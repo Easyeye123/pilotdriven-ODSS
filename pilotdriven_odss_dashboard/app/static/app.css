@@ -32,3 +32,22 @@ label{font-weight:700;font-size:13px}
 .muted{color:#5d6875;font-size:13px}
 .modules{columns:2;margin:0;padding-left:20px;line-height:1.7}
 .actions{display:flex;gap:10px;flex-wrap:wrap}
+.status-completed{background:#eaf6ef;color:#216b4a}
+.status-failed{background:#fce9ec;color:#a51e2d}
+.status-processing{background:#fff3d7;color:#8a5600}
+.error-box{margin:12px 0;padding:12px;border-left:4px solid var(--red);background:#fce9ec;color:#7f1722;border-radius:5px}
+.engine-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.engine-panel{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fff}
+.engine-panel>h3{margin:0;padding:10px 12px;background:var(--navy);color:#fff;font-size:15px}
+.finding{padding:11px 12px;border-bottom:1px solid var(--border)}
+.finding:last-child{border-bottom:0}
+.finding p{margin:5px 0;font-size:14px}
+.finding ul{margin:7px 0 0;padding-left:19px;font-size:13px;line-height:1.45}
+.finding-critical{border-left:5px solid var(--red)}
+.finding-warning{border-left:5px solid var(--amber)}
+.finding-information{border-left:5px solid var(--green)}
+.finding-unknown{border-left:5px solid #5d6875}
+.warning-card{border-left:5px solid var(--amber)}
+details summary{cursor:pointer;color:var(--navy)}
+.manual-grid{margin-top:14px}
+@media(max-width:800px){.engine-grid{grid-template-columns:1fr}}
