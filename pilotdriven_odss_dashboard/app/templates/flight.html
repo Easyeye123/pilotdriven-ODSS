@@ -6,38 +6,75 @@
   <p><strong>{{ flight.departure or "—" }} → {{ flight.destination or "—" }}</strong> · {{ flight.flight_date or "Date not entered" }}</p>
   <table>
     <tr><th>Aircraft</th><td>{{ flight.aircraft or "—" }}</td><th>Registration</th><td>{{ flight.registration or "—" }}</td></tr>
-    <tr><th>Status</th><td><span class="badge">{{ flight.status }}</span></td><th>Uploaded</th><td>{{ flight.created_at }}</td></tr>
+    <tr><th>Status</th><td><span class="badge status-{{ flight.status|lower|replace(' ', '-') }}">{{ flight.status }}</span></td><th>Uploaded</th><td>{{ flight.created_at }}</td></tr>
     <tr><th>Source</th><td colspan="3"><a href="/files/source/{{ flight.id }}">{{ flight.source_filename }}</a></td></tr>
   </table>
   {% if flight.notes %}<p class="muted">{{ flight.notes }}</p>{% endif %}
+  {% if flight.last_error %}<div class="error-box"><strong>Analysis error:</strong> {{ flight.last_error }}</div>{% endif %}
   <div class="actions">
-    <form method="post" action="/flights/{{ flight.id }}/analyse"><button class="green">Run analysis pipeline</button></form>
-    {% if flight.level1_report %}<a class="button" href="/files/report/{{ flight.id }}/1">Level 1 PDF</a>{% endif %}
-    {% if flight.level2_report %}<a class="button" href="/files/report/{{ flight.id }}/2">Level 2 PDF</a>{% endif %}
+    <form method="post" action="/flights/{{ flight.id }}/analyse"><button class="green">{% if flight.status == 'Completed' %}Run analysis again{% else %}Run ODSS analysis{% endif %}</button></form>
+    {% if flight.level1_report %}<a class="button" href="/files/report/{{ flight.id }}/1">Download Level 1 PDF</a>{% endif %}
+    {% if flight.level2_report %}<a class="button" href="/files/report/{{ flight.id }}/2">Download Level 2 PDF</a>{% endif %}
+    {% if flight.analysis_path %}<a class="button secondary" href="/files/analysis/{{ flight.id }}">Download analysis JSON</a>{% endif %}
   </div>
 </section>
 
 <aside class="card span-4">
-  <h3>Attach generated reports</h3>
-  <form method="post" action="/flights/{{ flight.id }}/reports/1" enctype="multipart/form-data">
-    <label>Level 1 PDF<input type="file" name="file" accept=".pdf" required></label>
-    <p><button type="submit">Attach Level 1</button></p>
-  </form>
-  <form method="post" action="/flights/{{ flight.id }}/reports/2" enctype="multipart/form-data">
-    <label>Level 2 PDF<input type="file" name="file" accept=".pdf" required></label>
-    <p><button type="submit">Attach Level 2</button></p>
-  </form>
+  <h3>Engine status</h3>
+  {% if analysis %}
+    <p><strong>{{ analysis.view.page_count }}</strong> PDF pages parsed</p>
+    <p><strong>{{ analysis.view.finding_count }}</strong> structured findings</p>
+    <p><strong>{{ analysis.flight.route_waypoints|length }}</strong> route entries</p>
+    <p><strong>{{ analysis.flight.notams|length }}</strong> pertinent NOTAM records</p>
+    <p><strong>{{ analysis.flight.weather|length }}</strong> weather records</p>
+  {% else %}
+    <p class="muted">Upload is stored. Run the ODSS analysis to parse the CFP and generate reports.</p>
+  {% endif %}
 </aside>
 
+{% if analysis %}
 <section class="card span-12">
-<h3>Flight workspace tabs planned for the next build</h3>
-<div class="actions">
-<span class="badge">Overview</span><span class="badge">MEL / CDDL</span>
-<span class="badge">NOTAM</span><span class="badge">Weather</span>
-<span class="badge">Terrain / VWS</span><span class="badge">Depressurisation</span>
-<span class="badge">Communications</span><span class="badge">Reports</span>
-<span class="badge">Revision comparison</span>
-</div>
+  <h2>Organised findings</h2>
+  <div class="engine-grid">
+  {% for engine, findings in analysis.view.grouped.items() %}
+    <article class="engine-panel">
+      <h3>{{ engine|replace('_',' ')|title }}</h3>
+      {% for finding in findings %}
+        <div class="finding finding-{{ finding.severity }}">
+          <strong>{{ finding.title }}</strong>
+          <p>{{ finding.summary }}</p>
+          {% if finding.details %}
+          <ul>
+            {% for detail in finding.details[:4] %}<li>{{ detail }}</li>{% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </article>
+  {% endfor %}
+  </div>
 </section>
+
+{% if analysis.view.warnings %}
+<section class="card span-12 warning-card">
+  <h3>Engine warnings</h3>
+  <ul>{% for warning in analysis.view.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endif %}
+
+<details class="card span-12">
+  <summary><strong>Manual report attachment / override</strong></summary>
+  <div class="grid manual-grid">
+    <form class="span-6" method="post" action="/flights/{{ flight.id }}/reports/1" enctype="multipart/form-data">
+      <label>Level 1 PDF<input type="file" name="file" accept=".pdf" required></label>
+      <p><button type="submit">Attach Level 1</button></p>
+    </form>
+    <form class="span-6" method="post" action="/flights/{{ flight.id }}/reports/2" enctype="multipart/form-data">
+      <label>Level 2 PDF<input type="file" name="file" accept=".pdf" required></label>
+      <p><button type="submit">Attach Level 2</button></p>
+    </form>
+  </div>
+</details>
 </div>
 {% endblock %}
