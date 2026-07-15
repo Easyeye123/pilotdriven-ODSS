@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+<h2>Upload Lido CFP PDF</h2>
+<form method="post" action="/upload" enctype="multipart/form-data">
+  <div class="form-grid">
+    <div><label>CFP PDF<input required type="file" name="file" accept=".pdf,application/pdf"></label></div>
+    <div><label>Flight number<input type="text" name="flight_number" placeholder="SQ304"></label></div>
+    <div><label>Flight date<input type="date" name="flight_date"></label></div>
+    <div><label>Departure ICAO<input type="text" name="departure" maxlength="4" placeholder="WSSS"></label></div>
+    <div><label>Destination ICAO<input type="text" name="destination" maxlength="4" placeholder="EBBR"></label></div>
+    <div><label>Aircraft type<input type="text" name="aircraft" placeholder="A350-941"></label></div>
+    <div><label>Registration<input type="text" name="registration" placeholder="9V-SMG"></label></div>
+  </div>
+  <p class="muted">Metadata fields are optional; the future CFP parser will populate them automatically.</p>
+  <button type="submit">Create flight workspace</button>
+</form>
+</section>
+{% endblock %}

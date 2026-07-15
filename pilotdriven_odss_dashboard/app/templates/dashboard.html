@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid">
+  <section class="card span-8">
+    <div class="actions" style="justify-content:space-between;align-items:center">
+      <h2 style="margin:0">Flight records</h2>
+      <a class="button" href="/upload">Upload new CFP</a>
+    </div>
+    {% if flights %}
+    <table>
+      <thead><tr><th>Flight</th><th>Route</th><th>Date</th><th>Status</th><th>Created</th></tr></thead>
+      <tbody>
+      {% for f in flights %}
+      <tr>
+        <td><a href="/flights/{{ f.id }}"><strong>{{ f.flight_number or "Unidentified" }}</strong></a><br><span class="muted">{{ f.source_filename }}</span></td>
+        <td>{{ f.departure or "—" }} → {{ f.destination or "—" }}</td>
+        <td>{{ f.flight_date or "—" }}</td>
+        <td><span class="badge">{{ f.status }}</span></td>
+        <td>{{ f.created_at }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>No flights uploaded yet.</p>
+    {% endif %}
+  </section>
+  <aside class="card span-4">
+    <h2>ODSS modules</h2>
+    <ul class="modules">
+      <li>CFP Page 1</li><li>MEL</li><li>CDDL</li><li>NOTAM</li>
+      <li>Weather</li><li>Performance</li><li>BOBCAT</li><li>EDTO</li>
+      <li>Terrain/MSA</li><li>VWS</li><li>Early ATC</li><li>Depressurisation</li>
+    </ul>
+  </aside>
+</div>
+{% endblock %}

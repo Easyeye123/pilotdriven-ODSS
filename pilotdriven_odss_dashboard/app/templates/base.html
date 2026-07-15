@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title or "PilotDriven ODSS" }}</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+<h1>PilotDriven ODSS</h1>
+<p>Personal Lido CFP Flight Workspace</p>
+</header>
+<nav><a href="/">Dashboard</a><a href="/upload">Upload CFP</a></nav>
+<main>{% block content %}{% endblock %}</main>
+</body>
+</html>

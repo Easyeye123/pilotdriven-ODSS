@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid">
+<section class="card span-8">
+  <h2>{{ flight.flight_number or "Unidentified flight" }}</h2>
+  <p><strong>{{ flight.departure or "—" }} → {{ flight.destination or "—" }}</strong> · {{ flight.flight_date or "Date not entered" }}</p>
+  <table>
+    <tr><th>Aircraft</th><td>{{ flight.aircraft or "—" }}</td><th>Registration</th><td>{{ flight.registration or "—" }}</td></tr>
+    <tr><th>Status</th><td><span class="badge">{{ flight.status }}</span></td><th>Uploaded</th><td>{{ flight.created_at }}</td></tr>
+    <tr><th>Source</th><td colspan="3"><a href="/files/source/{{ flight.id }}">{{ flight.source_filename }}</a></td></tr>
+  </table>
+  {% if flight.notes %}<p class="muted">{{ flight.notes }}</p>{% endif %}
+  <div class="actions">
+    <form method="post" action="/flights/{{ flight.id }}/analyse"><button class="green">Run analysis pipeline</button></form>
+    {% if flight.level1_report %}<a class="button" href="/files/report/{{ flight.id }}/1">Level 1 PDF</a>{% endif %}
+    {% if flight.level2_report %}<a class="button" href="/files/report/{{ flight.id }}/2">Level 2 PDF</a>{% endif %}
+  </div>
+</section>
+
+<aside class="card span-4">
+  <h3>Attach generated reports</h3>
+  <form method="post" action="/flights/{{ flight.id }}/reports/1" enctype="multipart/form-data">
+    <label>Level 1 PDF<input type="file" name="file" accept=".pdf" required></label>
+    <p><button type="submit">Attach Level 1</button></p>
+  </form>
+  <form method="post" action="/flights/{{ flight.id }}/reports/2" enctype="multipart/form-data">
+    <label>Level 2 PDF<input type="file" name="file" accept=".pdf" required></label>
+    <p><button type="submit">Attach Level 2</button></p>
+  </form>
+</aside>
+
+<section class="card span-12">
+<h3>Flight workspace tabs planned for the next build</h3>
+<div class="actions">
+<span class="badge">Overview</span><span class="badge">MEL / CDDL</span>
+<span class="badge">NOTAM</span><span class="badge">Weather</span>
+<span class="badge">Terrain / VWS</span><span class="badge">Depressurisation</span>
+<span class="badge">Communications</span><span class="badge">Reports</span>
+<span class="badge">Revision comparison</span>
+</div>
+</section>
+</div>
+{% endblock %}

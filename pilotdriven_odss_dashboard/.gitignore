@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+data/odss.db
+data/uploads/*
+data/reports/*
