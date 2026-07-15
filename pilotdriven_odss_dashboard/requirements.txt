@@ -3,3 +3,6 @@ uvicorn[standard]==0.35.0
 jinja2==3.1.6
 python-multipart==0.0.20
 pydantic==2.11.7
+pymupdf>=1.24,<2
+pypdf>=5,<7
+reportlab>=4.2,<5
