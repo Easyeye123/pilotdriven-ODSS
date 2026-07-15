@@ -21,11 +21,14 @@ CREATE TABLE IF NOT EXISTS flights (
     status TEXT NOT NULL DEFAULT 'Uploaded',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    analysis_path TEXT,
     level1_report TEXT,
     level2_report TEXT,
-    notes TEXT
+    notes TEXT,
+    last_error TEXT
 );
 '''
+
 
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -33,9 +36,23 @@ def connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     return conn
 
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(flights)")}
+    additions = {
+        "analysis_path": "TEXT",
+        "last_error": "TEXT",
+    }
+    for column, sql_type in additions.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE flights ADD COLUMN {column} {sql_type}")
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _ensure_columns(conn)
+
 
 def create_flight(data: dict[str, Any]) -> int:
     with connect() as conn:
@@ -62,20 +79,70 @@ def create_flight(data: dict[str, Any]) -> int:
         )
         return int(cur.lastrowid)
 
+
 def list_flights() -> list[sqlite3.Row]:
     with connect() as conn:
         return list(conn.execute("SELECT * FROM flights ORDER BY id DESC"))
+
 
 def get_flight(flight_id: int) -> sqlite3.Row | None:
     with connect() as conn:
         return conn.execute("SELECT * FROM flights WHERE id = ?", (flight_id,)).fetchone()
 
-def update_status(flight_id: int, status: str, notes: str | None = None) -> None:
+
+def update_status(
+    flight_id: int,
+    status: str,
+    notes: str | None = None,
+    last_error: str | None = None,
+) -> None:
     with connect() as conn:
         conn.execute(
-            "UPDATE flights SET status=?, notes=COALESCE(?, notes), updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (status, notes, flight_id),
+            '''
+            UPDATE flights
+            SET status=?, notes=COALESCE(?, notes), last_error=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            ''',
+            (status, notes, last_error, flight_id),
         )
+
+
+def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
+    with connect() as conn:
+        conn.execute(
+            '''
+            UPDATE flights SET
+                flight_number=COALESCE(NULLIF(?, ''), flight_number),
+                flight_date=COALESCE(NULLIF(?, ''), flight_date),
+                departure=COALESCE(NULLIF(?, ''), departure),
+                destination=COALESCE(NULLIF(?, ''), destination),
+                aircraft=COALESCE(NULLIF(?, ''), aircraft),
+                registration=COALESCE(NULLIF(?, ''), registration),
+                analysis_path=?, level1_report=?, level2_report=?,
+                status='Completed', notes=?, last_error=NULL,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            ''',
+            (
+                result.get("flight_number", ""),
+                result.get("flight_date", ""),
+                result.get("departure", ""),
+                result.get("destination", ""),
+                result.get("aircraft", ""),
+                result.get("registration", ""),
+                result.get("analysis_path"),
+                result.get("level1_report"),
+                result.get("level2_report"),
+                (
+                    f"Analysed {result.get('page_count', 0)} pages; "
+                    f"{result.get('finding_count', 0)} findings; "
+                    f"{result.get('weather_records', 0)} weather records; "
+                    f"{result.get('notam_records', 0)} pertinent NOTAM records."
+                ),
+                flight_id,
+            ),
+        )
+
 
 def attach_report(flight_id: int, level: int, report_path: str) -> None:
     column = "level1_report" if level == 1 else "level2_report"
