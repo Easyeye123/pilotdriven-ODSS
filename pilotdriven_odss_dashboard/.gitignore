@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 data/odss.db
 data/uploads/*
+data/results/*
 data/reports/*
