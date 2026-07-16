@@ -24,7 +24,7 @@ table{width:100%;border-collapse:collapse}
 th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
 th{font-size:12px;text-transform:uppercase;color:#5d6875}
 .button,button{display:inline-block;border:0;border-radius:6px;background:var(--navy);color:white;padding:10px 14px;text-decoration:none;font-weight:700;cursor:pointer}
-.button.secondary{background:#5d6875}.button.green{background:var(--green)}
+.button.secondary{background:#5d6875}.button.green,button.green{background:var(--green)}
 input[type=text],input[type=date],input[type=file]{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin-top:5px}
 label{font-weight:700;font-size:13px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -51,3 +51,4 @@ label{font-weight:700;font-size:13px}
 details summary{cursor:pointer;color:var(--navy)}
 .manual-grid{margin-top:14px}
 @media(max-width:800px){.engine-grid{grid-template-columns:1fr}}
+@media(max-width:800px){.form-grid{grid-template-columns:1fr}.card{overflow-x:auto}.flight-summary,.flight-summary tbody{display:block}.flight-summary tr{display:grid;grid-template-columns:minmax(92px,.55fr) minmax(0,1fr)}.flight-summary th,.flight-summary td{min-width:0;overflow-wrap:anywhere}}

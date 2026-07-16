@@ -8,9 +8,13 @@ from .constants import (
     COMMUNICATION_RULES,
     DEPRESS_PROFILES,
     MEL_REFERENCES,
+    MONTHS,
     format_actm,
     format_kg,
 )
+
+_WEEKDAYS = {name: index for index, name in enumerate(("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"))}
+_TIME_RANGE = re.compile(r"\b(\d{4})(?:UTC|Z)?\s*(?:-|TO)\s*(\d{4})(?:UTC|Z)?\b")
 
 
 def finding(
@@ -30,6 +34,133 @@ def finding(
         "details": details or [],
         "data": data or {},
     }
+
+
+def _intervals_overlap(
+    first_start: datetime,
+    first_end: datetime,
+    second_start: datetime,
+    second_end: datetime,
+) -> bool:
+    return first_start < second_end and second_start < first_end
+
+
+def _minute_of_day(value: str) -> int | None:
+    hour = int(value[:2])
+    minute = int(value[2:])
+    if hour > 23 or minute > 59:
+        return None
+    return hour * 60 + minute
+
+
+def _schedule_weekdays(value: str) -> set[int] | None:
+    weekday = r"MON|TUE|WED|THU|FRI|SAT|SUN"
+    normalized = re.sub(r"\s*,\s*", " ", value.strip())
+    range_match = re.fullmatch(rf"({weekday})-({weekday})", normalized)
+    if range_match:
+        start = _WEEKDAYS[range_match.group(1)]
+        end = _WEEKDAYS[range_match.group(2)]
+        result = {start}
+        while start != end:
+            start = (start + 1) % 7
+            result.add(start)
+        return result
+    if not re.fullmatch(rf"(?:{weekday})(?:\s+(?:{weekday}))*", normalized):
+        return None
+    tokens = re.findall(weekday, normalized)
+    return {_WEEKDAYS[token] for token in tokens}
+
+
+def _schedule_overlaps(schedule: str, window_start: datetime, window_end: datetime) -> bool | None:
+    months = "JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC"
+    normalized = re.sub(rf",\s*(?=(?:{months})\b)", ";", schedule.upper())
+    entries = [entry.strip() for entry in normalized.split(";") if entry.strip()]
+    if not entries:
+        return None
+    parsed_entries = 0
+    first_day = (window_start - timedelta(days=1)).date()
+    day_count = (window_end.date() - first_day).days + 1
+    for entry in entries:
+        matches = list(_TIME_RANGE.finditer(entry))
+        if not matches:
+            return None
+        gaps = [entry[matches[index].end():matches[index + 1].start()] for index in range(len(matches) - 1)]
+        gaps.append(entry[matches[-1].end():])
+        if any(not re.fullmatch(r"[\s,/]*", gap) for gap in gaps):
+            return None
+        ranges = []
+        for match in matches:
+            start_minutes = _minute_of_day(match.group(1))
+            end_minutes = _minute_of_day(match.group(2))
+            if start_minutes is None or end_minutes is None:
+                return None
+            ranges.append((start_minutes, end_minutes))
+        prefix = entry[:matches[0].start()].strip(" ,")
+        date_match = re.fullmatch(rf"({months})\s+(.+)", prefix)
+        month_days: set[int] | None = None
+        month_number = None
+        if date_match:
+            month_number = MONTHS[date_match.group(1)]
+            date_expression = date_match.group(2)
+            if not re.fullmatch(r"\d{2}(?:-\d{2})?(?:[ ,]+\d{2}(?:-\d{2})?)*", date_expression):
+                return None
+            month_days = set()
+            for token in re.findall(r"\d{2}(?:-\d{2})?", date_expression):
+                if "-" in token:
+                    start_day, end_day = (int(value) for value in token.split("-", 1))
+                    if start_day > end_day:
+                        return None
+                    month_days.update(range(start_day, end_day + 1))
+                else:
+                    month_days.add(int(token))
+            if not month_days:
+                return None
+        daily = prefix in {"DAILY", "DLY"}
+        weekdays = None if daily or date_match else _schedule_weekdays(prefix)
+        if not daily and not date_match and weekdays is None:
+            return None
+        parsed_entries += 1
+        for offset in range(day_count):
+            day = first_day + timedelta(days=offset)
+            if date_match and (day.month != month_number or day.day not in month_days):
+                continue
+            if weekdays is not None and day.weekday() not in weekdays:
+                continue
+            for start_minutes, end_minutes in ranges:
+                occurrence_start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(minutes=start_minutes)
+                occurrence_end = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(minutes=end_minutes)
+                if end_minutes <= start_minutes:
+                    occurrence_end += timedelta(days=1)
+                if _intervals_overlap(occurrence_start, occurrence_end, window_start, window_end):
+                    return True
+    return False if parsed_entries == len(entries) else None
+
+
+def _notam_role_window(
+    flight: dict[str, Any],
+    location: str,
+    alternate_airports: set[str],
+    edto_periods: dict[str, tuple[datetime, datetime]],
+) -> tuple[str, datetime, datetime]:
+    departure_utc = datetime.fromisoformat(flight["scheduled_departure_utc"])
+    arrival_utc = datetime.fromisoformat(flight["scheduled_arrival_utc"])
+    margin = timedelta(minutes=60)
+    if location == flight["departure"]:
+        return "departure", departure_utc - margin, departure_utc + margin
+    if location == flight["destination"]:
+        return "destination", arrival_utc - margin, arrival_utc + margin
+    if location in alternate_airports:
+        return "destination alternate", arrival_utc - margin, arrival_utc + margin
+    if location in edto_periods:
+        starts_at, ends_at = edto_periods[location]
+        return "EDTO", starts_at, ends_at
+    return "informational", departure_utc, arrival_utc
+
+
+def _profile_applies_to_aircraft(profile: dict[str, Any], aircraft_type: str) -> bool:
+    aircraft = re.sub(r"[^A-Z0-9]", "", aircraft_type.upper())
+    effectivity = [re.sub(r"[^A-Z0-9]", "", str(value).upper()) for value in profile.get("effectivity", [])]
+    return not effectivity or any(value and (value in aircraft or aircraft in value) for value in effectivity)
 
 
 def detect_terrain_events(waypoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -127,6 +258,8 @@ def match_profiles(
         names = [w["name"].upper() for w in segment]
         airways = [w["airway_in"].upper() for w in segment if w.get("airway_in")]
         for profile in DEPRESS_PROFILES:
+            if not _profile_applies_to_aircraft(profile, flight.get("aircraft_type", "")):
+                continue
             endpoint = profile["from"] in names and profile["to"] in names
             critical = profile["critical"] in names
             overlap: list[str] = []
@@ -186,11 +319,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         )
         ctot = datetime.fromisoformat(allocation["ctot_utc"])
         cto = datetime.fromisoformat(allocation["cto_utc"])
+        if cto < ctot:
+            cto += timedelta(days=1)
         predicted = ctot + timedelta(minutes=waypoint["actm_minutes"]) if waypoint else None
         difference = round((predicted - cto).total_seconds() / 60) if predicted else None
         findings.append(finding(
             "bobcat",
-            "critical" if difference else "warning",
+            "critical" if difference not in (None, 0) else "warning" if difference is None else "information",
             "BOBCAT timing reconciliation",
             (
                 f"{allocation['waypoint']}: predicted CTO difference {difference:+d} min."
@@ -277,6 +412,15 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
 
     alternate_airports = {a["airport"] for a in flight["alternates"]}
     edto_airports = {a["airport"] for a in flight["edto"]["airports"]}
+    edto_periods: dict[str, tuple[datetime, datetime]] = {}
+    for airport in flight["edto"]["airports"]:
+        starts_at = datetime.fromisoformat(airport["period_start_utc"])
+        ends_at = datetime.fromisoformat(airport["period_end_utc"])
+        current = edto_periods.get(airport["airport"])
+        edto_periods[airport["airport"]] = (
+            min(starts_at, current[0]) if current else starts_at,
+            max(ends_at, current[1]) if current else ends_at,
+        )
     for record in flight["weather"]:
         location = record["location"]
         role = (
@@ -299,41 +443,62 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             [f"Record type: {record['record_type']}."],
         ))
 
-    departure_utc = datetime.fromisoformat(flight["scheduled_departure_utc"])
-    arrival_utc = datetime.fromisoformat(flight["scheduled_arrival_utc"])
     for record in flight["notams"]:
+        location = record["location"]
+        role, window_start, window_end = _notam_role_window(
+            flight,
+            location,
+            alternate_airports,
+            edto_periods,
+        )
         valid_from = datetime.fromisoformat(record["valid_from_utc"])
         valid_to = (
             datetime.fromisoformat(record["valid_to_utc"])
             if record.get("valid_to_utc")
             else datetime.max.replace(tzinfo=timezone.utc)
         )
-        if not (valid_from <= arrival_utc and valid_to >= departure_utc):
+        applicability = "active"
+        if record.get("validity_review"):
+            applicability = "review"
+            warnings.append(f"{record['notam_id']}: B/C validity could not be parsed; manual review required.")
+        elif not _intervals_overlap(valid_from, valid_to, window_start, window_end):
             continue
-        location = record["location"]
-        role = (
-            "departure" if location == flight["departure"]
-            else "destination" if location == flight["destination"]
-            else "destination alternate" if location in alternate_airports
-            else "EDTO" if location in edto_airports
-            else "informational"
-        )
+        schedule = record.get("schedule")
+        if schedule:
+            schedule_active = _schedule_overlaps(schedule, window_start, window_end)
+            if schedule_active is False:
+                continue
+            if schedule_active is None:
+                applicability = "review"
+                warnings.append(f"{record['notam_id']}: D schedule could not be evaluated; manual review required.")
+        elif record.get("schedule_review"):
+            applicability = "review"
+            warnings.append(f"{record['notam_id']}: schedule language could not be structured; manual review required.")
         upper = record["text"].upper()
         severity = "warning"
-        if any(token in upper for token in ("CLSD", "CLOSED", "U/S", "NOT AVBL", "SUSPENDED")):
+        if re.search(r"(?<![A-Z0-9])(?:CLSD|CLOSED|U/S|NOT AVBL|SUSPENDED)(?![A-Z0-9])", upper):
             severity = "critical" if role in {"departure", "destination"} else "warning"
-        if record.get("schedule"):
-            warnings.append(f"{record['notam_id']}: recurring schedule present; confirm exact applicability.")
+        details = [
+            *([f"Schedule: {schedule}."] if schedule else []),
+            f"Operating window {window_start.isoformat()} to {window_end.isoformat()}.",
+            f"Location {location}; category {record['category']}.",
+            f"Validity {record['valid_from_utc']} to {record.get('valid_to_utc') or 'UFN'}.",
+            *(["Applicability requires manual review."] if applicability == "review" else []),
+        ]
         findings.append(finding(
             "notam",
             severity,
             f"{role.title()} NOTAM {record['notam_id']}",
             record["text"][:260],
-            [
-                f"Location {location}; category {record['category']}.",
-                f"Validity {record['valid_from_utc']} to {record.get('valid_to_utc') or 'UFN'}.",
-                *([f"Schedule: {record['schedule']}."] if record.get("schedule") else []),
-            ],
+            details,
+            {
+                "role": role,
+                "location": location,
+                "notam_id": record["notam_id"],
+                "priority_score": record.get("priority_score", 0),
+                "applicability": applicability,
+                "schedule": schedule,
+            },
         ))
 
     waypoint_by_boundary = {
@@ -410,6 +575,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 f"Maximum at {maximum['name']}, ACTM {format_actm(maximum['actm_minutes'])}.",
                 "Threshold is strictly greater than 4.",
             ],
+            {"start_actm_minutes": event["first_high"]["actm_minutes"]},
         ))
 
     matches = sorted(
@@ -463,7 +629,11 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 ),
                 "Confirm current approved chart, route direction, winds and aircraft effectivity before use.",
             ],
-            {"chart_number": profile["chart"], "critical_point": critical},
+            {
+                "chart_number": profile["chart"],
+                "critical_point": critical,
+                "start_actm_minutes": event["first_high"]["actm_minutes"],
+            },
         ))
     if terrain_events and not matches:
         findings.append(finding(
@@ -498,13 +668,16 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             f"ACTM {format_actm(edto['entry_actm_minutes'])}-"
             f"{format_actm(edto.get('exit_actm_minutes'))}.",
             details,
+            {"start_actm_minutes": edto["entry_actm_minutes"]},
         ))
 
     timeline_items: list[tuple[int, str, str]] = []
     for item in findings:
         if item["engine"] in {"communications", "terrain", "vws", "depressurisation", "edto"}:
             data = item.get("data", {})
-            actm = data.get("action_actm_minutes") or data.get("start_actm_minutes")
+            actm = data.get("action_actm_minutes")
+            if actm is None:
+                actm = data.get("start_actm_minutes")
             if actm is not None:
                 timeline_items.append((actm, item["title"], item["summary"]))
     if flight.get("bobcat"):

@@ -5,11 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import BaseDocTemplate, Frame, PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle
 
 from .constants import ENGINE_ORDER
 
@@ -31,6 +30,42 @@ _TITLES = {
     "qa": "Quality assurance",
 }
 
+_SEVERITY_RANK = {"information": 0, "unknown": 1, "warning": 2, "critical": 3}
+_ROLE_RANK = {"departure": 0, "destination": 1, "destination alternate": 2, "EDTO": 3, "informational": 4}
+
+
+def _select_level1_notams(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(
+        findings,
+        key=lambda item: (
+            _ROLE_RANK.get(item.get("data", {}).get("role", "informational"), 5),
+            -_SEVERITY_RANK.get(item.get("severity", "information"), 0),
+            -int(item.get("data", {}).get("priority_score", 0)),
+            item.get("title", ""),
+        ),
+    )
+    selected = [item for item in ordered if item.get("severity") == "critical"]
+    for role in ("departure", "destination", "destination alternate", "EDTO"):
+        if any(item.get("data", {}).get("role") == role for item in selected):
+            continue
+        candidate = next((item for item in ordered if item.get("data", {}).get("role") == role), None)
+        if candidate is not None and candidate not in selected:
+            selected.append(candidate)
+    for item in ordered:
+        if len(selected) >= 16:
+            break
+        if item not in selected:
+            selected.append(item)
+    return sorted(
+        selected,
+        key=lambda item: (
+            _ROLE_RANK.get(item.get("data", {}).get("role", "informational"), 5),
+            -_SEVERITY_RANK.get(item.get("severity", "information"), 0),
+            -int(item.get("data", {}).get("priority_score", 0)),
+            item.get("title", ""),
+        ),
+    )
+
 
 def report_sections(findings: list[dict[str, Any]], level: int) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -39,26 +74,37 @@ def report_sections(findings: list[dict[str, Any]], level: int) -> list[dict[str
     page_breaks = (
         {"mel", "weather", "communications", "depressurisation", "timeline"}
         if level == 2
-        else {"communications"}
+        else set()
     )
     sections: list[dict[str, Any]] = []
     for engine in ENGINE_ORDER:
         engine_findings = grouped.get(engine, [])
         if not engine_findings:
             continue
+        selected_findings = (
+            _select_level1_notams(engine_findings)
+            if level == 1 and engine == "notam"
+            else engine_findings
+        )
         lines: list[str] = []
-        severity = "information"
-        finding_limit = len(engine_findings) if level == 2 else (8 if engine == "notam" else 12)
-        for finding in engine_findings[:finding_limit]:
-            if finding["severity"] != "information":
-                severity = finding["severity"]
+        severity = max(
+            (finding["severity"] for finding in selected_findings),
+            key=lambda value: _SEVERITY_RANK.get(value, 0),
+            default="information",
+        )
+        finding_limit = len(selected_findings) if level == 2 or engine == "notam" else 12
+        for finding in selected_findings[:finding_limit]:
             lines.append(f"{finding['title']}: {finding['summary']}")
             detail_limit = (
                 len(finding["details"])
                 if level == 2
-                else (6 if engine in {"page1", "performance", "timeline"} else 2)
+                else (6 if engine in {"page1", "performance", "timeline"} else 1 if engine == "notam" else 2)
             )
             lines.extend(f"- {detail}" for detail in finding["details"][:detail_limit])
+        if level == 1 and engine == "notam" and len(selected_findings) < len(engine_findings):
+            lines.append(
+                f"{len(engine_findings) - len(selected_findings)} lower-priority active or review NOTAM findings omitted; see Level 2."
+            )
         sections.append({
             "title": _TITLES[engine],
             "lines": lines,
@@ -71,29 +117,12 @@ def report_sections(findings: list[dict[str, Any]], level: int) -> list[dict[str
 def render_pdf(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
+    warnings: list[str],
     level: int,
     path: Path,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     styles = getSampleStyleSheet()
-    title = ParagraphStyle(
-        "ODSS Title",
-        parent=styles["Title"],
-        fontName="Helvetica-Bold",
-        fontSize=15,
-        leading=17,
-        textColor=colors.HexColor("#173B65"),
-        alignment=TA_CENTER,
-    )
-    subtitle = ParagraphStyle(
-        "ODSS Subtitle",
-        parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=8.5,
-        leading=10,
-        textColor=colors.HexColor("#4B5563"),
-        alignment=TA_CENTER,
-    )
     heading = ParagraphStyle(
         "ODSS Heading",
         parent=styles["Heading2"],
@@ -109,21 +138,13 @@ def render_pdf(
         fontSize=7.5 if level == 1 else 7.2,
         leading=9.2,
     )
-    footer = ParagraphStyle(
-        "ODSS Footer",
-        parent=body,
-        fontSize=6.5,
-        leading=7.5,
-        textColor=colors.HexColor("#4B5563"),
-        alignment=TA_CENTER,
-    )
-    document = SimpleDocTemplate(
+    document = BaseDocTemplate(
         str(path),
         pagesize=A4,
         leftMargin=9 * mm,
         rightMargin=9 * mm,
-        topMargin=8 * mm,
-        bottomMargin=8 * mm,
+        topMargin=23 * mm,
+        bottomMargin=15 * mm,
     )
     report_title = (
         f"{flight['flight_number']} {flight['departure']}-{flight['destination']}"
@@ -131,53 +152,69 @@ def render_pdf(
         else f"{flight['flight_number']} Expanded Operational Analysis"
     )
     report_subtitle = f"Level {level} - {flight['flight_date']}"
-    story = [
-        Paragraph(report_title, title),
-        Paragraph(report_subtitle, subtitle),
-        Spacer(1, 2 * mm),
-    ]
-    page_number = 1
-    for index, section in enumerate(report_sections(findings, level)):
+    sections = report_sections(findings, level)
+    if warnings:
+        sections.append({
+            "title": "Applicability and parser warnings",
+            "lines": warnings,
+            "severity": "warning",
+            "page_break_before": level == 2,
+        })
+
+    def draw_page(canvas, document_template) -> None:
+        width, height = A4
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor("#173B65"))
+        canvas.setFont("Helvetica-Bold", 13)
+        canvas.drawCentredString(width / 2, height - 12 * mm, report_title)
+        canvas.setFillColor(colors.HexColor("#4B5563"))
+        canvas.setFont("Helvetica-Bold", 8)
+        canvas.drawCentredString(width / 2, height - 17 * mm, report_subtitle)
+        canvas.setStrokeColor(colors.HexColor("#D9E1E8"))
+        canvas.line(9 * mm, height - 19 * mm, width - 9 * mm, height - 19 * mm)
+        canvas.setFont("Helvetica", 6.2)
+        canvas.drawString(
+            9 * mm,
+            7 * mm,
+            "Decision support only - approved documents, dispatch authority, ATC instructions and PIC judgement remain controlling.",
+        )
+        canvas.drawRightString(width - 9 * mm, 7 * mm, f"Page {canvas.getPageNumber()}")
+        canvas.restoreState()
+
+    frame = Frame(
+        document.leftMargin,
+        document.bottomMargin,
+        document.width,
+        document.height,
+        id="body",
+    )
+    document.addPageTemplates([PageTemplate(id="report", frames=[frame], onPageEnd=draw_page)])
+
+    story = []
+    for index, section in enumerate(sections):
         if section["page_break_before"] and index > 0:
             story.append(PageBreak())
-            page_number += 1
-            story.extend([
-                Paragraph(f"{report_title} - Page {page_number}", title),
-                Paragraph(report_subtitle, subtitle),
-                Spacer(1, 2 * mm),
-            ])
         colour = {
             "critical": colors.HexColor("#9F1D2F"),
             "warning": colors.HexColor("#A96800"),
         }.get(section["severity"], colors.HexColor("#173B65"))
-        header = Table([[Paragraph(section["title"], heading)]], colWidths=[190 * mm])
-        header.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colour),
+        lines = section["lines"] or ["No findings."]
+        rows = [[Paragraph(section["title"], heading)]]
+        rows.extend([
+            [Paragraph(line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), body)]
+            for line in lines
+        ])
+        table = Table(rows, colWidths=[190 * mm], repeatRows=1, splitByRow=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colour),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F5F7FA")),
+            ("BOX", (0, 0), (-1, -1), 0.5, colour),
+            ("LINEBELOW", (0, 1), (-1, -2), 0.2, colors.HexColor("#D9E1E8")),
             ("LEFTPADDING", (0, 0), (-1, -1), 5),
             ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]))
-        story.append(header)
-        lines = section["lines"] or ["No findings."]
-        for offset in range(0, len(lines), 40):
-            content = "<br/>".join(
-                line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                for line in lines[offset: offset + 40]
-            )
-            box = Table([[Paragraph(content, body)]], colWidths=[190 * mm])
-            box.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F5F7FA")),
-                ("BOX", (0, 0), (-1, -1), 0.5, colour),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]))
-            story.extend([box, Spacer(1, 1 * mm)])
-    story.append(Paragraph(
-        "Decision support only. Current approved documents, dispatch authority, "
-        "ATC instructions and pilot-in-command judgement remain controlling.",
-        footer,
-    ))
+        story.extend([table, Spacer(1, 1 * mm)])
     document.build(story)

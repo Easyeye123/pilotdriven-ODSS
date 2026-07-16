@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
-import shutil
 import traceback
 import uuid
 
@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from .analysis import infer_metadata, load_analysis, run_odss_analysis
 from .database import (
     attach_report,
+    begin_analysis,
     complete_analysis,
     create_flight,
     get_flight,
@@ -20,6 +21,7 @@ from .database import (
     list_flights,
     update_status,
 )
+from .odss.parser import validate_pdf
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "data" / "uploads"
@@ -27,18 +29,95 @@ REPORT_DIR = BASE_DIR / "data" / "reports"
 RESULT_DIR = BASE_DIR / "data" / "results"
 TEMPLATE_DIR = BASE_DIR / "app" / "templates"
 STATIC_DIR = BASE_DIR / "app" / "static"
-
-app = FastAPI(title="PilotDriven ODSS Personal Dashboard", version="0.2.0")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-templates = Jinja2Templates(directory=TEMPLATE_DIR)
+MAX_PDF_BYTES = 25 * 1024 * 1024
+UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 
-@app.on_event("startup")
-def startup() -> None:
+@asynccontextmanager
+async def lifespan(_: FastAPI):
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
+    yield
+
+
+app = FastAPI(title="PilotDriven ODSS Personal Dashboard", version="0.2.1", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=TEMPLATE_DIR)
+
+
+def _normalized_pdf_name(filename: str | None, fallback: str) -> str:
+    raw = (filename or fallback).replace("\\", "/")
+    name = Path(raw).name
+    name = "".join(character for character in name if character.isprintable()).strip()
+    if not name:
+        name = fallback
+    if Path(name).suffix.lower() != ".pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+    stem = Path(name).stem[:160].strip(" .") or Path(fallback).stem
+    return f"{stem}.pdf"
+
+
+async def _store_pdf(file: UploadFile, directory: Path, prefix: str, fallback: str) -> tuple[str, Path]:
+    display_name = _normalized_pdf_name(file.filename, fallback)
+    directory.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex
+    temporary = directory / f".{prefix}_{token}.part"
+    destination = directory / f"{prefix}_{token}.pdf"
+    total = 0
+    try:
+        await file.seek(0)
+        with temporary.open("wb") as output:
+            while True:
+                chunk = await file.read(UPLOAD_CHUNK_BYTES)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_PDF_BYTES:
+                    raise HTTPException(status_code=413, detail="PDF exceeds the 25 MB upload limit.")
+                output.write(chunk)
+        if total == 0:
+            raise HTTPException(status_code=400, detail="PDF is empty.")
+        validate_pdf(temporary)
+        temporary.replace(destination)
+    except HTTPException:
+        temporary.unlink(missing_ok=True)
+        raise
+    except ValueError as exc:
+        temporary.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        temporary.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Unable to store the PDF.") from exc
+    return display_name, destination
+
+
+def _stored_file(path: str | None, directory: Path, missing_detail: str) -> Path:
+    if not path:
+        raise HTTPException(status_code=404, detail=missing_detail)
+    candidate = Path(path)
+    try:
+        candidate.resolve().relative_to(directory.resolve())
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=missing_detail) from exc
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail=missing_detail)
+    return candidate
+
+
+def _remove_stored_file(path: str | None, directory: Path) -> None:
+    if not path:
+        return
+    candidate = Path(path)
+    try:
+        candidate.resolve().relative_to(directory.resolve())
+    except (OSError, ValueError):
+        return
+    try:
+        candidate.unlink(missing_ok=True)
+    except OSError:
+        return
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -65,14 +144,7 @@ async def upload_cfp(
     aircraft: str = Form(""),
     registration: str = Form(""),
 ):
-    filename = file.filename or "uploaded.pdf"
-    if file.content_type != "application/pdf" and not filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
-
-    safe_name = f"{uuid.uuid4().hex}_{Path(filename).name}"
-    dest = UPLOAD_DIR / safe_name
-    with dest.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
+    filename, dest = await _store_pdf(file, UPLOAD_DIR, "cfp", "uploaded.pdf")
 
     inferred = infer_metadata(filename)
     record = {
@@ -86,7 +158,11 @@ async def upload_cfp(
         "source_path": str(dest),
         "status": "Uploaded",
     }
-    flight_id = create_flight(record)
+    try:
+        flight_id = create_flight(record)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
     return RedirectResponse(url=f"/flights/{flight_id}", status_code=303)
 
 
@@ -109,8 +185,17 @@ def analyse_flight(flight_id: int):
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
 
-    update_status(flight_id, "Processing", "Parsing Lido CFP and running ODSS engines.")
+    previous_artifacts = (
+        (flight["analysis_path"], RESULT_DIR),
+        (flight["level1_report"], REPORT_DIR),
+        (flight["level2_report"], REPORT_DIR),
+    )
+    if not begin_analysis(flight_id):
+        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+    result = None
     try:
+        for path, directory in previous_artifacts:
+            _remove_stored_file(path, directory)
         result = run_odss_analysis(
             Path(flight["source_path"]),
             result_dir=RESULT_DIR,
@@ -119,6 +204,10 @@ def analyse_flight(flight_id: int):
         )
         complete_analysis(flight_id, result)
     except Exception as exc:
+        if result:
+            _remove_stored_file(result.get("analysis_path"), RESULT_DIR)
+            _remove_stored_file(result.get("level1_report"), REPORT_DIR)
+            _remove_stored_file(result.get("level2_report"), REPORT_DIR)
         error = f"{type(exc).__name__}: {exc}"
         update_status(
             flight_id,
@@ -134,13 +223,23 @@ def analyse_flight(flight_id: int):
 async def upload_report(flight_id: int, level: int, file: UploadFile = File(...)):
     if level not in (1, 2):
         raise HTTPException(status_code=400, detail="Report level must be 1 or 2")
-    filename = file.filename or "report.pdf"
-    if not filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Report must be a PDF")
-    dest = REPORT_DIR / f"flight_{flight_id}_level_{level}_{Path(filename).name}"
-    with dest.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
-    attach_report(flight_id, level, str(dest))
+    flight = get_flight(flight_id)
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    _, dest = await _store_pdf(
+        file,
+        REPORT_DIR,
+        f"flight_{flight_id}_level_{level}",
+        "report.pdf",
+    )
+    try:
+        attach_report(flight_id, level, str(dest))
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
+    previous = flight["level1_report"] if level == 1 else flight["level2_report"]
+    if previous != str(dest):
+        _remove_stored_file(previous, REPORT_DIR)
     return RedirectResponse(url=f"/flights/{flight_id}", status_code=303)
 
 
@@ -149,9 +248,10 @@ def download_source(flight_id: int):
     flight = get_flight(flight_id)
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
+    path = _stored_file(flight["source_path"], UPLOAD_DIR, "Source PDF not found")
     return FileResponse(
-        flight["source_path"],
-        filename=flight["source_filename"],
+        path,
+        filename=_normalized_pdf_name(flight["source_filename"], "source.pdf"),
         media_type="application/pdf",
     )
 
@@ -163,10 +263,10 @@ def download_report(flight_id: int, level: int):
         raise HTTPException(status_code=404, detail="Flight not found")
     if level not in (1, 2):
         raise HTTPException(status_code=400, detail="Report level must be 1 or 2")
-    path = flight["level1_report"] if level == 1 else flight["level2_report"]
-    if not path:
-        raise HTTPException(status_code=404, detail="Report not generated")
-    return FileResponse(path, filename=Path(path).name, media_type="application/pdf")
+    stored_path = flight["level1_report"] if level == 1 else flight["level2_report"]
+    path = _stored_file(stored_path, REPORT_DIR, "Report not generated")
+    filename = f"{flight['flight_number'] or f'flight-{flight_id}'}_level_{level}.pdf"
+    return FileResponse(path, filename=filename, media_type="application/pdf")
 
 
 @app.get("/files/analysis/{flight_id}")
@@ -174,7 +274,6 @@ def download_analysis(flight_id: int):
     flight = get_flight(flight_id)
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
-    path = flight["analysis_path"]
-    if not path:
-        raise HTTPException(status_code=404, detail="Analysis not generated")
-    return FileResponse(path, filename=Path(path).name, media_type="application/json")
+    path = _stored_file(flight["analysis_path"], RESULT_DIR, "Analysis not generated")
+    filename = f"{flight['flight_number'] or f'flight-{flight_id}'}_analysis.json"
+    return FileResponse(path, filename=filename, media_type="application/json")
