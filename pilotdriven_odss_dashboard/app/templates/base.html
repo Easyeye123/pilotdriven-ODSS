@@ -12,6 +12,7 @@
 <p>Personal Lido CFP Flight Workspace</p>
 </header>
 <nav><a href="/">Dashboard</a><a href="/upload">Upload CFP</a></nav>
+{% if analysis and analysis.view and analysis.view.briefing %}{% include "visual_briefing.html" %}{% endif %}
 <main>{% block content %}{% endblock %}</main>
 </body>
 </html>
