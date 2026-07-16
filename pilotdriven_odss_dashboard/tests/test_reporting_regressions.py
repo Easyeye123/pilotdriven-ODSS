@@ -108,6 +108,11 @@ def test_multipage_reports_repeat_title_footer_and_physical_page_number(
         "departure": "WSSS",
         "destination": "EBBR",
         "flight_date": "11JUL26",
+        "masses": {
+            "planned_zfw_kg": 166486,
+            "planned_landing_weight_kg": 175802,
+            "planned_takeoff_weight_kg": 245529,
+        },
     }
     path = tmp_path / f"level_{level}.pdf"
 
@@ -120,6 +125,14 @@ def test_multipage_reports_repeat_title_footer_and_physical_page_number(
         assert title in text
         assert "Decision support only - approved documents" in text
         assert f"Page {page_number}" in text
+
+    first_page_text = reader.pages[0].extract_text() or ""
+    assert "PZFW" in first_page_text
+    assert "166,486 kg" in first_page_text
+    assert "PLDW" in first_page_text
+    assert "175,802 kg" in first_page_text
+    assert "PTOW" in first_page_text
+    assert "245,529 kg" in first_page_text
 
 
 def test_run_analysis_normalizes_identity_before_json_and_reports(
