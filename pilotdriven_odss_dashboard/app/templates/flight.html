@@ -7,6 +7,7 @@
   <table class="flight-summary">
     <tr><th>Aircraft</th><td>{{ flight.aircraft or "—" }}</td><th>Registration</th><td>{{ flight.registration or "—" }}</td></tr>
     <tr><th>Status</th><td><span class="badge status-{{ flight.status|lower|replace(' ', '-') }}">{{ flight.status }}</span></td><th>Uploaded</th><td>{{ flight.created_at }}</td></tr>
+    <tr><th>Actual takeoff</th><td>{{ timing_form.actual_takeoff_display or "Not entered" }}</td><th>Clock basis</th><td>{% if timing_form.actual_takeoff_display %}ATOT + CFP ACTM{% else %}ACTM only{% endif %}</td></tr>
     <tr><th>Source</th><td colspan="3"><a href="/files/source/{{ flight.id }}">{{ flight.source_filename }}</a></td></tr>
   </table>
   {% if flight.notes %}<p class="muted">{{ flight.notes }}</p>{% endif %}
@@ -27,10 +28,109 @@
     <p><strong>{{ analysis.flight.route_waypoints|length }}</strong> route entries</p>
     <p><strong>{{ analysis.view.notam_finding_count }}</strong> pertinent or review NOTAM findings</p>
     <p><strong>{{ analysis.flight.weather|length }}</strong> weather records</p>
+    {% if analysis.view.timing %}<p><strong>{{ analysis.view.timing.event_count }}</strong> pertinent actual-time events</p>{% endif %}
   {% else %}
     <p class="muted">Upload is stored. Run the ODSS analysis to parse the CFP and generate reports.</p>
   {% endif %}
 </aside>
+
+<section class="card span-12 timing-card">
+  <h2>Actual-time operational clock</h2>
+  <p class="timing-note"><strong>A timing reference is required for absolute UTC calculations.</strong> Enter either the actual takeoff time (ATOT) or an actual time over a route waypoint (ATA). The dashboard derives the time-zero anchor and calculates UTC crossing, early-call and critical-event times while retaining the original ACTM.</p>
+  <form method="post" action="/flights/{{ flight.id }}/timing" id="timing-form">
+    <div class="timing-form-grid">
+      <label>Timing reference
+        <select name="reference_type" id="reference-type" required>
+          <option value="takeoff" {% if timing_form.reference_type == 'takeoff' %}selected{% endif %}>Actual takeoff time (ATOT)</option>
+          <option value="waypoint_ata" {% if timing_form.reference_type == 'waypoint_ata' %}selected{% endif %} {% if not timing_form.waypoint_options %}disabled{% endif %}>Actual waypoint ATA</option>
+        </select>
+      </label>
+      <label>UTC date
+        <input type="date" name="reference_date" value="{{ timing_form.reference_date }}" required>
+      </label>
+      <label>UTC time
+        <input type="time" name="reference_time" value="{{ timing_form.reference_time }}" step="60" required>
+      </label>
+      <label id="reference-waypoint-field">Reference waypoint
+        {% if timing_form.waypoint_options %}
+        <select name="reference_waypoint" id="reference-waypoint">
+          <option value="">Select waypoint</option>
+          {% for waypoint in timing_form.waypoint_options %}
+          <option value="{{ waypoint.name }}" {% if timing_form.reference_waypoint == waypoint.name %}selected{% endif %}>{{ waypoint.name }} · ACTM {{ waypoint.actm }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input type="text" name="reference_waypoint" id="reference-waypoint" placeholder="Run analysis first" disabled>
+        {% endif %}
+      </label>
+    </div>
+    <p class="muted">Waypoint ATA mode re-anchors the whole route: derived ATOT = entered waypoint ATA − that waypoint's CFP ACTM.</p>
+    <button type="submit" class="green">Save time and recalculate UTC table</button>
+  </form>
+
+  {% if analysis and analysis.view.timing %}
+  {% set timing = analysis.view.timing %}
+  <div class="timing-summary">
+    <div><span>Derived ATOT</span><strong>{{ timing.actual_takeoff_display }}</strong></div>
+    <div><span>Schedule variance</span><strong>{{ "%+d"|format(timing.schedule_difference_minutes) }} min</strong></div>
+    <div><span>Early calls</span><strong>{{ timing.early_calls|length }}</strong></div>
+    <div><span>FIR crossings</span><strong>{{ timing.fir_crossing_count }}</strong></div>
+    <div><span>Route entries</span><strong>{{ timing.waypoint_count }}</strong></div>
+  </div>
+
+  <h3>Pertinent UTC timeline</h3>
+  <div class="table-scroll">
+  <table class="compact-table">
+    <thead><tr><th>UTC</th><th>Day</th><th>ACTM</th><th>Event</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for event in timing.events %}
+      <tr class="timing-row timing-{{ event.category }}">
+        <td><strong>{{ event.utc_display }}</strong></td>
+        <td>{{ event.day_label }}</td>
+        <td>{{ event.actm }}</td>
+        <td>{{ event.label }}</td>
+        <td>{{ event.details or "—" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <details class="timing-details">
+    <summary><strong>FIR crossing UTC table ({{ timing.fir_crossing_count }})</strong></summary>
+    <div class="table-scroll">
+    <table class="compact-table">
+      <thead><tr><th>UTC</th><th>ACTM</th><th>Boundary</th><th>Route detail</th></tr></thead>
+      <tbody>{% for event in timing.fir_crossings %}<tr><td><strong>{{ event.utc_display }}</strong></td><td>{{ event.actm }}</td><td>{{ event.label }}</td><td>{{ event.details }}</td></tr>{% endfor %}</tbody>
+    </table>
+    </div>
+  </details>
+
+  <details class="timing-details">
+    <summary><strong>All calculated waypoint ATA/UTC values ({{ timing.waypoint_count }})</strong></summary>
+    <p class="muted">These are calculated crossing times from the timing anchor, not pilot-recorded actual waypoint times.</p>
+    <div class="table-scroll waypoint-table-wrap">
+    <table class="compact-table">
+      <thead><tr><th>Waypoint</th><th>Calculated UTC</th><th>ACTM</th><th>Airway</th><th>MSA</th><th>VWS</th></tr></thead>
+      <tbody>
+      {% for waypoint in timing.waypoints %}
+        <tr>
+          <td>{{ waypoint.display_name }}</td>
+          <td><strong>{{ waypoint.utc_display }}</strong></td>
+          <td>{{ waypoint.actm }}</td>
+          <td>{{ waypoint.airway_in or "—" }}</td>
+          <td>{% if waypoint.msa_hundreds_ft is not none %}{{ waypoint.msa_hundreds_ft }}{% else %}—{% endif %}</td>
+          <td>{% if waypoint.vws is not none %}{{ "%03d"|format(waypoint.vws) }}{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {% else %}
+    <p class="muted timing-empty">The CFP can be reviewed in ACTM-only mode. Save a required timing reference above to create the absolute UTC crossing and early-call tables.</p>
+  {% endif %}
+</section>
 
 {% if analysis %}
 <section class="card span-12">
@@ -77,4 +177,19 @@
   </div>
 </details>
 </div>
+<script>
+(function () {
+  const referenceType = document.getElementById('reference-type');
+  const waypointField = document.getElementById('reference-waypoint-field');
+  const waypoint = document.getElementById('reference-waypoint');
+  if (!referenceType || !waypointField || !waypoint) return;
+  function updateWaypointRequirement() {
+    const usesWaypoint = referenceType.value === 'waypoint_ata';
+    waypointField.classList.toggle('timing-field-muted', !usesWaypoint);
+    if (!waypoint.disabled) waypoint.required = usesWaypoint;
+  }
+  referenceType.addEventListener('change', updateWaypointRequirement);
+  updateWaypointRequirement();
+})();
+</script>
 {% endblock %}

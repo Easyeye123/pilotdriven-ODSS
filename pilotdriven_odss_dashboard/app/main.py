@@ -19,9 +19,17 @@ from .database import (
     get_flight,
     init_db,
     list_flights,
+    save_timing_reference,
     update_status,
 )
+from .odss.constants import format_actm
 from .odss.parser import validate_pdf
+from .odss.timing import (
+    combine_utc_date_time,
+    derive_timing_reference,
+    display_utc,
+    parse_utc,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "data" / "uploads"
@@ -42,7 +50,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="PilotDriven ODSS Personal Dashboard", version="0.2.1", lifespan=lifespan)
+app = FastAPI(title="PilotDriven ODSS Personal Dashboard", version="0.3.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATE_DIR)
 
@@ -120,6 +128,97 @@ def _remove_stored_file(path: str | None, directory: Path) -> None:
         return
 
 
+def _timing_reference_from_row(flight) -> dict | None:
+    if not flight["actual_takeoff_utc"]:
+        return None
+    return {
+        "reference_type": flight["timing_reference_type"] or "takeoff",
+        "reference_utc": flight["timing_reference_utc"] or flight["actual_takeoff_utc"],
+        "reference_waypoint": flight["timing_reference_waypoint"],
+        "actual_takeoff_utc": flight["actual_takeoff_utc"],
+    }
+
+
+def _timing_form_context(flight, analysis: dict | None) -> dict:
+    reference_utc = flight["timing_reference_utc"] or ""
+    reference_date = ""
+    reference_time = ""
+    if reference_utc:
+        try:
+            parsed = parse_utc(reference_utc)
+            reference_date = parsed.date().isoformat()
+            reference_time = parsed.strftime("%H:%M")
+        except ValueError:
+            pass
+
+    actual_takeoff_display = None
+    if flight["actual_takeoff_utc"]:
+        try:
+            actual_takeoff_display = display_utc(parse_utc(flight["actual_takeoff_utc"]))
+        except ValueError:
+            actual_takeoff_display = flight["actual_takeoff_utc"]
+
+    waypoint_options = []
+    if analysis:
+        seen: set[tuple[str, int]] = set()
+        for waypoint in analysis.get("flight", {}).get("route_waypoints", []):
+            name = str(waypoint.get("fir_boundary") or waypoint.get("name") or "").lstrip("-")
+            actm = waypoint.get("actm_minutes")
+            if not name or actm is None or (name, int(actm)) in seen:
+                continue
+            seen.add((name, int(actm)))
+            waypoint_options.append({
+                "name": name,
+                "actm": format_actm(int(actm)),
+            })
+
+    return {
+        "reference_type": flight["timing_reference_type"] or "takeoff",
+        "reference_date": reference_date,
+        "reference_time": reference_time,
+        "reference_waypoint": flight["timing_reference_waypoint"] or "",
+        "actual_takeoff_display": actual_takeoff_display,
+        "waypoint_options": waypoint_options,
+    }
+
+
+def _execute_analysis(flight_id: int, flight) -> None:
+    previous_artifacts = (
+        (flight["analysis_path"], RESULT_DIR),
+        (flight["level1_report"], REPORT_DIR),
+        (flight["level2_report"], REPORT_DIR),
+    )
+    if not begin_analysis(flight_id):
+        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+
+    result = None
+    try:
+        for path, directory in previous_artifacts:
+            _remove_stored_file(path, directory)
+        result = run_odss_analysis(
+            Path(flight["source_path"]),
+            result_dir=RESULT_DIR,
+            report_dir=REPORT_DIR,
+            flight_id=flight_id,
+            actual_takeoff_utc=flight["actual_takeoff_utc"],
+            timing_reference=_timing_reference_from_row(flight),
+        )
+        complete_analysis(flight_id, result)
+    except Exception as exc:
+        if result:
+            _remove_stored_file(result.get("analysis_path"), RESULT_DIR)
+            _remove_stored_file(result.get("level1_report"), REPORT_DIR)
+            _remove_stored_file(result.get("level2_report"), REPORT_DIR)
+        error = f"{type(exc).__name__}: {exc}"
+        update_status(
+            flight_id,
+            "Failed",
+            "Analysis failed. The detailed error is shown below.",
+            last_error=error,
+        )
+        traceback.print_exc()
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     return templates.TemplateResponse(
@@ -175,7 +274,11 @@ def flight_workspace(request: Request, flight_id: int):
     return templates.TemplateResponse(
         request=request,
         name="flight.html",
-        context={"flight": flight, "analysis": analysis},
+        context={
+            "flight": flight,
+            "analysis": analysis,
+            "timing_form": _timing_form_context(flight, analysis),
+        },
     )
 
 
@@ -184,38 +287,46 @@ def analyse_flight(flight_id: int):
     flight = get_flight(flight_id)
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
+    _execute_analysis(flight_id, flight)
+    return RedirectResponse(url=f"/flights/{flight_id}", status_code=303)
 
-    previous_artifacts = (
-        (flight["analysis_path"], RESULT_DIR),
-        (flight["level1_report"], REPORT_DIR),
-        (flight["level2_report"], REPORT_DIR),
-    )
-    if not begin_analysis(flight_id):
-        raise HTTPException(status_code=409, detail="Analysis is already in progress")
-    result = None
+
+@app.post("/flights/{flight_id}/timing")
+def update_operational_clock(
+    flight_id: int,
+    reference_type: str = Form(...),
+    reference_date: str = Form(...),
+    reference_time: str = Form(...),
+    reference_waypoint: str = Form(""),
+):
+    flight = get_flight(flight_id)
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+
     try:
-        for path, directory in previous_artifacts:
-            _remove_stored_file(path, directory)
-        result = run_odss_analysis(
-            Path(flight["source_path"]),
-            result_dir=RESULT_DIR,
-            report_dir=REPORT_DIR,
-            flight_id=flight_id,
+        reference_datetime = combine_utc_date_time(reference_date, reference_time)
+        analysis = load_analysis(flight["analysis_path"])
+        parsed_flight = analysis.get("flight") if analysis else None
+        reference = derive_timing_reference(
+            parsed_flight,
+            reference_type,
+            reference_datetime.isoformat(),
+            reference_waypoint,
         )
-        complete_analysis(flight_id, result)
-    except Exception as exc:
-        if result:
-            _remove_stored_file(result.get("analysis_path"), RESULT_DIR)
-            _remove_stored_file(result.get("level1_report"), REPORT_DIR)
-            _remove_stored_file(result.get("level2_report"), REPORT_DIR)
-        error = f"{type(exc).__name__}: {exc}"
-        update_status(
-            flight_id,
-            "Failed",
-            "Analysis failed. The detailed error is shown below.",
-            last_error=error,
-        )
-        traceback.print_exc()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    save_timing_reference(
+        flight_id,
+        reference["actual_takeoff_utc"],
+        reference["reference_type"],
+        reference["reference_utc"],
+        reference.get("reference_waypoint"),
+    )
+    updated_flight = get_flight(flight_id)
+    if not updated_flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    _execute_analysis(flight_id, updated_flight)
     return RedirectResponse(url=f"/flights/{flight_id}", status_code=303)
 
 

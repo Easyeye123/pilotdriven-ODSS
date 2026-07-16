@@ -22,6 +22,7 @@ _TITLES = {
     "weather": "Weather",
     "notam": "Pertinent NOTAM",
     "communications": "Early ATC contact / FIR entry calls",
+    "actual_timing": "Actual takeoff / calculated UTC timeline",
     "terrain": "Terrain MSA events",
     "vws": "Vertical wind shear events",
     "depressurisation": "Depressurisation profiles",
@@ -72,7 +73,7 @@ def report_sections(findings: list[dict[str, Any]], level: int) -> list[dict[str
     for finding in findings:
         grouped[finding["engine"]].append(finding)
     page_breaks = (
-        {"mel", "weather", "communications", "depressurisation", "timeline"}
+        {"mel", "weather", "actual_timing", "depressurisation", "timeline"}
         if level == 2
         else set()
     )
@@ -98,7 +99,12 @@ def report_sections(findings: list[dict[str, Any]], level: int) -> list[dict[str
             detail_limit = (
                 len(finding["details"])
                 if level == 2
-                else (6 if engine in {"page1", "performance", "timeline"} else 1 if engine == "notam" else 2)
+                else (
+                    20 if engine == "actual_timing"
+                    else 6 if engine in {"page1", "performance", "timeline"}
+                    else 1 if engine == "notam"
+                    else 2
+                )
             )
             lines.extend(f"- {detail}" for detail in finding["details"][:detail_limit])
         if level == 1 and engine == "notam" and len(selected_findings) < len(engine_findings):
@@ -152,6 +158,8 @@ def render_pdf(
         else f"{flight['flight_number']} Expanded Operational Analysis"
     )
     report_subtitle = f"Level {level} - {flight['flight_date']}"
+    if flight.get("actual_takeoff_utc"):
+        report_subtitle += f" - actual clock anchored {flight['actual_takeoff_utc']}"
     sections = report_sections(findings, level)
     if warnings:
         sections.append({
