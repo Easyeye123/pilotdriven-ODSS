@@ -11,6 +11,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import BaseDocTemplate, Frame, PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle
 
+from ..personal_notes import PERSONAL_NOTE_PLACEMENT_LABELS
 from .constants import ENGINE_ORDER, format_kg
 
 
@@ -31,6 +32,35 @@ _TITLES = {
     "timeline": "Route-critical ACTM timeline",
     "qa": "Quality assurance",
 }
+
+_NOTE_TITLES = {
+    "separate": "Personal notes",
+    "departure": "Departure airport - personal notes",
+    "destination": "Destination airport - personal notes",
+    "communications": "Enroute ATC / communications - personal notes",
+}
+
+_REPORT_ORDER = [
+    "page1",
+    "bobcat",
+    "mel",
+    "cddl",
+    "performance",
+    "weather",
+    "notam",
+    "note:departure",
+    "note:destination",
+    "communications",
+    "note:communications",
+    "actual_timing",
+    "terrain",
+    "vws",
+    "depressurisation",
+    "edto",
+    "timeline",
+    "note:separate",
+    "qa",
+]
 
 _SEVERITY_RANK = {"information": 0, "unknown": 1, "warning": 2, "critical": 3}
 _ROLE_RANK = {"departure": 0, "destination": 1, "destination alternate": 2, "EDTO": 3, "informational": 4}
@@ -69,7 +99,97 @@ def _select_level1_notams(findings: list[dict[str, Any]]) -> list[dict[str, Any]
     )
 
 
-def report_sections(findings: list[dict[str, Any]], level: int) -> list[dict[str, Any]]:
+def _automatic_section(
+    engine: str,
+    engine_findings: list[dict[str, Any]],
+    level: int,
+    page_breaks: set[str],
+) -> dict[str, Any] | None:
+    if not engine_findings:
+        return None
+    selected_findings = (
+        _select_level1_notams(engine_findings)
+        if level == 1 and engine == "notam"
+        else engine_findings
+    )
+    lines: list[str] = []
+    severity = max(
+        (finding["severity"] for finding in selected_findings),
+        key=lambda value: _SEVERITY_RANK.get(value, 0),
+        default="information",
+    )
+    finding_limit = len(selected_findings) if level == 2 or engine == "notam" else 12
+    for finding in selected_findings[:finding_limit]:
+        lines.append(f"{finding['title']}: {finding['summary']}")
+        detail_limit = (
+            len(finding["details"])
+            if level == 2
+            else (
+                20 if engine == "actual_timing"
+                else 6 if engine in {"page1", "performance", "timeline"}
+                else 1 if engine == "notam"
+                else 2
+            )
+        )
+        lines.extend(f"- {detail}" for detail in finding["details"][:detail_limit])
+    if level == 1 and engine == "notam" and len(selected_findings) < len(engine_findings):
+        lines.append(
+            f"{len(engine_findings) - len(selected_findings)} lower-priority active or review NOTAM findings omitted; see Level 2."
+        )
+    return {
+        "engine": engine,
+        "title": _TITLES[engine],
+        "lines": lines,
+        "severity": severity,
+        "page_break_before": engine in page_breaks,
+    }
+
+
+def _personal_note_section(
+    placement: str,
+    notes: list[dict[str, Any]],
+    level: int,
+) -> dict[str, Any] | None:
+    inclusion_key = "include_level1" if level == 1 else "include_level2"
+    selected = [
+        note
+        for note in notes
+        if note.get("placement") == placement and bool(note.get(inclusion_key))
+    ]
+    if not selected:
+        return None
+
+    lines: list[str] = []
+    for index, note in enumerate(selected, start=1):
+        text_lines = [
+            line.strip()
+            for line in str(note.get("note_text") or "").splitlines()
+            if line.strip()
+        ]
+        if not text_lines:
+            continue
+        lines.append(f"Personal note {index}: {text_lines[0]}")
+        lines.extend(f"- {line}" for line in text_lines[1:])
+    lines.append(
+        "Pilot-entered personal content; it is not extracted, validated or endorsed by the ODSS engine."
+    )
+    return {
+        "engine": f"personal_notes_{placement}",
+        "title": _NOTE_TITLES.get(
+            placement,
+            PERSONAL_NOTE_PLACEMENT_LABELS.get(placement, "Personal notes"),
+        ),
+        "lines": lines,
+        "severity": "personal",
+        "page_break_before": False,
+    }
+
+
+def report_sections(
+    findings: list[dict[str, Any]],
+    level: int,
+    personal_notes: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
         grouped[finding["engine"]].append(finding)
@@ -78,46 +198,56 @@ def report_sections(findings: list[dict[str, Any]], level: int) -> list[dict[str
         if level == 2
         else set()
     )
+
+    automatic = {
+        engine: section
+        for engine in ENGINE_ORDER
+        if (
+            section := _automatic_section(
+                engine,
+                grouped.get(engine, []),
+                level,
+                page_breaks,
+            )
+        )
+    }
+    note_sections = {
+        placement: section
+        for placement in PERSONAL_NOTE_PLACEMENT_LABELS
+        if (
+            section := _personal_note_section(
+                placement,
+                personal_notes or [],
+                level,
+            )
+        )
+    }
+
     sections: list[dict[str, Any]] = []
+    used_engines: set[str] = set()
+    for item in _REPORT_ORDER:
+        if item.startswith("note:"):
+            placement = item.split(":", 1)[1]
+            section = note_sections.get(placement)
+        else:
+            section = automatic.get(item)
+            used_engines.add(item)
+        if section:
+            sections.append(section)
+
     for engine in ENGINE_ORDER:
-        engine_findings = grouped.get(engine, [])
-        if not engine_findings:
+        if engine in used_engines:
             continue
-        selected_findings = (
-            _select_level1_notams(engine_findings)
-            if level == 1 and engine == "notam"
-            else engine_findings
-        )
-        lines: list[str] = []
-        severity = max(
-            (finding["severity"] for finding in selected_findings),
-            key=lambda value: _SEVERITY_RANK.get(value, 0),
-            default="information",
-        )
-        finding_limit = len(selected_findings) if level == 2 or engine == "notam" else 12
-        for finding in selected_findings[:finding_limit]:
-            lines.append(f"{finding['title']}: {finding['summary']}")
-            detail_limit = (
-                len(finding["details"])
-                if level == 2
-                else (
-                    20 if engine == "actual_timing"
-                    else 6 if engine in {"page1", "performance", "timeline"}
-                    else 1 if engine == "notam"
-                    else 2
-                )
-            )
-            lines.extend(f"- {detail}" for detail in finding["details"][:detail_limit])
-        if level == 1 and engine == "notam" and len(selected_findings) < len(engine_findings):
-            lines.append(
-                f"{len(engine_findings) - len(selected_findings)} lower-priority active or review NOTAM findings omitted; see Level 2."
-            )
-        sections.append({
-            "title": _TITLES[engine],
-            "lines": lines,
-            "severity": severity,
-            "page_break_before": engine in page_breaks,
-        })
+        section = automatic.get(engine)
+        if section:
+            sections.append(section)
+    for engine, engine_findings in grouped.items():
+        if engine in ENGINE_ORDER:
+            continue
+        section = _automatic_section(engine, engine_findings, level, page_breaks)
+        if section:
+            section["title"] = engine.replace("_", " ").title()
+            sections.append(section)
     return sections
 
 
@@ -206,7 +336,11 @@ def render_pdf(
     report_subtitle = f"Level {level} - {flight['flight_date']}"
     if flight.get("actual_takeoff_utc"):
         report_subtitle += f" - actual clock anchored {flight['actual_takeoff_utc']}"
-    sections = report_sections(findings, level)
+    sections = report_sections(
+        findings,
+        level,
+        flight.get("personal_notes") or [],
+    )
     if warnings:
         sections.append({
             "title": "Applicability and parser warnings",
@@ -251,6 +385,7 @@ def render_pdf(
         colour = {
             "critical": colors.HexColor("#9F1D2F"),
             "warning": colors.HexColor("#A96800"),
+            "personal": colors.HexColor("#5B4B8A"),
         }.get(section["severity"], colors.HexColor("#173B65"))
         lines = section["lines"] or ["No findings."]
         rows = [[Paragraph(section["title"], heading)]]
