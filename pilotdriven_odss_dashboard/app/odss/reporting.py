@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Any
 
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import BaseDocTemplate, Frame, PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle
 
-from .constants import ENGINE_ORDER
+from .constants import ENGINE_ORDER, format_kg
 
 
 _TITLES = {
@@ -120,6 +121,42 @@ def report_sections(findings: list[dict[str, Any]], level: int) -> list[dict[str
     return sections
 
 
+def _planned_mass_strip(flight: dict[str, Any], style: ParagraphStyle) -> Table:
+    """Return the first-page mass strip requested for every pertinent brief.
+
+    PLDW is the display label for the CFP planned landing weight, which is
+    retained in the canonical model as ``planned_landing_weight_kg``.
+    """
+    masses = flight.get("masses") or {}
+    cells = [
+        Paragraph(
+            f"<b>PZFW</b><br/>{format_kg(masses.get('planned_zfw_kg'))}",
+            style,
+        ),
+        Paragraph(
+            f"<b>PLDW</b><br/>{format_kg(masses.get('planned_landing_weight_kg'))}",
+            style,
+        ),
+        Paragraph(
+            f"<b>PTOW</b><br/>{format_kg(masses.get('planned_takeoff_weight_kg'))}",
+            style,
+        ),
+    ]
+    table = Table([cells], colWidths=[190 * mm / 3] * 3)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EAF2F8")),
+        ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#173B65")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D9E1E8")),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return table
+
+
 def render_pdf(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -143,6 +180,15 @@ def render_pdf(
         fontName="Helvetica",
         fontSize=7.5 if level == 1 else 7.2,
         leading=9.2,
+    )
+    mass_style = ParagraphStyle(
+        "ODSS Planned Mass",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=11,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#173B65"),
     )
     document = BaseDocTemplate(
         str(path),
@@ -198,7 +244,7 @@ def render_pdf(
     )
     document.addPageTemplates([PageTemplate(id="report", frames=[frame], onPageEnd=draw_page)])
 
-    story = []
+    story = [_planned_mass_strip(flight, mass_style), Spacer(1, 2 * mm)]
     for index, section in enumerate(sections):
         if section["page_break_before"] and index > 0:
             story.append(PageBreak())
