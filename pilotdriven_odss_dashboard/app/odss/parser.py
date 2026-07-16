@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -10,11 +10,40 @@ import fitz
 from .constants import actm_minutes, date_ddmmmyy, utc_on_date
 from .enrichment import enrich_notams, enrich_weather
 
+MAX_PDF_PAGES = 180
+
 
 def extract_pages(path: Path) -> list[str]:
     document = fitz.open(str(path))
     try:
+        if document.needs_pass:
+            raise ValueError("Password-protected PDFs are not supported")
+        if document.page_count < 1:
+            raise ValueError("PDF has no pages")
+        if document.page_count > MAX_PDF_PAGES:
+            raise ValueError(f"PDF exceeds the {MAX_PDF_PAGES}-page CFP limit")
         return [page.get_text("text") for page in document]
+    finally:
+        document.close()
+
+
+def validate_pdf(path: Path) -> None:
+    try:
+        document = fitz.open(str(path))
+    except Exception as exc:
+        raise ValueError("File is not a readable PDF") from exc
+    try:
+        if document.needs_pass:
+            raise ValueError("Password-protected PDFs are not supported")
+        if document.page_count < 1:
+            raise ValueError("PDF has no pages")
+        if document.page_count > MAX_PDF_PAGES:
+            raise ValueError(f"PDF exceeds the {MAX_PDF_PAGES}-page CFP limit")
+        document.load_page(0)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("File is not a readable PDF") from exc
     finally:
         document.close()
 
@@ -180,6 +209,32 @@ def _parse_waypoints(route_pages: list[str], route_text: str) -> list[dict[str, 
     return waypoints
 
 
+def _edto_period(
+    start_hhmm: str,
+    end_hhmm: str,
+    departure_utc: datetime,
+    arrival_utc: datetime,
+) -> tuple[datetime, datetime]:
+    flight_days = (arrival_utc.date() - departure_utc.date()).days
+    candidates = [
+        utc_on_date(departure_utc + timedelta(days=offset), start_hhmm)
+        for offset in range(-1, flight_days + 2)
+    ]
+
+    def distance_from_flight(value: datetime) -> float:
+        if value < departure_utc:
+            return (departure_utc - value).total_seconds()
+        if value > arrival_utc:
+            return (value - arrival_utc).total_seconds()
+        return 0
+
+    period_start = min(candidates, key=lambda value: (distance_from_flight(value), value))
+    period_end = utc_on_date(period_start, end_hhmm)
+    if period_end <= period_start:
+        period_end += timedelta(days=1)
+    return period_start, period_end
+
+
 def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     sections = _detect_sections(pages)
     if "cfp" not in sections:
@@ -204,7 +259,17 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     if arrival_utc <= departure_utc:
         arrival_utc += timedelta(days=1)
     route_line = re.search(r"^(?P<departure>[A-Z]{4})/(?P<dep_rwy>[0-9A-Z]{2,3})\b", page1, re.MULTILINE)
-    destination_line = re.search(r"\b(?P<destination>[A-Z]{4})/(?P<dest_rwy>[0-9A-Z]{2,3})\s*$", page1, re.MULTILINE)
+    destination_candidates = list(
+        re.finditer(r"\b(?P<destination>[A-Z]{4})/(?P<dest_rwy>[0-9A-Z]{2,3})\s*$", page1, re.MULTILINE)
+    )
+    destination_line = next(
+        (
+            candidate
+            for candidate in reversed(destination_candidates)
+            if route_line is None or candidate.start() != route_line.start()
+        ),
+        None,
+    )
     departure = route_line.group("departure") if route_line else identity.group("dep_iata")
     destination = destination_line.group("destination") if destination_line else identity.group("dest_iata")
     route_text = _parse_route_text(page1)
@@ -221,21 +286,38 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         }
 
     fuel = {
-        "trip_fuel_kg": _int_group(page1, r"BURNOFF\s+\d{2}\.\d{2}\s+0*(\d+)") or 0,
-        "contingency_fuel_kg": _int_group(page1, r"STAT CONT\s+\d{2}\.\d{2}\s+0*(\d+)") or 0,
-        "alternate_fuel_kg": _int_group(page1, r"ALTN FUEL\s+\d{2}\.\d{2}\s+0*(\d+)") or 0,
-        "alternate_holding_fuel_kg": _int_group(page1, r"ALTN HOLD\s+\d{2}\.\d{2}\s+0*(\d+)") or 0,
-        "taxi_fuel_kg": _int_group(page1, r"TAXI FUEL\s+0*(\d+)") or 0,
-        "flight_plan_required_fuel_kg": _int_group(page1, r"FLT PLAN REQMT\s+\d{2}\.\d{2}\s+0*(\d+)") or 0,
-        "excess_fuel_kg": _int_group(page1, r"EXCESS FUEL\s+\d{2}\.\d{2}\s+0*(\d+)") or 0,
-        "fuel_in_tanks_kg": _int_group(page1, r"FUEL IN TANKS\s+\d{2}\.\d{2}\s+0*(\d+)") or 0,
+        "trip_fuel_kg": _int_group(page1, r"BURNOFF\s+\d{2}\.\d{2}\s+0*(\d+)"),
+        "contingency_fuel_kg": _int_group(page1, r"STAT CONT\s+\d{2}\.\d{2}\s+0*(\d+)"),
+        "alternate_fuel_kg": _int_group(page1, r"ALTN FUEL\s+\d{2}\.\d{2}\s+0*(\d+)"),
+        "alternate_holding_fuel_kg": _int_group(page1, r"ALTN HOLD\s+\d{2}\.\d{2}\s+0*(\d+)"),
+        "taxi_fuel_kg": _int_group(page1, r"TAXI FUEL\s+0*(\d+)"),
+        "flight_plan_required_fuel_kg": _int_group(page1, r"FLT PLAN REQMT\s+\d{2}\.\d{2}\s+0*(\d+)"),
+        "excess_fuel_kg": _int_group(page1, r"EXCESS FUEL\s+\d{2}\.\d{2}\s+0*(\d+)"),
+        "fuel_in_tanks_kg": _int_group(page1, r"FUEL IN TANKS\s+\d{2}\.\d{2}\s+0*(\d+)"),
     }
-    fuel["planned_destination_fuel_kg"] = fuel["fuel_in_tanks_kg"] - fuel["taxi_fuel_kg"] - fuel["trip_fuel_kg"]
     masses = {
-        "planned_zfw_kg": _int_group(page1, r"PZFW\s+(\d+)") or 0,
-        "planned_takeoff_weight_kg": _int_group(page1, r"PTOW\s+(\d+)") or 0,
-        "planned_landing_weight_kg": _int_group(page1, r"PLWT\s+(\d+)") or 0,
+        "planned_zfw_kg": _int_group(page1, r"PZFW\s+(\d+)"),
+        "planned_takeoff_weight_kg": _int_group(page1, r"PTOW\s+(\d+)"),
+        "planned_landing_weight_kg": _int_group(page1, r"PLWT\s+(\d+)"),
     }
+    required = {
+        "departure ICAO/runway": route_line,
+        "destination ICAO/runway": destination_line,
+        "route waypoints": waypoints,
+        "trip fuel": fuel["trip_fuel_kg"],
+        "taxi fuel": fuel["taxi_fuel_kg"],
+        "flight-plan required fuel": fuel["flight_plan_required_fuel_kg"],
+        "fuel in tanks": fuel["fuel_in_tanks_kg"],
+        "planned zero-fuel weight": masses["planned_zfw_kg"],
+        "planned take-off weight": masses["planned_takeoff_weight_kg"],
+        "planned landing weight": masses["planned_landing_weight_kg"],
+    }
+    missing = [name for name, value in required.items() if value is None or value == []]
+    if missing:
+        raise ValueError(f"Incomplete or unsupported Lido CFP; missing {', '.join(missing)}")
+    fuel["planned_destination_fuel_kg"] = (
+        masses["planned_landing_weight_kg"] - masses["planned_zfw_kg"]
+    )
     perf_text = "\n".join(cfp_pages[:5])
     performance = {
         "runway": (re.search(r"[A-Z]{4} RWY\s+(\w+)", perf_text).group(1) if re.search(r"[A-Z]{4} RWY\s+(\w+)", perf_text) else None),
@@ -260,10 +342,11 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     edto_airports = []
     for m in re.finditer(r"^(\w{4})\s+(\d{4})-(\d{4})\s+(\w+)\s+(\S+)\s+(.+)$", edto_text, re.MULTILINE):
         apt, start_hhmm, end_hhmm, runway, approach, minima = m.groups()
+        period_start, period_end = _edto_period(start_hhmm, end_hhmm, departure_utc, arrival_utc)
         edto_airports.append({
             "airport": apt,
-            "period_start_utc": utc_on_date(day, start_hhmm).isoformat(),
-            "period_end_utc": utc_on_date(day, end_hhmm).isoformat(),
+            "period_start_utc": period_start.isoformat(),
+            "period_end_utc": period_end.isoformat(),
             "runway": runway,
             "approach": approach,
             "minima": minima.strip(),

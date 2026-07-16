@@ -7,6 +7,10 @@ from typing import Any
 from .constants import MONTHS, OPERATIONAL_KEYWORDS
 
 _NOTAM_START = re.compile(r"^(?P<id>[A-Z0-9]+/\d{2})\s+VALID:\s+(?P<validity>.+)$")
+_SCHEDULE_LINE = re.compile(
+    r"^(?:DAILY|DLY|MON|TUE|WED|THU|FRI|SAT|SUN|"
+    r"JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b"
+)
 
 
 def _weather_section(pages: list[str]) -> str:
@@ -101,18 +105,26 @@ def _parse_notam_datetime(value: str) -> datetime | None:
     if not match:
         return None
     day, month, year, hhmm = match.groups()
-    return datetime(
-        2000 + int(year), MONTHS[month], int(day),
-        int(hhmm[:2]), int(hhmm[2:]), tzinfo=timezone.utc,
-    )
+    month_number = MONTHS.get(month)
+    if month_number is None:
+        return None
+    try:
+        return datetime(
+            2000 + int(year), month_number, int(day),
+            int(hhmm[:2]), int(hhmm[2:]), tzinfo=timezone.utc,
+        )
+    except ValueError:
+        return None
 
 
-def _parse_validity(value: str, fallback: datetime) -> tuple[datetime, datetime | None]:
+def _parse_validity(value: str, fallback: datetime) -> tuple[datetime, datetime | None, bool]:
     parts = re.split(r"\s+-\s+", value, maxsplit=1)
-    start = _parse_notam_datetime(parts[0]) or fallback
+    parsed_start = _parse_notam_datetime(parts[0])
+    start = parsed_start or fallback
     if len(parts) == 1 or parts[1].strip().upper().startswith(("UFN", "PERM")):
-        return start, None
-    return start, _parse_notam_datetime(parts[1])
+        return start, None, parsed_start is not None
+    parsed_end = _parse_notam_datetime(parts[1])
+    return start, parsed_end, parsed_start is not None and parsed_end is not None
 
 
 def _extract_airport_notam_block(notam_text: str, icao: str) -> str:
@@ -126,14 +138,24 @@ def _extract_airport_notam_block(notam_text: str, icao: str) -> str:
 
 def _notice_score(text: str, category: str) -> int:
     upper = f"{category} {text}".upper()
-    return sum(weight for token, weight in OPERATIONAL_KEYWORDS.items() if token in upper)
+    return sum(
+        weight
+        for token, weight in OPERATIONAL_KEYWORDS.items()
+        if re.search(rf"(?<![A-Z0-9]){re.escape(token)}(?![A-Z0-9])", upper)
+    )
+
+
+def _has_schedule_language(text: str) -> bool:
+    return bool(
+        re.search(r"\b(?:DAILY|DLY|EV|EVERY|MON|TUE|WED|THU|FRI|SAT|SUN)\b", text, re.IGNORECASE)
+        and re.search(r"\b\d{4}(?:UTC|Z)?\s*(?:-|TO)\s*\d{4}(?:UTC|Z)?\b", text, re.IGNORECASE)
+    )
 
 
 def _parse_airport_notams(
     icao: str,
     block: str,
     fallback: datetime,
-    limit: int,
 ) -> list[dict[str, Any]]:
     notices: list[tuple[int, dict[str, Any]]] = []
     category = "AIRPORT"
@@ -147,17 +169,16 @@ def _parse_airport_notams(
         if not current_id:
             return
         text = " ".join(line.strip() for line in current_lines if line.strip())
-        valid_from, valid_to = _parse_validity(current_validity, fallback)
-        schedule = next(
-            (
-                line.strip()
-                for line in current_lines[:3]
-                if line.strip().upper().startswith(
-                    ("DAILY ", "MON-", "TUE-", "WED-", "THU-", "FRI-", "SAT-", "SUN-", "JUL ", "AUG ", "SEP ")
-                )
-            ),
-            None,
-        )
+        valid_from, valid_to, validity_parsed = _parse_validity(current_validity, fallback)
+        schedule_lines = [
+            line.strip().rstrip(".")
+            for line in current_lines
+            if _SCHEDULE_LINE.match(line.strip().upper())
+            and re.search(r"\b\d{4}(?:UTC|Z)?\s*-\s*\d{4}(?:UTC|Z)?\b", line, re.IGNORECASE)
+        ]
+        schedule = "; ".join(schedule_lines) or None
+        schedule_review = schedule is None and _has_schedule_language(text)
+        score = _notice_score(text, current_category)
         record = {
             "notam_id": current_id,
             "location": icao,
@@ -166,8 +187,10 @@ def _parse_airport_notams(
             "valid_from_utc": valid_from.isoformat(),
             "valid_to_utc": valid_to.isoformat() if valid_to else None,
             "schedule": schedule,
+            "schedule_review": schedule_review,
+            "validity_review": not validity_parsed,
+            "priority_score": score,
         }
-        score = _notice_score(text, current_category)
         if score > 0:
             notices.append((score, record))
         current_id, current_validity, current_lines = None, "", []
@@ -189,19 +212,19 @@ def _parse_airport_notams(
             current_lines.append(raw)
     flush()
     notices.sort(key=lambda item: (-item[0], item[1]["notam_id"]))
-    return [record for _, record in notices[:limit]]
+    return [record for _, record in notices]
 
 
 def enrich_notams(flight: dict[str, Any], pages: list[str]) -> None:
     text = _notam_section(pages)
     if not text:
         return
-    limits = {flight["departure"]: 8, flight["destination"]: 10}
-    limits.update({a["airport"]: 7 for a in flight["alternates"]})
-    limits.update({a["airport"]: 5 for a in flight["edto"]["airports"]})
+    locations = [flight["departure"], flight["destination"]]
+    locations.extend(a["airport"] for a in flight["alternates"])
+    locations.extend(a["airport"] for a in flight["edto"]["airports"])
     if "EDDM /MUC" in text:
-        limits["EDDM"] = 5
+        locations.append("EDDM")
     fallback = datetime.fromisoformat(flight["scheduled_departure_utc"])
-    for icao, limit in limits.items():
+    for icao in dict.fromkeys(locations):
         block = _extract_airport_notam_block(text, icao)
-        flight["notams"].extend(_parse_airport_notams(icao, block, fallback, limit))
+        flight["notams"].extend(_parse_airport_notams(icao, block, fallback))

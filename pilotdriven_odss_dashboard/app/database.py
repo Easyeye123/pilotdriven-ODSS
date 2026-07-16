@@ -52,6 +52,19 @@ def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
         _ensure_columns(conn)
+        conn.execute(
+            '''
+            UPDATE flights SET
+                status='Failed',
+                notes='Previous analysis was interrupted. Run the analysis again.',
+                last_error='Analysis interrupted by application shutdown or restart.',
+                analysis_path=NULL,
+                level1_report=NULL,
+                level2_report=NULL,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE status='Processing'
+            ''',
+        )
 
 
 def create_flight(data: dict[str, Any]) -> int:
@@ -107,6 +120,29 @@ def update_status(
         )
 
 
+def begin_analysis(flight_id: int) -> bool:
+    with connect() as conn:
+        cursor = conn.execute(
+            '''
+            UPDATE flights SET
+                status='Processing',
+                notes='Parsing Lido CFP and running ODSS engines.',
+                last_error=NULL,
+                analysis_path=NULL,
+                level1_report=NULL,
+                level2_report=NULL,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND status != 'Processing'
+            ''',
+            (flight_id,),
+        )
+        if cursor.rowcount == 1:
+            return True
+        if conn.execute("SELECT 1 FROM flights WHERE id=?", (flight_id,)).fetchone() is None:
+            raise LookupError(f"Flight {flight_id} not found")
+        return False
+
+
 def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
     with connect() as conn:
         conn.execute(
@@ -147,7 +183,9 @@ def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
 def attach_report(flight_id: int, level: int, report_path: str) -> None:
     column = "level1_report" if level == 1 else "level2_report"
     with connect() as conn:
-        conn.execute(
+        cursor = conn.execute(
             f"UPDATE flights SET {column}=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (report_path, flight_id),
         )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Flight {flight_id} not found")

@@ -4,7 +4,7 @@
 <section class="card span-8">
   <h2>{{ flight.flight_number or "Unidentified flight" }}</h2>
   <p><strong>{{ flight.departure or "—" }} → {{ flight.destination or "—" }}</strong> · {{ flight.flight_date or "Date not entered" }}</p>
-  <table>
+  <table class="flight-summary">
     <tr><th>Aircraft</th><td>{{ flight.aircraft or "—" }}</td><th>Registration</th><td>{{ flight.registration or "—" }}</td></tr>
     <tr><th>Status</th><td><span class="badge status-{{ flight.status|lower|replace(' ', '-') }}">{{ flight.status }}</span></td><th>Uploaded</th><td>{{ flight.created_at }}</td></tr>
     <tr><th>Source</th><td colspan="3"><a href="/files/source/{{ flight.id }}">{{ flight.source_filename }}</a></td></tr>
@@ -25,7 +25,7 @@
     <p><strong>{{ analysis.view.page_count }}</strong> PDF pages parsed</p>
     <p><strong>{{ analysis.view.finding_count }}</strong> structured findings</p>
     <p><strong>{{ analysis.flight.route_waypoints|length }}</strong> route entries</p>
-    <p><strong>{{ analysis.flight.notams|length }}</strong> pertinent NOTAM records</p>
+    <p><strong>{{ analysis.view.notam_finding_count }}</strong> pertinent or review NOTAM findings</p>
     <p><strong>{{ analysis.flight.weather|length }}</strong> weather records</p>
   {% else %}
     <p class="muted">Upload is stored. Run the ODSS analysis to parse the CFP and generate reports.</p>
