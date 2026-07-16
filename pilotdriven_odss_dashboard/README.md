@@ -14,6 +14,14 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
 - Generate and download Level 1 and Level 2 PDF reports automatically.
 - Keep critical destination and alternate NOTAMs in Level 1 while retaining the complete active/review set in Level 2.
 - Save the canonical analysis result as JSON and display organised findings in the flight workspace.
+- Enter an **actual takeoff time (ATOT)** or an **actual waypoint ATA** and calculate:
+  - pertinent event UTCs;
+  - early ATC/FIR call UTCs;
+  - FIR crossing UTCs;
+  - all route-waypoint calculated ATA/UTC values;
+  - date rollover and delay against scheduled departure.
+- Re-anchor the route in flight by entering a known waypoint ATA; the engine derives ATOT as `waypoint ATA - waypoint ACTM`.
+- Retain ACTM as the source elapsed-time value. Absolute UTC is always calculated as `derived ATOT + CFP ACTM`.
 - Reject unreadable, password-protected, empty, oversized and incomplete CFP uploads with controlled errors.
 - Clear stale generated artifacts before a rerun and publish replacement JSON/PDF artifacts only after generation succeeds.
 - Reject duplicate analysis requests and recover interrupted runs after an application restart.
@@ -26,26 +34,49 @@ cd pilotdriven_odss_dashboard
 python3.12 -m venv .venv
 source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Open `http://127.0.0.1:8000`.
+
+For source-code development with automatic reload, exclude the in-project virtual environment so WatchFiles does not repeatedly restart while packages are installed:
+
+```bash
+python -m uvicorn app.main:app --reload --reload-exclude ".venv/*"
+```
 
 Uploads are limited to 25 MB and 180 PDF pages. The current parser accepts the supported Lido CFP layout only; a readable PDF that lacks its required route, fuel or mass fields fails analysis instead of producing zero-filled operational results.
 
 Python 3.12 is the supported local and container runtime. After pulling this upgrade, recreate or upgrade the virtual environment because the framework, upload parser and PDF libraries include reliability and security updates.
 
-## Upgrade from v0.1
+## Operational clock workflow
+
+1. Upload the Lido CFP and run the ODSS analysis.
+2. Open the flight workspace.
+3. In **Actual-time operational clock**, select either:
+   - **Actual takeoff time (ATOT)**; or
+   - **Actual waypoint ATA**.
+4. Enter the UTC date and UTC time.
+5. For waypoint ATA mode, select the route waypoint.
+6. Select **Save time and recalculate UTC table**.
+
+The timing entry is required only for absolute UTC calculations. The preflight analysis can still run in ACTM-only mode before takeoff. Saving or changing the timing reference automatically regenerates the analysis JSON and both PDF reports.
+
+The dashboard labels all route values as **calculated waypoint ATA/UTC**. They are not presented as pilot-recorded actual crossing times unless the waypoint itself was used as the entered ATA reference.
+
+## Upgrade an existing local clone
+
+Stop the running server with `Ctrl+C`, then:
 
 ```bash
-git pull
+git pull origin main
 cd pilotdriven_odss_dashboard
-.venv\Scripts\activate          # Windows
-pip install --upgrade -r requirements.txt
-uvicorn app.main:app --reload
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+python -m pip install --upgrade -r requirements.txt
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Your existing SQLite flight records are retained. Open the flight workspace and select **Run ODSS analysis**. Successful processing changes the status to **Completed** and creates Level 1, Level 2 and analysis JSON download buttons.
+Your existing SQLite flight records are retained. The startup migration adds the ATOT/ATA timing fields automatically.
 
 ## Test locally
 
@@ -56,12 +87,12 @@ python -m compileall -q app
 pytest -q
 ```
 
-The regression suite covers upload validation, failed reruns, missing artifacts, NOTAM applicability and priority, report pagination and long PDF content.
+The regression suite covers upload validation, failed reruns, missing artifacts, NOTAM applicability and priority, report pagination, long PDF content, actual takeoff anchoring and waypoint-ATA re-anchoring.
 
 ## Data storage
 
 ```text
-data/odss.db        SQLite flight records
+data/odss.db        SQLite flight records and timing references
 data/uploads/       uploaded CFP PDFs
 data/results/       structured ODSS JSON results
 data/reports/       generated Level 1 / Level 2 PDFs
