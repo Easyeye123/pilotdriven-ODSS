@@ -5,14 +5,24 @@ from pathlib import Path
 from typing import Any
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
-from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import BaseDocTemplate, Frame, PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    BaseDocTemplate,
+    Flowable,
+    Frame,
+    PageBreak,
+    PageTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from ..personal_notes import PERSONAL_NOTE_PLACEMENT_LABELS
-from .constants import ENGINE_ORDER, format_kg
+from .briefing import build_briefing_view
+from .constants import ENGINE_ORDER
+from .visual_reporting import PAGE_SIZE, render_level1_visual, visual_cover_flowable
 
 
 _TITLES = {
@@ -64,6 +74,19 @@ _REPORT_ORDER = [
 
 _SEVERITY_RANK = {"information": 0, "unknown": 1, "warning": 2, "critical": 3}
 _ROLE_RANK = {"departure": 0, "destination": 1, "destination alternate": 2, "EDTO": 3, "informational": 4}
+
+
+class _BookmarkFlowable(Flowable):
+    def __init__(self, *names: str):
+        super().__init__()
+        self.names = names
+
+    def wrap(self, available_width: float, available_height: float) -> tuple[float, float]:
+        return 0, 0
+
+    def draw(self) -> None:
+        for name in self.names:
+            self.canv.bookmarkPage(name)
 
 
 def _select_level1_notams(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -138,7 +161,7 @@ def _automatic_section(
         )
     return {
         "engine": engine,
-        "title": _TITLES[engine],
+        "title": _TITLES.get(engine, engine.replace("_", " ").title()),
         "lines": lines,
         "severity": severity,
         "page_break_before": engine in page_breaks,
@@ -246,45 +269,8 @@ def report_sections(
             continue
         section = _automatic_section(engine, engine_findings, level, page_breaks)
         if section:
-            section["title"] = engine.replace("_", " ").title()
             sections.append(section)
     return sections
-
-
-def _planned_mass_strip(flight: dict[str, Any], style: ParagraphStyle) -> Table:
-    """Return the first-page mass strip requested for every pertinent brief.
-
-    PLDW is the display label for the CFP planned landing weight, which is
-    retained in the canonical model as ``planned_landing_weight_kg``.
-    """
-    masses = flight.get("masses") or {}
-    cells = [
-        Paragraph(
-            f"<b>PZFW</b><br/>{format_kg(masses.get('planned_zfw_kg'))}",
-            style,
-        ),
-        Paragraph(
-            f"<b>PLDW</b><br/>{format_kg(masses.get('planned_landing_weight_kg'))}",
-            style,
-        ),
-        Paragraph(
-            f"<b>PTOW</b><br/>{format_kg(masses.get('planned_takeoff_weight_kg'))}",
-            style,
-        ),
-    ]
-    table = Table([cells], colWidths=[190 * mm / 3] * 3)
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EAF2F8")),
-        ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#173B65")),
-        ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D9E1E8")),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    return table
 
 
 def render_pdf(
@@ -295,6 +281,10 @@ def render_pdf(
     path: Path,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if level == 1:
+        render_level1_visual(flight, findings, warnings, path)
+        return
+
     styles = getSampleStyleSheet()
     heading = ParagraphStyle(
         "ODSS Heading",
@@ -308,65 +298,58 @@ def render_pdf(
         "ODSS Body",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=7.5 if level == 1 else 7.2,
+        fontSize=7.2,
         leading=9.2,
-    )
-    mass_style = ParagraphStyle(
-        "ODSS Planned Mass",
-        parent=styles["BodyText"],
-        fontName="Helvetica",
-        fontSize=9,
-        leading=11,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor("#173B65"),
     )
     document = BaseDocTemplate(
         str(path),
-        pagesize=A4,
-        leftMargin=9 * mm,
-        rightMargin=9 * mm,
-        topMargin=23 * mm,
-        bottomMargin=15 * mm,
+        pagesize=PAGE_SIZE,
+        leftMargin=7 * mm,
+        rightMargin=7 * mm,
+        topMargin=20 * mm,
+        bottomMargin=13 * mm,
     )
-    report_title = (
-        f"{flight['flight_number']} {flight['departure']}-{flight['destination']}"
-        if level == 1
-        else f"{flight['flight_number']} Expanded Operational Analysis"
-    )
+    report_title = f"{flight['flight_number']} Expanded Operational Analysis"
     report_subtitle = f"Level {level} - {flight['flight_date']}"
     if flight.get("actual_takeoff_utc"):
         report_subtitle += f" - actual clock anchored {flight['actual_takeoff_utc']}"
-    sections = report_sections(
-        findings,
-        level,
-        flight.get("personal_notes") or [],
-    )
+    sections = report_sections(findings, level, flight.get("personal_notes") or [])
     if warnings:
         sections.append({
+            "engine": "warnings",
             "title": "Applicability and parser warnings",
             "lines": warnings,
             "severity": "warning",
-            "page_break_before": level == 2,
+            "page_break_before": True,
         })
 
+    briefing = build_briefing_view(
+        flight,
+        findings,
+        warnings,
+        flight.get("timing_view"),
+    )
+
     def draw_page(canvas, document_template) -> None:
-        width, height = A4
+        if canvas.getPageNumber() == 1:
+            return
+        width, height = PAGE_SIZE
         canvas.saveState()
         canvas.setFillColor(colors.HexColor("#173B65"))
         canvas.setFont("Helvetica-Bold", 13)
-        canvas.drawCentredString(width / 2, height - 12 * mm, report_title)
+        canvas.drawCentredString(width / 2, height - 10 * mm, report_title)
         canvas.setFillColor(colors.HexColor("#4B5563"))
         canvas.setFont("Helvetica-Bold", 8)
-        canvas.drawCentredString(width / 2, height - 17 * mm, report_subtitle)
+        canvas.drawCentredString(width / 2, height - 15 * mm, report_subtitle)
         canvas.setStrokeColor(colors.HexColor("#D9E1E8"))
-        canvas.line(9 * mm, height - 19 * mm, width - 9 * mm, height - 19 * mm)
+        canvas.line(7 * mm, height - 17 * mm, width - 7 * mm, height - 17 * mm)
         canvas.setFont("Helvetica", 6.2)
         canvas.drawString(
-            9 * mm,
             7 * mm,
+            6 * mm,
             "Decision support only - approved documents, dispatch authority, ATC instructions and PIC judgement remain controlling.",
         )
-        canvas.drawRightString(width - 9 * mm, 7 * mm, f"Page {canvas.getPageNumber()}")
+        canvas.drawRightString(width - 7 * mm, 6 * mm, f"Page {canvas.getPageNumber()}")
         canvas.restoreState()
 
     frame = Frame(
@@ -378,8 +361,21 @@ def render_pdf(
     )
     document.addPageTemplates([PageTemplate(id="report", frames=[frame], onPageEnd=draw_page)])
 
-    story = [_planned_mass_strip(flight, mass_style), Spacer(1, 2 * mm)]
+    story: list[Any] = [
+        visual_cover_flowable(briefing),
+        PageBreak(),
+        _BookmarkFlowable("operational_detail", "departure_detail", "destination_detail"),
+    ]
+    route_bookmarked = False
+    edto_bookmarked = False
     for index, section in enumerate(sections):
+        engine = section.get("engine")
+        if engine == "communications" and not route_bookmarked:
+            story.append(_BookmarkFlowable("route_contingency", "communications_detail"))
+            route_bookmarked = True
+        if engine == "edto" and not edto_bookmarked:
+            story.append(_BookmarkFlowable("edto_detail"))
+            edto_bookmarked = True
         if section["page_break_before"] and index > 0:
             story.append(PageBreak())
         colour = {
@@ -393,7 +389,7 @@ def render_pdf(
             [Paragraph(line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), body)]
             for line in lines
         ])
-        table = Table(rows, colWidths=[190 * mm], repeatRows=1, splitByRow=1)
+        table = Table(rows, colWidths=[document.width], repeatRows=1, splitByRow=1)
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colour),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
