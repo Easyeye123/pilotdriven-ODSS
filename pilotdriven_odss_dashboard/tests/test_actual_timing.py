@@ -100,7 +100,7 @@ def test_actual_takeoff_entry_runs_analysis_and_calculates_waypoint_utc(
     assert flight is not None
     assert flight["status"] == "Completed"
     assert flight["actual_takeoff_utc"] == "2026-07-11T10:45:00+00:00"
-    assert analysis["schema_version"] == "0.3.0"
+    assert analysis["schema_version"] == "0.4.0"
     assert analysis["view"]["timing"]["actual_takeoff_display"] == "11 JUL 1045Z"
     waypoint_times = {
         item["display_name"]: item["utc_clock"]
