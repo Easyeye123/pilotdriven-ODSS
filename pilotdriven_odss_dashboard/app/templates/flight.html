@@ -29,10 +29,85 @@
     <p><strong>{{ analysis.view.notam_finding_count }}</strong> pertinent or review NOTAM findings</p>
     <p><strong>{{ analysis.flight.weather|length }}</strong> weather records</p>
     {% if analysis.view.timing %}<p><strong>{{ analysis.view.timing.event_count }}</strong> pertinent actual-time events</p>{% endif %}
+    {% if analysis.view.personal_note_count %}<p><strong>{{ analysis.view.personal_note_count }}</strong> personal notes included</p>{% endif %}
   {% else %}
     <p class="muted">Upload is stored. Run the ODSS analysis to parse the CFP and generate reports.</p>
   {% endif %}
 </aside>
+
+<section class="card span-12 notes-card" id="personal-notes">
+  <h2>Personal notes</h2>
+  <p class="notes-intro">Add pilot-entered notes and choose where they appear in the pertinent briefs. Notes can be kept in a separate section or positioned beside the departure airport, destination airport, or enroute ATC/communications material. Personal notes are clearly labelled and are not treated as ODSS-validated findings.</p>
+  <form method="post" action="/flights/{{ flight.id }}/notes" class="personal-note-form">
+    <div class="personal-note-form-grid">
+      <label>Report placement
+        <select name="placement" required>
+          {% for value, label in personal_note_placement_labels.items() %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="personal-note-text-field">Note
+        <textarea name="note_text" rows="4" maxlength="2000" placeholder="Enter your personal operational note" required></textarea>
+      </label>
+      <fieldset class="note-level-options">
+        <legend>Include in</legend>
+        <label><input type="checkbox" name="include_level1" value="on" checked> Level 1</label>
+        <label><input type="checkbox" name="include_level2" value="on" checked> Level 2</label>
+      </fieldset>
+    </div>
+    <p class="muted">Saving, editing or deleting a note automatically regenerates the reports when this flight has already been analysed.</p>
+    <button type="submit" class="green">Add personal note</button>
+  </form>
+
+  {% if personal_notes %}
+  <div class="personal-note-list">
+    {% for note in personal_notes %}
+    <article class="personal-note-item">
+      <div class="personal-note-header">
+        <div>
+          <span class="badge note-placement">{{ personal_note_placement_labels.get(note.placement, note.placement) }}</span>
+          {% if note.include_level1 %}<span class="badge note-level">Level 1</span>{% endif %}
+          {% if note.include_level2 %}<span class="badge note-level">Level 2</span>{% endif %}
+        </div>
+        <span class="muted">Updated {{ note.updated_at }}</span>
+      </div>
+      <div class="personal-note-text">{{ note.note_text }}</div>
+      <div class="personal-note-actions">
+        <details>
+          <summary><strong>Edit note</strong></summary>
+          <form method="post" action="/flights/{{ flight.id }}/notes/{{ note.id }}/update" class="personal-note-edit-form">
+            <div class="personal-note-form-grid">
+              <label>Report placement
+                <select name="placement" required>
+                  {% for value, label in personal_note_placement_labels.items() %}
+                  <option value="{{ value }}" {% if note.placement == value %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label class="personal-note-text-field">Note
+                <textarea name="note_text" rows="4" maxlength="2000" required>{{ note.note_text }}</textarea>
+              </label>
+              <fieldset class="note-level-options">
+                <legend>Include in</legend>
+                <label><input type="checkbox" name="include_level1" value="on" {% if note.include_level1 %}checked{% endif %}> Level 1</label>
+                <label><input type="checkbox" name="include_level2" value="on" {% if note.include_level2 %}checked{% endif %}> Level 2</label>
+              </fieldset>
+            </div>
+            <button type="submit">Save changes</button>
+          </form>
+        </details>
+        <form method="post" action="/flights/{{ flight.id }}/notes/{{ note.id }}/delete" onsubmit="return confirm('Delete this personal note?');">
+          <button type="submit" class="danger">Delete note</button>
+        </form>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted notes-empty">No personal notes have been added for this flight.</p>
+  {% endif %}
+</section>
 
 <section class="card span-12 timing-card">
   <h2>Actual-time operational clock</h2>

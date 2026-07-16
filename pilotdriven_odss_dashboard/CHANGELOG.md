@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+- Added persistent personal pilot notes for each flight workspace.
+- Added report-placement choices for a separate section, departure airport, destination airport, and enroute ATC/communications.
+- Added independent Level 1 and Level 2 inclusion controls for every note.
+- Added edit and delete actions with automatic report and canonical JSON regeneration after changes.
+- Kept personal notes separate from system processing-status messages and labelled them as pilot-entered, non-validated content.
+- Added automatic SQLite personal-notes table creation and foreign-key cleanup.
+- Added personal-note CRUD, report placement, level filtering and PDF regression tests.
+
 ## 0.3.1
 
 - Added a prominent first-page mass strip to both Level 1 and Level 2 pertinent briefs.

@@ -31,6 +31,23 @@ CREATE TABLE IF NOT EXISTS flights (
     timing_reference_waypoint TEXT,
     timing_reference_utc TEXT
 );
+
+CREATE TABLE IF NOT EXISTS personal_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    flight_id INTEGER NOT NULL,
+    placement TEXT NOT NULL CHECK (
+        placement IN ('separate', 'departure', 'destination', 'communications')
+    ),
+    note_text TEXT NOT NULL,
+    include_level1 INTEGER NOT NULL DEFAULT 1 CHECK (include_level1 IN (0, 1)),
+    include_level2 INTEGER NOT NULL DEFAULT 1 CHECK (include_level2 IN (0, 1)),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (flight_id) REFERENCES flights(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_personal_notes_flight
+ON personal_notes (flight_id, id);
 '''
 
 
@@ -38,6 +55,7 @@ def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -109,6 +127,97 @@ def list_flights() -> list[sqlite3.Row]:
 def get_flight(flight_id: int) -> sqlite3.Row | None:
     with connect() as conn:
         return conn.execute("SELECT * FROM flights WHERE id = ?", (flight_id,)).fetchone()
+
+
+def create_personal_note(
+    flight_id: int,
+    placement: str,
+    note_text: str,
+    include_level1: bool,
+    include_level2: bool,
+) -> int:
+    with connect() as conn:
+        if conn.execute("SELECT 1 FROM flights WHERE id=?", (flight_id,)).fetchone() is None:
+            raise LookupError(f"Flight {flight_id} not found")
+        cursor = conn.execute(
+            '''
+            INSERT INTO personal_notes (
+                flight_id, placement, note_text, include_level1, include_level2
+            ) VALUES (?, ?, ?, ?, ?)
+            ''',
+            (
+                flight_id,
+                placement,
+                note_text,
+                int(include_level1),
+                int(include_level2),
+            ),
+        )
+        return int(cursor.lastrowid)
+
+
+def list_personal_notes(flight_id: int) -> list[sqlite3.Row]:
+    with connect() as conn:
+        return list(
+            conn.execute(
+                '''
+                SELECT * FROM personal_notes
+                WHERE flight_id=?
+                ORDER BY id
+                ''',
+                (flight_id,),
+            )
+        )
+
+
+def get_personal_note(flight_id: int, note_id: int) -> sqlite3.Row | None:
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM personal_notes WHERE id=? AND flight_id=?",
+            (note_id, flight_id),
+        ).fetchone()
+
+
+def update_personal_note(
+    flight_id: int,
+    note_id: int,
+    placement: str,
+    note_text: str,
+    include_level1: bool,
+    include_level2: bool,
+) -> None:
+    with connect() as conn:
+        cursor = conn.execute(
+            '''
+            UPDATE personal_notes SET
+                placement=?,
+                note_text=?,
+                include_level1=?,
+                include_level2=?,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND flight_id=?
+            ''',
+            (
+                placement,
+                note_text,
+                int(include_level1),
+                int(include_level2),
+                note_id,
+                flight_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Personal note {note_id} not found for flight {flight_id}")
+
+
+def delete_personal_note(flight_id: int, note_id: int) -> None:
+    with connect() as conn:
+        cursor = conn.execute(
+            "DELETE FROM personal_notes WHERE id=? AND flight_id=?",
+            (note_id, flight_id),
+        )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Personal note {note_id} not found for flight {flight_id}")
 
 
 def update_status(
@@ -215,6 +324,11 @@ def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
                     + (
                         f" Calculated {result.get('timing_event_count', 0)} actual UTC events."
                         if result.get("timing_event_count")
+                        else ""
+                    )
+                    + (
+                        f" Included {result.get('personal_note_count', 0)} personal notes."
+                        if result.get("personal_note_count")
                         else ""
                     )
                 ),

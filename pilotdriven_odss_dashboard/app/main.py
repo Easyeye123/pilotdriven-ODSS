@@ -16,10 +16,15 @@ from .database import (
     begin_analysis,
     complete_analysis,
     create_flight,
+    create_personal_note,
+    delete_personal_note,
     get_flight,
+    get_personal_note,
     init_db,
     list_flights,
+    list_personal_notes,
     save_timing_reference,
+    update_personal_note,
     update_status,
 )
 from .odss.constants import format_actm
@@ -29,6 +34,10 @@ from .odss.timing import (
     derive_timing_reference,
     display_utc,
     parse_utc,
+)
+from .personal_notes import (
+    PERSONAL_NOTE_PLACEMENT_LABELS,
+    validate_personal_note,
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -50,7 +59,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="PilotDriven ODSS Personal Dashboard", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="PilotDriven ODSS Personal Dashboard", version="0.4.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATE_DIR)
 
@@ -182,6 +191,27 @@ def _timing_form_context(flight, analysis: dict | None) -> dict:
     }
 
 
+def _checkbox_selected(value: str | None) -> bool:
+    return value is not None and value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _validated_note_values(
+    placement: str,
+    note_text: str,
+    include_level1: str | None,
+    include_level2: str | None,
+) -> tuple[str, str, bool, bool]:
+    try:
+        return validate_personal_note(
+            placement,
+            note_text,
+            _checkbox_selected(include_level1),
+            _checkbox_selected(include_level2),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _execute_analysis(flight_id: int, flight) -> None:
     previous_artifacts = (
         (flight["analysis_path"], RESULT_DIR),
@@ -202,6 +232,7 @@ def _execute_analysis(flight_id: int, flight) -> None:
             flight_id=flight_id,
             actual_takeoff_utc=flight["actual_takeoff_utc"],
             timing_reference=_timing_reference_from_row(flight),
+            personal_notes=[dict(note) for note in list_personal_notes(flight_id)],
         )
         complete_analysis(flight_id, result)
     except Exception as exc:
@@ -217,6 +248,16 @@ def _execute_analysis(flight_id: int, flight) -> None:
             last_error=error,
         )
         traceback.print_exc()
+
+
+def _regenerate_after_note_change(flight_id: int) -> None:
+    flight = get_flight(flight_id)
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    if flight["status"] == "Processing":
+        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+    if flight["analysis_path"] or flight["status"] == "Completed":
+        _execute_analysis(flight_id, flight)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -278,6 +319,8 @@ def flight_workspace(request: Request, flight_id: int):
             "flight": flight,
             "analysis": analysis,
             "timing_form": _timing_form_context(flight, analysis),
+            "personal_notes": list_personal_notes(flight_id),
+            "personal_note_placement_labels": PERSONAL_NOTE_PLACEMENT_LABELS,
         },
     )
 
@@ -328,6 +371,71 @@ def update_operational_clock(
         raise HTTPException(status_code=404, detail="Flight not found")
     _execute_analysis(flight_id, updated_flight)
     return RedirectResponse(url=f"/flights/{flight_id}", status_code=303)
+
+
+@app.post("/flights/{flight_id}/notes")
+def add_personal_note(
+    flight_id: int,
+    placement: str = Form(...),
+    note_text: str = Form(...),
+    include_level1: str | None = Form(None),
+    include_level2: str | None = Form(None),
+):
+    flight = get_flight(flight_id)
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    if flight["status"] == "Processing":
+        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+    values = _validated_note_values(
+        placement,
+        note_text,
+        include_level1,
+        include_level2,
+    )
+    create_personal_note(flight_id, *values)
+    _regenerate_after_note_change(flight_id)
+    return RedirectResponse(url=f"/flights/{flight_id}#personal-notes", status_code=303)
+
+
+@app.post("/flights/{flight_id}/notes/{note_id}/update")
+def edit_personal_note(
+    flight_id: int,
+    note_id: int,
+    placement: str = Form(...),
+    note_text: str = Form(...),
+    include_level1: str | None = Form(None),
+    include_level2: str | None = Form(None),
+):
+    flight = get_flight(flight_id)
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    if flight["status"] == "Processing":
+        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+    if not get_personal_note(flight_id, note_id):
+        raise HTTPException(status_code=404, detail="Personal note not found")
+    values = _validated_note_values(
+        placement,
+        note_text,
+        include_level1,
+        include_level2,
+    )
+    update_personal_note(flight_id, note_id, *values)
+    _regenerate_after_note_change(flight_id)
+    return RedirectResponse(url=f"/flights/{flight_id}#personal-notes", status_code=303)
+
+
+@app.post("/flights/{flight_id}/notes/{note_id}/delete")
+def remove_personal_note(flight_id: int, note_id: int):
+    flight = get_flight(flight_id)
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    if flight["status"] == "Processing":
+        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+    if not get_personal_note(flight_id, note_id):
+        raise HTTPException(status_code=404, detail="Personal note not found")
+    delete_personal_note(flight_id, note_id)
+    _regenerate_after_note_change(flight_id)
+    return RedirectResponse(url=f"/flights/{flight_id}#personal-notes", status_code=303)
 
 
 @app.post("/flights/{flight_id}/reports/{level}")

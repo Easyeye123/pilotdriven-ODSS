@@ -22,6 +22,14 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
   - date rollover and delay against scheduled departure.
 - Re-anchor the route in flight by entering a known waypoint ATA; the engine derives ATOT as `waypoint ATA - waypoint ACTM`.
 - Retain ACTM as the source elapsed-time value. Absolute UTC is always calculated as `derived ATOT + CFP ACTM`.
+- Add, edit and delete **personal pilot notes** for each flight.
+- Place each personal note in one of four report locations:
+  - a separate personal-notes section;
+  - the departure-airport section;
+  - the destination-airport section;
+  - the enroute ATC/communications section.
+- Select whether each note appears in Level 1, Level 2, or both reports.
+- Regenerate analysis JSON and both PDF reports automatically when an included personal note changes.
 - Reject unreadable, password-protected, empty, oversized and incomplete CFP uploads with controlled errors.
 - Clear stale generated artifacts before a rerun and publish replacement JSON/PDF artifacts only after generation succeeds.
 - Reject duplicate analysis requests and recover interrupted runs after an application restart.
@@ -48,6 +56,19 @@ python -m uvicorn app.main:app --reload --reload-exclude ".venv/*"
 Uploads are limited to 25 MB and 180 PDF pages. The current parser accepts the supported Lido CFP layout only; a readable PDF that lacks its required route, fuel or mass fields fails analysis instead of producing zero-filled operational results.
 
 Python 3.12 is the supported local and container runtime. After pulling this upgrade, recreate or upgrade the virtual environment because the framework, upload parser and PDF libraries include reliability and security updates.
+
+## Personal notes workflow
+
+1. Open the flight workspace.
+2. In **Personal notes**, select the report placement.
+3. Enter the note text, up to 2,000 characters.
+4. Select Level 1, Level 2, or both.
+5. Select **Add personal note**.
+6. Use **Edit note** or **Delete note** for later changes.
+
+Notes may be entered before or after CFP analysis. When reports already exist, any note change automatically reruns the analysis and replaces Level 1, Level 2 and canonical JSON artifacts. Notes are stored separately from the system processing-status text.
+
+Every PDF note panel is labelled as pilot-entered personal content. The ODSS engine does not treat personal notes as extracted or validated operational findings.
 
 ## Operational clock workflow
 
@@ -76,7 +97,7 @@ python -m pip install --upgrade -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Your existing SQLite flight records are retained. The startup migration adds the ATOT/ATA timing fields automatically.
+Your existing SQLite flight records are retained. Startup creates the personal-notes table and adds any missing ATOT/ATA timing fields automatically.
 
 ## Test locally
 
@@ -87,12 +108,12 @@ python -m compileall -q app
 pytest -q
 ```
 
-The regression suite covers upload validation, failed reruns, missing artifacts, NOTAM applicability and priority, report pagination, long PDF content, actual takeoff anchoring and waypoint-ATA re-anchoring.
+The regression suite covers upload validation, failed reruns, missing artifacts, NOTAM applicability and priority, report pagination, long PDF content, actual takeoff anchoring, waypoint-ATA re-anchoring, personal-note CRUD and Level 1/Level 2 note placement.
 
 ## Data storage
 
 ```text
-data/odss.db        SQLite flight records and timing references
+data/odss.db        SQLite flight records, timing references and personal notes
 data/uploads/       uploaded CFP PDFs
 data/results/       structured ODSS JSON results
 data/reports/       generated Level 1 / Level 2 PDFs
