@@ -25,7 +25,11 @@ CREATE TABLE IF NOT EXISTS flights (
     level1_report TEXT,
     level2_report TEXT,
     notes TEXT,
-    last_error TEXT
+    last_error TEXT,
+    actual_takeoff_utc TEXT,
+    timing_reference_type TEXT,
+    timing_reference_waypoint TEXT,
+    timing_reference_utc TEXT
 );
 '''
 
@@ -42,6 +46,10 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
     additions = {
         "analysis_path": "TEXT",
         "last_error": "TEXT",
+        "actual_takeoff_utc": "TEXT",
+        "timing_reference_type": "TEXT",
+        "timing_reference_waypoint": "TEXT",
+        "timing_reference_utc": "TEXT",
     }
     for column, sql_type in additions.items():
         if column not in existing:
@@ -120,6 +128,36 @@ def update_status(
         )
 
 
+def save_timing_reference(
+    flight_id: int,
+    actual_takeoff_utc: str,
+    reference_type: str,
+    reference_utc: str,
+    reference_waypoint: str | None = None,
+) -> None:
+    with connect() as conn:
+        cursor = conn.execute(
+            '''
+            UPDATE flights SET
+                actual_takeoff_utc=?,
+                timing_reference_type=?,
+                timing_reference_waypoint=?,
+                timing_reference_utc=?,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            ''',
+            (
+                actual_takeoff_utc,
+                reference_type,
+                reference_waypoint,
+                reference_utc,
+                flight_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Flight {flight_id} not found")
+
+
 def begin_analysis(flight_id: int) -> bool:
     with connect() as conn:
         cursor = conn.execute(
@@ -174,6 +212,11 @@ def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
                     f"{result.get('finding_count', 0)} findings; "
                     f"{result.get('weather_records', 0)} weather records; "
                     f"{result.get('notam_records', 0)} pertinent NOTAM records."
+                    + (
+                        f" Calculated {result.get('timing_event_count', 0)} actual UTC events."
+                        if result.get("timing_event_count")
+                        else ""
+                    )
                 ),
                 flight_id,
             ),
