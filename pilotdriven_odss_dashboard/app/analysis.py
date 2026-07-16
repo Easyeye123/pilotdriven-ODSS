@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .odss.briefing import build_briefing_view
 from .odss.constants import ENGINE_ORDER, actm_minutes, format_actm
 from .odss.engines import analyse
 from .odss.parser import extract_pages, parse_lido
@@ -66,7 +67,15 @@ def run_odss_analysis(
             actual_takeoff_utc,
             flight.get("timing_reference"),
         )
+        flight["timing_view"] = timing_view
         findings.append(timing_finding(timing_view))
+
+    briefing_view = build_briefing_view(
+        flight,
+        findings,
+        warnings,
+        timing_view,
+    )
 
     grouped_raw: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
@@ -87,7 +96,7 @@ def run_odss_analysis(
     level1_path = report_dir / f"flight_{flight_id}_{run_id}_level_1.pdf"
     level2_path = report_dir / f"flight_{flight_id}_{run_id}_level_2.pdf"
     payload = {
-        "schema_version": "0.4.0",
+        "schema_version": "0.5.0",
         "flight": flight,
         "findings": findings,
         "view": {
@@ -98,6 +107,7 @@ def run_odss_analysis(
             "grouped": grouped,
             "warnings": warnings,
             "timing": timing_view,
+            "briefing": briefing_view,
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         },
     }
@@ -157,7 +167,7 @@ def load_analysis(path: str | None) -> dict[str, Any] | None:
 # Compatibility with the v0.1 dashboard while files are updated in stages.
 def run_placeholder_analysis(file_path: Path) -> dict[str, Any]:
     return {
-        "status": "ODSS core installed; update app.main to v0.4.0",
+        "status": "ODSS core installed; update app.main to v0.5.0",
         "file_size_bytes": file_path.stat().st_size,
         "modules": ENGINE_ORDER,
     }

@@ -1,0 +1,146 @@
+{% set briefing = analysis.view.briefing %}
+<section class="odss-visual-briefing" id="visual-briefing">
+  <div class="odss-visual-topbar">
+    <div class="odss-brand"><span class="odss-brand-mark">◆</span> PILOT<span>DRIVEN</span></div>
+    <div class="odss-flight-chip">{{ briefing.flight_number }}</div>
+    <div class="odss-route-title">{{ briefing.route_label }} <small>{{ briefing.flight_date }}</small></div>
+    <div class="odss-complete">{{ briefing.status }}</div>
+    <div class="odss-update">Updated {{ briefing.generated_at_display }}</div>
+    <div class="odss-top-counts">NOTAMs <strong>{{ briefing.counts.notams }}</strong> · Weather <strong>{{ briefing.counts.weather }}</strong></div>
+    <div class="odss-export-actions">
+      {% if flight.level1_report %}<a href="/files/report/{{ flight.id }}/1">Level 1</a>{% endif %}
+      {% if flight.level2_report %}<a href="/files/report/{{ flight.id }}/2">Level 2</a>{% endif %}
+    </div>
+  </div>
+
+  <div class="odss-visual-body">
+    <aside class="odss-visual-rail" aria-label="Briefing navigation">
+      <a class="active" href="#visual-briefing"><span>B</span>Briefing</a>
+      <a href="#odss-route-map"><span>R</span>Route</a>
+      <a href="#odss-airports"><span>A</span>Airports</a>
+      <a href="#odss-communications"><span>F</span>FIR / Comm</a>
+      <a href="#odss-exceptions"><span>N</span>NOTAMs</a>
+      <a href="#odss-edto"><span>E</span>EDTO</a>
+      <a href="#personal-notes"><span>D</span>Notes</a>
+      <a href="#timing-form"><span>T</span>Clock</a>
+    </aside>
+
+    <div class="odss-visual-workspace">
+      <div class="odss-metric-strip">
+        <div><span>Distance</span><strong>{{ briefing.metrics.distance }}</strong></div>
+        <div><span>EET</span><strong>{{ briefing.metrics.eet }}</strong></div>
+        <div><span>FIRs</span><strong>{{ briefing.metrics.fir_count }}</strong></div>
+        <div><span>ETD</span><strong>{{ briefing.metrics.etd }}</strong></div>
+        <div><span>ETA</span><strong>{{ briefing.metrics.eta }}</strong></div>
+        <div><span>Aircraft</span><strong>{{ briefing.metrics.aircraft }}</strong></div>
+        <div><span>Cruise</span><strong>{{ briefing.metrics.cruise }}</strong></div>
+        <div><span>ALTN</span><strong>{{ briefing.metrics.alternate }}</strong></div>
+      </div>
+
+      <div class="odss-mass-strip">
+        <div><span>PZFW</span><strong>{{ briefing.masses.pzfw }}</strong></div>
+        <div><span>PLDW</span><strong>{{ briefing.masses.pldw }}</strong></div>
+        <div><span>PTOW</span><strong>{{ briefing.masses.ptow }}</strong></div>
+        <div><span>Fuel</span><strong>{{ briefing.fuel.tanks }}</strong></div>
+        <div><span>Trip</span><strong>{{ briefing.fuel.trip }}</strong></div>
+        <div><span>Destination</span><strong>{{ briefing.fuel.destination }}</strong></div>
+      </div>
+
+      <div class="odss-route-grid" id="odss-airports">
+        <article class="odss-airport-panel">
+          <div class="odss-panel-kicker">Departure airport</div>
+          <h2>{{ briefing.departure.icao }}</h2>
+          <p class="odss-runway">Planned runway {{ briefing.departure.runway }}</p>
+          <div class="odss-weather-line">{{ briefing.departure.weather.primary }}</div>
+          <h3>Departure considerations</h3>
+          <ul class="odss-considerations">
+            {% for item in briefing.departure.considerations %}
+            <li class="severity-{{ item.severity }}"><strong>{{ item.kind }}</strong><span>{{ item.text }}</span></li>
+            {% endfor %}
+          </ul>
+          <a class="odss-panel-button" href="/files/report/{{ flight.id }}/1#page=2">View full departure briefing</a>
+        </article>
+
+        <article class="odss-map-panel" id="odss-route-map">
+          {{ briefing.route_svg | safe }}
+        </article>
+
+        <article class="odss-airport-panel">
+          <div class="odss-panel-kicker">Destination airport</div>
+          <h2>{{ briefing.destination.icao }}</h2>
+          <p class="odss-runway">Planned runway {{ briefing.destination.runway }}</p>
+          <div class="odss-weather-line">{{ briefing.destination.weather.primary }}</div>
+          <h3>Destination considerations</h3>
+          <ul class="odss-considerations">
+            {% for item in briefing.destination.considerations %}
+            <li class="severity-{{ item.severity }}"><strong>{{ item.kind }}</strong><span>{{ item.text }}</span></li>
+            {% endfor %}
+          </ul>
+          <a class="odss-panel-button" href="/files/report/{{ flight.id }}/1#page=2">View full destination briefing</a>
+        </article>
+      </div>
+
+      <div class="odss-exception-strip" id="odss-exceptions">
+        {% for item in briefing.exception_cards %}
+        <div class="severity-{{ item.severity }}">
+          <strong>{{ item.count }}</strong>
+          <span>{{ item.label }}</span>
+          <small>{{ item.detail }}</small>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="odss-lower-grid">
+        <article class="odss-lower-panel" id="odss-communications">
+          <h3>FIR communication timeline</h3>
+          {% if briefing.communications %}
+          <table>
+            <tbody>
+              {% for item in briefing.communications %}
+              <tr><td><strong>{{ item.time }}</strong><small>ACTM {{ item.actm }}</small></td><td>{{ item.event }}<small>{{ item.detail }}</small></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}<p>No route-specific early call rule matched.</p>{% endif %}
+          <a href="/files/report/{{ flight.id }}/1#page=3">View full communication plan</a>
+        </article>
+
+        <article class="odss-lower-panel" id="odss-edto">
+          <h3>EDTO summary</h3>
+          <div class="odss-edto-time"><strong>{{ briefing.edto.entry }} - {{ briefing.edto.exit }}</strong><span>ACTM</span></div>
+          {% if briefing.edto.etps %}<p>ETP {{ briefing.edto.etps | join(', ') }}</p>{% endif %}
+          <ul>
+            {% for item in briefing.edto.airports %}<li><strong>{{ item.airport }}</strong> RWY {{ item.runway }} {{ item.approach }}</li>{% endfor %}
+          </ul>
+          <a href="/files/report/{{ flight.id }}/1#page=3">View full EDTO analysis</a>
+        </article>
+
+        <article class="odss-lower-panel">
+          <h3>Enroute weather</h3>
+          <div class="odss-weather-cards">
+            {% for item in briefing.weather_cards %}
+            <div class="severity-{{ item.severity }}"><strong>{{ item.title }}</strong><span>{{ item.text }}</span></div>
+            {% endfor %}
+          </div>
+          <a href="/files/report/{{ flight.id }}/2">View expanded weather briefing</a>
+        </article>
+
+        <article class="odss-lower-panel odss-tools-panel">
+          <h3>Route / procedure tools</h3>
+          {% if flight.level1_report %}<a href="/files/report/{{ flight.id }}/1">Open Level 1 visual brief</a>{% endif %}
+          {% if flight.level2_report %}<a href="/files/report/{{ flight.id }}/2">Open Level 2 expanded brief</a>{% endif %}
+          {% if flight.analysis_path %}<a href="/files/analysis/{{ flight.id }}">Download canonical JSON</a>{% endif %}
+          <a href="#timing-form">Actual-time operational clock</a>
+          <a href="#personal-notes">Personal notes</a>
+        </article>
+      </div>
+
+      <div class="odss-visual-legend">
+        <span class="ok">No difference / information</span>
+        <span class="warn">Published difference / warning</span>
+        <span class="review">Source review required</span>
+        <span class="ref">Reference only</span>
+      </div>
+    </div>
+  </div>
+</section>

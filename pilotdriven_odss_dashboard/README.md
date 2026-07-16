@@ -5,13 +5,29 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
 ## What now works
 
 - Upload and archive Lido CFP PDFs.
-- Parse the CFP section, Page 1, route log, BOBCAT allocation, performance, fuel, EDTO and deferred items.
+- Parse the CFP section, Page 1, route log, route coordinates, BOBCAT allocation, performance, fuel, EDTO and deferred items.
+- Plot an offline schematic route map from the actual waypoint coordinates contained in the Lido CFP.
+- Display a dark visual briefing dashboard with:
+  - flight and schedule controls;
+  - PZFW, PLDW and PTOW in integer kg;
+  - departure and destination airport panels;
+  - the mapped CFP route and selected FIR/critical waypoint labels;
+  - an enroute exceptions summary;
+  - early ATC/FIR communication timing;
+  - EDTO summary; and
+  - pertinent enroute weather.
+- Generate a fixed three-page **Level 1 pertinent brief**:
+  1. visual route briefing;
+  2. operational detail; and
+  3. route and contingency detail.
+- Include clickable Page 1 PDF links to the Page 2 airport/operational sections and Page 3 communications/EDTO/route sections.
+- Start the **Level 2 expanded report** with the same visual briefing cover, followed by the complete deterministic analysis and warnings.
+- Store a canonical `view.briefing` object in the analysis JSON so the current dashboard, PDF renderer and future PilotDriven frontend share the same facts.
 - Detect continuous MSA greater than `100*` events and VWS greater than 4 events.
 - Match the bundled route-aware depressurisation profiles and early FIR-contact rules when applicable.
 - Extract weather and airport NOTAM records without silently truncating the airport list.
 - Evaluate NOTAM B/C validity and supported Item D daily, weekday, date-list, month-range and overnight schedules against airport-specific operational windows.
 - Keep unsupported Item D schedules visible for manual review instead of guessing applicability.
-- Generate and download Level 1 and Level 2 PDF reports automatically.
 - Keep critical destination and alternate NOTAMs in Level 1 while retaining the complete active/review set in Level 2.
 - Save the canonical analysis result as JSON and display organised findings in the flight workspace.
 - Enter an **actual takeoff time (ATOT)** or an **actual waypoint ATA** and calculate:
@@ -29,11 +45,17 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
   - the destination-airport section;
   - the enroute ATC/communications section.
 - Select whether each note appears in Level 1, Level 2, or both reports.
-- Regenerate analysis JSON and both PDF reports automatically when an included personal note changes.
+- Regenerate analysis JSON and both PDF reports automatically when an included personal note or timing reference changes.
 - Reject unreadable, password-protected, empty, oversized and incomplete CFP uploads with controlled errors.
 - Clear stale generated artifacts before a rerun and publish replacement JSON/PDF artifacts only after generation succeeds.
 - Reject duplicate analysis requests and recover interrupted runs after an application restart.
 - Preserve existing SQLite records through an automatic schema migration.
+
+## Visual route map semantics
+
+The current route display is an offline schematic generated from the coordinates printed in the Lido CFP route log. It is intended for briefing orientation only and is **not for navigation**.
+
+The map renderer is deliberately separated from the canonical route/briefing model. When this ODSS module is incorporated into the wider PilotDriven project, the renderer can be replaced by MapLibre, Mapbox or an approved aeronautical map service without rewriting the deterministic aviation engines.
 
 ## Run locally
 
@@ -97,7 +119,7 @@ python -m pip install --upgrade -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Your existing SQLite flight records are retained. Startup creates the personal-notes table and adds any missing ATOT/ATA timing fields automatically.
+Your existing SQLite flight records are retained. Open each existing flight and select **Run analysis again** to parse route coordinates, rebuild the canonical visual briefing model and generate the new visual PDFs.
 
 ## Test locally
 
@@ -108,7 +130,9 @@ python -m compileall -q app
 pytest -q
 ```
 
-The regression suite covers upload validation, failed reruns, missing artifacts, NOTAM applicability and priority, report pagination, long PDF content, actual takeoff anchoring, waypoint-ATA re-anchoring, personal-note CRUD and Level 1/Level 2 note placement.
+The regression suite covers upload validation, failed reruns, missing artifacts, NOTAM applicability and priority, route-coordinate parsing, three-page Level 1 generation, internal PDF links, visual cover output, actual takeoff anchoring, waypoint-ATA re-anchoring, personal-note CRUD and report placement.
+
+GitHub Actions also generates Level 1 and Level 2 visual sample PDFs as build artifacts for visual inspection.
 
 ## Data storage
 
@@ -119,9 +143,15 @@ data/results/       structured ODSS JSON results
 data/reports/       generated Level 1 / Level 2 PDFs
 ```
 
+## PilotDriven integration boundary
+
+The future PilotDriven frontend should consume the canonical `view.briefing` and `flight.route_waypoints` objects. It may replace the visual components and map renderer, but it should not duplicate or change deterministic operational calculations in client-side code.
+
+The detailed implementation contract is in `../docs/visual-route-briefing-v0.5.md`.
+
 ## Reference-library limitation
 
-The bundled MEL, communication and depressurisation entries are regression/reference abstractions derived from the current ODSS development case. They are not a substitute for a current operator-approved MEL, CDDL, Jeppesen/AIP material or depressurisation manual. The application deliberately flags missing reference matches rather than inventing terms.
+The bundled MEL, communication and depressurisation entries are regression/reference abstractions derived from the current ODSS development cases. They are not a substitute for a current operator-approved MEL, CDDL, Jeppesen/AIP material or depressurisation manual. The application deliberately flags missing reference matches rather than inventing terms.
 
 ## Deployment caution
 

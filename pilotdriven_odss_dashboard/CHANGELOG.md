@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0
+
+- Added a dark PilotDriven-style visual briefing dashboard for completed CFP analyses.
+- Added route-coordinate extraction from the Lido CFP log and an offline schematic route-map renderer.
+- Added the canonical `view.briefing` contract shared by the web dashboard, PDF output and future PilotDriven frontend.
+- Changed Level 1 to a fixed three-page A4 landscape format:
+  - Page 1 visual route briefing;
+  - Page 2 operational detail; and
+  - Page 3 route and contingency detail.
+- Added clickable Page 1 PDF links to airport, operational, communications, EDTO and route sections.
+- Added the visual route briefing as the first page of Level 2 before the expanded deterministic analysis.
+- Kept PZFW, PLDW, PTOW, fuel, trip and destination fuel visible at the top of the visual brief in integer kg.
+- Added actual-time UTC values to the visual communication timeline after ATOT or waypoint-ATA anchoring.
+- Added longitude unwrapping and priority-label selection for long-haul routes and dateline-safe plotting.
+- Added visual PDF sample artifacts and render-regression checks to GitHub Actions.
+- Added a formal PilotDriven integration and map-adapter specification.
+
 ## 0.4.0
 
 - Added persistent personal pilot notes for each flight workspace.
