@@ -15,13 +15,31 @@ def _visual_paragraph_escape(value: str) -> str:
     return escaped.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
 
 
-# visual_reporting imports ``escape`` as a module global. Applying the safe
-# wrapper once at package initialisation keeps the renderer implementation
-# small while preventing literal <b> tags from appearing in generated PDFs.
 try:
+    from . import briefing as _briefing
     from . import visual_reporting as _visual_reporting
 
     _visual_reporting.escape = _visual_paragraph_escape
+
+    _original_build_briefing_view = _briefing.build_briefing_view
+
+    def _build_briefing_view_with_saved_clock(
+        flight,
+        findings,
+        warnings,
+        timing_view=None,
+    ):
+        """Use the saved ATOT/waypoint-ATA view when a caller omits it."""
+        selected_timing = timing_view if timing_view is not None else flight.get("timing_view")
+        return _original_build_briefing_view(
+            flight,
+            findings,
+            warnings,
+            selected_timing,
+        )
+
+    _briefing.build_briefing_view = _build_briefing_view_with_saved_clock
+    _visual_reporting.build_briefing_view = _build_briefing_view_with_saved_clock
 except ImportError:
     # The deterministic engines remain importable even when optional PDF
     # dependencies have not yet been installed.
