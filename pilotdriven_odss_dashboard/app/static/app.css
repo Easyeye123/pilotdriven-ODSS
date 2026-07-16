@@ -25,7 +25,8 @@ th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left;vertica
 th{font-size:12px;text-transform:uppercase;color:#5d6875}
 .button,button{display:inline-block;border:0;border-radius:6px;background:var(--navy);color:white;padding:10px 14px;text-decoration:none;font-weight:700;cursor:pointer}
 .button.secondary{background:#5d6875}.button.green,button.green{background:var(--green)}
-input[type=text],input[type=date],input[type=file]{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin-top:5px}
+input[type=text],input[type=date],input[type=time],input[type=file],select{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin-top:5px;background:#fff;color:#1f2937}
+select:disabled,input:disabled{background:#eef2f6;color:#7b8794;cursor:not-allowed}
 label{font-weight:700;font-size:13px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .badge{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--blue);color:var(--navy);font-weight:700;font-size:12px}
@@ -50,5 +51,27 @@ label{font-weight:700;font-size:13px}
 .warning-card{border-left:5px solid var(--amber)}
 details summary{cursor:pointer;color:var(--navy)}
 .manual-grid{margin-top:14px}
+.timing-card{border-top:5px solid var(--green)}
+.timing-note{max-width:980px;line-height:1.5}
+.timing-form-grid{display:grid;grid-template-columns:1.25fr 1fr 1fr 1.6fr;gap:14px;align-items:end;margin:15px 0 8px}
+.timing-field-muted{opacity:.58}
+.timing-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:20px 0}
+.timing-summary>div{background:var(--blue);border:1px solid var(--border);border-radius:7px;padding:10px;text-align:center}
+.timing-summary span{display:block;color:#5d6875;font-size:11px;text-transform:uppercase;font-weight:700;margin-bottom:5px}
+.timing-summary strong{display:block;color:var(--navy);font-size:15px}
+.table-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:7px}
+.compact-table{min-width:780px;background:#fff}
+.compact-table th,.compact-table td{padding:7px 8px;font-size:12px}
+.compact-table th{background:#eef3f8;position:sticky;top:0;z-index:1}
+.timing-row{border-left:4px solid transparent}
+.timing-early_call{border-left-color:var(--red)}
+.timing-bobcat{border-left-color:var(--amber)}
+.timing-terrain,.timing-depressurisation{border-left-color:var(--green)}
+.timing-edto{border-left-color:#5b5fc7}
+.timing-details{margin-top:14px;border:1px solid var(--border);border-radius:7px;padding:12px;background:#fafcfe}
+.timing-details summary{margin-bottom:8px}
+.timing-empty{border-left:4px solid var(--amber);background:#fff8e9;padding:12px;border-radius:5px}
+.waypoint-table-wrap{max-height:520px;overflow:auto}
+@media(max-width:1000px){.timing-form-grid{grid-template-columns:1fr 1fr}.timing-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:800px){.engine-grid{grid-template-columns:1fr}}
-@media(max-width:800px){.form-grid{grid-template-columns:1fr}.card{overflow-x:auto}.flight-summary,.flight-summary tbody{display:block}.flight-summary tr{display:grid;grid-template-columns:minmax(92px,.55fr) minmax(0,1fr)}.flight-summary th,.flight-summary td{min-width:0;overflow-wrap:anywhere}}
+@media(max-width:800px){.form-grid,.timing-form-grid{grid-template-columns:1fr}.timing-summary{grid-template-columns:1fr 1fr}.card{overflow-x:auto}.flight-summary,.flight-summary tbody{display:block}.flight-summary tr{display:grid;grid-template-columns:minmax(92px,.55fr) minmax(0,1fr)}.flight-summary th,.flight-summary td{min-width:0;overflow-wrap:anywhere}}
