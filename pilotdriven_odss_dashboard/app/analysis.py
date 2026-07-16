@@ -13,6 +13,7 @@ from .odss.engines import analyse
 from .odss.parser import extract_pages, parse_lido
 from .odss.reporting import render_pdf
 from .odss.timing import build_timing_view, timing_finding
+from .personal_notes import serialise_personal_note
 
 
 def infer_metadata(filename: str) -> dict[str, str]:
@@ -37,10 +38,15 @@ def run_odss_analysis(
     flight_id: int,
     actual_takeoff_utc: str | None = None,
     timing_reference: dict[str, Any] | None = None,
+    personal_notes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     pages = extract_pages(file_path)
     flight = parse_lido(pages, file_path.name)
     flight["flight_number"] = flight["flight_number"].replace("SIA", "SQ", 1)
+    flight["personal_notes"] = [
+        serialise_personal_note(dict(note))
+        for note in (personal_notes or [])
+    ]
     if actual_takeoff_utc:
         flight["actual_takeoff_utc"] = actual_takeoff_utc
         flight["timing_reference"] = timing_reference or {
@@ -81,13 +87,14 @@ def run_odss_analysis(
     level1_path = report_dir / f"flight_{flight_id}_{run_id}_level_1.pdf"
     level2_path = report_dir / f"flight_{flight_id}_{run_id}_level_2.pdf"
     payload = {
-        "schema_version": "0.3.0",
+        "schema_version": "0.4.0",
         "flight": flight,
         "findings": findings,
         "view": {
             "page_count": len(pages),
             "finding_count": len(findings),
             "notam_finding_count": sum(item["engine"] == "notam" for item in findings),
+            "personal_note_count": len(flight["personal_notes"]),
             "grouped": grouped,
             "warnings": warnings,
             "timing": timing_view,
@@ -130,6 +137,7 @@ def run_odss_analysis(
         "weather_records": len(flight["weather"]),
         "notam_records": sum(item["engine"] == "notam" for item in findings),
         "timing_event_count": timing_view["event_count"] if timing_view else 0,
+        "personal_note_count": len(flight["personal_notes"]),
         "warnings": warnings,
     }
 
@@ -149,7 +157,7 @@ def load_analysis(path: str | None) -> dict[str, Any] | None:
 # Compatibility with the v0.1 dashboard while files are updated in stages.
 def run_placeholder_analysis(file_path: Path) -> dict[str, Any]:
     return {
-        "status": "ODSS core installed; update app.main to v0.3.0",
+        "status": "ODSS core installed; update app.main to v0.4.0",
         "file_size_bytes": file_path.stat().st_size,
         "modules": ENGINE_ORDER,
     }
