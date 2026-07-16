@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.odss.reporting import render_pdf
+from app.odss.timing import build_timing_view, timing_finding
 
 
 def finding(engine: str, title: str, summary: str, severity: str = "warning", **data):
@@ -125,6 +126,13 @@ def main() -> None:
     output.mkdir(exist_ok=True)
     flight = sample_flight()
     findings = sample_findings()
+    flight["actual_takeoff_utc"] = "2026-07-16T09:52:00+00:00"
+    flight["timing_view"] = build_timing_view(
+        flight,
+        findings,
+        flight["actual_takeoff_utc"],
+    )
+    findings.append(timing_finding(flight["timing_view"]))
     render_pdf(flight, findings, [], 1, output / "sample-level-1.pdf")
     render_pdf(flight, findings, [], 2, output / "sample-level-2.pdf")
 
