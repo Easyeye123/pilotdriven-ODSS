@@ -364,18 +364,16 @@ def render_pdf(
     story: list[Any] = [
         visual_cover_flowable(briefing),
         PageBreak(),
-        _BookmarkFlowable("operational_detail", "departure_detail", "destination_detail"),
+        _BookmarkFlowable(
+            "operational_detail",
+            "departure_detail",
+            "destination_detail",
+            "route_contingency",
+            "communications_detail",
+            "edto_detail",
+        ),
     ]
-    route_bookmarked = False
-    edto_bookmarked = False
     for index, section in enumerate(sections):
-        engine = section.get("engine")
-        if engine == "communications" and not route_bookmarked:
-            story.append(_BookmarkFlowable("route_contingency", "communications_detail"))
-            route_bookmarked = True
-        if engine == "edto" and not edto_bookmarked:
-            story.append(_BookmarkFlowable("edto_detail"))
-            edto_bookmarked = True
         if section["page_break_before"] and index > 0:
             story.append(PageBreak())
         colour = {
