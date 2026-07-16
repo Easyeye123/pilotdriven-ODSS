@@ -67,6 +67,7 @@ def run_odss_analysis(
             actual_takeoff_utc,
             flight.get("timing_reference"),
         )
+        flight["timing_view"] = timing_view
         findings.append(timing_finding(timing_view))
 
     briefing_view = build_briefing_view(
