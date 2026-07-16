@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+- Added a prominent first-page mass strip to both Level 1 and Level 2 pertinent briefs.
+- The strip displays PZFW, PLDW and PTOW in integer kilograms.
+- PLDW is populated from the canonical CFP planned landing weight / PLWT field.
+- Added PDF regression coverage for all three labels and values.
+
 ## 0.3.0
 
 - Added a required operational-clock form for absolute UTC calculations.
