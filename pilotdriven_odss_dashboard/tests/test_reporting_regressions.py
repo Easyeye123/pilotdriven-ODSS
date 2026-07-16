@@ -58,6 +58,44 @@ def _weather(index: int) -> dict[str, Any]:
     }
 
 
+def _flight() -> dict[str, Any]:
+    return {
+        "flight_number": "SQ304",
+        "departure": "WSSS",
+        "destination": "EBBR",
+        "departure_runway": "20C",
+        "destination_runway": "07L",
+        "flight_date": "11JUL26",
+        "scheduled_departure_utc": "2026-07-11T10:30:00+00:00",
+        "scheduled_arrival_utc": "2026-07-11T22:00:00+00:00",
+        "aircraft_type": "A350-941",
+        "registration": "9V-SMG",
+        "ground_distance_nm": 5933,
+        "planned_level_profile": "SIN/350/POINT/390/BRU/410",
+        "route_waypoints": [
+            {"name": "WSSS", "actm_minutes": 0, "latitude": 1.36, "longitude": 103.99, "fir_boundary": None, "airway_in": None, "msa_hundreds_ft": 4, "vws": 1},
+            {"name": "-VOMF", "actm_minutes": 120, "latitude": 13.93, "longitude": 92.33, "fir_boundary": "VOMF", "airway_in": "L759", "msa_hundreds_ft": None, "vws": 2},
+            {"name": "POINT", "actm_minutes": 360, "latitude": 31.40, "longitude": 69.00, "fir_boundary": None, "airway_in": "L750", "msa_hundreds_ft": 166, "vws": 5},
+            {"name": "EBBR", "actm_minutes": 690, "latitude": 50.90, "longitude": 4.48, "fir_boundary": None, "airway_in": "DCT", "msa_hundreds_ft": 5, "vws": 2},
+        ],
+        "masses": {
+            "planned_zfw_kg": 166486,
+            "planned_landing_weight_kg": 175802,
+            "planned_takeoff_weight_kg": 245529,
+        },
+        "fuel": {
+            "fuel_in_tanks_kg": 79643,
+            "trip_fuel_kg": 69727,
+            "planned_destination_fuel_kg": 9316,
+        },
+        "alternates": [{"airport": "EDDL", "runway": "05L", "approach": "CAT1DME"}],
+        "edto": {"entry_actm_minutes": 120, "exit_actm_minutes": 150, "etp_actm_minutes": [135], "airports": []},
+        "weather": [],
+        "notams": [],
+        "personal_notes": [],
+    }
+
+
 def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> None:
     findings = [
         _notam(f"D{index:02d}/26", "departure", priority_score=30 - index)
@@ -91,48 +129,44 @@ def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> 
     assert "9 lower-priority active or review NOTAM findings omitted; see Level 2." in text
 
 
-@pytest.mark.parametrize(
-    ("level", "title"),
-    [
-        (1, "SQ304 WSSS-EBBR"),
-        (2, "SQ304 Expanded Operational Analysis"),
-    ],
-)
-def test_multipage_reports_repeat_title_footer_and_physical_page_number(
-    tmp_path: Path,
-    level: int,
-    title: str,
-) -> None:
-    flight = {
-        "flight_number": "SQ304",
-        "departure": "WSSS",
-        "destination": "EBBR",
-        "flight_date": "11JUL26",
-        "masses": {
-            "planned_zfw_kg": 166486,
-            "planned_landing_weight_kg": 175802,
-            "planned_takeoff_weight_kg": 245529,
-        },
-    }
-    path = tmp_path / f"level_{level}.pdf"
-
-    render_pdf(flight, [_weather(index) for index in range(24)], [], level, path)
+def test_level1_is_three_page_visual_brief_with_internal_links(tmp_path: Path) -> None:
+    path = tmp_path / "level_1.pdf"
+    render_pdf(_flight(), [_weather(1), _notam("A1000/26", "departure")], [], 1, path)
 
     reader = PdfReader(path)
-    assert len(reader.pages) > 1
-    for page_number, page in enumerate(reader.pages, start=1):
-        text = page.extract_text() or ""
-        assert title in text
-        assert "Decision support only - approved documents" in text
-        assert f"Page {page_number}" in text
+    assert len(reader.pages) == 3
+    first = reader.pages[0].extract_text() or ""
+    second = reader.pages[1].extract_text() or ""
+    third = reader.pages[2].extract_text() or ""
 
-    first_page_text = reader.pages[0].extract_text() or ""
-    assert "PZFW" in first_page_text
-    assert "166,486 kg" in first_page_text
-    assert "PLDW" in first_page_text
-    assert "175,802 kg" in first_page_text
-    assert "PTOW" in first_page_text
-    assert "245,529 kg" in first_page_text
+    assert "PILOTDRIVEN" in first
+    assert "PZFW" in first and "166,486 kg" in first
+    assert "PLDW" in first and "175,802 kg" in first
+    assert "PTOW" in first and "245,529 kg" in first
+    assert "DEPARTURE AIRPORT" in first
+    assert "DESTINATION AIRPORT" in first
+    assert "OPERATIONAL DETAIL" in second
+    assert "ROUTE / CONTINGENCY" in third
+
+    annotations = reader.pages[0].get("/Annots") or []
+    assert len(annotations) >= 4
+    assert all(annotation.get_object().get("/Subtype") == "/Link" for annotation in annotations)
+
+
+def test_level2_begins_with_visual_cover_and_repeats_detail_header(tmp_path: Path) -> None:
+    path = tmp_path / "level_2.pdf"
+    render_pdf(_flight(), [_weather(index) for index in range(24)], [], 2, path)
+
+    reader = PdfReader(path)
+    assert len(reader.pages) > 2
+    first = reader.pages[0].extract_text() or ""
+    second = reader.pages[1].extract_text() or ""
+
+    assert "PILOTDRIVEN" in first
+    assert "PZFW" in first and "166,486 kg" in first
+    assert "SQ304 Expanded Operational Analysis" in second
+    assert "Decision support only - approved documents" in second
+    assert "Page 2" in second
 
 
 def test_run_analysis_normalizes_identity_before_json_and_reports(
@@ -177,4 +211,5 @@ def test_run_analysis_normalizes_identity_before_json_and_reports(
 
     assert result["flight_number"] == "SQ304"
     assert payload["flight"]["flight_number"] == "SQ304"
+    assert payload["view"]["briefing"]["route_label"] == "WSSS → EBBR"
     assert rendered_identities == ["SQ304", "SQ304"]
