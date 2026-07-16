@@ -141,6 +141,11 @@ def _parse_alternates(page1: str) -> list[dict[str, Any]]:
     ]
 
 
+def _decimal_coordinate(hemisphere: str, degrees: str, minutes: str) -> float:
+    value = int(degrees) + float(minutes) / 60
+    return -value if hemisphere in {"S", "W"} else value
+
+
 def _parse_waypoints(route_pages: list[str], route_text: str) -> list[dict[str, Any]]:
     pending: dict[str, Any] | None = None
     waypoints: list[dict[str, Any]] = []
@@ -149,7 +154,9 @@ def _parse_waypoints(route_pages: list[str], route_text: str) -> list[dict[str, 
         r"(?:\s+\d{3}(?:\.\d+)?)?\s+(?P<actm>\d{2}\.\d{2})\b"
     )
     coordinate_line = re.compile(
-        r"^[NS]\d{2}\s+\d{2}\.\d\s+[EW]\d{3}\s+\d{2}\.\d\s+(?P<msa>\d{3})(?P<star>\*)?"
+        r"^(?P<lat_hem>[NS])(?P<lat_deg>\d{2})\s+(?P<lat_min>\d{2}\.\d+)\s+"
+        r"(?P<lon_hem>[EW])(?P<lon_deg>\d{3})\s+(?P<lon_min>\d{2}\.\d+)\s+"
+        r"(?P<msa>\d{3})(?P<star>\*)?"
     )
     vws_line = re.compile(r"\s(?P<tas>\d{3})\s+(?P<vws>\d{3})\s+\d{2}\.\d\s")
     for page_number, text in enumerate(route_pages, start=1):
@@ -164,6 +171,8 @@ def _parse_waypoints(route_pages: list[str], route_text: str) -> list[dict[str, 
                     "actm_minutes": actm_minutes(match.group("actm")),
                     "fir_boundary": name[1:] if name.startswith("-") else None,
                     "source_page": page_number,
+                    "latitude": None,
+                    "longitude": None,
                     "msa_hundreds_ft": None,
                     "msa_asterisk": False,
                     "vws": None,
@@ -176,6 +185,16 @@ def _parse_waypoints(route_pages: list[str], route_text: str) -> list[dict[str, 
             if pending:
                 coordinate = coordinate_line.match(line.strip())
                 if coordinate:
+                    pending["latitude"] = _decimal_coordinate(
+                        coordinate.group("lat_hem"),
+                        coordinate.group("lat_deg"),
+                        coordinate.group("lat_min"),
+                    )
+                    pending["longitude"] = _decimal_coordinate(
+                        coordinate.group("lon_hem"),
+                        coordinate.group("lon_deg"),
+                        coordinate.group("lon_min"),
+                    )
                     name = str(pending["name"])
                     computed = name.startswith("-") or name.startswith(("ENTRY", "EXIT", "**ETP")) or name in {"TOC", "TOD"}
                     if not computed:
@@ -365,6 +384,8 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "destination_runway": destination_line.group("dest_rwy") if destination_line else None,
         "scheduled_departure_utc": departure_utc.isoformat(),
         "scheduled_arrival_utc": arrival_utc.isoformat(),
+        "ground_distance_nm": _int_group(page1, r"GND MILES\s+(\d+)"),
+        "air_distance_nm": _int_group(page1, r"AIR MILES\s+(\d+)"),
         "route_text": route_text,
         "route_waypoints": waypoints,
         "planned_level_profile": level_match.group(0).strip() if level_match else None,
