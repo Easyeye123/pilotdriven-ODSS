@@ -4,6 +4,7 @@
   --green:#216b4a;
   --amber:#b87300;
   --red:#a51e2d;
+  --purple:#5b4b8a;
   --bg:#f3f6fb;
   --border:#d9e1e8;
 }
@@ -25,9 +26,13 @@ th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left;vertica
 th{font-size:12px;text-transform:uppercase;color:#5d6875}
 .button,button{display:inline-block;border:0;border-radius:6px;background:var(--navy);color:white;padding:10px 14px;text-decoration:none;font-weight:700;cursor:pointer}
 .button.secondary{background:#5d6875}.button.green,button.green{background:var(--green)}
-input[type=text],input[type=date],input[type=time],input[type=file],select{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin-top:5px;background:#fff;color:#1f2937}
+.button.danger,button.danger{background:var(--red)}
+input[type=text],input[type=date],input[type=time],input[type=file],select,textarea{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin-top:5px;background:#fff;color:#1f2937;font:inherit}
+textarea{resize:vertical;min-height:84px;line-height:1.45}
 select:disabled,input:disabled{background:#eef2f6;color:#7b8794;cursor:not-allowed}
 label{font-weight:700;font-size:13px}
+fieldset{border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin:0}
+legend{font-weight:700;font-size:13px;color:var(--navy)}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .badge{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--blue);color:var(--navy);font-weight:700;font-size:12px}
 .muted{color:#5d6875;font-size:13px}
@@ -51,6 +56,23 @@ label{font-weight:700;font-size:13px}
 .warning-card{border-left:5px solid var(--amber)}
 details summary{cursor:pointer;color:var(--navy)}
 .manual-grid{margin-top:14px}
+.notes-card{border-top:5px solid var(--purple)}
+.notes-intro{max-width:1000px;line-height:1.5}
+.personal-note-form{margin-top:15px}
+.personal-note-form-grid{display:grid;grid-template-columns:minmax(190px,.8fr) minmax(320px,2fr) minmax(170px,.7fr);gap:14px;align-items:start}
+.personal-note-text-field{grid-column:auto}
+.note-level-options label{display:block;margin:5px 0;font-weight:600}
+.note-level-options input[type=checkbox]{width:auto;margin:0 7px 0 0}
+.personal-note-list{display:grid;gap:12px;margin-top:18px}
+.personal-note-item{border:1px solid var(--border);border-left:5px solid var(--purple);border-radius:8px;padding:13px;background:#fbfaff}
+.personal-note-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}
+.note-placement{background:#eee9f8;color:#493a78}
+.note-level{background:#eaf6ef;color:var(--green);margin-left:5px}
+.personal-note-text{white-space:pre-wrap;line-height:1.55;font-size:14px}
+.personal-note-actions{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;margin-top:12px}
+.personal-note-actions details{flex:1;border-top:1px solid var(--border);padding-top:9px}
+.personal-note-edit-form{margin-top:12px}
+.notes-empty{border-left:4px solid var(--purple);background:#f7f4fc;padding:12px;border-radius:5px;margin-top:16px}
 .timing-card{border-top:5px solid var(--green)}
 .timing-note{max-width:980px;line-height:1.5}
 .timing-form-grid{display:grid;grid-template-columns:1.25fr 1fr 1fr 1.6fr;gap:14px;align-items:end;margin:15px 0 8px}
@@ -72,6 +94,6 @@ details summary{cursor:pointer;color:var(--navy)}
 .timing-details summary{margin-bottom:8px}
 .timing-empty{border-left:4px solid var(--amber);background:#fff8e9;padding:12px;border-radius:5px}
 .waypoint-table-wrap{max-height:520px;overflow:auto}
-@media(max-width:1000px){.timing-form-grid{grid-template-columns:1fr 1fr}.timing-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:1000px){.timing-form-grid{grid-template-columns:1fr 1fr}.timing-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.personal-note-form-grid{grid-template-columns:1fr 1fr}.personal-note-text-field{grid-column:1/-1}}
 @media(max-width:800px){.engine-grid{grid-template-columns:1fr}}
-@media(max-width:800px){.form-grid,.timing-form-grid{grid-template-columns:1fr}.timing-summary{grid-template-columns:1fr 1fr}.card{overflow-x:auto}.flight-summary,.flight-summary tbody{display:block}.flight-summary tr{display:grid;grid-template-columns:minmax(92px,.55fr) minmax(0,1fr)}.flight-summary th,.flight-summary td{min-width:0;overflow-wrap:anywhere}}
+@media(max-width:800px){.form-grid,.timing-form-grid,.personal-note-form-grid{grid-template-columns:1fr}.timing-summary{grid-template-columns:1fr 1fr}.personal-note-header,.personal-note-actions{display:block}.personal-note-actions form{margin-top:10px}.card{overflow-x:auto}.flight-summary,.flight-summary tbody{display:block}.flight-summary tr{display:grid;grid-template-columns:minmax(92px,.55fr) minmax(0,1fr)}.flight-summary th,.flight-summary td{min-width:0;overflow-wrap:anywhere}}
