@@ -28,4 +28,11 @@ jobs:
       - name: Compile source
         run: python -m compileall -q app
       - name: Run tests
-        run: pytest -q
+        run: pytest -q 2>&1 | tee pytest.log
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-test-diagnostics
+          path: pilotdriven_odss_dashboard/pytest.log
+          if-no-files-found: ignore
