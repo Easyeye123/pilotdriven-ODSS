@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0
+
+- Added a required operational-clock form for absolute UTC calculations.
+- Added actual takeoff time (ATOT) as the normal time-zero reference.
+- Added optional waypoint ATA re-anchoring: derived ATOT equals entered waypoint ATA minus the waypoint CFP ACTM.
+- Added calculated UTC tables for pertinent events, early ATC/FIR calls, FIR crossings and all parsed route waypoints.
+- Added automatic date rollover and scheduled-departure variance.
+- Added actual-time findings to Level 1, Level 2 and canonical analysis JSON outputs.
+- Added automatic SQLite migration for timing-reference fields.
+- Added ATOT and waypoint-ATA web workflow regression tests.
+- Changed normal local startup guidance to run without reload and documented `.venv` exclusion for development reload.
+
 ## 0.2.1
 
 - Corrected airport-specific NOTAM applicability using B/C validity and supported Item D schedules.
