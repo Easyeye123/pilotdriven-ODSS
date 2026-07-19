@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 from typing import Any
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "data" / "odss.db"
+from .config import DATA_DIR
+
+DB_PATH = DATA_DIR / "odss.db"
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS flights (

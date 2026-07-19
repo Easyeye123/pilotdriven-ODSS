@@ -338,9 +338,11 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         masses["planned_landing_weight_kg"] - masses["planned_zfw_kg"]
     )
     perf_text = "\n".join(cfp_pages[:5])
+    runway_condition_match = re.search(r"RWY COND:\s*(\S+)", perf_text)
+    eosid_match = re.search(r"EOSID\s*:\s*(.+)", perf_text)
     performance = {
         "runway": (re.search(r"[A-Z]{4} RWY\s+(\w+)", perf_text).group(1) if re.search(r"[A-Z]{4} RWY\s+(\w+)", perf_text) else None),
-        "runway_condition": "DRY" if "RWY COND: DRY" in perf_text else None,
+        "runway_condition": runway_condition_match.group(1) if runway_condition_match else None,
         "thrust_setting": "FULL" if "STD RATING: FULL" in perf_text else None,
         "flap_setting": _int_group(perf_text, r"FLAPS\s+(\d+)"),
         "temperature_c": _int_group(perf_text, r"PLAN TEMP P(\d+)"),
@@ -348,7 +350,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "wind": (re.search(r"PLAN WIND\s+(\S+)", perf_text).group(1) if re.search(r"PLAN WIND\s+(\S+)", perf_text) else None),
         "packs_on": True if "PACKS ON" in perf_text else None,
         "anti_ice_on": False if "ANTI-ICE OFF" in perf_text else None,
-        "eosid": (re.search(r"EOSID\s*:\s*(.+)", perf_text).group(1).strip() if re.search(r"EOSID\s*:\s*(.+)", perf_text) else None),
+        "eosid": eosid_match.group(1).strip().rstrip(".") if eosid_match else None,
         "obstacle_rtow_kg": _int_group(perf_text, r"RTOW\(PERF\)\s+(\d+)"),
         "landing_rtow_kg": _int_group(perf_text, r"RTOW\(LAND\)\s+(\d+)"),
         "structural_rtow_kg": _int_group(perf_text, r"RTOW\(STRUC\)\s+(\d+)"),

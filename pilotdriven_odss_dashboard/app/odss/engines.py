@@ -36,6 +36,14 @@ def finding(
     }
 
 
+def _switch_state(value: bool | None) -> str:
+    if value is True:
+        return "ON"
+    if value is False:
+        return "OFF"
+    return "not parsed"
+
+
 def _intervals_overlap(
     first_start: datetime,
     first_end: datetime,
@@ -393,13 +401,15 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         "Take-off performance summary",
         f"Conditional RTOW margin {format_kg(margin)}.",
         [
-            f"Runway {performance.get('runway')}; condition {performance.get('runway_condition')}; "
-            f"thrust {performance.get('thrust_setting')}; flaps {performance.get('flap_setting')}.",
+            f"Runway {performance.get('runway') or 'not parsed'}; "
+            f"condition {performance.get('runway_condition') or 'not parsed'}; "
+            f"thrust {performance.get('thrust_setting') or 'not parsed'}; "
+            f"flaps {performance.get('flap_setting') if performance.get('flap_setting') is not None else 'not parsed'}.",
             f"Temperature {performance.get('temperature_c')} C; QNH {performance.get('qnh_hpa')} hPa; "
             f"wind {performance.get('wind')}.",
-            f"Packs {'ON' if performance.get('packs_on') else 'OFF/unknown'}; "
-            f"anti-ice {'ON' if performance.get('anti_ice_on') else 'OFF/unknown'}; "
-            f"EOSID {performance.get('eosid')}.",
+            f"Packs {_switch_state(performance.get('packs_on'))}; "
+            f"anti-ice {_switch_state(performance.get('anti_ice_on'))}; "
+            f"EOSID {performance.get('eosid') or 'not parsed'}.",
             f"Obstacle RTOW {format_kg(performance.get('obstacle_rtow_kg'))}; "
             f"landing RTOW {format_kg(performance.get('landing_rtow_kg'))}; "
             f"structural RTOW {format_kg(performance.get('structural_rtow_kg'))}.",

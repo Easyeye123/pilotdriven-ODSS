@@ -4,7 +4,7 @@ PilotDriven Operational Decision Support System development repository.
 
 The working personal dashboard is in [`pilotdriven_odss_dashboard/`](pilotdriven_odss_dashboard/README.md).
 
-Current dashboard release: **v0.2.0** — functional Lido CFP parsing, deterministic ODSS analysis, structured JSON output, and automatic Level 1 / Level 2 PDF generation.
+Current dashboard release: **v0.5.0** — functional Lido CFP parsing, deterministic ODSS analysis, structured JSON output, visual route briefing, and automatic Level 1 / Level 2 PDF generation.
 
 ## Quick start
 

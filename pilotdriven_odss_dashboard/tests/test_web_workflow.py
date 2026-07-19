@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -35,7 +36,7 @@ PZFW 180000
 PTOW 245000
 PLWT 195000
 """,
-        "LIDO CFP PAGE 2\nTAKEOFF PERFORMANCE\nWSSS RWY 02L\nRWY COND: DRY\n",
+        "LIDO CFP PAGE 2\nTAKEOFF PERFORMANCE\nWSSS RWY 02L\nRWY COND:  DRY\nEOSID : STRAIGHT OUT.\n",
         "LIDO CFP PAGE 3\nEDTO INFORMATION\n",
         "LIDO CFP PAGE 4\nFUEL AND MASS SUMMARY\n",
         "LIDO CFP PAGE 5\nALTERNATE SUMMARY\n",
@@ -138,8 +139,61 @@ def test_long_filename_upload_analyse_and_downloads(
     assert analysis.json()["flight"]["flight_number"] == "SQ304"
     assert analysis.json()["flight"]["departure"] == "WSSS"
     assert analysis.json()["flight"]["destination"] == "EBBR"
+    assert analysis.json()["flight"]["performance"]["runway_condition"] == "DRY"
+    assert analysis.json()["flight"]["performance"]["eosid"] == "STRAIGHT OUT"
     assert analysis.json()["view"]["page_count"] == 7
     assert len(analysis.json()["flight"]["route_waypoints"]) == 2
+
+
+def test_health_is_public_and_dashboard_requires_configured_credentials(
+    web_app: tuple[TestClient, dict[str, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = web_app
+    monkeypatch.setenv("ODSS_USERNAME", "boss")
+    monkeypatch.setenv("ODSS_PASSWORD", "correct horse battery staple")
+
+    health = client.get("/healthz")
+    anonymous = client.get("/")
+    wrong = client.get(
+        "/",
+        headers={"Authorization": "Basic " + base64.b64encode(b"boss:wrong").decode("ascii")},
+    )
+    authorized = client.get(
+        "/",
+        headers={
+            "Authorization": "Basic "
+            + base64.b64encode(b"boss:correct horse battery staple").decode("ascii")
+        },
+    )
+
+    assert health.status_code == 200
+    assert health.json() == {"status": "ok", "version": "0.5.0"}
+    assert anonymous.status_code == 401
+    assert anonymous.headers["www-authenticate"].startswith("Basic")
+    assert wrong.status_code == 401
+    assert authorized.status_code == 200
+    assert authorized.headers["cache-control"] == "no-store"
+
+
+def test_authenticated_cross_origin_write_is_refused(
+    web_app: tuple[TestClient, dict[str, Path]],
+    lido_pdf: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = web_app
+    monkeypatch.setenv("ODSS_USERNAME", "boss")
+    monkeypatch.setenv("ODSS_PASSWORD", "secret")
+    authorization = "Basic " + base64.b64encode(b"boss:secret").decode("ascii")
+
+    response = client.post(
+        "/upload",
+        headers={"Authorization": authorization, "Origin": "https://attacker.example"},
+        files={"file": ("SQ304.pdf", lido_pdf, "application/pdf")},
+    )
+
+    assert response.status_code == 403
+    assert database.list_flights() == []
 
 
 def test_fake_pdf_is_rejected_without_storage(

@@ -28,7 +28,9 @@ jobs:
       - name: Compile source
         run: python -m compileall -q app
       - name: Run tests
-        run: pytest -q 2>&1 | tee pytest.log
+        run: |
+          set -o pipefail
+          pytest -q 2>&1 | tee pytest.log
       - name: Generate visual briefing samples
         run: python tests/generate_visual_samples.py
       - name: Upload visual briefing samples
