@@ -155,7 +155,55 @@ This protects a single-user demonstration but does not turn the personal dashboa
 
 The future PilotDriven frontend should consume the canonical `view.briefing` and `flight.route_waypoints` objects. It may replace the visual components and map renderer, but it should not duplicate or change deterministic operational calculations in client-side code.
 
-The detailed implementation contract is in `../docs/visual-route-briefing-v0.5.md`.
+The detailed v0.5 implementation contract is in `../docs/visual-route-briefing-v0.5.md`.
+
+## ODSS v0.6 PilotDriven handoff
+
+The complete Phase 1–7 reference implementation is under:
+
+```text
+../integration/v0.6/
+```
+
+It contains:
+
+- versioned map contract;
+- route and marker GeoJSON;
+- stable route hash;
+- marker roles and label priorities;
+- Amazon Location Hybrid / MapLibre adapter;
+- Playwright PDF map capture;
+- Amazon Location static fallback;
+- schematic offline fallback;
+- FastAPI map endpoints;
+- print-map HTML/JavaScript/CSS;
+- React/Next.js PilotDriven component;
+- contract tests and runbooks.
+
+Read:
+
+```text
+../HANDOFF_MANIFEST.md
+../docs/handoff/PHASES_1_TO_7_IMPLEMENTATION.md
+../docs/handoff/PILOTDRIVEN_COMBINATION_GUIDE.md
+../docs/architecture/ADR-006-realistic-map-rendering.md
+```
+
+Install the optional map dependencies:
+
+```bash
+python -m pip install -r ../integration/v0.6/reference/requirements-map.txt
+python -m playwright install chromium
+```
+
+Copy `.env.example` to `.env` and configure the Amazon Location key. The realistic map remains disabled until that key and the MapLibre/Playwright integration are configured. The schematic map remains the explicitly labelled final fallback.
+
+Run the v0.6 reference tests:
+
+```bash
+cd ../integration/v0.6/reference
+PYTHONPATH=. pytest -q
+```
 
 ## Reference-library limitation
 

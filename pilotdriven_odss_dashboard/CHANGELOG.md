@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0 — integration handoff reference
+
+- Preserved the v0.5 schematic implementation on `archive/odss-v0.5-schematic-baseline`.
+- Added the complete Phase 1–7 implementation and PilotDriven combination guide.
+- Added canonical route/marker GeoJSON, bounds, route hash and priority-label reference code.
+- Added a provider-neutral `MapRenderer` contract and renderer chain.
+- Added Amazon Location Hybrid / MapLibre interactive reference code.
+- Added Playwright map-element capture for PDF parity.
+- Added Amazon Location GetStaticMap fallback and labelled schematic fallback.
+- Added FastAPI map endpoints, print-map template and map assets.
+- Added a React/Next.js PilotDriven map component and TypeScript contract types.
+- Added AWS setup, Playwright, API, testing and acceptance documentation.
+- Added a GitHub Actions workflow that validates and packages the complete handoff bundle.
+- No API keys, source CFPs, generated reports or proprietary manuals are included.
+
 ## 0.5.0
 
 - Added a dark PilotDriven-style visual briefing dashboard for completed CFP analyses.
@@ -38,31 +53,26 @@
 
 - Added a required operational-clock form for absolute UTC calculations.
 - Added actual takeoff time (ATOT) as the normal time-zero reference.
-- Added optional waypoint ATA re-anchoring: derived ATOT equals entered waypoint ATA minus the waypoint CFP ACTM.
-- Added calculated UTC tables for pertinent events, early ATC/FIR calls, FIR crossings and all parsed route waypoints.
+- Added optional waypoint ATA re-anchoring.
+- Added calculated UTC tables for pertinent events, early calls, FIR crossings and route waypoints.
 - Added automatic date rollover and scheduled-departure variance.
-- Added actual-time findings to Level 1, Level 2 and canonical analysis JSON outputs.
+- Added actual-time findings to Level 1, Level 2 and canonical analysis JSON.
 - Added automatic SQLite migration for timing-reference fields.
-- Added ATOT and waypoint-ATA web workflow regression tests.
-- Changed normal local startup guidance to run without reload and documented `.venv` exclusion for development reload.
 
 ## 0.2.1
 
-- Corrected airport-specific NOTAM applicability using B/C validity and supported Item D schedules.
-- Removed per-airport pre-filter truncation and prioritized critical destination and alternate findings in Level 1.
+- Corrected airport-specific NOTAM applicability using validity and supported schedules.
 - Added controlled PDF validation, upload limits and incomplete-CFP failure handling.
-- Made reruns clear stale artifacts and generate uniquely named JSON and PDF outputs before publication.
-- Corrected canonical flight identity, severity aggregation, timeline values and repeated PDF headers and page numbers.
-- Updated FastAPI and Starlette and added upload, engine, reporting and workflow regression tests.
+- Corrected report pagination, timing values and repeated headers.
+- Added upload, engine, reporting and workflow regression tests.
 
 ## 0.2.0
 
-- Replaced the placeholder analysis action with the working deterministic ODSS core.
-- Added Lido CFP parsing, MEL/CDDL matching, BOBCAT, performance, EDTO, terrain, VWS, communications and depressurisation engines.
-- Added selected weather and pertinent airport NOTAM extraction.
-- Added automatic Level 1 and Level 2 PDF generation.
-- Added canonical analysis JSON storage and organised findings in the flight workspace.
-- Added visible failure diagnostics and automatic SQLite schema migration.
+- Replaced the placeholder action with the deterministic ODSS core.
+- Added Lido parsing, MEL/CDDL, BOBCAT, performance, EDTO, terrain, VWS, communications and depressurisation engines.
+- Added selected weather and pertinent NOTAM extraction.
+- Added Level 1 and Level 2 PDF generation.
+- Added canonical JSON and organised findings.
 
 ## 0.1.0
 

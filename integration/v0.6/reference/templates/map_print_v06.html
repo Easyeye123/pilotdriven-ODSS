@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ODSS print map</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.x/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="/static/odss-maplibre-v06.css">
+  <script src="https://unpkg.com/maplibre-gl@5.x/dist/maplibre-gl.js"></script>
+</head>
+<body class="odss-print-map-body">
+  <main id="odss-print-map" class="odss-map-frame">
+    <div id="odss-map" class="odss-map-canvas"></div>
+    <div class="odss-map-status">
+      <span>CFP route briefing orientation</span>
+      <span>Not for navigation</span>
+    </div>
+    <div class="odss-map-attribution">
+      {% for item in contract.attribution %}<span>{{ item }}</span>{% endfor %}
+    </div>
+  </main>
+
+  <script>
+    window.ODSS_MAP_BOOTSTRAP = {{ {
+      "styleUrl": map_config.style_url,
+      "route": map_config.route,
+      "markers": map_config.markers,
+      "bounds": map_config.bounds,
+      "priorityLabels": map_config.priority_labels,
+      "routeHash": map_config.route_hash,
+      "printMode": true
+    } | tojson }};
+  </script>
+  <script src="/static/odss-maplibre-v06.js"></script>
+</body>
+</html>
