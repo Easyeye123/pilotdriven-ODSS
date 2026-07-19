@@ -2,11 +2,27 @@
 
 PilotDriven Operational Decision Support System development repository.
 
-## Current state
+The working personal dashboard is in [`pilotdriven_odss_dashboard/`](pilotdriven_odss_dashboard/README.md).
 
-- **ODSS v0.5** is the working local FastAPI dashboard.
-- It parses supported Lido CFP packages, runs deterministic operational analysis, creates canonical JSON, and generates Level 1 and Level 2 reports.
-- **ODSS v0.6** is the integration handoff for the final realistic-map standard and future combination with `pilotdriven.com`.
+Current dashboard release: **v0.5.0** — functional Lido CFP parsing, deterministic ODSS analysis, structured JSON output, visual route briefing, and automatic Level 1 / Level 2 PDF generation.
+
+## Quick start
+
+```bash
+git clone https://github.com/Easyeye123/pilotdriven-ODSS.git
+cd pilotdriven-ODSS/pilotdriven_odss_dashboard
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+Open `http://127.0.0.1:8000`, upload a Lido CFP PDF, create the flight workspace, and select **Run ODSS analysis**.
+
+## ODSS v0.6 PilotDriven handoff
+
+ODSS v0.6 is the integration handoff for the final realistic-map standard and future combination with `pilotdriven.com`.
 
 The v0.5 schematic baseline is preserved at:
 
@@ -14,7 +30,7 @@ The v0.5 schematic baseline is preserved at:
 archive/odss-v0.5-schematic-baseline
 ```
 
-## Repository layout
+### Repository layout
 
 ```text
 pilotdriven_odss_dashboard/
@@ -32,7 +48,7 @@ HANDOFF_MANIFEST.md
   File-level handoff inventory
 ```
 
-## v0.6 architecture
+### v0.6 architecture
 
 ```text
 Lido CFP
@@ -47,28 +63,20 @@ Lido CFP
 
 The PilotDriven frontend may replace presentation and map controls. It must not independently recalculate NOTAM applicability, ACTM/UTC, BOBCAT, EDTO, MSA/VWS, MEL/CDL or depressurisation findings.
 
-## Start the current dashboard
+### Start with Python 3.12
+
+For normal local use:
 
 ```bash
-git clone https://github.com/Easyeye123/pilotdriven-ODSS.git
-cd pilotdriven-ODSS/pilotdriven_odss_dashboard
-
+cd pilotdriven_odss_dashboard
 python3.12 -m venv .venv
 source .venv/bin/activate
-
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open:
-
-```text
-http://127.0.0.1:8000
-```
-
-Do not use unrestricted `--reload` with an in-project `.venv`. For development:
+For development reload, exclude `.venv`:
 
 ```bash
 python -m uvicorn app.main:app \
@@ -78,9 +86,7 @@ python -m uvicorn app.main:app \
   --port 8000
 ```
 
-Use Python 3.12. Run without reload for normal use, or exclude `.venv` from the development reloader.
-
-## Read first for PilotDriven combination
+### Read first for PilotDriven combination
 
 1. [`HANDOFF_MANIFEST.md`](HANDOFF_MANIFEST.md)
 2. [`docs/handoff/PHASES_1_TO_7_IMPLEMENTATION.md`](docs/handoff/PHASES_1_TO_7_IMPLEMENTATION.md)
