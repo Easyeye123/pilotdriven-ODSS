@@ -143,6 +143,14 @@ data/results/       structured ODSS JSON results
 data/reports/       generated Level 1 / Level 2 PDFs
 ```
 
+Set `ODSS_DATA_DIR` to move all four paths to a writable deployment volume. Render's free web-service filesystem is ephemeral, so a free boss-demo instance loses uploaded flights when it is restarted or redeployed. Attach a persistent disk and point `ODSS_DATA_DIR` at its mount path before relying on saved flight history.
+
+## Limited boss QA deployment
+
+An internet-facing instance must set both `ODSS_USERNAME` and `ODSS_PASSWORD`. The dashboard then requires HTTP Basic authentication on every page and file download while leaving `/healthz` public for hosting health checks. Startup fails if only one credential is configured.
+
+This protects a single-user demonstration but does not turn the personal dashboard into a production multi-user aviation system. Keep the deployment limited to authorised synthetic or approved QA CFPs until tenant isolation, encrypted object storage, background processing and formal reference governance are implemented.
+
 ## PilotDriven integration boundary
 
 The future PilotDriven frontend should consume the canonical `view.briefing` and `flight.route_waypoints` objects. It may replace the visual components and map renderer, but it should not duplicate or change deterministic operational calculations in client-side code.

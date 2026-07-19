@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import base64
 from contextlib import asynccontextmanager
+import os
+import secrets
 from pathlib import Path
 import traceback
+from urllib.parse import urlsplit
 import uuid
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .analysis import infer_metadata, load_analysis, run_odss_analysis
+from .config import APP_VERSION, BASE_DIR, DATA_DIR
 from .database import (
     attach_report,
     begin_analysis,
@@ -40,18 +45,52 @@ from .personal_notes import (
     validate_personal_note,
 )
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-UPLOAD_DIR = BASE_DIR / "data" / "uploads"
-REPORT_DIR = BASE_DIR / "data" / "reports"
-RESULT_DIR = BASE_DIR / "data" / "results"
+UPLOAD_DIR = DATA_DIR / "uploads"
+REPORT_DIR = DATA_DIR / "reports"
+RESULT_DIR = DATA_DIR / "results"
 TEMPLATE_DIR = BASE_DIR / "app" / "templates"
 STATIC_DIR = BASE_DIR / "app" / "static"
 MAX_PDF_BYTES = 25 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
+AUTH_REALM = "PilotDriven ODSS"
+
+
+def _configured_auth() -> tuple[str, str] | None:
+    username = os.environ.get("ODSS_USERNAME")
+    password = os.environ.get("ODSS_PASSWORD")
+    if username is None and password is None:
+        return None
+    if not username or not password:
+        raise RuntimeError("ODSS_USERNAME and ODSS_PASSWORD must both be configured.")
+    return username, password
+
+
+def _is_authorized(request: Request, username: str, password: str) -> bool:
+    scheme, separator, token = request.headers.get("authorization", "").partition(" ")
+    if separator != " " or scheme.lower() != "basic":
+        return False
+    expected = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+    return secrets.compare_digest(token, expected)
+
+
+def _is_same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    return urlsplit(origin).netloc.casefold() == request.headers.get("host", "").casefold()
+
+
+def _secure_response(response):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    _configured_auth()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
@@ -59,9 +98,37 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="PilotDriven ODSS Personal Dashboard", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="PilotDriven ODSS Personal Dashboard", version=APP_VERSION, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATE_DIR)
+
+
+@app.middleware("http")
+async def protect_dashboard(request: Request, call_next):
+    if request.url.path == "/healthz":
+        return _secure_response(await call_next(request))
+    try:
+        credentials = _configured_auth()
+    except RuntimeError:
+        return _secure_response(
+            PlainTextResponse("ODSS authentication is not configured safely.", status_code=503)
+        )
+    if credentials and not _is_authorized(request, *credentials):
+        return _secure_response(
+            PlainTextResponse(
+                "Authentication required.",
+                status_code=401,
+                headers={"WWW-Authenticate": f'Basic realm="{AUTH_REALM}", charset="UTF-8"'},
+            )
+        )
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not _is_same_origin(request):
+        return _secure_response(PlainTextResponse("Cross-origin request refused.", status_code=403))
+    return _secure_response(await call_next(request))
+
+
+@app.get("/healthz")
+def healthcheck():
+    return JSONResponse({"status": "ok", "version": APP_VERSION})
 
 
 def _normalized_pdf_name(filename: str | None, fallback: str) -> str:

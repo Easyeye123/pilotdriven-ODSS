@@ -12,9 +12,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import BaseDocTemplate, Flowable, Frame, PageBreak, PageTemplate, Paragraph
 
-from ..personal_notes import PERSONAL_NOTE_PLACEMENT_LABELS
 from .briefing import build_briefing_view, draw_route_map_pdf
-from .constants import format_actm, format_kg
 
 
 PAGE_SIZE = landscape(A4)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 from collections.abc import Iterator
 from io import BytesIO
@@ -126,16 +125,18 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     assert "Departure airport section" in workspace.text
 
     analysis = client.get(f"/files/analysis/{flight_id}").json()
-    assert analysis["schema_version"] == "0.4.0"
+    assert analysis["schema_version"] == "0.5.0"
     assert analysis["view"]["personal_note_count"] == 1
     assert analysis["flight"]["personal_notes"][0]["placement"] == "departure"
 
     level1_text = _pdf_text(client.get(f"/files/report/{flight_id}/1"))
     level2_text = _pdf_text(client.get(f"/files/report/{flight_id}/2"))
-    for report_text in (level1_text, level2_text):
-        assert "Departure airport - personal notes" in report_text
-        assert "Confirm departure stand and pushback plan." in report_text
-        assert "not extracted, validated or endorsed" in report_text
+    assert "DEPARTURE AIRPORT" in level1_text
+    assert "Confirm departure stand and pushback plan." in level1_text
+    assert "Pilot-entered content; not ODSS-validated." in level1_text
+    assert "Departure airport - personal notes" in level2_text
+    assert "Confirm departure stand and pushback plan." in level2_text
+    assert "not extracted, validated or endorsed" in level2_text
 
     response = client.post(
         f"/flights/{flight_id}/notes",
@@ -166,7 +167,7 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     assert updated["placement"] == "destination"
     assert updated["note_text"] == "Confirm destination stand and towing requirement."
     level1_text = _pdf_text(client.get(f"/files/report/{flight_id}/1"))
-    assert "Destination airport - personal notes" in level1_text
+    assert "DESTINATION AIRPORT" in level1_text
     assert "Confirm destination stand and towing requirement." in level1_text
     assert "Confirm departure stand and pushback plan." not in level1_text
 
