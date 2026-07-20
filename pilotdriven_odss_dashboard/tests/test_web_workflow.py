@@ -196,6 +196,57 @@ def test_authenticated_cross_origin_write_is_refused(
     assert database.list_flights() == []
 
 
+def test_same_origin_fetch_metadata_accepts_null_origin_upload(
+    web_app: tuple[TestClient, dict[str, Path]],
+    lido_pdf: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = web_app
+    monkeypatch.setenv("ODSS_USERNAME", "boss")
+    monkeypatch.setenv("ODSS_PASSWORD", "secret")
+    authorization = "Basic " + base64.b64encode(b"boss:secret").decode("ascii")
+
+    response = client.post(
+        "/upload",
+        headers={
+            "Authorization": authorization,
+            "Origin": "null",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Dest": "document",
+        },
+        files={"file": ("SQ304.pdf", lido_pdf, "application/pdf")},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/flights/1"
+    assert len(database.list_flights()) == 1
+
+
+def test_cross_site_fetch_metadata_overrides_matching_origin(
+    web_app: tuple[TestClient, dict[str, Path]],
+    lido_pdf: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = web_app
+    monkeypatch.setenv("ODSS_USERNAME", "boss")
+    monkeypatch.setenv("ODSS_PASSWORD", "secret")
+    authorization = "Basic " + base64.b64encode(b"boss:secret").decode("ascii")
+
+    response = client.post(
+        "/upload",
+        headers={
+            "Authorization": authorization,
+            "Origin": "http://testserver",
+            "Sec-Fetch-Site": "cross-site",
+        },
+        files={"file": ("SQ304.pdf", lido_pdf, "application/pdf")},
+    )
+
+    assert response.status_code == 403
+    assert database.list_flights() == []
+
+
 def test_fake_pdf_is_rejected_without_storage(
     web_app: tuple[TestClient, dict[str, Path]],
 ) -> None:
