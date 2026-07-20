@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from contextlib import asynccontextmanager
+import logging
 import os
 import secrets
 from pathlib import Path
@@ -54,6 +55,8 @@ MAX_PDF_BYTES = 25 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 AUTH_REALM = "PilotDriven ODSS"
 
+logger = logging.getLogger(__name__)
+
 
 def _configured_auth() -> tuple[str, str] | None:
     username = os.environ.get("ODSS_USERNAME")
@@ -73,7 +76,13 @@ def _is_authorized(request: Request, username: str, password: str) -> bool:
     return secrets.compare_digest(token, expected)
 
 
-def _is_same_origin(request: Request) -> bool:
+def _is_trusted_write_request(request: Request) -> bool:
+    fetch_site = request.headers.get("sec-fetch-site", "").casefold()
+    if fetch_site == "same-origin":
+        return True
+    if fetch_site in {"same-site", "cross-site"}:
+        return False
+
     origin = request.headers.get("origin")
     if not origin:
         return True
@@ -121,7 +130,20 @@ async def protect_dashboard(request: Request, call_next):
                 headers={"WWW-Authenticate": f'Basic realm="{AUTH_REALM}", charset="UTF-8"'},
             )
         )
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not _is_same_origin(request):
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not _is_trusted_write_request(
+        request
+    ):
+        logger.warning(
+            "Cross-origin write refused method=%s path=%s origin=%r host=%r "
+            "sec_fetch_site=%r sec_fetch_mode=%r sec_fetch_dest=%r",
+            request.method,
+            request.url.path,
+            request.headers.get("origin"),
+            request.headers.get("host"),
+            request.headers.get("sec-fetch-site"),
+            request.headers.get("sec-fetch-mode"),
+            request.headers.get("sec-fetch-dest"),
+        )
         return _secure_response(PlainTextResponse("Cross-origin request refused.", status_code=403))
     return _secure_response(await call_next(request))
 
