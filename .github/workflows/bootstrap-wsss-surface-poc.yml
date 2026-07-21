@@ -55,16 +55,33 @@ jobs:
 
       - name: Run deterministic and real-snapshot regression tests
         working-directory: integration/v0.7/wsss-surface-poc
-        run: pytest -q
+        run: |
+          mkdir -p validation
+          set +e
+          pytest -q 2>&1 | tee validation/pytest.txt
+          status=${PIPESTATUS[0]}
+          echo "$status" > validation/pytest.exitcode
+          exit 0
 
       - name: Build sample surface-map contract
         working-directory: integration/v0.7/wsss-surface-poc
-        run: python scripts/build_sample_contract.py
+        run: |
+          set +e
+          python scripts/build_sample_contract.py 2>&1 | tee validation/sample-contract.txt
+          status=${PIPESTATUS[0]}
+          echo "$status" > validation/sample-contract.exitcode
+          exit 0
 
-      - name: Commit proof of concept
+      - name: Commit proof of concept and validation evidence
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "feat: add WSSS OSM surface NOTAM proof of concept"
           git push origin HEAD:feature/v0.7-wsss-surface-notam-poc
+
+      - name: Enforce validation status after publishing evidence
+        working-directory: integration/v0.7/wsss-surface-poc
+        run: |
+          test "$(cat validation/pytest.exitcode)" = "0"
+          test "$(cat validation/sample-contract.exitcode)" = "0"
