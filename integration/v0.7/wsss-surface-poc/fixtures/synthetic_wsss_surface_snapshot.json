@@ -1,0 +1,333 @@
+{
+  "airport": "WSSS",
+  "attribution": "Synthetic test geometry",
+  "bbox": [
+    1.325,
+    103.98,
+    1.365,
+    104.015
+  ],
+  "generated_at_utc": "2026-07-21T00:00:00Z",
+  "licence": "test-only",
+  "points": [
+    {
+      "aeroway": "parking_position",
+      "coordinate": [
+        104.0047,
+        1.355
+      ],
+      "osm_id": 2001,
+      "ref": "D49",
+      "tags": {
+        "aeroway": "parking_position",
+        "ref": "D49"
+      }
+    },
+    {
+      "aeroway": "parking_position",
+      "coordinate": [
+        104.0047,
+        1.3535
+      ],
+      "osm_id": 2002,
+      "ref": "E24L",
+      "tags": {
+        "aeroway": "parking_position",
+        "ref": "E24L"
+      }
+    },
+    {
+      "aeroway": "parking_position",
+      "coordinate": [
+        104.0047,
+        1.3575
+      ],
+      "osm_id": 2003,
+      "ref": "E26",
+      "tags": {
+        "aeroway": "parking_position",
+        "ref": "E26"
+      }
+    }
+  ],
+  "schema_version": "1.0",
+  "source": "synthetic-test-fixture",
+  "source_timestamp": "2026-07-21T00:00:00Z",
+  "ways": [
+    {
+      "aeroway": "taxiway",
+      "coordinates": [
+        [
+          103.99,
+          1.35
+        ],
+        [
+          103.995,
+          1.35
+        ],
+        [
+          104.0,
+          1.35
+        ]
+      ],
+      "node_ids": [
+        1,
+        3,
+        5
+      ],
+      "osm_id": 1001,
+      "ref": "R",
+      "tags": {
+        "aeroway": "taxiway",
+        "ref": "R"
+      }
+    },
+    {
+      "aeroway": "taxiway",
+      "coordinates": [
+        [
+          103.995,
+          1.35
+        ],
+        [
+          103.995,
+          1.352
+        ],
+        [
+          103.995,
+          1.354
+        ]
+      ],
+      "node_ids": [
+        3,
+        15,
+        13
+      ],
+      "osm_id": 1002,
+      "ref": "R7",
+      "tags": {
+        "aeroway": "taxiway",
+        "ref": "R7"
+      }
+    },
+    {
+      "aeroway": "taxiway",
+      "coordinates": [
+        [
+          103.99,
+          1.354
+        ],
+        [
+          103.995,
+          1.354
+        ],
+        [
+          104.0,
+          1.354
+        ]
+      ],
+      "node_ids": [
+        11,
+        13,
+        17
+      ],
+      "osm_id": 1003,
+      "ref": "R4",
+      "tags": {
+        "aeroway": "taxiway",
+        "ref": "R4"
+      }
+    },
+    {
+      "aeroway": "taxiway",
+      "coordinates": [
+        [
+          103.995,
+          1.352
+        ],
+        [
+          104.0,
+          1.352
+        ],
+        [
+          104.003,
+          1.352
+        ]
+      ],
+      "node_ids": [
+        15,
+        21,
+        25
+      ],
+      "osm_id": 1004,
+      "ref": "R5",
+      "tags": {
+        "aeroway": "taxiway",
+        "ref": "R5"
+      }
+    },
+    {
+      "aeroway": "taxiway",
+      "coordinates": [
+        [
+          104.003,
+          1.348
+        ],
+        [
+          104.003,
+          1.352
+        ],
+        [
+          104.003,
+          1.356
+        ]
+      ],
+      "node_ids": [
+        23,
+        25,
+        27
+      ],
+      "osm_id": 1005,
+      "ref": "R8",
+      "tags": {
+        "aeroway": "taxiway",
+        "ref": "R8"
+      }
+    },
+    {
+      "aeroway": "taxiway",
+      "coordinates": [
+        [
+          104.0,
+          1.35
+        ],
+        [
+          104.005,
+          1.35
+        ],
+        [
+          104.01,
+          1.35
+        ]
+      ],
+      "node_ids": [
+        31,
+        33,
+        35
+      ],
+      "osm_id": 1010,
+      "ref": "Q",
+      "tags": {
+        "aeroway": "taxiway",
+        "ref": "Q"
+      }
+    },
+    {
+      "aeroway": "taxiway",
+      "coordinates": [
+        [
+          104.005,
+          1.35
+        ],
+        [
+          104.005,
+          1.355
+        ],
+        [
+          104.005,
+          1.36
+        ]
+      ],
+      "node_ids": [
+        33,
+        37,
+        39
+      ],
+      "osm_id": 1011,
+      "ref": "P7",
+      "tags": {
+        "aeroway": "taxiway",
+        "ref": "P7"
+      }
+    },
+    {
+      "aeroway": "taxiway",
+      "coordinates": [
+        [
+          104.0,
+          1.36
+        ],
+        [
+          104.005,
+          1.36
+        ],
+        [
+          104.01,
+          1.36
+        ]
+      ],
+      "node_ids": [
+        41,
+        39,
+        43
+      ],
+      "osm_id": 1012,
+      "ref": "P",
+      "tags": {
+        "aeroway": "taxiway",
+        "ref": "P"
+      }
+    },
+    {
+      "aeroway": "taxiway",
+      "coordinates": [
+        [
+          104.01,
+          1.348
+        ],
+        [
+          104.01,
+          1.35
+        ],
+        [
+          104.01,
+          1.36
+        ]
+      ],
+      "node_ids": [
+        45,
+        35,
+        43
+      ],
+      "osm_id": 1013,
+      "ref": "P8",
+      "tags": {
+        "aeroway": "taxiway",
+        "ref": "P8"
+      }
+    },
+    {
+      "aeroway": "runway",
+      "coordinates": [
+        [
+          103.9849,
+          1.3287
+        ],
+        [
+          103.9989,
+          1.362
+        ]
+      ],
+      "node_ids": [
+        60,
+        61
+      ],
+      "osm_id": 1020,
+      "ref": "02C/20C",
+      "tags": {
+        "aeroway": "runway",
+        "ref": "02C/20C"
+      }
+    }
+  ]
+}

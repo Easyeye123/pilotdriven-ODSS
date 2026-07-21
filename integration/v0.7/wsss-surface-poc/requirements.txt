@@ -1,0 +1,6 @@
+fastapi>=0.115,<1
+networkx>=3.2,<4
+pydantic>=2.7,<3
+pyproj>=3.6,<4
+shapely>=2.0,<3
+uvicorn[standard]>=0.30,<1
