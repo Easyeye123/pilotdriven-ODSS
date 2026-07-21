@@ -1,0 +1,59 @@
+name: Bootstrap WSSS surface NOTAM POC
+
+on:
+  push:
+    branches:
+      - feature/v0.7-wsss-surface-notam-poc
+    paths:
+      - "integration/v0.7/wsss-surface-poc-bootstrap.tar.gz.b64"
+
+permissions:
+  contents: write
+
+jobs:
+  unpack-fetch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/v0.7-wsss-surface-notam-poc
+          fetch-depth: 0
+
+      - name: Unpack reviewed implementation bundle
+        run: |
+          base64 --decode integration/v0.7/wsss-surface-poc-bootstrap.tar.gz.b64 > /tmp/wsss-surface-poc.tar.gz
+          tar -xzf /tmp/wsss-surface-poc.tar.gz -C .
+          rm integration/v0.7/wsss-surface-poc-bootstrap.tar.gz.b64
+          rm .github/workflows/bootstrap-wsss-surface-poc.yml
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: integration/v0.7/wsss-surface-poc/requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: integration/v0.7/wsss-surface-poc
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Fetch bounded versioned WSSS OSM snapshot
+        working-directory: integration/v0.7/wsss-surface-poc
+        run: python scripts/fetch_wsss_osm.py
+
+      - name: Run deterministic and real-snapshot regression tests
+        working-directory: integration/v0.7/wsss-surface-poc
+        run: pytest -q
+
+      - name: Build sample surface-map contract
+        working-directory: integration/v0.7/wsss-surface-poc
+        run: python scripts/build_sample_contract.py
+
+      - name: Commit proof of concept
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add WSSS OSM surface NOTAM proof of concept"
+          git push origin HEAD:feature/v0.7-wsss-surface-notam-poc
