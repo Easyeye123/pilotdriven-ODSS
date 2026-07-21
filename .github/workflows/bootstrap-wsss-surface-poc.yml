@@ -5,12 +5,13 @@ on:
     branches:
       - feature/v0.7-wsss-surface-notam-poc
     paths:
-      - "integration/v0.7/wsss-surface-poc-bootstrap.tar.gz.b64"
+      - "integration/v0.7/wsss-surface-poc-bootstrap.part-*"
+      - ".github/workflows/bootstrap-wsss-surface-poc.yml"
   pull_request:
     branches:
       - main
     paths:
-      - "integration/v0.7/wsss-surface-poc-bootstrap.tar.gz.b64"
+      - "integration/v0.7/wsss-surface-poc-bootstrap.part-*"
       - ".github/workflows/bootstrap-wsss-surface-poc.yml"
   workflow_dispatch:
 
@@ -26,12 +27,15 @@ jobs:
           ref: feature/v0.7-wsss-surface-notam-poc
           fetch-depth: 0
 
-      - name: Unpack reviewed implementation bundle
+      - name: Assemble and unpack reviewed implementation bundle
         run: |
-          base64 --decode integration/v0.7/wsss-surface-poc-bootstrap.tar.gz.b64 > /tmp/wsss-surface-poc.tar.gz
+          cat integration/v0.7/wsss-surface-poc-bootstrap.part-* > /tmp/wsss-surface-poc.b64
+          base64 --decode /tmp/wsss-surface-poc.b64 > /tmp/wsss-surface-poc.tar.gz
+          tar -tzf /tmp/wsss-surface-poc.tar.gz >/dev/null
           tar -xzf /tmp/wsss-surface-poc.tar.gz -C .
-          rm integration/v0.7/wsss-surface-poc-bootstrap.tar.gz.b64
-          rm .github/workflows/bootstrap-wsss-surface-poc.yml
+          rm -f integration/v0.7/wsss-surface-poc-bootstrap.part-*
+          rm -f integration/v0.7/wsss-surface-poc-bootstrap.tar.gz.b64
+          rm -f .github/workflows/bootstrap-wsss-surface-poc.yml
 
       - uses: actions/setup-python@v5
         with:
