@@ -22,7 +22,8 @@ from reportlab.platypus import (
 from ..personal_notes import PERSONAL_NOTE_PLACEMENT_LABELS
 from .briefing import build_briefing_view
 from .constants import ENGINE_ORDER
-from .visual_reporting import PAGE_SIZE, render_level1_visual, visual_cover_flowable
+from .pertinent_brief import render_level1_visual
+from .visual_reporting import PAGE_SIZE, visual_cover_flowable
 
 
 _TITLES = {

@@ -381,7 +381,10 @@ def test_level1_omits_vaa_and_bobcat_when_verified_not_applicable(tmp_path: Path
 
 
 @pytest.mark.parametrize("status", ["review_required", "affected"])
-def test_level1_adds_conditional_vaa_page(status: str, tmp_path: Path) -> None:
+def test_level1_integrates_conditional_vaa_on_route_page(
+    status: str,
+    tmp_path: Path,
+) -> None:
     flight = _flight()
     review = evaluate_vaa(
         flight,
@@ -395,14 +398,19 @@ def test_level1_adds_conditional_vaa_page(status: str, tmp_path: Path) -> None:
 
     render_pdf(flight, [_vaa_finding(status)], [], 1, path)
     reader = PdfReader(path)
-    page4 = reader.pages[3].extract_text() or ""
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    page3 = reader.pages[2].extract_text() or ""
 
-    assert len(reader.pages) == 4
-    assert "VOLCANIC ASH ADVISORY REVIEW" in page4
-    assert ("ROUTE AFFECTED" if status == "affected" else "MANUAL REVIEW REQUIRED") in page4
-    assert "authority.example" in page4
-    if status == "affected":
-        assert "22 JUL 0400Z-22 JUL 0600Z" in page4
+    assert len(reader.pages) == 3
+    assert "ENROUTE WEATHER / VAAC" in page3
+    assert (
+        "Volcanic ash affects the planned route"
+        if status == "affected"
+        else "Volcanic ash review required"
+    ) in page3
+    assert "VOLCANIC ASH ADVISORY REVIEW" not in text
+    assert "SOURCE / PROVENANCE" not in text
+    assert "MANUAL REVIEW REQUIRED" not in text
 
 
 def test_map_contract_and_schematic_include_only_verified_hazards() -> None:
