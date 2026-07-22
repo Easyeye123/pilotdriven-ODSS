@@ -58,6 +58,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git diff --check
           git add \
+            pilotdriven_odss_dashboard/app/odss/pertinent_brief.py \
             pilotdriven_odss_dashboard/app/odss/briefing.py \
             pilotdriven_odss_dashboard/app/odss/reporting.py \
             pilotdriven_odss_dashboard/tests/test_reporting_regressions.py
