@@ -35,7 +35,11 @@ only after the MapLibre map reaches the expected idle state and the route/marker
 async with async_playwright() as playwright:
     browser = await playwright.chromium.launch(
         headless=True,
-        args=["--enable-unsafe-swiftshader"],
+        args=[
+            "--use-gl=angle",
+            "--use-angle=swiftshader-webgl",
+            "--enable-unsafe-swiftshader",
+        ],
     )
     page = await browser.new_page(
         viewport={"width": 2200, "height": 1100},
