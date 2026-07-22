@@ -52,6 +52,7 @@
       priorityLabels: source.priorityLabels || source.priority_labels || [],
       routeHash: source.routeHash || source.route_hash,
       printMode: Boolean(source.printMode || source.print_mode),
+      readinessTimeoutMs: Number(source.readinessTimeoutMs || source.readiness_timeout_ms),
       attribution: source.attribution || [],
     };
     const geometry = window.ODSS_MAP_GEOMETRY;
@@ -263,11 +264,61 @@
 
     let layersReady = false;
     let ready = false;
+    let finishing = false;
     let idleCount = 0;
     let lastError = null;
+    const configuredTimeout = Number.isFinite(config.readinessTimeoutMs)
+      ? config.readinessTimeoutMs
+      : (config.printMode ? 30000 : 18000);
+    const readinessTimeoutMs = Math.max(1000, Math.min(configuredTimeout, 175000));
+    let readinessPoll = null;
+    const clearReadinessTimers = () => {
+      window.clearTimeout(timeout);
+      if (readinessPoll !== null) window.clearInterval(readinessPoll);
+    };
+    const signalReady = () => {
+      if (ready || finishing) return;
+      finishing = true;
+      Promise.resolve(document.fonts ? document.fonts.ready : undefined)
+        .then(() => new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        }))
+        .then(() => {
+          if (ready) return;
+          ready = true;
+          clearReadinessTimers();
+          callbacks.onReady(map);
+        })
+        .catch((error) => {
+          lastError = error;
+          clearReadinessTimers();
+          callbacks.onError(error);
+        });
+    };
     const timeout = window.setTimeout(() => {
-      if (!ready) callbacks.onError(lastError || new Error("Map readiness timeout"));
-    }, config.printMode ? 30000 : 18000);
+      if (ready) return;
+      clearReadinessTimers();
+      if (lastError) {
+        callbacks.onError(lastError);
+        return;
+      }
+      const styleLoaded = map.isStyleLoaded();
+      const tilesLoaded = typeof map.areTilesLoaded === "function" && map.areTilesLoaded();
+      callbacks.onError(new Error(
+        `Map readiness timeout (layers=${layersReady}; style=${styleLoaded}; tiles=${tilesLoaded})`,
+      ));
+    }, readinessTimeoutMs);
+    readinessPoll = window.setInterval(() => {
+      if (
+        layersReady
+        && !ready
+        && map.isStyleLoaded()
+        && typeof map.areTilesLoaded === "function"
+        && map.areTilesLoaded()
+      ) {
+        signalReady();
+      }
+    }, 250);
 
     map.on("load", () => {
       try {
@@ -278,7 +329,7 @@
         if (callbacks.onLayersReady) callbacks.onLayersReady(map);
       } catch (error) {
         lastError = error;
-        window.clearTimeout(timeout);
+        clearReadinessTimers();
         callbacks.onError(error);
       }
     });
@@ -291,27 +342,13 @@
       // without another render transition, so waiting for it can deadlock the
       // headless PDF capture until the readiness timeout.
       if (idleCount < 1) return;
-      Promise.resolve(document.fonts ? document.fonts.ready : undefined)
-        .then(() => new Promise((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(resolve));
-        }))
-        .then(() => {
-          if (ready) return;
-          ready = true;
-          window.clearTimeout(timeout);
-          callbacks.onReady(map);
-        })
-        .catch((error) => {
-          lastError = error;
-          window.clearTimeout(timeout);
-          callbacks.onError(error);
-        });
+      signalReady();
     });
 
     map.on("error", (event) => {
       lastError = event && event.error ? event.error : new Error("Map rendering error");
       if (config.printMode && !ready) {
-        window.clearTimeout(timeout);
+        clearReadinessTimers();
         callbacks.onError(lastError);
       } else if (ready && callbacks.onWarning) {
         callbacks.onWarning();
