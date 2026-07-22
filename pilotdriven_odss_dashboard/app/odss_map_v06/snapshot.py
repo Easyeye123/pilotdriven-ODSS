@@ -120,11 +120,16 @@ class PlaywrightMapSnapshotRenderer:
 
                         await context.route("**/*", authorize_internal_request)
                         page = await context.new_page()
-                        await page.goto(
-                            target,
-                            wait_until="domcontentloaded",
-                            timeout=timeout_ms,
-                        )
+                        try:
+                            await page.goto(
+                                target,
+                                wait_until="domcontentloaded",
+                                timeout=timeout_ms,
+                            )
+                        except PlaywrightTimeoutError as exc:
+                            raise MapRenderError(
+                                "Print page navigation did not reach DOMContentLoaded"
+                            ) from exc
                         try:
                             await page.wait_for_function(
                                 """(settleTimeoutMs) => {
@@ -215,7 +220,21 @@ class PlaywrightMapSnapshotRenderer:
                             }"""
                         )
                         locator = page.locator("#odss-print-map")
-                        image = await locator.screenshot(type="png")
+                        clip = await locator.bounding_box()
+                        if not clip:
+                            raise MapRenderError("Print map has no visible capture bounds")
+                        try:
+                            image = await page.screenshot(
+                                type="png",
+                                clip=clip,
+                                animations="disabled",
+                                caret="hide",
+                                timeout=30_000,
+                            )
+                        except PlaywrightTimeoutError as exc:
+                            raise MapRenderError(
+                                "Direct print-map screenshot did not complete"
+                            ) from exc
                     finally:
                         await context.close()
                 finally:
