@@ -21,6 +21,8 @@ def _chromium_launch_args() -> list[str]:
     return [
         "--disable-dev-shm-usage",
         "--font-render-hinting=none",
+        "--use-gl=angle",
+        "--use-angle=swiftshader-webgl",
         "--enable-unsafe-swiftshader",
     ]
 

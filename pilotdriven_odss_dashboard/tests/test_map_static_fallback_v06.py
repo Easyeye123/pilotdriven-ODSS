@@ -176,6 +176,8 @@ def test_print_capture_sends_service_bearer_only_to_internal_origin() -> None:
 def test_print_capture_enables_software_webgl_for_gpu_less_workers() -> None:
     launch_args = _chromium_launch_args()
 
+    assert "--use-gl=angle" in launch_args
+    assert "--use-angle=swiftshader-webgl" in launch_args
     assert "--enable-unsafe-swiftshader" in launch_args
     assert "--disable-gpu" not in launch_args
 
