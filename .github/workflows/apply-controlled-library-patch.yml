@@ -1,0 +1,62 @@
+name: Apply controlled CDL and depressurisation patch
+
+on:
+  push:
+    branches:
+      - feature/controlled-cdl-depress-library
+    paths:
+      - "scripts/apply_controlled_library_patch.py"
+      - ".github/workflows/apply-controlled-library-patch.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/controlled-cdl-depress-library
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pilotdriven_odss_dashboard/requirements.txt
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r pilotdriven_odss_dashboard/requirements.txt
+          python -m pip install pytest
+
+      - name: Apply reviewed engine patch
+        run: python scripts/apply_controlled_library_patch.py
+
+      - name: Syntax and focused regression tests
+        run: |
+          python -m py_compile \
+            pilotdriven_odss_dashboard/app/odss/controlled_library.py \
+            pilotdriven_odss_dashboard/app/odss/constants.py \
+            pilotdriven_odss_dashboard/app/odss/engines.py
+          pytest -q \
+            pilotdriven_odss_dashboard/tests/test_controlled_cdl_depress_library.py \
+            pilotdriven_odss_dashboard/tests/test_engine_regressions.py
+
+      - name: Commit patched implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
+          git diff --check
+          git add \
+            pilotdriven_odss_dashboard/app/odss/controlled_library.py \
+            pilotdriven_odss_dashboard/app/odss/engines.py
+          if git diff --cached --quiet; then
+            echo "No engine changes to commit"
+          else
+            git commit -m "feat: integrate controlled CDL and depressurisation indexes"
+            git push origin HEAD:feature/controlled-cdl-depress-library
+          fi
