@@ -195,8 +195,10 @@ def test_print_capture_checks_loaded_map_state_when_idle_callback_is_delayed() -
     assert "min(15_000, timeout_ms // 2)" in source
     assert "Rendered map route hash does not match the contract" in source
     assert "page.screenshot(" in source
-    assert "locator.screenshot(" not in source
+    assert "page.locator(" not in source
+    assert "device_scale_factor=1" in source
     assert "Direct print-map screenshot did not complete" in source
+    assert "timed out during {capture_stage}" in source
 
 
 def test_renderer_chain_redacts_keys_from_persisted_warnings() -> None:
