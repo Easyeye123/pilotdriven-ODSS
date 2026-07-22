@@ -42,7 +42,7 @@ Populate:
 
 ```text
 ODSS_MAP_PROVIDER=aws-location
-AWS_REGION=ap-southeast-1
+AWS_REGION=ap-southeast-2
 AWS_LOCATION_API_KEY=<secret>
 ODSS_MAP_STYLE=Hybrid
 ODSS_MAP_LANGUAGE=en
@@ -58,6 +58,11 @@ Do not commit `.env`.
 ```bash
 curl "https://maps.geo.${AWS_REGION}.amazonaws.com/v2/styles/Hybrid/descriptor?key=${AWS_LOCATION_API_KEY}"
 ```
+
+Use `ap-southeast-2` for the accepted Hybrid plus static Satellite chain.
+Amazon Location regions backed by GrabMaps (`ap-southeast-1` and
+`ap-southeast-5`) expose Standard/Monochrome instead and are rejected by the
+ODSS configuration when Hybrid or the Satellite static fallback is selected.
 
 A valid response is a MapLibre-compatible style document.
 

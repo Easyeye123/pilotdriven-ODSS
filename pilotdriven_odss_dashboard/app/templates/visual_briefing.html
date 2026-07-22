@@ -1,4 +1,5 @@
 {% set briefing = analysis.view.briefing %}
+{% set map_contract = analysis.map_contract or {} %}
 <section class="odss-visual-briefing" id="visual-briefing">
   <div class="odss-visual-topbar">
     <div class="odss-brand"><span class="odss-brand-mark">◆</span> PILOT<span>DRIVEN</span></div>
@@ -61,8 +62,45 @@
           <a class="odss-panel-button" href="/files/report/{{ flight.id }}/1#page=2">View full departure briefing</a>
         </article>
 
-        <article class="odss-map-panel" id="odss-route-map">
-          {{ briefing.route_svg | safe }}
+        <article class="odss-map-panel" id="odss-route-map" aria-label="Operational route map">
+          <div
+            class="odss-workspace-map"
+            data-odss-map-workspace
+            data-config-url="/flights/{{ flight.id }}/map-config"
+            data-fallback-url="/flights/{{ flight.id }}/map-fallback"
+            data-route-hash="{{ map_contract.route_hash or '' }}"
+          >
+            <div class="odss-map-canvas" data-odss-map-canvas aria-label="Interactive CFP route map"></div>
+            <div class="odss-map-fallback" data-odss-map-fallback>
+              {{ briefing.route_svg | safe }}
+            </div>
+
+            <div class="odss-map-mission">
+              <span>Operational route</span>
+              <strong>{{ briefing.departure.icao }} <i>→</i> {{ briefing.destination.icao }}</strong>
+              <small>{{ briefing.flight_number }} · {{ briefing.flight_date }}</small>
+            </div>
+            <div class="odss-map-mode" data-odss-map-mode role="status" aria-live="polite">
+              Schematic fallback
+            </div>
+            <button class="odss-map-reset" type="button" data-odss-map-reset hidden>
+              Reset view
+            </button>
+
+            <div class="odss-map-point-card" data-odss-map-point-card hidden aria-live="polite"></div>
+            <div class="odss-map-key" aria-label="Map symbology">
+              <span class="route">CFP route</span>
+              <span class="edto">EDTO</span>
+              <span class="bobcat">BOBCAT</span>
+              <span class="critical">Terrain / VAA</span>
+            </div>
+            <div class="odss-map-footnote">
+              Briefing orientation · not for navigation
+            </div>
+            <div class="odss-map-message" data-odss-map-message aria-live="polite">
+              Realistic basemap loads when the approved map service is available.
+            </div>
+          </div>
         </article>
 
         <article class="odss-airport-panel">

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 from contextlib import asynccontextmanager
+import json
 import logging
 import os
 import secrets
@@ -37,7 +39,12 @@ from .database import (
     update_status,
 )
 from .odss.constants import format_actm
-from .odss_map_v06.api import create_map_router
+from .odss_map_v06.api import (
+    create_map_router,
+    fallback_map_response,
+    interactive_map_payload,
+    map_contract_from_analysis,
+)
 from .odss_map_v06.config import MapSettings
 from .odss_map_v06.report_worker import render_reports_for_analysis
 from .odss.parser import validate_pdf
@@ -114,7 +121,7 @@ def _is_trusted_write_request(request: Request) -> bool:
 
 def _secure_response(response):
     response.headers["Cache-Control"] = "no-store"
-    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     return response
@@ -345,6 +352,60 @@ def _validated_note_values(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _record_map_refresh_warning(analysis_path: str | None, error_type: str) -> None:
+    if not analysis_path:
+        return
+    path = Path(analysis_path)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        view = payload.setdefault("view", {})
+        warning = (
+            "Realistic map refresh unavailable; the offline map reports were "
+            f"preserved ({error_type})."
+        )
+        warnings = view.setdefault("warnings", [])
+        if warning not in warnings:
+            warnings.append(warning)
+        view["map_render"] = {
+            "mode": "schematic-fallback",
+            "reports_refreshed": False,
+            "warning": warning,
+        }
+        temporary = path.with_suffix(path.suffix + ".map-warning.tmp")
+        temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        temporary.replace(path)
+    except (OSError, json.JSONDecodeError, TypeError):
+        logger.warning(
+            "Unable to record map refresh warning flight_analysis=%s",
+            path.name,
+        )
+
+
+def _refresh_reports_with_primary_map(flight_id: int, result: dict) -> None:
+    """Best-effort PDF map upgrade; initial offline reports remain authoritative."""
+    try:
+        if not (map_settings.aws_location_api_key and map_settings.service_token):
+            return
+        flight = get_flight(flight_id)
+        if not flight:
+            return
+        asyncio.run(
+            render_reports_for_analysis(
+                _public_analysis_id(flight),
+                settings=map_settings,
+            )
+        )
+    except Exception as exc:
+        error_type = type(exc).__name__
+        logger.warning(
+            "Realistic map report refresh failed flight_id=%s error_type=%s; "
+            "offline reports preserved",
+            flight_id,
+            error_type,
+        )
+        _record_map_refresh_warning(result.get("analysis_path"), error_type)
+
+
 def _execute_analysis(flight_id: int, flight) -> None:
     previous_artifacts = (
         (flight["analysis_path"], RESULT_DIR),
@@ -378,6 +439,7 @@ def _execute_analysis(flight_id: int, flight) -> None:
         ):
             if previous_path and previous_path != new_path:
                 _remove_stored_file(previous_path, directory)
+        _refresh_reports_with_primary_map(flight_id, result)
     except Exception as exc:
         if result:
             _remove_stored_file(result.get("analysis_path"), RESULT_DIR)
@@ -470,6 +532,52 @@ def flight_workspace(request: Request, flight_id: int):
             "personal_note_placement_labels": PERSONAL_NOTE_PLACEMENT_LABELS,
             "notice": notices.get(request.query_params.get("notice", "")),
         },
+    )
+
+
+def _dashboard_map_contract(flight_id: int):
+    flight = get_flight(flight_id)
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    analysis = load_analysis(flight["analysis_path"])
+    if not analysis:
+        raise HTTPException(status_code=409, detail="Analysis is not complete")
+    try:
+        return map_contract_from_analysis(
+            analysis,
+            map_settings,
+            analysis_id=_public_analysis_id(flight),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="A canonical map is not available for this analysis",
+        ) from exc
+
+
+@app.get("/flights/{flight_id}/map-config")
+async def dashboard_map_config(flight_id: int):
+    contract = _dashboard_map_contract(flight_id)
+    payload = await interactive_map_payload(
+        contract,
+        map_settings,
+        fallback_url=f"/flights/{flight_id}/map-fallback",
+    )
+    return JSONResponse(payload)
+
+
+@app.get("/flights/{flight_id}/map-fallback")
+async def dashboard_map_fallback(
+    flight_id: int,
+    width: int = 1600,
+    height: int = 900,
+):
+    contract = _dashboard_map_contract(flight_id)
+    return await fallback_map_response(
+        contract,
+        map_settings,
+        width=width,
+        height=height,
     )
 
 
@@ -788,7 +896,7 @@ async def create_service_analysis(
     flight = get_flight(flight_id)
     if not flight:
         raise HTTPException(status_code=500, detail="Analysis record was not created")
-    _execute_analysis(flight_id, flight)
+    await asyncio.to_thread(_execute_analysis, flight_id, flight)
     completed = get_flight(flight_id)
     if not completed:
         raise HTTPException(status_code=500, detail="Analysis record was lost")

@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app.database as database
 import app.main as main
+from app.odss_map_v06.config import MapSettings
 
 
 def _build_lido_pdf() -> bytes:
@@ -176,6 +177,170 @@ def test_health_is_public_and_dashboard_requires_configured_credentials(
     assert wrong.status_code == 401
     assert authorized.status_code == 200
     assert authorized.headers["cache-control"] == "no-store"
+    assert authorized.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+
+
+def test_flight_workspace_uses_canonical_progressive_map_and_labelled_fallback(
+    web_app: tuple[TestClient, dict[str, Path]],
+    lido_pdf: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = web_app
+    flight_id = _upload(client, lido_pdf)
+    assert client.post(f"/flights/{flight_id}/analyse").status_code == 303
+    monkeypatch.setattr(
+        main,
+        "map_settings",
+        MapSettings(provider="schematic", fallback="schematic"),
+    )
+
+    flight = database.get_flight(flight_id)
+    analysis = main.load_analysis(flight["analysis_path"])
+    route_hash = analysis["map_contract"]["route_hash"]
+    workspace = client.get(f"/flights/{flight_id}")
+    config = client.get(f"/flights/{flight_id}/map-config")
+    fallback = client.get(f"/flights/{flight_id}/map-fallback")
+
+    assert workspace.status_code == 200
+    assert 'data-odss-map-workspace' in workspace.text
+    assert f'data-config-url="/flights/{flight_id}/map-config"' in workspace.text
+    assert f'data-fallback-url="/flights/{flight_id}/map-fallback"' in workspace.text
+    assert f'data-route-hash="{route_hash}"' in workspace.text
+    assert "/static/vendor/maplibre-gl-5.6.0/maplibre-gl.js" in workspace.text
+    assert "/static/odss-map-geometry-v06.js" in workspace.text
+    assert "unpkg.com" not in workspace.text
+    assert "Schematic fallback" in workspace.text
+    assert "Briefing orientation · not for navigation" in workspace.text
+
+    assert config.status_code == 200
+    assert config.json()["provider"] == "schematic"
+    assert config.json()["route_hash"] == route_hash
+    assert config.json()["fallback_url"] == f"/flights/{flight_id}/map-fallback"
+    assert fallback.status_code == 200
+    assert fallback.headers["x-odss-map-mode"] == "schematic-fallback"
+    assert fallback.headers["x-odss-route-hash"] == route_hash
+    assert fallback.headers["content-type"].startswith("image/svg+xml")
+    assert b"Schematic route display" in fallback.content
+
+
+def test_dashboard_map_config_exposes_only_browser_key(
+    web_app: tuple[TestClient, dict[str, Path]],
+    lido_pdf: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = web_app
+    flight_id = _upload(client, lido_pdf)
+    assert client.post(f"/flights/{flight_id}/analyse").status_code == 303
+    monkeypatch.setattr(
+        main,
+        "map_settings",
+        MapSettings(
+            aws_location_api_key="browser-map-key",
+            aws_location_server_api_key="server-map-key",
+            service_token="service-token",
+        ),
+    )
+
+    response = client.get(f"/flights/{flight_id}/map-config")
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload["provider"] == "aws-location-maplibre"
+    assert payload["style_url"].endswith("?key=browser-map-key")
+    assert payload["fallback_url"] == f"/flights/{flight_id}/map-fallback"
+    assert payload["route"]["features"]
+    assert payload["markers"]["features"]
+    assert "server-map-key" not in response.text
+
+
+def test_configured_analysis_invokes_best_effort_primary_map_refresh(
+    web_app: tuple[TestClient, dict[str, Path]],
+    lido_pdf: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = web_app
+    calls: list[tuple[str, MapSettings]] = []
+
+    async def fake_refresh(analysis_id: str, *, settings: MapSettings):
+        calls.append((analysis_id, settings))
+        return {"mode": "primary", "reports_refreshed": True}
+
+    settings = MapSettings(
+        aws_location_api_key="browser-map-key",
+        service_token="service-token",
+    )
+    monkeypatch.setattr(main, "map_settings", settings)
+    monkeypatch.setattr(main, "render_reports_for_analysis", fake_refresh)
+    flight_id = _upload(client, lido_pdf)
+
+    response = client.post(f"/flights/{flight_id}/analyse")
+    completed = database.get_flight(flight_id)
+
+    assert response.status_code == 303
+    assert completed["status"] == "Completed"
+    assert calls == [(completed["analysis_id"], settings)]
+
+
+def test_primary_map_refresh_failure_preserves_completed_offline_reports(
+    web_app: tuple[TestClient, dict[str, Path]],
+    lido_pdf: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = web_app
+
+    async def failed_refresh(analysis_id: str, *, settings: MapSettings):
+        raise RuntimeError("simulated renderer failure")
+
+    monkeypatch.setattr(
+        main,
+        "map_settings",
+        MapSettings(
+            aws_location_api_key="browser-map-key",
+            service_token="service-token",
+        ),
+    )
+    monkeypatch.setattr(main, "render_reports_for_analysis", failed_refresh)
+    flight_id = _upload(client, lido_pdf)
+
+    response = client.post(f"/flights/{flight_id}/analyse")
+    completed = database.get_flight(flight_id)
+    analysis = main.load_analysis(completed["analysis_path"])
+
+    assert response.status_code == 303
+    assert completed["status"] == "Completed"
+    assert completed["last_error"] is None
+    assert Path(completed["level1_report"]).read_bytes().startswith(b"%PDF")
+    assert Path(completed["level2_report"]).read_bytes().startswith(b"%PDF")
+    assert analysis["view"]["map_render"]["mode"] == "schematic-fallback"
+    assert analysis["view"]["map_render"]["reports_refreshed"] is False
+    assert any("offline map reports were preserved" in item for item in analysis["view"]["warnings"])
+
+
+def test_unconfigured_analysis_skips_primary_map_refresh(
+    web_app: tuple[TestClient, dict[str, Path]],
+    lido_pdf: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = web_app
+    called = False
+
+    async def unexpected_refresh(analysis_id: str, *, settings: MapSettings):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(
+        main,
+        "map_settings",
+        MapSettings(aws_location_api_key=None, service_token="service-token"),
+    )
+    monkeypatch.setattr(main, "render_reports_for_analysis", unexpected_refresh)
+    flight_id = _upload(client, lido_pdf)
+
+    response = client.post(f"/flights/{flight_id}/analyse")
+
+    assert response.status_code == 303
+    assert database.get_flight(flight_id)["status"] == "Completed"
+    assert called is False
 
 
 def test_authenticated_cross_origin_write_is_refused(

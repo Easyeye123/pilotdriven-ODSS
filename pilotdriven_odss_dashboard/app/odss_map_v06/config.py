@@ -14,8 +14,9 @@ class MapSettings:
     """
 
     provider: str = "aws-location"
-    aws_region: str = "ap-southeast-1"
+    aws_region: str = "ap-southeast-2"
     aws_location_api_key: str | None = None
+    aws_location_server_api_key: str | None = None
     style: str = "Hybrid"
     language: str = "en"
     fallback: str = "static"
@@ -39,9 +40,12 @@ class MapSettings:
 
         settings = cls(
             provider=os.getenv("ODSS_MAP_PROVIDER", "aws-location").strip(),
-            aws_region=os.getenv("AWS_REGION", "ap-southeast-1").strip(),
+            aws_region=os.getenv("AWS_REGION", "ap-southeast-2").strip(),
             aws_location_api_key=(
                 os.getenv("AWS_LOCATION_API_KEY", "").strip() or None
+            ),
+            aws_location_server_api_key=(
+                os.getenv("AWS_LOCATION_SERVER_API_KEY", "").strip() or None
             ),
             style=os.getenv("ODSS_MAP_STYLE", "Hybrid").strip(),
             language=os.getenv("ODSS_MAP_LANGUAGE", "en").strip(),
@@ -77,6 +81,14 @@ class MapSettings:
             raise ValueError("AWS_REGION is required")
         if not self.language:
             raise ValueError("ODSS_MAP_LANGUAGE is required")
+        if self.aws_region in {"ap-southeast-1", "ap-southeast-5"} and (
+            self.style in {"Hybrid", "Satellite"} or self.fallback == "static"
+        ):
+            raise ValueError(
+                "Hybrid/Satellite maps are unavailable in AWS GrabMaps regions "
+                "ap-southeast-1 and ap-southeast-5; use ap-southeast-2 for the "
+                "accepted Hybrid/static architecture"
+            )
 
     @property
     def style_descriptor_url(self) -> str | None:
@@ -95,3 +107,8 @@ class MapSettings:
         return (
             f"https://maps.geo.{self.aws_region}.amazonaws.com/v2/static/map@2x"
         )
+
+    @property
+    def static_map_api_key(self) -> str | None:
+        """Server-only static-map key, with the legacy single-key fallback."""
+        return self.aws_location_server_api_key or self.aws_location_api_key

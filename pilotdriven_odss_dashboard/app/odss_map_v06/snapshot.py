@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
@@ -8,6 +8,30 @@ from playwright.async_api import async_playwright
 from .config import MapSettings
 from .contract import MapContract
 from .renderers import MapRenderError, MapRenderResult
+
+
+def _request_headers_for_url(
+    request_url: str,
+    request_headers: dict[str, str],
+    settings: MapSettings,
+) -> dict[str, str]:
+    """Attach the service bearer only to the internal print origin.
+
+    A browser-context-wide Authorization header also reaches Amazon Location
+    tile requests, turning them into failing cross-origin requests and leaking
+    an internal credential outside ODSS.
+    """
+    headers = dict(request_headers)
+    headers.pop("authorization", None)
+    target = urlsplit(request_url)
+    internal = urlsplit(settings.print_base_url)
+    if (
+        settings.service_token
+        and target.scheme == internal.scheme
+        and target.netloc == internal.netloc
+    ):
+        headers["authorization"] = f"Bearer {settings.service_token}"
+    return headers
 
 
 class PlaywrightMapSnapshotRenderer:
@@ -67,11 +91,18 @@ class PlaywrightMapSnapshotRenderer:
                             "height": viewport_height,
                         },
                         device_scale_factor=2,
-                        extra_http_headers={
-                            "Authorization": f"Bearer {self.settings.service_token}"
-                        },
                     )
                     try:
+                        async def authorize_internal_request(route, request):
+                            await route.continue_(
+                                headers=_request_headers_for_url(
+                                    request.url,
+                                    request.headers,
+                                    self.settings,
+                                )
+                            )
+
+                        await context.route("**/*", authorize_internal_request)
                         page = await context.new_page()
                         await page.goto(
                             target,
