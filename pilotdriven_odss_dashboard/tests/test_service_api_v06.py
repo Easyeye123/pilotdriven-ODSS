@@ -137,6 +137,7 @@ def test_print_map_template_uses_local_runtime_and_full_height_root() -> None:
     assert "map.areTilesLoaded()" in runtime
     assert "Map readiness timeout (layers=" in runtime
     assert "window.__ODSS_MAP_INSTANCE__ = map" in runtime
+    assert "window.__ODSS_MAP_LAYERS_READY_AT__ = Date.now()" in runtime
 
 def test_service_analysis_exposes_stable_contract_and_explicit_fallback(
     service_app: TestClient,

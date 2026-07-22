@@ -553,6 +553,7 @@
     const map = createOperationalMap(container, config, {
       onLayersReady: () => {
         document.documentElement.dataset.routeHash = config.routeHash;
+        window.__ODSS_MAP_LAYERS_READY_AT__ = Date.now();
       },
       onReady: () => {
         document.documentElement.dataset.routeHash = config.routeHash;
