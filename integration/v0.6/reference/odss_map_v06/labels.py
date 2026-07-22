@@ -49,6 +49,7 @@ def choose_priority_labels(
     )
     selected: list[dict[str, Any]] = []
     names: list[str] = []
+    seen_names: set[str] = set()
 
     for marker in ordered:
         props = marker.get("properties", {})
@@ -56,6 +57,10 @@ def choose_priority_labels(
         geometry = marker.get("geometry", {})
         coordinates = geometry.get("coordinates")
         if not name or not isinstance(coordinates, list) or len(coordinates) < 2:
+            continue
+
+        normalized_name = name.casefold()
+        if normalized_name in seen_names:
             continue
 
         role = str(props.get("role") or "route")
@@ -71,6 +76,7 @@ def choose_priority_labels(
 
         selected.append(marker)
         names.append(name)
+        seen_names.add(normalized_name)
         if len(names) >= max_labels:
             break
 

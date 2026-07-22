@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from odss_map_v06.config import MapSettings
 from odss_map_v06.geojson import build_map_contract
+from odss_map_v06.labels import choose_priority_labels
 
 
 def _flight() -> dict:
@@ -67,7 +68,7 @@ def test_map_contract_is_stable_and_keeps_route_order() -> None:
 def test_style_descriptor_url_never_enters_contract() -> None:
     settings = MapSettings(
         aws_location_api_key="v1.public.example",
-        aws_region="ap-southeast-1",
+        aws_region="ap-southeast-2",
         style="Hybrid",
     )
     contract = build_map_contract(_flight(), [], settings)
@@ -77,6 +78,17 @@ def test_style_descriptor_url_never_enters_contract() -> None:
     assert settings.style_descriptor_url.endswith(
         "/v2/styles/Hybrid/descriptor?key=v1.public.example"
     )
+
+
+def test_hybrid_rejects_grabmaps_regions() -> None:
+    for region in ("ap-southeast-1", "ap-southeast-5"):
+        settings = MapSettings(aws_region=region, style="Hybrid", fallback="static")
+        try:
+            settings.validate()
+        except ValueError as exc:
+            assert "Hybrid/Satellite maps are unavailable" in str(exc)
+        else:
+            raise AssertionError(f"{region} must reject Hybrid")
 
 
 def test_verified_hazard_geometry_is_carried_without_changing_route_hash() -> None:
@@ -101,3 +113,24 @@ def test_verified_hazard_geometry_is_carried_without_changing_route_hash() -> No
 
     assert contract.route_hash == baseline.route_hash
     assert len(contract.hazards_geojson["features"]) == 1
+
+
+def test_priority_labels_do_not_repeat_duplicate_waypoint_names() -> None:
+    markers = [
+        {
+            "geometry": {"coordinates": [longitude, 1.0]},
+            "properties": {"name": name, "role": role, "priority": priority},
+        }
+        for name, role, priority, longitude in (
+            ("WSSS", "departure", 100, 103.0),
+            ("RJJJ", "fir", 50, 139.0),
+            ("RJJJ", "fir", 50, 140.0),
+            ("KJFK", "destination", 100, -73.0),
+        )
+    ]
+
+    labels = choose_priority_labels(markers)
+
+    assert labels.count("RJJJ") == 1
+    assert "WSSS" in labels
+    assert "KJFK" in labels

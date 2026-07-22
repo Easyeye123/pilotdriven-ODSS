@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -9,6 +10,14 @@ from .contract import MapContract
 
 class MapRenderError(RuntimeError):
     """Raised when a map renderer cannot produce a usable artifact."""
+
+
+_SECRET_QUERY_VALUE = re.compile(r"([?&](?:key|token)=)[^&\s\"']+", re.IGNORECASE)
+
+
+def _safe_error_text(exc: Exception) -> str:
+    """Keep renderer diagnostics without persisting URL credentials."""
+    return _SECRET_QUERY_VALUE.sub(r"\1[redacted]", str(exc))
 
 
 @dataclass(slots=True)
@@ -73,6 +82,7 @@ class RendererChain:
                 return result
             except Exception as exc:
                 failures.append(
-                    f"{renderer.name} unavailable: {type(exc).__name__}: {exc}"
+                    f"{renderer.name} unavailable: {type(exc).__name__}: "
+                    f"{_safe_error_text(exc)}"
                 )
         raise MapRenderError("; ".join(failures))

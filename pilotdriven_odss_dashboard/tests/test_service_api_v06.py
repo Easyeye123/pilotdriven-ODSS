@@ -104,10 +104,34 @@ def test_playwright_static_assets_accept_service_bearer_with_legacy_basic_auth(
         "/static/odss-maplibre-v06.css",
         headers=_authorization(),
     )
+    geometry = service_app.get(
+        "/static/odss-map-geometry-v06.js",
+        headers=_authorization(),
+    )
+    maplibre = service_app.get(
+        "/static/vendor/maplibre-gl-5.6.0/maplibre-gl.js",
+        headers=_authorization(),
+    )
 
     assert anonymous.status_code == 401
     assert service.status_code == 200
     assert service.headers["content-type"].startswith("text/css")
+    assert geometry.status_code == 200
+    assert geometry.headers["content-type"].startswith("text/javascript")
+    assert maplibre.status_code == 200
+    assert maplibre.headers["content-type"].startswith("text/javascript")
+
+
+def test_print_map_template_uses_local_runtime_and_full_height_root() -> None:
+    template = (main.TEMPLATE_DIR / "map_print_v06.html").read_text(encoding="utf-8")
+    stylesheet = (main.STATIC_DIR / "odss-maplibre-v06.css").read_text(encoding="utf-8")
+
+    assert 'class="odss-print-map-root"' in template
+    assert "/static/vendor/maplibre-gl-5.6.0/maplibre-gl.js" in template
+    assert "/static/odss-map-geometry-v06.js" in template
+    assert "unpkg.com" not in template
+    assert ".odss-print-map-root," in stylesheet
+    assert "height: 100%;" in stylesheet
 
 def test_service_analysis_exposes_stable_contract_and_explicit_fallback(
     service_app: TestClient,

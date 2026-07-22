@@ -80,12 +80,14 @@ class AwsLocationStaticRenderer:
         width: int,
         height: int,
     ) -> MapRenderResult:
-        key = self.settings.aws_location_api_key
+        key = self.settings.static_map_api_key
         if not key:
             raise MapRenderError("AWS Location API key is not configured")
 
-        width = max(64, min(int(width), 1400))
-        height = max(64, min(int(height), 1400))
+        # ``map@2x`` accepts logical dimensions up to 700px and returns a
+        # double-density image. Passing 800/1600 here causes a hard HTTP 400.
+        width = max(64, min(int(width), 700))
+        height = max(64, min(int(height), 700))
         overlay = None
         overlay_text = ""
         # The canonical route can contain hundreds of points. Static-map
@@ -123,10 +125,7 @@ class AwsLocationStaticRenderer:
             "style": "Satellite",
             "width": str(width),
             "height": str(height),
-            "lang": self.settings.language,
             "padding": str(max(12, min(width, height) // 20)),
-            "crop-labels": "true",
-            "pois": "Disabled",
             "bounding-box": _bounding_box(contract),
             "geojson-overlay": overlay_text,
         }

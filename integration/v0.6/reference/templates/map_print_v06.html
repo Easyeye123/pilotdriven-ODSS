@@ -1,19 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="odss-print-map-root">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>ODSS print map</title>
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.x/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="/static/vendor/maplibre-gl-5.6.0/maplibre-gl.css">
   <link rel="stylesheet" href="/static/odss-maplibre-v06.css">
-  <script src="https://unpkg.com/maplibre-gl@5.x/dist/maplibre-gl.js"></script>
+  <script src="/static/vendor/maplibre-gl-5.6.0/maplibre-gl.js"></script>
 </head>
 <body class="odss-print-map-body">
   <main id="odss-print-map" class="odss-map-frame">
     <div id="odss-map" class="odss-map-canvas"></div>
     <div class="odss-map-status">
-      <span>CFP route briefing orientation</span>
-      <span>Not for navigation</span>
+      <strong>{{ contract.metadata.flight_number or analysis_id }}</strong>
+      <strong>{{ contract.metadata.departure or '----' }} → {{ contract.metadata.destination or '----' }}</strong>
+      <span>Amazon Location Hybrid</span>
+      <span>Briefing orientation · not for navigation</span>
     </div>
     <div class="odss-map-attribution">
       {% for item in contract.attribution %}<span>{{ item }}</span>{% endfor %}
@@ -32,6 +34,7 @@
       "printMode": true
     } | tojson }};
   </script>
+  <script src="/static/odss-map-geometry-v06.js"></script>
   <script src="/static/odss-maplibre-v06.js"></script>
 </body>
 </html>

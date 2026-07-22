@@ -50,9 +50,11 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
 
 ## Visual route map semantics
 
-The default route display is generated offline from the coordinates printed in the Lido CFP route log over a bundled Natural Earth 1:110m land layer. It provides recognisable coastline context without pretending to be an aeronautical chart. It is intended for briefing orientation only and is **not for navigation**.
+The flight workspace progressively renders the stored canonical ODSS map contract with the locally packaged MapLibre GL JS 5.6.0 runtime and Amazon Location Hybrid. The browser presents ODSS-provided route, marker, hazard, label, bounds and route-hash data; it does not recalculate operational significance.
 
-The map renderer is deliberately separated from the canonical route/briefing model. When this ODSS module is incorporated into the wider PilotDriven project, the renderer can be replaced by MapLibre, Mapbox or an approved aeronautical map service without rewriting the deterministic aviation engines.
+If the realistic map configuration, WebGL, style or tiles are unavailable, the workspace keeps the explicitly labelled offline route visible. The report chain uses Amazon Location static Satellite before the preserved offline schematic. Every mode is for briefing orientation only and is **not for navigation**.
+
+Use `AWS_REGION=ap-southeast-2` for Hybrid plus the static Satellite fallback. Configure `AWS_LOCATION_API_KEY` as a referrer-restricted browser key. A separate `AWS_LOCATION_SERVER_API_KEY` may be configured for server-side static maps; when omitted, the browser key is reused for backwards compatibility.
 
 ## Run locally
 
