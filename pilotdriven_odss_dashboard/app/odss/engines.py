@@ -444,6 +444,73 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         {"controlling_rtow_kg": controlling, "margin_kg": margin},
     ))
 
+    vaa_review = flight.get("vaa_review") or {}
+    if vaa_review.get("status") == "affected":
+        vaa_matches = vaa_review.get("matches") or []
+        first_match = vaa_matches[0] if vaa_matches else {}
+        details = [
+            (
+                f"{item.get('advisory_id')}: {item.get('route_from')}-"
+                f"{item.get('route_to')} at FL{item.get('planned_flight_level')}, "
+                f"{item.get('segment_start_utc')} to {item.get('segment_end_utc')}."
+            )
+            for item in vaa_matches[:8]
+        ]
+        details.extend([
+            f"Source: {vaa_review.get('provider') or 'not identified'}.",
+            f"Retrieved: {vaa_review.get('retrieved_at_utc') or 'not available'}.",
+            "Boundary contact is treated as an intersection; verify the original advisory and dispatch guidance.",
+        ])
+        findings.append(finding(
+            "vaa",
+            "critical",
+            "Volcanic ash affects the planned route",
+            f"{len(vaa_matches)} route/time/flight-level intersection(s) verified.",
+            details,
+            {
+                "status": "affected",
+                "start_actm_minutes": first_match.get("start_actm_minutes"),
+                "match_count": len(vaa_matches),
+                "provider": vaa_review.get("provider"),
+                "reason_codes": vaa_review.get("reason_codes") or [],
+            },
+        ))
+    elif vaa_review.get("status") == "review_required":
+        reason_codes = vaa_review.get("reason_codes") or []
+        human_reasons = {
+            "source_unavailable": "The official live source was unavailable.",
+            "source_stale": "The source snapshot did not meet the configured freshness limit.",
+            "source_records_incomplete": "One or more volcanic-ash records could not be normalized.",
+            "coverage_not_complete_for_flight": "The live active-SIGMET feed does not prove the full future flight window clear.",
+            "cfp_weather_data_unavailable": "The CFP states that volcanic-ash weather data is unavailable.",
+            "route_geometry_unavailable": "The CFP route geometry is incomplete.",
+            "route_timing_unavailable": "The route timing anchor is unavailable.",
+            "flight_level_unavailable": "The planned flight level could not be resolved.",
+            "flight_level_change_unresolved": "A planned level-change waypoint could not be matched to the route.",
+            "advisory_geometry_invalid": "An advisory geometry could not be evaluated safely.",
+        }
+        details = [human_reasons.get(code, code.replace("_", " ").capitalize() + ".") for code in reason_codes]
+        details.extend([
+            f"Source: {vaa_review.get('provider') or 'not available'}.",
+            f"Retrieved: {vaa_review.get('retrieved_at_utc') or 'not available'}.",
+            "Do not interpret this state as 'no volcanic ash'; complete the manual advisory review.",
+        ])
+        findings.append(finding(
+            "vaa",
+            "unknown",
+            "Volcanic ash review required",
+            "ODSS could not safely confirm that volcanic ash is not applicable to the route.",
+            details,
+            {
+                "status": "review_required",
+                "provider": vaa_review.get("provider"),
+                "reason_codes": reason_codes,
+            },
+        ))
+        warnings.append(
+            "Volcanic ash applicability remains unresolved; review the current official advisory source."
+        )
+
     alternate_airports = {a["airport"] for a in flight["alternates"]}
     edto_airports = {a["airport"] for a in flight["edto"]["airports"]}
     edto_periods: dict[str, tuple[datetime, datetime]] = {}
@@ -717,7 +784,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
 
     timeline_items: list[tuple[int, str, str]] = []
     for item in findings:
-        if item["engine"] in {"communications", "terrain", "vws", "depressurisation", "edto"}:
+        if item["engine"] in {"vaa", "communications", "terrain", "vws", "depressurisation", "edto"}:
             data = item.get("data", {})
             actm = data.get("action_actm_minutes")
             if actm is None:

@@ -94,6 +94,16 @@ def build_map_contract(
         "type": "FeatureCollection",
         "features": marker_features,
     }
+    vaa_review = flight.get("vaa_review") or {}
+    hazard_features = (
+        list(vaa_review.get("hazard_features") or [])
+        if vaa_review.get("status") == "affected"
+        else []
+    )
+    hazards_geojson = {
+        "type": "FeatureCollection",
+        "features": hazard_features,
+    }
     route_hash_payload = [
         {
             "name": _normalized_name(point),
@@ -117,6 +127,7 @@ def build_map_contract(
         route_hash=MapContract.route_digest(route_hash_payload),
         route_geojson=route_geojson,
         markers_geojson=markers_geojson,
+        hazards_geojson=hazards_geojson,
         bounds=_bounds(points),
         priority_labels=labels,
         attribution=[
@@ -130,6 +141,8 @@ def build_map_contract(
             "destination": flight.get("destination"),
             "point_count": len(points),
             "label_count": len(labels),
+            "hazard_count": len(hazard_features),
+            "vaa_status": vaa_review.get("status"),
             "actual_takeoff_utc": flight.get("actual_takeoff_utc"),
         },
     )

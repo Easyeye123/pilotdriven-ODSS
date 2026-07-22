@@ -38,6 +38,30 @@
         type: "geojson",
         data: bootstrap.markers,
       });
+      map.addSource("odss-hazards", {
+        type: "geojson",
+        data: bootstrap.hazards || {type: "FeatureCollection", features: []},
+      });
+
+      map.addLayer({
+        id: "odss-hazard-fill",
+        type: "fill",
+        source: "odss-hazards",
+        paint: {
+          "fill-color": "#ff6b6b",
+          "fill-opacity": 0.30,
+        },
+      });
+      map.addLayer({
+        id: "odss-hazard-outline",
+        type: "line",
+        source: "odss-hazards",
+        paint: {
+          "line-color": "#ffb84d",
+          "line-width": 2.5,
+          "line-opacity": 0.95,
+        },
+      });
 
       map.addLayer({
         id: "odss-route-halo",

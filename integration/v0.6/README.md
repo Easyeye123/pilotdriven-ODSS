@@ -1,4 +1,4 @@
-# PilotDriven ODSS v0.6 integration handoff
+# PilotDriven ODSS v0.6.1 integration handoff
 
 This directory contains the reference source and documentation required to implement Phases 1–7 of the realistic-map upgrade and combine ODSS with the wider `pilotdriven.com` project.
 
@@ -23,6 +23,8 @@ pilotdriven-nextjs/
 - A live realistic map requires an Amazon Location API key.
 - The Playwright browser must be installed for primary PDF capture.
 - Static and schematic fallbacks are mandatory.
+- Map contract 1.1 adds source-derived volcanic-ash hazard GeoJSON. Empty or
+  unresolved assessments never invent a polygon.
 
 ## FastAPI integration
 

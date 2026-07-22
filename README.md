@@ -4,7 +4,7 @@ PilotDriven Operational Decision Support System development repository.
 
 The working personal dashboard is in [`pilotdriven_odss_dashboard/`](pilotdriven_odss_dashboard/README.md).
 
-Current dashboard release: **v0.6.0** — authenticated service integration, deterministic Lido CFP analysis, a three-page landscape Level 1 brief with colour-coded review status and route map, expanded Level 2 output, ATOT recalculation and canonical map/report contracts.
+Current dashboard release: **v0.6.1** — authenticated service integration, deterministic Lido CFP analysis, a three-page landscape Level 1 brief with an additional volcanic-ash review page only when affected or unresolved, expanded Level 2 output, ATOT recalculation and canonical map/report contracts.
 
 ## Quick start
 
@@ -54,14 +54,14 @@ HANDOFF_MANIFEST.md
 Lido CFP
   -> ODSS parser and deterministic engines
   -> canonical analysis JSON
-  -> map contract / route GeoJSON / marker GeoJSON
+  -> map contract / route GeoJSON / marker and verified-hazard GeoJSON
   -> Amazon Location Hybrid + MapLibre
   -> Playwright PDF capture
   -> static fallback
   -> schematic offline fallback
 ```
 
-The PilotDriven frontend may replace presentation and map controls. It must not independently recalculate NOTAM applicability, ACTM/UTC, BOBCAT, EDTO, MSA/VWS, MEL/CDL or depressurisation findings.
+The PilotDriven frontend may replace presentation and map controls. It must not independently recalculate NOTAM applicability, volcanic-ash applicability, ACTM/UTC, BOBCAT, EDTO, MSA/VWS, MEL/CDL or depressurisation findings.
 
 ### Start with Python 3.12
 

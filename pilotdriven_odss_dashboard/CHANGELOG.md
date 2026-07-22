@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.1 - route-aware volcanic-ash review
+
+- Added an auditable NOAA Aviation Weather Center international-SIGMET snapshot and route/time/planned-flight-level intersection engine for volcanic ash.
+- Treats boundary contact as an intersection and handles route and advisory geometry across the antimeridian.
+- Fails closed to `review_required` when the source is unavailable, stale, incomplete, or does not cover the complete flight window; CFP text such as `No Wx data available` is never presented as a clear result.
+- Adds a colour-coded fourth Level 1 page for affected or unresolved volcanic-ash reviews while retaining the three-page report for verified non-applicability.
+- Omits the BOBCAT label and content when a flight has no BOBCAT allocation.
+- Adds verified hazard GeoJSON to map contract 1.1 and the schematic, MapLibre, Amazon Location static, React and print renderers.
+- Preserves source URL, retrieval time, response hash, record counts and match evidence in the canonical analysis JSON.
+- Corrects abbreviated Lido coordinate waypoint parsing so planned level changes such as `63N140W/410` can be matched to route entries such as `63N40`.
+
 ## 0.6.0 — authoritative service integration
 
 - Mounted the handoff map reference inside the working ODSS FastAPI application.

@@ -36,6 +36,7 @@
     <p><strong>{{ analysis.flight.route_waypoints|length }}</strong> route entries</p>
     <p><strong>{{ analysis.view.notam_finding_count }}</strong> pertinent or review NOTAM findings</p>
     <p><strong>{{ analysis.flight.weather|length }}</strong> weather records</p>
+    {% if analysis.flight.vaa_review %}<p><strong>Volcanic ash:</strong> {{ analysis.flight.vaa_review.status|replace('_', ' ')|title }}</p>{% endif %}
     {% if analysis.view.timing %}<p><strong>{{ analysis.view.timing.event_count }}</strong> pertinent actual-time events</p>{% endif %}
     {% if analysis.view.personal_note_count %}<p><strong>{{ analysis.view.personal_note_count }}</strong> personal notes included</p>{% endif %}
     {% if analysis.reference_library %}<p><strong>Reference library:</strong> {{ analysis.reference_library.status|replace('-', ' ')|title }}</p>{% endif %}

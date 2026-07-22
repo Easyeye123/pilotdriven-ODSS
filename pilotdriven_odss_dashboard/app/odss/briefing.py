@@ -272,9 +272,18 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
         "available": len(points) >= 2,
         "points": points,
         "label_indices": sorted(priority_indices),
+        "hazard_features": list(
+            ((flight.get("vaa_review") or {}).get("hazard_features") or [])
+        ),
+        "vaa_status": (flight.get("vaa_review") or {}).get("status"),
         "note": (
             "Natural Earth 1:110m land context; route from CFP coordinates - "
-            "briefing orientation only, not for navigation."
+            + (
+                "verified active VA SIGMET geometry shown; "
+                if (flight.get("vaa_review") or {}).get("hazard_features")
+                else ""
+            )
+            + "briefing orientation only, not for navigation."
         ),
     }
 
@@ -385,6 +394,33 @@ def _projected_land_segments(
     )
 
 
+def _projected_hazard_segments(
+    route_map: dict[str, Any],
+    projection: dict[str, Any],
+) -> tuple[tuple[tuple[float, float], ...], ...]:
+    frame = projection.get("frame") or {}
+    if not frame:
+        return ()
+    rings: list[tuple[tuple[float, float], ...]] = []
+    for feature in route_map.get("hazard_features") or []:
+        geometry = feature.get("geometry") or {}
+        coordinates = geometry.get("coordinates") or []
+        polygon_sets = [coordinates] if geometry.get("type") == "Polygon" else coordinates
+        for polygon_coordinates in polygon_sets:
+            for ring in polygon_coordinates or []:
+                try:
+                    prepared = tuple((float(lon), float(lat)) for lon, lat in ring)
+                except (TypeError, ValueError):
+                    continue
+                if len(prepared) >= 4:
+                    rings.append(prepared)
+    return tuple(
+        tuple(segment)
+        for ring in rings
+        for segment in _project_land_ring(ring, frame)
+    )
+
+
 def render_route_svg(route_map: dict[str, Any], width: int = 1200, height: int = 600) -> str:
     projection = project_route_map(route_map, float(width), float(height), 44.0)
     points = projection.get("points") or []
@@ -425,6 +461,19 @@ def render_route_svg(route_map: dict[str, Any], width: int = 1200, height: int =
         parts.append(
             f'<line x1="36" y1="{height - grid["y"]:.1f}" x2="{width - 36}" y2="{height - grid["y"]:.1f}" '
             'stroke="#28425f" stroke-width="1" opacity="0.55"/>'
+        )
+    for segment in _projected_hazard_segments(route_map, projection):
+        path = " ".join(
+            (
+                f"M {point[0]:.1f} {height - point[1]:.1f}"
+                if index == 0
+                else f"L {point[0]:.1f} {height - point[1]:.1f}"
+            )
+            for index, point in enumerate(segment)
+        )
+        parts.append(
+            f'<path d="{path} Z" fill="#ff6b6b" stroke="#ffb84d" '
+            'stroke-width="3" opacity="0.38"/>'
         )
     parts.append(
         f'<polyline points="{polyline}" fill="none" stroke="#dceeff" stroke-width="4" '
@@ -522,6 +571,17 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
     for grid in projection.get("grid") or []:
         canvas.line(x + grid["x"], y + 10, x + grid["x"], y + height - 10)
         canvas.line(x + 10, y + grid["y"], x + width - 10, y + grid["y"])
+
+    canvas.setFillColor(colors.Color(1.0, 0.42, 0.42, alpha=0.28))
+    canvas.setStrokeColor(colors.HexColor("#FFB84D"))
+    canvas.setLineWidth(1.1)
+    for segment in _projected_hazard_segments(route_map, projection):
+        hazard = canvas.beginPath()
+        hazard.moveTo(x + segment[0][0], y + segment[0][1])
+        for px, py in segment[1:]:
+            hazard.lineTo(x + px, y + py)
+        hazard.close()
+        canvas.drawPath(hazard, stroke=1, fill=1)
 
     canvas.setStrokeColor(colors.HexColor("#DCEEFF"))
     canvas.setLineWidth(1.8)
@@ -650,7 +710,7 @@ def _communication_timeline(
 
 def _enroute_weather_cards(findings: list[dict[str, Any]]) -> list[dict[str, str]]:
     weather = sorted(
-        [item for item in findings if item.get("engine") == "weather"],
+        [item for item in findings if item.get("engine") in {"vaa", "weather"}],
         key=_finding_sort_key,
     )
     cards = []
@@ -711,7 +771,11 @@ def build_briefing_view(
         and item.get("severity") == "critical"
         and item.get("data", {}).get("role") in {"departure", "destination", "destination alternate"}
     ]
-    weather_warnings = [item for item in grouped.get("weather", []) if item.get("severity") in {"warning", "critical"}]
+    weather_warnings = [
+        item
+        for item in grouped.get("vaa", []) + grouped.get("weather", [])
+        if item.get("severity") in {"warning", "critical", "unknown"}
+    ]
     edto_issues = [item for item in grouped.get("edto", []) if item.get("severity") in {"warning", "critical", "unknown"}]
     communication_items = grouped.get("communications", [])
     other_issues = [
@@ -802,6 +866,15 @@ def build_briefing_view(
             "airports": edto_airports,
         },
         "weather_cards": _enroute_weather_cards(findings),
+        "vaa": {
+            "status": (flight.get("vaa_review") or {}).get("status"),
+            "page": (
+                4
+                if (flight.get("vaa_review") or {}).get("status")
+                in {"affected", "review_required"}
+                else None
+            ),
+        },
         "counts": {
             "notams": sum(item.get("engine") == "notam" for item in findings),
             "weather": len(flight.get("weather") or []),
@@ -814,6 +887,12 @@ def build_briefing_view(
             {"label": "Route / contingency", "target": "route_contingency", "page": 3},
             {"label": "Communication plan", "target": "communications_detail", "page": 3},
             {"label": "EDTO analysis", "target": "edto_detail", "page": 3},
+            *(
+                [{"label": "Volcanic ash review", "target": "vaa_detail", "page": 4}]
+                if (flight.get("vaa_review") or {}).get("status")
+                in {"affected", "review_required"}
+                else []
+            ),
         ],
         "warnings": warnings[:5],
     }

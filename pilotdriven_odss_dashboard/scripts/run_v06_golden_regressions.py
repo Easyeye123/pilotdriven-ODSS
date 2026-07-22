@@ -56,7 +56,7 @@ def _run(name: str, source: Path, root: Path, flight_id: int) -> dict:
     findings = payload["findings"]
     contract = payload["map_contract"]
 
-    assert payload["schema_version"] == "0.6.0"
+    assert payload["schema_version"] == "0.6.1"
     assert flight["flight_number"] == name
     assert flight["departure"] == expected["departure"]
     assert flight["destination"] == expected["destination"]

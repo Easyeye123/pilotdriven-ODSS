@@ -25,6 +25,7 @@ class SchematicSvgRenderer:
             "provider": self.name,
             "route": contract.route_geojson,
             "markers": contract.markers_geojson,
+            "hazards": contract.hazards_geojson,
             "label": "Schematic route display — basemap unavailable",
         }
 
@@ -81,9 +82,24 @@ def _render_svg(contract: MapContract, *, width: int, height: int) -> str:
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" rx="12" fill="#07111f"/>',
-        f'<polyline points="{polyline}" fill="none" stroke="#dceeff" '
-        'stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>',
     ]
+    for feature in contract.hazards_geojson.get("features", []):
+        geometry = feature.get("geometry") or {}
+        coordinate_sets = geometry.get("coordinates") or []
+        polygons = [coordinate_sets] if geometry.get("type") == "Polygon" else coordinate_sets
+        for polygon in polygons:
+            if not polygon:
+                continue
+            ring = polygon[0]
+            points = " ".join(f"{x:.1f},{y:.1f}" for x, y in (project(item) for item in ring))
+            parts.append(
+                f'<polygon points="{points}" fill="#ff6b6b" fill-opacity="0.30" '
+                'stroke="#ffb84d" stroke-width="2"/>'
+            )
+    parts.append(
+        f'<polyline points="{polyline}" fill="none" stroke="#dceeff" '
+        'stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'
+    )
     selected = set(contract.priority_labels)
     for feature, (x, y) in zip(markers, projected):
         props = feature.get("properties", {})

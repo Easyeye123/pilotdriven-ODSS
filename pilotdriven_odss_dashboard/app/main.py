@@ -695,7 +695,7 @@ def _service_summary(flight) -> dict:
     analysis_id = _public_analysis_id(flight)
     return {
         "analysis_id": analysis_id,
-        "analysis_version": flight["analysis_version"] or "0.6.0",
+        "analysis_version": flight["analysis_version"] or APP_VERSION,
         "status": flight["status"],
         "created_at": flight["created_at"],
         "updated_at": flight["updated_at"],
@@ -720,6 +720,7 @@ def _service_summary(flight) -> dict:
             "map_contract": f"/v1/analyses/{analysis_id}/map-contract",
             "route_geojson": f"/v1/analyses/{analysis_id}/route.geojson",
             "markers_geojson": f"/v1/analyses/{analysis_id}/markers.geojson",
+            "hazards_geojson": f"/v1/analyses/{analysis_id}/hazards.geojson",
             "map_config": f"/v1/analyses/{analysis_id}/map-config",
             "level_1_report": f"/v1/analyses/{analysis_id}/reports/level-1",
             "level_2_report": f"/v1/analyses/{analysis_id}/reports/level-2",
@@ -734,7 +735,7 @@ def service_health():
     return JSONResponse({
         "status": "ok",
         "version": APP_VERSION,
-        "map_contract": "1.0",
+        "map_contract": "1.1",
         "map_provider": map_settings.provider,
         "map_style": map_settings.style,
         "playwright_capture_configured": bool(
@@ -776,7 +777,7 @@ async def create_service_analysis(
         "user_id": request.headers.get("x-pilotdriven-user-id"),
         "workspace_id": request.headers.get("x-pilotdriven-workspace-id"),
         "external_flight_id": request.headers.get("x-pilotdriven-flight-id"),
-        "analysis_version": "0.6.0",
+        "analysis_version": APP_VERSION,
         "service_request_id": service_request_id,
     }
     try:
