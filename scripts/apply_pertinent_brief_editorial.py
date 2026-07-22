@@ -37,6 +37,36 @@ briefing = replace_once(
 )
 briefing_path.write_text(briefing, encoding="utf-8")
 
+pertinent_path = root / "app/odss/pertinent_brief.py"
+pertinent = pertinent_path.read_text(encoding="utf-8")
+pertinent = replace_once(
+    pertinent,
+    '    top = _draw_page_title(canvas, briefing, width, height, "OPERATIONAL DETAIL", 2)\n',
+    '    top = _draw_page_title(\n'
+    '        canvas,\n'
+    '        briefing,\n'
+    '        width,\n'
+    '        height,\n'
+    '        f"{briefing[\'flight_number\']} - OPERATIONAL DETAIL",\n'
+    '        2,\n'
+    '    )\n',
+    "operational detail title",
+)
+pertinent = replace_once(
+    pertinent,
+    '    top = _draw_page_title(canvas, briefing, width, height, "ROUTE / CONTINGENCY", 3)\n',
+    '    top = _draw_page_title(\n'
+    '        canvas,\n'
+    '        briefing,\n'
+    '        width,\n'
+    '        height,\n'
+    '        f"{briefing[\'flight_number\']} - ROUTE / CONTINGENCY",\n'
+    '        3,\n'
+    '    )\n',
+    "route detail title",
+)
+pertinent_path.write_text(pertinent, encoding="utf-8")
+
 tests_path = root / "tests/test_reporting_regressions.py"
 tests = tests_path.read_text(encoding="utf-8")
 tests = replace_once(
@@ -56,6 +86,30 @@ tests = replace_once(
     '    assert "Decision support only" not in second\n'
     '    assert "Decision support only" not in third\n',
     "Level 1 status assertions",
+)
+tests = replace_once(
+    tests,
+    '    assert "MEL / CDL / CDDL" in second\n'
+    '    assert "PERFORMANCE / FUEL" in second\n'
+    '    assert "WEATHER / PERTINENT NOTAM" in second\n'
+    '    assert "SQ304 - ROUTE / CONTINGENCY" in third\n'
+    '    assert "FIR / COMMUNICATIONS" in third\n'
+    '    assert "TERRAIN MSA / VWS" in third\n'
+    '    assert "DEPRESSURISATION PROFILES" in third\n'
+    '    assert "High terrain detected but no profile matched" in third\n'
+    '    assert "Manual chart-index review is required" in third\n'
+    '    assert "ACTM / CALCULATED UTC TIMELINE" in third\n',
+    '    assert "MEL / CDL / CDDL" not in second\n'
+    '    assert "PERFORMANCE / FUEL" not in second\n'
+    '    assert "WEATHER / PERTINENT NOTAM" in second\n'
+    '    assert "SQ304 - ROUTE / CONTINGENCY" in third\n'
+    '    assert "FIR / COMMUNICATIONS" not in third\n'
+    '    assert "TERRAIN MSA / VWS" in third\n'
+    '    assert "DEPRESSURISATION PROFILES" in third\n'
+    '    assert "High terrain detected but no profile matched" in third\n'
+    '    assert "Manual chart-index review is required" in third\n'
+    '    assert "ACTM / CALCULATED UTC" not in third\n',
+    "floating section assertions",
 )
 
 append = r'''
