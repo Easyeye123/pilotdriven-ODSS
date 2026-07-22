@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from urllib.parse import quote
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -8,6 +9,14 @@ from playwright.async_api import async_playwright
 from .config import MapSettings
 from .contract import MapContract
 from .renderers import MapRenderError, MapRenderResult
+
+
+async def _close_quietly(resource) -> None:
+    """Bound Playwright cleanup so a captured map is not lost on shutdown."""
+    try:
+        await asyncio.wait_for(resource.close(), timeout=5)
+    except Exception:
+        pass
 
 
 def _chromium_launch_args() -> list[str]:
@@ -61,33 +70,41 @@ class PlaywrightMapSnapshotRenderer:
             f"{quote(str(contract.metadata.get('analysis_id') or contract.route_hash))}"
             f"?route_hash={quote(contract.route_hash)}"
         )
+        capture_stage = "Chromium startup"
 
         try:
             async with async_playwright() as playwright:
+                capture_stage = "Chromium startup"
                 browser = await playwright.chromium.launch(
                     headless=True,
                     args=_chromium_launch_args(),
                 )
-                context = await browser.new_context(
-                    viewport={
-                        "width": viewport_width,
-                        "height": viewport_height,
-                    },
-                    device_scale_factor=2,
-                )
-                page = await context.new_page()
                 try:
-                    await page.goto(
-                        target,
-                        wait_until="domcontentloaded",
-                        timeout=timeout_ms,
+                    capture_stage = "browser context setup"
+                    context = await browser.new_context(
+                        viewport={
+                            "width": viewport_width,
+                            "height": viewport_height,
+                        },
+                        device_scale_factor=1,
                     )
-                except PlaywrightTimeoutError as exc:
-                    raise MapRenderError(
-                        "Print page navigation did not reach DOMContentLoaded"
-                    ) from exc
-                try:
-                    await page.wait_for_function(
+                    try:
+                        capture_stage = "print page creation"
+                        page = await context.new_page()
+                        capture_stage = "print page navigation"
+                        try:
+                            await page.goto(
+                                target,
+                                wait_until="domcontentloaded",
+                                timeout=timeout_ms,
+                            )
+                        except PlaywrightTimeoutError as exc:
+                            raise MapRenderError(
+                                "Print page navigation did not reach DOMContentLoaded"
+                            ) from exc
+                        capture_stage = "MapLibre readiness"
+                        try:
+                            await page.wait_for_function(
                         """(settleTimeoutMs) => {
                           if (window.__ODSS_MAP_READY__ === true) {
                             window.__ODSS_MAP_CAPTURE_REASON__ = 'map-ready';
@@ -112,11 +129,11 @@ class PlaywrightMapSnapshotRenderer:
                             return false;
                           }
                         }""",
-                        arg=settle_timeout_ms,
-                        timeout=timeout_ms,
-                    )
-                except PlaywrightTimeoutError as exc:
-                    state = await page.evaluate(
+                                arg=settle_timeout_ms,
+                                timeout=timeout_ms,
+                            )
+                        except PlaywrightTimeoutError as exc:
+                            state = await page.evaluate(
                         """() => {
                           const map = window.__ODSS_MAP_INSTANCE__;
                           const result = {
@@ -135,18 +152,20 @@ class PlaywrightMapSnapshotRenderer:
                           return result;
                         }"""
                     )
-                    raise MapRenderError(
+                            raise MapRenderError(
                         "MapLibre print map did not become ready before timeout "
                         f"(map={bool(state.get('hasMap'))}; "
                         f"style={bool(state.get('styleLoaded'))}; "
                         f"tiles={bool(state.get('tilesLoaded'))}; "
                         f"ready={bool(state.get('ready'))}; "
                         f"error={bool(state.get('error'))})"
-                    ) from exc
-                page_error = await page.evaluate("window.__ODSS_MAP_ERROR__")
-                if page_error:
-                    raise MapRenderError(f"MapLibre print page failed: {page_error}")
-                capture_state = await page.evaluate(
+                            ) from exc
+                        capture_stage = "MapLibre error check"
+                        page_error = await page.evaluate("window.__ODSS_MAP_ERROR__")
+                        if page_error:
+                            raise MapRenderError(f"MapLibre print page failed: {page_error}")
+                        capture_stage = "MapLibre state verification"
+                        capture_state = await page.evaluate(
                     """() => {
                       const map = window.__ODSS_MAP_INSTANCE__;
                       const result = {
@@ -163,39 +182,62 @@ class PlaywrightMapSnapshotRenderer:
                       return result;
                     }"""
                 )
-                capture_readiness = capture_state.get("reason") or "verified-state"
-                rendered_hash = await page.get_attribute("html", "data-route-hash")
-                if rendered_hash != contract.route_hash:
-                    raise MapRenderError("Rendered map route hash does not match the contract")
-                await page.evaluate(
+                        capture_readiness = capture_state.get("reason") or "verified-state"
+                        capture_stage = "route hash verification"
+                        rendered_hash = await page.get_attribute("html", "data-route-hash")
+                        if rendered_hash != contract.route_hash:
+                            raise MapRenderError("Rendered map route hash does not match the contract")
+                        capture_stage = "font and frame settling"
+                        await page.evaluate(
                     """async () => {
-                      if (document.fonts) await document.fonts.ready;
+                      if (document.fonts) {
+                        await Promise.race([
+                          document.fonts.ready,
+                          new Promise((resolve) => setTimeout(resolve, 2000)),
+                        ]);
+                      }
                       await new Promise((resolve) => requestAnimationFrame(
                         () => requestAnimationFrame(resolve),
                       ));
                     }"""
-                )
-                locator = page.locator("#odss-print-map")
-                clip = await locator.bounding_box()
-                if not clip:
-                    raise MapRenderError("Print map has no visible capture bounds")
-                try:
-                    image = await page.screenshot(
-                        type="png",
-                        clip=clip,
-                        animations="disabled",
-                        caret="hide",
-                        timeout=30_000,
-                    )
-                except PlaywrightTimeoutError as exc:
-                    raise MapRenderError(
-                        "Direct print-map screenshot did not complete"
-                    ) from exc
-                await context.close()
-                await browser.close()
+                        )
+                        capture_stage = "print map bounds"
+                        clip = await page.evaluate(
+                            """() => {
+                              const element = document.getElementById('odss-print-map');
+                              if (!element) return null;
+                              const bounds = element.getBoundingClientRect();
+                              if (bounds.width <= 0 || bounds.height <= 0) return null;
+                              return {
+                                x: bounds.x,
+                                y: bounds.y,
+                                width: bounds.width,
+                                height: bounds.height,
+                              };
+                            }"""
+                        )
+                        if not clip:
+                            raise MapRenderError("Print map has no visible capture bounds")
+                        capture_stage = "direct print-map screenshot"
+                        try:
+                            image = await page.screenshot(
+                                type="png",
+                                clip=clip,
+                                animations="disabled",
+                                caret="hide",
+                                timeout=min(30_000, timeout_ms),
+                            )
+                        except PlaywrightTimeoutError as exc:
+                            raise MapRenderError(
+                                "Direct print-map screenshot did not complete"
+                            ) from exc
+                    finally:
+                        await _close_quietly(context)
+                finally:
+                    await _close_quietly(browser)
         except PlaywrightTimeoutError as exc:
             raise MapRenderError(
-                "MapLibre print map did not become ready before timeout"
+                f"MapLibre print map timed out during {capture_stage}"
             ) from exc
         except Exception as exc:
             raise MapRenderError(
