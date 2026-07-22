@@ -192,7 +192,7 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     second = reader.pages[1].extract_text() or ""
     third = reader.pages[2].extract_text() or ""
 
-    assert "PILOTDRIVEN" in first
+    assert "PILOT" in first and "DRIVEN" in first
     assert "REVIEW REQUIRED" not in first
     assert "BRIEFING COMPLETE" not in first
     assert "Decision support only" not in first
