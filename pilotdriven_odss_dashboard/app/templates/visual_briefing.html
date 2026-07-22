@@ -129,7 +129,6 @@
           <h3>Route / procedure tools</h3>
           {% if flight.level1_report %}<a href="/files/report/{{ flight.id }}/1">Open Level 1 visual brief</a>{% endif %}
           {% if flight.level2_report %}<a href="/files/report/{{ flight.id }}/2">Open Level 2 expanded brief</a>{% endif %}
-          {% if flight.analysis_path %}<a href="/files/analysis/{{ flight.id }}">Download canonical JSON</a>{% endif %}
           <a href="#timing-form">Actual-time operational clock</a>
           <a href="#personal-notes">Personal notes</a>
         </article>
