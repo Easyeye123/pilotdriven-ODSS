@@ -85,6 +85,29 @@ export function OdssRouteMap({
           type: "geojson",
           data: contract.markers_geojson as never,
         });
+        map.addSource("odss-hazards", {
+          type: "geojson",
+          data: contract.hazards_geojson as never,
+        });
+
+        map.addLayer({
+          id: "odss-hazard-fill",
+          type: "fill",
+          source: "odss-hazards",
+          paint: {
+            "fill-color": "#ff6b6b",
+            "fill-opacity": 0.3,
+          },
+        });
+        map.addLayer({
+          id: "odss-hazard-outline",
+          type: "line",
+          source: "odss-hazards",
+          paint: {
+            "line-color": "#ffb84d",
+            "line-width": 2.5,
+          },
+        });
 
         map.addLayer({
           id: "odss-route-halo",

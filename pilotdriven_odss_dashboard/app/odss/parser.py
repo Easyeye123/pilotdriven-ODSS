@@ -150,7 +150,7 @@ def _parse_waypoints(route_pages: list[str], route_text: str) -> list[dict[str, 
     pending: dict[str, Any] | None = None
     waypoints: list[dict[str, Any]] = []
     waypoint_line = re.compile(
-        r"^(?P<name>\*\*ETP\S*|-[A-Z0-9]+|[A-Z][A-Z0-9]{1,8}|TOC|TOD|ENTRY\d|EXIT\d)"
+        r"^(?P<name>\*\*ETP\S*|-[A-Z0-9]+|\d{1,2}[NS]\d{2,3}|[A-Z][A-Z0-9]{1,8}|TOC|TOD|ENTRY\d|EXIT\d)"
         r"(?:\s+\d{3}(?:\.\d+)?)?\s+(?P<actm>\d{2}\.\d{2})\b"
     )
     coordinate_line = re.compile(

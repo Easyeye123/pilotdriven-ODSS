@@ -170,7 +170,7 @@ def test_health_is_public_and_dashboard_requires_configured_credentials(
     )
 
     assert health.status_code == 200
-    assert health.json() == {"status": "ok", "version": "0.6.0"}
+    assert health.json() == {"status": "ok", "version": "0.6.1"}
     assert anonymous.status_code == 401
     assert anonymous.headers["www-authenticate"].startswith("Basic")
     assert wrong.status_code == 401

@@ -55,12 +55,15 @@ class MapContract(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     provider: str = "aws-location"
     style: str = "Hybrid"
     route_hash: str
     route_geojson: GeoJson
     markers_geojson: GeoJson
+    hazards_geojson: GeoJson = Field(
+        default_factory=lambda: {"type": "FeatureCollection", "features": []}
+    )
     bounds: MapBounds
     priority_labels: list[str] = Field(default_factory=list)
     attribution: list[str] = Field(default_factory=list)

@@ -161,7 +161,7 @@ async def render_reports_for_analysis(
         "warnings": result.warnings,
         **result.metadata,
     }
-    analysis["schema_version"] = "0.6.0"
+    analysis["schema_version"] = "0.6.1"
     analysis["map_contract"] = contract.public_dict()
     analysis.setdefault("view", {})["map_render"] = render_metadata
     _atomic_json_write(analysis_path, analysis)

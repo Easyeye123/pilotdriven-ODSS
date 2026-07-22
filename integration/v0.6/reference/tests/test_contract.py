@@ -52,6 +52,8 @@ def test_map_contract_is_stable_and_keeps_route_order() -> None:
 
     assert first.route_hash == second.route_hash
     assert first.metadata["point_count"] == 4
+    assert first.schema_version == "1.1"
+    assert first.hazards_geojson == {"type": "FeatureCollection", "features": []}
     assert first.route_geojson["features"][0]["geometry"]["type"] == "LineString"
     names = [
         item["properties"]["name"]
@@ -75,3 +77,27 @@ def test_style_descriptor_url_never_enters_contract() -> None:
     assert settings.style_descriptor_url.endswith(
         "/v2/styles/Hybrid/descriptor?key=v1.public.example"
     )
+
+
+def test_verified_hazard_geometry_is_carried_without_changing_route_hash() -> None:
+    baseline = build_map_contract(_flight(), [], MapSettings(provider="schematic"))
+    flight = _flight()
+    flight["vaa_review"] = {
+        "status": "affected",
+        "hazard_features": [
+            {
+                "type": "Feature",
+                "id": "VA-1",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[110, 5], [120, 5], [120, 15], [110, 5]]],
+                },
+                "properties": {"hazard": "volcanic_ash"},
+            }
+        ],
+    }
+
+    contract = build_map_contract(flight, [], MapSettings(provider="schematic"))
+
+    assert contract.route_hash == baseline.route_hash
+    assert len(contract.hazards_geojson["features"]) == 1

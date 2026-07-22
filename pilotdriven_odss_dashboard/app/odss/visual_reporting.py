@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -14,6 +16,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import BaseDocTemplate, Flowable, Frame, PageBreak, PageTemplate, Paragraph
 
 from .briefing import build_briefing_view, draw_route_map_pdf
+from .constants import format_actm
 
 
 PAGE_SIZE = landscape(A4)
@@ -341,6 +344,8 @@ def _draw_cover(canvas, briefing: dict[str, Any], width: float, height: float) -
         "MEL, NOTAM, weather and performance",
         "ATC, EDTO, MSA, VWS and profiles",
     ]
+    if briefing.get("vaa", {}).get("page"):
+        link_lines[-1] = "Page 4 - Volcanic ash review"
     _draw_panel(canvas, links_x, bottom_y, links_w, bottom_h, "BRIEFING LINKS", link_lines, _BLUE, True, _STYLES["panel_small"])
     canvas.linkRect("", "operational_detail", (links_x, bottom_y + bottom_h / 2, links_x + links_w, bottom_y + bottom_h), relative=1, thickness=0)
     canvas.linkRect("", "route_contingency", (links_x, bottom_y, links_x + links_w, bottom_y + bottom_h / 2), relative=1, thickness=0)
@@ -439,7 +444,7 @@ def _draw_operational_detail(canvas, flight: dict[str, Any], findings: list[dict
         item for item in grouped.get("notam", [])
         if item.get("data", {}).get("role") in {"destination alternate", "EDTO"}
     ]
-    weather_lines = _finding_lines(grouped.get("weather", []), 7, 1)
+    weather_lines = _finding_lines(grouped.get("vaa", []) + grouped.get("weather", []), 7, 1)
     _draw_panel(canvas, x3, body_bottom + half + gap, column_w, half, "ALTERNATES / EDTO AIRPORTS", _finding_lines(alternate_notams + grouped.get("edto", []), 7, 2), _PURPLE, False, _STYLES["detail_small"])
     _draw_panel(canvas, x3, body_bottom, column_w, half, "WEATHER / PERTINENT NOTAM", weather_lines + _finding_lines(grouped.get("notam", []), 4, 1), _RED, False, _STYLES["detail_small"])
 
@@ -473,11 +478,169 @@ def _draw_route_detail(canvas, flight: dict[str, Any], findings: list[dict[str, 
     _draw_panel(canvas, x2, bottom + half + gap, middle_w, half, "TERRAIN MSA / VWS", terrain_lines, _AMBER, False, _STYLES["detail_small"])
     _draw_panel(canvas, x2, bottom, middle_w, half, "DEPRESSURISATION PROFILES", depress_lines, _RED, False, _STYLES["detail_small"])
 
-    edto_lines = _finding_lines(grouped.get("edto", []), 6, 3)
-    bobcat_lines = _finding_lines(grouped.get("bobcat", []), 4, 3)
+    edto_findings = grouped.get("edto", [])
+    bobcat_findings = grouped.get("bobcat", [])
+    if edto_findings and bobcat_findings:
+        route_status_title = "EDTO / BOBCAT"
+        route_status_lines = _finding_lines(edto_findings, 6, 3) + _finding_lines(bobcat_findings, 4, 3)
+    elif edto_findings:
+        route_status_title = "EDTO"
+        route_status_lines = _finding_lines(edto_findings, 7, 3)
+    elif bobcat_findings:
+        route_status_title = "BOBCAT"
+        route_status_lines = _finding_lines(bobcat_findings, 7, 3)
+    else:
+        route_status_title = "ROUTE STATUS"
+        route_status_lines = ["No EDTO or route-allocation item selected."]
     map_h = available_h * 0.42
-    _draw_panel(canvas, x3, top - map_h, right_w, map_h, "EDTO / BOBCAT", edto_lines + bobcat_lines, _GREEN, False, _STYLES["detail_small"])
+    _draw_panel(canvas, x3, top - map_h, right_w, map_h, route_status_title, route_status_lines, _GREEN, False, _STYLES["detail_small"])
     draw_route_map_pdf(canvas, briefing["route_map"], x3, bottom, right_w, available_h - map_h - gap)
+
+
+def _draw_vaa_detail(
+    canvas,
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    width: float,
+    height: float,
+) -> None:
+    canvas.bookmarkPage("vaa_detail")
+    _draw_detail_header(
+        canvas,
+        width,
+        height,
+        f"{briefing['flight_number']} - VOLCANIC ASH ADVISORY REVIEW",
+        4,
+    )
+    review = flight.get("vaa_review") or {}
+    status = str(review.get("status") or "review_required")
+    accent = _RED if status == "affected" else _PURPLE
+    status_label = "ROUTE AFFECTED" if status == "affected" else "MANUAL REVIEW REQUIRED"
+    margin = 6 * mm
+    gap = 3 * mm
+    top = height - 17 * mm
+    bottom = 7 * mm
+    status_h = 16 * mm
+    canvas.setFillColor(accent)
+    canvas.roundRect(margin, top - status_h, width - 2 * margin, status_h, 5, fill=1, stroke=0)
+    canvas.setFillColor(colors.white)
+    canvas.setFont("Helvetica-Bold", 13)
+    canvas.drawString(margin + 5 * mm, top - 10.2 * mm, status_label)
+    canvas.setFont("Helvetica", 7)
+    canvas.drawRightString(
+        width - margin - 5 * mm,
+        top - 9.7 * mm,
+        "Route + UTC + planned flight level + advisory geometry",
+    )
+
+    body_top = top - status_h - gap
+    body_h = body_top - bottom
+    left_w = (width - 2 * margin - gap) * 0.35
+    right_w = width - 2 * margin - gap - left_w
+    left_x = margin
+    right_x = left_x + left_w + gap
+    left_half = (body_h - gap) / 2
+
+    reason_lines = [
+        str(code).replace("_", " ").capitalize()
+        for code in (review.get("reason_codes") or [])
+    ]
+    assessment_lines = [
+        f"Status: {status.replace('_', ' ').upper()}",
+        *(f"- {line}" for line in reason_lines),
+    ]
+    if status == "affected":
+        assessment_lines.append("A positive intersection is sufficient even if source coverage is otherwise partial.")
+    else:
+        assessment_lines.extend([
+            "This is not a 'no volcanic ash' result.",
+            "Review the current official advisory source and dispatch material before use.",
+        ])
+    _draw_panel(
+        canvas,
+        left_x,
+        bottom + left_half + gap,
+        left_w,
+        left_half,
+        "ASSESSMENT",
+        assessment_lines,
+        accent,
+        False,
+        _STYLES["detail_small"],
+    )
+
+    snapshot = review.get("source_snapshot") or {}
+    embedded = review.get("embedded_source") or {}
+    source_host = urlsplit(str(review.get("source_url") or "")).hostname or "not available"
+    source_lines = [
+        f"Provider: {review.get('provider') or 'not available'}",
+        f"Retrieved UTC: {review.get('retrieved_at_utc') or 'not available'}",
+        f"Coverage: {review.get('coverage_status') or 'unknown'}",
+        f"Freshness: {review.get('freshness_status') or 'unknown'}",
+        f"Snapshot SHA-256: {str(snapshot.get('raw_sha256') or 'not available')[:20]}",
+        f"CFP source page: {embedded.get('source_page') or 'not found'}",
+        f"CFP statement: {str(embedded.get('raw_excerpt') or 'not present')[:110]}",
+        f"Source host: {source_host}",
+    ]
+    _draw_panel(
+        canvas,
+        left_x,
+        bottom,
+        left_w,
+        left_half,
+        "SOURCE / PROVENANCE",
+        source_lines,
+        _NAVY,
+        False,
+        _STYLES["detail_small"],
+    )
+
+    matches = review.get("matches") or []
+    if matches:
+        def utc_label(value: Any) -> str:
+            try:
+                parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except ValueError:
+                return str(value or "--")
+            return parsed.strftime("%d %b %H%MZ").upper()
+
+        match_lines = [
+            (
+                f"{item.get('advisory_id')}: {item.get('route_from')}-"
+                f"{item.get('route_to')} | FL{item.get('planned_flight_level')} | "
+                f"ACTM {format_actm(item.get('start_actm_minutes'))}-"
+                f"{format_actm(item.get('end_actm_minutes'))} | "
+                f"{utc_label(item.get('segment_start_utc'))}-"
+                f"{utc_label(item.get('segment_end_utc'))}"
+            )
+            for item in matches[:8]
+        ]
+    else:
+        match_lines = [
+            "No verified intersection is displayed.",
+            "Incomplete source coverage cannot be used to prove non-applicability.",
+        ]
+    match_h = 43 * mm
+    _draw_panel(
+        canvas,
+        right_x,
+        body_top - match_h,
+        right_w,
+        match_h,
+        "ROUTE / TIME / FL EVIDENCE",
+        match_lines,
+        accent,
+        False,
+        _STYLES["detail_small"],
+    )
+    draw_route_map_pdf(
+        canvas,
+        briefing["route_map"],
+        right_x,
+        bottom,
+        right_w,
+        body_h - match_h - gap,
+    )
 
 
 class _FullPageFlowable(Flowable):
@@ -522,6 +685,15 @@ def route_detail_flowable(
     )
 
 
+def vaa_detail_flowable(
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+) -> Flowable:
+    return _FullPageFlowable(
+        lambda canvas, width, height: _draw_vaa_detail(canvas, flight, briefing, width, height)
+    )
+
+
 def render_level1_visual(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -552,6 +724,8 @@ def render_level1_visual(
         PageBreak(),
         route_detail_flowable(flight, findings, briefing, 1),
     ]
+    if (flight.get("vaa_review") or {}).get("status") in {"affected", "review_required"}:
+        story.extend([PageBreak(), vaa_detail_flowable(flight, briefing)])
     document.build(story)
 
 
@@ -560,5 +734,6 @@ __all__ = [
     "operational_detail_flowable",
     "render_level1_visual",
     "route_detail_flowable",
+    "vaa_detail_flowable",
     "visual_cover_flowable",
 ]

@@ -69,7 +69,7 @@ DEPRESS_PROFILES = [
 ]
 
 ENGINE_ORDER = [
-    "page1", "bobcat", "mel", "cddl", "performance", "weather", "notam",
+    "page1", "bobcat", "mel", "cddl", "performance", "weather", "vaa", "notam",
     "communications", "actual_timing", "terrain", "vws", "depressurisation",
     "edto", "timeline", "qa",
 ]

@@ -29,6 +29,7 @@ class AwsLocationInteractiveRenderer:
             "style_url": style_url,
             "route": contract.route_geojson,
             "markers": contract.markers_geojson,
+            "hazards": contract.hazards_geojson,
             "bounds": contract.bounds.model_dump(),
             "priority_labels": contract.priority_labels,
             "route_hash": contract.route_hash,
@@ -179,6 +180,22 @@ def _static_overlay(
     ][:marker_limit]
 
     features = []
+    for hazard in contract.hazards_geojson.get("features", [])[:4]:
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": _simplify_hazard_geometry(
+                    hazard.get("geometry") or {},
+                    max_points=max(6, route_point_limit // 2),
+                ),
+                "properties": {
+                    "color": "#FFB84D",
+                    "width": 2,
+                    "fill-color": "#FF6B6B",
+                    "fill-opacity": 0.30,
+                },
+            }
+        )
     for route in route_features[:1]:
         copied = {
             "type": "Feature",
@@ -240,6 +257,42 @@ def _simplify_route_geometry(geometry: dict[str, Any], *, max_points: int) -> di
             simplified.append(_sample_coordinates(segment, allocation))
         return {"type": "MultiLineString", "coordinates": simplified}
     return geometry
+
+
+def _simplify_hazard_geometry(geometry: dict[str, Any], *, max_points: int) -> dict[str, Any]:
+    geometry_type = geometry.get("type")
+    coordinates = geometry.get("coordinates")
+    if geometry_type == "Polygon" and isinstance(coordinates, list):
+        return {
+            "type": "Polygon",
+            "coordinates": [
+                _closed_sample(ring, max_points)
+                for ring in coordinates
+                if isinstance(ring, list)
+            ],
+        }
+    if geometry_type == "MultiPolygon" and isinstance(coordinates, list):
+        return {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [
+                    _closed_sample(ring, max_points)
+                    for ring in polygon
+                    if isinstance(ring, list)
+                ]
+                for polygon in coordinates
+                if isinstance(polygon, list)
+            ],
+        }
+    return geometry
+
+
+def _closed_sample(coordinates: list[Any], maximum: int) -> list[Any]:
+    if not coordinates:
+        return []
+    open_ring = coordinates[:-1] if coordinates[0] == coordinates[-1] else coordinates
+    sampled = _sample_coordinates(open_ring, max(3, maximum - 1))
+    return [*sampled, sampled[0]] if sampled else []
 
 
 def _sample_coordinates(coordinates: list[Any], maximum: int) -> list[Any]:

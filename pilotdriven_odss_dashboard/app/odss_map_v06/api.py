@@ -54,6 +54,10 @@ def create_map_router(
     async def marker_geojson(analysis_id: str) -> JSONResponse:
         return JSONResponse(contract_for(analysis_id).markers_geojson)
 
+    @router.get("/v1/analyses/{analysis_id}/hazards.geojson")
+    async def hazard_geojson(analysis_id: str) -> JSONResponse:
+        return JSONResponse(contract_for(analysis_id).hazards_geojson)
+
     @router.get("/v1/analyses/{analysis_id}/map-config")
     async def map_config(analysis_id: str) -> JSONResponse:
         contract = contract_for(analysis_id)

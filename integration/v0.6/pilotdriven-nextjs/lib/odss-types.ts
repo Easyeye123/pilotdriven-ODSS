@@ -19,12 +19,13 @@ export type OdssMapBounds = {
 };
 
 export type OdssMapContract = {
-  schema_version: "1.0";
+  schema_version: "1.0" | "1.1";
   provider: string;
   style: string;
   route_hash: string;
   route_geojson: GeoJsonFeatureCollection;
   markers_geojson: GeoJsonFeatureCollection;
+  hazards_geojson: GeoJsonFeatureCollection;
   bounds: OdssMapBounds;
   priority_labels: string[];
   attribution: string[];

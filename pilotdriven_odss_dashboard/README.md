@@ -6,6 +6,7 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
 
 - Upload and archive Lido CFP PDFs.
 - Parse the CFP section, Page 1, route log, route coordinates, BOBCAT allocation, performance, fuel, EDTO and deferred items.
+- Check official NOAA Aviation Weather Center international SIGMET data for positive volcanic-ash route/time/flight-level intersections, retain source provenance, and fail closed to manual review when complete flight coverage cannot be proven.
 - Plot an offline contextual route map using the actual waypoint coordinates contained in the Lido CFP over a bundled Natural Earth 1:110m land layer.
 - Display a dark visual briefing dashboard with:
   - flight and schedule controls;
@@ -16,7 +17,7 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
   - early ATC/FIR communication timing;
   - EDTO summary; and
   - pertinent enroute weather.
-- Generate a fixed three-page landscape **Level 1 pertinent brief** with a mapped summary cover, colour-coded operational detail and route/contingency review, readable without exposing support JSON.
+- Generate a three-page landscape **Level 1 pertinent brief** with a mapped summary cover, colour-coded operational detail and route/contingency review, plus a fourth volcanic-ash page only for an affected or unresolved assessment.
 - Start the **Level 2 expanded report** with the same visual briefing cover, followed by the complete deterministic analysis and warnings.
 - Store a canonical `view.briefing` object in the analysis JSON so the current dashboard, PDF renderer and future PilotDriven frontend share the same facts.
 - Detect continuous MSA greater than `100*` events and VWS greater than 4 events.
@@ -126,7 +127,7 @@ python -m compileall -q app
 pytest -q
 ```
 
-The regression suite covers upload validation, failed reruns, last-known-good artifacts, NOTAM applicability and priority, route-coordinate parsing, three-page landscape Level 1 generation, visual output, actual takeoff anchoring, waypoint-ATA re-anchoring, personal-note CRUD and report placement.
+The regression suite covers upload validation, failed reruns, last-known-good artifacts, NOTAM applicability and priority, route-coordinate parsing, conditional three/four-page Level 1 generation, volcanic-ash time/level/geometry and antimeridian checks, visual output, actual takeoff anchoring, waypoint-ATA re-anchoring, personal-note CRUD and report placement.
 
 GitHub Actions also generates Level 1 and Level 2 visual sample PDFs as build artifacts for visual inspection.
 
@@ -167,6 +168,7 @@ It contains:
 - route and marker GeoJSON;
 - stable route hash;
 - marker roles and label priorities;
+- verified volcanic-ash hazard GeoJSON;
 - Amazon Location Hybrid / MapLibre adapter;
 - Playwright PDF map capture;
 - Amazon Location static fallback;
@@ -228,6 +230,7 @@ GET  /v1/analyses/{id}/briefing
 GET  /v1/analyses/{id}/map-contract
 GET  /v1/analyses/{id}/route.geojson
 GET  /v1/analyses/{id}/markers.geojson
+GET  /v1/analyses/{id}/hazards.geojson
 GET  /v1/analyses/{id}/map-config
 GET  /v1/analyses/{id}/map-fallback
 POST /v1/analyses/{id}/timing
@@ -238,7 +241,7 @@ GET  /v1/analyses/{id}/reports/level-2
 
 ODSS remains authoritative for CFP parsing and all deterministic aviation
 calculations. The browser renders the returned briefing and GeoJSON; it does
-not recompute NOTAM applicability, MEL/CDL/CDDL, performance, BOBCAT, EDTO,
+not recompute NOTAM or volcanic-ash applicability, MEL/CDL/CDDL, performance, BOBCAT, EDTO,
 ACTM/UTC, communications, terrain, VWS or depressurisation findings.
 
 ## Playwright report worker

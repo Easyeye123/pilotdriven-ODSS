@@ -87,8 +87,8 @@ def test_service_api_requires_bearer_token(service_app: TestClient) -> None:
 
     assert anonymous.status_code == 401
     assert authorized.status_code == 200
-    assert authorized.json()["version"] == "0.6.0"
-    assert authorized.json()["map_contract"] == "1.0"
+    assert authorized.json()["version"] == "0.6.1"
+    assert authorized.json()["map_contract"] == "1.1"
 
 
 
@@ -147,6 +147,10 @@ def test_service_analysis_exposes_stable_contract_and_explicit_fallback(
         f"/v1/analyses/{analysis_id}/markers.geojson",
         headers=_authorization(),
     )
+    hazards = service_app.get(
+        f"/v1/analyses/{analysis_id}/hazards.geojson",
+        headers=_authorization(),
+    )
     config = service_app.get(
         f"/v1/analyses/{analysis_id}/map-config",
         headers=_authorization(),
@@ -156,12 +160,14 @@ def test_service_analysis_exposes_stable_contract_and_explicit_fallback(
         headers=_authorization(),
     )
 
-    assert contract.status_code == route.status_code == markers.status_code == 200
+    assert contract.status_code == route.status_code == markers.status_code == hazards.status_code == 200
     contract_payload = contract.json()
-    assert contract_payload["schema_version"] == "1.0"
+    assert contract_payload["schema_version"] == "1.1"
+    assert contract_payload["hazards_geojson"] == {"type": "FeatureCollection", "features": []}
     assert len(contract_payload["route_hash"]) == 64
     assert route.json() == contract_payload["route_geojson"]
     assert markers.json() == contract_payload["markers_geojson"]
+    assert hazards.json() == contract_payload["hazards_geojson"]
     assert config.json()["route_hash"] == contract_payload["route_hash"]
     assert config.json()["fallback_url"].endswith("/map-fallback")
     assert fallback.status_code == 200
@@ -174,7 +180,7 @@ def test_service_analysis_exposes_stable_contract_and_explicit_fallback(
         f"/v1/analyses/{analysis_id}/briefing",
         headers=_authorization(),
     ).json()
-    assert briefing["schema_version"] == "0.6.0"
+    assert briefing["schema_version"] == "0.6.1"
     assert briefing["flight"]["flight_number"] == "SQ304"
 
 

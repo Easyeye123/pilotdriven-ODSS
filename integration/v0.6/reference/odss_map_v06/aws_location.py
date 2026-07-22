@@ -29,6 +29,7 @@ class AwsLocationInteractiveRenderer:
             "style_url": style_url,
             "route": contract.route_geojson,
             "markers": contract.markers_geojson,
+            "hazards": contract.hazards_geojson,
             "bounds": contract.bounds.model_dump(),
             "priority_labels": contract.priority_labels,
             "route_hash": contract.route_hash,
@@ -164,6 +165,17 @@ def _static_overlay(
     ][:marker_limit]
 
     features = []
+    for hazard in contract.hazards_geojson.get("features", [])[:4]:
+        features.append({
+            "type": "Feature",
+            "geometry": hazard.get("geometry") or {},
+            "properties": {
+                "color": "#FFB84D",
+                "width": 2,
+                "fill-color": "#FF6B6B",
+                "fill-opacity": 0.30,
+            },
+        })
     for route in route_features[:1]:
         copied = {
             "type": "Feature",

@@ -18,6 +18,7 @@ from .odss.constants import (
 from .odss.engines import analyse
 from .odss.parser import extract_pages, parse_lido
 from .odss.reporting import render_pdf
+from .odss.vaa import assess_volcanic_ash
 from .odss_map_v06.config import MapSettings
 from .odss_map_v06.geojson import build_map_contract
 from .odss.timing import build_timing_view, timing_finding
@@ -65,6 +66,7 @@ def run_odss_analysis(
             "actual_takeoff_utc": actual_takeoff_utc,
         }
 
+    assess_volcanic_ash(flight, pages)
     findings, warnings = analyse(flight)
     timing_view = None
     if actual_takeoff_utc:
@@ -109,7 +111,7 @@ def run_odss_analysis(
         warnings.append(f"Map contract unavailable: {exc}")
 
     payload = {
-        "schema_version": "0.6.0",
+        "schema_version": "0.6.1",
         "flight": flight,
         "findings": findings,
         "reference_library": REFERENCE_LIBRARY_METADATA,
@@ -163,8 +165,9 @@ def run_odss_analysis(
         "notam_records": sum(item["engine"] == "notam" for item in findings),
         "timing_event_count": timing_view["event_count"] if timing_view else 0,
         "personal_note_count": len(flight["personal_notes"]),
+        "vaa_status": (flight.get("vaa_review") or {}).get("status"),
         "warnings": warnings,
-        "analysis_version": "0.6.0",
+        "analysis_version": "0.6.1",
     }
 
 
@@ -183,7 +186,7 @@ def load_analysis(path: str | None) -> dict[str, Any] | None:
 # Compatibility with the v0.1 dashboard while files are updated in stages.
 def run_placeholder_analysis(file_path: Path) -> dict[str, Any]:
     return {
-        "status": "ODSS core installed; update app.main to v0.6.0",
+        "status": "ODSS core installed; update app.main to v0.6.1",
         "file_size_bytes": file_path.stat().st_size,
         "modules": ENGINE_ORDER,
     }

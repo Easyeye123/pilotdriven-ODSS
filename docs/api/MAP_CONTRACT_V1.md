@@ -13,12 +13,13 @@
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "provider": "aws-location",
   "style": "Hybrid",
   "route_hash": "<sha256>",
   "route_geojson": {},
   "markers_geojson": {},
+  "hazards_geojson": {},
   "bounds": {
     "west": 0,
     "south": 0,
@@ -79,6 +80,33 @@ The route is one `LineString` or `MultiLineString` feature.
     "msa_hundreds_ft": 166,
     "vws": 1,
     "source_page": 11,
+    "not_for_navigation": true
+  }
+}
+```
+
+## Hazard feature
+
+`hazards_geojson` is an empty `FeatureCollection` unless ODSS has a verified
+positive route/time/flight-level volcanic-ash intersection. It contains the
+same source-derived geometry used by the dashboard and report renderers. A
+`review_required` state is carried in analysis metadata and never invents a
+polygon.
+
+```json
+{
+  "type": "Feature",
+  "id": "RJJJ-A1-1784700000",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[[140.0, 40.0], [145.0, 40.0], [145.0, 45.0], [140.0, 40.0]]]
+  },
+  "properties": {
+    "hazard": "volcanic_ash",
+    "valid_from_utc": "2026-07-22T04:00:00+00:00",
+    "valid_to_utc": "2026-07-22T10:00:00+00:00",
+    "lower_flight_level": 0,
+    "upper_flight_level": 350,
     "not_for_navigation": true
   }
 }
