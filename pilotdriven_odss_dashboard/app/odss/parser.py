@@ -254,6 +254,14 @@ def _edto_period(
     return period_start, period_end
 
 
+def _utc_nearest(reference: datetime, hhmm: str) -> datetime:
+    candidates = [
+        utc_on_date(reference + timedelta(days=offset), hhmm)
+        for offset in (-1, 0, 1)
+    ]
+    return min(candidates, key=lambda value: abs((value - reference).total_seconds()))
+
+
 def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     sections = _detect_sections(pages)
     if "cfp" not in sections:
@@ -295,13 +303,29 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     waypoints = _parse_waypoints(cfp_pages[6:], route_text)
 
     bobcat = None
-    match = re.search(r"BOBCAT ALLOCATION:\s*WPT\s+(\w+)\s+FL(\d+)\s+CTO\s+(\d{4})\s+CTOT\s+(\d{4})", page1)
+    match = re.search(
+        r"BOBCAT\s+ALLOCATION\s*:\s*WPT\s+([A-Z0-9]+)\s*,?\s*"
+        r"FL\s*(\d+)\s*,?\s*CTO\s*(\d{4})\s*,?\s*CTOT\s*(\d{4})",
+        page1,
+        re.IGNORECASE,
+    )
     if match:
+        waypoint = next(
+            (
+                item
+                for item in waypoints
+                if str(item.get("name") or "").lstrip("-").upper() == match.group(1).upper()
+            ),
+            None,
+        )
+        predicted_crossing = departure_utc + timedelta(
+            minutes=int((waypoint or {}).get("actm_minutes") or 0)
+        )
         bobcat = {
-            "waypoint": match.group(1),
+            "waypoint": match.group(1).upper(),
             "flight_level": int(match.group(2)),
-            "cto_utc": utc_on_date(day, match.group(3)).isoformat(),
-            "ctot_utc": utc_on_date(day, match.group(4)).isoformat(),
+            "cto_utc": _utc_nearest(predicted_crossing, match.group(3)).isoformat(),
+            "ctot_utc": _utc_nearest(departure_utc, match.group(4)).isoformat(),
         }
 
     fuel = {
@@ -386,8 +410,8 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "destination_runway": destination_line.group("dest_rwy") if destination_line else None,
         "scheduled_departure_utc": departure_utc.isoformat(),
         "scheduled_arrival_utc": arrival_utc.isoformat(),
-        "ground_distance_nm": _int_group(page1, r"GND MILES\s+(\d+)"),
-        "air_distance_nm": _int_group(page1, r"AIR MILES\s+(\d+)"),
+        "ground_distance_nm": _int_group(page1, r"GND\s+MILES\s+(\d+)"),
+        "air_distance_nm": _int_group(page1, r"AIR\s+MILES\s+(\d+)"),
         "route_text": route_text,
         "route_waypoints": waypoints,
         "planned_level_profile": level_match.group(0).strip() if level_match else None,

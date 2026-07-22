@@ -5,6 +5,15 @@ from typing import Any
 
 MONTHS = {m: i for i, m in enumerate("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split(), 1)}
 
+REFERENCE_LIBRARY_METADATA = {
+    "version": "sample-2026-07",
+    "status": "manual-review",
+    "notice": (
+        "Candidate MEL, communications and depressurisation mappings are regression "
+        "samples only. Verify every match against the current approved operator source."
+    ),
+}
+
 OPERATIONAL_KEYWORDS: dict[str, int] = {
     "RWY": 5, "RUNWAY": 5, "ILS": 5, "LOC": 4, "RNP": 4, "VOR": 3,
     "NDB": 2, "CLSD": 5, "CLOSED": 5, "U/S": 5, "NOT AVBL": 5,

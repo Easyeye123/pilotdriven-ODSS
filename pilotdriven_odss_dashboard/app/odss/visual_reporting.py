@@ -10,6 +10,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import BaseDocTemplate, Flowable, Frame, PageBreak, PageTemplate, Paragraph
 
 from .briefing import build_briefing_view, draw_route_map_pdf
@@ -116,7 +117,7 @@ def _draw_panel(
     style: ParagraphStyle | None = None,
 ) -> None:
     background = _PANEL if dark else colors.white
-    title_background = accent if dark else _NAVY
+    title_background = accent
     canvas.setFillColor(background)
     canvas.setStrokeColor(_LINE if dark else colors.HexColor("#D9E1E8"))
     canvas.roundRect(x, y, width, height, 4, fill=1, stroke=1)
@@ -269,13 +270,19 @@ def _draw_cover(canvas, briefing: dict[str, Any], width: float, height: float) -
     canvas.rect(0, height - top_h, width, top_h, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
     canvas.setFont("Helvetica-Bold", 12)
-    canvas.drawString(margin, height - 7.7 * mm, "PILOTDRIVEN")
+    brand = "PILOTDRIVEN"
+    brand_x = margin
+    canvas.drawString(brand_x, height - 7.7 * mm, brand)
     canvas.setFillColor(_BLUE)
-    canvas.drawString(margin + 28 * mm, height - 7.7 * mm, "ODSS")
+    canvas.drawString(
+        brand_x + pdfmetrics.stringWidth(brand, "Helvetica-Bold", 12) + 2 * mm,
+        height - 7.7 * mm,
+        "ODSS",
+    )
     canvas.setFillColor(_TEXT)
     canvas.setFont("Helvetica-Bold", 8.8)
     canvas.drawString(margin + 50 * mm, height - 7.6 * mm, f"{briefing['flight_number']}  {briefing['route_label']}  {briefing['flight_date']}")
-    canvas.setFillColor(_GREEN)
+    canvas.setFillColor(_severity_colour(briefing.get("status_severity", "information")))
     canvas.setFont("Helvetica-Bold", 6.4)
     canvas.drawRightString(width - margin, height - 5.4 * mm, briefing["status"])
     canvas.setFillColor(_MUTED)
@@ -520,8 +527,14 @@ def render_level1_visual(
     findings: list[dict[str, Any]],
     warnings: list[str],
     path: Path,
+    *,
+    map_image_path: Path | None = None,
+    map_label: str | None = None,
 ) -> None:
     briefing = build_briefing_view(flight, findings, warnings, None)
+    if map_image_path:
+        briefing["route_map"]["snapshot_path"] = str(map_image_path)
+        briefing["route_map"]["snapshot_label"] = map_label or "Realistic route map"
     document = BaseDocTemplate(
         str(path),
         pagesize=PAGE_SIZE,

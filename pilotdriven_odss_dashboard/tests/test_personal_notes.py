@@ -125,7 +125,7 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     assert "Departure airport section" in workspace.text
 
     analysis = client.get(f"/files/analysis/{flight_id}").json()
-    assert analysis["schema_version"] == "0.5.0"
+    assert analysis["schema_version"] == "0.6.0"
     assert analysis["view"]["personal_note_count"] == 1
     assert analysis["flight"]["personal_notes"][0]["placement"] == "departure"
 

@@ -279,10 +279,20 @@ def render_pdf(
     warnings: list[str],
     level: int,
     path: Path,
+    *,
+    map_image_path: Path | None = None,
+    map_label: str | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if level == 1:
-        render_level1_visual(flight, findings, warnings, path)
+        render_level1_visual(
+            flight,
+            findings,
+            warnings,
+            path,
+            map_image_path=map_image_path,
+            map_label=map_label,
+        )
         return
 
     styles = getSampleStyleSheet()
@@ -329,6 +339,9 @@ def render_pdf(
         warnings,
         flight.get("timing_view"),
     )
+    if map_image_path:
+        briefing["route_map"]["snapshot_path"] = str(map_image_path)
+        briefing["route_map"]["snapshot_label"] = map_label or "Realistic route map"
 
     def draw_page(canvas, document_template) -> None:
         if canvas.getPageNumber() == 1:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from typing import Any
+import uuid
 
 from .config import DATA_DIR
 
@@ -29,7 +30,14 @@ CREATE TABLE IF NOT EXISTS flights (
     actual_takeoff_utc TEXT,
     timing_reference_type TEXT,
     timing_reference_waypoint TEXT,
-    timing_reference_utc TEXT
+    timing_reference_utc TEXT,
+    analysis_id TEXT UNIQUE,
+    tenant_id TEXT,
+    user_id TEXT,
+    workspace_id TEXT,
+    external_flight_id TEXT,
+    analysis_version TEXT,
+    service_request_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS personal_notes (
@@ -68,10 +76,30 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         "timing_reference_type": "TEXT",
         "timing_reference_waypoint": "TEXT",
         "timing_reference_utc": "TEXT",
+        "analysis_id": "TEXT",
+        "tenant_id": "TEXT",
+        "user_id": "TEXT",
+        "workspace_id": "TEXT",
+        "external_flight_id": "TEXT",
+        "analysis_version": "TEXT",
+        "service_request_id": "TEXT",
     }
     for column, sql_type in additions.items():
         if column not in existing:
             conn.execute(f"ALTER TABLE flights ADD COLUMN {column} {sql_type}")
+    conn.execute(
+        "UPDATE flights SET analysis_id = COALESCE(analysis_id, 'legacy-' || id)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_flights_analysis_id ON flights (analysis_id)"
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_flights_tenant_request
+        ON flights (tenant_id, service_request_id)
+        WHERE service_request_id IS NOT NULL
+        """
+    )
 
 
 def init_db() -> None:
@@ -84,9 +112,6 @@ def init_db() -> None:
                 status='Failed',
                 notes='Previous analysis was interrupted. Run the analysis again.',
                 last_error='Analysis interrupted by application shutdown or restart.',
-                analysis_path=NULL,
-                level1_report=NULL,
-                level2_report=NULL,
                 updated_at=CURRENT_TIMESTAMP
             WHERE status='Processing'
             ''',
@@ -100,8 +125,10 @@ def create_flight(data: dict[str, Any]) -> int:
             INSERT INTO flights (
                 flight_number, flight_date, departure, destination,
                 aircraft, registration, source_filename, source_path,
-                status, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, notes, analysis_id, tenant_id, user_id,
+                workspace_id, external_flight_id, analysis_version,
+                service_request_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 data.get("flight_number"),
@@ -114,6 +141,13 @@ def create_flight(data: dict[str, Any]) -> int:
                 data["source_path"],
                 data.get("status", "Uploaded"),
                 data.get("notes"),
+                data.get("analysis_id") or uuid.uuid4().hex,
+                data.get("tenant_id"),
+                data.get("user_id"),
+                data.get("workspace_id"),
+                data.get("external_flight_id"),
+                data.get("analysis_version") or "0.6.0",
+                data.get("service_request_id"),
             ),
         )
         return int(cur.lastrowid)
@@ -127,6 +161,30 @@ def list_flights() -> list[sqlite3.Row]:
 def get_flight(flight_id: int) -> sqlite3.Row | None:
     with connect() as conn:
         return conn.execute("SELECT * FROM flights WHERE id = ?", (flight_id,)).fetchone()
+
+
+
+
+def get_flight_by_analysis_id(analysis_id: str) -> sqlite3.Row | None:
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM flights WHERE analysis_id = ?",
+            (analysis_id,),
+        ).fetchone()
+
+
+def get_flight_by_service_request(
+    tenant_id: str | None,
+    service_request_id: str,
+) -> sqlite3.Row | None:
+    with connect() as conn:
+        return conn.execute(
+            """
+            SELECT * FROM flights
+            WHERE tenant_id IS ? AND service_request_id = ?
+            """,
+            (tenant_id, service_request_id),
+        ).fetchone()
 
 
 def create_personal_note(
@@ -275,9 +333,6 @@ def begin_analysis(flight_id: int) -> bool:
                 status='Processing',
                 notes='Parsing Lido CFP and running ODSS engines.',
                 last_error=NULL,
-                analysis_path=NULL,
-                level1_report=NULL,
-                level2_report=NULL,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND status != 'Processing'
             ''',
@@ -302,6 +357,7 @@ def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
                 aircraft=COALESCE(NULLIF(?, ''), aircraft),
                 registration=COALESCE(NULLIF(?, ''), registration),
                 analysis_path=?, level1_report=?, level2_report=?,
+                analysis_version=COALESCE(NULLIF(?, ''), analysis_version),
                 status='Completed', notes=?, last_error=NULL,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=?
@@ -316,6 +372,7 @@ def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
                 result.get("analysis_path"),
                 result.get("level1_report"),
                 result.get("level2_report"),
+                result.get("analysis_version", "0.6.0"),
                 (
                     f"Analysed {result.get('page_count', 0)} pages; "
                     f"{result.get('finding_count', 0)} findings; "

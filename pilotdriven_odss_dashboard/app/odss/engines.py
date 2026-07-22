@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -9,6 +10,7 @@ from .constants import (
     DEPRESS_PROFILES,
     MEL_REFERENCES,
     MONTHS,
+    REFERENCE_LIBRARY_METADATA,
     format_actm,
     format_kg,
 )
@@ -152,17 +154,33 @@ def _notam_role_window(
 ) -> tuple[str, datetime, datetime]:
     departure_utc = datetime.fromisoformat(flight["scheduled_departure_utc"])
     arrival_utc = datetime.fromisoformat(flight["scheduled_arrival_utc"])
-    margin = timedelta(minutes=60)
+    departure_margin = timedelta(
+        minutes=_configured_window_minutes("ODSS_NOTAM_DEPARTURE_WINDOW_MINUTES", 60)
+    )
+    arrival_margin = timedelta(
+        minutes=_configured_window_minutes("ODSS_NOTAM_ARRIVAL_WINDOW_MINUTES", 120)
+    )
     if location == flight["departure"]:
-        return "departure", departure_utc - margin, departure_utc + margin
+        return "departure", departure_utc - departure_margin, departure_utc + departure_margin
     if location == flight["destination"]:
-        return "destination", arrival_utc - margin, arrival_utc + margin
+        return "destination", arrival_utc - arrival_margin, arrival_utc + arrival_margin
     if location in alternate_airports:
-        return "destination alternate", arrival_utc - margin, arrival_utc + margin
+        return "destination alternate", arrival_utc - arrival_margin, arrival_utc + arrival_margin
     if location in edto_periods:
         starts_at, ends_at = edto_periods[location]
         return "EDTO", starts_at, ends_at
     return "informational", departure_utc, arrival_utc
+
+
+def _configured_window_minutes(name: str, default: int) -> int:
+    raw = os.environ.get(name, str(default)).strip()
+    try:
+        minutes = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a whole number of minutes.") from exc
+    if not 0 <= minutes <= 720:
+        raise ValueError(f"{name} must be between 0 and 720 minutes.")
+    return minutes
 
 
 def _profile_applies_to_aircraft(profile: dict[str, Any], aircraft_type: str) -> bool:
@@ -295,6 +313,7 @@ def match_profiles(
 def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     findings: list[dict[str, Any]] = []
     warnings: list[str] = []
+    reference_library_used = False
     fuel = flight["fuel"]
     masses = flight["masses"]
     performance = flight["performance"]
@@ -352,6 +371,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         if item["item_type"] == "MEL":
             reference = MEL_REFERENCES.get(item["reference"])
             if reference:
+                reference_library_used = True
                 details = [
                     f"Repair interval {reference.get('repair_interval')}; "
                     f"installed {reference.get('installed')}; required {reference.get('required')}.",
@@ -365,8 +385,12 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                     "mel",
                     "warning",
                     f"MEL {item['reference']} - {item['description']}",
-                    "Matched to the loaded MEL reference; comply with all provisos and procedures.",
+                    "Candidate local-library match; verify the current approved MEL before use.",
                     details,
+                    {
+                        "reference_library_version": REFERENCE_LIBRARY_METADATA["version"],
+                        "reference_status": REFERENCE_LIBRARY_METADATA["status"],
+                    },
                 ))
             else:
                 findings.append(finding(
@@ -508,6 +532,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "priority_score": record.get("priority_score", 0),
                 "applicability": applicability,
                 "schedule": schedule,
+                "window_start_utc": window_start.isoformat(),
+                "window_end_utc": window_end.isoformat(),
             },
         ))
 
@@ -520,6 +546,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         waypoint = waypoint_by_boundary.get(rule["boundary"])
         if not waypoint:
             continue
+        reference_library_used = True
         action_time = waypoint["actm_minutes"] - rule["lead"]
         details = [
             f"Boundary ACTM {format_actm(waypoint['actm_minutes'])}; lead {rule['lead']} min.",
@@ -538,7 +565,11 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             f"Early ATC/FIR action before {rule['boundary']}",
             f"ACTM {format_actm(action_time)} - {rule['agency']}.",
             details,
-            {"action_actm_minutes": action_time},
+            {
+                "action_actm_minutes": action_time,
+                "reference_library_version": REFERENCE_LIBRARY_METADATA["version"],
+                "reference_status": REFERENCE_LIBRARY_METADATA["status"],
+            },
         ))
 
     terrain_events = detect_terrain_events(flight["route_waypoints"])
@@ -593,6 +624,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         key=lambda x: x["event"]["first_high"]["actm_minutes"],
     )
     for index, match in enumerate(matches, start=1):
+        reference_library_used = True
         event = match["event"]
         profile = match["profile"]
         names = match["names"]
@@ -625,7 +657,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "warning",
             f"Profile {index} - {route_start} to {route_end} "
             f"({' / '.join(label_airways) or 'airway review required'})",
-            f"Applicable depressurisation chart {profile['chart']}; critical point {critical}.",
+            f"Candidate depressurisation chart {profile['chart']}; critical point {critical}.",
             [
                 f"High-MSA event ACTM {format_actm(event['first_high']['actm_minutes'])}-"
                 f"{format_actm(end_wp['actm_minutes'])}.",
@@ -643,6 +675,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "chart_number": profile["chart"],
                 "critical_point": critical,
                 "start_actm_minutes": event["first_high"]["actm_minutes"],
+                "reference_library_version": REFERENCE_LIBRARY_METADATA["version"],
+                "reference_status": REFERENCE_LIBRARY_METADATA["status"],
             },
         ))
     if terrain_events and not matches:
@@ -729,4 +763,6 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         "MSA 100* threshold handling",
         "Exactly 100* is excluded from high-MSA events; only values >100* qualify.",
     ))
+    if reference_library_used:
+        warnings.insert(0, REFERENCE_LIBRARY_METADATA["notice"])
     return findings, warnings

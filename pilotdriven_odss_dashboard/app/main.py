@@ -14,6 +14,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 
 from .analysis import infer_metadata, load_analysis, run_odss_analysis
 from .config import APP_VERSION, BASE_DIR, DATA_DIR
@@ -25,6 +26,8 @@ from .database import (
     create_personal_note,
     delete_personal_note,
     get_flight,
+    get_flight_by_analysis_id,
+    get_flight_by_service_request,
     get_personal_note,
     init_db,
     list_flights,
@@ -34,6 +37,9 @@ from .database import (
     update_status,
 )
 from .odss.constants import format_actm
+from .odss_map_v06.api import create_map_router
+from .odss_map_v06.config import MapSettings
+from .odss_map_v06.report_worker import render_reports_for_analysis
 from .odss.parser import validate_pdf
 from .odss.timing import (
     combine_utc_date_time,
@@ -68,6 +74,23 @@ def _configured_auth() -> tuple[str, str] | None:
     return username, password
 
 
+def _configured_service_token() -> str | None:
+    return os.environ.get("ODSS_SERVICE_TOKEN", "").strip() or None
+
+
+def _is_service_path(path: str) -> bool:
+    return path == "/v1/health" or path.startswith("/v1/") or path.startswith("/render/maps/")
+
+
+def _is_service_authorized(request: Request, token: str) -> bool:
+    scheme, separator, value = request.headers.get("authorization", "").partition(" ")
+    return (
+        separator == " "
+        and scheme.lower() == "bearer"
+        and secrets.compare_digest(value, token)
+    )
+
+
 def _is_authorized(request: Request, username: str, password: str) -> bool:
     scheme, separator, token = request.headers.get("authorization", "").partition(" ")
     if separator != " " or scheme.lower() != "basic":
@@ -100,6 +123,7 @@ def _secure_response(response):
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     _configured_auth()
+    MapSettings.from_env()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
@@ -110,12 +134,32 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="PilotDriven ODSS Personal Dashboard", version=APP_VERSION, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATE_DIR)
+map_settings = MapSettings.from_env()
 
 
 @app.middleware("http")
 async def protect_dashboard(request: Request, call_next):
     if request.url.path == "/healthz":
         return _secure_response(await call_next(request))
+    if _is_service_path(request.url.path):
+        token = _configured_service_token()
+        if not token:
+            return _secure_response(
+                PlainTextResponse("ODSS service authentication is not configured.", status_code=503)
+            )
+        if not _is_service_authorized(request, token):
+            return _secure_response(
+                PlainTextResponse("ODSS service authentication required.", status_code=401)
+            )
+        return _secure_response(await call_next(request))
+
+    # The protected print page loads same-origin static assets. A worker's
+    # bearer header may therefore authorize static files without weakening the
+    # Basic-auth dashboard.
+    if request.url.path.startswith("/static/"):
+        token = _configured_service_token()
+        if token and _is_service_authorized(request, token):
+            return _secure_response(await call_next(request))
     try:
         credentials = _configured_auth()
     except RuntimeError:
@@ -312,8 +356,6 @@ def _execute_analysis(flight_id: int, flight) -> None:
 
     result = None
     try:
-        for path, directory in previous_artifacts:
-            _remove_stored_file(path, directory)
         result = run_odss_analysis(
             Path(flight["source_path"]),
             result_dir=RESULT_DIR,
@@ -324,6 +366,18 @@ def _execute_analysis(flight_id: int, flight) -> None:
             personal_notes=[dict(note) for note in list_personal_notes(flight_id)],
         )
         complete_analysis(flight_id, result)
+        new_artifacts = (
+            (result.get("analysis_path"), RESULT_DIR),
+            (result.get("level1_report"), REPORT_DIR),
+            (result.get("level2_report"), REPORT_DIR),
+        )
+        for (previous_path, directory), (new_path, _) in zip(
+            previous_artifacts,
+            new_artifacts,
+            strict=True,
+        ):
+            if previous_path and previous_path != new_path:
+                _remove_stored_file(previous_path, directory)
     except Exception as exc:
         if result:
             _remove_stored_file(result.get("analysis_path"), RESULT_DIR)
@@ -401,6 +455,10 @@ def flight_workspace(request: Request, flight_id: int):
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     analysis = load_analysis(flight["analysis_path"])
+    notices = {
+        "analysis-running": "Analysis is already running. This page still shows the last completed result.",
+        "refresh-failed": "The refresh failed. The last completed reports remain available below.",
+    }
     return templates.TemplateResponse(
         request=request,
         name="flight.html",
@@ -410,6 +468,7 @@ def flight_workspace(request: Request, flight_id: int):
             "timing_form": _timing_form_context(flight, analysis),
             "personal_notes": list_personal_notes(flight_id),
             "personal_note_placement_labels": PERSONAL_NOTE_PLACEMENT_LABELS,
+            "notice": notices.get(request.query_params.get("notice", "")),
         },
     )
 
@@ -419,8 +478,15 @@ def analyse_flight(flight_id: int):
     flight = get_flight(flight_id)
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
+    if flight["status"] == "Processing":
+        return RedirectResponse(
+            url=f"/flights/{flight_id}?notice=analysis-running",
+            status_code=303,
+        )
     _execute_analysis(flight_id, flight)
-    return RedirectResponse(url=f"/flights/{flight_id}", status_code=303)
+    refreshed = get_flight(flight_id)
+    notice = "?notice=refresh-failed" if refreshed and refreshed["status"] == "Failed" else ""
+    return RedirectResponse(url=f"/flights/{flight_id}{notice}", status_code=303)
 
 
 @app.post("/flights/{flight_id}/timing")
@@ -434,6 +500,11 @@ def update_operational_clock(
     flight = get_flight(flight_id)
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
+    if flight["status"] == "Processing":
+        return RedirectResponse(
+            url=f"/flights/{flight_id}?notice=analysis-running#actual-time",
+            status_code=303,
+        )
 
     try:
         reference_datetime = combine_utc_date_time(reference_date, reference_time)
@@ -474,7 +545,10 @@ def add_personal_note(
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     if flight["status"] == "Processing":
-        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+        return RedirectResponse(
+            url=f"/flights/{flight_id}?notice=analysis-running#personal-notes",
+            status_code=303,
+        )
     values = _validated_note_values(
         placement,
         note_text,
@@ -499,7 +573,10 @@ def edit_personal_note(
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     if flight["status"] == "Processing":
-        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+        return RedirectResponse(
+            url=f"/flights/{flight_id}?notice=analysis-running#personal-notes",
+            status_code=303,
+        )
     if not get_personal_note(flight_id, note_id):
         raise HTTPException(status_code=404, detail="Personal note not found")
     values = _validated_note_values(
@@ -519,7 +596,10 @@ def remove_personal_note(flight_id: int, note_id: int):
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     if flight["status"] == "Processing":
-        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+        return RedirectResponse(
+            url=f"/flights/{flight_id}?notice=analysis-running#personal-notes",
+            status_code=303,
+        )
     if not get_personal_note(flight_id, note_id):
         raise HTTPException(status_code=404, detail="Personal note not found")
     delete_personal_note(flight_id, note_id)
@@ -585,3 +665,238 @@ def download_analysis(flight_id: int):
     path = _stored_file(flight["analysis_path"], RESULT_DIR, "Analysis not generated")
     filename = f"{flight['flight_number'] or f'flight-{flight_id}'}_analysis.json"
     return FileResponse(path, filename=filename, media_type="application/json")
+
+class ServiceTimingRequest(BaseModel):
+    reference_type: str = Field(pattern="^(takeoff|waypoint_ata)$")
+    reference_utc: str
+    reference_waypoint: str | None = None
+
+
+def _public_analysis_id(flight) -> str:
+    return str(flight["analysis_id"] or f"legacy-{flight['id']}")
+
+
+def _service_flight(analysis_id: str):
+    flight = get_flight_by_analysis_id(analysis_id)
+    if not flight:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return flight
+
+
+def _service_analysis(analysis_id: str) -> tuple[object, dict]:
+    flight = _service_flight(analysis_id)
+    analysis = load_analysis(flight["analysis_path"])
+    if not analysis:
+        raise HTTPException(status_code=409, detail="Analysis is not complete")
+    return flight, analysis
+
+
+def _service_summary(flight) -> dict:
+    analysis_id = _public_analysis_id(flight)
+    return {
+        "analysis_id": analysis_id,
+        "analysis_version": flight["analysis_version"] or "0.6.0",
+        "status": flight["status"],
+        "created_at": flight["created_at"],
+        "updated_at": flight["updated_at"],
+        "flight": {
+            "flight_number": flight["flight_number"],
+            "flight_date": flight["flight_date"],
+            "departure": flight["departure"],
+            "destination": flight["destination"],
+            "aircraft": flight["aircraft"],
+            "registration": flight["registration"],
+        },
+        "context": {
+            "tenant_id": flight["tenant_id"],
+            "user_id": flight["user_id"],
+            "workspace_id": flight["workspace_id"],
+            "external_flight_id": flight["external_flight_id"],
+        },
+        "warnings": [flight["last_error"]] if flight["last_error"] else [],
+        "links": {
+            "self": f"/v1/analyses/{analysis_id}",
+            "briefing": f"/v1/analyses/{analysis_id}/briefing",
+            "map_contract": f"/v1/analyses/{analysis_id}/map-contract",
+            "route_geojson": f"/v1/analyses/{analysis_id}/route.geojson",
+            "markers_geojson": f"/v1/analyses/{analysis_id}/markers.geojson",
+            "map_config": f"/v1/analyses/{analysis_id}/map-config",
+            "level_1_report": f"/v1/analyses/{analysis_id}/reports/level-1",
+            "level_2_report": f"/v1/analyses/{analysis_id}/reports/level-2",
+            "timing": f"/v1/analyses/{analysis_id}/timing",
+            "render_reports": f"/v1/analyses/{analysis_id}/reports/render",
+        },
+    }
+
+
+@app.get("/v1/health")
+def service_health():
+    return JSONResponse({
+        "status": "ok",
+        "version": APP_VERSION,
+        "map_contract": "1.0",
+        "map_provider": map_settings.provider,
+        "map_style": map_settings.style,
+        "playwright_capture_configured": bool(
+            map_settings.aws_location_api_key and map_settings.service_token
+        ),
+    })
+
+
+@app.post("/v1/analyses", status_code=201)
+async def create_service_analysis(
+    request: Request,
+    file: UploadFile = File(...),
+    flight_number: str = Form(""),
+    flight_date: str = Form(""),
+    departure: str = Form(""),
+    destination: str = Form(""),
+    aircraft: str = Form(""),
+    registration: str = Form(""),
+):
+    tenant_id = request.headers.get("x-pilotdriven-tenant-id")
+    service_request_id = request.headers.get("x-pilotdriven-request-id", "").strip() or None
+    if service_request_id:
+        existing = get_flight_by_service_request(tenant_id, service_request_id)
+        if existing:
+            return JSONResponse(_service_summary(existing), status_code=200)
+    filename, dest = await _store_pdf(file, UPLOAD_DIR, "cfp", "uploaded.pdf")
+    inferred = infer_metadata(filename)
+    record = {
+        "flight_number": flight_number or inferred["flight_number"],
+        "flight_date": flight_date,
+        "departure": departure.upper(),
+        "destination": destination.upper(),
+        "aircraft": aircraft,
+        "registration": registration.upper(),
+        "source_filename": filename,
+        "source_path": str(dest),
+        "status": "Uploaded",
+        "tenant_id": tenant_id,
+        "user_id": request.headers.get("x-pilotdriven-user-id"),
+        "workspace_id": request.headers.get("x-pilotdriven-workspace-id"),
+        "external_flight_id": request.headers.get("x-pilotdriven-flight-id"),
+        "analysis_version": "0.6.0",
+        "service_request_id": service_request_id,
+    }
+    try:
+        flight_id = create_flight(record)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
+    flight = get_flight(flight_id)
+    if not flight:
+        raise HTTPException(status_code=500, detail="Analysis record was not created")
+    _execute_analysis(flight_id, flight)
+    completed = get_flight(flight_id)
+    if not completed:
+        raise HTTPException(status_code=500, detail="Analysis record was lost")
+    if completed["status"] != "Completed":
+        raise HTTPException(
+            status_code=422,
+            detail=completed["last_error"] or "ODSS analysis failed",
+        )
+    return JSONResponse(_service_summary(completed), status_code=201)
+
+
+@app.get("/v1/analyses/{analysis_id}")
+def get_service_analysis(analysis_id: str):
+    return JSONResponse(_service_summary(_service_flight(analysis_id)))
+
+
+@app.get("/v1/analyses/{analysis_id}/briefing")
+def get_service_briefing(analysis_id: str):
+    flight, analysis = _service_analysis(analysis_id)
+    view = analysis.get("view") or {}
+    return JSONResponse({
+        "analysis_id": analysis_id,
+        "schema_version": analysis.get("schema_version"),
+        "flight": analysis.get("flight"),
+        "briefing": view.get("briefing"),
+        "timing": view.get("timing"),
+        "warnings": view.get("warnings") or [],
+        "generated_at_utc": view.get("generated_at_utc"),
+        "report_links": _service_summary(flight)["links"],
+    })
+
+
+@app.post("/v1/analyses/{analysis_id}/timing")
+def update_service_timing(analysis_id: str, payload: ServiceTimingRequest):
+    flight, analysis = _service_analysis(analysis_id)
+    try:
+        reference = derive_timing_reference(
+            analysis.get("flight"),
+            payload.reference_type,
+            parse_utc(payload.reference_utc).isoformat(),
+            payload.reference_waypoint or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    save_timing_reference(
+        int(flight["id"]),
+        reference["actual_takeoff_utc"],
+        reference["reference_type"],
+        reference["reference_utc"],
+        reference.get("reference_waypoint"),
+    )
+    updated = get_flight(int(flight["id"]))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    _execute_analysis(int(flight["id"]), updated)
+    refreshed = get_flight(int(flight["id"]))
+    if not refreshed:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return JSONResponse(_service_summary(refreshed))
+
+
+@app.post("/v1/analyses/{analysis_id}/reports/render")
+async def render_service_reports(analysis_id: str):
+    _service_analysis(analysis_id)
+    try:
+        result = await render_reports_for_analysis(
+            analysis_id,
+            settings=map_settings,
+        )
+    except (LookupError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return JSONResponse({
+        "analysis_id": analysis_id,
+        "map_render": result,
+        "links": _service_summary(_service_flight(analysis_id))["links"],
+    })
+
+
+@app.get("/v1/analyses/{analysis_id}/reports/level-1")
+def get_service_level_1_report(analysis_id: str):
+    flight = _service_flight(analysis_id)
+    path = _stored_file(flight["level1_report"], REPORT_DIR, "Level 1 report not generated")
+    return FileResponse(
+        path,
+        filename=f"{flight['flight_number'] or analysis_id}_level_1.pdf",
+        media_type="application/pdf",
+    )
+
+
+@app.get("/v1/analyses/{analysis_id}/reports/level-2")
+def get_service_level_2_report(analysis_id: str):
+    flight = _service_flight(analysis_id)
+    path = _stored_file(flight["level2_report"], REPORT_DIR, "Level 2 report not generated")
+    return FileResponse(
+        path,
+        filename=f"{flight['flight_number'] or analysis_id}_level_2.pdf",
+        media_type="application/pdf",
+    )
+
+
+def _load_service_analysis(analysis_id: str) -> dict | None:
+    flight = get_flight_by_analysis_id(analysis_id)
+    return load_analysis(flight["analysis_path"]) if flight else None
+
+
+app.include_router(
+    create_map_router(
+        load_analysis=_load_service_analysis,
+        templates=templates,
+        settings=map_settings,
+    )
+)
