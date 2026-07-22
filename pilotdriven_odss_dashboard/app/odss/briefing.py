@@ -482,7 +482,7 @@ def render_route_svg(route_map: dict[str, Any], width: int = 1200, height: int =
 
     role_colour = {
         "departure": "#4db8ff",
-        "destination": "#4db8ff",
+        "destination": "#7c4dff",
         "fir": "#b38cff",
         "bobcat": "#ffb84d",
         "terrain": "#ff7f66",
@@ -593,7 +593,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
 
     role_colour = {
         "departure": colors.HexColor("#4DB8FF"),
-        "destination": colors.HexColor("#4DB8FF"),
+        "destination": colors.HexColor("#7C4DFF"),
         "fir": colors.HexColor("#B38CFF"),
         "bobcat": colors.HexColor("#FFB84D"),
         "terrain": colors.HexColor("#FF7F66"),

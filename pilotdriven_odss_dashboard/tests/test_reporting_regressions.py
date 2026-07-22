@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import analysis
 from app.odss.briefing import build_route_map, render_route_svg
+from app.odss.pertinent_brief import CATEGORY_COLOURS
 from app.odss.reporting import render_pdf, report_sections
 
 
@@ -192,8 +193,11 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     third = reader.pages[2].extract_text() or ""
 
     assert "PILOTDRIVEN" in first
-    assert "REVIEW REQUIRED" in first
+    assert "REVIEW REQUIRED" not in first
     assert "BRIEFING COMPLETE" not in first
+    assert "Decision support only" not in first
+    assert "Decision support only" not in second
+    assert "Decision support only" not in third
     assert float(reader.pages[0].mediabox.width) > float(reader.pages[0].mediabox.height)
     assert "PZFW" in first and "166,486 kg" in first
     assert "PLDW" in first and "175,802 kg" in first
@@ -202,16 +206,16 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "DESTINATION AIRPORT" in first
     assert "Natural Earth 1:110m land context" in first
     assert "SQ304 - OPERATIONAL DETAIL" in second
-    assert "MEL / CDL / CDDL" in second
-    assert "PERFORMANCE / FUEL" in second
+    assert "MEL / CDL / CDDL" not in second
+    assert "PERFORMANCE / FUEL" not in second
     assert "WEATHER / PERTINENT NOTAM" in second
     assert "SQ304 - ROUTE / CONTINGENCY" in third
-    assert "FIR / COMMUNICATIONS" in third
+    assert "FIR / COMMUNICATIONS" not in third
     assert "TERRAIN MSA / VWS" in third
     assert "DEPRESSURISATION PROFILES" in third
     assert "High terrain detected but no profile matched" in third
     assert "Manual chart-index review is required" in third
-    assert "ACTM / CALCULATED UTC TIMELINE" in third
+    assert "ACTM / CALCULATED UTC" not in third
 
 
 def test_level2_begins_with_visual_cover_and_repeats_detail_header(tmp_path: Path) -> None:
@@ -274,3 +278,55 @@ def test_run_analysis_normalizes_identity_before_json_and_reports(
     assert payload["flight"]["flight_number"] == "SQ304"
     assert payload["view"]["briefing"]["route_label"] == "WSSS → EBBR"
     assert rendered_identities == ["SQ304", "SQ304"]
+
+
+def test_pilot_brief_category_colours_are_distinct_and_stable() -> None:
+    assert CATEGORY_COLOURS == {
+        "departure": "#2F80ED",
+        "destination": "#7C4DFF",
+        "edto": "#2EAD74",
+        "weather": "#D99116",
+        "communications": "#0F8B8D",
+        "terrain": "#D97706",
+        "critical": "#C62828",
+        "neutral": "#64748B",
+    }
+    assert CATEGORY_COLOURS["departure"] != CATEGORY_COLOURS["destination"]
+
+
+def test_level1_integrates_volcanic_ash_without_source_gate_page(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_1_vaa.pdf"
+    flight = _flight()
+    flight["vaa_review"] = {
+        "status": "affected",
+        "provider": "Anchorage VAAC",
+        "retrieved_at_utc": "2026-07-22T07:00:00+00:00",
+        "matches": [],
+        "hazard_features": [],
+    }
+    findings = [
+        {
+            "engine": "vaa",
+            "severity": "critical",
+            "title": "Sheveluch volcanic ash proximity",
+            "summary": "Time-matched route screening requires operational action.",
+            "details": [
+                "Closest route sector TED-GKN at 1551Z.",
+                "PANC EDTO suitability requires the latest advisory.",
+            ],
+            "data": {},
+        }
+    ]
+
+    render_pdf(flight, findings, [], 1, path)
+
+    reader = PdfReader(path)
+    assert len(reader.pages) == 3
+    text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    assert "ENROUTE WEATHER / VAAC" in text
+    assert "Sheveluch volcanic ash proximity" in text
+    assert "SOURCE / PROVENANCE" not in text
+    assert "MANUAL REVIEW REQUIRED" not in text
+

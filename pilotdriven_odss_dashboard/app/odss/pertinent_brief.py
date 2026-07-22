@@ -630,7 +630,14 @@ def _draw_operational_detail(
 ) -> None:
     for destination in ("operational_detail", "departure_detail", "destination_detail"):
         canvas.bookmarkPage(destination)
-    top = _draw_page_title(canvas, briefing, width, height, "OPERATIONAL DETAIL", 2)
+    top = _draw_page_title(
+        canvas,
+        briefing,
+        width,
+        height,
+        f"{briefing['flight_number']} - OPERATIONAL DETAIL",
+        2,
+    )
     grouped = _group_findings(findings)
     margin = 6 * mm
     gap = 3 * mm
@@ -707,7 +714,14 @@ def _draw_route_detail(
 ) -> None:
     for destination in ("route_contingency", "communications_detail", "edto_detail"):
         canvas.bookmarkPage(destination)
-    top = _draw_page_title(canvas, briefing, width, height, "ROUTE / CONTINGENCY", 3)
+    top = _draw_page_title(
+        canvas,
+        briefing,
+        width,
+        height,
+        f"{briefing['flight_number']} - ROUTE / CONTINGENCY",
+        3,
+    )
     grouped = _group_findings(findings)
     margin = 6 * mm
     gap = 3 * mm
