@@ -7,6 +7,12 @@ on:
     paths:
       - "scripts/apply_pertinent_brief_editorial.py"
       - ".github/workflows/apply-pertinent-brief-editorial.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "scripts/apply_pertinent_brief_editorial.py"
+      - ".github/workflows/apply-pertinent-brief-editorial.yml"
   workflow_dispatch:
 
 permissions:
