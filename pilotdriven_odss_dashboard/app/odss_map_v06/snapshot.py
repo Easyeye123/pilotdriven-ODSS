@@ -86,6 +86,8 @@ class PlaywrightMapSnapshotRenderer:
 
         viewport_width = max(800, int(width))
         viewport_height = max(450, int(height))
+        timeout_ms = self.settings.screenshot_timeout_seconds * 1_000
+        settle_timeout_ms = max(1_000, min(45_000, timeout_ms // 2))
         target = (
             f"{self.settings.print_base_url}/render/maps/"
             f"{quote(str(contract.metadata.get('analysis_id') or contract.route_hash))}"
@@ -121,24 +123,36 @@ class PlaywrightMapSnapshotRenderer:
                         await page.goto(
                             target,
                             wait_until="domcontentloaded",
-                            timeout=self.settings.screenshot_timeout_seconds * 1000,
+                            timeout=timeout_ms,
                         )
                         try:
                             await page.wait_for_function(
-                                """() => {
-                                  if (window.__ODSS_MAP_READY__ === true || window.__ODSS_MAP_ERROR__) {
+                                """(settleTimeoutMs) => {
+                                  if (window.__ODSS_MAP_READY__ === true) {
+                                    window.__ODSS_MAP_CAPTURE_REASON__ = 'map-ready';
                                     return true;
                                   }
+                                  if (window.__ODSS_MAP_ERROR__) return true;
                                   const map = window.__ODSS_MAP_INSTANCE__;
                                   if (!map) return false;
                                   try {
-                                    return map.isStyleLoaded()
+                                    const loaded = map.isStyleLoaded()
                                       && (typeof map.areTilesLoaded !== 'function' || map.areTilesLoaded());
+                                    if (loaded) {
+                                      window.__ODSS_MAP_CAPTURE_REASON__ = 'tiles-loaded';
+                                      return true;
+                                    }
+                                    const layersReadyAt = Number(window.__ODSS_MAP_LAYERS_READY_AT__ || 0);
+                                    const settled = layersReadyAt > 0
+                                      && Date.now() - layersReadyAt >= settleTimeoutMs;
+                                    if (settled) window.__ODSS_MAP_CAPTURE_REASON__ = 'bounded-settle';
+                                    return settled;
                                   } catch (_) {
                                     return false;
                                   }
                                 }""",
-                                timeout=self.settings.screenshot_timeout_seconds * 1000,
+                                arg=settle_timeout_ms,
+                                timeout=timeout_ms,
                             )
                         except PlaywrightTimeoutError as exc:
                             state = await page.evaluate(
@@ -171,9 +185,35 @@ class PlaywrightMapSnapshotRenderer:
                         page_error = await page.evaluate("window.__ODSS_MAP_ERROR__")
                         if page_error:
                             raise MapRenderError(f"MapLibre print page failed: {page_error}")
+                        capture_state = await page.evaluate(
+                            """() => {
+                              const map = window.__ODSS_MAP_INSTANCE__;
+                              const result = {
+                                reason: window.__ODSS_MAP_CAPTURE_REASON__ || null,
+                                styleLoaded: false,
+                                tilesLoaded: false,
+                              };
+                              if (!map) return result;
+                              try { result.styleLoaded = map.isStyleLoaded(); } catch (_) {}
+                              try {
+                                result.tilesLoaded = typeof map.areTilesLoaded !== 'function'
+                                  || map.areTilesLoaded();
+                              } catch (_) {}
+                              return result;
+                            }"""
+                        )
+                        capture_readiness = capture_state.get("reason") or "verified-state"
                         rendered_hash = await page.get_attribute("html", "data-route-hash")
                         if rendered_hash != contract.route_hash:
                             raise MapRenderError("Rendered map route hash does not match the contract")
+                        await page.evaluate(
+                            """async () => {
+                              if (document.fonts) await document.fonts.ready;
+                              await new Promise((resolve) => requestAnimationFrame(
+                                () => requestAnimationFrame(resolve),
+                              ));
+                            }"""
+                        )
                         locator = page.locator("#odss-print-map")
                         image = await locator.screenshot(type="png")
                     finally:
@@ -201,5 +241,6 @@ class PlaywrightMapSnapshotRenderer:
                 "style": self.settings.style,
                 "width": viewport_width,
                 "height": viewport_height,
+                "capture_readiness": capture_readiness,
             },
         )

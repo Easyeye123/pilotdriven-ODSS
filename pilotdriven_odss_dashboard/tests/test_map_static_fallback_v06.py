@@ -190,6 +190,8 @@ def test_print_capture_checks_loaded_map_state_when_idle_callback_is_delayed() -
     assert "window.__ODSS_MAP_INSTANCE__" in source
     assert "map.isStyleLoaded()" in source
     assert "map.areTilesLoaded()" in source
+    assert "window.__ODSS_MAP_LAYERS_READY_AT__" in source
+    assert "bounded-settle" in source
     assert "Rendered map route hash does not match the contract" in source
 
 
