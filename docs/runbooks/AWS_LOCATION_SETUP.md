@@ -53,6 +53,17 @@ ODSS_MAP_PRINT_BASE_URL=http://127.0.0.1:8000
 
 Do not commit `.env`.
 
+For a Render web service, keep the print callback inside the container and use
+Render's `PORT` (normally `10000`):
+
+```text
+ODSS_MAP_PRINT_BASE_URL=http://127.0.0.1:10000
+```
+
+Add that exact loopback origin to the browser key's referrer restrictions. The
+print page is still protected by `ODSS_SERVICE_TOKEN`; the key is never written
+to an analysis artifact or report.
+
 ## 4. Verify style descriptor
 
 ```bash

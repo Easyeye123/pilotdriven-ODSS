@@ -10,6 +10,21 @@ from .contract import MapContract
 from .renderers import MapRenderError, MapRenderResult
 
 
+def _chromium_launch_args() -> list[str]:
+    """Enable deterministic WebGL rendering on GPU-less Linux workers.
+
+    Chromium 138 removed automatic SwiftShader fallback for WebGL. MapLibre
+    therefore needs the explicit opt-in when the report worker has no GPU, as
+    is normal for a Render container. Interactive desktop browsers continue to
+    use their regular hardware-backed WebGL path.
+    """
+    return [
+        "--disable-dev-shm-usage",
+        "--font-render-hinting=none",
+        "--enable-unsafe-swiftshader",
+    ]
+
+
 def _request_headers_for_url(
     request_url: str,
     request_headers: dict[str, str],
@@ -79,10 +94,7 @@ class PlaywrightMapSnapshotRenderer:
             async with async_playwright() as playwright:
                 browser = await playwright.chromium.launch(
                     headless=True,
-                    args=[
-                        "--disable-dev-shm-usage",
-                        "--font-render-hinting=none",
-                    ],
+                    args=_chromium_launch_args(),
                 )
                 try:
                     context = await browser.new_context(

@@ -33,7 +33,10 @@ only after the MapLibre map reaches the expected idle state and the route/marker
 
 ```python
 async with async_playwright() as playwright:
-    browser = await playwright.chromium.launch(headless=True)
+    browser = await playwright.chromium.launch(
+        headless=True,
+        args=["--enable-unsafe-swiftshader"],
+    )
     page = await browser.new_page(
         viewport={"width": 2200, "height": 1100},
         device_scale_factor=2,
@@ -72,6 +75,7 @@ On timeout or browser failure:
 
 ## Container recommendations
 
+- opt in to Chromium's SwiftShader WebGL path on GPU-less Linux workers;
 - run report capture in a worker, not the API request thread;
 - cap concurrent Chromium processes;
 - use `/dev/shm` appropriately;

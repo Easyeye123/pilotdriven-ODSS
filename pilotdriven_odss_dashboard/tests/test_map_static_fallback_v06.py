@@ -17,7 +17,10 @@ from app.odss_map_v06.aws_location import (
 from app.odss_map_v06.contract import MapBounds, MapContract
 from app.odss_map_v06.config import MapSettings
 from app.odss_map_v06.renderers import MapRenderError, MapRenderResult, RendererChain
-from app.odss_map_v06.snapshot import _request_headers_for_url
+from app.odss_map_v06.snapshot import (
+    _chromium_launch_args,
+    _request_headers_for_url,
+)
 
 
 def _contract(point_count: int = 160) -> MapContract:
@@ -168,6 +171,13 @@ def test_print_capture_sends_service_bearer_only_to_internal_origin() -> None:
 
     assert internal["authorization"] == "Bearer internal-service-token"
     assert "authorization" not in external
+
+
+def test_print_capture_enables_software_webgl_for_gpu_less_workers() -> None:
+    launch_args = _chromium_launch_args()
+
+    assert "--enable-unsafe-swiftshader" in launch_args
+    assert "--disable-gpu" not in launch_args
 
 
 def test_renderer_chain_redacts_keys_from_persisted_warnings() -> None:
