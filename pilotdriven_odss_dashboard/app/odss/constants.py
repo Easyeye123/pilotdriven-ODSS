@@ -9,8 +9,8 @@ REFERENCE_LIBRARY_METADATA = {
     "version": "sample-2026-07",
     "status": "manual-review",
     "notice": (
-        "Candidate MEL, communications and depressurisation mappings are regression "
-        "samples only. Verify every match against the current approved operator source."
+        "Candidate MEL and communications mappings are regression samples only. "
+        "Verify every match against the current approved operator source."
     ),
 }
 
@@ -62,14 +62,8 @@ COMMUNICATION_RULES = [
     {"boundary": "UTAV", "lead": 10, "agency": "Turkmenabat Control", "action": "Establish next-FIR contact", "frequency": "134.5", "backup": "128.5"},
 ]
 
-DEPRESS_PROFILES = [
-    {"chart": "10-4", "from": "RANAH", "to": "HILAL", "airways": ["L750", "G202"], "critical": "DUDEG", "effectivity": ["A350-941", "LH", "ULR"]},
-    {"chart": "8-5", "from": "TEMEL", "to": "LEKBA", "airways": ["UM11", "M11", "T916", "N161"], "critical": "MATAL", "effectivity": ["A350-941", "LH", "ULR"]},
-    {"chart": "7-1", "from": "HILAL", "to": "NONIB", "airways": ["G202", "G325", "L509"], "critical": "HILAL", "effectivity": ["A350-941", "LH", "ULR"]},
-]
-
 ENGINE_ORDER = [
-    "page1", "bobcat", "mel", "cddl", "performance", "weather", "vaa", "notam",
+    "page1", "bobcat", "mel", "cdl", "cddl", "performance", "weather", "vaa", "notam",
     "communications", "actual_timing", "terrain", "vws", "depressurisation",
     "edto", "timeline", "qa",
 ]
