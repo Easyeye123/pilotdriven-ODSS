@@ -758,6 +758,15 @@ def _draw_route_detail(
         _finding_lines(edto_bobcat, finding_limit=6, detail_limit=2)
         + edto_summary_lines
     )
+    has_edto = bool(grouped.get("edto") or edto_summary_lines)
+    has_bobcat = bool(grouped.get("bobcat"))
+    edto_bobcat_title = (
+        "EDTO / BOBCAT"
+        if has_edto and has_bobcat
+        else "EDTO"
+        if has_edto
+        else "BOBCAT"
+    )
     vaa_weather = grouped.get("vaa", []) + [
         item for item in grouped.get("weather", [])
         if "departure" not in str(item.get("title") or "").lower()
@@ -798,7 +807,7 @@ def _draw_route_detail(
         panel_bottom,
         right_width,
         [
-            {"title": "EDTO / BOBCAT", "lines": edto_bobcat_lines, "accent": _EDTO},
+            {"title": edto_bobcat_title, "lines": edto_bobcat_lines, "accent": _EDTO},
             {
                 "title": "ENROUTE WEATHER / VAAC",
                 "lines": _finding_lines(vaa_weather, finding_limit=5, detail_limit=2),
