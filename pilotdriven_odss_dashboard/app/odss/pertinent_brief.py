@@ -613,11 +613,14 @@ def _draw_cover(
 
 
 def _note_lines(flight: dict[str, Any], placements: set[str]) -> list[str]:
-    return [
+    lines = [
         f"Personal note: {' '.join(str(note.get('note_text') or '').split())}"
         for note in (flight.get("personal_notes") or [])
         if note.get("placement") in placements and note.get("include_level1")
     ]
+    if lines:
+        lines.append("Pilot-entered content; not ODSS-validated.")
+    return lines
 
 
 def _draw_operational_detail(
@@ -739,6 +742,22 @@ def _draw_route_detail(
     terrain_lines = _finding_lines(grouped.get("terrain", []) + grouped.get("vws", []), finding_limit=7, detail_limit=2)
     depress_lines = _finding_lines(grouped.get("depressurisation", []), finding_limit=6, detail_limit=3)
     edto_bobcat = grouped.get("edto", []) + grouped.get("bobcat", [])
+    edto_view = briefing.get("edto") or {}
+    edto_summary_lines: list[str] = []
+    if edto_view.get("entry") != "--.--" or edto_view.get("exit") != "--.--":
+        edto_summary_lines.append(
+            f"EDTO ACTM {edto_view.get('entry') or '--.--'} - {edto_view.get('exit') or '--.--'}"
+        )
+    if edto_view.get("etps"):
+        edto_summary_lines.append("ETP: " + ", ".join(edto_view["etps"]))
+    edto_summary_lines.extend(
+        f"{item['airport']} | {item['period']} | RWY {item['runway']} {item['approach']}"
+        for item in edto_view.get("airports", [])[:4]
+    )
+    edto_bobcat_lines = (
+        _finding_lines(edto_bobcat, finding_limit=6, detail_limit=2)
+        + edto_summary_lines
+    )
     vaa_weather = grouped.get("vaa", []) + [
         item for item in grouped.get("weather", [])
         if "departure" not in str(item.get("title") or "").lower()
@@ -779,7 +798,7 @@ def _draw_route_detail(
         panel_bottom,
         right_width,
         [
-            {"title": "EDTO / BOBCAT", "lines": _finding_lines(edto_bobcat, finding_limit=6, detail_limit=2), "accent": _EDTO},
+            {"title": "EDTO / BOBCAT", "lines": edto_bobcat_lines, "accent": _EDTO},
             {
                 "title": "ENROUTE WEATHER / VAAC",
                 "lines": _finding_lines(vaa_weather, finding_limit=5, detail_limit=2),
