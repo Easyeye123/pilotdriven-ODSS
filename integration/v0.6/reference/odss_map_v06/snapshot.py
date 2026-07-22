@@ -79,10 +79,57 @@ class PlaywrightMapSnapshotRenderer:
                     wait_until="domcontentloaded",
                     timeout=self.settings.screenshot_timeout_seconds * 1000,
                 )
-                await page.wait_for_function(
-                    "window.__ODSS_MAP_READY__ === true",
-                    timeout=self.settings.screenshot_timeout_seconds * 1000,
-                )
+                try:
+                    await page.wait_for_function(
+                        """() => {
+                          if (window.__ODSS_MAP_READY__ === true || window.__ODSS_MAP_ERROR__) {
+                            return true;
+                          }
+                          const map = window.__ODSS_MAP_INSTANCE__;
+                          if (!map) return false;
+                          try {
+                            return map.isStyleLoaded()
+                              && (typeof map.areTilesLoaded !== 'function' || map.areTilesLoaded());
+                          } catch (_) {
+                            return false;
+                          }
+                        }""",
+                        timeout=self.settings.screenshot_timeout_seconds * 1000,
+                    )
+                except PlaywrightTimeoutError as exc:
+                    state = await page.evaluate(
+                        """() => {
+                          const map = window.__ODSS_MAP_INSTANCE__;
+                          const result = {
+                            ready: window.__ODSS_MAP_READY__ === true,
+                            error: Boolean(window.__ODSS_MAP_ERROR__),
+                            hasMap: Boolean(map),
+                            styleLoaded: false,
+                            tilesLoaded: false,
+                          };
+                          if (!map) return result;
+                          try { result.styleLoaded = map.isStyleLoaded(); } catch (_) {}
+                          try {
+                            result.tilesLoaded = typeof map.areTilesLoaded !== 'function'
+                              || map.areTilesLoaded();
+                          } catch (_) {}
+                          return result;
+                        }"""
+                    )
+                    raise MapRenderError(
+                        "MapLibre print map did not become ready before timeout "
+                        f"(map={bool(state.get('hasMap'))}; "
+                        f"style={bool(state.get('styleLoaded'))}; "
+                        f"tiles={bool(state.get('tilesLoaded'))}; "
+                        f"ready={bool(state.get('ready'))}; "
+                        f"error={bool(state.get('error'))})"
+                    ) from exc
+                page_error = await page.evaluate("window.__ODSS_MAP_ERROR__")
+                if page_error:
+                    raise MapRenderError(f"MapLibre print page failed: {page_error}")
+                rendered_hash = await page.get_attribute("html", "data-route-hash")
+                if rendered_hash != contract.route_hash:
+                    raise MapRenderError("Rendered map route hash does not match the contract")
                 locator = page.locator("#odss-print-map")
                 image = await locator.screenshot(type="png")
                 await context.close()

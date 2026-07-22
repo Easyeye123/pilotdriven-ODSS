@@ -550,7 +550,10 @@
       return;
     }
     const config = normalizeConfig(bootstrap);
-    createOperationalMap(container, config, {
+    const map = createOperationalMap(container, config, {
+      onLayersReady: () => {
+        document.documentElement.dataset.routeHash = config.routeHash;
+      },
       onReady: () => {
         document.documentElement.dataset.routeHash = config.routeHash;
         window.__ODSS_MAP_READY__ = true;
@@ -561,6 +564,7 @@
           : "MapLibre rendering error";
       },
     });
+    window.__ODSS_MAP_INSTANCE__ = map;
   }
 
   const printBootstrap = window.ODSS_MAP_BOOTSTRAP;
