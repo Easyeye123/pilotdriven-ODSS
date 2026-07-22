@@ -8,6 +8,13 @@ on:
       - "pilotdriven_odss_dashboard/app/odss/pertinent_brief.py"
       - "scripts/apply_pertinent_brief_editorial.py"
       - ".github/workflows/apply-pertinent-brief-editorial.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "pilotdriven_odss_dashboard/app/odss/pertinent_brief.py"
+      - "scripts/apply_pertinent_brief_editorial.py"
+      - ".github/workflows/apply-pertinent-brief-editorial.yml"
   workflow_dispatch:
 
 permissions:
