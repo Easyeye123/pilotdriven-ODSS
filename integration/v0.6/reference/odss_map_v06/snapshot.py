@@ -10,6 +10,15 @@ from .contract import MapContract
 from .renderers import MapRenderError, MapRenderResult
 
 
+def _chromium_launch_args() -> list[str]:
+    """Enable deterministic WebGL rendering on GPU-less Linux workers."""
+    return [
+        "--disable-dev-shm-usage",
+        "--font-render-hinting=none",
+        "--enable-unsafe-swiftshader",
+    ]
+
+
 class PlaywrightMapSnapshotRenderer:
     """Capture the same MapLibre map used by the web dashboard."""
 
@@ -53,10 +62,7 @@ class PlaywrightMapSnapshotRenderer:
             async with async_playwright() as playwright:
                 browser = await playwright.chromium.launch(
                     headless=True,
-                    args=[
-                        "--disable-dev-shm-usage",
-                        "--font-render-hinting=none",
-                    ],
+                    args=_chromium_launch_args(),
                 )
                 context = await browser.new_context(
                     viewport={
