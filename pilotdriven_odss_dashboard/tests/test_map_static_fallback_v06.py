@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ from app.odss_map_v06.contract import MapBounds, MapContract
 from app.odss_map_v06.config import MapSettings
 from app.odss_map_v06.renderers import MapRenderError, MapRenderResult, RendererChain
 from app.odss_map_v06.snapshot import (
+    PlaywrightMapSnapshotRenderer,
     _chromium_launch_args,
     _request_headers_for_url,
 )
@@ -180,6 +182,15 @@ def test_print_capture_enables_software_webgl_for_gpu_less_workers() -> None:
     assert "--use-angle=swiftshader-webgl" in launch_args
     assert "--enable-unsafe-swiftshader" in launch_args
     assert "--disable-gpu" not in launch_args
+
+
+def test_print_capture_checks_loaded_map_state_when_idle_callback_is_delayed() -> None:
+    source = inspect.getsource(PlaywrightMapSnapshotRenderer.render_snapshot)
+
+    assert "window.__ODSS_MAP_INSTANCE__" in source
+    assert "map.isStyleLoaded()" in source
+    assert "map.areTilesLoaded()" in source
+    assert "Rendered map route hash does not match the contract" in source
 
 
 def test_renderer_chain_redacts_keys_from_persisted_warnings() -> None:
