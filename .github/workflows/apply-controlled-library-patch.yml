@@ -44,27 +44,39 @@ jobs:
       - name: Apply reviewed engine patch
         run: python scripts/apply_controlled_library_patch.py
 
-      - name: Syntax and focused regression tests
+      - name: Capture syntax and focused regression evidence
         run: |
-          python -m py_compile \
-            pilotdriven_odss_dashboard/app/odss/controlled_library.py \
-            pilotdriven_odss_dashboard/app/odss/constants.py \
-            pilotdriven_odss_dashboard/app/odss/engines.py
-          pytest -q \
-            pilotdriven_odss_dashboard/tests/test_controlled_cdl_depress_library.py \
-            pilotdriven_odss_dashboard/tests/test_engine_regressions.py
+          mkdir -p validation/controlled-library
+          set +e
+          {
+            python -m py_compile \
+              pilotdriven_odss_dashboard/app/odss/controlled_library.py \
+              pilotdriven_odss_dashboard/app/odss/constants.py \
+              pilotdriven_odss_dashboard/app/odss/engines.py
+            pytest -q \
+              pilotdriven_odss_dashboard/tests/test_controlled_cdl_depress_library.py \
+              pilotdriven_odss_dashboard/tests/test_engine_regressions.py
+          } 2>&1 | tee validation/controlled-library/pytest.txt
+          status=${PIPESTATUS[0]}
+          echo "$status" > validation/controlled-library/pytest.exitcode
+          exit 0
 
-      - name: Commit patched implementation
+      - name: Commit patched implementation and validation evidence
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git diff --check
           git add \
             pilotdriven_odss_dashboard/app/odss/controlled_library.py \
-            pilotdriven_odss_dashboard/app/odss/engines.py
+            pilotdriven_odss_dashboard/app/odss/engines.py \
+            validation/controlled-library/pytest.txt \
+            validation/controlled-library/pytest.exitcode
           if git diff --cached --quiet; then
             echo "No engine changes to commit"
           else
             git commit -m "feat: integrate controlled CDL and depressurisation indexes"
             git push origin HEAD:feature/controlled-cdl-depress-library
           fi
+
+      - name: Enforce regression result after publishing evidence
+        run: test "$(cat validation/controlled-library/pytest.exitcode)" = "0"
