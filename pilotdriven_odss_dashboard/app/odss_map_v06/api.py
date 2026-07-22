@@ -178,6 +178,10 @@ def create_map_router(
             context={
                 "analysis_id": analysis_id,
                 "map_config": config,
+                "map_readiness_timeout_ms": max(
+                    1_000,
+                    (settings.screenshot_timeout_seconds * 1_000) - 5_000,
+                ),
                 "contract": contract.public_dict(),
             },
         )
