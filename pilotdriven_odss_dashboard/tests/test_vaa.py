@@ -398,8 +398,7 @@ def test_level1_integrates_conditional_vaa_on_route_page(
 
     render_pdf(flight, [_vaa_finding(status)], [], 1, path)
     reader = PdfReader(path)
-    text = "
-".join(page.extract_text() or "" for page in reader.pages)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
     page3 = reader.pages[2].extract_text() or ""
 
     assert len(reader.pages) == 3
