@@ -5,14 +5,6 @@ on:
     branches:
       - fix/pertinent-brief-editorial-execution
     paths:
-      - "pilotdriven_odss_dashboard/app/odss/pertinent_brief.py"
-      - "scripts/apply_pertinent_brief_editorial.py"
-      - ".github/workflows/apply-pertinent-brief-editorial.yml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "pilotdriven_odss_dashboard/app/odss/pertinent_brief.py"
       - "scripts/apply_pertinent_brief_editorial.py"
       - ".github/workflows/apply-pertinent-brief-editorial.yml"
   workflow_dispatch:
@@ -44,16 +36,25 @@ jobs:
       - name: Apply renderer integration patch
         run: python scripts/apply_pertinent_brief_editorial.py
 
-      - name: Compile and run reporting regressions
+      - name: Capture compile and reporting regressions
         run: |
-          python -m py_compile \
-            pilotdriven_odss_dashboard/app/odss/pertinent_brief.py \
-            pilotdriven_odss_dashboard/app/odss/briefing.py \
-            pilotdriven_odss_dashboard/app/odss/reporting.py
-          pytest -q pilotdriven_odss_dashboard/tests/test_reporting_regressions.py
+          set +e
+          {
+            python -m py_compile \
+              pilotdriven_odss_dashboard/app/odss/pertinent_brief.py \
+              pilotdriven_odss_dashboard/app/odss/briefing.py \
+              pilotdriven_odss_dashboard/app/odss/reporting.py && \
+            pytest -q pilotdriven_odss_dashboard/tests/test_reporting_regressions.py
+          } 2>&1 | tee /tmp/pertinent-brief-tests.log
+          status=${PIPESTATUS[0]}
+          echo "$status" > /tmp/pertinent-brief-test-status
+          exit 0
 
-      - name: Commit integrated renderer
+      - name: Commit integrated renderer and validation evidence
         run: |
+          mkdir -p validation
+          cp /tmp/pertinent-brief-tests.log validation/pertinent-brief-editorial-tests.txt
+          cp /tmp/pertinent-brief-test-status validation/pertinent-brief-editorial-test-status.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git diff --check
@@ -61,10 +62,15 @@ jobs:
             pilotdriven_odss_dashboard/app/odss/pertinent_brief.py \
             pilotdriven_odss_dashboard/app/odss/briefing.py \
             pilotdriven_odss_dashboard/app/odss/reporting.py \
-            pilotdriven_odss_dashboard/tests/test_reporting_regressions.py
+            pilotdriven_odss_dashboard/tests/test_reporting_regressions.py \
+            validation/pertinent-brief-editorial-tests.txt \
+            validation/pertinent-brief-editorial-test-status.txt
           if git diff --cached --quiet; then
             echo "No generated changes to commit"
           else
             git commit -m "fix: enforce pertinent brief editorial protocol"
             git push origin HEAD:fix/pertinent-brief-editorial-execution
           fi
+
+      - name: Enforce reporting regression result
+        run: exit "$(cat /tmp/pertinent-brief-test-status)"
