@@ -87,7 +87,7 @@ class PlaywrightMapSnapshotRenderer:
         viewport_width = max(800, int(width))
         viewport_height = max(450, int(height))
         timeout_ms = self.settings.screenshot_timeout_seconds * 1_000
-        settle_timeout_ms = max(1_000, min(45_000, timeout_ms // 2))
+        settle_timeout_ms = max(1_000, min(15_000, timeout_ms // 2))
         target = (
             f"{self.settings.print_base_url}/render/maps/"
             f"{quote(str(contract.metadata.get('analysis_id') or contract.route_hash))}"
