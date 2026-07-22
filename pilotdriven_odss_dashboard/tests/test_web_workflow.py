@@ -129,6 +129,8 @@ def test_long_filename_upload_analyse_and_downloads(
     assert "Download Level 1 PDF" in workspace.text
     assert "Download Level 2 PDF" in workspace.text
     assert "Download analysis JSON" in workspace.text
+    assert "Download canonical JSON" not in workspace.text
+    assert workspace.text.count(f'href="/files/analysis/{flight_id}"') == 1
     assert source.status_code == 200
     assert source.content == lido_pdf
     assert level1.status_code == 200
