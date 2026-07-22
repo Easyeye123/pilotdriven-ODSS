@@ -31,6 +31,8 @@ jobs:
         run: |
           set -o pipefail
           pytest -q 2>&1 | tee pytest.log
+      - name: Build production Docker image
+        run: docker build --tag pilotdriven-odss-ci .
       - name: Generate visual briefing samples
         run: python tests/generate_visual_samples.py
       - name: Upload visual briefing samples
