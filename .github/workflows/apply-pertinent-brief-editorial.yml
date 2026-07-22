@@ -63,7 +63,6 @@ jobs:
           cp /tmp/pertinent-brief-test-status validation/pertinent-brief-editorial-test-status.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git diff --check
           git add \
             pilotdriven_odss_dashboard/app/odss/pertinent_brief.py \
             pilotdriven_odss_dashboard/app/odss/briefing.py \
