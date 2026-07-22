@@ -1,0 +1,62 @@
+name: Apply pertinent brief editorial execution
+
+on:
+  push:
+    branches:
+      - fix/pertinent-brief-editorial-execution
+    paths:
+      - "pilotdriven_odss_dashboard/app/odss/pertinent_brief.py"
+      - "scripts/apply_pertinent_brief_editorial.py"
+      - ".github/workflows/apply-pertinent-brief-editorial.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/pertinent-brief-editorial-execution
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pilotdriven_odss_dashboard/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r pilotdriven_odss_dashboard/requirements.txt
+          python -m pip install pytest pypdf
+
+      - name: Apply renderer integration patch
+        run: python scripts/apply_pertinent_brief_editorial.py
+
+      - name: Compile and run reporting regressions
+        run: |
+          python -m py_compile \
+            pilotdriven_odss_dashboard/app/odss/pertinent_brief.py \
+            pilotdriven_odss_dashboard/app/odss/briefing.py \
+            pilotdriven_odss_dashboard/app/odss/reporting.py
+          pytest -q pilotdriven_odss_dashboard/tests/test_reporting_regressions.py
+
+      - name: Commit integrated renderer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git diff --check
+          git add \
+            pilotdriven_odss_dashboard/app/odss/briefing.py \
+            pilotdriven_odss_dashboard/app/odss/reporting.py \
+            pilotdriven_odss_dashboard/tests/test_reporting_regressions.py
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit"
+          else
+            git commit -m "fix: enforce pertinent brief editorial protocol"
+            git push origin HEAD:fix/pertinent-brief-editorial-execution
+          fi
