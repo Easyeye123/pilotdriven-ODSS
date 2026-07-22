@@ -7,6 +7,14 @@ on:
     paths:
       - "scripts/apply_controlled_library_patch.py"
       - ".github/workflows/apply-controlled-library-patch.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "scripts/apply_controlled_library_patch.py"
+      - ".github/workflows/apply-controlled-library-patch.yml"
+      - "pilotdriven_odss_dashboard/app/odss/controlled_library.py"
+      - "pilotdriven_odss_dashboard/tests/test_controlled_cdl_depress_library.py"
   workflow_dispatch:
 
 permissions:
@@ -49,7 +57,7 @@ jobs:
       - name: Commit patched implementation
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git diff --check
           git add \
             pilotdriven_odss_dashboard/app/odss/controlled_library.py \
