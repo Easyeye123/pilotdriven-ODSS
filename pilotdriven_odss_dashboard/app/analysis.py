@@ -9,10 +9,17 @@ from pathlib import Path
 from typing import Any
 
 from .odss.briefing import build_briefing_view
-from .odss.constants import ENGINE_ORDER, actm_minutes, format_actm
+from .odss.constants import (
+    ENGINE_ORDER,
+    REFERENCE_LIBRARY_METADATA,
+    actm_minutes,
+    format_actm,
+)
 from .odss.engines import analyse
 from .odss.parser import extract_pages, parse_lido
 from .odss.reporting import render_pdf
+from .odss_map_v06.config import MapSettings
+from .odss_map_v06.geojson import build_map_contract
 from .odss.timing import build_timing_view, timing_finding
 from .personal_notes import serialise_personal_note
 
@@ -95,10 +102,18 @@ def run_odss_analysis(
     result_path = result_dir / f"flight_{flight_id}_{run_id}_analysis.json"
     level1_path = report_dir / f"flight_{flight_id}_{run_id}_level_1.pdf"
     level2_path = report_dir / f"flight_{flight_id}_{run_id}_level_2.pdf"
+    map_contract = None
+    try:
+        map_contract = build_map_contract(flight, findings, MapSettings.from_env())
+    except ValueError as exc:
+        warnings.append(f"Map contract unavailable: {exc}")
+
     payload = {
-        "schema_version": "0.5.0",
+        "schema_version": "0.6.0",
         "flight": flight,
         "findings": findings,
+        "reference_library": REFERENCE_LIBRARY_METADATA,
+        "map_contract": map_contract.public_dict() if map_contract else None,
         "view": {
             "page_count": len(pages),
             "finding_count": len(findings),
@@ -149,6 +164,7 @@ def run_odss_analysis(
         "timing_event_count": timing_view["event_count"] if timing_view else 0,
         "personal_note_count": len(flight["personal_notes"]),
         "warnings": warnings,
+        "analysis_version": "0.6.0",
     }
 
 
@@ -167,7 +183,7 @@ def load_analysis(path: str | None) -> dict[str, Any] | None:
 # Compatibility with the v0.1 dashboard while files are updated in stages.
 def run_placeholder_analysis(file_path: Path) -> dict[str, Any]:
     return {
-        "status": "ODSS core installed; update app.main to v0.5.0",
+        "status": "ODSS core installed; update app.main to v0.6.0",
         "file_size_bytes": file_path.stat().st_size,
         "modules": ENGINE_ORDER,
     }

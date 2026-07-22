@@ -233,10 +233,12 @@ def test_item_d_schedule_exceptions_require_manual_review(schedule: str) -> None
     ) is None
 
 
-def test_destination_and_alternate_notams_use_arrival_phase() -> None:
+def test_destination_and_alternate_notams_use_two_hour_arrival_window() -> None:
     notams = [
+        _record("DESTTOOOLD/26", "RJBB", "2026-07-16T09:00:00+00:00", "2026-07-16T09:59:00+00:00"),
         _record("DESTOLD/26", "RJBB", "2026-07-16T09:30:00+00:00", "2026-07-16T10:30:00+00:00"),
         _record("DESTNOW/26", "RJBB", "2026-07-16T11:30:00+00:00", "2026-07-16T12:30:00+00:00"),
+        _record("ALTNTOOOLD/26", "WIII", "2026-07-16T09:00:00+00:00", "2026-07-16T09:59:00+00:00"),
         _record("ALTNOLD/26", "WIII", "2026-07-16T09:30:00+00:00", "2026-07-16T10:30:00+00:00"),
         _record("ALTNNOW/26", "WIII", "2026-07-16T11:30:00+00:00", "2026-07-16T12:30:00+00:00"),
     ]
@@ -244,8 +246,36 @@ def test_destination_and_alternate_notams_use_arrival_phase() -> None:
     notam_findings = [item for item in findings if item["engine"] == "notam"]
     ids = {item["data"]["notam_id"] for item in notam_findings}
     roles = {item["data"]["notam_id"]: item["data"]["role"] for item in notam_findings}
-    assert ids == {"DESTNOW/26", "ALTNNOW/26"}
-    assert roles == {"DESTNOW/26": "destination", "ALTNNOW/26": "destination alternate"}
+    assert ids == {"DESTOLD/26", "DESTNOW/26", "ALTNOLD/26", "ALTNNOW/26"}
+    assert roles == {
+        "DESTOLD/26": "destination",
+        "DESTNOW/26": "destination",
+        "ALTNOLD/26": "destination alternate",
+        "ALTNNOW/26": "destination alternate",
+    }
+    assert all(
+        item["data"]["window_start_utc"] == "2026-07-16T10:00:00+00:00"
+        and item["data"]["window_end_utc"] == "2026-07-16T14:00:00+00:00"
+        for item in notam_findings
+    )
+
+
+def test_arrival_notam_window_is_configurable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ODSS_NOTAM_ARRIVAL_WINDOW_MINUTES", "30")
+    notams = [
+        _record("OUTSIDE/26", "RJBB", "2026-07-16T11:00:00+00:00", "2026-07-16T11:29:00+00:00"),
+        _record("INSIDE/26", "RJBB", "2026-07-16T11:30:00+00:00", "2026-07-16T12:15:00+00:00"),
+    ]
+
+    findings, _ = analyse(_flight(notams=notams))
+
+    assert {
+        item["data"]["notam_id"]
+        for item in findings
+        if item["engine"] == "notam"
+    } == {"INSIDE/26"}
 
 
 def test_incomplete_lido_pages_fail_before_zero_value_analysis() -> None:
@@ -298,6 +328,47 @@ N03 10.0 E105 40.0 090
     assert periods["RJAA"]["period_end_utc"] == "2026-07-17T03:00:00+00:00"
     assert periods["RPLL"]["period_start_utc"] == "2026-07-16T23:00:00+00:00"
     assert periods["RPLL"]["period_end_utc"] == "2026-07-17T01:00:00+00:00"
+
+
+def test_bobcat_allocation_accepts_lido_commas_and_suffix() -> None:
+    pages = [
+        """SUMMARY EDTO CFP
+BOBCAT ALLOCATION:
+WPT BOBI1, FL360, CTO 2215, CTOT 2205(10MIN)DLY
+9VAAA SQ123 SIN/KIX ETD 2200 16JUL26
+SCHED DEP 2200 UTC SCHED ARR 0400 UTC
+RTE NO 001 A350-941
+WSSS/20C
+DCT BOBI1 DCT BOBI2
+RJBB/24L
+BURNOFF 11.30 050000
+TAXI FUEL 001000
+FLT PLAN REQMT 13.00 060000
+FUEL IN TANKS 14.00 065000
+PZFW 180000
+PTOW 245000
+PLWT 195000
+""",
+        "",
+        "",
+        "",
+        "",
+        "",
+        """BOBI1 00.15
+N01 20.0 E103 50.0 105*
+BOBI2 00.25
+N03 10.0 E105 40.0 090
+""",
+    ]
+
+    flight = parse_lido(pages, "bobcat.pdf")
+
+    assert flight["bobcat"] == {
+        "waypoint": "BOBI1",
+        "flight_level": 360,
+        "cto_utc": "2026-07-16T22:15:00+00:00",
+        "ctot_utc": "2026-07-16T22:05:00+00:00",
+    }
 
 
 def test_depressurisation_profiles_require_aircraft_effectivity() -> None:

@@ -168,7 +168,7 @@ def test_health_is_public_and_dashboard_requires_configured_credentials(
     )
 
     assert health.status_code == 200
-    assert health.json() == {"status": "ok", "version": "0.5.0"}
+    assert health.json() == {"status": "ok", "version": "0.6.0"}
     assert anonymous.status_code == 401
     assert anonymous.headers["www-authenticate"].startswith("Basic")
     assert wrong.status_code == 401
@@ -297,7 +297,7 @@ def test_nonexistent_flight_report_creates_no_orphan(
     assert list(paths["reports"].iterdir()) == []
 
 
-def test_failed_rerun_clears_stale_artifacts_and_links(
+def test_failed_rerun_preserves_last_completed_artifacts_and_links(
     web_app: tuple[TestClient, dict[str, Path]],
     lido_pdf: bytes,
 ) -> None:
@@ -320,19 +320,20 @@ def test_failed_rerun_clears_stale_artifacts_and_links(
     assert response.status_code == 303
     assert failed is not None
     assert failed["status"] == "Failed"
-    assert failed["analysis_path"] is None
-    assert failed["level1_report"] is None
-    assert failed["level2_report"] is None
-    assert "Download Level 1 PDF" not in workspace.text
-    assert "Download Level 2 PDF" not in workspace.text
-    assert "Download analysis JSON" not in workspace.text
-    assert "structured findings" not in workspace.text
-    assert client.get(f"/files/report/{flight_id}/1").status_code == 404
-    assert client.get(f"/files/report/{flight_id}/2").status_code == 404
-    assert client.get(f"/files/analysis/{flight_id}").status_code == 404
+    assert failed["analysis_path"] == completed["analysis_path"]
+    assert failed["level1_report"] == completed["level1_report"]
+    assert failed["level2_report"] == completed["level2_report"]
+    assert "Last completed result preserved" in workspace.text
+    assert "Download Level 1 PDF" in workspace.text
+    assert "Download Level 2 PDF" in workspace.text
+    assert "Technical support data" in workspace.text
+    assert "structured findings" in workspace.text
+    assert client.get(f"/files/report/{flight_id}/1").status_code == 200
+    assert client.get(f"/files/report/{flight_id}/2").status_code == 200
+    assert client.get(f"/files/analysis/{flight_id}").status_code == 200
 
 
-def test_duplicate_analysis_request_is_rejected(
+def test_duplicate_dashboard_analysis_request_redirects_to_friendly_status(
     web_app: tuple[TestClient, dict[str, Path]],
     lido_pdf: bytes,
 ) -> None:
@@ -342,9 +343,12 @@ def test_duplicate_analysis_request_is_rejected(
     assert database.begin_analysis(flight_id) is True
     response = client.post(f"/flights/{flight_id}/analyse")
 
-    assert response.status_code == 409
-    assert response.json()["detail"] == "Analysis is already in progress"
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/flights/{flight_id}?notice=analysis-running"
     assert database.get_flight(flight_id)["status"] == "Processing"
+    workspace = client.get(response.headers["location"])
+    assert "Analysis is already running" in workspace.text
+    assert "Analysis running" in workspace.text
 
 
 def test_startup_recovers_interrupted_analysis(

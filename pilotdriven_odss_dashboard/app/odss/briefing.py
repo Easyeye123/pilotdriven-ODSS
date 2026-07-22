@@ -4,10 +4,12 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from html import escape
 from math import cos, radians
+from pathlib import Path
 import re
 from typing import Any
 
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
 
 from .constants import format_actm, format_kg
 from .engines import detect_terrain_events
@@ -334,6 +336,30 @@ def render_route_svg(route_map: dict[str, Any], width: int = 1200, height: int =
 
 
 def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, width: float, height: float) -> None:
+    snapshot_path = route_map.get("snapshot_path")
+    if snapshot_path:
+        candidate = Path(str(snapshot_path))
+        if candidate.is_file():
+            canvas.saveState()
+            canvas.setFillColor(colors.HexColor("#07111F"))
+            canvas.roundRect(x, y, width, height, 6, fill=1, stroke=0)
+            canvas.drawImage(
+                ImageReader(str(candidate)),
+                x,
+                y,
+                width=width,
+                height=height,
+                preserveAspectRatio=True,
+                anchor="c",
+                mask="auto",
+            )
+            canvas.setFillColor(colors.HexColor("#E8F2FF"))
+            canvas.setFont("Helvetica", 4.8)
+            label = str(route_map.get("snapshot_label") or "Realistic route map")
+            canvas.drawString(x + 5, y + 4, f"{label} - briefing orientation, not for navigation")
+            canvas.restoreState()
+            return
+
     projection = project_route_map(route_map, width, height, 18.0)
     points = projection.get("points") or []
     canvas.saveState()
@@ -517,6 +543,7 @@ def build_briefing_view(
         "generated_at_utc": generated_at.isoformat(),
         "generated_at_display": generated_at.strftime("%d %b %Y %H%MZ").upper(),
         "flight_number": flight.get("flight_number") or "----",
+        "registration": flight.get("registration") or "--",
         "route_label": f"{flight.get('departure') or '----'} → {flight.get('destination') or '----'}",
         "flight_date": flight.get("flight_date") or "--",
         "metrics": {
@@ -528,6 +555,7 @@ def build_briefing_view(
             "aircraft": flight.get("aircraft_type") or "--",
             "cruise": _cruise_summary(flight.get("planned_level_profile")),
             "alternate": (alternates[0].get("airport") if alternates else "--"),
+            "clock_basis": "ATOT + CFP ACTM" if timing_view else "CFP ACTM only",
         },
         "masses": {
             "pzfw": format_kg(masses.get("planned_zfw_kg")),

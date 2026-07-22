@@ -129,28 +129,51 @@ def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> 
     assert "9 lower-priority active or review NOTAM findings omitted; see Level 2." in text
 
 
-def test_level1_is_three_page_visual_brief_with_internal_links(tmp_path: Path) -> None:
+def test_level1_is_two_page_readable_portrait_brief(tmp_path: Path) -> None:
     path = tmp_path / "level_1.pdf"
-    render_pdf(_flight(), [_weather(1), _notam("A1000/26", "departure")], [], 1, path)
+    findings = [
+        _weather(1),
+        _notam("A1000/26", "departure"),
+        {
+            "engine": "depressurisation",
+            "severity": "unknown",
+            "title": "High terrain detected but no profile matched",
+            "summary": "Manual chart-index review is required.",
+            "details": [],
+            "data": {},
+        },
+        *[
+            {
+                "engine": "terrain",
+                "severity": "warning",
+                "title": f"High-MSA event {index}",
+                "summary": "Review terrain escape planning.",
+                "details": [],
+                "data": {},
+            }
+            for index in range(1, 9)
+        ],
+    ]
+    render_pdf(_flight(), findings, [], 1, path)
 
     reader = PdfReader(path)
-    assert len(reader.pages) == 3
+    assert len(reader.pages) == 2
     first = reader.pages[0].extract_text() or ""
     second = reader.pages[1].extract_text() or ""
-    third = reader.pages[2].extract_text() or ""
 
     assert "PILOTDRIVEN" in first
+    assert float(reader.pages[0].mediabox.width) < float(reader.pages[0].mediabox.height)
     assert "PZFW" in first and "166,486 kg" in first
     assert "PLDW" in first and "175,802 kg" in first
     assert "PTOW" in first and "245,529 kg" in first
-    assert "DEPARTURE AIRPORT" in first
-    assert "DESTINATION AIRPORT" in first
-    assert "OPERATIONAL DETAIL" in second
-    assert "ROUTE / CONTINGENCY" in third
-
-    annotations = reader.pages[0].get("/Annots") or []
-    assert len(annotations) >= 4
-    assert all(annotation.get_object().get("/Subtype") == "/Link" for annotation in annotations)
+    assert "1  MEL / CDL / CDDL" in first
+    assert "3  DEPARTURE AIRPORT" in first
+    assert "4  DESTINATION AIRPORT / ALTERNATES / NOTAM" in first
+    assert "5  FIR / COMMUNICATIONS" in second
+    assert "6  TERRAIN / VWS / DEPRESSURISATION" in second
+    assert "High terrain detected but no profile matched" in second
+    assert "Manual chart-index review is required" in second
+    assert "8  ACTM / CALCULATED UTC TIMELINE" in second
 
 
 def test_level2_begins_with_visual_cover_and_repeats_detail_header(tmp_path: Path) -> None:

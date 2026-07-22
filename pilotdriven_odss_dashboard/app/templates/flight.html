@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="grid">
+{% if notice %}<div class="notice-box span-12" role="status">{{ notice }}</div>{% endif %}
 <section class="card span-8">
   <h2>{{ flight.flight_number or "Unidentified flight" }}</h2>
   <p><strong>{{ flight.departure or "—" }} → {{ flight.destination or "—" }}</strong> · {{ flight.flight_date or "Date not entered" }}</p>
@@ -12,12 +13,19 @@
   </table>
   {% if flight.notes %}<p class="muted">{{ flight.notes }}</p>{% endif %}
   {% if flight.last_error %}<div class="error-box"><strong>Analysis error:</strong> {{ flight.last_error }}</div>{% endif %}
+  {% if flight.status == 'Failed' and analysis %}<div class="notice-box"><strong>Last completed result preserved.</strong> You can still open the previous reports while the refresh error is investigated.</div>{% endif %}
   <div class="actions">
-    <form method="post" action="/flights/{{ flight.id }}/analyse"><button class="green">{% if flight.status == 'Completed' %}Run analysis again{% else %}Run ODSS analysis{% endif %}</button></form>
+    <form method="post" action="/flights/{{ flight.id }}/analyse" class="analysis-form"><button class="green" {% if flight.status == 'Processing' %}disabled{% endif %}>{% if flight.status == 'Processing' %}Analysis running…{% elif analysis %}Run analysis again{% else %}Run ODSS analysis{% endif %}</button></form>
     {% if flight.level1_report %}<a class="button" href="/files/report/{{ flight.id }}/1">Download Level 1 PDF</a>{% endif %}
     {% if flight.level2_report %}<a class="button" href="/files/report/{{ flight.id }}/2">Download Level 2 PDF</a>{% endif %}
-    {% if flight.analysis_path %}<a class="button secondary" href="/files/analysis/{{ flight.id }}">Download analysis JSON</a>{% endif %}
   </div>
+  {% if flight.analysis_path %}
+  <details class="advanced-data">
+    <summary>Technical support data</summary>
+    <p class="muted">The JSON file is for developers and troubleshooting. Pilots normally use the Level 1 or Level 2 PDF.</p>
+    <a class="button secondary" href="/files/analysis/{{ flight.id }}">Download analysis JSON</a>
+  </details>
+  {% endif %}
 </section>
 
 <aside class="card span-4">
@@ -30,86 +38,13 @@
     <p><strong>{{ analysis.flight.weather|length }}</strong> weather records</p>
     {% if analysis.view.timing %}<p><strong>{{ analysis.view.timing.event_count }}</strong> pertinent actual-time events</p>{% endif %}
     {% if analysis.view.personal_note_count %}<p><strong>{{ analysis.view.personal_note_count }}</strong> personal notes included</p>{% endif %}
+    {% if analysis.reference_library %}<p><strong>Reference library:</strong> {{ analysis.reference_library.status|replace('-', ' ')|title }}</p>{% endif %}
   {% else %}
     <p class="muted">Upload is stored. Run the ODSS analysis to parse the CFP and generate reports.</p>
   {% endif %}
 </aside>
 
-<section class="card span-12 notes-card" id="personal-notes">
-  <h2>Personal notes</h2>
-  <p class="notes-intro">Add pilot-entered notes and choose where they appear in the pertinent briefs. Notes can be kept in a separate section or positioned beside the departure airport, destination airport, or enroute ATC/communications material. Personal notes are clearly labelled and are not treated as ODSS-validated findings.</p>
-  <form method="post" action="/flights/{{ flight.id }}/notes" class="personal-note-form">
-    <div class="personal-note-form-grid">
-      <label>Report placement
-        <select name="placement" required>
-          {% for value, label in personal_note_placement_labels.items() %}
-          <option value="{{ value }}">{{ label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="personal-note-text-field">Note
-        <textarea name="note_text" rows="4" maxlength="2000" placeholder="Enter your personal operational note" required></textarea>
-      </label>
-      <fieldset class="note-level-options">
-        <legend>Include in</legend>
-        <label><input type="checkbox" name="include_level1" value="on" checked> Level 1</label>
-        <label><input type="checkbox" name="include_level2" value="on" checked> Level 2</label>
-      </fieldset>
-    </div>
-    <p class="muted">Saving, editing or deleting a note automatically regenerates the reports when this flight has already been analysed.</p>
-    <button type="submit" class="green">Add personal note</button>
-  </form>
-
-  {% if personal_notes %}
-  <div class="personal-note-list">
-    {% for note in personal_notes %}
-    <article class="personal-note-item">
-      <div class="personal-note-header">
-        <div>
-          <span class="badge note-placement">{{ personal_note_placement_labels.get(note.placement, note.placement) }}</span>
-          {% if note.include_level1 %}<span class="badge note-level">Level 1</span>{% endif %}
-          {% if note.include_level2 %}<span class="badge note-level">Level 2</span>{% endif %}
-        </div>
-        <span class="muted">Updated {{ note.updated_at }}</span>
-      </div>
-      <div class="personal-note-text">{{ note.note_text }}</div>
-      <div class="personal-note-actions">
-        <details>
-          <summary><strong>Edit note</strong></summary>
-          <form method="post" action="/flights/{{ flight.id }}/notes/{{ note.id }}/update" class="personal-note-edit-form">
-            <div class="personal-note-form-grid">
-              <label>Report placement
-                <select name="placement" required>
-                  {% for value, label in personal_note_placement_labels.items() %}
-                  <option value="{{ value }}" {% if note.placement == value %}selected{% endif %}>{{ label }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label class="personal-note-text-field">Note
-                <textarea name="note_text" rows="4" maxlength="2000" required>{{ note.note_text }}</textarea>
-              </label>
-              <fieldset class="note-level-options">
-                <legend>Include in</legend>
-                <label><input type="checkbox" name="include_level1" value="on" {% if note.include_level1 %}checked{% endif %}> Level 1</label>
-                <label><input type="checkbox" name="include_level2" value="on" {% if note.include_level2 %}checked{% endif %}> Level 2</label>
-              </fieldset>
-            </div>
-            <button type="submit">Save changes</button>
-          </form>
-        </details>
-        <form method="post" action="/flights/{{ flight.id }}/notes/{{ note.id }}/delete" onsubmit="return confirm('Delete this personal note?');">
-          <button type="submit" class="danger">Delete note</button>
-        </form>
-      </div>
-    </article>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="muted notes-empty">No personal notes have been added for this flight.</p>
-  {% endif %}
-</section>
-
-<section class="card span-12 timing-card">
+<section class="card span-12 timing-card" id="actual-time">
   <h2>Actual-time operational clock</h2>
   <p class="timing-note"><strong>A timing reference is required for absolute UTC calculations.</strong> Enter either the actual takeoff time (ATOT) or an actual time over a route waypoint (ATA). The dashboard derives the time-zero anchor and calculates UTC crossing, early-call and critical-event times while retaining the original ACTM.</p>
   <form method="post" action="/flights/{{ flight.id }}/timing" id="timing-form">
@@ -140,6 +75,7 @@
       </label>
     </div>
     <p class="muted">Waypoint ATA mode re-anchors the whole route: derived ATOT = entered waypoint ATA − that waypoint's CFP ACTM.</p>
+    <p class="timing-sync-status muted" aria-live="polite"></p>
     <button type="submit" class="green">Save time and recalculate UTC table</button>
   </form>
 
@@ -207,6 +143,81 @@
   {% endif %}
 </section>
 
+<section class="card span-12 notes-card" id="personal-notes">
+  <h2>Personal notes</h2>
+  <p class="notes-intro">Add pilot-entered notes and choose where they appear in the pertinent briefs. Notes can be kept in a separate section or positioned beside the departure airport, destination airport, or enroute ATC/communications material. Personal notes are clearly labelled and are not treated as ODSS-validated findings.</p>
+  <form method="post" action="/flights/{{ flight.id }}/notes" class="personal-note-form">
+    <div class="personal-note-form-grid">
+      <label>Report placement
+        <select name="placement" class="note-placement-select" required>
+          {% for value, label in personal_note_placement_labels.items() %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="personal-note-text-field">Note
+        <textarea name="note_text" class="note-text-input" rows="4" maxlength="2000" placeholder="Enter your personal operational note" required></textarea>
+      </label>
+      <fieldset class="note-level-options">
+        <legend>Include in</legend>
+        <label><input type="checkbox" name="include_level1" value="on" checked> Level 1</label>
+        <label><input type="checkbox" name="include_level2" value="on" checked> Level 2</label>
+      </fieldset>
+    </div>
+    <p class="note-placement-preview" aria-live="polite"></p>
+    <p class="muted">Saving, editing or deleting a note automatically regenerates the reports when this flight has already been analysed.</p>
+    <button type="submit" class="green">Add personal note</button>
+  </form>
+
+  {% if personal_notes %}
+  <div class="personal-note-list">
+    {% for note in personal_notes %}
+    <article class="personal-note-item">
+      <div class="personal-note-header">
+        <div>
+          <span class="badge note-placement">{{ personal_note_placement_labels.get(note.placement, note.placement) }}</span>
+          {% if note.include_level1 %}<span class="badge note-level">Level 1</span>{% endif %}
+          {% if note.include_level2 %}<span class="badge note-level">Level 2</span>{% endif %}
+        </div>
+        <span class="muted">Updated {{ note.updated_at }}</span>
+      </div>
+      <div class="personal-note-text">{{ note.note_text }}</div>
+      <div class="personal-note-actions">
+        <details>
+          <summary><strong>Edit note</strong></summary>
+          <form method="post" action="/flights/{{ flight.id }}/notes/{{ note.id }}/update" class="personal-note-edit-form">
+            <div class="personal-note-form-grid">
+              <label>Report placement
+                <select name="placement" required>
+                  {% for value, label in personal_note_placement_labels.items() %}
+                  <option value="{{ value }}" {% if note.placement == value %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label class="personal-note-text-field">Note
+                <textarea name="note_text" rows="4" maxlength="2000" required>{{ note.note_text }}</textarea>
+              </label>
+              <fieldset class="note-level-options">
+                <legend>Include in</legend>
+                <label><input type="checkbox" name="include_level1" value="on" {% if note.include_level1 %}checked{% endif %}> Level 1</label>
+                <label><input type="checkbox" name="include_level2" value="on" {% if note.include_level2 %}checked{% endif %}> Level 2</label>
+              </fieldset>
+            </div>
+            <button type="submit">Save changes</button>
+          </form>
+        </details>
+        <form method="post" action="/flights/{{ flight.id }}/notes/{{ note.id }}/delete" onsubmit="return confirm('Delete this personal note?');">
+          <button type="submit" class="danger">Delete note</button>
+        </form>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted notes-empty">No personal notes have been added for this flight.</p>
+  {% endif %}
+</section>
+
 {% if analysis %}
 <section class="card span-12">
   <h2>Organised findings</h2>
@@ -257,14 +268,110 @@
   const referenceType = document.getElementById('reference-type');
   const waypointField = document.getElementById('reference-waypoint-field');
   const waypoint = document.getElementById('reference-waypoint');
-  if (!referenceType || !waypointField || !waypoint) return;
-  function updateWaypointRequirement() {
-    const usesWaypoint = referenceType.value === 'waypoint_ata';
-    waypointField.classList.toggle('timing-field-muted', !usesWaypoint);
-    if (!waypoint.disabled) waypoint.required = usesWaypoint;
+  if (referenceType && waypointField && waypoint) {
+    function updateWaypointRequirement() {
+      const usesWaypoint = referenceType.value === 'waypoint_ata';
+      waypointField.classList.toggle('timing-field-muted', !usesWaypoint);
+      if (!waypoint.disabled) waypoint.required = usesWaypoint;
+    }
+    referenceType.addEventListener('change', updateWaypointRequirement);
+    updateWaypointRequirement();
   }
-  referenceType.addEventListener('change', updateWaypointRequirement);
-  updateWaypointRequirement();
+
+  document.querySelectorAll('.analysis-form').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      const button = form.querySelector('button');
+      if (!button) return;
+      button.disabled = true;
+      button.textContent = 'Analysing CFP…';
+    });
+  });
+
+  const noteForm = document.querySelector('.personal-note-form');
+  if (noteForm) {
+    const placement = noteForm.querySelector('.note-placement-select');
+    const preview = noteForm.querySelector('.note-placement-preview');
+    const levels = noteForm.querySelectorAll('input[type="checkbox"]');
+    function updateNotePreview() {
+      const selectedLevels = Array.from(levels)
+        .filter(function (input) { return input.checked; })
+        .map(function (input) { return input.name === 'include_level1' ? 'Level 1' : 'Level 2'; });
+      const location = placement && placement.selectedOptions[0]
+        ? placement.selectedOptions[0].textContent.trim()
+        : 'selected section';
+      preview.textContent = selectedLevels.length
+        ? 'Report preview: ' + selectedLevels.join(' + ') + ' → ' + location + '.'
+        : 'Choose at least one report level before saving.';
+    }
+    if (placement && preview) {
+      placement.addEventListener('change', updateNotePreview);
+      levels.forEach(function (input) { input.addEventListener('change', updateNotePreview); });
+      updateNotePreview();
+    }
+  }
+
+  const timingForm = document.getElementById('timing-form');
+  if (timingForm && window.localStorage) {
+    const storageKey = 'odss-timing-draft-{{ flight.id }}';
+    const status = timingForm.querySelector('.timing-sync-status');
+    function readDraft() {
+      try { return JSON.parse(localStorage.getItem(storageKey) || 'null'); }
+      catch (_) { return null; }
+    }
+    function captureDraft(pending) {
+      const values = {};
+      new FormData(timingForm).forEach(function (value, key) { values[key] = String(value); });
+      localStorage.setItem(storageKey, JSON.stringify({ values: values, pending: pending }));
+    }
+    function restoreDraft(draft) {
+      if (!draft || !draft.values) return;
+      Object.entries(draft.values).forEach(function (entry) {
+        const field = timingForm.elements.namedItem(entry[0]);
+        if (field && !field.disabled) field.value = entry[1];
+      });
+      if (referenceType) referenceType.dispatchEvent(new Event('change'));
+    }
+    async function syncPendingDraft() {
+      const draft = readDraft();
+      if (!draft || !draft.pending || !navigator.onLine) return;
+      if (status) status.textContent = 'Connection restored. Syncing saved actual time…';
+      const body = new URLSearchParams(draft.values);
+      try {
+        const response = await fetch(timingForm.action, {
+          method: 'POST',
+          body: body,
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        localStorage.removeItem(storageKey);
+        window.location.assign('/flights/{{ flight.id }}#actual-time');
+      } catch (_) {
+        if (status) status.textContent = 'Actual time is still saved on this device and will retry when connected.';
+      }
+    }
+    const draft = readDraft();
+    restoreDraft(draft);
+    timingForm.addEventListener('input', function () {
+      captureDraft(Boolean(readDraft() && readDraft().pending));
+    });
+    timingForm.addEventListener('submit', function (event) {
+      if (!navigator.onLine) {
+        event.preventDefault();
+        captureDraft(true);
+        if (status) status.textContent = 'Offline: actual time saved on this device. It will sync automatically when connected.';
+        return;
+      }
+      localStorage.removeItem(storageKey);
+      const button = timingForm.querySelector('button[type="submit"]');
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Saving and recalculating…';
+      }
+    });
+    window.addEventListener('online', syncPendingDraft);
+    syncPendingDraft();
+  }
 })();
 </script>
 {% endblock %}

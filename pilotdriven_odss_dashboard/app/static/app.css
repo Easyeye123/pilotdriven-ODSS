@@ -25,6 +25,8 @@ table{width:100%;border-collapse:collapse}
 th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
 th{font-size:12px;text-transform:uppercase;color:#5d6875}
 .button,button{display:inline-block;border:0;border-radius:6px;background:var(--navy);color:white;padding:10px 14px;text-decoration:none;font-weight:700;cursor:pointer}
+.button:focus-visible,button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #5bb8ff;outline-offset:2px}
+button:disabled{opacity:.62;cursor:wait}
 .button.secondary{background:#5d6875}.button.green,button.green{background:var(--green)}
 .button.danger,button.danger{background:var(--red)}
 input[type=text],input[type=date],input[type=time],input[type=file],select,textarea{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin-top:5px;background:#fff;color:#1f2937;font:inherit}
@@ -42,6 +44,9 @@ legend{font-weight:700;font-size:13px;color:var(--navy)}
 .status-failed{background:#fce9ec;color:#a51e2d}
 .status-processing{background:#fff3d7;color:#8a5600}
 .error-box{margin:12px 0;padding:12px;border-left:4px solid var(--red);background:#fce9ec;color:#7f1722;border-radius:5px}
+.notice-box{margin:0;padding:12px 14px;border:1px solid #b7d5e9;border-left:5px solid var(--navy);background:#eef7fc;color:#173b65;border-radius:7px;line-height:1.45}
+.advanced-data{margin-top:14px;border-top:1px solid var(--border);padding-top:11px}
+.advanced-data summary{font-size:13px;font-weight:700}
 .engine-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .engine-panel{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fff}
 .engine-panel>h3{margin:0;padding:10px 12px;background:var(--navy);color:#fff;font-size:15px}
@@ -73,6 +78,7 @@ details summary{cursor:pointer;color:var(--navy)}
 .personal-note-actions details{flex:1;border-top:1px solid var(--border);padding-top:9px}
 .personal-note-edit-form{margin-top:12px}
 .notes-empty{border-left:4px solid var(--purple);background:#f7f4fc;padding:12px;border-radius:5px;margin-top:16px}
+.note-placement-preview{margin:9px 0 0;padding:9px 11px;border:1px dashed #8c7bb9;border-radius:6px;background:#f8f5fd;color:#493a78;font-size:13px;font-weight:700}
 .timing-card{border-top:5px solid var(--green)}
 .timing-note{max-width:980px;line-height:1.5}
 .timing-form-grid{display:grid;grid-template-columns:1.25fr 1fr 1fr 1.6fr;gap:14px;align-items:end;margin:15px 0 8px}
@@ -93,6 +99,7 @@ details summary{cursor:pointer;color:var(--navy)}
 .timing-details{margin-top:14px;border:1px solid var(--border);border-radius:7px;padding:12px;background:#fafcfe}
 .timing-details summary{margin-bottom:8px}
 .timing-empty{border-left:4px solid var(--amber);background:#fff8e9;padding:12px;border-radius:5px}
+.timing-sync-status:not(:empty){margin:9px 0;padding:9px 11px;border-left:4px solid var(--green);background:#eef8f3;border-radius:5px;color:#174c36;font-weight:700}
 .waypoint-table-wrap{max-height:520px;overflow:auto}
 
 /* Visual route briefing shell */
