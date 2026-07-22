@@ -11,6 +11,7 @@ from pypdf import PdfReader
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import analysis
+from app.odss.briefing import build_route_map, render_route_svg
 from app.odss.reporting import render_pdf, report_sections
 
 
@@ -96,6 +97,34 @@ def _flight() -> dict[str, Any]:
     }
 
 
+def test_route_map_limits_routine_labels_on_dense_long_haul_routes() -> None:
+    flight = _flight()
+    flight["route_waypoints"] = [
+        {
+            "name": f"P{index:02d}",
+            "actm_minutes": index * 20,
+            "latitude": 1.0 + index,
+            "longitude": 104.0 - index * 2.0,
+            "fir_boundary": f"FIR{index:02d}" if index not in {0, 29} else None,
+            "msa_hundreds_ft": None,
+            "vws": None,
+            "airway_in": "DCT",
+        }
+        for index in range(30)
+    ]
+
+    route_map = build_route_map(flight)
+
+    assert route_map["available"] is True
+    assert 0 in route_map["label_indices"]
+    assert 29 in route_map["label_indices"]
+    assert len(route_map["label_indices"]) <= 12
+
+    svg = render_route_svg(route_map)
+    assert 'fill="#153044"' in svg
+    assert "Natural Earth 1:110m land context" in svg
+
+
 def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> None:
     findings = [
         _notam(f"D{index:02d}/26", "departure", priority_score=30 - index)
@@ -129,7 +158,7 @@ def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> 
     assert "9 lower-priority active or review NOTAM findings omitted; see Level 2." in text
 
 
-def test_level1_is_two_page_readable_portrait_brief(tmp_path: Path) -> None:
+def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> None:
     path = tmp_path / "level_1.pdf"
     findings = [
         _weather(1),
@@ -157,23 +186,32 @@ def test_level1_is_two_page_readable_portrait_brief(tmp_path: Path) -> None:
     render_pdf(_flight(), findings, [], 1, path)
 
     reader = PdfReader(path)
-    assert len(reader.pages) == 2
+    assert len(reader.pages) == 3
     first = reader.pages[0].extract_text() or ""
     second = reader.pages[1].extract_text() or ""
+    third = reader.pages[2].extract_text() or ""
 
     assert "PILOTDRIVEN" in first
-    assert float(reader.pages[0].mediabox.width) < float(reader.pages[0].mediabox.height)
+    assert "REVIEW REQUIRED" in first
+    assert "BRIEFING COMPLETE" not in first
+    assert float(reader.pages[0].mediabox.width) > float(reader.pages[0].mediabox.height)
     assert "PZFW" in first and "166,486 kg" in first
     assert "PLDW" in first and "175,802 kg" in first
     assert "PTOW" in first and "245,529 kg" in first
-    assert "1  MEL / CDL / CDDL" in first
-    assert "3  DEPARTURE AIRPORT" in first
-    assert "4  DESTINATION AIRPORT / ALTERNATES / NOTAM" in first
-    assert "5  FIR / COMMUNICATIONS" in second
-    assert "6  TERRAIN / VWS / DEPRESSURISATION" in second
-    assert "High terrain detected but no profile matched" in second
-    assert "Manual chart-index review is required" in second
-    assert "8  ACTM / CALCULATED UTC TIMELINE" in second
+    assert "DEPARTURE AIRPORT" in first
+    assert "DESTINATION AIRPORT" in first
+    assert "Natural Earth 1:110m land context" in first
+    assert "SQ304 - OPERATIONAL DETAIL" in second
+    assert "MEL / CDL / CDDL" in second
+    assert "PERFORMANCE / FUEL" in second
+    assert "WEATHER / PERTINENT NOTAM" in second
+    assert "SQ304 - ROUTE / CONTINGENCY" in third
+    assert "FIR / COMMUNICATIONS" in third
+    assert "TERRAIN MSA / VWS" in third
+    assert "DEPRESSURISATION PROFILES" in third
+    assert "High terrain detected but no profile matched" in third
+    assert "Manual chart-index review is required" in third
+    assert "ACTM / CALCULATED UTC TIMELINE" in third
 
 
 def test_level2_begins_with_visual_cover_and_repeats_detail_header(tmp_path: Path) -> None:

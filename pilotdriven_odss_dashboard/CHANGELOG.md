@@ -10,7 +10,11 @@
 - Added compact Amazon Location static-map overlays with deterministic route simplification.
 - Added service API, fallback, report-worker, static-overlay and external golden regression coverage.
 - Added SQ303 and SQ304 command-line golden runners for core and service boundaries.
-- Rebuilt Level 1 as a readable two-page portrait brief with eight colour-coded sections.
+- Rebuilt Level 1 as a reviewed three-page landscape brief with a colour-coded summary map, operational detail and route/contingency pages.
+- Reduced routine route labels and added collision-aware PDF placement so long-haul maps remain legible.
+- Added a bundled public-domain Natural Earth 1:110m land layer so offline URL/PDF reports retain geographic context when the live Amazon Location renderer is unavailable.
+- Corrected Lido `GND  MILES` / `AIR  MILES` parsing when the labels contain variable whitespace.
+- Changed the report banner to `REVIEW REQUIRED` whenever the deterministic result contains warnings, unknowns or manual-review gates.
 - Added configurable departure and arrival NOTAM windows, with destination and alternate defaulting to ETA plus or minus two hours.
 - Preserved the last completed reports when a rerun fails and made duplicate service requests idempotent.
 - Moved support JSON behind a disclosure, added visible personal-note placement preview and made ATOT entry available before notes with offline capture.

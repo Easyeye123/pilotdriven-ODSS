@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import base64
 from collections import defaultdict
 from datetime import datetime, timezone
+from functools import lru_cache
+import gzip
 from html import escape
+import json
 from math import cos, radians
 from pathlib import Path
 import re
@@ -10,12 +14,42 @@ from typing import Any
 
 from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
 
 from .constants import format_actm, format_kg
 from .engines import detect_terrain_events
 
 
 _SEVERITY_RANK = {"information": 0, "unknown": 1, "warning": 2, "critical": 3}
+_NATURAL_EARTH_LAND = Path(__file__).with_name(
+    "natural_earth_110m_land.geojson.gz.b64"
+)
+
+
+@lru_cache(maxsize=1)
+def _natural_earth_land_rings() -> tuple[tuple[tuple[float, float], ...], ...]:
+    """Load the bundled public-domain 1:110m land polygons once per process."""
+    try:
+        encoded = _NATURAL_EARTH_LAND.read_text(encoding="ascii")
+        payload = gzip.decompress(base64.b64decode(encoded))
+        geojson = json.loads(payload)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, gzip.BadGzipFile):
+        return ()
+
+    rings: list[tuple[tuple[float, float], ...]] = []
+    for feature in geojson.get("features", []):
+        geometry = feature.get("geometry") or {}
+        if geometry.get("type") != "Polygon":
+            continue
+        for ring in geometry.get("coordinates") or []:
+            prepared = tuple(
+                (float(coordinate[0]), float(coordinate[1]))
+                for coordinate in ring
+                if isinstance(coordinate, list) and len(coordinate) >= 2
+            )
+            if len(prepared) >= 3:
+                rings.append(prepared)
+    return tuple(rings)
 
 
 def _parse_utc(value: str | None) -> datetime | None:
@@ -151,6 +185,20 @@ def _unwrap_route_points(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
+def _evenly_spaced_indices(indices: list[int], limit: int) -> set[int]:
+    """Keep representative labels without turning a long-haul map into a wall of text."""
+    if limit <= 0 or not indices:
+        return set()
+    if len(indices) <= limit:
+        return set(indices)
+    if limit == 1:
+        return {indices[len(indices) // 2]}
+    return {
+        indices[round(position * (len(indices) - 1) / (limit - 1))]
+        for position in range(limit)
+    }
+
+
 def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
     raw_points: list[dict[str, Any]] = []
     for waypoint in flight.get("route_waypoints", []):
@@ -180,6 +228,7 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
         }
 
     priority_indices: set[int] = {0, len(points) - 1}
+    fir_indices: list[int] = []
     bobcat_name = str((flight.get("bobcat") or {}).get("waypoint") or "").upper()
     terrain_maxima = {
         str(event["maximum"].get("name") or "").upper()
@@ -188,7 +237,7 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
     for index, point in enumerate(points):
         name = str(point.get("name") or "").upper().lstrip("-")
         if point.get("fir_boundary"):
-            priority_indices.add(index)
+            fir_indices.append(index)
         if name in {"TOC", "TOD"} or name.startswith(("ENTRY", "EXIT", "**ETP")):
             priority_indices.add(index)
         if bobcat_name and name == bobcat_name:
@@ -196,8 +245,10 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
         if name in terrain_maxima:
             priority_indices.add(index)
 
-    step = max(1, len(points) // 8)
-    priority_indices.update(range(0, len(points), step))
+    priority_indices.update(_evenly_spaced_indices(fir_indices, 6))
+    priority_indices.update(
+        _evenly_spaced_indices(list(range(1, max(1, len(points) - 1))), 4)
+    )
 
     for index, point in enumerate(points):
         role = "route"
@@ -221,7 +272,10 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
         "available": len(points) >= 2,
         "points": points,
         "label_indices": sorted(priority_indices),
-        "note": "Schematic route map from CFP coordinates - not for navigation.",
+        "note": (
+            "Natural Earth 1:110m land context; route from CFP coordinates - "
+            "briefing orientation only, not for navigation."
+        ),
     }
 
 
@@ -233,7 +287,7 @@ def project_route_map(
 ) -> dict[str, Any]:
     points = route_map.get("points") or []
     if len(points) < 2:
-        return {"points": [], "grid": []}
+        return {"points": [], "grid": [], "frame": {}}
 
     mid_latitude = sum(float(point["latitude"]) for point in points) / len(points)
     longitude_factor = max(0.25, cos(radians(mid_latitude)))
@@ -248,6 +302,19 @@ def project_route_map(
     drawn_height = span_y * scale
     offset_x = (width - drawn_width) / 2
     offset_y = (height - drawn_height) / 2
+    frame = {
+        "longitude_factor": longitude_factor,
+        "center_longitude": (
+            min(float(point["plot_longitude"]) for point in points)
+            + max(float(point["plot_longitude"]) for point in points)
+        )
+        / 2,
+        "min_x": min_x,
+        "min_y": min_y,
+        "scale": scale,
+        "offset_x": offset_x,
+        "offset_y": offset_y,
+    }
 
     projected = []
     for index, point in enumerate(points):
@@ -264,7 +331,58 @@ def project_route_map(
             "x": padding + fraction * (width - 2 * padding),
             "y": padding + fraction * (height - 2 * padding),
         })
-    return {"points": projected, "grid": grid}
+    return {"points": projected, "grid": grid, "frame": frame}
+
+
+def _project_land_ring(
+    ring: tuple[tuple[float, float], ...],
+    frame: dict[str, float],
+) -> list[list[tuple[float, float]]]:
+    """Project and split a land ring across the active longitude wrap."""
+    longitude_factor = float(frame["longitude_factor"])
+    center_longitude = float(frame["center_longitude"])
+    min_x = float(frame["min_x"])
+    min_y = float(frame["min_y"])
+    scale = float(frame["scale"])
+    offset_x = float(frame["offset_x"])
+    offset_y = float(frame["offset_y"])
+
+    segments: list[list[tuple[float, float]]] = []
+    current: list[tuple[float, float]] = []
+    previous_longitude: float | None = None
+    for raw_longitude, latitude in ring:
+        longitude = raw_longitude
+        while longitude - center_longitude > 180:
+            longitude -= 360
+        while longitude - center_longitude < -180:
+            longitude += 360
+        if previous_longitude is not None and abs(longitude - previous_longitude) > 180:
+            if len(current) >= 3:
+                segments.append(current)
+            current = []
+        current.append(
+            (
+                offset_x + (longitude * longitude_factor - min_x) * scale,
+                offset_y + (latitude - min_y) * scale,
+            )
+        )
+        previous_longitude = longitude
+    if len(current) >= 3:
+        segments.append(current)
+    return segments
+
+
+def _projected_land_segments(
+    projection: dict[str, Any],
+) -> tuple[tuple[tuple[float, float], ...], ...]:
+    frame = projection.get("frame") or {}
+    if not frame:
+        return ()
+    return tuple(
+        tuple(segment)
+        for ring in _natural_earth_land_rings()
+        for segment in _project_land_ring(ring, frame)
+    )
 
 
 def render_route_svg(route_map: dict[str, Any], width: int = 1200, height: int = 600) -> str:
@@ -286,6 +404,19 @@ def render_route_svg(route_map: dict[str, Any], width: int = 1200, height: int =
         '</linearGradient></defs>',
         f'<rect width="{width}" height="{height}" rx="18" fill="url(#odssMapBg)"/>',
     ]
+    for segment in _projected_land_segments(projection):
+        path = " ".join(
+            (
+                f"M {point[0]:.1f} {height - point[1]:.1f}"
+                if index == 0
+                else f"L {point[0]:.1f} {height - point[1]:.1f}"
+            )
+            for index, point in enumerate(segment)
+        )
+        parts.append(
+            f'<path d="{path} Z" fill="#153044" stroke="#42647b" '
+            'stroke-width="1" opacity="0.9"/>'
+        )
     for grid in projection.get("grid") or []:
         parts.append(
             f'<line x1="{grid["x"]:.1f}" y1="36" x2="{grid["x"]:.1f}" y2="{height - 36}" '
@@ -372,6 +503,20 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
         canvas.restoreState()
         return
 
+    clip = canvas.beginPath()
+    clip.rect(x, y, width, height)
+    canvas.clipPath(clip, stroke=0, fill=0)
+    canvas.setFillColor(colors.HexColor("#153044"))
+    canvas.setStrokeColor(colors.HexColor("#42647B"))
+    canvas.setLineWidth(0.35)
+    for segment in _projected_land_segments(projection):
+        land = canvas.beginPath()
+        land.moveTo(x + segment[0][0], y + segment[0][1])
+        for px, py in segment[1:]:
+            land.lineTo(x + px, y + py)
+        land.close()
+        canvas.drawPath(land, stroke=1, fill=1)
+
     canvas.setStrokeColor(colors.HexColor("#28425F"))
     canvas.setLineWidth(0.4)
     for grid in projection.get("grid") or []:
@@ -396,18 +541,78 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
         "route": colors.HexColor("#DCEEFF"),
     }
     canvas.setFont("Helvetica-Bold", 5.8)
-    for index, point in enumerate(points):
+    for point in points:
         px, py = x + point["x"], y + point["y"]
         canvas.setFillColor(role_colour.get(point.get("role"), colors.HexColor("#DCEEFF")))
         radius = 3.2 if point.get("role") in {"departure", "destination"} else 1.9
         canvas.circle(px, py, radius, fill=1, stroke=0)
-        if point.get("label"):
-            canvas.setFillColor(colors.HexColor("#E8F2FF"))
-            label = _shorten(point.get("display_name"), 16)
-            if px < x + width * 0.75:
-                canvas.drawString(px + 3.5, py + (3.5 if index % 2 == 0 else -7), label)
-            else:
-                canvas.drawRightString(px - 3.5, py + (3.5 if index % 2 == 0 else -7), label)
+
+    role_priority = {
+        "departure": 0,
+        "destination": 0,
+        "bobcat": 1,
+        "edto": 2,
+        "terrain": 3,
+        "fir": 4,
+        "route": 5,
+    }
+    labelled = sorted(
+        [
+            (index, point)
+            for index, point in enumerate(points)
+            if point.get("label")
+        ],
+        key=lambda item: (role_priority.get(str(item[1].get("role")), 6), item[0]),
+    )
+    occupied: list[tuple[float, float, float, float]] = []
+    canvas.setFillColor(colors.HexColor("#E8F2FF"))
+    for index, point in labelled:
+        px, py = x + point["x"], y + point["y"]
+        label = _shorten(point.get("display_name"), 16)
+        text_width = pdfmetrics.stringWidth(label, "Helvetica-Bold", 5.8)
+        right_side = px < x + width * 0.72
+        anchors = (
+            [(px + 3.5, py + 4.0, "left"), (px + 3.5, py - 8.0, "left")]
+            if right_side
+            else [(px - 3.5, py + 4.0, "right"), (px - 3.5, py - 8.0, "right")]
+        )
+        anchors.extend(
+            [(px - 3.5, py + 4.0, "right"), (px - 3.5, py - 8.0, "right")]
+            if right_side
+            else [(px + 3.5, py + 4.0, "left"), (px + 3.5, py - 8.0, "left")]
+        )
+
+        selected: tuple[float, float, str, tuple[float, float, float, float]] | None = None
+        for tx, ty, anchor in anchors:
+            left = tx if anchor == "left" else tx - text_width
+            box = (left - 1.0, ty - 1.5, left + text_width + 1.0, ty + 5.8)
+            within_map = (
+                box[0] >= x + 2
+                and box[2] <= x + width - 2
+                and box[1] >= y + 8
+                and box[3] <= y + height - 2
+            )
+            overlaps = any(
+                not (
+                    box[2] + 1.5 < other[0]
+                    or box[0] - 1.5 > other[2]
+                    or box[3] + 1.5 < other[1]
+                    or box[1] - 1.5 > other[3]
+                )
+                for other in occupied
+            )
+            if within_map and not overlaps:
+                selected = (tx, ty, anchor, box)
+                break
+
+        if selected is None:
+            continue
+        tx, ty, anchor, box = selected
+        if anchor == "left":
+            canvas.drawString(tx, ty, label)
+        else:
+            canvas.drawRightString(tx, ty, label)
+        occupied.append(box)
     canvas.setFillColor(colors.HexColor("#8396AB"))
     canvas.setFont("Helvetica", 4.8)
     canvas.drawString(x + 5, y + 4, str(route_map.get("note") or ""))
@@ -511,17 +716,33 @@ def build_briefing_view(
     communication_items = grouped.get("communications", [])
     other_issues = [
         item
-        for engine in ("bobcat", "cddl", "qa")
+        for engine in (
+            "bobcat",
+            "mel",
+            "cddl",
+            "performance",
+            "terrain",
+            "vws",
+            "depressurisation",
+            "qa",
+        )
         for item in grouped.get(engine, [])
         if item.get("severity") in {"warning", "critical", "unknown"}
     ]
+    needs_review = bool(
+        warnings
+        or any(
+            item.get("severity") in {"warning", "critical", "unknown"}
+            for item in findings
+        )
+    )
 
     exception_cards = [
         {"label": "Airport restrictions", "count": len(critical_airport_notams), "detail": "Critical departure/destination items", "severity": "critical" if critical_airport_notams else "information"},
         {"label": "Significant weather", "count": len(weather_warnings), "detail": "Operational weather findings", "severity": "warning" if weather_warnings else "information"},
         {"label": "EDTO", "count": len(edto_issues), "detail": "Issues requiring review" if edto_issues else "Checked-period summary available", "severity": "warning" if edto_issues else "information"},
         {"label": "FIR communication", "count": len(communication_items), "detail": "Early contact requirements", "severity": "warning" if communication_items else "information"},
-        {"label": "Other", "count": len(other_issues), "detail": "MEL/CDL/QA exceptions", "severity": "warning" if other_issues else "information"},
+        {"label": "Other reviews", "count": len(other_issues), "detail": "MEL/performance/terrain/profile", "severity": "warning" if other_issues else "information"},
     ]
 
     edto = flight.get("edto") or {}
@@ -539,7 +760,8 @@ def build_briefing_view(
     scheduled_arrival = _parse_utc(flight.get("scheduled_arrival_utc"))
     generated_at = datetime.now(timezone.utc)
     return {
-        "status": "BRIEFING COMPLETE",
+        "status": "REVIEW REQUIRED" if needs_review else "BRIEFING COMPLETE",
+        "status_severity": "warning" if needs_review else "information",
         "generated_at_utc": generated_at.isoformat(),
         "generated_at_display": generated_at.strftime("%d %b %Y %H%MZ").upper(),
         "flight_number": flight.get("flight_number") or "----",

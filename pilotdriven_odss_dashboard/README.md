@@ -6,7 +6,7 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
 
 - Upload and archive Lido CFP PDFs.
 - Parse the CFP section, Page 1, route log, route coordinates, BOBCAT allocation, performance, fuel, EDTO and deferred items.
-- Plot an offline schematic route map from the actual waypoint coordinates contained in the Lido CFP.
+- Plot an offline contextual route map using the actual waypoint coordinates contained in the Lido CFP over a bundled Natural Earth 1:110m land layer.
 - Display a dark visual briefing dashboard with:
   - flight and schedule controls;
   - PZFW, PLDW and PTOW in integer kg;
@@ -16,7 +16,7 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
   - early ATC/FIR communication timing;
   - EDTO summary; and
   - pertinent enroute weather.
-- Generate a fixed two-page portrait **Level 1 pertinent brief** with eight colour-coded operational sections, readable without exposing support JSON.
+- Generate a fixed three-page landscape **Level 1 pertinent brief** with a mapped summary cover, colour-coded operational detail and route/contingency review, readable without exposing support JSON.
 - Start the **Level 2 expanded report** with the same visual briefing cover, followed by the complete deterministic analysis and warnings.
 - Store a canonical `view.briefing` object in the analysis JSON so the current dashboard, PDF renderer and future PilotDriven frontend share the same facts.
 - Detect continuous MSA greater than `100*` events and VWS greater than 4 events.
@@ -49,7 +49,7 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
 
 ## Visual route map semantics
 
-The current route display is an offline schematic generated from the coordinates printed in the Lido CFP route log. It is intended for briefing orientation only and is **not for navigation**.
+The default route display is generated offline from the coordinates printed in the Lido CFP route log over a bundled Natural Earth 1:110m land layer. It provides recognisable coastline context without pretending to be an aeronautical chart. It is intended for briefing orientation only and is **not for navigation**.
 
 The map renderer is deliberately separated from the canonical route/briefing model. When this ODSS module is incorporated into the wider PilotDriven project, the renderer can be replaced by MapLibre, Mapbox or an approved aeronautical map service without rewriting the deterministic aviation engines.
 
@@ -126,7 +126,7 @@ python -m compileall -q app
 pytest -q
 ```
 
-The regression suite covers upload validation, failed reruns, last-known-good artifacts, NOTAM applicability and priority, route-coordinate parsing, two-page portrait Level 1 generation, visual output, actual takeoff anchoring, waypoint-ATA re-anchoring, personal-note CRUD and report placement.
+The regression suite covers upload validation, failed reruns, last-known-good artifacts, NOTAM applicability and priority, route-coordinate parsing, three-page landscape Level 1 generation, visual output, actual takeoff anchoring, waypoint-ATA re-anchoring, personal-note CRUD and report placement.
 
 GitHub Actions also generates Level 1 and Level 2 visual sample PDFs as build artifacts for visual inspection.
 

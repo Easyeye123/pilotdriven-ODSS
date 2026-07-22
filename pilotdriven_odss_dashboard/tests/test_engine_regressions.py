@@ -298,6 +298,8 @@ RTE NO 001 A350-941
 WSSS/20C
 DCT BOBI1 DCT BOBI2
 RJBB/24L
+GND  MILES    5984
+AIR  MILES    6197
 BURNOFF 11.30 050000
 TAXI FUEL 001000
 FLT PLAN REQMT 13.00 060000
@@ -328,6 +330,8 @@ N03 10.0 E105 40.0 090
     assert periods["RJAA"]["period_end_utc"] == "2026-07-17T03:00:00+00:00"
     assert periods["RPLL"]["period_start_utc"] == "2026-07-16T23:00:00+00:00"
     assert periods["RPLL"]["period_end_utc"] == "2026-07-17T01:00:00+00:00"
+    assert flight["ground_distance_nm"] == 5984
+    assert flight["air_distance_nm"] == 6197
 
 
 def test_bobcat_allocation_accepts_lido_commas_and_suffix() -> None:

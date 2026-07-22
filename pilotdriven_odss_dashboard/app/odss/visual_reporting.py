@@ -10,13 +10,13 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import BaseDocTemplate, Flowable, Frame, PageBreak, PageTemplate, Paragraph
 
 from .briefing import build_briefing_view, draw_route_map_pdf
 
 
 PAGE_SIZE = landscape(A4)
-LEVEL1_PAGE_SIZE = A4
 _DARK = colors.HexColor("#07111F")
 _DARK_2 = colors.HexColor("#102843")
 _PANEL = colors.HexColor("#0D1B2C")
@@ -67,14 +67,6 @@ def _styles() -> dict[str, ParagraphStyle]:
             fontName="Helvetica",
             fontSize=5.8,
             leading=7,
-            textColor=colors.HexColor("#1F2937"),
-        ),
-        "level1": ParagraphStyle(
-            "Level 1 readable body",
-            parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=7.4,
-            leading=9.2,
             textColor=colors.HexColor("#1F2937"),
         ),
         "metric": ParagraphStyle(
@@ -278,13 +270,19 @@ def _draw_cover(canvas, briefing: dict[str, Any], width: float, height: float) -
     canvas.rect(0, height - top_h, width, top_h, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
     canvas.setFont("Helvetica-Bold", 12)
-    canvas.drawString(margin, height - 7.7 * mm, "PILOTDRIVEN")
+    brand = "PILOTDRIVEN"
+    brand_x = margin
+    canvas.drawString(brand_x, height - 7.7 * mm, brand)
     canvas.setFillColor(_BLUE)
-    canvas.drawString(margin + 28 * mm, height - 7.7 * mm, "ODSS")
+    canvas.drawString(
+        brand_x + pdfmetrics.stringWidth(brand, "Helvetica-Bold", 12) + 2 * mm,
+        height - 7.7 * mm,
+        "ODSS",
+    )
     canvas.setFillColor(_TEXT)
     canvas.setFont("Helvetica-Bold", 8.8)
     canvas.drawString(margin + 50 * mm, height - 7.6 * mm, f"{briefing['flight_number']}  {briefing['route_label']}  {briefing['flight_date']}")
-    canvas.setFillColor(_GREEN)
+    canvas.setFillColor(_severity_colour(briefing.get("status_severity", "information")))
     canvas.setFont("Helvetica-Bold", 6.4)
     canvas.drawRightString(width - margin, height - 5.4 * mm, briefing["status"])
     canvas.setFillColor(_MUTED)
@@ -524,219 +522,6 @@ def route_detail_flowable(
     )
 
 
-def _level1_section_lines(
-    grouped: dict[str, list[dict[str, Any]]],
-    engines: tuple[str, ...],
-    *,
-    finding_limit: int,
-    detail_limit: int,
-) -> list[str]:
-    selected: list[dict[str, Any]] = []
-    for engine in engines:
-        selected.extend(grouped.get(engine, []))
-    lines = _finding_lines(selected, finding_limit, detail_limit)
-    if len(selected) > finding_limit:
-        lines.append(f"{len(selected) - finding_limit} additional finding(s) are retained in Level 2.")
-    return lines
-
-
-def _draw_level1_header(
-    canvas,
-    briefing: dict[str, Any],
-    width: float,
-    height: float,
-    page_number: int,
-) -> float:
-    canvas.setFillColor(_WHITE_BG)
-    canvas.rect(0, 0, width, height, fill=1, stroke=0)
-    canvas.setFillColor(_NAVY)
-    canvas.rect(0, height - 22 * mm, width, 22 * mm, fill=1, stroke=0)
-    canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 14)
-    canvas.drawString(9 * mm, height - 9 * mm, "PILOTDRIVEN ODSS")
-    canvas.setFont("Helvetica-Bold", 10)
-    canvas.drawString(
-        9 * mm,
-        height - 16 * mm,
-        f"{briefing['flight_number']}  {briefing['route_label']}  {briefing['flight_date']}",
-    )
-    canvas.setFont("Helvetica", 6.5)
-    canvas.drawRightString(
-        width - 9 * mm,
-        height - 9 * mm,
-        f"LEVEL 1 PERTINENT BRIEF  |  PAGE {page_number}/2",
-    )
-    canvas.drawRightString(
-        width - 9 * mm,
-        height - 16 * mm,
-        "CFP-derived decision support",
-    )
-    canvas.setFillColor(_GREY)
-    canvas.setFont("Helvetica", 5.8)
-    canvas.drawCentredString(
-        width / 2,
-        5 * mm,
-        "Verify against current approved manuals, live dispatch information, ATC instructions and PIC judgement.",
-    )
-    return height - 27 * mm
-
-
-def _draw_level1_summary(
-    canvas,
-    briefing: dict[str, Any],
-    x: float,
-    y: float,
-    width: float,
-    height: float,
-) -> None:
-    gap = 2.5 * mm
-    cell_width = (width - 2 * gap) / 3
-    blocks = [
-        (
-            "FLIGHT",
-            [
-                f"{briefing['metrics']['aircraft']}  {briefing['registration']}",
-                f"ETD {briefing['metrics']['etd']}  ETA {briefing['metrics']['eta']}",
-            ],
-            _BLUE,
-        ),
-        (
-            "MASS / FUEL",
-            [
-                f"PZFW {briefing['masses']['pzfw']}  PLDW {briefing['masses']['pldw']}",
-                f"PTOW {briefing['masses']['ptow']}",
-                f"Tanks {briefing['fuel']['tanks']}  Trip {briefing['fuel']['trip']}",
-            ],
-            _GREEN,
-        ),
-        (
-            "CLOCK / SCOPE",
-            [
-                f"Basis {briefing['metrics'].get('clock_basis') or 'ACTM only'}",
-                f"NOTAM {briefing['counts']['notams']}  WX {briefing['counts']['weather']}",
-            ],
-            _PURPLE,
-        ),
-    ]
-    for index, (title, lines, colour) in enumerate(blocks):
-        _draw_panel(
-            canvas,
-            x + index * (cell_width + gap),
-            y,
-            cell_width,
-            height,
-            title,
-            lines,
-            colour,
-            False,
-            _STYLES["level1"],
-        )
-
-
-def _draw_level1_page(
-    canvas,
-    flight: dict[str, Any],
-    findings: list[dict[str, Any]],
-    warnings: list[str],
-    briefing: dict[str, Any],
-    page_number: int,
-    width: float,
-    height: float,
-) -> None:
-    top = _draw_level1_header(canvas, briefing, width, height, page_number)
-    grouped = _findings_by_engine(findings)
-    margin = 9 * mm
-    gap = 3 * mm
-    bottom = 11 * mm
-
-    if page_number == 1:
-        summary_height = 24 * mm
-        _draw_level1_summary(
-            canvas,
-            briefing,
-            margin,
-            top - summary_height,
-            width - 2 * margin,
-            summary_height,
-        )
-        panel_top = top - summary_height - gap
-        panel_titles = [
-            (
-                "1  MEL / CDL / CDDL",
-                _level1_section_lines(grouped, ("mel", "cddl"), finding_limit=6, detail_limit=2)
-                + _note_lines(flight, {"separate"}, 1)[:2],
-                _AMBER,
-            ),
-            (
-                "2  PERFORMANCE / FUEL / BOBCAT",
-                _level1_section_lines(grouped, ("page1", "performance", "bobcat", "qa"), finding_limit=6, detail_limit=2),
-                _NAVY,
-            ),
-            (
-                "3  DEPARTURE AIRPORT",
-                _airport_lines(briefing["departure"])
-                + _level1_section_lines(
-                    grouped,
-                    ("notam",),
-                    finding_limit=3,
-                    detail_limit=1,
-                )
-                + _note_lines(flight, {"departure"}, 1),
-                _BLUE,
-            ),
-            (
-                "4  DESTINATION AIRPORT / ALTERNATES / NOTAM",
-                _airport_lines(briefing["destination"])
-                + _level1_section_lines(grouped, ("weather", "notam"), finding_limit=5, detail_limit=1)
-                + _note_lines(flight, {"destination"}, 1),
-                _GREEN,
-            ),
-        ]
-    else:
-        panel_top = top
-        review_lines = [f"Manual review: {warning}" for warning in warnings[:3]]
-        panel_titles = [
-            (
-                "5  FIR / COMMUNICATIONS",
-                _level1_section_lines(grouped, ("communications",), finding_limit=7, detail_limit=2)
-                + _note_lines(flight, {"communications"}, 1),
-                _PURPLE,
-            ),
-            (
-                "6  TERRAIN / VWS / DEPRESSURISATION",
-                _level1_section_lines(grouped, ("depressurisation", "terrain", "vws"), finding_limit=7, detail_limit=2)
-                + review_lines,
-                _RED,
-            ),
-            (
-                "7  EDTO / ENROUTE WEATHER",
-                _level1_section_lines(grouped, ("edto", "weather"), finding_limit=7, detail_limit=2),
-                _GREEN,
-            ),
-            (
-                "8  ACTM / CALCULATED UTC TIMELINE",
-                _level1_section_lines(grouped, ("actual_timing", "timeline"), finding_limit=8, detail_limit=2),
-                _NAVY,
-            ),
-        ]
-
-    panel_height = (panel_top - bottom - 3 * gap) / 4
-    for index, (title, lines, colour) in enumerate(panel_titles):
-        y = panel_top - (index + 1) * panel_height - index * gap
-        _draw_panel(
-            canvas,
-            margin,
-            y,
-            width - 2 * margin,
-            panel_height,
-            title,
-            lines,
-            colour,
-            False,
-            _STYLES["level1"],
-        )
-
-
 def render_level1_visual(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -752,7 +537,7 @@ def render_level1_visual(
         briefing["route_map"]["snapshot_label"] = map_label or "Realistic route map"
     document = BaseDocTemplate(
         str(path),
-        pagesize=LEVEL1_PAGE_SIZE,
+        pagesize=PAGE_SIZE,
         leftMargin=4 * mm,
         rightMargin=4 * mm,
         topMargin=4 * mm,
@@ -761,38 +546,17 @@ def render_level1_visual(
     frame = Frame(document.leftMargin, document.bottomMargin, document.width, document.height, id="visual")
     document.addPageTemplates([PageTemplate(id="visual", frames=[frame])])
     story = [
-        _FullPageFlowable(
-            lambda canvas, width, height: _draw_level1_page(
-                canvas,
-                flight,
-                findings,
-                warnings,
-                briefing,
-                1,
-                width,
-                height,
-            )
-        ),
+        visual_cover_flowable(briefing),
         PageBreak(),
-        _FullPageFlowable(
-            lambda canvas, width, height: _draw_level1_page(
-                canvas,
-                flight,
-                findings,
-                warnings,
-                briefing,
-                2,
-                width,
-                height,
-            )
-        ),
+        operational_detail_flowable(flight, findings, briefing, 1),
+        PageBreak(),
+        route_detail_flowable(flight, findings, briefing, 1),
     ]
     document.build(story)
 
 
 __all__ = [
     "PAGE_SIZE",
-    "LEVEL1_PAGE_SIZE",
     "operational_detail_flowable",
     "render_level1_visual",
     "route_detail_flowable",
