@@ -21,8 +21,9 @@ from shapely.ops import split
 
 AWC_ISIGMET_URL = "https://aviationweather.gov/api/data/isigmet?format=json"
 _CACHE_LOCK = Lock()
-_CACHE_SNAPSHOT: dict[str, Any] | None = None
-_CACHE_MONOTONIC = 0.0
+# Keyed by AWC hazard code so volcanic ash and tropical cyclone snapshots
+# never overwrite one another.
+_CACHE_BY_HAZARD: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def extract_embedded_vaa(pages: list[str]) -> dict[str, Any]:
@@ -98,8 +99,12 @@ def _float_setting(name: str, default: float, minimum: float, maximum: float) ->
     return value
 
 
-def _normalize_awc_advisory(record: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
-    if str(record.get("hazard") or "").upper() != "VA":
+def _normalize_awc_advisory(
+    record: dict[str, Any],
+    hazard_code: str = "VA",
+) -> tuple[dict[str, Any] | None, str | None]:
+    hazard_code = hazard_code.upper()
+    if str(record.get("hazard") or "").upper() != hazard_code:
         return None, None
     valid_from = _utc(record.get("validTimeFrom"))
     valid_to = _utc(record.get("validTimeTo"))
@@ -123,8 +128,14 @@ def _normalize_awc_advisory(record: dict[str, Any]) -> tuple[dict[str, Any] | No
     if ring[0] != ring[-1]:
         ring.append(list(ring[0]))
 
+    raw_base = record.get("base")
+    if raw_base is None and hazard_code == "TC":
+        # An ICAO tropical cyclone SIGMET describes a surface-based cyclone area
+        # and publishes only a top. An absent base means surface, not unknown.
+        # A missing top stays unknown and is refused below.
+        raw_base = 0
     try:
-        lower_feet = int(record["base"])
+        lower_feet = int(raw_base)
         upper_feet = int(record["top"])
     except (KeyError, TypeError, ValueError):
         return None, "missing_vertical_limits"
@@ -134,12 +145,12 @@ def _normalize_awc_advisory(record: dict[str, Any]) -> tuple[dict[str, Any] | No
     raw_text = str(record.get("rawSigmet") or "").strip()
     identifier_parts = [
         str(record.get("firId") or "GLOBAL"),
-        str(record.get("seriesId") or "VA"),
+        str(record.get("seriesId") or hazard_code),
         str(int(valid_from.timestamp())),
     ]
     return {
         "advisory_id": "-".join(identifier_parts),
-        "hazard": "VA",
+        "hazard": hazard_code,
         "fir_id": record.get("firId"),
         "fir_name": record.get("firName"),
         "series_id": record.get("seriesId"),
@@ -158,8 +169,15 @@ def fetch_awc_snapshot(
     *,
     client: httpx.Client | None = None,
     now: datetime | None = None,
+    hazard_code: str = "VA",
 ) -> dict[str, Any]:
-    """Fetch a bounded, auditable snapshot of current international VA SIGMETs."""
+    """Fetch a bounded, auditable snapshot of current international SIGMETs.
+
+    ``hazard_code`` selects the AWC hazard class to normalise (``VA`` for
+    volcanic ash, ``TC`` for tropical cyclone). The upstream feed is the same
+    international SIGMET endpoint in both cases.
+    """
+    hazard_code = hazard_code.upper()
     retrieved_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     url = os.environ.get("ODSS_VA_SIGMET_URL", AWC_ISIGMET_URL).strip() or AWC_ISIGMET_URL
     parsed_url = urlsplit(url)
@@ -233,10 +251,10 @@ def fetch_awc_snapshot(
     for index, record in enumerate(payload):
         if not isinstance(record, dict):
             continue
-        advisory, warning = _normalize_awc_advisory(record)
+        advisory, warning = _normalize_awc_advisory(record, hazard_code)
         if advisory:
             advisories.append(advisory)
-        elif warning and str(record.get("hazard") or "").upper() == "VA":
+        elif warning and str(record.get("hazard") or "").upper() == hazard_code:
             parse_warnings.append(f"record_{index}:{warning}")
 
     response_date = None
@@ -249,9 +267,11 @@ def fetch_awc_snapshot(
     freshness_minutes = abs((retrieved_at - reference_time).total_seconds()) / 60
     valid_starts = [_utc(item["valid_from_utc"]) for item in advisories]
     valid_ends = [_utc(item["valid_to_utc"]) for item in advisories]
+    hazard_label = "TC" if hazard_code == "TC" else "VA"
     return {
         "schema_version": "1.0",
         "provider": "noaa-awc-international-sigmet",
+        "hazard_code": hazard_code,
         "source_url": url,
         "status": "available",
         "retrieved_at_utc": _iso(retrieved_at),
@@ -267,25 +287,26 @@ def fetch_awc_snapshot(
         "parse_warnings": parse_warnings,
         "source_note": (
             "Official NOAA Aviation Weather Center international SIGMET feed. "
-            "This feed proves active VA SIGMET matches but is not a full-flight future VAA forecast archive."
+            f"This feed proves active {hazard_label} SIGMET matches but is not a "
+            "full-flight future forecast archive."
         ),
     }
 
 
-def live_vaa_snapshot() -> dict[str, Any]:
+def live_vaa_snapshot(hazard_code: str = "VA") -> dict[str, Any]:
     """Cache the public feed briefly to respect the published API rate limit."""
-    global _CACHE_MONOTONIC, _CACHE_SNAPSHOT
+    hazard_code = hazard_code.upper()
     try:
         cache_seconds = _float_setting("ODSS_VA_SIGMET_CACHE_SECONDS", 60.0, 30.0, 600.0)
     except ValueError:
         cache_seconds = 60.0
     now_monotonic = time.monotonic()
     with _CACHE_LOCK:
-        if _CACHE_SNAPSHOT and now_monotonic - _CACHE_MONOTONIC < cache_seconds:
-            return deepcopy(_CACHE_SNAPSHOT)
-        snapshot = fetch_awc_snapshot()
-        _CACHE_SNAPSHOT = snapshot
-        _CACHE_MONOTONIC = now_monotonic
+        cached = _CACHE_BY_HAZARD.get(hazard_code)
+        if cached and now_monotonic - cached[0] < cache_seconds:
+            return deepcopy(cached[1])
+        snapshot = fetch_awc_snapshot(hazard_code=hazard_code)
+        _CACHE_BY_HAZARD[hazard_code] = (now_monotonic, snapshot)
         return deepcopy(snapshot)
 
 
@@ -501,8 +522,16 @@ def evaluate_vaa(
     flight: dict[str, Any],
     snapshot: dict[str, Any],
     embedded_source: dict[str, Any] | None = None,
+    *,
+    hazard_label: str = "volcanic_ash",
+    default_advisory_id: str = "VA-SIGMET",
 ) -> dict[str, Any]:
-    """Evaluate route, time, and planned flight level against source geometry."""
+    """Evaluate route, time, and planned flight level against source geometry.
+
+    The evaluation is hazard-agnostic: ``hazard_label`` and
+    ``default_advisory_id`` only affect how matched features are tagged for the
+    map and report layers.
+    """
     embedded = embedded_source or {
         "status": "not_present",
         "source_page": None,
@@ -605,7 +634,7 @@ def evaluate_vaa(
                 continue
             if not intersects:
                 continue
-            advisory_id = str(advisory.get("advisory_id") or "VA-SIGMET")
+            advisory_id = str(advisory.get("advisory_id") or default_advisory_id)
             matches.append({
                 "advisory_id": advisory_id,
                 "fir_id": advisory.get("fir_id"),
@@ -629,7 +658,7 @@ def evaluate_vaa(
                 "geometry": _map_safe_geometry(advisory["geometry"]),
                 "properties": {
                     "advisory_id": advisory_id,
-                    "hazard": "volcanic_ash",
+                    "hazard": hazard_label,
                     "fir_id": advisory.get("fir_id"),
                     "valid_from_utc": advisory.get("valid_from_utc"),
                     "valid_to_utc": advisory.get("valid_to_utc"),

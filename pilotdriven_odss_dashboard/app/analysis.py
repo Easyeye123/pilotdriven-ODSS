@@ -18,6 +18,7 @@ from .odss.constants import (
 from .odss.engines import analyse
 from .odss.parser import extract_pages, parse_lido
 from .odss.reporting import render_pdf
+from .odss.tropical_cyclone import assess_tropical_cyclone
 from .odss.vaa import assess_volcanic_ash
 from .odss_map_v06.config import MapSettings
 from .odss_map_v06.geojson import build_map_contract
@@ -67,6 +68,7 @@ def run_odss_analysis(
         }
 
     assess_volcanic_ash(flight, pages)
+    assess_tropical_cyclone(flight, pages)
     findings, warnings = analyse(flight)
     timing_view = None
     if actual_takeoff_utc:
@@ -166,6 +168,7 @@ def run_odss_analysis(
         "timing_event_count": timing_view["event_count"] if timing_view else 0,
         "personal_note_count": len(flight["personal_notes"]),
         "vaa_status": (flight.get("vaa_review") or {}).get("status"),
+        "tropical_cyclone_status": (flight.get("tropical_cyclone_review") or {}).get("status"),
         "warnings": warnings,
         "analysis_version": "0.6.1",
     }

@@ -46,6 +46,119 @@ def finding(
     }
 
 
+# Hazard reviews share one deterministic route x time x flight-level evaluator,
+# so they also share one finding shape. Only the wording differs.
+_HAZARD_REVIEWS = (
+    {
+        "review_key": "vaa_review",
+        "engine": "vaa",
+        "affected_title": "Volcanic ash affects the planned route",
+        "review_title": "Volcanic ash review required",
+        "review_summary": "ODSS could not safely confirm that volcanic ash is not applicable to the route.",
+        "record_phrase": "volcanic-ash",
+        "cfp_phrase": "volcanic-ash",
+        "negative_claim": "no volcanic ash",
+        "unresolved_warning": (
+            "Volcanic ash applicability remains unresolved; "
+            "review the current official advisory source."
+        ),
+    },
+    {
+        "review_key": "tropical_cyclone_review",
+        "engine": "tropical_cyclone",
+        "affected_title": "Tropical cyclone affects the planned route",
+        "review_title": "Tropical cyclone review required",
+        "review_summary": (
+            "ODSS could not safely confirm that a tropical cyclone is not applicable to the route."
+        ),
+        "record_phrase": "tropical-cyclone",
+        "cfp_phrase": "tropical-cyclone",
+        "negative_claim": "no tropical cyclone",
+        "unresolved_warning": (
+            "Tropical cyclone applicability remains unresolved; "
+            "review the current official advisory source."
+        ),
+    },
+)
+
+
+def _hazard_review_findings(
+    review: dict[str, Any],
+    hazard: dict[str, str],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Build findings for one hazard review without interpreting the hazard."""
+    status = review.get("status")
+    if status == "affected":
+        matches = review.get("matches") or []
+        first_match = matches[0] if matches else {}
+        details = [
+            (
+                f"{item.get('advisory_id')}: {item.get('route_from')}-"
+                f"{item.get('route_to')} at FL{item.get('planned_flight_level')}, "
+                f"{item.get('segment_start_utc')} to {item.get('segment_end_utc')}."
+            )
+            for item in matches[:8]
+        ]
+        details.extend([
+            f"Source: {review.get('provider') or 'not identified'}.",
+            f"Retrieved: {review.get('retrieved_at_utc') or 'not available'}.",
+            "Boundary contact is treated as an intersection; verify the original advisory and dispatch guidance.",
+        ])
+        return [finding(
+            hazard["engine"],
+            "critical",
+            hazard["affected_title"],
+            f"{len(matches)} route/time/flight-level intersection(s) verified.",
+            details,
+            {
+                "status": "affected",
+                "start_actm_minutes": first_match.get("start_actm_minutes"),
+                "match_count": len(matches),
+                "provider": review.get("provider"),
+                "reason_codes": review.get("reason_codes") or [],
+            },
+        )], []
+
+    if status != "review_required":
+        return [], []
+
+    reason_codes = review.get("reason_codes") or []
+    human_reasons = {
+        "source_unavailable": "The official live source was unavailable.",
+        "source_stale": "The source snapshot did not meet the configured freshness limit.",
+        "source_records_incomplete": (
+            f"One or more {hazard['record_phrase']} records could not be normalized."
+        ),
+        "coverage_not_complete_for_flight": "The live active-SIGMET feed does not prove the full future flight window clear.",
+        "cfp_weather_data_unavailable": (
+            f"The CFP states that {hazard['cfp_phrase']} weather data is unavailable."
+        ),
+        "route_geometry_unavailable": "The CFP route geometry is incomplete.",
+        "route_timing_unavailable": "The route timing anchor is unavailable.",
+        "flight_level_unavailable": "The planned flight level could not be resolved.",
+        "flight_level_change_unresolved": "A planned level-change waypoint could not be matched to the route.",
+        "advisory_geometry_invalid": "An advisory geometry could not be evaluated safely.",
+    }
+    details = [human_reasons.get(code, code.replace("_", " ").capitalize() + ".") for code in reason_codes]
+    details.extend([
+        f"Source: {review.get('provider') or 'not available'}.",
+        f"Retrieved: {review.get('retrieved_at_utc') or 'not available'}.",
+        f"Do not interpret this state as '{hazard['negative_claim']}'; complete the manual advisory review.",
+    ])
+    return [finding(
+        hazard["engine"],
+        "unknown",
+        hazard["review_title"],
+        hazard["review_summary"],
+        details,
+        {
+            "status": "review_required",
+            "provider": review.get("provider"),
+            "reason_codes": reason_codes,
+        },
+    )], [hazard["unresolved_warning"]]
+
+
 def _switch_state(value: bool | None) -> str:
     if value is True:
         return "ON"
@@ -744,72 +857,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         {"controlling_rtow_kg": controlling, "margin_kg": margin},
     ))
 
-    vaa_review = flight.get("vaa_review") or {}
-    if vaa_review.get("status") == "affected":
-        vaa_matches = vaa_review.get("matches") or []
-        first_match = vaa_matches[0] if vaa_matches else {}
-        details = [
-            (
-                f"{item.get('advisory_id')}: {item.get('route_from')}-"
-                f"{item.get('route_to')} at FL{item.get('planned_flight_level')}, "
-                f"{item.get('segment_start_utc')} to {item.get('segment_end_utc')}."
-            )
-            for item in vaa_matches[:8]
-        ]
-        details.extend([
-            f"Source: {vaa_review.get('provider') or 'not identified'}.",
-            f"Retrieved: {vaa_review.get('retrieved_at_utc') or 'not available'}.",
-            "Boundary contact is treated as an intersection; verify the original advisory and dispatch guidance.",
-        ])
-        findings.append(finding(
-            "vaa",
-            "critical",
-            "Volcanic ash affects the planned route",
-            f"{len(vaa_matches)} route/time/flight-level intersection(s) verified.",
-            details,
-            {
-                "status": "affected",
-                "start_actm_minutes": first_match.get("start_actm_minutes"),
-                "match_count": len(vaa_matches),
-                "provider": vaa_review.get("provider"),
-                "reason_codes": vaa_review.get("reason_codes") or [],
-            },
-        ))
-    elif vaa_review.get("status") == "review_required":
-        reason_codes = vaa_review.get("reason_codes") or []
-        human_reasons = {
-            "source_unavailable": "The official live source was unavailable.",
-            "source_stale": "The source snapshot did not meet the configured freshness limit.",
-            "source_records_incomplete": "One or more volcanic-ash records could not be normalized.",
-            "coverage_not_complete_for_flight": "The live active-SIGMET feed does not prove the full future flight window clear.",
-            "cfp_weather_data_unavailable": "The CFP states that volcanic-ash weather data is unavailable.",
-            "route_geometry_unavailable": "The CFP route geometry is incomplete.",
-            "route_timing_unavailable": "The route timing anchor is unavailable.",
-            "flight_level_unavailable": "The planned flight level could not be resolved.",
-            "flight_level_change_unresolved": "A planned level-change waypoint could not be matched to the route.",
-            "advisory_geometry_invalid": "An advisory geometry could not be evaluated safely.",
-        }
-        details = [human_reasons.get(code, code.replace("_", " ").capitalize() + ".") for code in reason_codes]
-        details.extend([
-            f"Source: {vaa_review.get('provider') or 'not available'}.",
-            f"Retrieved: {vaa_review.get('retrieved_at_utc') or 'not available'}.",
-            "Do not interpret this state as 'no volcanic ash'; complete the manual advisory review.",
-        ])
-        findings.append(finding(
-            "vaa",
-            "unknown",
-            "Volcanic ash review required",
-            "ODSS could not safely confirm that volcanic ash is not applicable to the route.",
-            details,
-            {
-                "status": "review_required",
-                "provider": vaa_review.get("provider"),
-                "reason_codes": reason_codes,
-            },
-        ))
-        warnings.append(
-            "Volcanic ash applicability remains unresolved; review the current official advisory source."
+    for hazard in _HAZARD_REVIEWS:
+        hazard_findings, hazard_warnings = _hazard_review_findings(
+            flight.get(hazard["review_key"]) or {},
+            hazard,
         )
+        findings.extend(hazard_findings)
+        warnings.extend(hazard_warnings)
 
     alternate_airports = {a["airport"] for a in flight["alternates"]}
     edto_airports = {a["airport"] for a in flight["edto"]["airports"]}
