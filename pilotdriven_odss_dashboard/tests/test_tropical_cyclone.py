@@ -405,3 +405,25 @@ def test_volcanic_ash_and_cyclone_reviews_are_independent():
 
     assert flight["tropical_cyclone_review"]["status"] == "affected"
     assert "vaa_review" not in flight
+
+
+def test_tropical_cyclone_is_a_reportable_engine():
+    """A finding the report layer drops is a finding the pilot never sees."""
+    from app.odss.constants import ENGINE_ORDER
+    from app.odss.reporting import _REPORT_ORDER, _TITLES
+
+    assert "tropical_cyclone" in ENGINE_ORDER
+    assert "tropical_cyclone" in _TITLES
+    assert "tropical_cyclone" in _REPORT_ORDER
+
+
+def test_report_sections_include_a_tropical_cyclone_finding():
+    from app.odss.reporting import report_sections
+
+    flight = _flight()
+    review = assess_tropical_cyclone(flight, [], snapshot=_snapshot([_tc_advisory()]))
+    findings, _ = _hazard_review_findings(review, _TC_HAZARD)
+
+    for level in (1, 2):
+        titles = [section.get("title") for section in report_sections(findings, level)]
+        assert "Tropical cyclone review" in titles, f"missing at level {level}"

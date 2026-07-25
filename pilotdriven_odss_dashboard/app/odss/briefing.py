@@ -710,7 +710,7 @@ def _communication_timeline(
 
 def _enroute_weather_cards(findings: list[dict[str, Any]]) -> list[dict[str, str]]:
     weather = sorted(
-        [item for item in findings if item.get("engine") in {"vaa", "weather"}],
+        [item for item in findings if item.get("engine") in {"vaa", "tropical_cyclone", "weather"}],
         key=_finding_sort_key,
     )
     cards = []
@@ -773,7 +773,7 @@ def build_briefing_view(
     ]
     weather_warnings = [
         item
-        for item in grouped.get("vaa", []) + grouped.get("weather", [])
+        for item in grouped.get("vaa", []) + grouped.get("tropical_cyclone", []) + grouped.get("weather", [])
         if item.get("severity") in {"warning", "critical", "unknown"}
     ]
     edto_issues = [item for item in grouped.get("edto", []) if item.get("severity") in {"warning", "critical", "unknown"}]
@@ -875,6 +875,15 @@ def build_briefing_view(
                 else None
             ),
         },
+        "tropical_cyclone": {
+            "status": (flight.get("tropical_cyclone_review") or {}).get("status"),
+            "page": (
+                4
+                if (flight.get("tropical_cyclone_review") or {}).get("status")
+                in {"affected", "review_required"}
+                else None
+            ),
+        },
         "counts": {
             "notams": sum(item.get("engine") == "notam" for item in findings),
             "weather": len(flight.get("weather") or []),
@@ -890,6 +899,12 @@ def build_briefing_view(
             *(
                 [{"label": "Volcanic ash review", "target": "vaa_detail", "page": 4}]
                 if (flight.get("vaa_review") or {}).get("status")
+                in {"affected", "review_required"}
+                else []
+            ),
+            *(
+                [{"label": "Tropical cyclone review", "target": "tropical_cyclone_detail", "page": 4}]
+                if (flight.get("tropical_cyclone_review") or {}).get("status")
                 in {"affected", "review_required"}
                 else []
             ),
