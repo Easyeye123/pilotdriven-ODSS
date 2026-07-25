@@ -120,25 +120,35 @@ def _parse_route_text(page1: str) -> str:
     return " ".join(route_lines)
 
 
-def _parse_alternates(page1: str) -> list[dict[str, Any]]:
+def _parse_alternates(cfp_pages: list[str]) -> list[dict[str, Any]]:
+    # The alternate table spills past the first page on long-haul plans, so the
+    # whole CFP section is scanned. The scan stays inside that section, never
+    # the NOTAM or weather sections, so unrelated rows cannot match.
+    section_text = "\n".join(cfp_pages)
     pattern = re.compile(
         r"^(?P<apt>[A-Z]{4})/(?P<rwy>[0-9A-Z]{2,3})\s+(?P<approach>[A-Z0-9]+)\s+"
         r"(?P<minima>\S+)\s+(?P<dist>\d{4})\s+\d{3}\s+[MP]\d{3}\s+"
         r"(?P<time>\d{4})\s+(?P<fuel>\d{5})$",
         re.MULTILINE,
     )
-    return [
-        {
-            "airport": m.group("apt"),
-            "runway": m.group("rwy"),
-            "approach": m.group("approach"),
-            "minima": m.group("minima"),
-            "distance_nm": int(m.group("dist")),
-            "time_minutes": int(m.group("time")[:2]) * 60 + int(m.group("time")[2:]),
-            "fuel_kg": int(m.group("fuel")),
-        }
-        for m in pattern.finditer(page1)
-    ]
+    alternates: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for match in pattern.finditer(section_text):
+        # A summary page can restate the same row; keep the first occurrence.
+        key = (match.group("apt"), match.group("rwy"), match.group("approach"))
+        if key in seen:
+            continue
+        seen.add(key)
+        alternates.append({
+            "airport": match.group("apt"),
+            "runway": match.group("rwy"),
+            "approach": match.group("approach"),
+            "minima": match.group("minima"),
+            "distance_nm": int(match.group("dist")),
+            "time_minutes": int(match.group("time")[:2]) * 60 + int(match.group("time")[2:]),
+            "fuel_kg": int(match.group("fuel")),
+        })
+    return alternates
 
 
 def _decimal_coordinate(hemisphere: str, degrees: str, minutes: str) -> float:
@@ -419,7 +429,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "edto_rvsm": "EDTO/RVSM" if "EDTO/RVSM" in page1 else None,
         "bobcat": bobcat,
         "deferred_items": _parse_deferred_items(page1),
-        "alternates": _parse_alternates(page1),
+        "alternates": _parse_alternates(cfp_pages),
         "performance": performance,
         "fuel": fuel,
         "masses": masses,
