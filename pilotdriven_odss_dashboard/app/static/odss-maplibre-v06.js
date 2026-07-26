@@ -101,7 +101,15 @@
       type: "symbol",
       source: "odss-hazards",
       layout: {
-        "text-field": "VOLCANIC ASH",
+        "text-field": [
+          "match",
+          ["get", "hazard"],
+          "tropical_cyclone",
+          "TROPICAL CYCLONE SIGMET",
+          "volcanic_ash",
+          "VOLCANIC ASH SIGMET",
+          "ACTIVE SIGMET"
+        ],
         "text-size": config.printMode ? 11 : 10,
         "text-letter-spacing": 0.12,
         "text-allow-overlap": false,

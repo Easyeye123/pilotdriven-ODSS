@@ -10,7 +10,12 @@ import pytest
 from app.odss.briefing import build_route_map, render_route_svg
 from app.odss.reporting import render_pdf
 from app.odss.parser import _parse_waypoints
-from app.odss.vaa import evaluate_vaa, extract_embedded_vaa, fetch_awc_snapshot
+from app.odss.vaa import (
+    assess_volcanic_ash,
+    evaluate_vaa,
+    extract_embedded_vaa,
+    fetch_awc_snapshot,
+)
 from app.odss_map_v06.config import MapSettings
 from app.odss_map_v06.geojson import build_map_contract
 
@@ -399,10 +404,12 @@ def test_level1_integrates_conditional_vaa_on_route_page(
     render_pdf(flight, [_vaa_finding(status)], [], 1, path)
     reader = PdfReader(path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    page2 = reader.pages[1].extract_text() or ""
     page3 = reader.pages[2].extract_text() or ""
 
     assert len(reader.pages) == 3
     assert "ENROUTE WEATHER / VAAC" in page3
+    assert "Volcanic ash" not in page2
     assert (
         "Volcanic ash affects the planned route"
         if status == "affected"
@@ -429,3 +436,19 @@ def test_map_contract_and_schematic_include_only_verified_hazards() -> None:
     flight["vaa_review"] = evaluate_vaa(flight, _snapshot([]))
     cleared = build_map_contract(flight, [], MapSettings(provider="schematic"))
     assert cleared.hazards_geojson["features"] == []
+
+
+def test_awc_sigmet_only_does_not_claim_complete_vaac_coverage(monkeypatch) -> None:
+    monkeypatch.delenv("ODSS_VAAC_ADVISORY_SOURCE", raising=False)
+    snapshot = _snapshot([])
+    snapshot["provider"] = "noaa-awc-international-sigmet"
+    flight = _flight()
+
+    review = assess_volcanic_ash(flight, [], snapshot=snapshot)
+
+    assert review["status"] == "review_required"
+    assert "direct_vaac_advisory_source_not_mounted" in review["reason_codes"]
+    assert (
+        review["coverage_ledger"]["responsible_vaac_advisory_and_vag"]["available"]
+        is False
+    )

@@ -274,6 +274,8 @@ def concise_weather_finding(item: dict[str, Any]) -> dict[str, Any]:
     window_status = str(data.get("window_status") or "").strip()
     window_status_text = str(data.get("window_status_text") or "").strip()
     applicable_conditions = str(data.get("applicable_conditions") or "").strip()
+    observed_conditions = str(data.get("observed_conditions") or "").strip()
+    observation_time = str(data.get("observation_time_utc") or "").strip()
     timing = str(data.get("timing") or "").strip()
     if window_status_text:
         copied["summary"] = " ".join(
@@ -286,6 +288,11 @@ def concise_weather_finding(item: dict[str, Any]) -> dict[str, Any]:
                     else ""
                 ),
                 f"Timing: {timing}" if timing else "",
+                (
+                    f"Nearby observation: {observed_conditions} at {observation_time}."
+                    if observed_conditions and observation_time
+                    else ""
+                ),
                 f"Flight effect: {effect}",
             )
             if part
@@ -301,6 +308,11 @@ def concise_weather_finding(item: dict[str, Any]) -> dict[str, Any]:
             else []
         ),
         *([f"Timing: {timing}"] if timing else []),
+        *(
+            [f"Nearby observation: {observed_conditions} at {observation_time}."]
+            if observed_conditions and observation_time
+            else []
+        ),
         f"Operational mechanism: {mechanism}.",
         f"Flight effect: {effect}",
         *(

@@ -58,8 +58,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent dark",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.7,
-            leading=7.0,
+            fontSize=5.9,
+            leading=7.6,
             textColor=_TEXT,
             spaceAfter=0,
             spaceBefore=0,
@@ -68,8 +68,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent dark small",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.2,
-            leading=6.3,
+            fontSize=5.4,
+            leading=7.1,
             textColor=_TEXT,
             spaceAfter=0,
             spaceBefore=0,
@@ -78,8 +78,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent light",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.8,
-            leading=7.1,
+            fontSize=7.0,
+            leading=9.2,
             textColor=colors.HexColor("#1F2937"),
             spaceAfter=0,
             spaceBefore=0,
@@ -88,8 +88,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent light small",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.25,
-            leading=6.35,
+            fontSize=6.4,
+            leading=8.5,
             textColor=colors.HexColor("#1F2937"),
             spaceAfter=0,
             spaceBefore=0,
@@ -407,6 +407,59 @@ def _finding_lines(
     return lines
 
 
+def _pilot_weather_lines(
+    findings: list[dict[str, Any]],
+    *,
+    finding_limit: int,
+    non_weather_detail_limit: int = 2,
+) -> list[str]:
+    """Render only the operational weather fields needed in Level 1.
+
+    Full observations, forecasts, record identifiers and source payloads stay
+    in the analysis audit.  The pertinent report keeps the flight phase,
+    station, checked UTC window, mechanism, timing and resulting flight effect.
+    """
+
+    lines: list[str] = []
+    for item in sorted(findings, key=_finding_sort_key)[:finding_limit]:
+        if item.get("engine") != "weather":
+            lines.append(
+                f"{item.get('title') or 'Weather advisory'}: "
+                f"{item.get('summary') or ''}".strip()
+            )
+            lines.extend(
+                str(detail)
+                for detail in (item.get("details") or [])[:non_weather_detail_limit]
+                if str(detail).strip()
+            )
+            continue
+
+        data = item.get("data") or {}
+        phase = str(data.get("phase") or "Enroute").strip()
+        location = str(data.get("location") or "station").strip()
+        utc_window = str(data.get("utc_window") or "UTC window not resolved").strip()
+        mechanism = str(data.get("mechanism") or "Not safely classified").strip()
+        if mechanism.lower() == "none safely classified":
+            mechanism = "Not safely classified from the available forecast"
+        timing = str(data.get("timing") or "Timing not safely resolved.").strip()
+        flight_effect = str(
+            data.get("flight_effect")
+            or "Review the latest operational weather for this flight phase."
+        ).strip()
+        lines.extend(
+            [
+                (
+                    f"{item.get('title') or 'Weather'}: "
+                    f"{phase} | {location} | {utc_window}"
+                ),
+                f"Mechanism: {mechanism.rstrip('.')}.",
+                f"Timing: {timing}",
+                f"Flight effect: {flight_effect}",
+            ]
+        )
+    return lines
+
+
 def _group_findings(findings: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
@@ -422,14 +475,32 @@ def _top_actions(findings: list[dict[str, Any]], limit: int = 5) -> list[dict[st
         and item.get("engine") not in {"qa", "page1", "timeline"}
     ]
     selected = sorted(operational, key=_finding_sort_key)[:limit]
-    return [
-        {
-            "title": str(item.get("title") or "Operational item"),
-            "summary": str(item.get("summary") or ""),
-            "severity": str(item.get("severity") or "warning"),
-        }
-        for item in selected
-    ]
+    actions: list[dict[str, str]] = []
+    for item in selected:
+        data = item.get("data") or {}
+        if item.get("engine") == "weather":
+            summary = " | ".join(
+                part
+                for part in (
+                    str(data.get("phase") or "").strip(),
+                    str(data.get("location") or "").strip(),
+                    str(data.get("utc_window") or "").strip(),
+                    str(data.get("mechanism") or "").strip(),
+                    str(data.get("timing") or "").strip(),
+                    str(data.get("flight_effect") or "").strip(),
+                )
+                if part
+            )
+        else:
+            summary = str(item.get("summary") or "")
+        actions.append(
+            {
+                "title": str(item.get("title") or "Operational item"),
+                "summary": summary,
+                "severity": str(item.get("severity") or "warning"),
+            }
+        )
+    return actions
 
 
 def _severity_accent(items: list[dict[str, Any]], normal: colors.Color) -> colors.Color:
@@ -700,9 +771,11 @@ def _draw_operational_detail(
     weather_items = [
         item
         for item in grouped.get("weather", [])
+        if (item.get("data") or {}).get("phase")
+        in {"Departure", "Destination", "Destination alternate"}
         if (item.get("data") or {}).get("window_status")
         != "no_significant_overlap"
-    ] + grouped.get("vaa", [])
+    ]
 
     _draw_balanced_columns(
         canvas,
@@ -723,7 +796,14 @@ def _draw_operational_detail(
             },
             {
                 "title": "WEATHER / PERTINENT NOTAM",
-                "lines": _finding_lines(weather_items + airport_notams, finding_limit=7, detail_limit=1),
+                "lines": (
+                    _pilot_weather_lines(weather_items, finding_limit=4)
+                    + _finding_lines(
+                        airport_notams,
+                        finding_limit=6,
+                        detail_limit=1,
+                    )
+                ),
                 "accent": _severity_accent(weather_items + airport_notams, _WEATHER),
             },
         ],
@@ -810,7 +890,11 @@ def _draw_route_detail(
             {"title": edto_bobcat_title, "lines": edto_bobcat_lines, "accent": _EDTO},
             {
                 "title": "ENROUTE WEATHER / VAAC",
-                "lines": _finding_lines(vaa_weather, finding_limit=5, detail_limit=2),
+                "lines": _pilot_weather_lines(
+                    vaa_weather,
+                    finding_limit=5,
+                    non_weather_detail_limit=2,
+                ),
                 "accent": _severity_accent(vaa_weather, _WEATHER),
             },
         ],

@@ -28,7 +28,7 @@ from .pilot_briefing import (
     notam_sort_key,
     pilot_notam_key,
 )
-from .weather_timing import summarize_taf_for_window
+from .weather_timing import summarize_metar_for_window, summarize_taf_for_window
 
 _WEEKDAYS = {name: index for index, name in enumerate(("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"))}
 _TIME_RANGE = re.compile(r"\b(\d{4})(?:UTC|Z)?\s*(?:-|TO)\s*(\d{4})(?:UTC|Z)?\b")
@@ -94,6 +94,37 @@ def _hazard_review_findings(
     hazard: dict[str, str],
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Build findings for one hazard review without interpreting the hazard."""
+    track_context = (
+        review.get("track_context") or {}
+        if hazard["engine"] == "tropical_cyclone"
+        else {}
+    )
+
+    def track_details() -> list[str]:
+        details: list[str] = []
+        for cyclone in (track_context.get("cyclones") or [])[:3]:
+            movement = cyclone.get("movement") or {}
+            closest = cyclone.get("closest_route_screening") or {}
+            if movement:
+                details.append(
+                    f"{cyclone.get('name') or cyclone.get('cyclone_id') or 'Cyclone'} "
+                    f"centre movement: {movement.get('bearing_degrees')}° at "
+                    f"{movement.get('speed_knots')} kt, based on official timed positions."
+                )
+            if closest:
+                details.append(
+                    f"Centre-track screening: {closest.get('distance_nm')} NM from "
+                    f"{closest.get('route_from')}-{closest.get('route_to')} at "
+                    f"{closest.get('time_utc')}; ODSS interpolation, not an official "
+                    "hazard boundary."
+                )
+        if track_context.get("status") == "review_required":
+            details.append(
+                "Official tropical-cyclone centre-track context was unavailable; "
+                "review the responsible meteorological authority."
+            )
+        return details
+
     status = review.get("status")
     if status == "affected":
         matches = review.get("matches") or []
@@ -111,6 +142,7 @@ def _hazard_review_findings(
             f"Retrieved: {review.get('retrieved_at_utc') or 'not available'}.",
             "Boundary contact is treated as an intersection; verify the original advisory and dispatch guidance.",
         ])
+        details.extend(track_details())
         return [finding(
             hazard["engine"],
             "critical",
@@ -145,6 +177,21 @@ def _hazard_review_findings(
         "flight_level_unavailable": "The planned flight level could not be resolved.",
         "flight_level_change_unresolved": "A planned level-change waypoint could not be matched to the route.",
         "advisory_geometry_invalid": "An advisory geometry could not be evaluated safely.",
+        "direct_vaac_advisory_source_not_mounted": (
+            "The responsible VAAC advisory and VAG source is not mounted; the active "
+            "international SIGMET feed is not a complete VAAC review."
+        ),
+        "direct_vaac_advisory_source_unavailable": (
+            "The configured responsible VAAC advisory source was unavailable."
+        ),
+        "direct_vaac_coverage_partial": (
+            "Direct Tokyo VAAC VAA/VAG evidence was checked, but one VAAC does not "
+            "prove complete responsible-VAAC coverage for the whole route."
+        ),
+        "direct_tca_advisory_source_not_mounted": (
+            "The responsible tropical-cyclone advisory source is not mounted; the "
+            "active SIGMET feed and centre track are not a complete wind-field review."
+        ),
     }
     details = [human_reasons.get(code, code.replace("_", " ").capitalize() + ".") for code in reason_codes]
     details.extend([
@@ -152,6 +199,7 @@ def _hazard_review_findings(
         f"Retrieved: {review.get('retrieved_at_utc') or 'not available'}.",
         f"Do not interpret this state as '{hazard['negative_claim']}'; complete the manual advisory review.",
     ])
+    details.extend(track_details())
     return [finding(
         hazard["engine"],
         "unknown",
@@ -1020,13 +1068,38 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             if record_type == "TAF"
             else None
         )
+        observed_at = None
+        if record.get("observed_at_utc"):
+            try:
+                observed_at = datetime.fromisoformat(
+                    str(record["observed_at_utc"]).replace("Z", "+00:00")
+                )
+            except ValueError:
+                observed_at = None
+        metar_summary = (
+            summarize_metar_for_window(
+                raw_text,
+                window_start,
+                window_end,
+                observed_at=observed_at,
+            )
+            if record_type == "METAR"
+            else None
+        )
         evidence_ref = f"weather:{len(weather_audit_records)}"
         weather_audit_records.append({
             "evidence_ref": evidence_ref,
-            "source": "uploaded_cfp",
+            "source": record.get("source") or "uploaded_cfp",
+            "provider": record.get("provider"),
             "location": location,
             "record_type": record_type,
             "raw_text": raw_text,
+            "raw_sha256": record.get("raw_sha256"),
+            "observed_at_utc": record.get("observed_at_utc"),
+            "issue_time_utc": record.get("issue_time_utc"),
+            "valid_from_utc": record.get("valid_from_utc"),
+            "valid_to_utc": record.get("valid_to_utc"),
+            "retrieved_at_utc": record.get("retrieved_at_utc"),
             "phase": phase,
             "window_start_utc": window_start.isoformat(),
             "window_end_utc": window_end.isoformat(),
@@ -1034,14 +1107,31 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 phase != "Enroute"
                 or significant
                 or bool(taf_summary and taf_summary["status"] != "no_significant_overlap")
+                or bool(
+                    metar_summary
+                    and metar_summary["status"] not in {
+                        "outside_window",
+                        "no_significant_observation",
+                    }
+                )
             ),
             **(
                 {"window_status": taf_summary["status"]}
                 if taf_summary
+                else {"window_status": metar_summary["status"]}
+                if metar_summary
                 else {}
             ),
         })
-        if phase == "Enroute" and not significant and taf_summary is None:
+        if (
+            phase == "Enroute"
+            and not significant
+            and taf_summary is None
+            and (
+                metar_summary is None
+                or metar_summary["status"] == "outside_window"
+            )
+        ):
             continue
 
         window_label = _utc_window_label(window_start, window_end)
@@ -1053,6 +1143,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "mechanisms": [],
             "taf_summaries": [],
             "taf_evidence_refs": [],
+            "metar_summaries": [],
+            "metar_evidence_refs": [],
             "fallback_evidence_refs": [],
             "record_types": [],
             "audit_evidence_refs": [],
@@ -1061,6 +1153,9 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         if taf_summary:
             group["taf_summaries"].append(taf_summary)
             group["taf_evidence_refs"].append(evidence_ref)
+        elif metar_summary:
+            group["metar_summaries"].append(metar_summary)
+            group["metar_evidence_refs"].append(evidence_ref)
         else:
             group["fallback_evidence_refs"].append(evidence_ref)
             prepared = concise_weather_finding(finding(
@@ -1089,6 +1184,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             group["warning"]
             or significant
             or bool(taf_summary and taf_summary["status"] != "no_significant_overlap")
+            or bool(metar_summary and metar_summary["status"] == "pertinent")
         )
 
     for group in weather_groups.values():
@@ -1107,6 +1203,20 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "record_types": group["record_types"],
                 "audit_evidence_refs": group["audit_evidence_refs"],
             }
+            nearby_observation = next(
+                (
+                    item
+                    for item in reversed(group["metar_summaries"])
+                    if item["status"] != "outside_window"
+                ),
+                None,
+            )
+            if nearby_observation:
+                data.update({
+                    "observed_conditions": nearby_observation["applicable_conditions"],
+                    "observation_time_utc": nearby_observation["observed_at_utc"],
+                    "observation_status": nearby_observation["status"],
+                })
             if status == "no_significant_overlap":
                 data["flight_effect"] = (
                     "No adverse flight effect is indicated for this window by the "
@@ -1118,6 +1228,35 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                     "weather for this flight phase."
                 )
             severity = "information" if status == "no_significant_overlap" else "warning"
+        elif group["metar_summaries"]:
+            metar_summary = group["metar_summaries"][-1]
+            data = {
+                "phase": group["phase"],
+                "location": group["location"],
+                "utc_window": group["utc_window"],
+                "mechanism": metar_summary["mechanism"],
+                "applicable_conditions": metar_summary["applicable_conditions"],
+                "timing": metar_summary["timing"],
+                "window_status": metar_summary["status"],
+                "window_status_text": metar_summary["window_status_text"],
+                "record_types": group["record_types"],
+                "audit_evidence_refs": group["audit_evidence_refs"],
+                "observation_time_utc": metar_summary["observed_at_utc"],
+            }
+            if metar_summary["status"] == "outside_window":
+                data["flight_effect"] = (
+                    "This observation is not used to characterize the later flight "
+                    "window; review the applicable forecast and latest observation."
+                )
+                severity = "unknown"
+            elif metar_summary["status"] == "no_significant_observation":
+                data["flight_effect"] = (
+                    "No adverse effect is indicated by this nearby observation; "
+                    "confirm the applicable forecast and latest operational weather."
+                )
+                severity = "information"
+            else:
+                severity = "warning"
         else:
             mechanisms = list(group["mechanisms"])
             if len(mechanisms) > 1:
@@ -1150,6 +1289,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         for evidence_ref in (
             group["taf_evidence_refs"]
             if group["taf_summaries"]
+            else group["metar_evidence_refs"]
+            if group["metar_summaries"]
             else group["fallback_evidence_refs"]
         )
     }

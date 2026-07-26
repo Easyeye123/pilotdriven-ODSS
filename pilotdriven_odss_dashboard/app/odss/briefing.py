@@ -305,19 +305,28 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
             role = "edto"
         point["role"] = role
 
+    vaa_features = list(
+        ((flight.get("vaa_review") or {}).get("hazard_features") or [])
+    )
+    tc_features = list(
+        ((flight.get("tropical_cyclone_review") or {}).get("hazard_features") or [])
+    )
+    hazard_features = vaa_features + tc_features
+
     return {
         "available": len(points) >= 2,
         "points": points,
         "label_indices": sorted(priority_indices),
-        "hazard_features": list(
-            ((flight.get("vaa_review") or {}).get("hazard_features") or [])
-        ),
+        "hazard_features": hazard_features,
         "vaa_status": (flight.get("vaa_review") or {}).get("status"),
+        "tropical_cyclone_status": (
+            flight.get("tropical_cyclone_review") or {}
+        ).get("status"),
         "note": (
             "Natural Earth 1:110m land context; route from CFP coordinates - "
             + (
-                "verified active VA SIGMET geometry shown; "
-                if (flight.get("vaa_review") or {}).get("hazard_features")
+                "verified active SIGMET geometry shown; "
+                if hazard_features
                 else ""
             )
             + "briefing orientation only, not for navigation."
@@ -764,9 +773,26 @@ def _enroute_weather_cards(findings: list[dict[str, Any]]) -> list[dict[str, str
         title = str(item.get("title") or "Weather")
         if any(role in title.lower() for role in ("departure", "destination")) and len(cards) < 2:
             continue
+        data = item.get("data") or {}
+        if item.get("engine") == "weather":
+            mechanism = str(data.get("mechanism") or "").strip()
+            if mechanism.lower() == "none safely classified":
+                mechanism = "Not safely classified from the available forecast"
+            text = " | ".join(
+                part
+                for part in (
+                    str(data.get("utc_window") or "").strip(),
+                    mechanism,
+                    str(data.get("timing") or "").strip(),
+                    str(data.get("flight_effect") or "").strip(),
+                )
+                if part
+            )
+        else:
+            text = str(item.get("summary") or "")
         cards.append({
             "title": _shorten(title, 30),
-            "text": _shorten(item.get("summary"), 94),
+            "text": _shorten(text, 135),
             "severity": str(item.get("severity") or "information"),
         })
         if len(cards) >= 3:

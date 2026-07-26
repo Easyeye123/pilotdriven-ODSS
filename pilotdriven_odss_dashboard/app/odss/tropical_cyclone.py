@@ -116,6 +116,35 @@ def assess_tropical_cyclone(
         hazard_label="tropical_cyclone",
         default_advisory_id="TC-SIGMET",
     )
+    direct_tca_mounted = bool(
+        os.environ.get("ODSS_TCA_ADVISORY_SOURCE", "").strip().lower()
+        not in {"", "disabled", "off", "none"}
+    )
+    review["coverage_ledger"] = {
+        "active_tropical_cyclone_sigmet": {
+            "available": snapshot.get("provider") == "noaa-awc-international-sigmet",
+            "provider": snapshot.get("provider"),
+        },
+        "responsible_tropical_cyclone_advisory": {
+            "available": direct_tca_mounted,
+            "provider": (
+                os.environ.get("ODSS_TCA_ADVISORY_SOURCE")
+                if direct_tca_mounted
+                else None
+            ),
+            "review_required_when_missing": True,
+        },
+    }
+    if (
+        snapshot.get("provider") == "noaa-awc-international-sigmet"
+        and not direct_tca_mounted
+    ):
+        review["reason_codes"] = sorted(set(
+            (review.get("reason_codes") or [])
+            + ["direct_tca_advisory_source_not_mounted"]
+        ))
+        if review.get("status") == "not_applicable":
+            review["status"] = "review_required"
     flight["tropical_cyclone_review"] = review
     return review
 

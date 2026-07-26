@@ -704,6 +704,7 @@ def assess_volcanic_ash(
     pages: list[str],
     *,
     snapshot: dict[str, Any] | None = None,
+    direct_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     embedded = extract_embedded_vaa(pages)
     configured_source = os.environ.get("ODSS_VA_SIGMET_SOURCE", "awc").strip().lower()
@@ -732,6 +733,47 @@ def assess_volcanic_ash(
                 "error": "Unsupported ODSS_VA_SIGMET_SOURCE setting",
             }
     review = evaluate_vaa(flight, snapshot, embedded)
+    direct_source = os.environ.get("ODSS_VAAC_ADVISORY_SOURCE", "").strip().lower()
+    if direct_snapshot is None and direct_source in {"jma", "jma-tokyo", "tokyo"}:
+        from .direct_vaac import live_tokyo_vaac_snapshot
+
+        direct_snapshot = live_tokyo_vaac_snapshot(flight)
+    direct_vaac_available = bool(
+        direct_snapshot
+        and direct_snapshot.get("status") in {"available", "partial"}
+    )
+    review["direct_vaac_snapshot"] = direct_snapshot
+    review["coverage_ledger"] = {
+        "active_international_sigmet": {
+            "available": snapshot.get("provider") == "noaa-awc-international-sigmet",
+            "provider": snapshot.get("provider"),
+        },
+        "responsible_vaac_advisory_and_vag": {
+            "available": direct_vaac_available,
+            "provider": (direct_snapshot or {}).get("provider"),
+            "coverage_status": (direct_snapshot or {}).get("coverage_status"),
+            "review_required_when_missing": True,
+        },
+    }
+    if snapshot.get("provider") == "noaa-awc-international-sigmet" and not direct_vaac_available:
+        reason = (
+            "direct_vaac_advisory_source_unavailable"
+            if direct_source not in {"", "disabled", "off", "none"}
+            else "direct_vaac_advisory_source_not_mounted"
+        )
+        review["reason_codes"] = sorted(set(
+            (review.get("reason_codes") or [])
+            + [reason]
+        ))
+        if review.get("status") == "not_applicable":
+            review["status"] = "review_required"
+    elif direct_vaac_available:
+        review["reason_codes"] = sorted(set(
+            (review.get("reason_codes") or [])
+            + ["direct_vaac_coverage_partial"]
+        ))
+        if review.get("status") == "not_applicable":
+            review["status"] = "review_required"
     flight["vaa_review"] = review
     return review
 

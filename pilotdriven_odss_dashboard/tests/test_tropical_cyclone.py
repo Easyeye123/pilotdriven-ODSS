@@ -10,6 +10,8 @@ from app.odss.tropical_cyclone import (
     extract_embedded_tc,
 )
 from app.odss.vaa import fetch_awc_snapshot
+from app.odss_map_v06.config import MapSettings
+from app.odss_map_v06.geojson import build_map_contract
 
 from tests.test_vaa import _flight
 
@@ -90,6 +92,21 @@ def test_tags_map_features_as_tropical_cyclone():
     assert feature["properties"]["not_for_navigation"] is True
 
 
+def test_canonical_map_contract_includes_verified_tc_sigmet_geometry():
+    flight = _flight()
+    review = assess_tropical_cyclone(flight, [], snapshot=_snapshot([_tc_advisory()]))
+
+    contract = build_map_contract(flight, [], MapSettings(provider="schematic"))
+
+    assert review["status"] == "affected"
+    assert len(contract.hazards_geojson["features"]) == 1
+    assert (
+        contract.hazards_geojson["features"][0]["properties"]["hazard"]
+        == "tropical_cyclone"
+    )
+    assert contract.metadata["tropical_cyclone_status"] == "affected"
+
+
 def test_does_not_report_affected_when_flight_level_is_below_the_band():
     flight = _flight()
     review = assess_tropical_cyclone(
@@ -164,6 +181,24 @@ def test_fails_closed_when_the_source_is_disabled():
 
     assert review["status"] == "not_assessed"
     assert review["reason_codes"] == ["source_disabled"]
+
+
+def test_awc_sigmet_only_does_not_claim_complete_tca_coverage(monkeypatch):
+    monkeypatch.delenv("ODSS_TCA_ADVISORY_SOURCE", raising=False)
+    snapshot = _snapshot([])
+    snapshot["provider"] = "noaa-awc-international-sigmet"
+    flight = _flight()
+
+    review = assess_tropical_cyclone(flight, [], snapshot=snapshot)
+
+    assert review["status"] == "review_required"
+    assert "direct_tca_advisory_source_not_mounted" in review["reason_codes"]
+    assert (
+        review["coverage_ledger"]["responsible_tropical_cyclone_advisory"][
+            "available"
+        ]
+        is False
+    )
 
 
 def test_extracts_the_embedded_cfp_tropical_cyclone_statement():

@@ -517,6 +517,7 @@ def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audi
         "UTC window",
         "Applicable conditions",
         "Timing",
+        "Nearby observation",
         "Operational mechanism",
         "Flight effect",
         "Window status",
@@ -532,6 +533,21 @@ def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audi
         False,
         True,
     ]
+
+
+def test_tcu_alone_does_not_create_a_bad_weather_warning() -> None:
+    flight = _flight(weather=[{
+        "location": "RJBB",
+        "record_type": "METAR",
+        "text": "METAR RJBB 161130Z 22008KT 9999 FEW018TCU SCT120 28/24 Q1010 NOSIG",
+    }])
+
+    findings, _ = analyse(flight)
+
+    item = next(row for row in findings if row["engine"] == "weather")
+    assert item["severity"] == "information"
+    assert item["data"]["window_status"] == "no_significant_observation"
+    assert "thunderstorm" not in item["data"]["mechanism"].lower()
 
 
 def test_weather_group_suppresses_benign_jargon_and_duplicate_mechanisms() -> None:

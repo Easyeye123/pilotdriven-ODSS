@@ -60,6 +60,44 @@ def _weather(index: int) -> dict[str, Any]:
     }
 
 
+def _pertinent_weather() -> dict[str, Any]:
+    return {
+        "engine": "weather",
+        "severity": "warning",
+        "title": "EDTO weather - VTSP",
+        "summary": (
+            "EDTO; 25 JUL 1821Z-2039Z: Forecast weather overlapping this "
+            "window: convection / thunderstorms. Applicable conditions: "
+            "wind 280 degrees 8 kt; visibility 10 km or more; scattered "
+            "2000 ft. Nearby observation: wind 260 degrees 11 kt at "
+            "2026-07-25T16:30:00+00:00. Flight effect: Diversion-airport "
+            "suitability during the checked period requires review."
+        ),
+        "details": [
+            "Phase: EDTO.",
+            "UTC window: 25 JUL 1821Z-2039Z.",
+            "Applicable conditions: wind 280 degrees 8 kt.",
+            "Timing: convection / thunderstorms overlaps 20:00Z-20:39Z.",
+            "Nearby observation: wind 260 degrees 11 kt.",
+            "Operational mechanism: convection / thunderstorms.",
+            "Flight effect: Diversion-airport suitability requires review.",
+        ],
+        "data": {
+            "phase": "EDTO",
+            "location": "VTSP",
+            "utc_window": "25 JUL 1821Z-2039Z",
+            "mechanism": "convection / thunderstorms",
+            "timing": "convection / thunderstorms overlaps 20:00Z-20:39Z.",
+            "flight_effect": "Diversion-airport suitability requires review.",
+            "applicable_conditions": "wind 280 degrees 8 kt",
+            "observed_conditions": "wind 260 degrees 11 kt",
+            "observation_time_utc": "2026-07-25T16:30:00+00:00",
+            "window_status": "pertinent",
+            "window_status_text": "Forecast weather overlaps this window.",
+        },
+    }
+
+
 def _flight() -> dict[str, Any]:
     return {
         "flight_number": "SQ304",
@@ -223,6 +261,32 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
         "Natural Earth 1:110m land context" in (page.extract_text() or "")
         for page in reader.pages
     ) == 1
+
+
+def test_level1_weather_uses_pertinent_operational_lines_not_raw_repetition(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_1_pertinent_weather.pdf"
+
+    render_pdf(_flight(), [_pertinent_weather()], [], 1, path)
+
+    text = "\n".join(
+        (page.extract_text() or "")
+        for page in PdfReader(path).pages
+    )
+    reader = PdfReader(path)
+    page2 = reader.pages[1].extract_text() or ""
+    page3 = reader.pages[2].extract_text() or ""
+    assert "EDTO weather - VTSP" in text
+    assert "EDTO weather - VTSP" not in page2
+    assert "EDTO weather - VTSP" in page3
+    assert "EDTO | VTSP | 25 JUL 1821Z-2039Z" in text
+    assert "Mechanism: convection / thunderstorms." in text
+    assert "Timing: convection / thunderstorms overlaps 20:00Z-20:39Z." in text
+    assert "Flight effect: Diversion-airport suitability requires review." in text
+    assert "Applicable conditions:" not in text
+    assert "Nearby observation:" not in text
+    assert "2026-07-25T16:30:00+00:00" not in text
 
 
 def test_level2_begins_with_visual_cover_and_repeats_detail_header(tmp_path: Path) -> None:

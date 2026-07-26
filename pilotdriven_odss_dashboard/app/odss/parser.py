@@ -53,6 +53,106 @@ def _int_group(text: str, pattern: str, default: int | None = None) -> int | Non
     return int(match.group(1)) if match else default
 
 
+def _weight_group_kg(text: str, pattern: str) -> int | None:
+    match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
+    if not match:
+        return None
+    value = float(match.group("value"))
+    unit = (match.groupdict().get("unit") or "").upper()
+    kilograms = round(value * 1000) if unit == "T" else round(value)
+    return kilograms if 50_000 <= kilograms <= 500_000 else None
+
+
+def _line_value(text: str, pattern: str) -> str | None:
+    match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
+    value = match.group("value").strip().rstrip(".") if match else ""
+    return value or None
+
+
+def _parse_performance(perf_text: str) -> dict[str, Any]:
+    runway_line = re.search(
+        r"^\s*RWY\s*:\s*(?P<runway>[0-9]{2}[LCR]?)"
+        r"(?:\s+(?P<condition>DRY|WET|CONTAMINATED))?\b",
+        perf_text,
+        re.MULTILINE | re.IGNORECASE,
+    )
+    runway_table = re.search(
+        r"^\s*[A-Z]{4}\s+RWY\s+(?P<runway>[0-9]{2}[LCR]?)\b",
+        perf_text,
+        re.MULTILINE,
+    )
+    condition = _line_value(
+        perf_text,
+        r"^\s*RWY\s+COND\s*:[ \t]*(?P<value>[^\n]*)$",
+    )
+    if not condition and runway_line:
+        condition = runway_line.group("condition")
+    return {
+        "runway": (
+            runway_line.group("runway").upper()
+            if runway_line
+            else runway_table.group("runway").upper()
+            if runway_table
+            else None
+        ),
+        "runway_condition": condition.upper() if condition else None,
+        "thrust_setting": _line_value(
+            perf_text,
+            r"\bT/O\s+THR\s*:[ \t]*(?P<value>\S+)",
+        )
+        or ("FULL" if "STD RATING: FULL" in perf_text else None),
+        "flap_setting": _int_group(perf_text, r"FLAPS\s+(\d+)"),
+        "temperature_c": _int_group(
+            perf_text,
+            r"(?:PLAN\s+TEMP\s+P|^\s*OAT\s*:[ \t]*)(\d+)\s*C?\b",
+        ),
+        "qnh_hpa": _int_group(
+            perf_text,
+            r"(?:PLAN\s+QNH|^\s*QNH\s*:[ \t]*)(\d+)\s*(?:HPA)?\b",
+        ),
+        "wind": _line_value(
+            perf_text,
+            r"^\s*(?:PLAN\s+)?WIND\s*:[ \t]*(?P<value>\S+)",
+        ),
+        "packs_on": (
+            True
+            if re.search(r"\b(?:PACKS|A/C)\s*(?::\s*)?ON\b", perf_text)
+            else None
+        ),
+        "anti_ice_on": (
+            False
+            if re.search(r"\b(?:ANTI-ICE|A/ICE)\s*(?::\s*)?OFF\b", perf_text)
+            else True
+            if re.search(r"\b(?:ANTI-ICE|A/ICE)\s*(?::\s*)?ON\b", perf_text)
+            else None
+        ),
+        "eosid": _line_value(
+            perf_text,
+            r"^\s*EOSID\s*:[ \t]*(?P<value>[^\n]*)$",
+        ),
+        "obstacle_rtow_kg": _weight_group_kg(
+            perf_text,
+            r"RTOW\(PERF\)\s+(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>T)?\b",
+        ),
+        "landing_rtow_kg": _weight_group_kg(
+            perf_text,
+            r"RTOW\(LAND\)\s+(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>T)?\b",
+        ),
+        "structural_rtow_kg": _weight_group_kg(
+            perf_text,
+            r"RTOW\(STRUC\)\s+(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>T)?\b",
+        ),
+        "controlling_rtow_kg": _weight_group_kg(
+            perf_text,
+            r"^\s*RTOW\s+(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>T)?\s*$",
+        ),
+        "maximum_fuel_available_kg": _int_group(
+            perf_text,
+            r"MAX FUEL AVAIL:\s*0*(\d+)",
+        ),
+    }
+
+
 def _detect_sections(pages: list[str]) -> dict[str, tuple[int, int]]:
     starts: list[tuple[str, int]] = []
     for index, text in enumerate(pages):
@@ -372,25 +472,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         masses["planned_landing_weight_kg"] - masses["planned_zfw_kg"]
     )
     perf_text = "\n".join(cfp_pages[:5])
-    runway_condition_match = re.search(r"RWY COND:\s*(\S+)", perf_text)
-    eosid_match = re.search(r"EOSID\s*:\s*(.+)", perf_text)
-    performance = {
-        "runway": (re.search(r"[A-Z]{4} RWY\s+(\w+)", perf_text).group(1) if re.search(r"[A-Z]{4} RWY\s+(\w+)", perf_text) else None),
-        "runway_condition": runway_condition_match.group(1) if runway_condition_match else None,
-        "thrust_setting": "FULL" if "STD RATING: FULL" in perf_text else None,
-        "flap_setting": _int_group(perf_text, r"FLAPS\s+(\d+)"),
-        "temperature_c": _int_group(perf_text, r"PLAN TEMP P(\d+)"),
-        "qnh_hpa": _int_group(perf_text, r"PLAN QNH\s+(\d+)"),
-        "wind": (re.search(r"PLAN WIND\s+(\S+)", perf_text).group(1) if re.search(r"PLAN WIND\s+(\S+)", perf_text) else None),
-        "packs_on": True if "PACKS ON" in perf_text else None,
-        "anti_ice_on": False if "ANTI-ICE OFF" in perf_text else None,
-        "eosid": eosid_match.group(1).strip().rstrip(".") if eosid_match else None,
-        "obstacle_rtow_kg": _int_group(perf_text, r"RTOW\(PERF\)\s+(\d+)"),
-        "landing_rtow_kg": _int_group(perf_text, r"RTOW\(LAND\)\s+(\d+)"),
-        "structural_rtow_kg": _int_group(perf_text, r"RTOW\(STRUC\)\s+(\d+)"),
-        "controlling_rtow_kg": _int_group(perf_text, r"^\s*RTOW\s+(\d+)\s*$"),
-        "maximum_fuel_available_kg": _int_group(perf_text, r"MAX FUEL AVAIL:\s*0*(\d+)"),
-    }
+    performance = _parse_performance(perf_text)
     edto_text = next((text for text in cfp_pages if "EDTO INFORMATION" in text), "")
     entry_match = re.search(r"\n\s*(\d{1,2}\.\d{2})\s+N.*\nENTRY", edto_text)
     exit_match = re.search(r"\n\s*(\d{1,2}\.\d{2})\s+N.*\nEXIT", edto_text)

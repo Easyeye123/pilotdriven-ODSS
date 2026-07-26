@@ -114,7 +114,9 @@ def significant_mechanisms(value: str) -> list[str]:
         if label not in mechanisms:
             mechanisms.append(label)
 
-    if re.search(r"(?:^|\s)(?:[+-]?TS[A-Z]*|VCTS)(?=\s|=|$)|(?:CB|TCU)\b", text):
+    # TCU alone is an observation, not a thunderstorm forecast. Treat an
+    # explicit TS/VCTS or CB as the significant convective mechanism.
+    if re.search(r"(?:^|\s)(?:[+-]?TS[A-Z]*|VCTS)(?=\s|=|$)|\bCB\b", text):
         add("convection / thunderstorms")
     if re.search(r"(?:^|\s)(?:FZRA|FZDZ|SN|SG|PL)(?=\s|=|$)", text):
         add("freezing or frozen precipitation")
@@ -410,4 +412,77 @@ def summarize_taf_for_window(
     }
 
 
-__all__ = ["significant_mechanisms", "summarize_taf_for_window"]
+def _metar_observation_time(text: str, reference: datetime) -> datetime | None:
+    match = re.search(r"\b(\d{2})(\d{2})(\d{2})Z\b", str(text or "").upper())
+    if not match:
+        return None
+    candidates = _date_candidates(
+        int(match.group(1)),
+        int(match.group(2)),
+        int(match.group(3)),
+        reference,
+    )
+    return min(candidates, key=lambda value: abs(value - reference), default=None)
+
+
+def summarize_metar_for_window(
+    text: str,
+    window_start: datetime,
+    window_end: datetime,
+    *,
+    observed_at: datetime | None = None,
+) -> dict[str, str] | None:
+    """Describe a nearby observation without presenting it as a forecast."""
+    observation = observed_at or _metar_observation_time(text, window_start)
+    if observation is None:
+        return None
+    if observation.tzinfo is None:
+        observation = observation.replace(tzinfo=timezone.utc)
+    observation = observation.astimezone(timezone.utc)
+    near_window = (
+        window_start - timedelta(hours=2)
+        <= observation
+        <= window_end + timedelta(minutes=30)
+    )
+    mechanisms = significant_mechanisms(text)
+    conditions = _describe_conditions(text)
+    if not near_window:
+        return {
+            "status": "outside_window",
+            "observed_at_utc": observation.isoformat(),
+            "applicable_conditions": conditions,
+            "mechanism": "; ".join(mechanisms) or "None safely classified",
+            "timing": (
+                f"Observation at {observation:%H:%MZ} is outside "
+                f"{_short_range(window_start, window_end)}."
+            ),
+            "window_status_text": "Observation retained in audit only.",
+        }
+    if mechanisms:
+        return {
+            "status": "pertinent",
+            "observed_at_utc": observation.isoformat(),
+            "applicable_conditions": conditions,
+            "mechanism": "; ".join(mechanisms),
+            "timing": f"Observed at {observation:%H:%MZ}.",
+            "window_status_text": (
+                f"Observed weather near this window: {'; '.join(mechanisms)}."
+            ),
+        }
+    return {
+        "status": "no_significant_observation",
+        "observed_at_utc": observation.isoformat(),
+        "applicable_conditions": conditions,
+        "mechanism": "No significant mechanism in the nearby observation",
+        "timing": f"Observed at {observation:%H:%MZ}.",
+        "window_status_text": (
+            "No significant weather mechanism appears in the nearby observation."
+        ),
+    }
+
+
+__all__ = [
+    "significant_mechanisms",
+    "summarize_metar_for_window",
+    "summarize_taf_for_window",
+]

@@ -18,8 +18,10 @@ from .odss.constants import (
 from .odss.engines import analyse
 from .odss.finding_ids import assign_finding_ids
 from .odss.parser import extract_pages, parse_lido
+from .odss.opmet import enrich_official_opmet
 from .odss.reporting import render_pdf
 from .odss.tropical_cyclone import assess_tropical_cyclone
+from .odss.tc_track import assess_tropical_cyclone_track
 from .odss.vaa import assess_volcanic_ash
 from .odss_map_v06.config import MapSettings
 from .odss_map_v06.geojson import build_map_contract
@@ -68,8 +70,10 @@ def run_odss_analysis(
             "actual_takeoff_utc": actual_takeoff_utc,
         }
 
+    enrich_official_opmet(flight)
     assess_volcanic_ash(flight, pages)
-    assess_tropical_cyclone(flight, pages)
+    tropical_cyclone_review = assess_tropical_cyclone(flight, pages)
+    tropical_cyclone_review["track_context"] = assess_tropical_cyclone_track(flight)
     findings, warnings = analyse(flight)
     timing_view = None
     if actual_takeoff_utc:
