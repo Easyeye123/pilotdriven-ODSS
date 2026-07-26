@@ -241,6 +241,32 @@ def test_level2_begins_with_visual_cover_and_repeats_detail_header(tmp_path: Pat
     assert "Page 2" in second
 
 
+def test_level2_does_not_force_sparse_section_pages(tmp_path: Path) -> None:
+    path = tmp_path / "level_2_compact.pdf"
+    findings = [
+        _weather(1),
+        _notam("A1000/26", "departure"),
+        {
+            "engine": "terrain",
+            "severity": "warning",
+            "title": "High-MSA event",
+            "summary": "Review terrain escape planning.",
+            "details": ["Maximum MSA 190 at ORT."],
+            "data": {},
+        },
+    ]
+
+    render_pdf(_flight(), findings, ["Source review required."], 2, path)
+
+    reader = PdfReader(path)
+    page_text = [(page.extract_text() or "").strip() for page in reader.pages]
+    assert len(reader.pages) == 2
+    assert "Weather" in page_text[1]
+    assert "Pertinent NOTAM" in page_text[1]
+    assert "Terrain MSA events" in page_text[1]
+    assert "Applicability and parser warnings" in page_text[1]
+
+
 def test_level2_weather_is_concise_deduplicated_and_does_not_repeat_raw_opmet(
     tmp_path: Path,
 ) -> None:

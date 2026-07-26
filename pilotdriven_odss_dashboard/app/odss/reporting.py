@@ -202,11 +202,9 @@ def report_sections(
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
         grouped[finding["engine"]].append(finding)
-    page_breaks = (
-        {"mel", "weather", "actual_timing", "depressurisation", "timeline"}
-        if level == 2
-        else set()
-    )
+    # Let ReportLab pack detail sections naturally. Forced section breaks made
+    # short, valid sections consume mostly-empty pages on real long-haul CFPs.
+    page_breaks: set[str] = set()
 
     automatic = {
         engine: section
@@ -316,7 +314,7 @@ def render_pdf(
             "title": "Applicability and parser warnings",
             "lines": warnings,
             "severity": "warning",
-            "page_break_before": True,
+            "page_break_before": False,
         })
 
     briefing = build_briefing_view(
@@ -334,6 +332,10 @@ def render_pdf(
             return
         width, height = PAGE_SIZE
         canvas.saveState()
+        # Split tables can leave a translated canvas transform on continuation
+        # pages. Reset to physical page coordinates before drawing the repeated
+        # header/footer so they cannot be clipped or shifted off-page.
+        canvas.resetTransforms()
         canvas.setFillColor(colors.HexColor("#173B65"))
         canvas.setFont("Helvetica-Bold", 13)
         canvas.drawCentredString(width / 2, height - 10 * mm, report_title)
