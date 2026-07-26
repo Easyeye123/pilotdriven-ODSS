@@ -697,7 +697,12 @@ def _draw_operational_detail(
         item for item in grouped.get("notam", [])
         if (item.get("data") or {}).get("role") in {"departure", "destination"}
     ]
-    weather_items = grouped.get("weather", []) + grouped.get("vaa", [])
+    weather_items = [
+        item
+        for item in grouped.get("weather", [])
+        if (item.get("data") or {}).get("window_status")
+        != "no_significant_overlap"
+    ] + grouped.get("vaa", [])
 
     _draw_balanced_columns(
         canvas,
@@ -786,6 +791,8 @@ def _draw_route_detail(
         item for item in grouped.get("weather", [])
         if "departure" not in str(item.get("title") or "").lower()
         and "destination" not in str(item.get("title") or "").lower()
+        and (item.get("data") or {}).get("window_status")
+        != "no_significant_overlap"
     ]
 
     _draw_balanced_columns(

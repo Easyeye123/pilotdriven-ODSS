@@ -112,9 +112,19 @@ def _weather_summary(
         key=_finding_sort_key,
     )
     primary = selected[0] if selected else None
+    primary_data = primary.get("data", {}) if primary else {}
+    status_text = str(primary_data.get("window_status_text") or "").strip()
+    timing = str(primary_data.get("timing") or "").strip()
+    primary_text = (
+        " ".join(part for part in (status_text, timing) if part)
+        if status_text
+        else str(primary.get("summary") or "")
+        if primary
+        else ""
+    )
     return {
         "primary": (
-            _shorten(primary.get("summary"), 170)
+            _shorten(primary_text, 170)
             if primary
             else f"No significant {role} weather finding selected for the operating window"
         ),
@@ -737,7 +747,16 @@ def _communication_timeline(
 
 def _enroute_weather_cards(findings: list[dict[str, Any]]) -> list[dict[str, str]]:
     weather = sorted(
-        [item for item in findings if item.get("engine") in {"vaa", "tropical_cyclone", "weather"}],
+        [
+            item
+            for item in findings
+            if item.get("engine") in {"vaa", "tropical_cyclone", "weather"}
+            and (
+                item.get("engine") != "weather"
+                or (item.get("data") or {}).get("window_status")
+                != "no_significant_overlap"
+            )
+        ],
         key=_finding_sort_key,
     )
     cards = []

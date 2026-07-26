@@ -28,6 +28,7 @@ from .pilot_briefing import (
     notam_sort_key,
     pilot_notam_key,
 )
+from .weather_timing import summarize_taf_for_window
 
 _WEEKDAYS = {name: index for index, name in enumerate(("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"))}
 _TIME_RANGE = re.compile(r"\b(\d{4})(?:UTC|Z)?\s*(?:-|TO)\s*(\d{4})(?:UTC|Z)?\b")
@@ -1013,81 +1014,149 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 upper,
             )
         )
+        record_type = str(record.get("record_type") or "weather")
+        taf_summary = (
+            summarize_taf_for_window(raw_text, window_start, window_end)
+            if record_type == "TAF"
+            else None
+        )
         evidence_ref = f"weather:{len(weather_audit_records)}"
         weather_audit_records.append({
             "evidence_ref": evidence_ref,
             "source": "uploaded_cfp",
             "location": location,
-            "record_type": record.get("record_type"),
+            "record_type": record_type,
             "raw_text": raw_text,
             "phase": phase,
             "window_start_utc": window_start.isoformat(),
             "window_end_utc": window_end.isoformat(),
-            "selected_for_pilot": phase != "Enroute" or significant,
+            "selected_for_pilot": (
+                phase != "Enroute"
+                or significant
+                or bool(taf_summary and taf_summary["status"] != "no_significant_overlap")
+            ),
+            **(
+                {"window_status": taf_summary["status"]}
+                if taf_summary
+                else {}
+            ),
         })
-        if phase == "Enroute" and not significant:
+        if phase == "Enroute" and not significant and taf_summary is None:
             continue
 
         window_label = _utc_window_label(window_start, window_end)
-        prepared = concise_weather_finding(finding(
-            "weather",
-            "warning" if significant else "information",
-            f"{phase} weather - {location}",
-            "",
-            data={
-                "phase": phase,
-                "utc_window": window_label,
-                "raw_text": raw_text,
-            },
-        ))
-        mechanism = str(prepared["data"]["mechanism"])
         key = (phase, location, window_label)
         group = weather_groups.setdefault(key, {
             "phase": phase,
             "location": location,
             "utc_window": window_label,
             "mechanisms": [],
+            "taf_summaries": [],
+            "taf_evidence_refs": [],
+            "fallback_evidence_refs": [],
             "record_types": [],
             "audit_evidence_refs": [],
             "warning": False,
         })
-        for mechanism_part in (
-            part.strip()
-            for part in mechanism.split(",")
-            if part.strip()
-        ):
-            if mechanism_part not in group["mechanisms"]:
-                group["mechanisms"].append(mechanism_part)
-        record_type = str(record.get("record_type") or "weather")
+        if taf_summary:
+            group["taf_summaries"].append(taf_summary)
+            group["taf_evidence_refs"].append(evidence_ref)
+        else:
+            group["fallback_evidence_refs"].append(evidence_ref)
+            prepared = concise_weather_finding(finding(
+                "weather",
+                "warning" if significant else "information",
+                f"{phase} weather - {location}",
+                "",
+                data={
+                    "phase": phase,
+                    "utc_window": window_label,
+                    "raw_text": raw_text,
+                },
+            ))
+            mechanism = str(prepared["data"]["mechanism"])
+            for mechanism_part in (
+                part.strip()
+                for part in mechanism.split(",")
+                if part.strip()
+            ):
+                if mechanism_part not in group["mechanisms"]:
+                    group["mechanisms"].append(mechanism_part)
         if record_type not in group["record_types"]:
             group["record_types"].append(record_type)
         group["audit_evidence_refs"].append(evidence_ref)
-        group["warning"] = bool(group["warning"] or significant)
+        group["warning"] = bool(
+            group["warning"]
+            or significant
+            or bool(taf_summary and taf_summary["status"] != "no_significant_overlap")
+        )
 
     for group in weather_groups.values():
-        mechanisms = list(group["mechanisms"])
-        if len(mechanisms) > 1:
-            mechanisms = [
-                item
-                for item in mechanisms
-                if item != "no adverse mechanism identified in the parsed station record"
-            ]
-        mechanism = ", ".join(mechanisms)
-        prepared = concise_weather_finding(finding(
-            "weather",
-            "warning" if group["warning"] else "information",
-            f"{group['phase']} weather - {group['location']}",
-            "",
-            data={
+        taf_summary = group["taf_summaries"][-1] if group["taf_summaries"] else None
+        if taf_summary:
+            status = taf_summary["status"]
+            data = {
                 "phase": group["phase"],
                 "location": group["location"],
                 "utc_window": group["utc_window"],
-                "mechanism": mechanism,
+                "mechanism": taf_summary["mechanism"],
+                "applicable_conditions": taf_summary["applicable_conditions"],
+                "timing": taf_summary["timing"],
+                "window_status": status,
+                "window_status_text": taf_summary["window_status_text"],
                 "record_types": group["record_types"],
                 "audit_evidence_refs": group["audit_evidence_refs"],
-            },
+            }
+            if status == "no_significant_overlap":
+                data["flight_effect"] = (
+                    "No adverse flight effect is indicated for this window by the "
+                    "CFP TAF; confirm the latest operational weather."
+                )
+            elif status == "review_required":
+                data["flight_effect"] = (
+                    "Forecast coverage is incomplete; review the latest operational "
+                    "weather for this flight phase."
+                )
+            severity = "information" if status == "no_significant_overlap" else "warning"
+        else:
+            mechanisms = list(group["mechanisms"])
+            if len(mechanisms) > 1:
+                mechanisms = [
+                    item
+                    for item in mechanisms
+                    if item != "no adverse mechanism identified in the parsed station record"
+                ]
+            data = {
+                "phase": group["phase"],
+                "location": group["location"],
+                "utc_window": group["utc_window"],
+                "mechanism": ", ".join(mechanisms),
+                "record_types": group["record_types"],
+                "audit_evidence_refs": group["audit_evidence_refs"],
+            }
+            severity = "warning" if group["warning"] else "information"
+        prepared = concise_weather_finding(finding(
+            "weather",
+            severity,
+            f"{group['phase']} weather - {group['location']}",
+            "",
+            data=data,
         ))
         findings.append(prepared)
+
+    pilot_weather_evidence_refs = {
+        evidence_ref
+        for group in weather_groups.values()
+        for evidence_ref in (
+            group["taf_evidence_refs"]
+            if group["taf_summaries"]
+            else group["fallback_evidence_refs"]
+        )
+    }
+    for audit_record in weather_audit_records:
+        audit_record["selected_for_pilot"] = (
+            audit_record["evidence_ref"] in pilot_weather_evidence_refs
+        )
 
     audit_evidence["weather"] = {
         "source_record_count": len(flight["weather"]),

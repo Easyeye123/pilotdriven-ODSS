@@ -271,12 +271,43 @@ def concise_weather_finding(item: dict[str, Any]) -> dict[str, Any]:
         phase,
         mechanism,
     )
-    copied["summary"] = f"{phase}; {window}: {mechanism}. {effect}"
+    window_status = str(data.get("window_status") or "").strip()
+    window_status_text = str(data.get("window_status_text") or "").strip()
+    applicable_conditions = str(data.get("applicable_conditions") or "").strip()
+    timing = str(data.get("timing") or "").strip()
+    if window_status_text:
+        copied["summary"] = " ".join(
+            part
+            for part in (
+                f"{phase}; {window}: {window_status_text}",
+                (
+                    f"Applicable conditions: {applicable_conditions}."
+                    if applicable_conditions
+                    else ""
+                ),
+                f"Timing: {timing}" if timing else "",
+                f"Flight effect: {effect}",
+            )
+            if part
+        )
+    else:
+        copied["summary"] = f"{phase}; {window}: {mechanism}. {effect}"
     copied["details"] = [
         f"Phase: {phase}.",
         f"UTC window: {window}.",
+        *(
+            [f"Applicable conditions: {applicable_conditions}."]
+            if applicable_conditions
+            else []
+        ),
+        *([f"Timing: {timing}"] if timing else []),
         f"Operational mechanism: {mechanism}.",
         f"Flight effect: {effect}",
+        *(
+            [f"Window status: {window_status_text}"]
+            if window_status_text
+            else []
+        ),
     ]
     data.update(
         {

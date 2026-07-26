@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.odss.engines import _schedule_overlaps, analyse, detect_terrain_events, match_profiles
 from app.odss.enrichment import _notice_score, _parse_airport_notams, _parse_notam_datetime
+from app.odss.briefing import _weather_summary
 from app.odss.parser import parse_lido
 
 
@@ -491,7 +492,10 @@ def test_notam_pilot_view_is_bounded_but_audit_retains_every_applicable_record()
 
 def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audit() -> None:
     raw_metar = "SA RJBB 161130Z 22018G32KT 4000 TSRA BKN008CB"
-    raw_taf = "FT RJBB 161100Z 1612/1718 TEMPO 1612/1616 2000 TSRA BKN006CB"
+    raw_taf = (
+        "FT RJBB 160900Z 1610/1718 22008KT 9999 FEW020 "
+        "TEMPO 1612/1616 2000 TSRA BKN006CB"
+    )
     flight = _flight(weather=[
         {"location": "RJBB", "record_type": "METAR", "text": raw_metar},
         {"location": "RJBB", "record_type": "TAF", "text": raw_taf},
@@ -511,8 +515,11 @@ def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audi
     assert {detail.split(":", 1)[0] for detail in item["details"]} == {
         "Phase",
         "UTC window",
+        "Applicable conditions",
+        "Timing",
         "Operational mechanism",
         "Flight effect",
+        "Window status",
     }
     audit = flight["audit_evidence"]["weather"]
     assert audit["source_record_count"] == 2
@@ -520,6 +527,10 @@ def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audi
     assert [record["raw_text"] for record in audit["records"]] == [
         raw_metar,
         raw_taf,
+    ]
+    assert [record["selected_for_pilot"] for record in audit["records"]] == [
+        False,
+        True,
     ]
 
 
@@ -533,9 +544,78 @@ def test_weather_group_suppresses_benign_jargon_and_duplicate_mechanisms() -> No
     findings, _ = analyse(flight)
     item = next(row for row in findings if row["engine"] == "weather")
 
-    assert item["data"]["mechanism"] == "convection / thunderstorms"
+    assert "convection / thunderstorms" in item["data"]["mechanism"]
     assert "trigger" not in item["summary"].lower()
     assert item["details"].count("Operational mechanism: convection / thunderstorms.") == 1
+
+
+def test_destination_taf_excludes_significant_group_outside_arrival_window() -> None:
+    flight = _flight(weather=[{
+        "location": "RJBB",
+        "record_type": "TAF",
+        "text": (
+            "FT 241700 2418/2600 16009KT 9999 FEW015 SCT020 "
+            "TEMPO 2502/2505 3000 TSRA FEW012CB BKN015="
+        ),
+    }])
+    flight["scheduled_departure_utc"] = "2026-07-25T02:15:00+00:00"
+    flight["scheduled_arrival_utc"] = "2026-07-25T21:30:00+00:00"
+
+    findings, _ = analyse(flight)
+
+    item = next(row for row in findings if row["engine"] == "weather")
+    assert item["severity"] == "information"
+    assert item["data"]["window_status"] == "no_significant_overlap"
+    assert item["data"]["mechanism"] == "None in time-overlapping forecast groups"
+    assert "02:00Z-05:00Z" in item["data"]["timing"]
+    assert "outside this window" in item["data"]["timing"]
+    assert "No significant weather group overlaps this window" in item["summary"]
+    assert "Arrival routing" not in item["summary"]
+    assert flight["audit_evidence"]["weather"]["records"][0]["raw_text"].endswith("BKN015=")
+    panel_weather = _weather_summary(findings, "RJBB", "destination")
+    assert "No significant weather group overlaps this window" in panel_weather["primary"]
+    assert "02:00Z-05:00Z" in panel_weather["primary"]
+    assert "Arrival routing" not in panel_weather["primary"]
+
+
+def test_destination_taf_keeps_significant_group_overlapping_arrival_window() -> None:
+    flight = _flight(weather=[{
+        "location": "RJBB",
+        "record_type": "TAF",
+        "text": (
+            "FT 241700 2418/2600 16009KT 9999 FEW015 SCT020 "
+            "TEMPO 2520/2523 3000 TSRA FEW012CB BKN015="
+        ),
+    }])
+    flight["scheduled_departure_utc"] = "2026-07-25T02:15:00+00:00"
+    flight["scheduled_arrival_utc"] = "2026-07-25T21:30:00+00:00"
+
+    findings, _ = analyse(flight)
+
+    item = next(row for row in findings if row["engine"] == "weather")
+    assert item["severity"] == "warning"
+    assert item["data"]["window_status"] == "pertinent"
+    assert "convection / thunderstorms" in item["data"]["mechanism"]
+    assert "20:00Z-23:00Z" in item["data"]["timing"]
+    assert "Arrival routing" in item["data"]["flight_effect"]
+
+
+def test_destination_taf_incomplete_coverage_fails_closed() -> None:
+    flight = _flight(weather=[{
+        "location": "RJBB",
+        "record_type": "TAF",
+        "text": "FT 241700 2418/2518 16009KT 9999 FEW015 SCT020=",
+    }])
+    flight["scheduled_departure_utc"] = "2026-07-25T02:15:00+00:00"
+    flight["scheduled_arrival_utc"] = "2026-07-25T21:30:00+00:00"
+
+    findings, _ = analyse(flight)
+
+    item = next(row for row in findings if row["engine"] == "weather")
+    assert item["severity"] == "warning"
+    assert item["data"]["window_status"] == "review_required"
+    assert "does not fully cover" in item["data"]["timing"]
+    assert "review required" in item["summary"].lower()
 
 
 def test_incomplete_lido_pages_fail_before_zero_value_analysis() -> None:
