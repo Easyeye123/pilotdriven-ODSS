@@ -42,6 +42,12 @@ from .database import (
 )
 from .odss.constants import format_actm
 from .odss.level3 import generate_level3_artifacts
+from .odss.reporting import render_pdf
+from .odss.surface_overlays import (
+    SurfaceOverlayRequest,
+    attach_surface_report_maps,
+    validated_surface_overlays,
+)
 from .odss_map_v06.api import (
     create_map_router,
     fallback_map_response,
@@ -451,6 +457,10 @@ def _refresh_reports_with_primary_map(flight, result: dict) -> None:
 
 def _execute_analysis(flight_id: int, flight) -> None:
     tenant_id = str(flight["tenant_id"]) if flight["tenant_id"] else None
+    previous_analysis = load_analysis(flight["analysis_path"])
+    previous_surface_overlays = (
+        (previous_analysis or {}).get("flight", {}).get("surface_overlays") or []
+    )
     previous_artifacts = (
         (flight["analysis_path"], RESULT_DIR),
         (flight["level1_report"], REPORT_DIR),
@@ -471,6 +481,7 @@ def _execute_analysis(flight_id: int, flight) -> None:
             actual_takeoff_utc=flight["actual_takeoff_utc"],
             timing_reference=_timing_reference_from_row(flight),
             personal_notes=[dict(note) for note in list_personal_notes(flight_id)],
+            surface_overlays=previous_surface_overlays,
         )
         if flight["tenant_id"] and flight["user_id"]:
             result.update(
@@ -877,6 +888,99 @@ def _service_analysis(
     return flight, analysis
 
 
+def _surface_report_route_map(analysis: dict) -> tuple[Path | None, str | None]:
+    render = (analysis.get("view") or {}).get("map_render") or {}
+    raw_path = render.get("artifact_path")
+    if not raw_path:
+        return None, None
+    candidate = Path(str(raw_path))
+    try:
+        candidate.resolve().relative_to((DATA_DIR / "maps").resolve())
+    except (OSError, ValueError):
+        return None, None
+    if (
+        not candidate.is_file()
+        or candidate.suffix.casefold() not in {".png", ".jpg", ".jpeg"}
+    ):
+        return None, None
+    return candidate, str(render.get("label") or "Realistic route map")
+
+
+def _surface_overlay_summary(overlays: list[dict]) -> list[dict]:
+    return [
+        {
+            "icao": overlay["icao"],
+            "role": overlay["role"],
+            "window": overlay["window"],
+            "counts": overlay["counts"],
+            "report_map": overlay.get("report_map"),
+        }
+        for overlay in overlays
+    ]
+
+
+def _publish_surface_overlay_reports(
+    flight,
+    analysis: dict,
+    overlays: list[dict],
+) -> None:
+    analysis_path = _stored_file(
+        flight["analysis_path"],
+        RESULT_DIR,
+        "Analysis not generated",
+    )
+    level1_path = _stored_file(
+        flight["level1_report"],
+        REPORT_DIR,
+        "Level 1 report not generated",
+    )
+    level2_path = _stored_file(
+        flight["level2_report"],
+        REPORT_DIR,
+        "Level 2 report not generated",
+    )
+    updated = json.loads(json.dumps(analysis))
+    updated_flight = updated.setdefault("flight", {})
+    updated_flight["surface_overlays"] = overlays
+    updated.setdefault("view", {})["surface_overlays"] = _surface_overlay_summary(
+        overlays
+    )
+    route_map_path, route_map_label = _surface_report_route_map(updated)
+    warnings = (updated.get("view") or {}).get("warnings") or []
+    findings = updated.get("findings") or []
+
+    analysis_temp = analysis_path.with_suffix(analysis_path.suffix + ".surface.tmp")
+    level1_temp = level1_path.with_suffix(level1_path.suffix + ".surface.tmp")
+    level2_temp = level2_path.with_suffix(level2_path.suffix + ".surface.tmp")
+    try:
+        analysis_temp.write_text(json.dumps(updated, indent=2), encoding="utf-8")
+        render_pdf(
+            updated_flight,
+            findings,
+            warnings,
+            1,
+            level1_temp,
+            map_image_path=route_map_path,
+            map_label=route_map_label,
+        )
+        render_pdf(
+            updated_flight,
+            findings,
+            warnings,
+            2,
+            level2_temp,
+            map_image_path=route_map_path,
+            map_label=route_map_label,
+        )
+        level1_temp.replace(level1_path)
+        level2_temp.replace(level2_path)
+        analysis_temp.replace(analysis_path)
+    finally:
+        analysis_temp.unlink(missing_ok=True)
+        level1_temp.unlink(missing_ok=True)
+        level2_temp.unlink(missing_ok=True)
+
+
 def _service_summary(flight) -> dict:
     analysis_id = _public_analysis_id(flight)
     return {
@@ -913,6 +1017,7 @@ def _service_summary(flight) -> dict:
             "level_3": f"/v1/analyses/{analysis_id}/level-3",
             "level_3_report": f"/v1/analyses/{analysis_id}/reports/level-3",
             "timing": f"/v1/analyses/{analysis_id}/timing",
+            "surface_overlays": f"/v1/analyses/{analysis_id}/surface-overlays",
             "render_reports": f"/v1/analyses/{analysis_id}/reports/render",
         },
     }
@@ -1045,6 +1150,53 @@ def update_service_timing(
     if not refreshed:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return JSONResponse(_service_summary(refreshed))
+
+
+@app.post("/v1/analyses/{analysis_id}/surface-overlays")
+async def update_service_surface_overlays(
+    request: Request,
+    analysis_id: str,
+    payload: SurfaceOverlayRequest,
+):
+    identity = request_service_identity(request)
+    flight, analysis = _service_analysis(analysis_id, identity)
+    try:
+        overlays = validated_surface_overlays(
+            payload,
+            analysis.get("flight") or {},
+        )
+        prepared = await attach_surface_report_maps(
+            analysis_id,
+            overlays,
+            map_settings,
+        )
+        _publish_surface_overlay_reports(flight, analysis, prepared)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    record_audit_event(
+        tenant_id=identity.tenant_id,
+        actor_id=identity.user_id,
+        action="analysis.surface_overlays_published",
+        resource_type="analysis",
+        resource_id=analysis_id,
+        details={
+            "airports": [
+                {
+                    "icao": overlay["icao"],
+                    "role": overlay["role"],
+                    "mapped": overlay["counts"]["mapped"],
+                    "review_required": overlay["counts"]["reviewRequired"],
+                    "map_mode": (overlay.get("report_map") or {}).get("mode"),
+                }
+                for overlay in prepared
+            ],
+        },
+    )
+    return JSONResponse({
+        "analysis_id": analysis_id,
+        "surface_overlays": _surface_overlay_summary(prepared),
+        "report_links": _service_summary(flight)["links"],
+    })
 
 
 @app.post("/v1/analyses/{analysis_id}/reports/render")

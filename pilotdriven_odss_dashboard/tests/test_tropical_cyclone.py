@@ -201,6 +201,23 @@ def test_awc_sigmet_only_does_not_claim_complete_tca_coverage(monkeypatch):
     )
 
 
+def test_an_environment_label_cannot_claim_unimplemented_tca_coverage(monkeypatch):
+    monkeypatch.setenv("ODSS_TCA_ADVISORY_SOURCE", "imaginary-centre")
+    snapshot = _snapshot([])
+    snapshot["provider"] = "noaa-awc-international-sigmet"
+    flight = _flight()
+
+    review = assess_tropical_cyclone(flight, [], snapshot=snapshot)
+    ledger = review["coverage_ledger"]["responsible_tropical_cyclone_advisory"]
+
+    assert review["status"] == "review_required"
+    assert "direct_tca_advisory_source_not_mounted" in review["reason_codes"]
+    assert ledger["available"] is False
+    assert ledger["provider"] is None
+    assert ledger["configured_source"] == "imaginary-centre"
+    assert ledger["configuration_status"] == "adapter_not_implemented"
+
+
 def test_extracts_the_embedded_cfp_tropical_cyclone_statement():
     embedded = extract_embedded_tc([
         "TROPICAL CYCLONE SIGMETS:\nWTPQ31 RJTD TC TYPHOON NEAR 20N130E\nDESTINATION WEATHER",

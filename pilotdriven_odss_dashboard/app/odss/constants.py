@@ -83,6 +83,31 @@ def format_actm(minutes: int | None) -> str:
     return f"{minutes // 60:02d}.{minutes % 60:02d}"
 
 
+def edto_sectors(edto: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Return explicit EDTO sectors, with the legacy single-sector shape supported."""
+    source = edto or {}
+    sectors = [
+        dict(item)
+        for item in (source.get("sectors") or [])
+        if isinstance(item, dict)
+        and item.get("entry_actm_minutes") is not None
+        and item.get("exit_actm_minutes") is not None
+    ]
+    if sectors:
+        return sectors
+    if source.get("entry_actm_minutes") is None:
+        return []
+    return [{
+        "number": 1,
+        "entry_actm_minutes": source.get("entry_actm_minutes"),
+        "exit_actm_minutes": source.get("exit_actm_minutes"),
+        "etp_actm_minutes": list(source.get("etp_actm_minutes") or []),
+        "entry": None,
+        "exit": None,
+        "etps": [],
+    }]
+
+
 def format_kg(value: int | None) -> str:
     return "not available" if value is None else f"{value:,} kg"
 

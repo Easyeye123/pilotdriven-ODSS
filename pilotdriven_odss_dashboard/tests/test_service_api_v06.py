@@ -14,7 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app.database as database
 import app.main as main
+import app.odss.surface_overlays as surface_overlays
 import app.odss_map_v06.report_worker as report_worker
+from app.odss_map_v06.config import MapSettings
 
 
 def _build_lido_pdf() -> bytes:
@@ -71,6 +73,8 @@ def service_app(
     monkeypatch.setattr(main, "REPORT_DIR", data / "reports")
     monkeypatch.setattr(main, "RESULT_DIR", data / "results")
     monkeypatch.setattr(report_worker, "MAP_DIR", data / "maps")
+    monkeypatch.setattr(surface_overlays, "SURFACE_MAP_DIR", data / "maps")
+    monkeypatch.setattr(main, "map_settings", MapSettings())
     monkeypatch.setenv("ODSS_SERVICE_TOKEN", "service-test-token")
     monkeypatch.delenv("AWS_LOCATION_API_KEY", raising=False)
     with TestClient(main.app, follow_redirects=False) as client:
@@ -85,6 +89,90 @@ def _authorization(
         "Authorization": "Bearer service-test-token",
         "X-PilotDriven-Tenant-Id": tenant_id,
         "X-PilotDriven-User-Id": user_id,
+    }
+
+
+def _surface_contract(
+    icao: str,
+    role: str,
+) -> dict:
+    return {
+        "schemaVersion": "1.0",
+        "icao": icao,
+        "name": f"{icao} test airport",
+        "role": role,
+        "window": {
+            "startsAt": "2026-07-11T08:30:00Z",
+            "endsAt": "2026-07-11T12:30:00Z",
+            "basis": "filed-std-sta",
+        },
+        "source": {
+            "provider": "openstreetmap",
+            "fetchedAt": "2026-07-11T08:00:00Z",
+            "sourceUpdatedAt": "2026-07-10T00:00:00Z",
+            "attribution": "© OpenStreetMap contributors",
+            "licenceUrl": "https://www.openstreetmap.org/copyright",
+            "referenceOnly": True,
+        },
+        "bounds": {
+            "west": 103.98,
+            "south": 1.33,
+            "east": 104.01,
+            "north": 1.37,
+        },
+        "featureCollection": {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "id": "way/runway",
+                    "properties": {
+                        "featureId": "way/runway",
+                        "aeroway": "runway",
+                        "ref": "02L/20R",
+                        "name": None,
+                        "source": "openstreetmap",
+                    },
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[103.985, 1.34], [104.0, 1.36]],
+                    },
+                },
+                {
+                    "type": "Feature",
+                    "id": "way/taxiway",
+                    "properties": {
+                        "featureId": "way/taxiway",
+                        "aeroway": "taxiway",
+                        "ref": "S2",
+                        "name": None,
+                        "source": "openstreetmap",
+                    },
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[103.99, 1.345], [103.995, 1.35]],
+                    },
+                },
+            ],
+        },
+        "mapped": [
+            {
+                "notamNumber": "A9002/26",
+                "entityType": "taxiway",
+                "entityRef": "S2",
+                "scope": "whole_entity",
+                "featureIds": ["way/taxiway"],
+                "plainEnglish": "Taxiway S2 closed.",
+                "evidence": "TWY S2 CLSD",
+                "markers": [],
+            }
+        ],
+        "reviewRequired": [],
+        "counts": {
+            "mapped": 1,
+            "reviewRequired": 0,
+            "runways": 1,
+        },
     }
 
 
@@ -314,6 +402,90 @@ def test_service_timing_accepts_atot_and_rejects_unknown_reference(
     assert briefing["timing"]["actual_takeoff_utc"] == "2026-07-11T10:42:00+00:00"
 
 
+def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
+    service_app: TestClient,
+) -> None:
+    owner_headers = _authorization("tenant-owner", "pilot-owner")
+    other_headers = _authorization("tenant-other", "pilot-other")
+    created = service_app.post(
+        "/v1/analyses",
+        headers=owner_headers,
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = created.json()["flight"]
+    overlays = [
+        _surface_contract(flight["departure"], "departure"),
+        _surface_contract(flight["destination"], "destination"),
+    ]
+
+    cross_tenant = service_app.post(
+        f"/v1/analyses/{analysis_id}/surface-overlays",
+        headers=other_headers,
+        json={"overlays": overlays},
+    )
+    assert cross_tenant.status_code == 404
+
+    invalid = _surface_contract("WADD", "departure")
+    rejected = service_app.post(
+        f"/v1/analyses/{analysis_id}/surface-overlays",
+        headers=owner_headers,
+        json={"overlays": [invalid]},
+    )
+    assert rejected.status_code == 422
+
+    published = service_app.post(
+        f"/v1/analyses/{analysis_id}/surface-overlays",
+        headers=owner_headers,
+        json={"overlays": overlays},
+    )
+    assert published.status_code == 200
+    published_overlays = published.json()["surface_overlays"]
+    assert [item["role"] for item in published_overlays] == [
+        "departure",
+        "destination",
+    ]
+    assert all(
+        item["report_map"]["mode"] == "schematic-fallback"
+        for item in published_overlays
+    )
+
+    briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=owner_headers,
+    ).json()
+    assert len(briefing["flight"]["surface_overlays"]) == 2
+
+    level1 = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-1",
+        headers=owner_headers,
+    )
+    document = fitz.open(stream=level1.content, filetype="pdf")
+    try:
+        text = "\n".join(page.get_text() for page in document)
+        assert document.page_count == 3
+    finally:
+        document.close()
+    assert "Surface overlay: 1 exact closure mark." in text
+    assert "Closed: TAXIWAY S2" in text
+
+    timing = service_app.post(
+        f"/v1/analyses/{analysis_id}/timing",
+        headers=owner_headers,
+        json={
+            "reference_type": "takeoff",
+            "reference_utc": "2026-07-11T10:42:00+00:00",
+        },
+    )
+    assert timing.status_code == 200
+    refreshed = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=owner_headers,
+    ).json()
+    assert len(refreshed["flight"]["surface_overlays"]) == 2
+
+
 def test_report_worker_endpoint_preserves_labelled_schematic_fallback(
     service_app: TestClient,
 ) -> None:
@@ -443,8 +615,21 @@ def test_service_analysis_is_hidden_from_another_tenant_on_every_surface(
         f"/v1/analyses/{analysis_id}/reports/render",
         headers=other_headers,
     )
+    surface = service_app.post(
+        f"/v1/analyses/{analysis_id}/surface-overlays",
+        headers=other_headers,
+        json={
+            "overlays": [
+                _surface_contract(
+                    created.json()["flight"]["departure"],
+                    "departure",
+                )
+            ],
+        },
+    )
     assert timing.status_code == 404
     assert render.status_code == 404
+    assert surface.status_code == 404
     with pytest.raises(LookupError):
         database.save_timing_reference(
             int(owner_row["id"]),

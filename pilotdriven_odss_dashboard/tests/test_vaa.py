@@ -382,7 +382,7 @@ def test_level1_omits_vaa_and_bobcat_when_verified_not_applicable(tmp_path: Path
     assert len(reader.pages) == 3
     assert "VOLCANIC ASH ADVISORY REVIEW" not in text
     assert "BOBCAT" not in text
-    assert "EDTO" in (reader.pages[2].extract_text() or "")
+    assert "EDTO" in (reader.pages[1].extract_text() or "")
 
 
 @pytest.mark.parametrize("status", ["review_required", "affected"])
@@ -408,13 +408,13 @@ def test_level1_integrates_conditional_vaa_on_route_page(
     page3 = reader.pages[2].extract_text() or ""
 
     assert len(reader.pages) == 3
-    assert "ENROUTE WEATHER / VAAC" in page3
-    assert "Volcanic ash" not in page2
+    assert "ENROUTE WEATHER / VAAC / TC" in page2
+    assert "ENROUTE WEATHER / VAAC / TC" not in page3
     assert (
         "Volcanic ash affects the planned route"
         if status == "affected"
         else "Volcanic ash review required"
-    ) in page3
+    ) in page2
     assert "VOLCANIC ASH ADVISORY REVIEW" not in text
     assert "SOURCE / PROVENANCE" not in text
     assert "MANUAL REVIEW REQUIRED" not in text

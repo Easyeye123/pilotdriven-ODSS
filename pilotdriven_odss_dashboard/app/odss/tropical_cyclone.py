@@ -116,10 +116,14 @@ def assess_tropical_cyclone(
         hazard_label="tropical_cyclone",
         default_advisory_id="TC-SIGMET",
     )
-    direct_tca_mounted = bool(
-        os.environ.get("ODSS_TCA_ADVISORY_SOURCE", "").strip().lower()
-        not in {"", "disabled", "off", "none"}
-    )
+    configured_tca_source = os.environ.get(
+        "ODSS_TCA_ADVISORY_SOURCE",
+        "",
+    ).strip().lower()
+    # No direct responsible-centre TCA adapter is implemented yet. An
+    # environment label alone is not evidence that current TCA data was
+    # retrieved, parsed, and validated, so coverage must stay fail-closed.
+    direct_tca_mounted = False
     review["coverage_ledger"] = {
         "active_tropical_cyclone_sigmet": {
             "available": snapshot.get("provider") == "noaa-awc-international-sigmet",
@@ -127,10 +131,12 @@ def assess_tropical_cyclone(
         },
         "responsible_tropical_cyclone_advisory": {
             "available": direct_tca_mounted,
-            "provider": (
-                os.environ.get("ODSS_TCA_ADVISORY_SOURCE")
-                if direct_tca_mounted
-                else None
+            "provider": None,
+            "configured_source": configured_tca_source or None,
+            "configuration_status": (
+                "disabled"
+                if configured_tca_source in {"", "disabled", "off", "none"}
+                else "adapter_not_implemented"
             ),
             "review_required_when_missing": True,
         },

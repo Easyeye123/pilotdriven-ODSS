@@ -131,9 +131,10 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
 
     level1_text = _pdf_text(client.get(f"/files/report/{flight_id}/1"))
     level2_text = _pdf_text(client.get(f"/files/report/{flight_id}/2"))
+    level1_compact = " ".join(level1_text.split())
     assert "DEPARTURE AIRPORT" in level1_text
-    assert "Confirm departure stand and pushback plan." in level1_text
-    assert "Pilot-entered content; not ODSS-validated." in level1_text
+    assert "Confirm departure stand and pushback plan." in level1_compact
+    assert "Pilot-entered content; not ODSS-validated." in level1_compact
     assert "Departure airport - personal notes" in level2_text
     assert "Confirm departure stand and pushback plan." in level2_text
     assert "not extracted, validated or endorsed" in level2_text
@@ -167,9 +168,10 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     assert updated["placement"] == "destination"
     assert updated["note_text"] == "Confirm destination stand and towing requirement."
     level1_text = _pdf_text(client.get(f"/files/report/{flight_id}/1"))
+    level1_compact = " ".join(level1_text.split())
     assert "DESTINATION AIRPORT" in level1_text
-    assert "Confirm destination stand and towing requirement." in level1_text
-    assert "Confirm departure stand and pushback plan." not in level1_text
+    assert "Confirm destination stand and towing requirement." in level1_compact
+    assert "Confirm departure stand and pushback plan." not in level1_compact
 
     response = client.post(f"/flights/{flight_id}/notes/{note_id}/delete")
     assert response.status_code == 303

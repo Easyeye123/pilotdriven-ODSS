@@ -327,8 +327,12 @@ def _draw_cover(canvas, briefing: dict[str, Any], width: float, height: float) -
     canvas.linkRect("", "communications_detail", (margin, bottom_y, margin + comm_w, bottom_y + bottom_h), relative=1, thickness=0)
 
     edto = briefing["edto"]
-    edto_lines = [f"ACTM {edto['entry']} - {edto['exit']}"]
-    if edto.get("etps"):
+    sectors = edto.get("sectors") or []
+    edto_lines = [
+        f"S{sector.get('number', index)} {sector['entry']} - {sector['exit']}"
+        for index, sector in enumerate(sectors, start=1)
+    ] or [f"ACTM {edto['entry']} - {edto['exit']}"]
+    if not sectors and edto.get("etps"):
         edto_lines.append("ETP: " + ", ".join(edto["etps"]))
     edto_lines.extend(f"{item['airport']} RWY {item['runway']} {item['approach']}" for item in edto.get("airports", [])[:3])
     _draw_panel(canvas, margin + comm_w + gap, bottom_y, edto_w, bottom_h, "EDTO SUMMARY", edto_lines, _GREEN, True, _STYLES["panel_small"])

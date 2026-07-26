@@ -256,6 +256,113 @@ def _decimal_coordinate(hemisphere: str, degrees: str, minutes: str) -> float:
     return -value if hemisphere in {"S", "W"} else value
 
 
+def _parse_edto_sectors(edto_text: str) -> list[dict[str, Any]]:
+    boundary_pattern = re.compile(
+        r"^\s*(?P<actm>\d{1,2}\.\d{2})\s+"
+        r"(?P<lat_h>[NS])(?P<lat_deg>\d{2})(?P<lat_min>\d{2}(?:\.\d+)?)\b[^\n]*\n"
+        r"\s*(?P<kind>ENTRY|EXIT)(?P<number>\d+)\s+"
+        r"(?P<lon_h>[EW])(?P<lon_deg>\d{3})(?P<lon_min>\d{2}(?:\.\d+)?)\b",
+        re.MULTILINE,
+    )
+    sectors_by_number: dict[int, dict[str, Any]] = {}
+    for match in boundary_pattern.finditer(edto_text):
+        number = int(match.group("number"))
+        kind = match.group("kind").lower()
+        point = {
+            "name": f"{match.group('kind')}{number}",
+            "actm_minutes": actm_minutes(match.group("actm")),
+            "latitude": _decimal_coordinate(
+                match.group("lat_h"),
+                match.group("lat_deg"),
+                match.group("lat_min"),
+            ),
+            "longitude": _decimal_coordinate(
+                match.group("lon_h"),
+                match.group("lon_deg"),
+                match.group("lon_min"),
+            ),
+        }
+        sector = sectors_by_number.setdefault(number, {
+            "number": number,
+            "entry": None,
+            "exit": None,
+            "etps": [],
+        })
+        sector[kind] = point
+
+    etp_pattern = re.compile(
+        r"^\s*(?P<actm>\d{1,2}\.\d{2})\s+"
+        r"(?P<lat_h>[NS])(?P<lat_deg>\d{2})(?P<lat_min>\d{2}(?:\.\d+)?)\s+"
+        r"(?P<airport_one>[A-Z]{4})\b[^\n]*\n"
+        r"\s*(?P<label>\d+[A-Z])\s+\.*\s*"
+        r"(?P<lon_h>[EW])(?P<lon_deg>\d{3})(?P<lon_min>\d{2}(?:\.\d+)?)"
+        r"(?:\s+(?P<airport_two>[A-Z]{4}))?",
+        re.MULTILINE,
+    )
+    for match in etp_pattern.finditer(edto_text):
+        actm = actm_minutes(match.group("actm"))
+        point = {
+            "label": match.group("label"),
+            "actm_minutes": actm,
+            "latitude": _decimal_coordinate(
+                match.group("lat_h"),
+                match.group("lat_deg"),
+                match.group("lat_min"),
+            ),
+            "longitude": _decimal_coordinate(
+                match.group("lon_h"),
+                match.group("lon_deg"),
+                match.group("lon_min"),
+            ),
+            "airports": [
+                airport
+                for airport in (
+                    match.group("airport_one"),
+                    match.group("airport_two"),
+                )
+                if airport
+            ],
+        }
+        containing = next(
+            (
+                sector
+                for sector in sectors_by_number.values()
+                if sector.get("entry")
+                and sector.get("exit")
+                and sector["entry"]["actm_minutes"] <= actm <= sector["exit"]["actm_minutes"]
+            ),
+            None,
+        )
+        if containing is not None:
+            containing["etps"].append(point)
+
+    sectors: list[dict[str, Any]] = []
+    for number, sector in sorted(sectors_by_number.items()):
+        entry = sector.get("entry")
+        exit_point = sector.get("exit")
+        if not entry or not exit_point:
+            continue
+        etps = sorted(
+            sector.get("etps") or [],
+            key=lambda item: (
+                item["actm_minutes"],
+                item["label"],
+                item["latitude"],
+                item["longitude"],
+            ),
+        )
+        sectors.append({
+            "number": number,
+            "entry_actm_minutes": entry["actm_minutes"],
+            "exit_actm_minutes": exit_point["actm_minutes"],
+            "etp_actm_minutes": sorted({item["actm_minutes"] for item in etps}),
+            "entry": entry,
+            "exit": exit_point,
+            "etps": etps,
+        })
+    return sectors
+
+
 def _parse_waypoints(route_pages: list[str], route_text: str) -> list[dict[str, Any]]:
     pending: dict[str, Any] | None = None
     waypoints: list[dict[str, Any]] = []
@@ -474,8 +581,17 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     perf_text = "\n".join(cfp_pages[:5])
     performance = _parse_performance(perf_text)
     edto_text = next((text for text in cfp_pages if "EDTO INFORMATION" in text), "")
+    edto_sectors = _parse_edto_sectors(edto_text)
     entry_match = re.search(r"\n\s*(\d{1,2}\.\d{2})\s+N.*\nENTRY", edto_text)
     exit_match = re.search(r"\n\s*(\d{1,2}\.\d{2})\s+N.*\nEXIT", edto_text)
+    legacy_etp_actm = [
+        actm_minutes(match.group(1))
+        for match in re.finditer(
+            r"\*\*ETP\S*(?:\s+\S+)?\s+(\d{1,2}\.\d{2})",
+            "\n".join(cfp_pages),
+        )
+    ]
+    primary_edto_sector = edto_sectors[0] if edto_sectors else None
     edto_airports = []
     for m in re.finditer(r"^(\w{4})\s+(\d{4})-(\d{4})\s+(\w+)\s+(\S+)\s+(.+)$", edto_text, re.MULTILINE):
         apt, start_hhmm, end_hhmm, runway, approach, minima = m.groups()
@@ -516,12 +632,26 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "fuel": fuel,
         "masses": masses,
         "edto": {
-            "entry_actm_minutes": actm_minutes(entry_match.group(1)) if entry_match else None,
-            "exit_actm_minutes": actm_minutes(exit_match.group(1)) if exit_match else None,
-            "etp_actm_minutes": [
-                actm_minutes(m.group(1))
-                for m in re.finditer(r"\*\*ETP\S*(?:\s+\S+)?\s+(\d{1,2}\.\d{2})", "\n".join(cfp_pages))
-            ],
+            "entry_actm_minutes": (
+                primary_edto_sector["entry_actm_minutes"]
+                if primary_edto_sector
+                else actm_minutes(entry_match.group(1))
+                if entry_match
+                else None
+            ),
+            "exit_actm_minutes": (
+                primary_edto_sector["exit_actm_minutes"]
+                if primary_edto_sector
+                else actm_minutes(exit_match.group(1))
+                if exit_match
+                else None
+            ),
+            "etp_actm_minutes": (
+                primary_edto_sector["etp_actm_minutes"]
+                if primary_edto_sector
+                else legacy_etp_actm
+            ),
+            "sectors": edto_sectors,
             "airports": edto_airports,
         },
         "notams": [],

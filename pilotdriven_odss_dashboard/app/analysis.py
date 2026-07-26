@@ -52,6 +52,7 @@ def run_odss_analysis(
     actual_takeoff_utc: str | None = None,
     timing_reference: dict[str, Any] | None = None,
     personal_notes: list[dict[str, Any]] | None = None,
+    surface_overlays: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     pages = extract_pages(file_path)
     flight = parse_lido(pages, file_path.name)
@@ -59,6 +60,10 @@ def run_odss_analysis(
     flight["personal_notes"] = [
         serialise_personal_note(dict(note))
         for note in (personal_notes or [])
+    ]
+    flight["surface_overlays"] = [
+        dict(overlay)
+        for overlay in (surface_overlays or [])
     ]
     if actual_takeoff_utc:
         flight["actual_takeoff_utc"] = actual_takeoff_utc

@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+
+import fitz
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.odss.report_quality import (
+    ReportQualityError,
+    assert_report_quality,
+    validate_report_pdf,
+)
+
+
+def _pdf(
+    path: Path,
+    *,
+    pages: int,
+    text: str = "Pilot briefing",
+    page_texts: list[str] | None = None,
+) -> None:
+    document = fitz.open()
+    for index in range(pages):
+        page = document.new_page(width=841.89, height=595.28)
+        page.insert_text(
+            (40, 50),
+            page_texts[index] if page_texts is not None else text,
+        )
+    document.save(path)
+    document.close()
+
+
+def test_quality_gate_accepts_three_page_a4_landscape_level1(tmp_path: Path) -> None:
+    path = tmp_path / "level1.pdf"
+    _pdf(
+        path,
+        pages=3,
+        page_texts=[
+            "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS\n"
+            "Natural Earth 1:110m land context",
+            "SQ304 - TIME-BASED OPERATING GATES",
+            "SQ304 - HIGH TERRAIN EXPOSURE",
+        ],
+    )
+
+    result = assert_report_quality(path, level=1)
+
+    assert result["valid"] is True
+    assert result["page_count"] == 3
+
+
+def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:
+    path = tmp_path / "level1-extra.pdf"
+    _pdf(path, pages=4)
+
+    with pytest.raises(ReportQualityError) as exc_info:
+        assert_report_quality(path, level=1)
+
+    assert any(
+        item.code == "LEVEL_1_PAGE_CONTRACT"
+        for item in exc_info.value.violations
+    )
+
+
+@pytest.mark.parametrize(
+    ("page_texts", "expected_code"),
+    (
+        (
+            [
+                "Natural Earth 1:110m land context",
+                "SQ304 - TIME-BASED OPERATING GATES",
+                "SQ304 - HIGH TERRAIN EXPOSURE",
+            ],
+            "LEVEL_1_NOTAM_WINDOW_HEADING",
+        ),
+        (
+            [
+                "APPLICABLE NOTAMS WITHIN STD / STA +/- 2 HOURS\n"
+                "Natural Earth 1:110m land context",
+                "SQ304 - OPERATIONAL DETAIL",
+                "SQ304 - HIGH TERRAIN EXPOSURE",
+            ],
+            "LEVEL_1_PAGE_2_STRUCTURE",
+        ),
+        (
+            [
+                "APPLICABLE NOTAMS WITHIN STD / STA +/- 2 HOURS\n"
+                "Natural Earth 1:110m land context",
+                "SQ304 - TIME-BASED OPERATING GATES",
+                "SQ304 - ROUTE / CONTINGENCY",
+            ],
+            "LEVEL_1_PAGE_3_STRUCTURE",
+        ),
+        (
+            [
+                "APPLICABLE NOTAMS WITHIN STD / STA +/- 2 HOURS\n"
+                "Natural Earth 1:110m land context",
+                "SQ304 - TIME-BASED OPERATING GATES\n"
+                "Natural Earth 1:110m land context",
+                "SQ304 - HIGH TERRAIN EXPOSURE",
+            ],
+            "LEVEL_1_SINGLE_MAP_CONTRACT",
+        ),
+    ),
+)
+def test_quality_gate_rejects_level1_structure_regressions(
+    tmp_path: Path,
+    page_texts: list[str],
+    expected_code: str,
+) -> None:
+    path = tmp_path / "level1-structure.pdf"
+    _pdf(path, pages=3, page_texts=page_texts)
+
+    result = validate_report_pdf(path, level=1)
+
+    assert result["valid"] is False
+    assert any(item.code == expected_code for item in result["violations"])
+
+
+@pytest.mark.parametrize("wording", ("Manual RAG", "canonical route", "Trigger: RWY"))
+def test_quality_gate_rejects_internal_pilot_wording(
+    tmp_path: Path,
+    wording: str,
+) -> None:
+    path = tmp_path / "level3.pdf"
+    _pdf(path, pages=1, text=wording)
+
+    result = validate_report_pdf(path, level=3, level3_status="PARTIAL")
+
+    assert result["valid"] is False
+    assert any(item.code.startswith("PILOT_") for item in result["violations"])

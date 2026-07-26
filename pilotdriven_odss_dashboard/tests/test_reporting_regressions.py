@@ -245,15 +245,20 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "PTOW" in first and "245,529 kg" in first
     assert "DEPARTURE AIRPORT" in first
     assert "DESTINATION AIRPORT" in first
+    assert "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS" in first
     assert "Natural Earth 1:110m land context" in first
-    assert "SQ304 - OPERATIONAL DETAIL" in second
+    assert "SQ304 - TIME-BASED OPERATING GATES" in second
+    assert "FLIGHT PHASE WINDOWS" in second
+    assert "EDTO 1 | ENTRY 02.00 | EXIT 02.30" in second
     assert "MEL / CDL / CDDL" not in second
     assert "PERFORMANCE / FUEL" not in second
-    assert "WEATHER / PERTINENT NOTAM" in second
-    assert "SQ304 - ROUTE / CONTINGENCY" in third
+    assert "WEATHER / PERTINENT NOTAM" not in second
+    assert "ENROUTE WEATHER / VAAC / TC" in second
+    assert "SQ304 - HIGH TERRAIN EXPOSURE" in third
+    assert "Validated CFP MSA points only - no terrain interpolation" in third
     assert "FIR / COMMUNICATIONS" not in third
-    assert "TERRAIN MSA / VWS" in third
-    assert "DEPRESSURISATION PROFILES" in third
+    assert "HIGH TERRAIN MSA / VWS" in third
+    assert "DEPRESSURISATION PROFILE COVERAGE" in third
     assert "High terrain detected but no profile matched" in third
     assert "Manual chart-index review is required" in third
     assert "ACTM / CALCULATED UTC" not in third
@@ -278,8 +283,8 @@ def test_level1_weather_uses_pertinent_operational_lines_not_raw_repetition(
     page2 = reader.pages[1].extract_text() or ""
     page3 = reader.pages[2].extract_text() or ""
     assert "EDTO weather - VTSP" in text
-    assert "EDTO weather - VTSP" not in page2
-    assert "EDTO weather - VTSP" in page3
+    assert "EDTO weather - VTSP" in page2
+    assert "EDTO weather - VTSP" not in page3
     assert "EDTO | VTSP | 25 JUL 1821Z-2039Z" in text
     assert "Mechanism: convection / thunderstorms." in text
     assert "Timing: convection / thunderstorms overlaps 20:00Z-20:39Z." in text
@@ -326,7 +331,7 @@ def test_level2_does_not_force_sparse_section_pages(tmp_path: Path) -> None:
     page_text = [(page.extract_text() or "").strip() for page in reader.pages]
     assert len(reader.pages) == 2
     assert "Weather" in page_text[1]
-    assert "Pertinent NOTAM" in page_text[1]
+    assert "Applicable NOTAMs within STD / STA ±2 hours" in page_text[1]
     assert "Terrain MSA events" in page_text[1]
     assert "Applicability and parser warnings" in page_text[1]
 
@@ -345,13 +350,15 @@ def test_level2_weather_is_concise_deduplicated_and_does_not_repeat_raw_opmet(
     assert "TAF WSSS 161100Z" not in text
     assert "trigger" not in text.lower()
     # The single concise effect appears once on the visual cover and once in
-    # expanded detail; the second duplicate source record is not rendered.
+    # expanded detail; the second duplicate source record and the generated
+    # detail rows are not repeated.
     assert text.count("Weather record 01") == 2
     assert "Weather record 02" not in text
-    assert "UTC window: UTC window not resolved." in text
-    assert "Operational mechanism: convection / thunderstorms" in text
+    assert "Enroute; UTC window not resolved: convection / thunderstorms." in text
+    assert "UTC window: UTC window not resolved." not in text
+    assert "Operational mechanism:" not in text
     assert (
-        "Flight effect: Route deviation, flight-level strategy or timing may be affected."
+        "Route deviation, flight-level strategy or timing may be affected."
         in text
     )
 

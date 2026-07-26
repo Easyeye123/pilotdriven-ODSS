@@ -23,6 +23,7 @@ from ..personal_notes import PERSONAL_NOTE_PLACEMENT_LABELS
 from .briefing import build_briefing_view
 from .constants import ENGINE_ORDER
 from .pertinent_brief import render_level1_visual
+from .report_quality import assert_report_quality
 from .pilot_briefing import (
     select_concise_weather,
     select_pertinent_notams,
@@ -39,7 +40,7 @@ _TITLES = {
     "weather": "Weather",
     "vaa": "Volcanic ash advisory review",
     "tropical_cyclone": "Tropical cyclone review",
-    "notam": "Pertinent NOTAM",
+    "notam": "Applicable NOTAMs within STD / STA ±2 hours",
     "communications": "Early ATC contact / FIR entry calls",
     "actual_timing": "Actual takeoff / calculated UTC timeline",
     "terrain": "Terrain MSA events",
@@ -129,7 +130,12 @@ def _automatic_section(
     finding_limit = len(selected_findings) if level == 2 or engine == "notam" else 12
     for finding in selected_findings[:finding_limit]:
         lines.append(f"{finding['title']}: {finding['summary']}")
-        detail_limit = (
+        # The concise weather summary already contains phase, checked UTC
+        # window, applicable mechanism and flight effect. Repeating its
+        # decoded METAR/TAF fields as separate report rows bloats the report
+        # and makes the same fact appear twice. The immutable analysis JSON
+        # remains the audit path for those source details.
+        detail_limit = 0 if engine == "weather" else (
             len(finding["details"])
             if level == 2
             else (
@@ -277,6 +283,7 @@ def render_pdf(
             map_image_path=map_image_path,
             map_label=map_label,
         )
+        assert_report_quality(path, level=1)
         return
 
     styles = getSampleStyleSheet()
@@ -402,3 +409,4 @@ def render_pdf(
         ]))
         story.extend([table, Spacer(1, 1 * mm)])
     document.build(story)
+    assert_report_quality(path, level=2)

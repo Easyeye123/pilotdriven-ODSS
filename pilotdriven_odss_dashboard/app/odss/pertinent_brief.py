@@ -11,10 +11,16 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import BaseDocTemplate, Flowable, Frame, PageBreak, PageTemplate, Paragraph
 
-from .briefing import build_briefing_view, draw_route_map_pdf
-from .constants import format_actm
+from .briefing import (
+    build_briefing_view,
+    draw_route_map_pdf,
+    project_route_map,
+)
+from .constants import edto_sectors, format_actm
+from .engines import detect_terrain_events
 from .pilot_briefing import prepare_pilot_findings
 
 
@@ -58,8 +64,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent dark",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.9,
-            leading=7.6,
+            fontSize=7.2,
+            leading=10.0,
             textColor=_TEXT,
             spaceAfter=0,
             spaceBefore=0,
@@ -68,8 +74,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent dark small",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.4,
-            leading=7.1,
+            fontSize=5.9,
+            leading=8.0,
             textColor=_TEXT,
             spaceAfter=0,
             spaceBefore=0,
@@ -189,7 +195,7 @@ def _draw_panel(
     canvas.roundRect(x, y + height - title_height, width, title_height, 3.5, fill=1, stroke=0)
     canvas.rect(x, y + height - title_height, width, title_height / 2, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 6.9)
+    canvas.setFont("Helvetica-Bold", 5.8 if len(title) > 28 else 6.9)
     canvas.drawString(x + 3 * mm, y + height - 4.9 * mm, title)
 
     body_x = x + 3 * mm
@@ -341,20 +347,578 @@ def _draw_metric_strip(
         )
 
 
-def _airport_lines(panel: dict[str, Any]) -> list[str]:
+def _interpolate_route_point(
+    points: list[dict[str, Any]],
+    actm_minutes: int,
+    *,
+    name: str,
+    role: str,
+) -> dict[str, Any] | None:
+    timed = [
+        point
+        for point in points
+        if point.get("actm_minutes") is not None
+    ]
+    if not timed:
+        return None
+    for point in timed:
+        if int(point["actm_minutes"]) == int(actm_minutes):
+            return {
+                **point,
+                "name": name,
+                "display_name": name,
+                "role": role,
+            }
+    before = None
+    after = None
+    for point in timed:
+        point_actm = int(point["actm_minutes"])
+        if point_actm < actm_minutes:
+            before = point
+        elif point_actm > actm_minutes:
+            after = point
+            break
+    if before is None or after is None:
+        return None
+    span = int(after["actm_minutes"]) - int(before["actm_minutes"])
+    if span <= 0:
+        return None
+    ratio = (actm_minutes - int(before["actm_minutes"])) / span
+    return {
+        "name": name,
+        "display_name": name,
+        "latitude": float(before["latitude"])
+        + (float(after["latitude"]) - float(before["latitude"])) * ratio,
+        "longitude": float(before["longitude"])
+        + (float(after["longitude"]) - float(before["longitude"])) * ratio,
+        "plot_longitude": float(before["plot_longitude"])
+        + (
+            float(after["plot_longitude"])
+            - float(before["plot_longitude"])
+        )
+        * ratio,
+        "actm_minutes": actm_minutes,
+        "msa_hundreds_ft": None,
+        "vws": None,
+        "role": role,
+    }
+
+
+def _route_window_points(
+    route_points: list[dict[str, Any]],
+    start_actm: int,
+    end_actm: int,
+    *,
+    markers: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    timed_indices = [
+        index
+        for index, point in enumerate(route_points)
+        if point.get("actm_minutes") is not None
+        and start_actm <= int(point["actm_minutes"]) <= end_actm
+    ]
+    if not timed_indices:
+        return []
+    first = max(0, timed_indices[0] - 1)
+    last = min(len(route_points) - 1, timed_indices[-1] + 1)
+    selected = [dict(point) for point in route_points[first:last + 1]]
+    selected.extend(markers or [])
+    selected.sort(
+        key=lambda point: (
+            int(point.get("actm_minutes") or -1),
+            0 if point.get("role") == "route" else 1,
+        )
+    )
+    return selected
+
+
+def _sector_etp_markers(
+    route_points: list[dict[str, Any]],
+    sector: dict[str, Any],
+    sector_number: int,
+) -> list[dict[str, Any]]:
+    clusters: list[dict[str, Any]] = []
+    for item in sorted(
+        (
+            item
+            for item in (sector.get("etps") or [])
+            if isinstance(item, dict) and item.get("actm_minutes") is not None
+        ),
+        key=lambda item: int(item["actm_minutes"]),
+    ):
+        actm = int(item["actm_minutes"])
+        latitude = float(item.get("latitude") or 0.0)
+        longitude = float(item.get("longitude") or 0.0)
+        cluster = next(
+            (
+                candidate
+                for candidate in clusters
+                if abs(int(candidate["actm"]) - actm) <= 1
+                and abs(float(candidate["latitude"]) - latitude) <= 0.5
+                and abs(float(candidate["longitude"]) - longitude) <= 0.5
+            ),
+            None,
+        )
+        if cluster is None:
+            cluster = {
+                "actm": actm,
+                "latitude": latitude,
+                "longitude": longitude,
+                "labels": [],
+                "airports": item.get("airports") or [],
+            }
+            clusters.append(cluster)
+        cluster["labels"].append(str(item.get("label") or "ETP"))
+
+    markers: list[dict[str, Any]] = []
+    for cluster in clusters:
+        actm = int(cluster["actm"])
+        latitude = float(cluster["latitude"])
+        longitude = float(cluster["longitude"])
+        interpolated = _interpolate_route_point(
+            route_points,
+            actm,
+            name="ETP",
+            role="edto_etp",
+        )
+        if interpolated is None:
+            continue
+        plot_longitude = longitude
+        while plot_longitude - float(interpolated["plot_longitude"]) > 180:
+            plot_longitude -= 360
+        while float(interpolated["plot_longitude"]) - plot_longitude > 180:
+            plot_longitude += 360
+        unique_labels = list(dict.fromkeys(cluster["labels"]))
+        label = " / ".join(unique_labels)
+        markers.append({
+            **interpolated,
+            "name": f"S{sector_number} ETP {label}",
+            "display_name": f"S{sector_number} ETP {label}",
+            "latitude": latitude,
+            "longitude": longitude,
+            "plot_longitude": plot_longitude,
+            "etp_labels": unique_labels,
+            "airports": cluster["airports"],
+        })
+    return markers
+
+
+def _draw_route_evidence_chart(
+    canvas,
+    points: list[dict[str, Any]],
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    *,
+    title: str,
+    mode: str,
+) -> None:
+    canvas.setFillColor(_PANEL)
+    canvas.setStrokeColor(_LINE)
+    canvas.roundRect(x, y, width, height, 3.5, fill=1, stroke=1)
+    canvas.setFillColor(_TEXT)
+    canvas.setFont("Helvetica-Bold", 6.2)
+    canvas.drawString(x + 3 * mm, y + height - 5.3 * mm, title[:58])
+    note = (
+        "Validated CFP MSA points only - no terrain interpolation"
+        if mode == "terrain"
+        else "CFP route coordinates and EDTO times"
+    )
+    canvas.setFillColor(_MUTED)
+    canvas.setFont("Helvetica", 4.5)
+    canvas.drawRightString(x + width - 3 * mm, y + height - 5.2 * mm, note)
+
+    plot_x = x + 3 * mm
+    plot_y = y + 4 * mm
+    plot_width = width - 6 * mm
+    plot_height = height - 12 * mm
+    projection = project_route_map(
+        {"points": points},
+        plot_width,
+        plot_height,
+        10.0,
+    )
+    projected = projection.get("points") or []
+    if len(projected) < 2:
+        canvas.setFillColor(_MUTED)
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.drawCentredString(
+            x + width / 2,
+            y + height / 2,
+            "Verified route coordinates unavailable",
+        )
+        return
+
+    canvas.setStrokeColor(colors.HexColor("#203C57"))
+    canvas.setLineWidth(0.35)
+    for fraction in (0.25, 0.5, 0.75):
+        canvas.line(
+            plot_x,
+            plot_y + plot_height * fraction,
+            plot_x + plot_width,
+            plot_y + plot_height * fraction,
+        )
+        canvas.line(
+            plot_x + plot_width * fraction,
+            plot_y,
+            plot_x + plot_width * fraction,
+            plot_y + plot_height,
+        )
+
+    canvas.setStrokeColor(_TEXT)
+    canvas.setLineWidth(1.4)
+    route_sequence = [
+        point
+        for point in projected
+        if point.get("role") != "edto_etp"
+    ]
+    route_path = canvas.beginPath()
+    route_path.moveTo(
+        plot_x + route_sequence[0]["x"],
+        plot_y + route_sequence[0]["y"],
+    )
+    for point in route_sequence[1:]:
+        route_path.lineTo(plot_x + point["x"], plot_y + point["y"])
+    canvas.drawPath(route_path, stroke=1, fill=0)
+
+    label_count = 0
+    for index, point in enumerate(projected):
+        role = str(point.get("role") or "route")
+        msa = point.get("msa_hundreds_ft")
+        is_high = bool(point.get("msa_asterisk")) or (
+            msa is not None and int(msa) > 100
+        )
+        if role == "edto_etp":
+            colour = _EDTO
+        elif role in {"edto_entry", "edto_exit"}:
+            colour = _DEPARTURE
+        elif is_high:
+            colour = _CRITICAL if int(msa or 0) >= 150 else _WEATHER
+        else:
+            colour = _TEXT
+        radius = 2.1 if role != "route" or is_high else 1.3
+        px = plot_x + point["x"]
+        py = plot_y + point["y"]
+        canvas.setFillColor(colour)
+        canvas.circle(px, py, radius, fill=1, stroke=0)
+
+        important = (
+            index in {0, len(projected) - 1}
+            or role in {"edto_entry", "edto_exit", "edto_etp"}
+            or (mode == "terrain" and role == "terrain")
+        )
+        if not important:
+            continue
+        label_count += 1
+        label = str(point.get("display_name") or point.get("name") or "")
+        if mode == "terrain" and msa is not None:
+            label += f" {int(msa):03d}{'*' if point.get('msa_asterisk') else ''}"
+        canvas.setFillColor(colour)
+        canvas.setFont("Helvetica-Bold", 4.4)
+        label_width = pdfmetrics.stringWidth(label[:22], "Helvetica-Bold", 4.4)
+        dx = (
+            -label_width - 3
+            if px > plot_x + plot_width * 0.76
+            else 3
+        )
+        canvas.drawString(
+            px + dx,
+            py + (4 if label_count % 2 else -7),
+            label[:22],
+        )
+
+
+def _draw_phase_timeline(
+    canvas,
+    *,
+    sectors: list[dict[str, Any]],
+    communications: list[dict[str, Any]],
+    final_actm: int,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+) -> None:
+    canvas.setFillColor(_PANEL_2)
+    canvas.setStrokeColor(_LINE)
+    canvas.roundRect(x, y, width, height, 3.5, fill=1, stroke=1)
+    canvas.setFillColor(_MUTED)
+    canvas.setFont("Helvetica-Bold", 5.2)
+    canvas.drawString(x + 3 * mm, y + height - 4.8 * mm, "FLIGHT PHASE WINDOWS")
+    canvas.drawRightString(
+        x + width - 3 * mm,
+        y + height - 4.8 * mm,
+        "ACTM from scheduled-departure anchor",
+    )
+    line_y = y + height / 2
+    line_start = x + 6 * mm
+    line_width = width - 12 * mm
+    canvas.setStrokeColor(colors.HexColor("#42647B"))
+    canvas.setLineWidth(0.8)
+    canvas.line(line_start, line_y, line_start + line_width, line_y)
+    scale = max(1, final_actm)
+
+    for index, sector in enumerate(sectors, start=1):
+        start = int(sector.get("entry_actm_minutes") or 0)
+        end = int(sector.get("exit_actm_minutes") or start)
+        sx = line_start + line_width * min(1.0, start / scale)
+        ex = line_start + line_width * min(1.0, end / scale)
+        canvas.setStrokeColor(_EDTO)
+        canvas.setLineWidth(3.2)
+        canvas.line(sx, line_y, max(sx + 2, ex), line_y)
+        canvas.setFillColor(_EDTO)
+        canvas.setFont("Helvetica-Bold", 4.6)
+        canvas.drawCentredString(
+            (sx + ex) / 2,
+            line_y + 3.3 * mm,
+            f"EDTO {index}",
+        )
+        canvas.setFillColor(_MUTED)
+        canvas.setFont("Helvetica", 4.2)
+        canvas.drawCentredString(
+            (sx + ex) / 2,
+            line_y - 4.4 * mm,
+            f"{format_actm(start)}-{format_actm(end)}",
+        )
+
+    for item in communications[:4]:
+        actm = (item.get("data") or {}).get("action_actm_minutes")
+        if actm is None:
+            continue
+        px = line_start + line_width * min(1.0, int(actm) / scale)
+        canvas.setFillColor(_WEATHER)
+        canvas.circle(px, line_y, 2.0, fill=1, stroke=0)
+        canvas.setFillColor(_WEATHER)
+        canvas.setFont("Helvetica-Bold", 4.1)
+        label = str(item.get("title") or "ATC").rsplit(" ", 1)[-1]
+        canvas.drawCentredString(
+            px,
+            line_y + (6.8 if int(actm) % 2 else 9.3) * mm,
+            label[:15],
+        )
+
+
+def _surface_overlay(
+    flight: dict[str, Any],
+    *,
+    role: str,
+    icao: str,
+) -> dict[str, Any] | None:
+    return next(
+        (
+            item
+            for item in (flight.get("surface_overlays") or [])
+            if item.get("role") == role and item.get("icao") == icao
+        ),
+        None,
+    )
+
+
+def _airport_lines(
+    panel: dict[str, Any],
+    overlay: dict[str, Any] | None,
+    personal_lines: list[str] | None = None,
+) -> list[str]:
     lines = [
         f"{panel['icao']} | Planned runway {panel['runway']}",
         f"WX: {panel['weather']['primary']}",
     ]
+    if overlay:
+        mapped = overlay.get("mapped") or []
+        review_required = overlay.get("reviewRequired") or []
+        window = overlay.get("window") or {}
+        if window.get("startsAt") and window.get("endsAt"):
+            lines.append(
+                "CFP NOTAM window: "
+                f"{str(window['startsAt'])[11:16]}Z-"
+                f"{str(window['endsAt'])[11:16]}Z"
+            )
+        if mapped:
+            lines.append(
+                f"Surface overlay: {len(mapped)} exact closure "
+                f"mark{'s' if len(mapped) != 1 else ''}."
+            )
+            lines.extend(
+                "Closed: "
+                + " ".join(
+                    value
+                    for value in (
+                        str(item.get("entityType") or "").upper(),
+                        str(item.get("entityRef") or ""),
+                    )
+                    if value
+                )
+                for item in mapped[:3]
+            )
+        elif review_required:
+            lines.append(
+                "Surface overlay: no exact mark; "
+                f"{len(review_required)} item"
+                f"{'s' if len(review_required) != 1 else ''} require chart review."
+            )
+        else:
+            lines.append(
+                "Surface overlay: no exact surface closure match in the checked window."
+            )
+        if review_required:
+            lines.extend(
+                f"Review required: {item.get('plainEnglish') or 'surface location unresolved'}"
+                for item in review_required[:1]
+            )
+    else:
+        lines.append("Surface overlay unavailable - review the current official chart.")
+    lines.extend(personal_lines or [])
     lines.extend(
         f"{item['kind']}: {item['text']}"
-        for item in panel.get("considerations", [])[:4]
+        for item in panel.get("considerations", [])[:2]
     )
     return lines
 
 
 def _airport_accent(panel: dict[str, Any]) -> colors.Color:
     return _DESTINATION if panel.get("role") == "destination" else _DEPARTURE
+
+
+def _surface_points(value: Any) -> list[tuple[float, float]]:
+    points: list[tuple[float, float]] = []
+
+    def visit(item: Any) -> None:
+        if (
+            isinstance(item, list)
+            and len(item) >= 2
+            and isinstance(item[0], (int, float))
+            and isinstance(item[1], (int, float))
+        ):
+            points.append((float(item[0]), float(item[1])))
+            return
+        if isinstance(item, list):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    return points
+
+
+def _draw_surface_schematic(
+    canvas,
+    overlay: dict[str, Any],
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+) -> None:
+    canvas.setFillColor(colors.HexColor("#071725"))
+    canvas.rect(x, y, width, height, fill=1, stroke=0)
+    bounds = overlay.get("bounds") or {}
+    west = bounds.get("west")
+    south = bounds.get("south")
+    east = bounds.get("east")
+    north = bounds.get("north")
+    if not all(isinstance(value, (int, float)) for value in (west, south, east, north)):
+        canvas.setFillColor(_MUTED)
+        canvas.setFont("Helvetica", 5.2)
+        canvas.drawCentredString(
+            x + width / 2,
+            y + height / 2,
+            "Surface geometry unavailable",
+        )
+        return
+    longitude_span = max(1e-9, float(east) - float(west))
+    latitude_span = max(1e-9, float(north) - float(south))
+
+    def projected(point: tuple[float, float]) -> tuple[float, float]:
+        longitude, latitude = point
+        return (
+            x + 2 * mm + (longitude - float(west)) / longitude_span * (width - 4 * mm),
+            y + 2 * mm + (latitude - float(south)) / latitude_span * (height - 4 * mm),
+        )
+
+    mapped_ids = {
+        str(feature_id)
+        for item in (overlay.get("mapped") or [])
+        for feature_id in (item.get("featureIds") or [])
+    }
+    for feature in (overlay.get("featureCollection") or {}).get("features") or []:
+        properties = feature.get("properties") or {}
+        feature_id = str(properties.get("featureId") or feature.get("id") or "")
+        aeroway = str(properties.get("aeroway") or "")
+        is_closed = feature_id in mapped_ids
+        points = _surface_points((feature.get("geometry") or {}).get("coordinates"))
+        if len(points) < 2:
+            continue
+        canvas.setStrokeColor(_CRITICAL if is_closed else _TEXT)
+        canvas.setLineWidth(
+            2.8 if is_closed else (1.7 if aeroway == "runway" else 0.7)
+        )
+        path = canvas.beginPath()
+        first_x, first_y = projected(points[0])
+        path.moveTo(first_x, first_y)
+        for point in points[1:]:
+            point_x, point_y = projected(point)
+            path.lineTo(point_x, point_y)
+        canvas.drawPath(path, stroke=1, fill=0)
+        if aeroway == "runway" or is_closed:
+            midpoint_x, midpoint_y = projected(points[len(points) // 2])
+            label = str(properties.get("ref") or "")
+            if label:
+                canvas.setFillColor(_CRITICAL if is_closed else _MUTED)
+                canvas.setFont("Helvetica-Bold", 4.1)
+                canvas.drawCentredString(midpoint_x, midpoint_y + 1.5 * mm, label[:12])
+    canvas.setFillColor(_MUTED)
+    canvas.setFont("Helvetica", 4.0)
+    canvas.drawString(x + 1.5 * mm, y + 1.2 * mm, "Validated OSM surface schematic")
+
+
+def _draw_surface_map(
+    canvas,
+    overlay: dict[str, Any] | None,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+) -> None:
+    canvas.saveState()
+    canvas.setFillColor(colors.HexColor("#071725"))
+    canvas.rect(x, y, width, height, fill=1, stroke=0)
+    image_path = ((overlay or {}).get("report_map") or {}).get("image_path")
+    if image_path and Path(str(image_path)).is_file():
+        try:
+            canvas.drawImage(
+                ImageReader(str(image_path)),
+                x,
+                y,
+                width=width,
+                height=height,
+                preserveAspectRatio=True,
+                anchor="c",
+                mask="auto",
+            )
+        except (OSError, ValueError):
+            if overlay:
+                _draw_surface_schematic(canvas, overlay, x, y, width, height)
+    elif overlay:
+        _draw_surface_schematic(canvas, overlay, x, y, width, height)
+    else:
+        canvas.setFillColor(_MUTED)
+        canvas.setFont("Helvetica", 5.1)
+        canvas.drawCentredString(
+            x + width / 2,
+            y + height / 2,
+            "Surface overlay unavailable",
+        )
+    if overlay:
+        report_map = overlay.get("report_map") or {}
+        label = str(
+            report_map.get("label")
+            or "Validated OSM surface schematic"
+        )
+        canvas.setFillColor(colors.Color(0, 0, 0, alpha=0.72))
+        canvas.rect(x, y, width, 5 * mm, fill=1, stroke=0)
+        canvas.setFillColor(colors.white)
+        canvas.setFont("Helvetica", 4.0)
+        canvas.drawString(x + 1.5 * mm, y + 1.7 * mm, label[:58])
+    canvas.restoreState()
 
 
 def _draw_airport_panel(
@@ -365,18 +929,61 @@ def _draw_airport_panel(
     width: float,
     height: float,
     title: str,
+    overlay: dict[str, Any] | None = None,
+    personal_lines: list[str] | None = None,
 ) -> None:
-    _draw_panel(
-        canvas,
+    canvas.setFillColor(_PANEL)
+    canvas.setStrokeColor(_LINE)
+    canvas.roundRect(x, y, width, height, 3.5, fill=1, stroke=1)
+    title_height = 7.5 * mm
+    canvas.setFillColor(_airport_accent(panel))
+    canvas.roundRect(
         x,
-        y,
+        y + height - title_height,
         width,
-        height,
-        title,
-        _airport_lines(panel),
-        _airport_accent(panel),
-        dark=True,
-        style=_STYLES["dark_small"],
+        title_height,
+        3.5,
+        fill=1,
+        stroke=0,
+    )
+    canvas.rect(
+        x,
+        y + height - title_height,
+        width,
+        title_height / 2,
+        fill=1,
+        stroke=0,
+    )
+    canvas.setFillColor(colors.white)
+    canvas.setFont("Helvetica-Bold", 6.4)
+    canvas.drawString(x + 3 * mm, y + height - 4.9 * mm, title)
+
+    map_height = min(49 * mm, max(34 * mm, height * 0.47))
+    map_y = y + height - title_height - map_height
+    _draw_surface_map(
+        canvas,
+        overlay,
+        x + 1.5 * mm,
+        map_y + 1 * mm,
+        width - 3 * mm,
+        map_height - 2 * mm,
+    )
+    body_x = x + 3 * mm
+    body_y = y + 2.3 * mm
+    body_width = width - 6 * mm
+    body_height = max(1.0, map_y - body_y - 1.2 * mm)
+    lines = _fit_lines(
+        _airport_lines(panel, overlay, personal_lines),
+        _STYLES["dark_small"],
+        body_width,
+        body_height,
+    )
+    paragraph = _paragraph(lines, _STYLES["dark_small"])
+    _, required = paragraph.wrap(body_width, body_height)
+    paragraph.drawOn(
+        canvas,
+        body_x,
+        body_y + max(0.0, body_height - required),
     )
 
 
@@ -576,9 +1183,9 @@ def _draw_page_title(
     page_number: int,
 ) -> float:
     header_height = 13 * mm
-    canvas.setFillColor(_WHITE_BG)
+    canvas.setFillColor(_DARK)
     canvas.rect(0, 0, width, height, fill=1, stroke=0)
-    canvas.setFillColor(_NAVY)
+    canvas.setFillColor(colors.HexColor("#102A46"))
     canvas.rect(0, height - header_height, width, header_height, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
     canvas.setFont("Helvetica-Bold", 11.5)
@@ -634,16 +1241,44 @@ def _draw_cover(
     mass_y = metric_y - mass_h
     _draw_metric_strip(canvas, mass_items, margin, mass_y, width - 2 * margin, mass_h, colors.HexColor("#0A2035"))
 
-    bottom_panel_h = 32 * mm
-    action_h = 18 * mm
-    main_y = margin + bottom_panel_h + action_h + 3 * gap
-    main_h = mass_y - main_y - gap
+    summary_h = 15 * mm
+    section_label_h = 5 * mm
+    main_y = margin + summary_h + 2 * gap
+    main_h = mass_y - section_label_h - main_y - gap
     left_w = 49 * mm
     right_w = 49 * mm
     centre_x = margin + left_w + gap
     centre_w = width - 2 * margin - left_w - right_w - 2 * gap
 
-    _draw_airport_panel(canvas, briefing["departure"], margin, main_y, left_w, main_h, "DEPARTURE AIRPORT")
+    canvas.setFillColor(_MUTED)
+    canvas.setFont("Helvetica-Bold", 5.4)
+    canvas.drawCentredString(
+        width / 2,
+        mass_y - 3.5 * mm,
+        "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS",
+    )
+
+    departure_overlay = _surface_overlay(
+        flight,
+        role="departure",
+        icao=str(briefing["departure"]["icao"]),
+    )
+    destination_overlay = _surface_overlay(
+        flight,
+        role="destination",
+        icao=str(briefing["destination"]["icao"]),
+    )
+    _draw_airport_panel(
+        canvas,
+        briefing["departure"],
+        margin,
+        main_y,
+        left_w,
+        main_h,
+        "DEPARTURE AIRPORT",
+        departure_overlay,
+        _note_lines(flight, {"departure"}),
+    )
     draw_route_map_pdf(canvas, briefing["route_map"], centre_x, main_y, centre_w, main_h)
     _draw_airport_panel(
         canvas,
@@ -653,70 +1288,35 @@ def _draw_cover(
         right_w,
         main_h,
         "DESTINATION AIRPORT",
+        destination_overlay,
+        _note_lines(flight, {"destination"}),
     )
 
-    action_y = margin + bottom_panel_h + gap
-    _draw_action_strip(canvas, findings, margin, action_y, width - 2 * margin, action_h)
-
-    bottom_y = margin
-    available = width - 2 * margin - 2 * gap
-    comm_w = available * 0.35
-    edto_w = available * 0.25
-    weather_w = available - comm_w - edto_w
-
-    comm_lines = [
-        f"{item['time']} | {item['actm']} | {item['event']}"
-        for item in briefing.get("communications", [])[:5]
+    grouped = _group_findings(findings)
+    summary_items = [
+        (
+            "AIRPORT",
+            f"{sum(item.get('severity') == 'critical' for item in grouped.get('notam', []))} CRITICAL",
+        ),
+        (
+            "WEATHER",
+            f"{sum(item.get('severity') in {'critical', 'warning', 'unknown'} for item in grouped.get('weather', []) + grouped.get('vaa', []) + grouped.get('tropical_cyclone', []))} REVIEW",
+        ),
+        ("EDTO", f"{len(edto_sectors(flight.get('edto') or {}))} SECTORS"),
+        ("CONTACTS", f"{len(grouped.get('communications', []))} EARLY"),
+        (
+            "TERRAIN",
+            f"{len(detect_terrain_events(flight.get('route_waypoints') or []))} WINDOWS",
+        ),
     ]
-    _draw_panel(
+    _draw_metric_strip(
         canvas,
+        summary_items,
         margin,
-        bottom_y,
-        comm_w,
-        bottom_panel_h,
-        "FIR / COMMUNICATIONS",
-        comm_lines,
-        _COMMUNICATIONS,
-        dark=True,
-        style=_STYLES["dark_small"],
-    )
-
-    edto = briefing["edto"]
-    edto_lines = [f"ACTM {edto['entry']} - {edto['exit']}"]
-    if edto.get("etps"):
-        edto_lines.append("ETP: " + ", ".join(edto["etps"]))
-    edto_lines.extend(
-        f"{item['airport']} RWY {item['runway']} {item['approach']}"
-        for item in edto.get("airports", [])[:3]
-    )
-    _draw_panel(
-        canvas,
-        margin + comm_w + gap,
-        bottom_y,
-        edto_w,
-        bottom_panel_h,
-        "EDTO",
-        edto_lines,
-        _EDTO,
-        dark=True,
-        style=_STYLES["dark_small"],
-    )
-
-    weather_lines = [
-        f"{item['title']}: {item['text']}"
-        for item in briefing.get("weather_cards", [])[:3]
-    ]
-    _draw_panel(
-        canvas,
-        margin + comm_w + edto_w + 2 * gap,
-        bottom_y,
-        weather_w,
-        bottom_panel_h,
-        "WEATHER / VAAC",
-        weather_lines,
-        _WEATHER,
-        dark=True,
-        style=_STYLES["dark_small"],
+        margin,
+        width - 2 * margin,
+        summary_h,
+        _PANEL_2,
     )
 
 
@@ -746,7 +1346,7 @@ def _draw_operational_detail(
         briefing,
         width,
         height,
-        f"{briefing['flight_number']} - OPERATIONAL DETAIL",
+        f"{briefing['flight_number']} - TIME-BASED OPERATING GATES",
         2,
     )
     grouped = _group_findings(findings)
@@ -755,56 +1355,186 @@ def _draw_operational_detail(
     bottom = 5 * mm
     column_width = (width - 2 * margin - gap) / 2
     right_x = margin + column_width + gap
+    route_points = list((briefing.get("route_map") or {}).get("points") or [])
+    sectors = edto_sectors(flight.get("edto") or {})
+    final_actm = max(
+        (
+            int(point["actm_minutes"])
+            for point in route_points
+            if point.get("actm_minutes") is not None
+        ),
+        default=1,
+    )
+
+    timeline_h = 27 * mm
+    timeline_y = top - timeline_h - gap
+    _draw_phase_timeline(
+        canvas,
+        sectors=sectors,
+        communications=grouped.get("communications", []),
+        final_actm=final_actm,
+        x=margin,
+        y=timeline_y,
+        width=width - 2 * margin,
+        height=timeline_h,
+    )
+    content_top = timeline_y - gap
 
     deferred = grouped.get("mel", []) + grouped.get("cdl", []) + grouped.get("cddl", [])
-    performance = grouped.get("performance", []) + grouped.get("qa", [])
-    departure_lines = _airport_lines(briefing["departure"]) + _note_lines(flight, {"departure"})
-    destination_lines = _airport_lines(briefing["destination"]) + _note_lines(flight, {"destination"})
     alternate_notams = [
         item for item in grouped.get("notam", [])
         if (item.get("data") or {}).get("role") in {"destination alternate", "EDTO"}
     ]
-    airport_notams = [
-        item for item in grouped.get("notam", [])
-        if (item.get("data") or {}).get("role") in {"departure", "destination"}
-    ]
     weather_items = [
         item
-        for item in grouped.get("weather", [])
+        for item in grouped.get("vaa", [])
+        + grouped.get("tropical_cyclone", [])
+        + grouped.get("weather", [])
         if (item.get("data") or {}).get("phase")
-        in {"Departure", "Destination", "Destination alternate"}
+        not in {"Departure", "Destination"}
         if (item.get("data") or {}).get("window_status")
         != "no_significant_overlap"
     ]
+    communication_lines = _finding_lines(
+        grouped.get("communications", []),
+        finding_limit=7,
+        detail_limit=2,
+    ) + _note_lines(flight, {"communications"})
+    timing_lines = _finding_lines(
+        grouped.get("actual_timing", []),
+        finding_limit=5,
+        detail_limit=2,
+    )
+    edto_exceptions = [
+        item
+        for item in grouped.get("edto", [])
+        if item.get("severity") in {"critical", "warning", "unknown"}
+    ]
+    edto_lines = _finding_lines(
+        alternate_notams + edto_exceptions,
+        finding_limit=6,
+        detail_limit=2,
+    )
+    edto_view = briefing.get("edto") or {}
+    edto_lines.extend(
+        f"Sector {sector.get('number', index)}: entry ACTM "
+        f"{sector.get('entry') or '--.--'}; exit ACTM "
+        f"{sector.get('exit') or '--.--'}"
+        + (
+            "; ETP ACTM " + ", ".join(sector.get("etps") or [])
+            if sector.get("etps")
+            else ""
+        )
+        for index, sector in enumerate(edto_view.get("sectors") or [], start=1)
+    )
+    edto_lines.extend(
+        f"{item['airport']} | {item['period']} | RWY {item['runway']} {item['approach']}"
+        for item in (edto_view.get("airports") or [])[:4]
+    )
 
-    _draw_balanced_columns(
+    edto_panel_h = min(
+        53 * mm,
+        _panel_height(
+            edto_lines,
+            column_width,
+            _STYLES["dark"],
+            min_height=30 * mm,
+        ),
+    )
+    _draw_panel(
         canvas,
         margin,
+        bottom,
+        column_width,
+        edto_panel_h,
+        "EDTO SECTORS / ALTERNATES",
+        edto_lines,
+        _EDTO,
+        dark=True,
+        style=_STYLES["dark"],
+    )
+
+    chart_bottom = bottom + edto_panel_h + gap
+    chart_available = max(20 * mm, content_top - chart_bottom)
+    if sectors:
+        chart_gap = 2 * mm
+        chart_height = (
+            chart_available - chart_gap * (len(sectors) - 1)
+        ) / len(sectors)
+        cursor = content_top
+        for index, sector in enumerate(sectors, start=1):
+            start = int(sector.get("entry_actm_minutes") or 0)
+            end = int(sector.get("exit_actm_minutes") or start)
+            markers = _sector_etp_markers(route_points, sector, index)
+            points = _route_window_points(
+                route_points,
+                start,
+                end,
+                markers=markers,
+            )
+            chart_y = cursor - chart_height
+            _draw_route_evidence_chart(
+                canvas,
+                points,
+                margin,
+                chart_y,
+                column_width,
+                chart_height,
+                title=(
+                    f"EDTO {index} | ENTRY {format_actm(start)} | "
+                    f"EXIT {format_actm(end)}"
+                ),
+                mode="edto",
+            )
+            cursor = chart_y - chart_gap
+    else:
+        _draw_panel(
+            canvas,
+            margin,
+            chart_bottom,
+            column_width,
+            chart_available,
+            "EDTO ROUTE EVIDENCE",
+            ["No EDTO sector was parsed from the uploaded CFP."],
+            _EDTO,
+            dark=True,
+            style=_STYLES["dark"],
+        )
+
+    _draw_column_stack(
+        canvas,
         right_x,
-        top,
+        content_top,
         bottom,
         column_width,
         [
-            {"title": "MEL / CDL / CDDL", "lines": _finding_lines(deferred, finding_limit=6, detail_limit=2), "accent": _WEATHER},
-            {"title": "PERFORMANCE / FUEL", "lines": _finding_lines(performance, finding_limit=5, detail_limit=3), "accent": _NAVY},
-            {"title": "DEPARTURE AIRPORT", "lines": departure_lines, "accent": _DEPARTURE},
-            {"title": "DESTINATION AIRPORT", "lines": destination_lines, "accent": _DESTINATION},
             {
-                "title": "ALTERNATES / EDTO AIRPORTS",
-                "lines": _finding_lines(alternate_notams + grouped.get("edto", []), finding_limit=6, detail_limit=2),
-                "accent": _EDTO,
+                "title": "MEL / CDL / CDDL",
+                "lines": _finding_lines(deferred, finding_limit=6, detail_limit=2),
+                "accent": _WEATHER,
+                "dark": True,
+                "style": _STYLES["dark"],
             },
             {
-                "title": "WEATHER / PERTINENT NOTAM",
-                "lines": (
-                    _pilot_weather_lines(weather_items, finding_limit=4)
-                    + _finding_lines(
-                        airport_notams,
-                        finding_limit=6,
-                        detail_limit=1,
-                    )
-                ),
-                "accent": _severity_accent(weather_items + airport_notams, _WEATHER),
+                "title": "ACTUAL CLOCK / CALCULATED UTC",
+                "lines": timing_lines,
+                "accent": _NEUTRAL,
+                "dark": True,
+                "style": _STYLES["dark"],
+            },
+            {
+                "title": "FIR / COMMUNICATIONS",
+                "lines": communication_lines,
+                "accent": _COMMUNICATIONS,
+                "dark": True,
+                "style": _STYLES["dark"],
+            },
+            {
+                "title": "ENROUTE WEATHER / VAAC / TC",
+                "lines": _pilot_weather_lines(weather_items, finding_limit=5),
+                "accent": _severity_accent(weather_items, _WEATHER),
+                "dark": True,
+                "style": _STYLES["dark"],
             },
         ],
         gap=gap,
@@ -826,7 +1556,7 @@ def _draw_route_detail(
         briefing,
         width,
         height,
-        f"{briefing['flight_number']} - ROUTE / CONTINGENCY",
+        f"{briefing['flight_number']} - HIGH TERRAIN EXPOSURE",
         3,
     )
     grouped = _group_findings(findings)
@@ -834,72 +1564,179 @@ def _draw_route_detail(
     gap = 3 * mm
     bottom = 5 * mm
     column_width = (width - 2 * margin - gap) / 2
-    left_x = margin
-    right_x = left_x + column_width + gap
-
-    comm_lines = _finding_lines(grouped.get("communications", []), finding_limit=7, detail_limit=2) + _note_lines(flight, {"communications"})
-    timing_lines = _finding_lines(grouped.get("actual_timing", []) + grouped.get("timeline", []), finding_limit=7, detail_limit=2)
-    terrain_lines = _finding_lines(grouped.get("terrain", []) + grouped.get("vws", []), finding_limit=7, detail_limit=2)
-    depress_lines = _finding_lines(grouped.get("depressurisation", []), finding_limit=6, detail_limit=3)
-    edto_bobcat = grouped.get("edto", []) + grouped.get("bobcat", [])
-    edto_view = briefing.get("edto") or {}
-    edto_summary_lines: list[str] = []
-    if edto_view.get("entry") != "--.--" or edto_view.get("exit") != "--.--":
-        edto_summary_lines.append(
-            f"EDTO ACTM {edto_view.get('entry') or '--.--'} - {edto_view.get('exit') or '--.--'}"
-        )
-    if edto_view.get("etps"):
-        edto_summary_lines.append("ETP: " + ", ".join(edto_view["etps"]))
-    edto_summary_lines.extend(
-        f"{item['airport']} | {item['period']} | RWY {item['runway']} {item['approach']}"
-        for item in edto_view.get("airports", [])[:4]
+    right_x = margin + column_width + gap
+    terrain_findings = grouped.get("terrain", []) + grouped.get("vws", [])
+    terrain_lines = _finding_lines(
+        terrain_findings,
+        finding_limit=7,
+        detail_limit=2,
     )
-    edto_bobcat_lines = (
-        _finding_lines(edto_bobcat, finding_limit=6, detail_limit=2)
-        + edto_summary_lines
+    depress_findings = grouped.get("depressurisation", [])
+    depress_lines = _finding_lines(
+        depress_findings,
+        finding_limit=6,
+        detail_limit=3,
     )
-    has_edto = bool(grouped.get("edto") or edto_summary_lines)
-    has_bobcat = bool(grouped.get("bobcat"))
-    edto_bobcat_title = (
-        "EDTO / BOBCAT"
-        if has_edto and has_bobcat
-        else "EDTO"
-        if has_edto
-        else "BOBCAT"
+    events = detect_terrain_events(flight.get("route_waypoints") or [])
+    route_points = list((briefing.get("route_map") or {}).get("points") or [])
+    maximum = max(
+        (
+            event.get("maximum") or {}
+            for event in events
+        ),
+        key=lambda point: int(point.get("msa_hundreds_ft") or -1),
+        default={},
     )
-    vaa_weather = grouped.get("vaa", []) + [
-        item for item in grouped.get("weather", [])
-        if "departure" not in str(item.get("title") or "").lower()
-        and "destination" not in str(item.get("title") or "").lower()
-        and (item.get("data") or {}).get("window_status")
-        != "no_significant_overlap"
-    ]
-
-    _draw_balanced_columns(
+    metrics_h = 16 * mm
+    metrics_y = top - metrics_h - gap
+    _draw_metric_strip(
         canvas,
-        left_x,
-        right_x,
-        top,
+        [
+            ("EXPOSURE WINDOWS", str(len(events))),
+            (
+                "MAX MSA",
+                (
+                    f"{int(maximum.get('msa_hundreds_ft')):03d}"
+                    f"{'*' if maximum.get('msa_asterisk') else ''} "
+                    f"{maximum.get('name') or ''}"
+                    if maximum.get("msa_hundreds_ft") is not None
+                    else "NOT RESOLVED"
+                ),
+            ),
+            (
+                "PROFILE FINDINGS",
+                str(len(depress_findings)),
+            ),
+            ("SOURCE", "CFP MSA POINTS"),
+        ],
+        margin,
+        metrics_y,
+        width - 2 * margin,
+        metrics_h,
+        _PANEL_2,
+    )
+
+    panels_h = max(
+        38 * mm,
+        min(
+            64 * mm,
+            max(
+                _panel_height(
+                    terrain_lines,
+                    column_width,
+                    _STYLES["dark"],
+                    min_height=38 * mm,
+                ),
+                _panel_height(
+                    depress_lines,
+                    column_width,
+                    _STYLES["dark"],
+                    min_height=38 * mm,
+                ),
+            ),
+        ),
+    )
+    _draw_panel(
+        canvas,
+        margin,
         bottom,
         column_width,
-        [
-            {"title": "FIR / COMMUNICATIONS", "lines": comm_lines, "accent": _COMMUNICATIONS},
-            {"title": "ACTM / CALCULATED UTC", "lines": timing_lines, "accent": _NEUTRAL},
-            {"title": "TERRAIN MSA / VWS", "lines": terrain_lines, "accent": _TERRAIN},
-            {"title": "DEPRESSURISATION PROFILES", "lines": depress_lines, "accent": _TERRAIN},
-            {"title": edto_bobcat_title, "lines": edto_bobcat_lines, "accent": _EDTO},
-            {
-                "title": "ENROUTE WEATHER / VAAC",
-                "lines": _pilot_weather_lines(
-                    vaa_weather,
-                    finding_limit=5,
-                    non_weather_detail_limit=2,
-                ),
-                "accent": _severity_accent(vaa_weather, _WEATHER),
-            },
-        ],
-        gap=gap,
+        panels_h,
+        "HIGH TERRAIN MSA / VWS",
+        terrain_lines or ["No high-terrain exposure was extracted from the CFP."],
+        _TERRAIN,
+        dark=True,
+        style=_STYLES["dark"],
     )
+    _draw_panel(
+        canvas,
+        right_x,
+        bottom,
+        column_width,
+        panels_h,
+        "DEPRESSURISATION PROFILE COVERAGE",
+        depress_lines or [
+            "No approved matching profile was available; pilot review is required."
+        ],
+        _TERRAIN,
+        dark=True,
+        style=_STYLES["dark"],
+    )
+
+    chart_y = bottom + panels_h + gap
+    chart_height = max(30 * mm, metrics_y - chart_y - gap)
+    if events:
+        if len(events) == 1:
+            grouped_events = [events]
+        else:
+            gaps = []
+            for index in range(len(events) - 1):
+                current_end = (
+                    (events[index].get("drop") or events[index].get("last_high") or {})
+                    .get("actm_minutes")
+                )
+                next_start = (
+                    (events[index + 1].get("preceding") or events[index + 1].get("first_high") or {})
+                    .get("actm_minutes")
+                )
+                gaps.append(
+                    max(
+                        0,
+                        int(next_start or 0) - int(current_end or 0),
+                    )
+                )
+            split_at = gaps.index(max(gaps)) + 1
+            grouped_events = [events[:split_at], events[split_at:]]
+
+        chart_gap = 3 * mm
+        chart_width = (
+            width - 2 * margin - chart_gap * (len(grouped_events) - 1)
+        ) / len(grouped_events)
+        for index, event_group in enumerate(grouped_events):
+            start_point = (
+                event_group[0].get("preceding")
+                or event_group[0].get("first_high")
+                or {}
+            )
+            end_point = (
+                event_group[-1].get("drop")
+                or event_group[-1].get("last_high")
+                or {}
+            )
+            start_actm = int(start_point.get("actm_minutes") or 0)
+            end_actm = int(end_point.get("actm_minutes") or start_actm)
+            points = _route_window_points(
+                route_points,
+                start_actm,
+                end_actm,
+            )
+            _draw_route_evidence_chart(
+                canvas,
+                points,
+                margin + index * (chart_width + chart_gap),
+                chart_y,
+                chart_width,
+                chart_height,
+                title=(
+                    f"{chr(65 + index)}  "
+                    f"{str(start_point.get('name') or 'START').lstrip('-')} - "
+                    f"{str(end_point.get('name') or 'END').lstrip('-')}"
+                ),
+                mode="terrain",
+            )
+    else:
+        _draw_panel(
+            canvas,
+            margin,
+            chart_y,
+            width - 2 * margin,
+            chart_height,
+            "VALIDATED CFP MSA POINTS",
+            ["No high-terrain exposure window was extracted."],
+            _TERRAIN,
+            dark=True,
+            style=_STYLES["dark"],
+        )
 
 
 class _FullPageFlowable(Flowable):

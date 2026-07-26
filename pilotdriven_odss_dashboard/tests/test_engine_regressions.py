@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.odss.engines import _schedule_overlaps, analyse, detect_terrain_events, match_profiles
 from app.odss.enrichment import _notice_score, _parse_airport_notams, _parse_notam_datetime
 from app.odss.briefing import _weather_summary
-from app.odss.parser import parse_lido
+from app.odss.parser import _parse_edto_sectors, parse_lido
 
 
 UTC = timezone.utc
@@ -688,6 +688,36 @@ N03 10.0 E105 40.0 090
     assert periods["RPLL"]["period_end_utc"] == "2026-07-17T01:00:00+00:00"
     assert flight["ground_distance_nm"] == 5984
     assert flight["air_distance_nm"] == 6197
+
+
+def test_edto_parser_preserves_every_numbered_sector_and_explicit_point() -> None:
+    sectors = _parse_edto_sectors(
+        """EDTO INFORMATION:
+       2.39 N5405.3 CYQX
+ENTRY1      W04650.1
+       3.17 N5623.3 CYQX 36 180 777
+ 1E    ..... W03701.3 EINN 39 180 996
+       4.17 N5600.4 EINN
+EXIT1       W01937.0
+      15.13 N1551.2 VECC
+ENTRY2      E09020.3
+      15.13 N1551.2 VTSP 44 260 661
+ 1E    ..... E09020.3 VTSP 44 260 661
+      15.42 N1302.8 VTSP
+EXIT2       E09313.0
+"""
+    )
+
+    assert [sector["number"] for sector in sectors] == [1, 2]
+    assert [
+        (sector["entry_actm_minutes"], sector["exit_actm_minutes"])
+        for sector in sectors
+    ] == [(159, 257), (913, 942)]
+    assert sectors[0]["entry"]["name"] == "ENTRY1"
+    assert sectors[1]["exit"]["name"] == "EXIT2"
+    assert sectors[0]["etps"][0]["label"] == "1E"
+    assert sectors[0]["etps"][0]["airports"] == ["CYQX", "EINN"]
+    assert sectors[1]["etp_actm_minutes"] == [913]
 
 
 def test_bobcat_allocation_accepts_lido_commas_and_suffix() -> None:

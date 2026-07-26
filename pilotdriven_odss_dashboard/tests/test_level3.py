@@ -317,6 +317,8 @@ def test_level3_compact_partial_pdf_does_not_repeat_uncovered_findings(
     assert "Internal trace identifiers" not in text
     assert "Pertinent review item" in text
     assert "Pilot review required" in text
+    assert "Review gates" in text
+    assert f"{sum(item['status'] != 'complete' for item in artifact['completeness_ledger'])}" in text
     assert "normalized-flight-input" not in text
     assert "approved-policy-library" not in text
     assert "finding-policy-coverage" not in text

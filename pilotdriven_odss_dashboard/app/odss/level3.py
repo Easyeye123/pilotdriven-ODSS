@@ -28,6 +28,7 @@ from ..database import (
 )
 from .finding_ids import assign_finding_ids
 from .policy_index import policy_snapshot_from_env
+from .report_quality import assert_report_quality
 
 
 PILOT_DECISION_STATEMENT = (
@@ -773,14 +774,18 @@ def _render_level3_pdf(artifact: dict[str, Any], destination: Path) -> None:
     ]
     summary = artifact["decision_summary"]
     flight = summary["flight"]
+    review_gate_count = sum(
+        item.get("status") != "complete"
+        for item in artifact["completeness_ledger"]
+    )
     story.append(Table(
         [
-            ["Flight", "Route", "State", "Review items", "Policy revisions"],
+            ["Flight", "Route", "State", "Review gates", "Policy revisions"],
             [
                 f"{flight.get('flight_number') or '-'} / {flight.get('flight_date') or '-'}",
                 f"{flight.get('departure') or '-'} to {flight.get('destination') or '-'}",
                 artifact["status"],
-                str(len(artifact["threat_cards"])),
+                str(review_gate_count),
                 str(len(summary["policy_revision_set"])),
             ],
         ],
@@ -822,6 +827,11 @@ def _render_level3_pdf(artifact: dict[str, Any], destination: Path) -> None:
             small,
         ))
         document.build(story)
+        assert_report_quality(
+            destination,
+            level=3,
+            level3_status=artifact["status"],
+        )
         return
 
     revision_text = "; ".join(
@@ -966,6 +976,11 @@ def _render_level3_pdf(artifact: dict[str, Any], destination: Path) -> None:
             body,
         ))
     document.build(story)
+    assert_report_quality(
+        destination,
+        level=3,
+        level3_status=artifact["status"],
+    )
 
 
 def _snapshot_for_analysis(

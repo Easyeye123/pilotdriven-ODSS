@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+from ..odss.constants import edto_sectors
 from .config import MapSettings
 from .contract import MapBounds, MapContract
 from .labels import choose_priority_labels, role_priority
@@ -89,6 +90,68 @@ def build_map_contract(
             }
         )
 
+    edto_etp_marker_count = 0
+    for sector in edto_sectors(flight.get("edto")):
+        sector_number = int(sector.get("number") or 1)
+        grouped_etps: dict[tuple[float, float, int | None], dict[str, Any]] = {}
+        for etp in sector.get("etps") or []:
+            latitude = etp.get("latitude")
+            longitude = etp.get("longitude")
+            if latitude is None or longitude is None:
+                continue
+            normalized_longitude = _normalize_longitude(float(longitude))
+            marker_key = (
+                round(normalized_longitude, 7),
+                round(float(latitude), 7),
+                etp.get("actm_minutes"),
+            )
+            grouped = grouped_etps.setdefault(
+                marker_key,
+                {
+                    "latitude": float(latitude),
+                    "longitude": normalized_longitude,
+                    "actm_minutes": etp.get("actm_minutes"),
+                    "labels": [],
+                    "airports": [],
+                },
+            )
+            label = str(etp.get("label") or "ETP")
+            if label not in grouped["labels"]:
+                grouped["labels"].append(label)
+            for airport in etp.get("airports") or []:
+                if airport and airport not in grouped["airports"]:
+                    grouped["airports"].append(airport)
+
+        for etp_index, grouped in enumerate(grouped_etps.values(), start=1):
+            labels = list(grouped["labels"])
+            label = " / ".join(labels)
+            marker_features.append(
+                {
+                    "type": "Feature",
+                    "id": f"edto-s{sector_number}-etp-{etp_index}",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [
+                            grouped["longitude"],
+                            grouped["latitude"],
+                        ],
+                    },
+                    "properties": {
+                        "name": f"S{sector_number} ETP {label}",
+                        "source_name": label,
+                        "role": "edto_etp",
+                        "roles": ["edto_etp"],
+                        "priority": role_priority("edto_etp"),
+                        "actm_minutes": grouped["actm_minutes"],
+                        "etp_labels": labels,
+                        "airports": grouped["airports"],
+                        "sector_number": sector_number,
+                        "not_for_navigation": True,
+                    },
+                }
+            )
+            edto_etp_marker_count += 1
+
     labels = choose_priority_labels(marker_features)
     markers_geojson = {
         "type": "FeatureCollection",
@@ -152,6 +215,8 @@ def build_map_contract(
             "vaa_status": vaa_review.get("status"),
             "tropical_cyclone_status": tropical_cyclone_review.get("status"),
             "actual_takeoff_utc": flight.get("actual_takeoff_utc"),
+            "edto_sector_count": len(edto_sectors(flight.get("edto"))),
+            "edto_etp_marker_count": edto_etp_marker_count,
         },
     )
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from .constants import format_actm
+from .constants import edto_sectors, format_actm
 from .engines import detect_terrain_events, detect_vws_events
 
 
@@ -202,12 +202,30 @@ def build_timing_view(
             )
 
     edto = flight.get("edto") or {}
-    if edto.get("entry_actm_minutes") is not None:
-        events.append(_event(anchor, int(edto["entry_actm_minutes"]), "EDTO entry", "edto"))
-    for index, actm in enumerate(edto.get("etp_actm_minutes") or [], start=1):
-        events.append(_event(anchor, int(actm), f"EDTO ETP {index}", "edto"))
-    if edto.get("exit_actm_minutes") is not None:
-        events.append(_event(anchor, int(edto["exit_actm_minutes"]), "EDTO exit", "edto"))
+    for index, sector in enumerate(edto_sectors(edto), start=1):
+        number = sector.get("number", index)
+        events.append(_event(
+            anchor,
+            int(sector["entry_actm_minutes"]),
+            f"EDTO sector {number} entry",
+            "edto",
+        ))
+        for etp_index, actm in enumerate(
+            sector.get("etp_actm_minutes") or [],
+            start=1,
+        ):
+            events.append(_event(
+                anchor,
+                int(actm),
+                f"EDTO sector {number} ETP {etp_index}",
+                "edto",
+            ))
+        events.append(_event(
+            anchor,
+            int(sector["exit_actm_minutes"]),
+            f"EDTO sector {number} exit",
+            "edto",
+        ))
 
     for index, terrain in enumerate(detect_terrain_events(flight.get("route_waypoints", [])), start=1):
         end_waypoint = terrain.get("drop") or terrain["last_high"]

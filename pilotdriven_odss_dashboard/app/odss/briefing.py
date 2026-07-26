@@ -16,7 +16,7 @@ from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 
-from .constants import format_actm, format_kg
+from .constants import edto_sectors, format_actm, format_kg
 from .engines import detect_terrain_events
 from .pilot_briefing import prepare_pilot_findings
 
@@ -251,6 +251,7 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
             "actm_minutes": waypoint.get("actm_minutes"),
             "fir_boundary": waypoint.get("fir_boundary"),
             "msa_hundreds_ft": waypoint.get("msa_hundreds_ft"),
+            "msa_asterisk": bool(waypoint.get("msa_asterisk")),
             "vws": waypoint.get("vws"),
             "airway_in": waypoint.get("airway_in"),
         })
@@ -892,6 +893,18 @@ def build_briefing_view(
         }
         for item in (edto.get("airports") or [])[:4]
     ]
+    edto_sector_view = [
+        {
+            "number": sector.get("number", index),
+            "entry": format_actm(sector.get("entry_actm_minutes")),
+            "exit": format_actm(sector.get("exit_actm_minutes")),
+            "etps": [
+                format_actm(value)
+                for value in (sector.get("etp_actm_minutes") or [])
+            ],
+        }
+        for index, sector in enumerate(edto_sectors(edto), start=1)
+    ]
 
     scheduled_departure = _parse_utc(flight.get("scheduled_departure_utc"))
     scheduled_arrival = _parse_utc(flight.get("scheduled_arrival_utc"))
@@ -933,9 +946,25 @@ def build_briefing_view(
         "exception_cards": exception_cards,
         "communications": _communication_timeline(findings, timing_view),
         "edto": {
-            "entry": format_actm(edto.get("entry_actm_minutes")),
-            "exit": format_actm(edto.get("exit_actm_minutes")),
-            "etps": [format_actm(value) for value in (edto.get("etp_actm_minutes") or [])],
+            "entry": (
+                edto_sector_view[0]["entry"]
+                if edto_sector_view
+                else format_actm(edto.get("entry_actm_minutes"))
+            ),
+            "exit": (
+                edto_sector_view[0]["exit"]
+                if edto_sector_view
+                else format_actm(edto.get("exit_actm_minutes"))
+            ),
+            "etps": (
+                edto_sector_view[0]["etps"]
+                if edto_sector_view
+                else [
+                    format_actm(value)
+                    for value in (edto.get("etp_actm_minutes") or [])
+                ]
+            ),
+            "sectors": edto_sector_view,
             "airports": edto_airports,
         },
         "weather_cards": _enroute_weather_cards(findings),

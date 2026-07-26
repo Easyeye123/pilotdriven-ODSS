@@ -10,6 +10,7 @@ from .constants import (
     MEL_REFERENCES,
     MONTHS,
     REFERENCE_LIBRARY_METADATA,
+    edto_sectors,
     format_actm,
     format_kg,
 )
@@ -1594,17 +1595,32 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         ))
 
     edto = flight["edto"]
-    if edto.get("entry_actm_minutes") is not None:
-        details = [
-            f"Entry ACTM {format_actm(edto['entry_actm_minutes'])}; "
-            f"exit ACTM {format_actm(edto.get('exit_actm_minutes'))}."
-        ]
-        if edto.get("etp_actm_minutes"):
-            details.append(
-                "ETP ACTM: "
-                + ", ".join(format_actm(x) for x in edto["etp_actm_minutes"])
-                + "."
+    sectors = edto_sectors(edto)
+    if sectors:
+        sector_summary = "; ".join(
+            f"S{sector.get('number', index)} "
+            f"{format_actm(sector.get('entry_actm_minutes'))}-"
+            f"{format_actm(sector.get('exit_actm_minutes'))}"
+            for index, sector in enumerate(sectors, start=1)
+        )
+        details = []
+        for index, sector in enumerate(sectors, start=1):
+            number = sector.get("number", index)
+            line = (
+                f"Sector {number}: entry ACTM "
+                f"{format_actm(sector.get('entry_actm_minutes'))}; exit ACTM "
+                f"{format_actm(sector.get('exit_actm_minutes'))}."
             )
+            if sector.get("etp_actm_minutes"):
+                line += (
+                    " ETP ACTM "
+                    + ", ".join(
+                        format_actm(value)
+                        for value in sector["etp_actm_minutes"]
+                    )
+                    + "."
+                )
+            details.append(line)
         details.extend(
             f"{a['airport']} checked {datetime.fromisoformat(a['period_start_utc']):%H%MZ}-"
             f"{datetime.fromisoformat(a['period_end_utc']):%H%MZ}, RWY {a['runway']} "
@@ -1615,10 +1631,22 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "edto",
             "information",
             "EDTO checked-period summary",
-            f"ACTM {format_actm(edto['entry_actm_minutes'])}-"
-            f"{format_actm(edto.get('exit_actm_minutes'))}.",
+            f"ACTM {sector_summary}.",
             details,
-            {"start_actm_minutes": edto["entry_actm_minutes"]},
+            {
+                "start_actm_minutes": sectors[0]["entry_actm_minutes"],
+                "sectors": [
+                    {
+                        "number": sector.get("number", index),
+                        "entry_actm_minutes": sector.get("entry_actm_minutes"),
+                        "exit_actm_minutes": sector.get("exit_actm_minutes"),
+                        "etp_actm_minutes": list(
+                            sector.get("etp_actm_minutes") or []
+                        ),
+                    }
+                    for index, sector in enumerate(sectors, start=1)
+                ],
+            },
         ))
 
     timeline_items: list[tuple[int, str, str]] = []
