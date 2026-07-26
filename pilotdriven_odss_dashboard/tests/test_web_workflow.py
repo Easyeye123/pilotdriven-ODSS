@@ -259,10 +259,16 @@ def test_configured_analysis_invokes_best_effort_primary_map_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client, _ = web_app
-    calls: list[tuple[str, MapSettings]] = []
+    calls: list[tuple[str, str, str, MapSettings]] = []
 
-    async def fake_refresh(analysis_id: str, *, settings: MapSettings):
-        calls.append((analysis_id, settings))
+    async def fake_refresh(
+        analysis_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+        settings: MapSettings,
+    ):
+        calls.append((analysis_id, tenant_id, user_id, settings))
         return {"mode": "primary", "reports_refreshed": True}
 
     settings = MapSettings(
@@ -278,7 +284,12 @@ def test_configured_analysis_invokes_best_effort_primary_map_refresh(
 
     assert response.status_code == 303
     assert completed["status"] == "Completed"
-    assert calls == [(completed["analysis_id"], settings)]
+    assert calls == [(
+        completed["analysis_id"],
+        "personal-dashboard",
+        "legacy-dashboard-user",
+        settings,
+    )]
 
 
 def test_primary_map_refresh_failure_preserves_completed_offline_reports(
@@ -288,7 +299,13 @@ def test_primary_map_refresh_failure_preserves_completed_offline_reports(
 ) -> None:
     client, _ = web_app
 
-    async def failed_refresh(analysis_id: str, *, settings: MapSettings):
+    async def failed_refresh(
+        analysis_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+        settings: MapSettings,
+    ):
         raise RuntimeError("simulated renderer failure")
 
     monkeypatch.setattr(
@@ -360,7 +377,7 @@ def test_authenticated_cross_origin_write_is_refused(
     )
 
     assert response.status_code == 403
-    assert database.list_flights() == []
+    assert database.list_flights("personal-dashboard") == []
 
 
 def test_same_origin_fetch_metadata_accepts_null_origin_upload(
@@ -387,7 +404,7 @@ def test_same_origin_fetch_metadata_accepts_null_origin_upload(
 
     assert response.status_code == 303
     assert response.headers["location"] == "/flights/1"
-    assert len(database.list_flights()) == 1
+    assert len(database.list_flights("personal-dashboard")) == 1
 
 
 def test_cross_site_fetch_metadata_overrides_matching_origin(
@@ -411,7 +428,7 @@ def test_cross_site_fetch_metadata_overrides_matching_origin(
     )
 
     assert response.status_code == 403
-    assert database.list_flights() == []
+    assert database.list_flights("personal-dashboard") == []
 
 
 def test_fake_pdf_is_rejected_without_storage(
@@ -426,7 +443,7 @@ def test_fake_pdf_is_rejected_without_storage(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "File is not a readable PDF"
-    assert database.list_flights() == []
+    assert database.list_flights("personal-dashboard") == []
     assert list(paths["uploads"].iterdir()) == []
 
 
@@ -444,7 +461,7 @@ def test_pdf_size_limit_removes_partial_upload(
 
     assert response.status_code == 413
     assert response.json()["detail"] == "PDF exceeds the 25 MB upload limit."
-    assert database.list_flights() == []
+    assert database.list_flights("personal-dashboard") == []
     assert list(paths["uploads"].iterdir()) == []
 
 

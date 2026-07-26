@@ -11,6 +11,7 @@ GeoJson = dict[str, Any]
 MarkerRole = Literal[
     "departure",
     "destination",
+    "notam_airport",
     "fir",
     "bobcat",
     "kabul",

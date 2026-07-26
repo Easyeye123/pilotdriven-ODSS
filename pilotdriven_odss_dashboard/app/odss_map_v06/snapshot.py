@@ -40,6 +40,9 @@ def _request_headers_for_url(
     request_url: str,
     request_headers: dict[str, str],
     settings: MapSettings,
+    *,
+    tenant_id: str | None = None,
+    user_id: str | None = None,
 ) -> dict[str, str]:
     """Attach the service bearer only to the internal print origin.
 
@@ -57,6 +60,10 @@ def _request_headers_for_url(
         and target.netloc == internal.netloc
     ):
         headers["authorization"] = f"Bearer {settings.service_token}"
+        if tenant_id:
+            headers["x-pilotdriven-tenant-id"] = tenant_id
+        if user_id:
+            headers["x-pilotdriven-user-id"] = user_id
     return headers
 
 
@@ -65,8 +72,16 @@ class PlaywrightMapSnapshotRenderer:
 
     name = "aws-location-hybrid-playwright"
 
-    def __init__(self, settings: MapSettings):
+    def __init__(
+        self,
+        settings: MapSettings,
+        *,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+    ):
         self.settings = settings
+        self.tenant_id = tenant_id
+        self.user_id = user_id
 
     async def interactive_config(
         self,
@@ -131,6 +146,8 @@ class PlaywrightMapSnapshotRenderer:
                                     request.url,
                                     request.headers,
                                     self.settings,
+                                    tenant_id=self.tenant_id,
+                                    user_id=self.user_id,
                                 )
                             )
 

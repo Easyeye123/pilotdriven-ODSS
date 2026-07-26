@@ -156,7 +156,10 @@ def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> 
     assert "Departure NOTAM" in text
     assert "Destination Alternate NOTAM A2000/26" in text
     assert "Edto NOTAM A3000/26" in text
-    assert "9 lower-priority active or review NOTAM findings omitted; see Level 2." in text
+    assert (
+        "9 duplicate or lower-priority applicable NOTAM record(s) retained in audit evidence."
+        in text
+    )
 
 
 def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> None:
@@ -216,6 +219,10 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "High terrain detected but no profile matched" in third
     assert "Manual chart-index review is required" in third
     assert "ACTM / CALCULATED UTC" not in third
+    assert sum(
+        "Natural Earth 1:110m land context" in (page.extract_text() or "")
+        for page in reader.pages
+    ) == 1
 
 
 def test_level2_begins_with_visual_cover_and_repeats_detail_header(tmp_path: Path) -> None:
@@ -223,7 +230,7 @@ def test_level2_begins_with_visual_cover_and_repeats_detail_header(tmp_path: Pat
     render_pdf(_flight(), [_weather(index) for index in range(24)], [], 2, path)
 
     reader = PdfReader(path)
-    assert len(reader.pages) > 2
+    assert len(reader.pages) >= 2
     first = reader.pages[0].extract_text() or ""
     second = reader.pages[1].extract_text() or ""
 
@@ -232,6 +239,31 @@ def test_level2_begins_with_visual_cover_and_repeats_detail_header(tmp_path: Pat
     assert "SQ304 Expanded Operational Analysis" in second
     assert "Decision support only - approved documents" in second
     assert "Page 2" in second
+
+
+def test_level2_weather_is_concise_deduplicated_and_does_not_repeat_raw_opmet(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_concise_weather.pdf"
+
+    render_pdf(_flight(), [_weather(1), _weather(2)], [], 2, path)
+
+    text = "\n".join(
+        (page.extract_text() or "")
+        for page in PdfReader(path).pages
+    )
+    assert "TAF WSSS 161100Z" not in text
+    assert "trigger" not in text.lower()
+    # The single concise effect appears once on the visual cover and once in
+    # expanded detail; the second duplicate source record is not rendered.
+    assert text.count("Weather record 01") == 2
+    assert "Weather record 02" not in text
+    assert "UTC window: UTC window not resolved." in text
+    assert "Operational mechanism: convection / thunderstorms" in text
+    assert (
+        "Flight effect: Route deviation, flight-level strategy or timing may be affected."
+        in text
+    )
 
 
 def test_run_analysis_normalizes_identity_before_json_and_reports(
@@ -329,4 +361,3 @@ def test_level1_integrates_volcanic_ash_without_source_gate_page(
     assert "Sheveluch volcanic ash proximity" in text
     assert "SOURCE / PROVENANCE" not in text
     assert "MANUAL REVIEW REQUIRED" not in text
-

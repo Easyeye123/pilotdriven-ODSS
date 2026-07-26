@@ -22,24 +22,29 @@ def _record(
     valid_from: str,
     valid_to: str | None,
     schedule: str | None = None,
+    *,
+    text: str = "RWY CLSD",
+    category: str = "RWY",
+    priority_score: int = 10,
 ) -> dict:
     return {
         "notam_id": notam_id,
         "location": location,
-        "category": "RWY",
-        "text": "RWY CLSD",
+        "category": category,
+        "text": text,
         "valid_from_utc": valid_from,
         "valid_to_utc": valid_to,
         "schedule": schedule,
         "schedule_review": False,
         "validity_review": False,
-        "priority_score": 10,
+        "priority_score": priority_score,
     }
 
 
 def _flight(
     notams: list[dict] | None = None,
     route_waypoints: list[dict] | None = None,
+    weather: list[dict] | None = None,
 ) -> dict:
     return {
         "document_id": "test.pdf",
@@ -85,7 +90,7 @@ def _flight(
             "airports": [],
         },
         "notams": notams or [],
-        "weather": [],
+        "weather": weather or [],
     }
 
 
@@ -276,6 +281,261 @@ def test_arrival_notam_window_is_configurable(
         for item in findings
         if item["engine"] == "notam"
     } == {"INSIDE/26"}
+
+
+def test_notams_are_semantically_deduplicated_and_ranked_after_sta_filter() -> None:
+    valid_from = "2026-07-16T10:00:00+00:00"
+    valid_to = "2026-07-16T14:00:00+00:00"
+    notams = [
+        _record(
+            "CRANE1/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="CRANE ERECTED 2NM SOUTH OF AD",
+            category="OBST",
+            priority_score=99,
+        ),
+        _record(
+            "TWY1/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="TWY A CLSD DUE WIP",
+            category="TWY",
+            priority_score=7,
+        ),
+        _record(
+            "ILS1/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="ILS RWY 24L U/S",
+            category="AIRPORT",
+            priority_score=10,
+        ),
+        _record(
+            "RWY1/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="RWY 24L CLSD",
+            category="RWY",
+            priority_score=10,
+        ),
+        _record(
+            "RWY-DUP/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="RUNWAY 24L CLOSED",
+            category="RWY",
+            priority_score=10,
+        ),
+        _record(
+            "AD1/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="AD CLSD",
+            category="AIRPORT",
+            priority_score=10,
+        ),
+    ]
+
+    findings, _ = analyse(_flight(notams=notams))
+
+    selected = [item for item in findings if item["engine"] == "notam"]
+    assert [item["data"]["pertinence_kind"] for item in selected] == [
+        "airport_closure",
+        "runway_closure",
+        "approach_navaid_closure",
+        "taxiway_closure",
+        "obstacle",
+    ]
+    assert "RWY 24L CLSD" not in "\n".join(item["summary"] for item in selected)
+    # The raw source and duplicate decision remain outside the pilot-facing findings.
+    flight = _flight(notams=notams)
+    analyse(flight)
+    notam_audit = flight["audit_evidence"]["notam"]
+    assert notam_audit["source_record_count"] == 6
+    assert notam_audit["pilot_facing_count"] == 5
+    assert notam_audit["semantic_duplicate_count"] == 1
+    duplicate = next(
+        item for item in notam_audit["records"]
+        if item["pilot_status"] == "semantic_duplicate"
+    )
+    assert duplicate["pilot_status"] == "semantic_duplicate"
+    assert duplicate["raw_text"] in {"RWY 24L CLSD", "RUNWAY 24L CLOSED"}
+
+
+def test_notam_subject_outages_are_not_promoted_to_full_surface_closures() -> None:
+    valid_from = "2026-07-16T10:00:00+00:00"
+    valid_to = "2026-07-16T14:00:00+00:00"
+    notams = [
+        _record(
+            "AD1/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="AD AP CLSD",
+            category="AIRPORT",
+        ),
+        _record(
+            "STAND1/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text=(
+                "CLOSURE OF ACFT STAND E5 AT CARGO APRON. "
+                "ACFT STAND E5 AT THE AIRPORT WILL BE CLOSED."
+            ),
+            category="AIRPORT",
+        ),
+        _record(
+            "RWYLGT1/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="RWY 24L LEAD OFF LGT AT TWY K U/S",
+            category="RUNWAY",
+        ),
+        _record(
+            "TWY1/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="TWY Z BTN RWY 06L/24R AND TWY Y CLSD",
+            category="TAXIWAY",
+        ),
+    ]
+
+    findings, _ = analyse(_flight(notams=notams))
+    by_id = {
+        item["data"]["notam_id"]: item
+        for item in findings
+        if item["engine"] == "notam"
+    }
+
+    assert by_id["AD1/26"]["data"]["pertinence_kind"] == "airport_closure"
+    assert by_id["STAND1/26"]["data"]["pertinence_kind"] == "apron_stand_closure"
+    assert "Entire airport" not in by_id["STAND1/26"]["summary"]
+    assert by_id["RWYLGT1/26"]["data"]["pertinence_kind"] == "runway_lighting_restriction"
+    assert "closed" not in by_id["RWYLGT1/26"]["summary"].lower()
+    assert by_id["TWY1/26"]["data"]["pertinence_kind"] == "taxiway_closure"
+    assert [item["data"]["notam_id"] for item in findings if item["engine"] == "notam"] == [
+        "AD1/26",
+        "RWYLGT1/26",
+        "TWY1/26",
+        "STAND1/26",
+    ]
+
+
+def test_unresolved_notam_schedule_is_review_required_not_declared_active() -> None:
+    record = _record(
+        "SCHED1/26",
+        "RJBB",
+        "2026-07-01T00:00:00+00:00",
+        "2026-07-31T23:59:00+00:00",
+        text="RWY 24L WILL BE CLSD BTN 1800-2200 DLY",
+        category="RUNWAY",
+    )
+    record["schedule_review"] = True
+
+    findings, _ = analyse(_flight(notams=[record]))
+    item = next(row for row in findings if row["engine"] == "notam")
+
+    assert item["data"]["applicability"] == "review"
+    assert "could not be resolved" in item["summary"]
+    assert "review required" in item["summary"]
+    assert "closed or unavailable during" not in item["summary"]
+
+
+def test_notam_pilot_view_is_bounded_but_audit_retains_every_applicable_record() -> None:
+    notams = [
+        _record(
+            f"OBS{index:02d}/26",
+            "RJBB",
+            "2026-07-16T10:00:00+00:00",
+            "2026-07-16T14:00:00+00:00",
+            text=f"CRANE {index} ERECTED NEAR AD",
+            category="OBST",
+            priority_score=index,
+        )
+        for index in range(30)
+    ]
+    notams.append(
+        _record(
+            "RWYTOP/26",
+            "RJBB",
+            "2026-07-16T10:00:00+00:00",
+            "2026-07-16T14:00:00+00:00",
+            text="RWY 24L CLSD",
+            category="RWY",
+            priority_score=1,
+        )
+    )
+    flight = _flight(notams=notams)
+
+    findings, _ = analyse(flight)
+
+    selected = [item for item in findings if item["engine"] == "notam"]
+    assert len(selected) == 24
+    assert selected[0]["data"]["notam_id"] == "RWYTOP/26"
+    audit = flight["audit_evidence"]["notam"]
+    assert audit["source_record_count"] == 31
+    assert audit["time_applicable_count"] == 31
+    assert audit["pilot_facing_count"] == 24
+    assert audit["audit_only_count"] == 7
+
+
+def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audit() -> None:
+    raw_metar = "SA RJBB 161130Z 22018G32KT 4000 TSRA BKN008CB"
+    raw_taf = "FT RJBB 161100Z 1612/1718 TEMPO 1612/1616 2000 TSRA BKN006CB"
+    flight = _flight(weather=[
+        {"location": "RJBB", "record_type": "METAR", "text": raw_metar},
+        {"location": "RJBB", "record_type": "TAF", "text": raw_taf},
+    ])
+
+    findings, _ = analyse(flight)
+
+    weather = [item for item in findings if item["engine"] == "weather"]
+    assert len(weather) == 1
+    item = weather[0]
+    assert item["data"]["phase"] == "Destination"
+    assert item["data"]["utc_window"] == "16 JUL 1000Z-1400Z"
+    assert "convection / thunderstorms" in item["data"]["mechanism"]
+    assert "Arrival routing" in item["data"]["flight_effect"]
+    assert raw_metar not in item["summary"]
+    assert raw_taf not in item["summary"]
+    assert {detail.split(":", 1)[0] for detail in item["details"]} == {
+        "Phase",
+        "UTC window",
+        "Operational mechanism",
+        "Flight effect",
+    }
+    audit = flight["audit_evidence"]["weather"]
+    assert audit["source_record_count"] == 2
+    assert audit["pilot_facing_group_count"] == 1
+    assert [record["raw_text"] for record in audit["records"]] == [
+        raw_metar,
+        raw_taf,
+    ]
+
+
+def test_weather_group_suppresses_benign_jargon_and_duplicate_mechanisms() -> None:
+    flight = _flight(weather=[
+        {"location": "RJBB", "record_type": "METAR", "text": "SA RJBB 161130Z 22008KT CAVOK"},
+        {"location": "RJBB", "record_type": "TAF", "text": "FT RJBB 161100Z TEMPO 1612/1616 4000 TSRA BKN008CB"},
+        {"location": "RJBB", "record_type": "TAF", "text": "FT RJBB 161130Z TEMPO 1612/1616 3000 TSRA"},
+    ])
+
+    findings, _ = analyse(flight)
+    item = next(row for row in findings if row["engine"] == "weather")
+
+    assert item["data"]["mechanism"] == "convection / thunderstorms"
+    assert "trigger" not in item["summary"].lower()
+    assert item["details"].count("Operational mechanism: convection / thunderstorms.") == 1
 
 
 def test_incomplete_lido_pages_fail_before_zero_value_analysis() -> None:

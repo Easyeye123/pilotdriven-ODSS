@@ -18,6 +18,7 @@ from reportlab.pdfbase import pdfmetrics
 
 from .constants import format_actm, format_kg
 from .engines import detect_terrain_events
+from .pilot_briefing import prepare_pilot_findings
 
 
 _SEVERITY_RANK = {"information": 0, "unknown": 1, "warning": 2, "critical": 3}
@@ -93,13 +94,39 @@ def _weather_records(flight: dict[str, Any], location: str) -> list[dict[str, An
     return [record for record in flight.get("weather", []) if record.get("location") == location]
 
 
-def _weather_summary(flight: dict[str, Any], location: str) -> dict[str, str]:
-    records = _weather_records(flight, location)
-    metar = next((record for record in records if record.get("record_type") == "METAR"), None)
-    taf = next((record for record in records if record.get("record_type") == "TAF"), None)
+def _weather_summary(
+    findings: list[dict[str, Any]],
+    location: str,
+    role: str,
+) -> dict[str, str]:
+    selected = sorted(
+        [
+            item
+            for item in findings
+            if item.get("engine") == "weather"
+            and (
+                item.get("data", {}).get("location") == location
+                or str(item.get("title") or "").endswith(f" - {location}")
+            )
+        ],
+        key=_finding_sort_key,
+    )
+    primary = selected[0] if selected else None
     return {
-        "primary": _shorten((metar or taf or {}).get("text"), 125) or "No station weather parsed",
-        "secondary": _shorten((taf or {}).get("text"), 145) if taf else "",
+        "primary": (
+            _shorten(primary.get("summary"), 170)
+            if primary
+            else f"No significant {role} weather finding selected for the operating window"
+        ),
+        "secondary": (
+            _shorten(
+                f"{primary.get('data', {}).get('mechanism', '')}; "
+                f"{primary.get('data', {}).get('flight_effect', '')}",
+                170,
+            )
+            if primary
+            else ""
+        ),
     }
 
 
@@ -158,7 +185,7 @@ def _airport_panel(
     role: str,
     runway: str | None,
 ) -> dict[str, Any]:
-    weather = _weather_summary(flight, location)
+    weather = _weather_summary(findings, location, role)
     return {
         "icao": location,
         "role": role,
@@ -736,6 +763,7 @@ def build_briefing_view(
     warnings: list[str],
     timing_view: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    findings = prepare_pilot_findings(findings, notam_limit=24)
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in findings:
         grouped[str(item.get("engine") or "other")].append(item)

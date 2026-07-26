@@ -15,7 +15,8 @@ from .renderers import RendererChain
 from .schematic import SchematicSvgRenderer
 
 
-AnalysisLoader = Callable[[str], dict[str, Any] | None]
+AnalysisLoader = Callable[[str, str], dict[str, Any] | None]
+IdentityLoader = Callable[[Request], Any]
 
 
 def map_contract_from_analysis(
@@ -99,13 +100,15 @@ async def fallback_map_response(
 def create_map_router(
     *,
     load_analysis: AnalysisLoader,
+    load_identity: IdentityLoader,
     templates: Jinja2Templates,
     settings: MapSettings,
 ) -> APIRouter:
     """Create versioned map endpoints without coupling to ODSS persistence."""
     router = APIRouter(tags=["odss-map-v06"])
-    def contract_for(analysis_id: str):
-        analysis = load_analysis(analysis_id)
+    def contract_for(request: Request, analysis_id: str):
+        identity = load_identity(request)
+        analysis = load_analysis(analysis_id, identity.tenant_id)
         if not analysis:
             raise HTTPException(status_code=404, detail="Analysis not found")
         return map_contract_from_analysis(
@@ -115,24 +118,24 @@ def create_map_router(
         )
 
     @router.get("/v1/analyses/{analysis_id}/map-contract")
-    async def map_contract(analysis_id: str) -> JSONResponse:
-        return JSONResponse(contract_for(analysis_id).public_dict())
+    async def map_contract(request: Request, analysis_id: str) -> JSONResponse:
+        return JSONResponse(contract_for(request, analysis_id).public_dict())
 
     @router.get("/v1/analyses/{analysis_id}/route.geojson")
-    async def route_geojson(analysis_id: str) -> JSONResponse:
-        return JSONResponse(contract_for(analysis_id).route_geojson)
+    async def route_geojson(request: Request, analysis_id: str) -> JSONResponse:
+        return JSONResponse(contract_for(request, analysis_id).route_geojson)
 
     @router.get("/v1/analyses/{analysis_id}/markers.geojson")
-    async def marker_geojson(analysis_id: str) -> JSONResponse:
-        return JSONResponse(contract_for(analysis_id).markers_geojson)
+    async def marker_geojson(request: Request, analysis_id: str) -> JSONResponse:
+        return JSONResponse(contract_for(request, analysis_id).markers_geojson)
 
     @router.get("/v1/analyses/{analysis_id}/hazards.geojson")
-    async def hazard_geojson(analysis_id: str) -> JSONResponse:
-        return JSONResponse(contract_for(analysis_id).hazards_geojson)
+    async def hazard_geojson(request: Request, analysis_id: str) -> JSONResponse:
+        return JSONResponse(contract_for(request, analysis_id).hazards_geojson)
 
     @router.get("/v1/analyses/{analysis_id}/map-config")
-    async def map_config(analysis_id: str) -> JSONResponse:
-        contract = contract_for(analysis_id)
+    async def map_config(request: Request, analysis_id: str) -> JSONResponse:
+        contract = contract_for(request, analysis_id)
         return JSONResponse(
             await interactive_map_payload(
                 contract,
@@ -143,11 +146,12 @@ def create_map_router(
 
     @router.get("/v1/analyses/{analysis_id}/map-fallback")
     async def map_fallback(
+        request: Request,
         analysis_id: str,
         width: int = 1600,
         height: int = 900,
     ) -> Response:
-        contract = contract_for(analysis_id)
+        contract = contract_for(request, analysis_id)
         return await fallback_map_response(
             contract,
             settings,
@@ -165,7 +169,7 @@ def create_map_router(
         analysis_id: str,
         route_hash: str | None = None,
     ) -> HTMLResponse:
-        contract = contract_for(analysis_id)
+        contract = contract_for(request, analysis_id)
         if route_hash and route_hash != contract.route_hash:
             raise HTTPException(
                 status_code=409,

@@ -27,18 +27,21 @@ from .database import (
     create_flight,
     create_personal_note,
     delete_personal_note,
-    get_flight,
     get_flight_by_analysis_id,
     get_flight_by_service_request,
+    get_flight_for_tenant,
     get_personal_note,
     init_db,
     list_flights,
+    record_audit_event,
+    save_level3_answer,
     list_personal_notes,
     save_timing_reference,
     update_personal_note,
     update_status,
 )
 from .odss.constants import format_actm
+from .odss.level3 import generate_level3_artifacts
 from .odss_map_v06.api import (
     create_map_router,
     fallback_map_response,
@@ -57,6 +60,11 @@ from .odss.timing import (
 from .personal_notes import (
     PERSONAL_NOTE_PLACEMENT_LABELS,
     validate_personal_note,
+)
+from .service_identity import (
+    ServiceIdentity,
+    request_service_identity,
+    service_identity_from_request,
 )
 
 UPLOAD_DIR = DATA_DIR / "uploads"
@@ -83,6 +91,28 @@ def _configured_auth() -> tuple[str, str] | None:
 
 def _configured_service_token() -> str | None:
     return os.environ.get("ODSS_SERVICE_TOKEN", "").strip() or None
+
+
+def _dashboard_tenant_id() -> str:
+    tenant_id = os.environ.get(
+        "ODSS_LEGACY_DASHBOARD_TENANT_ID",
+        "personal-dashboard",
+    ).strip()
+    if not tenant_id or len(tenant_id) > 64 or not all(
+        character.isalnum() or character in "._:-"
+        for character in tenant_id
+    ):
+        raise RuntimeError("ODSS_LEGACY_DASHBOARD_TENANT_ID is invalid.")
+    return tenant_id
+
+
+def _legacy_dashboard_enabled() -> bool:
+    configured = os.environ.get("ODSS_ENABLE_LEGACY_DASHBOARD")
+    if configured is not None:
+        return configured.strip().casefold() in {"1", "true", "yes", "on"}
+    # A service deployment is API-only unless an administrator explicitly
+    # enables the separately tenant-scoped legacy dashboard.
+    return _configured_service_token() is None
 
 
 def _is_service_path(path: str) -> bool:
@@ -158,6 +188,16 @@ async def protect_dashboard(request: Request, call_next):
             return _secure_response(
                 PlainTextResponse("ODSS service authentication required.", status_code=401)
             )
+        if request.url.path != "/v1/health":
+            try:
+                request.state.service_identity = service_identity_from_request(request)
+            except HTTPException as exc:
+                return _secure_response(
+                    JSONResponse(
+                        {"detail": exc.detail},
+                        status_code=exc.status_code,
+                    )
+                )
         return _secure_response(await call_next(request))
 
     # The protected print page loads same-origin static assets. A worker's
@@ -167,6 +207,8 @@ async def protect_dashboard(request: Request, call_next):
         token = _configured_service_token()
         if token and _is_service_authorized(request, token):
             return _secure_response(await call_next(request))
+    if not _legacy_dashboard_enabled():
+        return _secure_response(PlainTextResponse("Not found.", status_code=404))
     try:
         credentials = _configured_auth()
     except RuntimeError:
@@ -381,17 +423,18 @@ def _record_map_refresh_warning(analysis_path: str | None, error_type: str) -> N
         )
 
 
-def _refresh_reports_with_primary_map(flight_id: int, result: dict) -> None:
+def _refresh_reports_with_primary_map(flight, result: dict) -> None:
     """Best-effort PDF map upgrade; initial offline reports remain authoritative."""
     try:
         if not (map_settings.aws_location_api_key and map_settings.service_token):
             return
-        flight = get_flight(flight_id)
-        if not flight:
+        if not flight or not flight["tenant_id"] or not flight["user_id"]:
             return
         asyncio.run(
             render_reports_for_analysis(
                 _public_analysis_id(flight),
+                tenant_id=str(flight["tenant_id"]),
+                user_id=str(flight["user_id"]),
                 settings=map_settings,
             )
         )
@@ -400,19 +443,22 @@ def _refresh_reports_with_primary_map(flight_id: int, result: dict) -> None:
         logger.warning(
             "Realistic map report refresh failed flight_id=%s error_type=%s; "
             "offline reports preserved",
-            flight_id,
+            flight["id"],
             error_type,
         )
         _record_map_refresh_warning(result.get("analysis_path"), error_type)
 
 
 def _execute_analysis(flight_id: int, flight) -> None:
+    tenant_id = str(flight["tenant_id"]) if flight["tenant_id"] else None
     previous_artifacts = (
         (flight["analysis_path"], RESULT_DIR),
         (flight["level1_report"], REPORT_DIR),
         (flight["level2_report"], REPORT_DIR),
+        (flight["level3_json"], RESULT_DIR),
+        (flight["level3_report"], REPORT_DIR),
     )
-    if not begin_analysis(flight_id):
+    if not begin_analysis(flight_id, tenant_id):
         raise HTTPException(status_code=409, detail="Analysis is already in progress")
 
     result = None
@@ -426,11 +472,24 @@ def _execute_analysis(flight_id: int, flight) -> None:
             timing_reference=_timing_reference_from_row(flight),
             personal_notes=[dict(note) for note in list_personal_notes(flight_id)],
         )
-        complete_analysis(flight_id, result)
+        if flight["tenant_id"] and flight["user_id"]:
+            result.update(
+                generate_level3_artifacts(
+                    tenant_id=str(flight["tenant_id"]),
+                    actor_id=str(flight["user_id"]),
+                    analysis_id=_public_analysis_id(flight),
+                    analysis_path=Path(str(result["analysis_path"])),
+                    result_dir=RESULT_DIR,
+                    report_dir=REPORT_DIR,
+                )
+            )
+        complete_analysis(flight_id, result, tenant_id)
         new_artifacts = (
             (result.get("analysis_path"), RESULT_DIR),
             (result.get("level1_report"), REPORT_DIR),
             (result.get("level2_report"), REPORT_DIR),
+            (result.get("level3_json"), RESULT_DIR),
+            (result.get("level3_report"), REPORT_DIR),
         )
         for (previous_path, directory), (new_path, _) in zip(
             previous_artifacts,
@@ -439,24 +498,27 @@ def _execute_analysis(flight_id: int, flight) -> None:
         ):
             if previous_path and previous_path != new_path:
                 _remove_stored_file(previous_path, directory)
-        _refresh_reports_with_primary_map(flight_id, result)
+        _refresh_reports_with_primary_map(flight, result)
     except Exception as exc:
         if result:
             _remove_stored_file(result.get("analysis_path"), RESULT_DIR)
             _remove_stored_file(result.get("level1_report"), REPORT_DIR)
             _remove_stored_file(result.get("level2_report"), REPORT_DIR)
+            _remove_stored_file(result.get("level3_json"), RESULT_DIR)
+            _remove_stored_file(result.get("level3_report"), REPORT_DIR)
         error = f"{type(exc).__name__}: {exc}"
         update_status(
             flight_id,
             "Failed",
             "Analysis failed. The detailed error is shown below.",
             last_error=error,
+            tenant_id=tenant_id,
         )
         traceback.print_exc()
 
 
 def _regenerate_after_note_change(flight_id: int) -> None:
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     if flight["status"] == "Processing":
@@ -470,7 +532,7 @@ def dashboard(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={"flights": list_flights()},
+        context={"flights": list_flights(_dashboard_tenant_id())},
     )
 
 
@@ -502,6 +564,8 @@ async def upload_cfp(
         "source_filename": filename,
         "source_path": str(dest),
         "status": "Uploaded",
+        "tenant_id": _dashboard_tenant_id(),
+        "user_id": "legacy-dashboard-user",
     }
     try:
         flight_id = create_flight(record)
@@ -513,7 +577,7 @@ async def upload_cfp(
 
 @app.get("/flights/{flight_id}", response_class=HTMLResponse)
 def flight_workspace(request: Request, flight_id: int):
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     analysis = load_analysis(flight["analysis_path"])
@@ -536,7 +600,7 @@ def flight_workspace(request: Request, flight_id: int):
 
 
 def _dashboard_map_contract(flight_id: int):
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     analysis = load_analysis(flight["analysis_path"])
@@ -583,7 +647,7 @@ async def dashboard_map_fallback(
 
 @app.post("/flights/{flight_id}/analyse")
 def analyse_flight(flight_id: int):
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     if flight["status"] == "Processing":
@@ -592,7 +656,7 @@ def analyse_flight(flight_id: int):
             status_code=303,
         )
     _execute_analysis(flight_id, flight)
-    refreshed = get_flight(flight_id)
+    refreshed = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     notice = "?notice=refresh-failed" if refreshed and refreshed["status"] == "Failed" else ""
     return RedirectResponse(url=f"/flights/{flight_id}{notice}", status_code=303)
 
@@ -605,7 +669,7 @@ def update_operational_clock(
     reference_time: str = Form(...),
     reference_waypoint: str = Form(""),
 ):
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     if flight["status"] == "Processing":
@@ -633,8 +697,9 @@ def update_operational_clock(
         reference["reference_type"],
         reference["reference_utc"],
         reference.get("reference_waypoint"),
+        tenant_id=_dashboard_tenant_id(),
     )
-    updated_flight = get_flight(flight_id)
+    updated_flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not updated_flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     _execute_analysis(flight_id, updated_flight)
@@ -649,7 +714,7 @@ def add_personal_note(
     include_level1: str | None = Form(None),
     include_level2: str | None = Form(None),
 ):
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     if flight["status"] == "Processing":
@@ -677,7 +742,7 @@ def edit_personal_note(
     include_level1: str | None = Form(None),
     include_level2: str | None = Form(None),
 ):
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     if flight["status"] == "Processing":
@@ -700,7 +765,7 @@ def edit_personal_note(
 
 @app.post("/flights/{flight_id}/notes/{note_id}/delete")
 def remove_personal_note(flight_id: int, note_id: int):
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     if flight["status"] == "Processing":
@@ -719,7 +784,7 @@ def remove_personal_note(flight_id: int, note_id: int):
 async def upload_report(flight_id: int, level: int, file: UploadFile = File(...)):
     if level not in (1, 2):
         raise HTTPException(status_code=400, detail="Report level must be 1 or 2")
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     _, dest = await _store_pdf(
@@ -729,7 +794,12 @@ async def upload_report(flight_id: int, level: int, file: UploadFile = File(...)
         "report.pdf",
     )
     try:
-        attach_report(flight_id, level, str(dest))
+        attach_report(
+            flight_id,
+            level,
+            str(dest),
+            tenant_id=_dashboard_tenant_id(),
+        )
     except Exception:
         dest.unlink(missing_ok=True)
         raise
@@ -741,7 +811,7 @@ async def upload_report(flight_id: int, level: int, file: UploadFile = File(...)
 
 @app.get("/files/source/{flight_id}")
 def download_source(flight_id: int):
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     path = _stored_file(flight["source_path"], UPLOAD_DIR, "Source PDF not found")
@@ -754,7 +824,7 @@ def download_source(flight_id: int):
 
 @app.get("/files/report/{flight_id}/{level}")
 def download_report(flight_id: int, level: int):
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     if level not in (1, 2):
@@ -767,7 +837,7 @@ def download_report(flight_id: int, level: int):
 
 @app.get("/files/analysis/{flight_id}")
 def download_analysis(flight_id: int):
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
     if not flight:
         raise HTTPException(status_code=404, detail="Flight not found")
     path = _stored_file(flight["analysis_path"], RESULT_DIR, "Analysis not generated")
@@ -780,19 +850,27 @@ class ServiceTimingRequest(BaseModel):
     reference_waypoint: str | None = None
 
 
+class ServiceLevel3AnswerRequest(BaseModel):
+    answer: str | None = Field(default=None, max_length=500)
+    declined: bool = False
+
+
 def _public_analysis_id(flight) -> str:
     return str(flight["analysis_id"] or f"legacy-{flight['id']}")
 
 
-def _service_flight(analysis_id: str):
-    flight = get_flight_by_analysis_id(analysis_id)
+def _service_flight(analysis_id: str, identity: ServiceIdentity):
+    flight = get_flight_by_analysis_id(analysis_id, identity.tenant_id)
     if not flight:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return flight
 
 
-def _service_analysis(analysis_id: str) -> tuple[object, dict]:
-    flight = _service_flight(analysis_id)
+def _service_analysis(
+    analysis_id: str,
+    identity: ServiceIdentity,
+) -> tuple[object, dict]:
+    flight = _service_flight(analysis_id, identity)
     analysis = load_analysis(flight["analysis_path"])
     if not analysis:
         raise HTTPException(status_code=409, detail="Analysis is not complete")
@@ -832,6 +910,8 @@ def _service_summary(flight) -> dict:
             "map_config": f"/v1/analyses/{analysis_id}/map-config",
             "level_1_report": f"/v1/analyses/{analysis_id}/reports/level-1",
             "level_2_report": f"/v1/analyses/{analysis_id}/reports/level-2",
+            "level_3": f"/v1/analyses/{analysis_id}/level-3",
+            "level_3_report": f"/v1/analyses/{analysis_id}/reports/level-3",
             "timing": f"/v1/analyses/{analysis_id}/timing",
             "render_reports": f"/v1/analyses/{analysis_id}/reports/render",
         },
@@ -863,8 +943,9 @@ async def create_service_analysis(
     aircraft: str = Form(""),
     registration: str = Form(""),
 ):
-    tenant_id = request.headers.get("x-pilotdriven-tenant-id")
-    service_request_id = request.headers.get("x-pilotdriven-request-id", "").strip() or None
+    identity = request_service_identity(request)
+    tenant_id = identity.tenant_id
+    service_request_id = identity.request_id
     if service_request_id:
         existing = get_flight_by_service_request(tenant_id, service_request_id)
         if existing:
@@ -882,9 +963,9 @@ async def create_service_analysis(
         "source_path": str(dest),
         "status": "Uploaded",
         "tenant_id": tenant_id,
-        "user_id": request.headers.get("x-pilotdriven-user-id"),
-        "workspace_id": request.headers.get("x-pilotdriven-workspace-id"),
-        "external_flight_id": request.headers.get("x-pilotdriven-flight-id"),
+        "user_id": identity.user_id,
+        "workspace_id": identity.workspace_id,
+        "external_flight_id": identity.flight_id,
         "analysis_version": APP_VERSION,
         "service_request_id": service_request_id,
     }
@@ -893,11 +974,11 @@ async def create_service_analysis(
     except Exception:
         dest.unlink(missing_ok=True)
         raise
-    flight = get_flight(flight_id)
+    flight = get_flight_for_tenant(flight_id, tenant_id)
     if not flight:
         raise HTTPException(status_code=500, detail="Analysis record was not created")
     await asyncio.to_thread(_execute_analysis, flight_id, flight)
-    completed = get_flight(flight_id)
+    completed = get_flight_for_tenant(flight_id, tenant_id)
     if not completed:
         raise HTTPException(status_code=500, detail="Analysis record was lost")
     if completed["status"] != "Completed":
@@ -909,13 +990,15 @@ async def create_service_analysis(
 
 
 @app.get("/v1/analyses/{analysis_id}")
-def get_service_analysis(analysis_id: str):
-    return JSONResponse(_service_summary(_service_flight(analysis_id)))
+def get_service_analysis(request: Request, analysis_id: str):
+    identity = request_service_identity(request)
+    return JSONResponse(_service_summary(_service_flight(analysis_id, identity)))
 
 
 @app.get("/v1/analyses/{analysis_id}/briefing")
-def get_service_briefing(analysis_id: str):
-    flight, analysis = _service_analysis(analysis_id)
+def get_service_briefing(request: Request, analysis_id: str):
+    identity = request_service_identity(request)
+    flight, analysis = _service_analysis(analysis_id, identity)
     view = analysis.get("view") or {}
     return JSONResponse({
         "analysis_id": analysis_id,
@@ -930,8 +1013,13 @@ def get_service_briefing(analysis_id: str):
 
 
 @app.post("/v1/analyses/{analysis_id}/timing")
-def update_service_timing(analysis_id: str, payload: ServiceTimingRequest):
-    flight, analysis = _service_analysis(analysis_id)
+def update_service_timing(
+    request: Request,
+    analysis_id: str,
+    payload: ServiceTimingRequest,
+):
+    identity = request_service_identity(request)
+    flight, analysis = _service_analysis(analysis_id, identity)
     try:
         reference = derive_timing_reference(
             analysis.get("flight"),
@@ -947,23 +1035,27 @@ def update_service_timing(analysis_id: str, payload: ServiceTimingRequest):
         reference["reference_type"],
         reference["reference_utc"],
         reference.get("reference_waypoint"),
+        tenant_id=identity.tenant_id,
     )
-    updated = get_flight(int(flight["id"]))
+    updated = get_flight_for_tenant(int(flight["id"]), identity.tenant_id)
     if not updated:
         raise HTTPException(status_code=404, detail="Analysis not found")
     _execute_analysis(int(flight["id"]), updated)
-    refreshed = get_flight(int(flight["id"]))
+    refreshed = get_flight_for_tenant(int(flight["id"]), identity.tenant_id)
     if not refreshed:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return JSONResponse(_service_summary(refreshed))
 
 
 @app.post("/v1/analyses/{analysis_id}/reports/render")
-async def render_service_reports(analysis_id: str):
-    _service_analysis(analysis_id)
+async def render_service_reports(request: Request, analysis_id: str):
+    identity = request_service_identity(request)
+    _service_analysis(analysis_id, identity)
     try:
         result = await render_reports_for_analysis(
             analysis_id,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
             settings=map_settings,
         )
     except (LookupError, RuntimeError, ValueError) as exc:
@@ -971,13 +1063,14 @@ async def render_service_reports(analysis_id: str):
     return JSONResponse({
         "analysis_id": analysis_id,
         "map_render": result,
-        "links": _service_summary(_service_flight(analysis_id))["links"],
+        "links": _service_summary(_service_flight(analysis_id, identity))["links"],
     })
 
 
 @app.get("/v1/analyses/{analysis_id}/reports/level-1")
-def get_service_level_1_report(analysis_id: str):
-    flight = _service_flight(analysis_id)
+def get_service_level_1_report(request: Request, analysis_id: str):
+    identity = request_service_identity(request)
+    flight = _service_flight(analysis_id, identity)
     path = _stored_file(flight["level1_report"], REPORT_DIR, "Level 1 report not generated")
     return FileResponse(
         path,
@@ -987,8 +1080,9 @@ def get_service_level_1_report(analysis_id: str):
 
 
 @app.get("/v1/analyses/{analysis_id}/reports/level-2")
-def get_service_level_2_report(analysis_id: str):
-    flight = _service_flight(analysis_id)
+def get_service_level_2_report(request: Request, analysis_id: str):
+    identity = request_service_identity(request)
+    flight = _service_flight(analysis_id, identity)
     path = _stored_file(flight["level2_report"], REPORT_DIR, "Level 2 report not generated")
     return FileResponse(
         path,
@@ -997,14 +1091,115 @@ def get_service_level_2_report(analysis_id: str):
     )
 
 
-def _load_service_analysis(analysis_id: str) -> dict | None:
-    flight = get_flight_by_analysis_id(analysis_id)
+@app.get("/v1/analyses/{analysis_id}/level-3")
+def get_service_level_3(request: Request, analysis_id: str):
+    identity = request_service_identity(request)
+    flight = _service_flight(analysis_id, identity)
+    path = _stored_file(
+        flight["level3_json"],
+        RESULT_DIR,
+        "Level 3 artifact not generated",
+    )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=409, detail="Level 3 artifact is unavailable") from exc
+    return JSONResponse(payload)
+
+
+@app.get("/v1/analyses/{analysis_id}/reports/level-3")
+def get_service_level_3_report(request: Request, analysis_id: str):
+    identity = request_service_identity(request)
+    flight = _service_flight(analysis_id, identity)
+    path = _stored_file(
+        flight["level3_report"],
+        REPORT_DIR,
+        "Level 3 report not generated",
+    )
+    return FileResponse(
+        path,
+        filename=f"{flight['flight_number'] or analysis_id}_level_3.pdf",
+        media_type="application/pdf",
+    )
+
+
+@app.post("/v1/analyses/{analysis_id}/level-3/questions/{question_id}")
+def answer_service_level_3_question(
+    request: Request,
+    analysis_id: str,
+    question_id: str,
+    payload: ServiceLevel3AnswerRequest,
+):
+    identity = request_service_identity(request)
+    flight, _analysis = _service_analysis(analysis_id, identity)
+    current_path = _stored_file(
+        flight["level3_json"],
+        RESULT_DIR,
+        "Level 3 artifact not generated",
+    )
+    current = json.loads(current_path.read_text(encoding="utf-8"))
+    question = next(
+        (
+            item
+            for item in current.get("pilot_questions") or []
+            if item.get("question_id") == question_id
+        ),
+        None,
+    )
+    if question is None:
+        raise HTTPException(status_code=404, detail="Level 3 question not found")
+    if payload.declined:
+        answer_text = None
+        answer_state = "declined"
+    else:
+        answer_text = " ".join(str(payload.answer or "").split())
+        if answer_text not in (question.get("options") or []):
+            raise HTTPException(
+                status_code=400,
+                detail="Answer must be one of the approved scoped options.",
+            )
+        answer_state = "answered"
+    save_level3_answer(
+        tenant_id=identity.tenant_id,
+        analysis_id=analysis_id,
+        question_id=question_id,
+        answer_text=answer_text,
+        answer_state=answer_state,
+        answered_by=identity.user_id,
+    )
+    record_audit_event(
+        tenant_id=identity.tenant_id,
+        actor_id=identity.user_id,
+        action="level3.question_recorded",
+        resource_type="analysis",
+        resource_id=analysis_id,
+        details={
+            "question_id": question_id,
+            "answer_state": answer_state,
+            "pilot_entered": True,
+            "validated": False,
+        },
+    )
+    regenerated = generate_level3_artifacts(
+        tenant_id=identity.tenant_id,
+        actor_id=identity.user_id,
+        analysis_id=analysis_id,
+        analysis_path=Path(str(flight["analysis_path"])),
+        result_dir=RESULT_DIR,
+        report_dir=REPORT_DIR,
+    )
+    return JSONResponse(regenerated["artifact"])
+
+
+def _load_service_analysis(analysis_id: str, tenant_id: str) -> dict | None:
+    flight = get_flight_by_analysis_id(analysis_id, tenant_id)
     return load_analysis(flight["analysis_path"]) if flight else None
 
 
 app.include_router(
     create_map_router(
         load_analysis=_load_service_analysis,
+        load_identity=request_service_identity,
         templates=templates,
         settings=map_settings,
     )

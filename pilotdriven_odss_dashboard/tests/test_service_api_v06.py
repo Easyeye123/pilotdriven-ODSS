@@ -77,8 +77,15 @@ def service_app(
         yield client
 
 
-def _authorization() -> dict[str, str]:
-    return {"Authorization": "Bearer service-test-token"}
+def _authorization(
+    tenant_id: str = "tenant-1",
+    user_id: str = "pilot-7",
+) -> dict[str, str]:
+    return {
+        "Authorization": "Bearer service-test-token",
+        "X-PilotDriven-Tenant-Id": tenant_id,
+        "X-PilotDriven-User-Id": user_id,
+    }
 
 
 def test_service_api_requires_bearer_token(service_app: TestClient) -> None:
@@ -89,6 +96,17 @@ def test_service_api_requires_bearer_token(service_app: TestClient) -> None:
     assert authorized.status_code == 200
     assert authorized.json()["version"] == "0.6.1"
     assert authorized.json()["map_contract"] == "1.1"
+
+    missing_identity = service_app.get(
+        "/v1/analyses/unknown",
+        headers={"Authorization": "Bearer service-test-token"},
+    )
+    assert missing_identity.status_code == 400
+    legacy_dashboard = service_app.get(
+        "/",
+        headers={"Authorization": "Basic ZGVtbzpkZW1v"},
+    )
+    assert legacy_dashboard.status_code == 404
 
 
 
@@ -113,7 +131,7 @@ def test_playwright_static_assets_accept_service_bearer_with_legacy_basic_auth(
         headers=_authorization(),
     )
 
-    assert anonymous.status_code == 401
+    assert anonymous.status_code == 404
     assert service.status_code == 200
     assert service.headers["content-type"].startswith("text/css")
     assert geometry.status_code == 200
@@ -213,6 +231,27 @@ def test_service_analysis_exposes_stable_contract_and_explicit_fallback(
     assert briefing["schema_version"] == "0.6.1"
     assert briefing["flight"]["flight_number"] == "SQ304"
 
+    level3 = service_app.get(
+        f"/v1/analyses/{analysis_id}/level-3",
+        headers=_authorization(),
+    )
+    level3_report = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-3",
+        headers=_authorization(),
+    )
+    assert level3.status_code == 200
+    assert level3.json()["status"] == "PARTIAL"
+    assert level3.json()["decision_authority"] == "pilot"
+    assert level3.json()["generation"]["llm_operational_verdict"] is False
+    assert level3.json()["policy_digest"] == []
+    assert any(
+        item["key"] == "approved-policy-library"
+        and item["status"] == "review_required"
+        for item in level3.json()["completeness_ledger"]
+    )
+    assert level3_report.status_code == 200
+    assert level3_report.content.startswith(b"%PDF")
+
 
 def test_service_analysis_request_id_is_idempotent(
     service_app: TestClient,
@@ -236,7 +275,7 @@ def test_service_analysis_request_id_is_idempotent(
     assert first.status_code == 201
     assert second.status_code == 200
     assert second.json()["analysis_id"] == first.json()["analysis_id"]
-    assert len(database.list_flights()) == 1
+    assert len(database.list_flights("tenant-1")) == 1
 
 
 def test_service_timing_accepts_atot_and_rejects_unknown_reference(
@@ -329,7 +368,11 @@ def test_report_worker_embeds_primary_png_and_refreshes_reports(
                 metadata={"route_hash": contract.route_hash},
             )
 
-    monkeypatch.setattr(report_worker, "_renderers", lambda settings: [FakeRenderer()])
+    monkeypatch.setattr(
+        report_worker,
+        "_renderers",
+        lambda settings, **_identity: [FakeRenderer()],
+    )
     rendered = service_app.post(
         f"/v1/analyses/{analysis_id}/reports/render",
         headers=_authorization(),
@@ -351,3 +394,67 @@ def test_report_worker_embeds_primary_png_and_refreshes_reports(
     )
     assert level1.content.startswith(b"%PDF")
     assert level2.content.startswith(b"%PDF")
+
+
+def test_service_analysis_is_hidden_from_another_tenant_on_every_surface(
+    service_app: TestClient,
+) -> None:
+    owner_headers = _authorization("tenant-owner", "pilot-owner")
+    other_headers = _authorization("tenant-other", "pilot-other")
+    created = service_app.post(
+        "/v1/analyses",
+        headers=owner_headers,
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    owner_row = database.get_flight_by_analysis_id(analysis_id, "tenant-owner")
+    assert owner_row is not None
+    original_timing = owner_row["actual_takeoff_utc"]
+
+    read_paths = [
+        f"/v1/analyses/{analysis_id}",
+        f"/v1/analyses/{analysis_id}/briefing",
+        f"/v1/analyses/{analysis_id}/map-contract",
+        f"/v1/analyses/{analysis_id}/route.geojson",
+        f"/v1/analyses/{analysis_id}/markers.geojson",
+        f"/v1/analyses/{analysis_id}/hazards.geojson",
+        f"/v1/analyses/{analysis_id}/map-config",
+        f"/v1/analyses/{analysis_id}/map-fallback",
+        f"/v1/analyses/{analysis_id}/reports/level-1",
+        f"/v1/analyses/{analysis_id}/reports/level-2",
+        f"/v1/analyses/{analysis_id}/level-3",
+        f"/v1/analyses/{analysis_id}/reports/level-3",
+        f"/render/maps/{analysis_id}",
+    ]
+    for path in read_paths:
+        response = service_app.get(path, headers=other_headers)
+        assert response.status_code == 404, path
+
+    timing = service_app.post(
+        f"/v1/analyses/{analysis_id}/timing",
+        headers=other_headers,
+        json={
+            "reference_type": "takeoff",
+            "reference_utc": "2026-07-11T10:42:00+00:00",
+        },
+    )
+    render = service_app.post(
+        f"/v1/analyses/{analysis_id}/reports/render",
+        headers=other_headers,
+    )
+    assert timing.status_code == 404
+    assert render.status_code == 404
+    with pytest.raises(LookupError):
+        database.save_timing_reference(
+            int(owner_row["id"]),
+            "2026-07-11T10:42:00+00:00",
+            "takeoff",
+            "2026-07-11T10:42:00+00:00",
+            tenant_id="tenant-other",
+        )
+
+    unchanged = database.get_flight_by_analysis_id(analysis_id, "tenant-owner")
+    assert unchanged is not None
+    assert unchanged["actual_takeoff_utc"] == original_timing
+    assert database.get_flight_by_analysis_id(analysis_id, "tenant-other") is None

@@ -8,6 +8,7 @@ from typing import Any
 ROLE_PRIORITY: dict[str, int] = {
     "departure": 100,
     "destination": 100,
+    "notam_airport": 98,
     "bobcat": 95,
     "kabul": 90,
     "early_contact": 85,

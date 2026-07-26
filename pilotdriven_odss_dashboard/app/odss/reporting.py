@@ -23,6 +23,10 @@ from ..personal_notes import PERSONAL_NOTE_PLACEMENT_LABELS
 from .briefing import build_briefing_view
 from .constants import ENGINE_ORDER
 from .pertinent_brief import render_level1_visual
+from .pilot_briefing import (
+    select_concise_weather,
+    select_pertinent_notams,
+)
 from .visual_reporting import PAGE_SIZE, visual_cover_flowable
 
 
@@ -95,36 +99,7 @@ class _BookmarkFlowable(Flowable):
 
 
 def _select_level1_notams(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    ordered = sorted(
-        findings,
-        key=lambda item: (
-            _ROLE_RANK.get(item.get("data", {}).get("role", "informational"), 5),
-            -_SEVERITY_RANK.get(item.get("severity", "information"), 0),
-            -int(item.get("data", {}).get("priority_score", 0)),
-            item.get("title", ""),
-        ),
-    )
-    selected = [item for item in ordered if item.get("severity") == "critical"]
-    for role in ("departure", "destination", "destination alternate", "EDTO"):
-        if any(item.get("data", {}).get("role") == role for item in selected):
-            continue
-        candidate = next((item for item in ordered if item.get("data", {}).get("role") == role), None)
-        if candidate is not None and candidate not in selected:
-            selected.append(candidate)
-    for item in ordered:
-        if len(selected) >= 16:
-            break
-        if item not in selected:
-            selected.append(item)
-    return sorted(
-        selected,
-        key=lambda item: (
-            _ROLE_RANK.get(item.get("data", {}).get("role", "informational"), 5),
-            -_SEVERITY_RANK.get(item.get("severity", "information"), 0),
-            -int(item.get("data", {}).get("priority_score", 0)),
-            item.get("title", ""),
-        ),
-    )
+    return select_pertinent_notams(findings, limit=16)
 
 
 def _automatic_section(
@@ -135,11 +110,16 @@ def _automatic_section(
 ) -> dict[str, Any] | None:
     if not engine_findings:
         return None
-    selected_findings = (
-        _select_level1_notams(engine_findings)
-        if level == 1 and engine == "notam"
-        else engine_findings
-    )
+    if engine == "notam":
+        selected_findings = (
+            _select_level1_notams(engine_findings)
+            if level == 1
+            else select_pertinent_notams(engine_findings, limit=24)
+        )
+    elif engine == "weather":
+        selected_findings = select_concise_weather(engine_findings)
+    else:
+        selected_findings = engine_findings
     lines: list[str] = []
     severity = max(
         (finding["severity"] for finding in selected_findings),
@@ -160,9 +140,10 @@ def _automatic_section(
             )
         )
         lines.extend(f"- {detail}" for detail in finding["details"][:detail_limit])
-    if level == 1 and engine == "notam" and len(selected_findings) < len(engine_findings):
+    if engine == "notam" and len(selected_findings) < len(engine_findings):
         lines.append(
-            f"{len(engine_findings) - len(selected_findings)} lower-priority active or review NOTAM findings omitted; see Level 2."
+            f"{len(engine_findings) - len(selected_findings)} duplicate or lower-priority "
+            "applicable NOTAM record(s) retained in audit evidence."
         )
     return {
         "engine": engine,

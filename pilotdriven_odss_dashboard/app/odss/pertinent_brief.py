@@ -15,6 +15,7 @@ from reportlab.platypus import BaseDocTemplate, Flowable, Frame, PageBreak, Page
 
 from .briefing import build_briefing_view, draw_route_map_pdf
 from .constants import format_actm
+from .pilot_briefing import prepare_pilot_findings
 
 
 PAGE_SIZE = landscape(A4)
@@ -257,6 +258,42 @@ def _draw_column_stack(
             style=panel.get("style") or _STYLES["light_small"],
         )
         cursor = y - gap
+
+
+def _draw_balanced_columns(
+    canvas,
+    left_x: float,
+    right_x: float,
+    top: float,
+    bottom: float,
+    width: float,
+    panels: list[dict[str, Any]],
+    *,
+    gap: float = 2.5 * mm,
+) -> None:
+    """Lay out content-driven detail panels without reserving empty card space."""
+    columns: list[list[dict[str, Any]]] = [[], []]
+    column_heights = [0.0, 0.0]
+    for panel in panels:
+        lines = panel.get("lines") or []
+        if not _clean_lines(lines):
+            continue
+        prepared = dict(panel)
+        prepared["style"] = panel.get("style") or _STYLES["light"]
+        height = _panel_height(
+            lines,
+            width,
+            prepared["style"],
+            min_height=panel.get("min_height", 15 * mm),
+        )
+        index = 0 if column_heights[0] <= column_heights[1] else 1
+        if columns[index]:
+            column_heights[index] += gap
+        columns[index].append(prepared)
+        column_heights[index] += height
+
+    _draw_column_stack(canvas, left_x, top, bottom, width, columns[0], gap=gap)
+    _draw_column_stack(canvas, right_x, top, bottom, width, columns[1], gap=gap)
 
 
 def _draw_centered_metric_cell(
@@ -645,7 +682,8 @@ def _draw_operational_detail(
     margin = 6 * mm
     gap = 3 * mm
     bottom = 5 * mm
-    column_width = (width - 2 * margin - 2 * gap) / 3
+    column_width = (width - 2 * margin - gap) / 2
+    right_x = margin + column_width + gap
 
     deferred = grouped.get("mel", []) + grouped.get("cdl", []) + grouped.get("cddl", [])
     performance = grouped.get("performance", []) + grouped.get("qa", [])
@@ -661,37 +699,18 @@ def _draw_operational_detail(
     ]
     weather_items = grouped.get("weather", []) + grouped.get("vaa", [])
 
-    _draw_column_stack(
+    _draw_balanced_columns(
         canvas,
         margin,
+        right_x,
         top,
         bottom,
         column_width,
         [
             {"title": "MEL / CDL / CDDL", "lines": _finding_lines(deferred, finding_limit=6, detail_limit=2), "accent": _WEATHER},
             {"title": "PERFORMANCE / FUEL", "lines": _finding_lines(performance, finding_limit=5, detail_limit=3), "accent": _NAVY},
-        ],
-        gap=gap,
-    )
-    _draw_column_stack(
-        canvas,
-        margin + column_width + gap,
-        top,
-        bottom,
-        column_width,
-        [
             {"title": "DEPARTURE AIRPORT", "lines": departure_lines, "accent": _DEPARTURE},
             {"title": "DESTINATION AIRPORT", "lines": destination_lines, "accent": _DESTINATION},
-        ],
-        gap=gap,
-    )
-    _draw_column_stack(
-        canvas,
-        margin + 2 * (column_width + gap),
-        top,
-        bottom,
-        column_width,
-        [
             {
                 "title": "ALTERNATES / EDTO AIRPORTS",
                 "lines": _finding_lines(alternate_notams + grouped.get("edto", []), finding_limit=6, detail_limit=2),
@@ -729,13 +748,9 @@ def _draw_route_detail(
     margin = 6 * mm
     gap = 3 * mm
     bottom = 5 * mm
-    usable_width = width - 2 * margin - 2 * gap
-    left_width = usable_width * 0.32
-    middle_width = usable_width * 0.33
-    right_width = usable_width - left_width - middle_width
+    column_width = (width - 2 * margin - gap) / 2
     left_x = margin
-    middle_x = left_x + left_width + gap
-    right_x = middle_x + middle_width + gap
+    right_x = left_x + column_width + gap
 
     comm_lines = _finding_lines(grouped.get("communications", []), finding_limit=7, detail_limit=2) + _note_lines(flight, {"communications"})
     timing_lines = _finding_lines(grouped.get("actual_timing", []) + grouped.get("timeline", []), finding_limit=7, detail_limit=2)
@@ -773,40 +788,18 @@ def _draw_route_detail(
         and "destination" not in str(item.get("title") or "").lower()
     ]
 
-    _draw_column_stack(
+    _draw_balanced_columns(
         canvas,
         left_x,
+        right_x,
         top,
         bottom,
-        left_width,
+        column_width,
         [
             {"title": "FIR / COMMUNICATIONS", "lines": comm_lines, "accent": _COMMUNICATIONS},
             {"title": "ACTM / CALCULATED UTC", "lines": timing_lines, "accent": _NEUTRAL},
-        ],
-        gap=gap,
-    )
-    _draw_column_stack(
-        canvas,
-        middle_x,
-        top,
-        bottom,
-        middle_width,
-        [
             {"title": "TERRAIN MSA / VWS", "lines": terrain_lines, "accent": _TERRAIN},
             {"title": "DEPRESSURISATION PROFILES", "lines": depress_lines, "accent": _TERRAIN},
-        ],
-        gap=gap,
-    )
-
-    map_height = 61 * mm
-    panel_bottom = bottom + map_height + gap
-    _draw_column_stack(
-        canvas,
-        right_x,
-        top,
-        panel_bottom,
-        right_width,
-        [
             {"title": edto_bobcat_title, "lines": edto_bobcat_lines, "accent": _EDTO},
             {
                 "title": "ENROUTE WEATHER / VAAC",
@@ -816,7 +809,6 @@ def _draw_route_detail(
         ],
         gap=gap,
     )
-    draw_route_map_pdf(canvas, briefing["route_map"], right_x, bottom, right_width, map_height)
 
 
 class _FullPageFlowable(Flowable):
@@ -844,6 +836,7 @@ def render_level1_visual(
     map_image_path: Path | None = None,
     map_label: str | None = None,
 ) -> None:
+    findings = prepare_pilot_findings(findings, notam_limit=16)
     briefing = build_briefing_view(flight, findings, warnings, None)
     if map_image_path:
         briefing["route_map"]["snapshot_path"] = str(map_image_path)

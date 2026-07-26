@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from typing import Any
 import uuid
@@ -25,6 +27,8 @@ CREATE TABLE IF NOT EXISTS flights (
     analysis_path TEXT,
     level1_report TEXT,
     level2_report TEXT,
+    level3_json TEXT,
+    level3_report TEXT,
     notes TEXT,
     last_error TEXT,
     actual_takeoff_utc TEXT,
@@ -56,6 +60,62 @@ CREATE TABLE IF NOT EXISTS personal_notes (
 
 CREATE INDEX IF NOT EXISTS idx_personal_notes_flight
 ON personal_notes (flight_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_snapshots (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    analysis_id TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL,
+    snapshot_sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (tenant_id, analysis_id)
+);
+
+CREATE TABLE IF NOT EXISTS level3_answers (
+    tenant_id TEXT NOT NULL,
+    analysis_id TEXT NOT NULL,
+    question_id TEXT NOT NULL,
+    answer_text TEXT,
+    answer_state TEXT NOT NULL CHECK (answer_state IN ('answered', 'declined')),
+    answered_by TEXT NOT NULL,
+    answered_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, analysis_id, question_id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_events (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    details_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER IF NOT EXISTS policy_snapshots_no_update
+BEFORE UPDATE ON policy_snapshots
+BEGIN
+    SELECT RAISE(ABORT, 'policy snapshots are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS policy_snapshots_no_delete
+BEFORE DELETE ON policy_snapshots
+BEGIN
+    SELECT RAISE(ABORT, 'policy snapshots are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS audit_events_no_update
+BEFORE UPDATE ON audit_events
+BEGIN
+    SELECT RAISE(ABORT, 'audit events are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS audit_events_no_delete
+BEFORE DELETE ON audit_events
+BEGIN
+    SELECT RAISE(ABORT, 'audit events are append-only');
+END;
 '''
 
 
@@ -83,6 +143,8 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         "external_flight_id": "TEXT",
         "analysis_version": "TEXT",
         "service_request_id": "TEXT",
+        "level3_json": "TEXT",
+        "level3_report": "TEXT",
     }
     for column, sql_type in additions.items():
         if column not in existing:
@@ -92,6 +154,12 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_flights_analysis_id ON flights (analysis_id)"
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_flights_tenant_analysis
+        ON flights (tenant_id, analysis_id)
+        """
     )
     conn.execute(
         """
@@ -153,9 +221,14 @@ def create_flight(data: dict[str, Any]) -> int:
         return int(cur.lastrowid)
 
 
-def list_flights() -> list[sqlite3.Row]:
+def list_flights(tenant_id: str) -> list[sqlite3.Row]:
     with connect() as conn:
-        return list(conn.execute("SELECT * FROM flights ORDER BY id DESC"))
+        return list(
+            conn.execute(
+                "SELECT * FROM flights WHERE tenant_id = ? ORDER BY id DESC",
+                (tenant_id,),
+            )
+        )
 
 
 def get_flight(flight_id: int) -> sqlite3.Row | None:
@@ -163,25 +236,39 @@ def get_flight(flight_id: int) -> sqlite3.Row | None:
         return conn.execute("SELECT * FROM flights WHERE id = ?", (flight_id,)).fetchone()
 
 
-
-
-def get_flight_by_analysis_id(analysis_id: str) -> sqlite3.Row | None:
+def get_flight_for_tenant(flight_id: int, tenant_id: str) -> sqlite3.Row | None:
     with connect() as conn:
         return conn.execute(
-            "SELECT * FROM flights WHERE analysis_id = ?",
-            (analysis_id,),
+            "SELECT * FROM flights WHERE id = ? AND tenant_id = ?",
+            (flight_id, tenant_id),
+        ).fetchone()
+
+
+
+
+def get_flight_by_analysis_id(
+    analysis_id: str,
+    tenant_id: str,
+) -> sqlite3.Row | None:
+    with connect() as conn:
+        return conn.execute(
+            """
+            SELECT * FROM flights
+            WHERE analysis_id = ? AND tenant_id = ?
+            """,
+            (analysis_id, tenant_id),
         ).fetchone()
 
 
 def get_flight_by_service_request(
-    tenant_id: str | None,
+    tenant_id: str,
     service_request_id: str,
 ) -> sqlite3.Row | None:
     with connect() as conn:
         return conn.execute(
             """
             SELECT * FROM flights
-            WHERE tenant_id IS ? AND service_request_id = ?
+            WHERE tenant_id = ? AND service_request_id = ?
             """,
             (tenant_id, service_request_id),
         ).fetchone()
@@ -283,16 +370,19 @@ def update_status(
     status: str,
     notes: str | None = None,
     last_error: str | None = None,
+    tenant_id: str | None = None,
 ) -> None:
     with connect() as conn:
-        conn.execute(
+        cursor = conn.execute(
             '''
             UPDATE flights
             SET status=?, notes=COALESCE(?, notes), last_error=?, updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
+            WHERE id=? AND (? IS NULL OR tenant_id=?)
             ''',
-            (status, notes, last_error, flight_id),
+            (status, notes, last_error, flight_id, tenant_id, tenant_id),
         )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Flight {flight_id} not found")
 
 
 def save_timing_reference(
@@ -301,6 +391,7 @@ def save_timing_reference(
     reference_type: str,
     reference_utc: str,
     reference_waypoint: str | None = None,
+    tenant_id: str | None = None,
 ) -> None:
     with connect() as conn:
         cursor = conn.execute(
@@ -311,7 +402,7 @@ def save_timing_reference(
                 timing_reference_waypoint=?,
                 timing_reference_utc=?,
                 updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
+            WHERE id=? AND (? IS NULL OR tenant_id=?)
             ''',
             (
                 actual_takeoff_utc,
@@ -319,13 +410,15 @@ def save_timing_reference(
                 reference_waypoint,
                 reference_utc,
                 flight_id,
+                tenant_id,
+                tenant_id,
             ),
         )
         if cursor.rowcount != 1:
             raise LookupError(f"Flight {flight_id} not found")
 
 
-def begin_analysis(flight_id: int) -> bool:
+def begin_analysis(flight_id: int, tenant_id: str | None = None) -> bool:
     with connect() as conn:
         cursor = conn.execute(
             '''
@@ -334,20 +427,27 @@ def begin_analysis(flight_id: int) -> bool:
                 notes='Parsing Lido CFP and running ODSS engines.',
                 last_error=NULL,
                 updated_at=CURRENT_TIMESTAMP
-            WHERE id=? AND status != 'Processing'
+            WHERE id=? AND (? IS NULL OR tenant_id=?) AND status != 'Processing'
             ''',
-            (flight_id,),
+            (flight_id, tenant_id, tenant_id),
         )
         if cursor.rowcount == 1:
             return True
-        if conn.execute("SELECT 1 FROM flights WHERE id=?", (flight_id,)).fetchone() is None:
+        if conn.execute(
+            "SELECT 1 FROM flights WHERE id=? AND (? IS NULL OR tenant_id=?)",
+            (flight_id, tenant_id, tenant_id),
+        ).fetchone() is None:
             raise LookupError(f"Flight {flight_id} not found")
         return False
 
 
-def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
+def complete_analysis(
+    flight_id: int,
+    result: dict[str, Any],
+    tenant_id: str | None = None,
+) -> None:
     with connect() as conn:
-        conn.execute(
+        cursor = conn.execute(
             '''
             UPDATE flights SET
                 flight_number=COALESCE(NULLIF(?, ''), flight_number),
@@ -357,10 +457,11 @@ def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
                 aircraft=COALESCE(NULLIF(?, ''), aircraft),
                 registration=COALESCE(NULLIF(?, ''), registration),
                 analysis_path=?, level1_report=?, level2_report=?,
+                level3_json=?, level3_report=?,
                 analysis_version=COALESCE(NULLIF(?, ''), analysis_version),
                 status='Completed', notes=?, last_error=NULL,
                 updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
+            WHERE id=? AND (? IS NULL OR tenant_id=?)
             ''',
             (
                 result.get("flight_number", ""),
@@ -372,6 +473,8 @@ def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
                 result.get("analysis_path"),
                 result.get("level1_report"),
                 result.get("level2_report"),
+                result.get("level3_json"),
+                result.get("level3_report"),
                 result.get("analysis_version", "0.6.0"),
                 (
                     f"Analysed {result.get('page_count', 0)} pages; "
@@ -390,16 +493,169 @@ def complete_analysis(flight_id: int, result: dict[str, Any]) -> None:
                     )
                 ),
                 flight_id,
+                tenant_id,
+                tenant_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Flight {flight_id} not found")
+
+
+def attach_report(
+    flight_id: int,
+    level: int,
+    report_path: str,
+    tenant_id: str | None = None,
+) -> None:
+    column = "level1_report" if level == 1 else "level2_report"
+    with connect() as conn:
+        cursor = conn.execute(
+            f"""
+            UPDATE flights SET {column}=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND (? IS NULL OR tenant_id=?)
+            """,
+            (report_path, flight_id, tenant_id, tenant_id),
+        )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Flight {flight_id} not found")
+
+
+def get_or_create_policy_snapshot(
+    *,
+    tenant_id: str,
+    analysis_id: str,
+    snapshot: dict[str, Any],
+) -> sqlite3.Row:
+    snapshot_json = json.dumps(
+        snapshot,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    digest = hashlib.sha256(snapshot_json.encode("utf-8")).hexdigest()
+    with connect() as conn:
+        owner = conn.execute(
+            "SELECT 1 FROM flights WHERE analysis_id=? AND tenant_id=?",
+            (analysis_id, tenant_id),
+        ).fetchone()
+        if owner is None:
+            raise LookupError(f"Analysis {analysis_id} not found")
+        existing = conn.execute(
+            """
+            SELECT * FROM policy_snapshots
+            WHERE tenant_id=? AND analysis_id=?
+            """,
+            (tenant_id, analysis_id),
+        ).fetchone()
+        if existing:
+            return existing
+        conn.execute(
+            """
+            INSERT INTO policy_snapshots (
+                id, tenant_id, analysis_id, snapshot_json, snapshot_sha256
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (uuid.uuid4().hex, tenant_id, analysis_id, snapshot_json, digest),
+        )
+        return conn.execute(
+            """
+            SELECT * FROM policy_snapshots
+            WHERE tenant_id=? AND analysis_id=?
+            """,
+            (tenant_id, analysis_id),
+        ).fetchone()
+
+
+def get_policy_snapshot(tenant_id: str, analysis_id: str) -> sqlite3.Row | None:
+    with connect() as conn:
+        return conn.execute(
+            """
+            SELECT * FROM policy_snapshots
+            WHERE tenant_id=? AND analysis_id=?
+            """,
+            (tenant_id, analysis_id),
+        ).fetchone()
+
+
+def list_level3_answers(tenant_id: str, analysis_id: str) -> list[sqlite3.Row]:
+    with connect() as conn:
+        return list(
+            conn.execute(
+                """
+                SELECT * FROM level3_answers
+                WHERE tenant_id=? AND analysis_id=?
+                ORDER BY question_id
+                """,
+                (tenant_id, analysis_id),
+            )
+        )
+
+
+def save_level3_answer(
+    *,
+    tenant_id: str,
+    analysis_id: str,
+    question_id: str,
+    answer_text: str | None,
+    answer_state: str,
+    answered_by: str,
+) -> None:
+    with connect() as conn:
+        owner = conn.execute(
+            "SELECT 1 FROM flights WHERE analysis_id=? AND tenant_id=?",
+            (analysis_id, tenant_id),
+        ).fetchone()
+        if owner is None:
+            raise LookupError(f"Analysis {analysis_id} not found")
+        conn.execute(
+            """
+            INSERT INTO level3_answers (
+                tenant_id, analysis_id, question_id, answer_text,
+                answer_state, answered_by, answered_at
+            ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT (tenant_id, analysis_id, question_id) DO UPDATE SET
+                answer_text=excluded.answer_text,
+                answer_state=excluded.answer_state,
+                answered_by=excluded.answered_by,
+                answered_at=CURRENT_TIMESTAMP
+            """,
+            (
+                tenant_id,
+                analysis_id,
+                question_id,
+                answer_text,
+                answer_state,
+                answered_by,
             ),
         )
 
 
-def attach_report(flight_id: int, level: int, report_path: str) -> None:
-    column = "level1_report" if level == 1 else "level2_report"
+def record_audit_event(
+    *,
+    tenant_id: str,
+    actor_id: str,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    details: dict[str, Any],
+) -> str:
+    event_id = uuid.uuid4().hex
     with connect() as conn:
-        cursor = conn.execute(
-            f"UPDATE flights SET {column}=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (report_path, flight_id),
+        conn.execute(
+            """
+            INSERT INTO audit_events (
+                id, tenant_id, actor_id, action,
+                resource_type, resource_id, details_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                tenant_id,
+                actor_id,
+                action,
+                resource_type,
+                resource_id,
+                json.dumps(details, sort_keys=True, separators=(",", ":")),
+            ),
         )
-        if cursor.rowcount != 1:
-            raise LookupError(f"Flight {flight_id} not found")
+    return event_id

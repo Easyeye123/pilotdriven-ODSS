@@ -48,8 +48,14 @@ def _contract_for(analysis_id: str, analysis: dict[str, Any], settings: MapSetti
     return contract
 
 
-def _renderers(settings: MapSettings):
-    renderers = [PlaywrightMapSnapshotRenderer(settings)]
+def _renderers(settings: MapSettings, *, tenant_id: str, user_id: str):
+    renderers = [
+        PlaywrightMapSnapshotRenderer(
+            settings,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+    ]
     if settings.fallback == "static":
         renderers.append(AwsLocationStaticRenderer(settings))
     if settings.fallback in {"static", "schematic"}:
@@ -106,6 +112,8 @@ def _regenerate_reports(
 async def render_reports_for_analysis(
     analysis_id: str,
     *,
+    tenant_id: str,
+    user_id: str,
     settings: MapSettings | None = None,
     width: int = 1600,
     height: int = 900,
@@ -117,7 +125,7 @@ async def render_reports_for_analysis(
     is recalculated in React or in the report renderer.
     """
     settings = settings or MapSettings.from_env()
-    flight_row = get_flight_by_analysis_id(analysis_id)
+    flight_row = get_flight_by_analysis_id(analysis_id, tenant_id)
     if not flight_row:
         raise LookupError(f"Analysis {analysis_id} was not found")
     if not flight_row["analysis_path"]:
@@ -127,7 +135,9 @@ async def render_reports_for_analysis(
     analysis = _load_json(analysis_path)
     contract = _contract_for(analysis_id, analysis, settings)
 
-    result = await RendererChain(*_renderers(settings)).render_snapshot(
+    result = await RendererChain(
+        *_renderers(settings, tenant_id=tenant_id, user_id=user_id)
+    ).render_snapshot(
         contract,
         width=max(800, min(int(width), 4096)),
         height=max(450, min(int(height), 2160)),
@@ -173,6 +183,8 @@ def _parse_args() -> argparse.Namespace:
         description="Capture the ODSS MapLibre map and regenerate Level 1/2 reports."
     )
     parser.add_argument("analysis_id")
+    parser.add_argument("--tenant-id", required=True)
+    parser.add_argument("--user-id", default="odss-report-worker")
     parser.add_argument("--width", type=int, default=1600)
     parser.add_argument("--height", type=int, default=900)
     return parser.parse_args()
@@ -183,6 +195,8 @@ def main() -> int:
     result = asyncio.run(
         render_reports_for_analysis(
             args.analysis_id,
+            tenant_id=args.tenant_id,
+            user_id=args.user_id,
             width=args.width,
             height=args.height,
         )

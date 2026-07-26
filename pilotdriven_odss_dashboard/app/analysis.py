@@ -16,6 +16,7 @@ from .odss.constants import (
     format_actm,
 )
 from .odss.engines import analyse
+from .odss.finding_ids import assign_finding_ids
 from .odss.parser import extract_pages, parse_lido
 from .odss.reporting import render_pdf
 from .odss.tropical_cyclone import assess_tropical_cyclone
@@ -80,6 +81,7 @@ def run_odss_analysis(
         )
         flight["timing_view"] = timing_view
         findings.append(timing_finding(timing_view))
+    assign_finding_ids(findings)
 
     briefing_view = build_briefing_view(
         flight,

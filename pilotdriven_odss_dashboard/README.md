@@ -1,6 +1,6 @@
 # PilotDriven ODSS Personal Dashboard
 
-A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic PilotDriven ODSS engine and generating Level 1 and Level 2 reports.
+A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic PilotDriven ODSS engine and generating Level 1, Level 2 and policy-aware Level 3 reports.
 
 ## What now works
 
@@ -19,6 +19,10 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
   - pertinent enroute weather.
 - Generate a three-page landscape **Level 1 pertinent brief** with a mapped summary cover, colour-coded operational detail and route/contingency review, plus a fourth volcanic-ash page only for an affected or unresolved assessment.
 - Start the **Level 2 expanded report** with the same visual briefing cover, followed by the complete deterministic analysis and warnings.
+- Generate a **Level 3 policy-aware decision artifact** by joining stable Level 2
+  finding IDs only to current, approved, tenant-scoped policy clauses. Missing
+  policy, minima, weather coverage or normalized inputs produces `PARTIAL` and
+  a fail-closed completeness ledger rather than a benign answer.
 - Store a canonical `view.briefing` object in the analysis JSON so the current dashboard, PDF renderer and future PilotDriven frontend share the same facts.
 - Detect continuous MSA greater than `100*` events and VWS greater than 4 events.
 - Match the bundled route-aware depressurisation profiles and early FIR-contact rules when applicable.
@@ -139,7 +143,7 @@ GitHub Actions also generates Level 1 and Level 2 visual sample PDFs as build ar
 data/odss.db        SQLite flight records, timing references and personal notes
 data/uploads/       uploaded CFP PDFs
 data/results/       structured ODSS JSON results
-data/reports/       generated Level 1 / Level 2 PDFs
+data/reports/       generated Level 1 / Level 2 / Level 3 PDFs
 ```
 
 Set `ODSS_DATA_DIR` to move all four paths to a writable deployment volume. Render's free web-service filesystem is ephemeral, so a free boss-demo instance loses uploaded flights when it is restarted or redeployed. Attach a persistent disk and point `ODSS_DATA_DIR` at its mount path before relying on saved flight history.
@@ -148,7 +152,12 @@ Set `ODSS_DATA_DIR` to move all four paths to a writable deployment volume. Rend
 
 An internet-facing instance must set both `ODSS_USERNAME` and `ODSS_PASSWORD`. The dashboard then requires HTTP Basic authentication on every page and file download while leaving `/healthz` public for hosting health checks. Startup fails if only one credential is configured.
 
-This protects a single-user demonstration but does not turn the personal dashboard into a production multi-user aviation system. Keep the deployment limited to authorised synthetic or approved QA CFPs until tenant isolation, encrypted object storage, background processing and formal reference governance are implemented.
+This protects a single-user demonstration but does not turn the personal
+dashboard into a production multi-user aviation system. When
+`ODSS_SERVICE_TOKEN` is configured, the legacy dashboard is disabled by default
+and service records are accessible only through the authenticated, tenant-bound
+`/v1` API. Keep any legacy compatibility mode in its own
+`ODSS_LEGACY_DASHBOARD_TENANT_ID`.
 
 ## PilotDriven integration boundary
 
@@ -239,6 +248,9 @@ POST /v1/analyses/{id}/timing
 POST /v1/analyses/{id}/reports/render
 GET  /v1/analyses/{id}/reports/level-1
 GET  /v1/analyses/{id}/reports/level-2
+GET  /v1/analyses/{id}/level-3
+GET  /v1/analyses/{id}/reports/level-3
+POST /v1/analyses/{id}/level-3/questions/{question-id}
 ```
 
 ODSS remains authoritative for CFP parsing and all deterministic aviation
@@ -246,13 +258,37 @@ calculations. The browser renders the returned briefing and GeoJSON; it does
 not recompute NOTAM or volcanic-ash applicability, MEL/CDL/CDDL, performance, BOBCAT, EDTO,
 ACTM/UTC, communications, terrain, VWS or depressurisation findings.
 
+Every `/v1/analyses/{id}` read or mutation requires trusted
+`X-PilotDriven-Tenant-Id` and `X-PilotDriven-User-Id` context from
+PilotDriven's authenticated server proxy. Storage queries include the tenant;
+knowing another tenant's analysis ID is insufficient to read or mutate it.
+
+## Level 3 governed policy boundary
+
+Level 3 is not a general-purpose AI verdict. The pilot retains the final
+decision. ODSS joins deterministic Level 2 finding IDs to cited clauses from a
+mounted, current and approved tenant policy index. Each citation retains the
+document, revision, effective date, page, section, exact supporting extract and
+applicability reason. Per-analysis policy snapshots and audit rows are
+append-only at the application database boundary.
+
+Configure either `ODSS_LEVEL3_POLICY_INDEX_DIR` (recommended, one
+`<tenant-id>.json` file per tenant) or `ODSS_LEVEL3_POLICY_INDEX_PATH` (whose
+embedded tenant must match). If the approved source set is missing or invalid,
+the artifact still exists but is deliberately `PARTIAL / review required`.
+Sample fixtures never replace operator policy. Calculated margins are omitted
+unless both the required normalized inputs and a controlling approved clause
+are mounted.
+
 ## Playwright report worker
 
 After an analysis has completed, capture the canonical MapLibre route map and
 refresh the Level 1 and Level 2 reports with:
 
 ```bash
-python -m app.odss_map_v06.report_worker <analysis-id>
+python -m app.odss_map_v06.report_worker <analysis-id> \
+  --tenant-id <tenant-id> \
+  --user-id <user-id>
 ```
 
 The worker uses this explicit hierarchy:

@@ -263,6 +263,14 @@ def _significance_index(
                 marker = _extract_after(title, "before ")
                 if marker:
                     index[marker].add("early_contact")
+        if engine == "notam" and data.get("location"):
+            location = str(data["location"]).upper()
+            if points and location == str(flight.get("departure") or "").upper():
+                index[_normalized_name(points[0])].add("notam_airport")
+            elif points and location == str(flight.get("destination") or "").upper():
+                index[_normalized_name(points[-1])].add("notam_airport")
+            else:
+                index[location].add("notam_airport")
 
     return index
 

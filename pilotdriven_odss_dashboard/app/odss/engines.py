@@ -22,6 +22,12 @@ from .controlled_library import (
     aircraft_effectivity_tokens,
     select_cdl_variants,
 )
+from .pilot_briefing import (
+    concise_weather_finding,
+    notam_pertinence,
+    notam_sort_key,
+    pilot_notam_key,
+)
 
 _WEEKDAYS = {name: index for index, name in enumerate(("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"))}
 _TIME_RANGE = re.compile(r"\b(\d{4})(?:UTC|Z)?\s*(?:-|TO)\s*(\d{4})(?:UTC|Z)?\b")
@@ -291,6 +297,115 @@ def _notam_role_window(
         starts_at, ends_at = edto_periods[location]
         return "EDTO", starts_at, ends_at
     return "informational", departure_utc, arrival_utc
+
+
+def _utc_window_label(window_start: datetime, window_end: datetime) -> str:
+    start = window_start.astimezone(timezone.utc)
+    end = window_end.astimezone(timezone.utc)
+    if start.date() == end.date():
+        return f"{start:%d %b %H%MZ}-{end:%H%MZ}".upper()
+    return f"{start:%d %b %H%MZ}-{end:%d %b %H%MZ}".upper()
+
+
+def _weather_role_window(
+    flight: dict[str, Any],
+    location: str,
+    alternate_airports: set[str],
+    edto_periods: dict[str, tuple[datetime, datetime]],
+) -> tuple[str, datetime, datetime]:
+    role, starts_at, ends_at = _notam_role_window(
+        flight,
+        location,
+        alternate_airports,
+        edto_periods,
+    )
+    phase = {
+        "departure": "Departure",
+        "destination": "Destination",
+        "destination alternate": "Destination alternate",
+        "EDTO": "EDTO",
+        "informational": "Enroute",
+    }[role]
+    return phase, starts_at, ends_at
+
+
+def _notam_subject(text: str, kind: str) -> str:
+    upper = " ".join(text.upper().split())
+    runway_pattern = r"(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
+    taxiway_pattern = r"(?:TWY|TAXIWAY)\s+[A-Z0-9][A-Z0-9/-]*"
+    closure_pattern = r"(?:CLSD|CLOSED|NOT\s+AVBL|NOT\s+AVAILABLE|SUSPENDED)"
+    if kind == "runway_closure":
+        match = (
+            re.search(
+                rf"\b({runway_pattern})\s+(?:WILL\s+BE\s+|IS\s+)?{closure_pattern}\b",
+                upper,
+            )
+            or re.search(rf"\bCLOSURE\s+OF\s+({runway_pattern})\b", upper)
+        )
+        return match.group(1).replace("RUNWAY", "RWY") if match else "runway"
+    if kind in {"runway_approach_restriction", "runway_lighting_restriction"}:
+        match = re.search(rf"\b{runway_pattern}\b", upper)
+        return match.group(0).replace("RUNWAY", "RWY") if match else "runway"
+    if kind == "approach_navaid_closure":
+        system = re.search(
+            r"\b(?:ILS|LOC|LOCALIZER|GLIDE\s*PATH|GLIDESLOPE|DME|VOR|NDB|RNP|PAPI)\b",
+            upper,
+        )
+        runway = re.search(r"\b(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?\b", upper)
+        parts = [
+            system.group(0).replace("LOCALIZER", "LOC").replace("RUNWAY", "RWY")
+            if system
+            else "approach/navaid",
+            runway.group(0).replace("RUNWAY", "RWY") if runway else "",
+        ]
+        return " ".join(part for part in parts if part)
+    if kind in {"taxiway_closure", "taxiway_restriction"}:
+        match = re.search(rf"\b{taxiway_pattern}\b", upper)
+        return match.group(0).replace("TAXIWAY", "TWY") if match else "taxiway"
+    if kind == "apron_stand_closure":
+        match = re.search(
+            r"\b(?:ACFT\s+STAND|STAND|APRON|APN|RAMP|GATE)\s+[A-Z0-9][A-Z0-9/-]*\b",
+            upper,
+        )
+        return match.group(0).replace("APN", "APRON") if match else "apron or stand"
+    return ""
+
+
+def _notam_operational_summary(
+    text: str,
+    kind: str,
+    role: str,
+    applicability: str = "active",
+) -> str:
+    subject = _notam_subject(text, kind)
+    phase = role.replace("destination alternate", "alternate").replace("informational", "flight")
+    if applicability == "review":
+        return (
+            f"Published {subject or 'airport'} restriction could not be resolved "
+            f"for the applicable {phase} window; review required."
+        )
+    if kind == "airport_closure":
+        return f"Entire airport closed or unavailable during the applicable {phase} window."
+    if kind == "runway_closure":
+        return f"{subject.title()} closed or unavailable during the applicable {phase} window."
+    if kind == "approach_navaid_closure":
+        return f"{subject} unavailable during the applicable {phase} window."
+    if kind == "runway_approach_restriction":
+        return f"{subject.title()} restriction applies during the applicable {phase} window."
+    if kind == "runway_lighting_restriction":
+        return f"Lighting affecting {subject.upper()} is unavailable during the applicable {phase} window."
+    if kind == "taxiway_closure":
+        return f"{subject.upper()} closed during the applicable {phase} window."
+    if kind == "taxiway_restriction":
+        return f"{subject.upper()} restriction applies during the applicable {phase} window."
+    if kind == "apron_stand_closure":
+        return f"{subject.upper()} closed during the applicable {phase} window."
+    if kind == "obstacle":
+        return (
+            f"Obstacle or crane affects the {phase} airport environment; "
+            "assess against expected runway and approach use."
+        )
+    return f"Operational airport restriction requires review during the applicable {phase} window."
 
 
 def _configured_window_minutes(name: str, default: int) -> int:
@@ -876,28 +991,112 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             min(starts_at, current[0]) if current else starts_at,
             max(ends_at, current[1]) if current else ends_at,
         )
+    audit_evidence = flight.setdefault("audit_evidence", {})
+
+    weather_audit_records: list[dict[str, Any]] = []
+    weather_groups: dict[tuple[str, str, str], dict[str, Any]] = {}
     for record in flight["weather"]:
         location = record["location"]
-        role = (
-            "departure" if location == flight["departure"]
-            else "destination" if location == flight["destination"]
-            else "destination alternate" if location in alternate_airports
-            else "EDTO airport" if location in edto_airports
-            else "enroute"
+        phase, window_start, window_end = _weather_role_window(
+            flight,
+            location,
+            alternate_airports,
+            edto_periods,
         )
-        upper = record["text"].upper()
-        significant = bool(re.search(r"\b(TS|TSRA|CB|CAVOK|BKN00\d|OVC00\d|G\d{2}KT|WS)\b", upper))
-        if role == "enroute" and not significant:
+        raw_text = str(record["text"])
+        upper = raw_text.upper()
+        significant = bool(
+            record.get("record_type") == "SIGMET"
+            or re.search(
+                r"\b(?:TS|TSRA|VCTS|CB|BKN00\d|OVC00\d|G\d{2,3}KT|"
+                r"LLWS|WS|FZRA|FZDZ|SN|BLSN|SEV\s+TURB|SEV\s+ICE)\b",
+                upper,
+            )
+        )
+        evidence_ref = f"weather:{len(weather_audit_records)}"
+        weather_audit_records.append({
+            "evidence_ref": evidence_ref,
+            "source": "uploaded_cfp",
+            "location": location,
+            "record_type": record.get("record_type"),
+            "raw_text": raw_text,
+            "phase": phase,
+            "window_start_utc": window_start.isoformat(),
+            "window_end_utc": window_end.isoformat(),
+            "selected_for_pilot": phase != "Enroute" or significant,
+        })
+        if phase == "Enroute" and not significant:
             continue
-        severity = "warning" if any(x in upper for x in ("TS", "CB", "BKN00", "OVC00")) else "information"
-        findings.append(finding(
-            "weather",
-            severity,
-            f"{role.title()} weather - {location}",
-            record["text"],
-            [f"Record type: {record['record_type']}."],
-        ))
 
+        window_label = _utc_window_label(window_start, window_end)
+        prepared = concise_weather_finding(finding(
+            "weather",
+            "warning" if significant else "information",
+            f"{phase} weather - {location}",
+            "",
+            data={
+                "phase": phase,
+                "utc_window": window_label,
+                "raw_text": raw_text,
+            },
+        ))
+        mechanism = str(prepared["data"]["mechanism"])
+        key = (phase, location, window_label)
+        group = weather_groups.setdefault(key, {
+            "phase": phase,
+            "location": location,
+            "utc_window": window_label,
+            "mechanisms": [],
+            "record_types": [],
+            "audit_evidence_refs": [],
+            "warning": False,
+        })
+        for mechanism_part in (
+            part.strip()
+            for part in mechanism.split(",")
+            if part.strip()
+        ):
+            if mechanism_part not in group["mechanisms"]:
+                group["mechanisms"].append(mechanism_part)
+        record_type = str(record.get("record_type") or "weather")
+        if record_type not in group["record_types"]:
+            group["record_types"].append(record_type)
+        group["audit_evidence_refs"].append(evidence_ref)
+        group["warning"] = bool(group["warning"] or significant)
+
+    for group in weather_groups.values():
+        mechanisms = list(group["mechanisms"])
+        if len(mechanisms) > 1:
+            mechanisms = [
+                item
+                for item in mechanisms
+                if item != "no adverse mechanism identified in the parsed station record"
+            ]
+        mechanism = ", ".join(mechanisms)
+        prepared = concise_weather_finding(finding(
+            "weather",
+            "warning" if group["warning"] else "information",
+            f"{group['phase']} weather - {group['location']}",
+            "",
+            data={
+                "phase": group["phase"],
+                "location": group["location"],
+                "utc_window": group["utc_window"],
+                "mechanism": mechanism,
+                "record_types": group["record_types"],
+                "audit_evidence_refs": group["audit_evidence_refs"],
+            },
+        ))
+        findings.append(prepared)
+
+    audit_evidence["weather"] = {
+        "source_record_count": len(flight["weather"]),
+        "pilot_facing_group_count": len(weather_groups),
+        "records": weather_audit_records,
+    }
+
+    notam_audit_records: list[dict[str, Any]] = []
+    applicable_notams: list[dict[str, Any]] = []
     for record in flight["notams"]:
         location = record["location"]
         role, window_start, window_end = _notam_role_window(
@@ -912,16 +1111,35 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             if record.get("valid_to_utc")
             else datetime.max.replace(tzinfo=timezone.utc)
         )
+        evidence_ref = f"notam:{len(notam_audit_records)}"
+        audit_record = {
+            "evidence_ref": evidence_ref,
+            "source": "uploaded_cfp",
+            "notam_id": record["notam_id"],
+            "location": location,
+            "category": record["category"],
+            "raw_text": record["text"],
+            "valid_from_utc": record["valid_from_utc"],
+            "valid_to_utc": record.get("valid_to_utc"),
+            "schedule": record.get("schedule"),
+            "role": role,
+            "window_start_utc": window_start.isoformat(),
+            "window_end_utc": window_end.isoformat(),
+            "pilot_status": "pending",
+        }
+        notam_audit_records.append(audit_record)
         applicability = "active"
         if record.get("validity_review"):
             applicability = "review"
             warnings.append(f"{record['notam_id']}: B/C validity could not be parsed; manual review required.")
         elif not _intervals_overlap(valid_from, valid_to, window_start, window_end):
+            audit_record["pilot_status"] = "outside_time_window"
             continue
         schedule = record.get("schedule")
         if schedule:
             schedule_active = _schedule_overlaps(schedule, window_start, window_end)
             if schedule_active is False:
+                audit_record["pilot_status"] = "outside_schedule"
                 continue
             if schedule_active is None:
                 applicability = "review"
@@ -929,34 +1147,89 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         elif record.get("schedule_review"):
             applicability = "review"
             warnings.append(f"{record['notam_id']}: schedule language could not be structured; manual review required.")
-        upper = record["text"].upper()
-        severity = "warning"
-        if re.search(r"(?<![A-Z0-9])(?:CLSD|CLOSED|U/S|NOT AVBL|SUSPENDED)(?![A-Z0-9])", upper):
-            severity = "critical" if role in {"departure", "destination"} else "warning"
+        pertinence_rank, pertinence_kind = notam_pertinence(
+            str(record["text"]),
+            str(record["category"]),
+        )
+        severity = (
+            "critical"
+            if role in {"departure", "destination"} and pertinence_rank <= 2
+            else "warning"
+        )
         details = [
             *([f"Schedule: {schedule}."] if schedule else []),
-            f"Operating window {window_start.isoformat()} to {window_end.isoformat()}.",
-            f"Location {location}; category {record['category']}.",
-            f"Validity {record['valid_from_utc']} to {record.get('valid_to_utc') or 'UFN'}.",
+            f"Applicable {role} UTC window: {_utc_window_label(window_start, window_end)}.",
             *(["Applicability requires manual review."] if applicability == "review" else []),
         ]
-        findings.append(finding(
+        applicable_notams.append(finding(
             "notam",
             severity,
             f"{role.title()} NOTAM {record['notam_id']}",
-            record["text"][:260],
+            _notam_operational_summary(
+                str(record["text"]),
+                pertinence_kind,
+                role,
+                applicability,
+            ),
             details,
             {
                 "role": role,
                 "location": location,
                 "notam_id": record["notam_id"],
+                "category": record["category"],
                 "priority_score": record.get("priority_score", 0),
+                "pertinence_rank": pertinence_rank,
+                "pertinence_kind": pertinence_kind,
                 "applicability": applicability,
                 "schedule": schedule,
+                "valid_from_utc": record["valid_from_utc"],
+                "valid_to_utc": record.get("valid_to_utc"),
                 "window_start_utc": window_start.isoformat(),
                 "window_end_utc": window_end.isoformat(),
+                "raw_text": record["text"],
+                "audit_evidence_ref": evidence_ref,
             },
         ))
+
+    selected_notams: list[dict[str, Any]] = []
+    seen_notams: dict[tuple[str, ...], dict[str, Any]] = {}
+    for item in sorted(applicable_notams, key=notam_sort_key):
+        data = item.get("data") or {}
+        audit_index = int(str(data["audit_evidence_ref"]).split(":", 1)[1])
+        audit_record = notam_audit_records[audit_index]
+        semantic_key = pilot_notam_key(item)
+        if semantic_key is not None and semantic_key in seen_notams:
+            original = seen_notams[semantic_key]
+            audit_record["pilot_status"] = "semantic_duplicate"
+            audit_record["duplicate_of_notam_id"] = original["data"]["notam_id"]
+            continue
+        if semantic_key is not None:
+            seen_notams[semantic_key] = item
+        if len(selected_notams) >= 24:
+            audit_record["pilot_status"] = "lower_priority_audit_only"
+            continue
+        audit_record["pilot_status"] = "selected"
+        selected_notams.append(item)
+    findings.extend(selected_notams)
+    audit_evidence["notam"] = {
+        "source_record_count": len(flight["notams"]),
+        "time_applicable_count": len(applicable_notams),
+        "pilot_facing_count": len(selected_notams),
+        "semantic_duplicate_count": sum(
+            item["pilot_status"] == "semantic_duplicate"
+            for item in notam_audit_records
+        ),
+        "audit_only_count": sum(
+            item["pilot_status"] in {
+                "outside_time_window",
+                "outside_schedule",
+                "semantic_duplicate",
+                "lower_priority_audit_only",
+            }
+            for item in notam_audit_records
+        ),
+        "records": notam_audit_records,
+    }
 
     waypoint_by_boundary = {
         w["fir_boundary"]: w
