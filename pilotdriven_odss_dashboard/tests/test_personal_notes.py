@@ -132,12 +132,13 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     level1_text = _pdf_text(client.get(f"/files/report/{flight_id}/1"))
     level2_text = _pdf_text(client.get(f"/files/report/{flight_id}/2"))
     level1_compact = " ".join(level1_text.split())
-    assert "DEPARTURE AIRPORT" in level1_text
+    level2_compact = " ".join(level2_text.split())
+    assert "DEPARTURE -" in level1_text
     assert "Confirm departure stand and pushback plan." in level1_compact
     assert "Pilot-entered content; not ODSS-validated." in level1_compact
     assert "Departure airport - personal notes" in level2_text
     assert "Confirm departure stand and pushback plan." in level2_text
-    assert "not extracted, validated or endorsed" in level2_text
+    assert "not extracted, validated or endorsed" in level2_compact
 
     response = client.post(
         f"/flights/{flight_id}/notes",
@@ -150,9 +151,11 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     assert response.status_code == 303
     level1_text = _pdf_text(client.get(f"/files/report/{flight_id}/1"))
     level2_text = _pdf_text(client.get(f"/files/report/{flight_id}/2"))
+    level2_compact = " ".join(level2_text.split())
     assert "Monitor the company frequency before the FIR transfer." not in level1_text
-    assert "Enroute ATC / communications - personal notes" in level2_text
-    assert "Monitor the company frequency before the FIR transfer." in level2_text
+    assert "LEVEL 2 - OCEANIC / FIR COMMUNICATIONS" in level2_text
+    assert "PERSONAL NOTE" in level2_text
+    assert "Monitor the company frequency before the FIR transfer." in level2_compact
 
     response = client.post(
         f"/flights/{flight_id}/notes/{note_id}/update",
@@ -169,7 +172,7 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     assert updated["note_text"] == "Confirm destination stand and towing requirement."
     level1_text = _pdf_text(client.get(f"/files/report/{flight_id}/1"))
     level1_compact = " ".join(level1_text.split())
-    assert "DESTINATION AIRPORT" in level1_text
+    assert "DESTINATION -" in level1_text
     assert "Confirm destination stand and towing requirement." in level1_compact
     assert "Confirm departure stand and pushback plan." not in level1_compact
 

@@ -41,7 +41,7 @@ def test_quality_gate_accepts_three_page_a4_landscape_level1(tmp_path: Path) -> 
         page_texts=[
             "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS\n"
             "Natural Earth 1:110m land context",
-            "SQ304 - TIME-BASED OPERATING GATES",
+            "SQ304 - OPERATIONAL TIMING",
             "SQ304 - HIGH TERRAIN EXPOSURE",
         ],
     )
@@ -71,7 +71,7 @@ def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:
         (
             [
                 "Natural Earth 1:110m land context",
-                "SQ304 - TIME-BASED OPERATING GATES",
+                "SQ304 - OPERATIONAL TIMING",
                 "SQ304 - HIGH TERRAIN EXPOSURE",
             ],
             "LEVEL_1_NOTAM_WINDOW_HEADING",
@@ -89,7 +89,7 @@ def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:
             [
                 "APPLICABLE NOTAMS WITHIN STD / STA +/- 2 HOURS\n"
                 "Natural Earth 1:110m land context",
-                "SQ304 - TIME-BASED OPERATING GATES",
+                "SQ304 - OPERATIONAL TIMING",
                 "SQ304 - ROUTE / CONTINGENCY",
             ],
             "LEVEL_1_PAGE_3_STRUCTURE",
@@ -98,7 +98,7 @@ def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:
             [
                 "APPLICABLE NOTAMS WITHIN STD / STA +/- 2 HOURS\n"
                 "Natural Earth 1:110m land context",
-                "SQ304 - TIME-BASED OPERATING GATES\n"
+                "SQ304 - OPERATIONAL TIMING\n"
                 "Natural Earth 1:110m land context",
                 "SQ304 - HIGH TERRAIN EXPOSURE",
             ],
@@ -132,3 +132,47 @@ def test_quality_gate_rejects_internal_pilot_wording(
 
     assert result["valid"] is False
     assert any(item.code.startswith("PILOT_") for item in result["violations"])
+
+
+def test_quality_gate_requires_fixed_level2_page_contract(tmp_path: Path) -> None:
+    path = tmp_path / "level2.pdf"
+    _pdf(
+        path,
+        pages=7,
+        page_texts=[
+            "ANALYSIS OVERVIEW",
+            "PERFORMANCE, FUEL AND AIRPORT BASIS",
+            "FLIGHT-WINDOW NOTAM APPLICABILITY",
+            "EDTO SECTORS AND SUITABILITY INPUTS",
+            "OCEANIC AND FIR COMMUNICATIONS",
+            "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE",
+            "WEATHER, VAAC AND PROMOTION RESULT",
+        ],
+    )
+
+    result = assert_report_quality(path, level=2)
+
+    assert result["valid"] is True
+    assert result["page_count"] == 7
+
+
+def test_quality_gate_rejects_wrong_level2_page_order(tmp_path: Path) -> None:
+    path = tmp_path / "level2-wrong-order.pdf"
+    _pdf(
+        path,
+        pages=7,
+        page_texts=[
+            "ANALYSIS OVERVIEW",
+            "FLIGHT-WINDOW NOTAM APPLICABILITY",
+            "PERFORMANCE, FUEL AND AIRPORT BASIS",
+            "EDTO SECTORS AND SUITABILITY INPUTS",
+            "OCEANIC AND FIR COMMUNICATIONS",
+            "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE",
+            "WEATHER, VAAC AND PROMOTION RESULT",
+        ],
+    )
+
+    result = validate_report_pdf(path, level=2)
+
+    assert result["valid"] is False
+    assert any(item.code == "LEVEL_2_PAGE_STRUCTURE" for item in result["violations"])

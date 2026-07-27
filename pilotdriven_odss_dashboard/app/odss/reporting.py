@@ -24,6 +24,7 @@ from ..personal_notes import PERSONAL_NOTE_PLACEMENT_LABELS
 from .briefing import build_briefing_view
 from .constants import ENGINE_ORDER
 from .pertinent_brief import render_level1_visual
+from .operational_brief import render_level2_visual
 from .report_quality import assert_report_quality
 from .pilot_briefing import (
     select_concise_weather,
@@ -481,6 +482,18 @@ def render_pdf(
             map_label=map_label,
         )
         assert_report_quality(path, level=1)
+        return
+
+    if level == 2:
+        render_level2_visual(
+            flight,
+            findings,
+            warnings,
+            path,
+            map_image_path=map_image_path,
+            map_label=map_label,
+        )
+        assert_report_quality(path, level=2)
         return
 
     styles = getSampleStyleSheet()

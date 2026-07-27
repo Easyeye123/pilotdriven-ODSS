@@ -417,12 +417,12 @@ def test_level1_integrates_conditional_vaa_on_route_page(
     page3 = reader.pages[2].extract_text() or ""
 
     assert len(reader.pages) == 3
-    assert "ENROUTE WEATHER / VAAC / TC" in page2
-    assert "ENROUTE WEATHER / VAAC / TC" not in page3
+    assert "DATA COVERAGE" in page2
+    assert "DATA COVERAGE" not in page3
     assert (
-        "Volcanic ash affects the planned route"
+        "VAAC / TC: route impact identified - review Level 2."
         if status == "affected"
-        else "Volcanic ash review required"
+        else "VAAC / TC: VAA review required."
     ) in page2
     assert "VOLCANIC ASH ADVISORY REVIEW" not in text
     assert "SOURCE / PROVENANCE" not in text

@@ -13,6 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import analysis
 from app.odss.briefing import build_route_map, render_route_svg
 from app.odss.pertinent_brief import CATEGORY_COLOURS
+from app.odss.report_facts import (
+    build_route_gate_rows,
+    select_route_gate_rows,
+)
 from app.odss.reporting import render_pdf, report_sections
 
 
@@ -124,6 +128,30 @@ def _no_overlap_weather(
     }
 
 
+def _review_required_weather(
+    *,
+    location: str,
+    phase: str,
+    window: str,
+) -> dict[str, Any]:
+    return {
+        "engine": "weather",
+        "severity": "warning",
+        "title": f"{phase} weather - {location}",
+        "summary": "Forecast coverage is incomplete — review required.",
+        "details": [],
+        "data": {
+            "phase": phase,
+            "location": location,
+            "utc_window": window,
+            "mechanism": "None safely classified",
+            "timing": f"The CFP TAF does not fully cover {window}.",
+            "flight_effect": "Forecast coverage is incomplete.",
+            "window_status": "review_required",
+        },
+    }
+
+
 def _flight() -> dict[str, Any]:
     return {
         "flight_number": "SQ304",
@@ -160,6 +188,61 @@ def _flight() -> dict[str, Any]:
         "notams": [],
         "personal_notes": [],
     }
+
+
+def test_route_gates_are_derived_from_generic_cfp_route_and_fail_closed() -> None:
+    flight = _flight()
+    flight["route_text"] = "WSSS DCT ALPHA NATB BRAVO DCT EBBR"
+    flight["route_waypoints"] = [
+        {
+            "name": "WSSS",
+            "actm_minutes": 0,
+            "source_page": 7,
+            "fir_boundary": None,
+        },
+        {
+            "name": "ALPHA",
+            "actm_minutes": 120,
+            "source_page": 8,
+            "fir_boundary": None,
+        },
+        {
+            "name": "-TEST",
+            "actm_minutes": 180,
+            "source_page": 8,
+            "fir_boundary": "TEST",
+        },
+        {
+            "name": "BRAVO",
+            "actm_minutes": 240,
+            "source_page": 9,
+            "fir_boundary": None,
+        },
+        {
+            "name": "EBBR",
+            "actm_minutes": 690,
+            "source_page": 15,
+            "fir_boundary": None,
+        },
+    ]
+
+    rows = build_route_gate_rows(flight)
+    selected = select_route_gate_rows(rows, limit=3)
+
+    assert rows[0]["gate"] == "NAT B"
+    assert rows[0]["basis"] == "ALPHA - BRAVO"
+    assert "11 JUL 1230Z" in rows[0]["time"]
+    assert any(item["gate"] == "TEST" for item in selected)
+    assert selected[-1]["gate"] == "EBBR"
+    assert all(
+        item["status"] == "review_required"
+        or item["kind"] == "arrival"
+        for item in selected
+    )
+    assert all(
+        "review required" not in item["result"].lower()
+        for item in selected
+    )
 
 
 def test_route_map_limits_routine_labels_on_dense_long_haul_routes() -> None:
@@ -266,26 +349,32 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "Decision support only" not in second
     assert "Decision support only" not in third
     assert float(reader.pages[0].mediabox.width) > float(reader.pages[0].mediabox.height)
-    assert "PZFW" in first and "166,486 kg" in first
-    assert "PLDW" in first and "175,802 kg" in first
-    assert "PTOW" in first and "245,529 kg" in first
-    assert "DEPARTURE AIRPORT" in first
-    assert "DESTINATION AIRPORT" in first
+    assert "LEVEL 1 - PERTINENT BRIEF" in first
+    assert "PERFORMANCE" in first
+    assert "EXCESS FUEL" in first
+    assert "EDTO" in first
+    assert "OCEANIC" in first
+    assert "HIGH TERRAIN" in first
+    assert "DEPARTURE - WSSS" in first
+    assert "DESTINATION - EBBR" in first
+    assert "DECISION GATES" in first
     assert "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS" in first
     assert "Natural Earth 1:110m land context" in first
-    assert "SQ304 - TIME-BASED OPERATING GATES" in second
+    assert "SQ304 - OPERATIONAL TIMING" in second
     assert "FLIGHT PHASE WINDOWS" in second
     assert "EDTO 1 | ENTRY 02.00 | EXIT 02.30" in second
     assert "MEL / CDL / CDDL" not in second
     assert "PERFORMANCE / FUEL" not in second
     assert "WEATHER / PERTINENT NOTAM" not in second
-    assert "ENROUTE WEATHER / VAAC / TC" in second
+    assert "ROUTE GATE" in second
+    assert "TAKEOFF WEIGHT" in second
+    assert "DATA COVERAGE" in second
     assert "SQ304 - HIGH TERRAIN EXPOSURE" in third
     assert "Validated CFP MSA points only - no terrain interpolation" in third
     assert "FIR / COMMUNICATIONS" not in third
-    assert "HIGH TERRAIN MSA / VWS" in third
-    assert "DEPRESSURISATION PROFILE COVERAGE" in third
-    assert "High terrain detected but no profile matched" in third
+    assert "ACTUAL EXPOSURE" in third
+    assert "PROFILE / COVERAGE" in third
+    assert "BOUNDARY LOGIC" in third
     assert "Manual chart-index review is required" in third
     assert "ACTM / CALCULATED UTC" not in third
     assert sum(
@@ -306,37 +395,90 @@ def test_level1_weather_uses_pertinent_operational_lines_not_raw_repetition(
         for page in PdfReader(path).pages
     )
     reader = PdfReader(path)
+    page1 = reader.pages[0].extract_text() or ""
     page2 = reader.pages[1].extract_text() or ""
     page3 = reader.pages[2].extract_text() or ""
     assert "EDTO weather - VTSP" in text
-    assert "EDTO weather - VTSP" in page2
+    assert "EDTO weather - VTSP" in page1
+    assert "EDTO weather - VTSP" not in page2
     assert "EDTO weather - VTSP" not in page3
-    assert "EDTO | VTSP | 25 JUL 1821Z-2039Z" in text
-    assert "Mechanism: convection / thunderstorms." in text
-    assert "Timing: convection / thunderstorms overlaps 20:00Z-20:39Z." in text
-    assert "Flight effect: Diversion-airport suitability requires review." in text
+    assert "EDTO | VTSP | 25 JUL 1821Z-2039Z" in page1
+    assert "convection / thunderstorms" in page1
+    assert "Diversion-airport suitability requires review." in page1
     assert "Applicable conditions:" not in text
     assert "Nearby observation:" not in text
     assert "2026-07-25T16:30:00+00:00" not in text
 
 
-def test_level2_begins_with_visual_cover_and_repeats_detail_header(tmp_path: Path) -> None:
+def test_level1_groups_repeated_incomplete_weather_without_hiding_review(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_1_grouped_incomplete_weather.pdf"
+    findings = [
+        _pertinent_weather(),
+        _review_required_weather(
+            location="CYQX",
+            phase="EDTO",
+            window="25 JUL 0526Z-0917Z",
+        ),
+        _review_required_weather(
+            location="EINN",
+            phase="EDTO",
+            window="25 JUL 0649Z-0917Z",
+        ),
+        {
+            "engine": "vaa",
+            "severity": "unknown",
+            "title": "Volcanic ash review required",
+            "summary": "Coverage is incomplete.",
+            "details": [],
+            "data": {"status": "review_required"},
+        },
+        {
+            "engine": "tropical_cyclone",
+            "severity": "unknown",
+            "title": "Tropical cyclone review required",
+            "summary": "Coverage is incomplete.",
+            "details": [],
+            "data": {"status": "review_required"},
+        },
+    ]
+
+    render_pdf(_flight(), findings, [], 1, path)
+
+    reader = PdfReader(path)
+    page1 = " ".join((reader.pages[0].extract_text() or "").split())
+    page2 = " ".join((reader.pages[1].extract_text() or "").split())
+    assert page1.count("Weather coverage incomplete") == 1
+    assert "EDTO / CYQX / 25 JUL 0526Z-0917Z" in page1
+    assert "EDTO / EINN / 25 JUL 0649Z-0917Z" in page1
+    assert "VAA and tropical-cyclone review required" in page2
+    assert "Forecast coverage is incomplete." not in f"{page1} {page2}"
+
+
+def test_level2_matches_seven_page_operational_contract(tmp_path: Path) -> None:
     path = tmp_path / "level_2.pdf"
     render_pdf(_flight(), [_weather(index) for index in range(24)], [], 2, path)
 
     reader = PdfReader(path)
-    assert len(reader.pages) >= 2
-    first = reader.pages[0].extract_text() or ""
-    second = reader.pages[1].extract_text() or ""
+    assert len(reader.pages) == 7
+    pages = [page.extract_text() or "" for page in reader.pages]
+    first = pages[0]
+    second = pages[1]
 
     assert "PILOTDRIVEN" in first
     assert "PZFW" in first and "166,486 kg" in first
-    assert "SQ304 Expanded Operational Analysis" in second
-    assert "Decision support only - approved documents" in second
-    assert "Page 2" in second
+    assert "ANALYSIS OVERVIEW" in first
+    assert "PERFORMANCE, FUEL AND AIRPORT BASIS" in second
+    assert "FLIGHT-WINDOW NOTAM APPLICABILITY" in pages[2]
+    assert "EDTO SECTORS AND SUITABILITY INPUTS" in pages[3]
+    assert "OCEANIC AND FIR COMMUNICATIONS" in pages[4]
+    assert "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE" in pages[5]
+    assert "WEATHER, VAAC AND PROMOTION RESULT" in pages[6]
+    assert all(f"Page {index} of 7" in text for index, text in enumerate(pages, 1))
 
 
-def test_level2_does_not_force_sparse_section_pages(tmp_path: Path) -> None:
+def test_level2_preserves_page_contract_when_sections_are_sparse(tmp_path: Path) -> None:
     path = tmp_path / "level_2_compact.pdf"
     findings = [
         _weather(1),
@@ -355,11 +497,69 @@ def test_level2_does_not_force_sparse_section_pages(tmp_path: Path) -> None:
 
     reader = PdfReader(path)
     page_text = [(page.extract_text() or "").strip() for page in reader.pages]
-    assert len(reader.pages) == 2
-    assert "Weather" in page_text[1]
-    assert "Applicable NOTAMs within STD / STA ±2 hours" in page_text[1]
-    assert "Terrain MSA events" in page_text[1]
-    assert "Applicability and parser warnings" in page_text[1]
+    assert len(reader.pages) == 7
+    assert "FLIGHT-WINDOW NOTAM APPLICABILITY" in page_text[2]
+    assert "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE" in page_text[5]
+    assert "WEATHER, VAAC AND PROMOTION RESULT" in page_text[6]
+    assert "Coverage note: Source review required." in page_text[6]
+
+
+def test_level2_notam_table_uses_actual_window_and_pilot_facing_effect(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_notam_window.pdf"
+    active = _notam("A1000/26", "departure")
+    active["data"].update({
+        "location": "WSSS",
+        "applicability": "active",
+        "pertinence_kind": "runway_closure",
+        "window_start_utc": "2026-07-11T09:30:00+00:00",
+        "window_end_utc": "2026-07-11T11:30:00+00:00",
+    })
+    unresolved = _notam("A1001/26", "destination")
+    unresolved["data"].update({
+        "location": "EBBR",
+        "applicability": "review",
+        "window_start_utc": "2026-07-11T21:00:00+00:00",
+        "window_end_utc": "2026-07-12T01:00:00+00:00",
+    })
+
+    render_pdf(_flight(), [active, unresolved], [], 2, path)
+
+    page = PdfReader(path).pages[2].extract_text() or ""
+    normalized = " ".join(page.split())
+    assert "11 JUL 0930Z-1130Z" in normalized
+    assert "11 JUL 2100Z-12 JUL 0100Z" in normalized
+    assert "Runway availability affected." in normalized
+    assert "Restriction unresolved - pilot review required." in normalized
+    assert " active " not in f" {normalized.lower()} "
+
+
+def test_level2_notam_table_merges_duplicate_operational_conditions(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_notam_deduplicated.pdf"
+    first = _notam("A1000/26", "departure", priority_score=20)
+    second = _notam("A1001/26", "departure", priority_score=19)
+    for item in (first, second):
+        item["data"].update({
+            "location": "WSSS",
+            "applicability": "active",
+            "pertinence_kind": "approach_navaid_closure",
+            "window_start_utc": "2026-07-11T09:30:00+00:00",
+            "window_end_utc": "2026-07-11T11:30:00+00:00",
+        })
+        item["summary"] = "ILS RWY 20C unavailable during the departure window."
+
+    render_pdf(_flight(), [first, second], [], 2, path)
+
+    page = PdfReader(path).pages[2].extract_text() or ""
+    normalized = " ".join(page.split())
+    assert normalized.count(
+        "ILS RWY 20C unavailable during the departure window."
+    ) == 1
+    assert "A1000/26 + A1001/26" in normalized
+    assert "Approach or navigation availability affected." in normalized
 
 
 def test_level2_cites_originating_evidence_without_exposing_trace_ids(
@@ -436,17 +636,18 @@ def test_level2_weather_is_concise_deduplicated_and_does_not_repeat_raw_opmet(
     )
     assert "TAF WSSS 161100Z" not in text
     assert "trigger" not in text.lower()
-    # The single concise effect appears once on the visual cover and once in
-    # expanded detail; the second duplicate source record and the generated
-    # detail rows are not repeated.
-    assert text.count("Weather record 01") == 2
+    # The analysis overview is an index. The primary weather fact is shown
+    # once on the dedicated page and raw source-record labels are suppressed.
+    assert "Weather record 01" not in text
     assert "Weather record 02" not in text
-    assert "Enroute; UTC window not resolved: convection / thunderstorms." in text
+    normalized = " ".join(text.split())
+    assert normalized.count("convection / thunderstorms") == 1
+    assert "Enroute UTC window not resolved" in normalized
     assert "UTC window: UTC window not resolved." not in text
     assert "Operational mechanism:" not in text
     assert (
         "Route deviation, flight-level strategy or timing may be affected."
-        in text
+        in normalized
     )
 
 
@@ -474,12 +675,15 @@ def test_level2_groups_repeated_no_overlap_weather_into_one_checked_summary(
         (page.extract_text() or "")
         for page in PdfReader(path).pages
     )
-    assert text.count(
-        "No significant CFP forecast-weather overlap in the checked windows:"
+    normalized = " ".join(text.split())
+    assert normalized.count(
+        "No significant CFP forecast group overlapped."
     ) == 1
-    assert "KJFK (departure, 25 JUL 0115Z-0315Z)" in text
-    assert "WSSS (destination, 25 JUL 1930Z-2330Z)" in text
-    assert text.count("refresh from the latest official operational weather") == 1
+    assert "Departure / KJFK / 25 JUL 0115Z-0315Z" in normalized
+    assert "Destination / WSSS / 25 JUL 1930Z-2330Z" in normalized
+    assert normalized.lower().count(
+        "confirm the latest operational weather before use"
+    ) == 1
 
 
 def test_level2_deduplicates_repeated_notam_window_detail_rows() -> None:
@@ -521,9 +725,10 @@ def test_level2_formats_official_source_times_for_pilot_readability(
         (page.extract_text() or "")
         for page in PdfReader(path).pages
     )
-    assert "retrieved 27 JUL 2026 0816Z" in text
-    assert "valid 27 JUL 2026 0230Z to 27 JUL 2026 1320Z" in text
-    assert ".364917+00:00" not in text
+    normalized = " ".join(text.split())
+    assert "retrieved 27 JUL 2026 0816Z" in normalized
+    assert "valid 27 JUL 2026 0230Z to 27 JUL 2026 1320Z" in normalized
+    assert ".364917+00:00" not in normalized
 
 
 def test_level2_compacts_deterministic_event_details_without_losing_facts() -> None:
@@ -644,7 +849,7 @@ def test_level1_integrates_volcanic_ash_without_source_gate_page(
     reader = PdfReader(path)
     assert len(reader.pages) == 3
     text = "\n".join((page.extract_text() or "") for page in reader.pages)
-    assert "ENROUTE WEATHER / VAAC" in text
     assert "Sheveluch volcanic ash proximity" in text
+    assert "Time-matched route screening requires operational action." in text
     assert "SOURCE / PROVENANCE" not in text
     assert "MANUAL REVIEW REQUIRED" not in text

@@ -34,7 +34,7 @@ _PILOT_FACING_FORBIDDEN = (
     ("PILOT_DECISION_POINT_LABEL", re.compile(r"\bDecision point\s*:", re.IGNORECASE)),
 )
 _LEVEL_1_PAGE_2_TITLE = re.compile(
-    r"\bS(?:IA|Q)\s*\d+\s*-\s*TIME-BASED OPERATING GATES\b",
+    r"\bS(?:IA|Q)\s*\d+\s*-\s*OPERATIONAL TIMING\b",
     re.IGNORECASE,
 )
 _LEVEL_1_PAGE_3_TITLE = re.compile(
@@ -54,6 +54,15 @@ _LEVEL_1_RETIRED_HEADINGS = (
     "WEATHER / PERTINENT NOTAM",
     "OPERATIONAL DETAIL",
     "ROUTE / CONTINGENCY",
+)
+_LEVEL_2_PAGE_TITLES = (
+    "ANALYSIS OVERVIEW",
+    "PERFORMANCE, FUEL AND AIRPORT BASIS",
+    "FLIGHT-WINDOW NOTAM APPLICABILITY",
+    "EDTO SECTORS AND SUITABILITY INPUTS",
+    "OCEANIC AND FIR COMMUNICATIONS",
+    "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE",
+    "WEATHER, VAAC AND PROMOTION RESULT",
 )
 
 
@@ -85,10 +94,10 @@ def validate_report_pdf(
             "LEVEL_1_PAGE_CONTRACT",
             f"Level 1 must contain exactly 3 pages; generated {page_count}.",
         ))
-    elif level == 2 and not 2 <= page_count <= 7:
+    elif level == 2 and page_count != 7:
         violations.append(ReportQualityViolation(
             "LEVEL_2_PAGE_CONTRACT",
-            f"Level 2 must contain 2 to 7 pages; generated {page_count}.",
+            f"Level 2 must contain exactly 7 pages; generated {page_count}.",
         ))
     elif level == 3:
         maximum = 1 if str(level3_status).upper() == "PARTIAL" else 5
@@ -121,7 +130,7 @@ def validate_report_pdf(
             extracted_pages.append("")
 
     pilot_text = "\n".join(extracted_pages)
-    if level in {1, 3}:
+    if level in {1, 2, 3}:
         for code, pattern in _PILOT_FACING_FORBIDDEN:
             if pattern.search(pilot_text):
                 violations.append(ReportQualityViolation(
@@ -160,6 +169,17 @@ def validate_report_pdf(
                 violations.append(ReportQualityViolation(
                     "LEVEL_1_RETIRED_DUPLICATE_SECTION",
                     f"Level 1 contains retired duplicate section heading: {retired_heading}.",
+                ))
+
+    if level == 2 and page_count == 7:
+        for page_index, required_title in enumerate(_LEVEL_2_PAGE_TITLES):
+            if required_title.lower() not in extracted_pages[page_index].lower():
+                violations.append(ReportQualityViolation(
+                    "LEVEL_2_PAGE_STRUCTURE",
+                    (
+                        f"Level 2 page {page_index + 1} must contain "
+                        f"{required_title}."
+                    ),
                 ))
 
     return {
