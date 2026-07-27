@@ -38,46 +38,61 @@ _GREY = colors.HexColor("#4B5563")
 
 
 def _styles() -> dict[str, ParagraphStyle]:
+    """Paragraph styles for the generated Level 1/2/3 PDFs.
+
+    Sizes were raised about 25% (panel 6.2->7.6, panel_small 5.4->6.8,
+    detail 6.5->8.0, detail_small 5.8->7.2, metric 5.4->6.8) after repeated
+    "font size TOO SMALL" reports. 5.4pt body text is roughly half normal print
+    body size and is not readable on an iPad at arm's length in a flight deck.
+
+    The step is 25% rather than the ~45% that would match normal print body
+    text because these pages are fixed-geometry panels, not reflowing text.
+    Measured against the real page-1 bottom strip (63x21mm) a jump to 8pt cuts
+    it from 9 usable lines to 6, and `_fit_paragraph` would drop the overflow.
+    25% costs about two lines in the worst panel and none in the three-column
+    detail panels, which keep roughly 24 lines against the 9 they are fed.
+    Anything dropped is now labelled rather than silently removed.
+    """
     base = getSampleStyleSheet()
     return {
         "panel": ParagraphStyle(
             "Visual panel",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=6.2,
-            leading=7.5,
+            fontSize=7.6,
+            leading=9.2,
             textColor=_TEXT,
         ),
         "panel_small": ParagraphStyle(
             "Visual panel small",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.4,
-            leading=6.5,
+            fontSize=6.8,
+            leading=8.2,
             textColor=_TEXT,
         ),
         "detail": ParagraphStyle(
             "Visual detail",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=6.5,
-            leading=8,
+            fontSize=8.0,
+            leading=9.8,
             textColor=colors.HexColor("#1F2937"),
         ),
         "detail_small": ParagraphStyle(
             "Visual detail small",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.8,
-            leading=7,
+            fontSize=7.2,
+            leading=8.8,
             textColor=colors.HexColor("#1F2937"),
         ),
         "metric": ParagraphStyle(
             "Visual metric",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.4,
-            leading=6.5,
+            fontSize=6.8,
+            leading=8.2,
             alignment=TA_CENTER,
             textColor=_TEXT,
         ),
@@ -88,17 +103,34 @@ _STYLES = _styles()
 
 
 def _fit_paragraph(lines: list[str], style: ParagraphStyle, width: float, height: float) -> Paragraph:
-    prepared = [line for line in lines if line]
-    if not prepared:
-        prepared = ["No pertinent item selected."]
+    """Fit `lines` into a fixed panel, trimming from the end until they fit.
+
+    A dropped line is reported, never silently discarded: when the panel cannot
+    hold everything it is given, the last surviving line becomes a count of what
+    was left out, so an item missing from the panel is visible as missing rather
+    than looking like an item that was never found. Same reasoning as leaving
+    unavailable source coverage unresolved instead of rendering it as a clean
+    result.
+    """
+    supplied = [line for line in lines if line]
+    if not supplied:
+        return Paragraph("No pertinent item selected.", style)
+
+    prepared = list(supplied)
     while prepared:
-        text = "<br/>".join(escape(line) for line in prepared)
+        hidden = len(supplied) - len(prepared)
+        shown = prepared
+        if hidden:
+            # The marker occupies a line, so it replaces one more entry rather
+            # than being added on top of a set that already only just fits.
+            shown = prepared[:-1] + [f"+ {hidden + 1} more in expanded brief"]
+        text = "<br/>".join(escape(line) for line in shown)
         paragraph = Paragraph(text, style)
         _, required = paragraph.wrap(width, height)
         if required <= height:
             return paragraph
         prepared = prepared[:-1]
-    return Paragraph("See expanded brief.", style)
+    return Paragraph(f"{len(supplied)} items - see expanded brief.", style)
 
 
 def _draw_text(canvas, lines: list[str], x: float, y: float, width: float, height: float, style: ParagraphStyle) -> None:

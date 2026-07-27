@@ -505,12 +505,14 @@ def render_pdf(
         leading=11,
         textColor=colors.white,
     )
+    # Raised from 7.2pt for the same readability reason as the visual report
+    # styles: this is body text read on an iPad at arm's length.
     body = ParagraphStyle(
         "ODSS Body",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=7.2,
-        leading=9.2,
+        fontSize=9.5,
+        leading=12,
     )
     document = BaseDocTemplate(
         str(path),
@@ -614,8 +616,12 @@ def render_pdf(
             ("LINEBELOW", (0, 1), (-1, -2), 0.2, colors.HexColor("#D9E1E8")),
             ("LEFTPADDING", (0, 0), (-1, -1), 5),
             ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            # ReportLab tops-aligns cell content by default, which leaves short
+            # entries floating against the rule when a neighbouring cell wraps.
+            # "middle place the texts in ALL cells" — asked for twice.
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ]))
         story.extend([table, Spacer(1, 1 * mm)])
     document.build(story)
