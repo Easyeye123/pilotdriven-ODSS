@@ -110,6 +110,17 @@ def test_actual_takeoff_entry_runs_analysis_and_calculates_waypoint_utc(
     assert waypoint_times["BOBI2"] == "1110Z"
     assert any(item["engine"] == "actual_timing" for item in analysis["findings"])
 
+    for level in (1, 2):
+        report = timing_app.get(f"/files/report/{flight_id}/{level}")
+        assert report.status_code == 200
+        document = fitz.open(stream=report.content, filetype="pdf")
+        try:
+            report_text = "\n".join(page.get_text() for page in document)
+        finally:
+            document.close()
+        assert "ATOT 11 JUL 1045Z" in report_text
+        assert "ATOT + CFP ACTM" in report_text
+
 
 def test_waypoint_ata_derives_takeoff_anchor_and_recalculates_route(
     timing_app: TestClient,

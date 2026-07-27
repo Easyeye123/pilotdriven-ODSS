@@ -327,7 +327,12 @@ def _draw_header(
     canvas.drawString(
         160 * mm,
         top - 2.8 * mm,
-        f"{_pilot_text(briefing.get('flight_date'))}  UTC",
+        (
+            f"{_pilot_text(briefing.get('flight_date'))} UTC · "
+            f"{_pilot_text(briefing['metrics'].get('clock_basis'))}"
+            if briefing["metrics"].get("atot")
+            else f"{_pilot_text(briefing.get('flight_date'))} UTC"
+        ),
     )
     canvas.setFillColor(_MUTED)
     canvas.setFont("Helvetica", 6.2)
@@ -339,7 +344,12 @@ def _draw_header(
     canvas.drawString(
         160 * mm,
         top - 11.1 * mm,
-        f"Aircraft {_pilot_text(briefing['metrics'].get('aircraft'))}",
+        (
+            f"Aircraft {_pilot_text(briefing['metrics'].get('aircraft'))} · "
+            f"ATOT {_pilot_text(briefing['metrics'].get('atot'))}"
+            if briefing["metrics"].get("atot")
+            else f"Aircraft {_pilot_text(briefing['metrics'].get('aircraft'))}"
+        ),
     )
 
     pill_w = 57 * mm

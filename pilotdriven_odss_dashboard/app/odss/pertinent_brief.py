@@ -726,6 +726,7 @@ def _draw_phase_timeline(
     *,
     sectors: list[dict[str, Any]],
     communications: list[dict[str, Any]],
+    clock_basis: str,
     final_actm: int,
     x: float,
     y: float,
@@ -741,7 +742,7 @@ def _draw_phase_timeline(
     canvas.drawRightString(
         x + width - 3 * mm,
         y + height - 4.8 * mm,
-        "ACTM from scheduled-departure anchor",
+        clock_basis,
     )
     line_y = y + height / 2
     line_start = x + 6 * mm
@@ -1386,7 +1387,15 @@ def _draw_header(canvas, briefing: dict[str, Any], width: float, height: float) 
     canvas.drawString(62 * mm, height - 16.1 * mm, briefing["route_label"])
 
     canvas.setFont("Helvetica-Bold", 6.5)
-    canvas.drawString(160 * mm, height - 7.8 * mm, f"{briefing['flight_date']} UTC")
+    canvas.drawString(
+        160 * mm,
+        height - 7.8 * mm,
+        (
+            f"{briefing['flight_date']} UTC · {briefing['metrics']['clock_basis']}"
+            if briefing["metrics"].get("atot")
+            else f"{briefing['flight_date']} UTC"
+        ),
+    )
     canvas.setFillColor(_MUTED)
     canvas.setFont("Helvetica", 5.4)
     canvas.drawString(
@@ -1397,7 +1406,12 @@ def _draw_header(canvas, briefing: dict[str, Any], width: float, height: float) 
     canvas.drawString(
         160 * mm,
         height - 18.3 * mm,
-        f"Aircraft {briefing['metrics']['aircraft']}",
+        (
+            f"Aircraft {briefing['metrics']['aircraft']} · "
+            f"ATOT {briefing['metrics']['atot']}"
+            if briefing["metrics"].get("atot")
+            else f"Aircraft {briefing['metrics']['aircraft']}"
+        ),
     )
 
     badge_w = 57 * mm
@@ -1880,6 +1894,12 @@ def _draw_operational_detail(
         canvas,
         sectors=sectors,
         communications=grouped.get("communications", []),
+        clock_basis=(
+            f"{briefing['metrics']['clock_basis']} · "
+            f"ATOT {briefing['metrics']['atot']}"
+            if briefing["metrics"].get("atot")
+            else "ACTM from scheduled-departure anchor"
+        ),
         final_actm=final_actm,
         x=margin,
         y=timeline_y,
@@ -2353,7 +2373,12 @@ def render_level1_visual(
     map_label: str | None = None,
 ) -> None:
     findings = prepare_pilot_findings(findings, notam_limit=16)
-    briefing = build_briefing_view(flight, findings, warnings, None)
+    briefing = build_briefing_view(
+        flight,
+        findings,
+        warnings,
+        flight.get("timing_view"),
+    )
     if map_image_path:
         briefing["route_map"]["snapshot_path"] = str(map_image_path)
         briefing["route_map"]["snapshot_label"] = map_label or "Realistic route map"

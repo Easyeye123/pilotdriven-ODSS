@@ -928,6 +928,11 @@ def build_briefing_view(
             "cruise": _cruise_summary(flight.get("planned_level_profile")),
             "alternate": (alternates[0].get("airport") if alternates else "--"),
             "clock_basis": "ATOT + CFP ACTM" if timing_view else "CFP ACTM only",
+            "atot": (
+                str(timing_view.get("actual_takeoff_display") or "").strip()
+                if timing_view
+                else ""
+            ),
         },
         "masses": {
             "pzfw": format_kg(masses.get("planned_zfw_kg")),
