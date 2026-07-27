@@ -18,6 +18,8 @@ from shapely import make_valid
 from shapely.geometry import LineString, MultiPolygon, Polygon, mapping
 from shapely.ops import split
 
+from .snapshot_governance import govern_snapshot, mark_snapshot_reused
+
 
 AWC_ISIGMET_URL = "https://aviationweather.gov/api/data/isigmet?format=json"
 _CACHE_LOCK = Lock()
@@ -97,6 +99,34 @@ def _float_setting(name: str, default: float, minimum: float, maximum: float) ->
     if not minimum <= value <= maximum:
         raise ValueError(f"{name} must be between {minimum} and {maximum}")
     return value
+
+
+def _snapshot_cache_seconds() -> float:
+    try:
+        return _float_setting(
+            "ODSS_VA_SIGMET_CACHE_SECONDS",
+            60.0,
+            30.0,
+            600.0,
+        )
+    except ValueError:
+        return 60.0
+
+
+def _govern_awc_snapshot(
+    snapshot: dict[str, Any],
+    retrieved_at: datetime,
+) -> dict[str, Any]:
+    seconds = _snapshot_cache_seconds()
+    return govern_snapshot(
+        snapshot,
+        now=retrieved_at,
+        refresh_after_seconds=seconds,
+        expires_after_seconds=max(180.0, seconds * 3),
+        scope="noaa_awc_current_active_international_sigmet_feed",
+        effective_start_utc=snapshot.get("coverage_start_utc"),
+        effective_end_utc=snapshot.get("coverage_end_utc"),
+    )
 
 
 def _normalize_awc_advisory(
@@ -185,7 +215,7 @@ def fetch_awc_snapshot(
         "aviationweather.gov",
         "www.aviationweather.gov",
     }:
-        return {
+        return _govern_awc_snapshot({
             "schema_version": "1.0",
             "provider": "noaa-awc-international-sigmet",
             "source_url": None,
@@ -196,12 +226,12 @@ def fetch_awc_snapshot(
             "advisories": [],
             "parse_warnings": [],
             "error": "ODSS_VA_SIGMET_URL must use the approved aviationweather.gov HTTPS host",
-        }
+        }, retrieved_at)
     try:
         timeout = _float_setting("ODSS_VA_SIGMET_TIMEOUT_SECONDS", 8.0, 1.0, 30.0)
         freshness_limit = _float_setting("ODSS_VA_SIGMET_FRESHNESS_MINUTES", 15.0, 1.0, 180.0)
     except ValueError as exc:
-        return {
+        return _govern_awc_snapshot({
             "schema_version": "1.0",
             "provider": "noaa-awc-international-sigmet",
             "source_url": url,
@@ -212,7 +242,7 @@ def fetch_awc_snapshot(
             "advisories": [],
             "parse_warnings": [],
             "error": str(exc),
-        }
+        }, retrieved_at)
     user_agent = os.environ.get("ODSS_VA_SIGMET_USER_AGENT", "").strip() or (
         "PilotDriven-ODSS/0.6.1 (operational-briefing service)"
     )
@@ -230,7 +260,7 @@ def fetch_awc_snapshot(
         if not isinstance(payload, list):
             raise ValueError("AWC response is not a JSON array")
     except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
-        return {
+        return _govern_awc_snapshot({
             "schema_version": "1.0",
             "provider": "noaa-awc-international-sigmet",
             "source_url": url,
@@ -241,7 +271,7 @@ def fetch_awc_snapshot(
             "advisories": [],
             "parse_warnings": [],
             "error": f"{type(exc).__name__}: {str(exc)[:180]}",
-        }
+        }, retrieved_at)
     finally:
         if own_client:
             active_client.close()
@@ -268,7 +298,7 @@ def fetch_awc_snapshot(
     valid_starts = [_utc(item["valid_from_utc"]) for item in advisories]
     valid_ends = [_utc(item["valid_to_utc"]) for item in advisories]
     hazard_label = "TC" if hazard_code == "TC" else "VA"
-    return {
+    return _govern_awc_snapshot({
         "schema_version": "1.0",
         "provider": "noaa-awc-international-sigmet",
         "hazard_code": hazard_code,
@@ -290,21 +320,18 @@ def fetch_awc_snapshot(
             f"This feed proves active {hazard_label} SIGMET matches but is not a "
             "full-flight future forecast archive."
         ),
-    }
+    }, retrieved_at)
 
 
 def live_vaa_snapshot(hazard_code: str = "VA") -> dict[str, Any]:
     """Cache the public feed briefly to respect the published API rate limit."""
     hazard_code = hazard_code.upper()
-    try:
-        cache_seconds = _float_setting("ODSS_VA_SIGMET_CACHE_SECONDS", 60.0, 30.0, 600.0)
-    except ValueError:
-        cache_seconds = 60.0
+    cache_seconds = _snapshot_cache_seconds()
     now_monotonic = time.monotonic()
     with _CACHE_LOCK:
         cached = _CACHE_BY_HAZARD.get(hazard_code)
         if cached and now_monotonic - cached[0] < cache_seconds:
-            return deepcopy(cached[1])
+            return mark_snapshot_reused(cached[1])
         snapshot = fetch_awc_snapshot(hazard_code=hazard_code)
         _CACHE_BY_HAZARD[hazard_code] = (now_monotonic, snapshot)
         return deepcopy(snapshot)

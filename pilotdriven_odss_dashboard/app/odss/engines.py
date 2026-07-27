@@ -54,6 +54,46 @@ def finding(
     }
 
 
+def _cfp_source_reference(
+    flight: dict[str, Any],
+    pages: list[int | None],
+    section: str,
+) -> dict[str, Any]:
+    return {
+        "source_type": "uploaded_cfp",
+        "document_title": flight.get("document_id") or "Uploaded CFP",
+        "display_title": "Uploaded company CFP",
+        "pages": sorted(
+            {
+                int(page)
+                for page in pages
+                if isinstance(page, int) and page > 0
+            }
+        ),
+        "section": section,
+    }
+
+
+def _weather_source_reference(
+    flight: dict[str, Any],
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    page = record.get("source_page")
+    if isinstance(page, int) and page > 0:
+        return _cfp_source_reference(
+            flight,
+            [page],
+            "Airport weather list",
+        )
+    return {
+        "source_type": record.get("source") or "official_weather",
+        "provider": record.get("provider"),
+        "retrieved_at_utc": record.get("retrieved_at_utc"),
+        "valid_from_utc": record.get("valid_from_utc"),
+        "valid_to_utc": record.get("valid_to_utc"),
+    }
+
+
 # Hazard reviews share one deterministic route x time x flight-level evaluator,
 # so they also share one finding shape. Only the wording differs.
 _HAZARD_REVIEWS = (
@@ -101,6 +141,33 @@ def _hazard_review_findings(
         else {}
     )
 
+    def source_references() -> list[dict[str, Any]]:
+        snapshot = review.get("source_snapshot") or {}
+        provider = review.get("provider") or snapshot.get("provider")
+        if not provider:
+            return []
+        return [{
+            "source_type": "official_advisory",
+            "provider": provider,
+            "retrieved_at_utc": (
+                review.get("retrieved_at_utc")
+                or snapshot.get("retrieved_at_utc")
+            ),
+            "valid_from_utc": (
+                snapshot.get("effective_start_utc")
+                or snapshot.get("coverage_start_utc")
+            ),
+            "valid_to_utc": (
+                snapshot.get("effective_end_utc")
+                or snapshot.get("coverage_end_utc")
+            ),
+            "availability_status": (
+                "source-incomplete"
+                if review.get("status") == "review_required"
+                else "available"
+            ),
+        }]
+
     def track_details() -> list[str]:
         details: list[str] = []
         for cyclone in (track_context.get("cyclones") or [])[:3]:
@@ -138,11 +205,10 @@ def _hazard_review_findings(
             )
             for item in matches[:8]
         ]
-        details.extend([
-            f"Source: {review.get('provider') or 'not identified'}.",
-            f"Retrieved: {review.get('retrieved_at_utc') or 'not available'}.",
-            "Boundary contact is treated as an intersection; verify the original advisory and dispatch guidance.",
-        ])
+        details.append(
+            "Boundary contact is treated as an intersection; verify the "
+            "original advisory and dispatch guidance."
+        )
         details.extend(track_details())
         return [finding(
             hazard["engine"],
@@ -156,6 +222,7 @@ def _hazard_review_findings(
                 "match_count": len(matches),
                 "provider": review.get("provider"),
                 "reason_codes": review.get("reason_codes") or [],
+                "source_references": source_references(),
             },
         )], []
 
@@ -167,9 +234,12 @@ def _hazard_review_findings(
         "source_unavailable": "The official live source was unavailable.",
         "source_stale": "The source snapshot did not meet the configured freshness limit.",
         "source_records_incomplete": (
-            f"One or more {hazard['record_phrase']} records could not be normalized."
+            f"Some official {hazard['record_phrase']} records could not be read "
+            "completely; review required."
         ),
-        "coverage_not_complete_for_flight": "The live active-SIGMET feed does not prove the full future flight window clear.",
+        "coverage_not_complete_for_flight": (
+            "Official-source coverage is incomplete for the flight window."
+        ),
         "cfp_weather_data_unavailable": (
             f"The CFP states that {hazard['cfp_phrase']} weather data is unavailable."
         ),
@@ -179,27 +249,25 @@ def _hazard_review_findings(
         "flight_level_change_unresolved": "A planned level-change waypoint could not be matched to the route.",
         "advisory_geometry_invalid": "An advisory geometry could not be evaluated safely.",
         "direct_vaac_advisory_source_not_mounted": (
-            "The responsible VAAC advisory and VAG source is not mounted; the active "
-            "international SIGMET feed is not a complete VAAC review."
+            "The responsible VAAC advisory and VAG source is not mounted."
         ),
         "direct_vaac_advisory_source_unavailable": (
             "The configured responsible VAAC advisory source was unavailable."
         ),
         "direct_vaac_coverage_partial": (
-            "Direct Tokyo VAAC VAA/VAG evidence was checked, but one VAAC does not "
-            "prove complete responsible-VAAC coverage for the whole route."
+            "The checked VAAC source does not cover every responsible VAAC for "
+            "the route."
         ),
         "direct_tca_advisory_source_not_mounted": (
-            "The responsible tropical-cyclone advisory source is not mounted; the "
-            "active SIGMET feed and centre track are not a complete wind-field review."
+            "The responsible tropical-cyclone advisory and wind-field source is "
+            "not mounted."
         ),
     }
     details = [human_reasons.get(code, code.replace("_", " ").capitalize() + ".") for code in reason_codes]
-    details.extend([
-        f"Source: {review.get('provider') or 'not available'}.",
-        f"Retrieved: {review.get('retrieved_at_utc') or 'not available'}.",
-        f"Do not interpret this state as '{hazard['negative_claim']}'; complete the manual advisory review.",
-    ])
+    details.append(
+        f"Incomplete coverage is not a '{hazard['negative_claim']}' result; "
+        "complete the advisory review."
+    )
     details.extend(track_details())
     return [finding(
         hazard["engine"],
@@ -211,6 +279,7 @@ def _hazard_review_findings(
             "status": "review_required",
             "provider": review.get("provider"),
             "reason_codes": reason_codes,
+            "source_references": source_references(),
         },
     )], [hazard["unresolved_warning"]]
 
@@ -221,6 +290,14 @@ def _switch_state(value: bool | None) -> str:
     if value is False:
         return "OFF"
     return "not parsed"
+
+
+def _reference_library_is_approved() -> bool:
+    return str(REFERENCE_LIBRARY_METADATA.get("status") or "").lower() in {
+        "approved",
+        "approved-current",
+        "current-approved",
+    }
 
 
 def _intervals_overlap(
@@ -771,7 +848,6 @@ def match_profiles(
 def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     findings: list[dict[str, Any]] = []
     warnings: list[str] = []
-    reference_library_used = False
     fuel = flight["fuel"]
     masses = flight["masses"]
     performance = flight["performance"]
@@ -794,6 +870,15 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             f"PTOW {format_kg(masses['planned_takeoff_weight_kg'])}; "
             f"PLWT {format_kg(masses['planned_landing_weight_kg'])}.",
         ],
+        {
+            "source_references": [
+                _cfp_source_reference(
+                    flight,
+                    [flight.get("source_evidence", {}).get("page1")],
+                    "Flight summary",
+                )
+            ],
+        },
     ))
 
     if flight.get("bobcat"):
@@ -822,14 +907,25 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 f"CFP waypoint ACTM {format_actm(waypoint['actm_minutes']) if waypoint else 'not found'}.",
                 "Treat the allocated CTO as controlling and recheck if take-off, route, level or speed changes.",
             ],
-            {"difference_minutes": difference},
+            {
+                "difference_minutes": difference,
+                "source_references": [
+                    _cfp_source_reference(
+                        flight,
+                        [
+                            flight.get("source_evidence", {}).get("page1"),
+                            (waypoint or {}).get("source_page"),
+                        ],
+                        "BOBCAT allocation and route timing",
+                    )
+                ],
+            },
         ))
 
     for item in flight["deferred_items"]:
         if item["item_type"] == "MEL":
             reference = MEL_REFERENCES.get(item["reference"])
-            if reference:
-                reference_library_used = True
+            if reference and _reference_library_is_approved():
                 details = [
                     f"Repair interval {reference.get('repair_interval')}; "
                     f"installed {reference.get('installed')}; required {reference.get('required')}.",
@@ -851,12 +947,25 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                     },
                 ))
             else:
+                details = [item["description"]]
+                if item.get("company_remark"):
+                    details.append(f"Company remark: {item['company_remark']}.")
                 findings.append(finding(
                     "mel",
                     "unknown",
-                    f"MEL {item['reference']} not verified",
-                    "The approved MEL reference is missing from the local library.",
-                    [item["description"]],
+                    f"MEL {item['reference']} requires approved source review",
+                    "Current approved MEL evidence is unavailable.",
+                    details,
+                    {
+                        "reference_status": REFERENCE_LIBRARY_METADATA["status"],
+                        "source_references": [
+                            _cfp_source_reference(
+                                flight,
+                                [flight.get("source_evidence", {}).get("page1")],
+                                "Deferred item declaration",
+                            )
+                        ],
+                    },
                 ))
         elif item["item_type"] == "CDL":
             reference_key = str(item.get("reference") or "").upper()
@@ -1019,7 +1128,22 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             f"PTOW {format_kg(masses['planned_takeoff_weight_kg'])}; margin {format_kg(margin)}.",
             "The margin is conditional on every stated input and applicable MEL/CDL effect.",
         ],
-        {"controlling_rtow_kg": controlling, "margin_kg": margin},
+        {
+            "controlling_rtow_kg": controlling,
+            "margin_kg": margin,
+            "source_references": [
+                _cfp_source_reference(
+                    flight,
+                    list(
+                        flight.get("source_evidence", {}).get(
+                            "performance_pages",
+                            [],
+                        )
+                    ),
+                    "Performance and mass data",
+                )
+            ],
+        },
     ))
 
     for hazard in _HAZARD_REVIEWS:
@@ -1101,6 +1225,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "valid_from_utc": record.get("valid_from_utc"),
             "valid_to_utc": record.get("valid_to_utc"),
             "retrieved_at_utc": record.get("retrieved_at_utc"),
+            "source_page": record.get("source_page"),
             "phase": phase,
             "window_start_utc": window_start.isoformat(),
             "window_end_utc": window_end.isoformat(),
@@ -1149,8 +1274,12 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "fallback_evidence_refs": [],
             "record_types": [],
             "audit_evidence_refs": [],
+            "source_references": [],
             "warning": False,
         })
+        source_reference = _weather_source_reference(flight, record)
+        if source_reference not in group["source_references"]:
+            group["source_references"].append(source_reference)
         if taf_summary:
             group["taf_summaries"].append(taf_summary)
             group["taf_evidence_refs"].append(evidence_ref)
@@ -1203,6 +1332,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "window_status_text": taf_summary["window_status_text"],
                 "record_types": group["record_types"],
                 "audit_evidence_refs": group["audit_evidence_refs"],
+                "source_references": group["source_references"],
             }
             nearby_observation = next(
                 (
@@ -1242,6 +1372,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "window_status_text": metar_summary["window_status_text"],
                 "record_types": group["record_types"],
                 "audit_evidence_refs": group["audit_evidence_refs"],
+                "source_references": group["source_references"],
                 "observation_time_utc": metar_summary["observed_at_utc"],
             }
             if metar_summary["status"] == "outside_window":
@@ -1273,6 +1404,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "mechanism": ", ".join(mechanisms),
                 "record_types": group["record_types"],
                 "audit_evidence_refs": group["audit_evidence_refs"],
+                "source_references": group["source_references"],
             }
             severity = "warning" if group["warning"] else "information"
         prepared = concise_weather_finding(finding(
@@ -1333,6 +1465,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "valid_from_utc": record["valid_from_utc"],
             "valid_to_utc": record.get("valid_to_utc"),
             "schedule": record.get("schedule"),
+            "source_page": record.get("source_page"),
             "role": role,
             "window_start_utc": window_start.isoformat(),
             "window_end_utc": window_end.isoformat(),
@@ -1399,6 +1532,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "window_end_utc": window_end.isoformat(),
                 "raw_text": record["text"],
                 "audit_evidence_ref": evidence_ref,
+                "source_references": [
+                    _cfp_source_reference(
+                        flight,
+                        [record.get("source_page")],
+                        "NOTAM package",
+                    )
+                ],
             },
         ))
 
@@ -1447,33 +1587,58 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         for w in flight["route_waypoints"]
         if w.get("fir_boundary")
     }
-    for rule in COMMUNICATION_RULES:
-        waypoint = waypoint_by_boundary.get(rule["boundary"])
-        if not waypoint:
-            continue
-        reference_library_used = True
-        action_time = waypoint["actm_minutes"] - rule["lead"]
-        details = [
-            f"Boundary ACTM {format_actm(waypoint['actm_minutes'])}; lead {rule['lead']} min.",
-            f"Action: {rule['action']}.",
-        ]
-        if rule.get("frequency"):
-            details.append(
-                f"Frequency {rule['frequency']} MHz"
-                + (f"; backup {rule['backup']} MHz." if rule.get("backup") else ".")
-            )
-        if rule.get("notes"):
-            details.append(rule["notes"])
+    if _reference_library_is_approved():
+        for rule in COMMUNICATION_RULES:
+            waypoint = waypoint_by_boundary.get(rule["boundary"])
+            if not waypoint:
+                continue
+            action_time = waypoint["actm_minutes"] - rule["lead"]
+            details = [
+                f"Boundary ACTM {format_actm(waypoint['actm_minutes'])}; lead {rule['lead']} min.",
+                f"Action: {rule['action']}.",
+            ]
+            if rule.get("frequency"):
+                details.append(
+                    f"Frequency {rule['frequency']} MHz"
+                    + (f"; backup {rule['backup']} MHz." if rule.get("backup") else ".")
+                )
+            if rule.get("notes"):
+                details.append(rule["notes"])
+            findings.append(finding(
+                "communications",
+                "warning",
+                f"Early ATC/FIR action before {rule['boundary']}",
+                f"ACTM {format_actm(action_time)} - {rule['agency']}.",
+                details,
+                {
+                    "action_actm_minutes": action_time,
+                    "reference_library_version": REFERENCE_LIBRARY_METADATA["version"],
+                    "reference_status": REFERENCE_LIBRARY_METADATA["status"],
+                },
+            ))
+    elif waypoint_by_boundary:
+        boundary_names = sorted(waypoint_by_boundary)
         findings.append(finding(
             "communications",
-            "warning",
-            f"Early ATC/FIR action before {rule['boundary']}",
-            f"ACTM {format_actm(action_time)} - {rule['agency']}.",
-            details,
+            "unknown",
+            "FIR communication review required",
+            "Current approved communication procedures are unavailable.",
+            [
+                f"CFP route crosses {len(boundary_names)} FIR boundary or boundaries.",
+                "Review current early-contact, frequency and reporting requirements.",
+            ],
             {
-                "action_actm_minutes": action_time,
-                "reference_library_version": REFERENCE_LIBRARY_METADATA["version"],
                 "reference_status": REFERENCE_LIBRARY_METADATA["status"],
+                "source_references": [
+                    _cfp_source_reference(
+                        flight,
+                        [
+                            waypoint.get("source_page")
+                            for waypoint in waypoint_by_boundary.values()
+                        ],
+                        "Route FIR boundaries",
+                    )
+                ],
             },
         ))
 
@@ -1503,6 +1668,23 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "start_actm_minutes": event["first_high"]["actm_minutes"],
                 "end_actm_minutes": end_wp["actm_minutes"],
                 "maximum_msa_hundreds_ft": max_msa,
+                "source_references": [
+                    _cfp_source_reference(
+                        flight,
+                        [
+                            waypoint.get("source_page")
+                            for waypoint in (
+                                event.get("preceding"),
+                                event.get("first_high"),
+                                event.get("last_high"),
+                                event.get("maximum"),
+                                event.get("drop"),
+                            )
+                            if waypoint
+                        ],
+                        "Route MSA data",
+                    )
+                ],
             },
         ))
 
@@ -1521,7 +1703,25 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 f"Maximum at {maximum['name']}, ACTM {format_actm(maximum['actm_minutes'])}.",
                 "Threshold is strictly greater than 4.",
             ],
-            {"start_actm_minutes": event["first_high"]["actm_minutes"]},
+            {
+                "start_actm_minutes": event["first_high"]["actm_minutes"],
+                "source_references": [
+                    _cfp_source_reference(
+                        flight,
+                        [
+                            waypoint.get("source_page")
+                            for waypoint in (
+                                event.get("first_high"),
+                                event.get("last_high"),
+                                event.get("maximum"),
+                                event.get("drop"),
+                            )
+                            if waypoint
+                        ],
+                        "Route wind data",
+                    )
+                ],
+            },
         ))
 
     matches = sorted(
@@ -1584,6 +1784,35 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "controlled_issue_date": DEPRESS_LIBRARY_METADATA.get("issue_date"),
                 "reference_status": DEPRESS_LIBRARY_METADATA.get("status"),
                 "chart_page": profile.get("chart_page"),
+                "source_references": [
+                    _cfp_source_reference(
+                        flight,
+                        [
+                            waypoint.get("source_page")
+                            for waypoint in (
+                                event.get("preceding"),
+                                event.get("first_high"),
+                                event.get("last_high"),
+                                event.get("maximum"),
+                                event.get("drop"),
+                            )
+                            if waypoint
+                        ],
+                        "Route MSA data",
+                    ),
+                    {
+                        "source_type": "controlled_document",
+                        "document_title": DEPRESS_LIBRARY_METADATA.get("title"),
+                        "revision": DEPRESS_LIBRARY_METADATA.get("issue_date"),
+                        "pages": (
+                            [profile.get("chart_page")]
+                            if profile.get("chart_page")
+                            else []
+                        ),
+                        "section": f"Profile {profile['chart']}",
+                        "availability_status": DEPRESS_LIBRARY_METADATA.get("status"),
+                    },
+                ],
             },
         ))
     if terrain_events and not matches:
@@ -1646,6 +1875,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                     }
                     for index, sector in enumerate(sectors, start=1)
                 ],
+                "source_references": [
+                    _cfp_source_reference(
+                        flight,
+                        [flight.get("source_evidence", {}).get("edto_page")],
+                        "EDTO information",
+                    )
+                ],
             },
         ))
 
@@ -1697,6 +1933,4 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         "MSA 100* threshold handling",
         "A starred MSA qualifies; without an asterisk only numeric values strictly above 100 qualify.",
     ))
-    if reference_library_used:
-        warnings.insert(0, REFERENCE_LIBRARY_METADATA["notice"])
     return findings, warnings

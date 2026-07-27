@@ -22,6 +22,8 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
+from .snapshot_governance import govern_snapshot, mark_snapshot_reused
+
 
 JMA_VAAC_ORIGIN = "https://www.data.jma.go.jp"
 JMA_VAAC_LIST_PATH = "/vaac/data/vaac_list.html"
@@ -69,6 +71,35 @@ def _utc(value: Any) -> datetime | None:
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def _snapshot_cache_seconds() -> float:
+    try:
+        return max(
+            300.0,
+            min(
+                1800.0,
+                float(os.environ.get("ODSS_VAAC_CACHE_SECONDS", "600")),
+            ),
+        )
+    except ValueError:
+        return 600.0
+
+
+def _govern_tokyo_snapshot(
+    snapshot: dict[str, Any],
+    retrieved_at: datetime,
+) -> dict[str, Any]:
+    seconds = _snapshot_cache_seconds()
+    return govern_snapshot(
+        snapshot,
+        now=retrieved_at,
+        refresh_after_seconds=seconds,
+        expires_after_seconds=max(1800.0, seconds * 3),
+        scope="jma_tokyo_vaac_direct_advisories_for_requested_issue_window",
+        effective_start_utc=snapshot.get("requested_issue_window_start_utc"),
+        effective_end_utc=snapshot.get("requested_issue_window_end_utc"),
+    )
 
 
 def _flight_window(flight: dict[str, Any]) -> tuple[datetime, datetime] | None:
@@ -296,7 +327,7 @@ def fetch_tokyo_vaac_snapshot(
     window = _flight_window(flight)
     list_url = f"{JMA_VAAC_ORIGIN}{JMA_VAAC_LIST_PATH}"
     if window is None:
-        return {
+        return _govern_tokyo_snapshot({
             "schema_version": "1.0",
             "status": "unavailable",
             "provider": "jma-tokyo-vaac",
@@ -304,7 +335,7 @@ def fetch_tokyo_vaac_snapshot(
             "retrieved_at_utc": _iso(retrieved_at),
             "advisories": [],
             "error": "Flight timing is unavailable",
-        }
+        }, retrieved_at)
     window_start, window_end = window
     own_client = client is None
     active_client = client or httpx.Client(
@@ -343,7 +374,7 @@ def fetch_tokyo_vaac_snapshot(
                     "source_url": row["vaa_url"],
                     "error": f"{type(exc).__name__}: {str(exc)[:160]}",
                 })
-        return {
+        return _govern_tokyo_snapshot({
             "schema_version": "1.0",
             "status": "available" if not errors else "partial",
             "provider": "jma-tokyo-vaac",
@@ -362,9 +393,9 @@ def fetch_tokyo_vaac_snapshot(
                 "Forecast polygons remain official snapshots and are not "
                 "interpolated into a continuous hazard boundary."
             ),
-        }
+        }, retrieved_at)
     except (httpx.HTTPError, ValueError) as exc:
-        return {
+        return _govern_tokyo_snapshot({
             "schema_version": "1.0",
             "status": "unavailable",
             "provider": "jma-tokyo-vaac",
@@ -373,7 +404,7 @@ def fetch_tokyo_vaac_snapshot(
             "coverage_status": "unavailable",
             "advisories": [],
             "errors": [{"error": f"{type(exc).__name__}: {str(exc)[:160]}"}],
-        }
+        }, retrieved_at)
     finally:
         if own_client:
             active_client.close()
@@ -382,18 +413,12 @@ def fetch_tokyo_vaac_snapshot(
 def live_tokyo_vaac_snapshot(flight: dict[str, Any]) -> dict[str, Any]:
     window = _flight_window(flight)
     cache_key = "|".join(_iso(value) or "" for value in window) if window else "missing"
-    try:
-        seconds = max(
-            300.0,
-            min(1800.0, float(os.environ.get("ODSS_VAAC_CACHE_SECONDS", "600"))),
-        )
-    except ValueError:
-        seconds = 600.0
+    seconds = _snapshot_cache_seconds()
     now_monotonic = time.monotonic()
     with _CACHE_LOCK:
         cached = _CACHE.get(cache_key)
         if cached and now_monotonic - cached[0] < seconds:
-            return deepcopy(cached[1])
+            return mark_snapshot_reused(cached[1])
         snapshot = fetch_tokyo_vaac_snapshot(flight)
         _CACHE[cache_key] = (now_monotonic, snapshot)
         return deepcopy(snapshot)

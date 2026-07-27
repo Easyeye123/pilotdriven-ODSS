@@ -9,12 +9,29 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.odss.engines import _schedule_overlaps, analyse, detect_terrain_events, match_profiles
-from app.odss.enrichment import _notice_score, _parse_airport_notams, _parse_notam_datetime
+from app.odss.enrichment import (
+    _notice_score,
+    _parse_airport_notams,
+    _parse_notam_datetime,
+    _record_source_page,
+)
 from app.odss.briefing import _weather_summary
 from app.odss.parser import _parse_edto_sectors, parse_lido
 
 
 UTC = timezone.utc
+
+
+def test_normalized_source_locator_finds_record_page_without_flight_specific_rules() -> None:
+    pages = [
+        "SUMMARY PAGE",
+        "SA   250051Z   15007KT   10SM FEW250",
+        "1A6475/26 VALID: 25-JUL-26 0300 - 25-JUL-26 1000",
+    ]
+
+    assert _record_source_page(pages, "SA 250051Z 15007KT 10SM FEW250") == 2
+    assert _record_source_page(pages, "1A6475/26") == 3
+    assert _record_source_page(pages, "NOT PRESENT") is None
 
 
 def _record(
@@ -798,7 +815,7 @@ def test_bobcat_midnight_rollover_reconciles_without_false_difference() -> None:
     assert any("BOBCAT BOB" in detail for detail in timeline["details"])
 
 
-def test_zero_actm_action_is_kept_in_timeline() -> None:
+def test_unapproved_communication_samples_fail_closed() -> None:
     waypoint = {
         "name": "-VOMF",
         "actm_minutes": 10,
@@ -808,5 +825,31 @@ def test_zero_actm_action_is_kept_in_timeline() -> None:
         "airway_in": None,
     }
     findings, _ = analyse(_flight(route_waypoints=[waypoint]))
-    timeline = next(item for item in findings if item["engine"] == "timeline")
-    assert any("ACTM 00.00 - Early ATC/FIR action before VOMF" in detail for detail in timeline["details"])
+    communication = next(
+        item
+        for item in findings
+        if item["engine"] == "communications"
+    )
+    assert communication["severity"] == "unknown"
+    assert communication["title"] == "FIR communication review required"
+    assert "approved communication procedures are unavailable" in communication["summary"]
+    assert all("ACTM 00.00" not in item["summary"] for item in findings)
+    assert all("Chennai ATS/FIS" not in str(item) for item in findings)
+
+
+def test_unapproved_mel_sample_does_not_publish_sample_conditions() -> None:
+    flight = _flight()
+    flight["deferred_items"] = [{
+        "item_type": "MEL",
+        "reference": "30-81-01A",
+        "description": "Ice detection system inoperative",
+        "company_remark": None,
+    }]
+
+    findings, _ = analyse(flight)
+
+    mel = next(item for item in findings if item["engine"] == "mel")
+    assert mel["severity"] == "unknown"
+    assert mel["summary"] == "Current approved MEL evidence is unavailable."
+    assert "Repair interval" not in str(mel)
+    assert "anti-ice operational procedure" not in str(mel)

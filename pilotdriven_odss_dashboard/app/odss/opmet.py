@@ -25,6 +25,8 @@ from typing import Any
 
 import httpx
 
+from .snapshot_governance import govern_snapshot, mark_snapshot_reused
+
 
 AWC_API_ORIGIN = "https://aviationweather.gov"
 AWC_METAR_PATH = "/api/data/metar"
@@ -105,6 +107,37 @@ def _request_key(path: str, params: dict[str, str]) -> str:
     return f"{path}?{'&'.join(f'{key}={params[key]}' for key in sorted(params))}"
 
 
+def _product_effective_window(
+    path: str,
+    records: list[Any],
+) -> tuple[datetime | None, datetime | None]:
+    if path == AWC_METAR_PATH:
+        values = [
+            _utc(record.get("reportTime")) or _utc(record.get("obsTime"))
+            for record in records
+            if isinstance(record, dict)
+        ]
+        valid = [value for value in values if value]
+        return (
+            min(valid, default=None),
+            max(valid, default=None),
+        )
+    starts = [
+        _utc(record.get("validTimeFrom"))
+        for record in records
+        if isinstance(record, dict)
+    ]
+    ends = [
+        _utc(record.get("validTimeTo"))
+        for record in records
+        if isinstance(record, dict)
+    ]
+    return (
+        min((value for value in starts if value), default=None),
+        max((value for value in ends if value), default=None),
+    )
+
+
 def fetch_awc_product(
     path: str,
     params: dict[str, str],
@@ -119,10 +152,11 @@ def fetch_awc_product(
     request_params = {**params, "format": "json"}
     key = _request_key(path, request_params)
     now_monotonic = time.monotonic()
+    cache_seconds = _cache_seconds()
     with _CACHE_LOCK:
         cached = _CACHE.get(key)
-        if cached and now_monotonic - cached[0] < _cache_seconds():
-            return deepcopy(cached[1])
+        if cached and now_monotonic - cached[0] < cache_seconds:
+            return mark_snapshot_reused(cached[1], now=retrieved_at)
 
     own_client = client is None
     active_client = client or httpx.Client(
@@ -130,10 +164,11 @@ def fetch_awc_product(
         follow_redirects=False,
         headers={"User-Agent": _user_agent(), "Accept": "application/json"},
     )
+    payload: list[Any] = []
     try:
         response = active_client.get(f"{AWC_API_ORIGIN}{path}", params=request_params)
         if response.status_code == 204:
-            payload: list[Any] = []
+            payload = []
         else:
             response.raise_for_status()
             raw = response.content
@@ -166,6 +201,20 @@ def fetch_awc_product(
         if own_client:
             active_client.close()
 
+    effective_start, effective_end = _product_effective_window(path, payload)
+    result = govern_snapshot(
+        result,
+        now=retrieved_at,
+        refresh_after_seconds=cache_seconds,
+        expires_after_seconds=max(300.0, cache_seconds * 3),
+        scope=(
+            "requested_noaa_awc_metar_records"
+            if path == AWC_METAR_PATH
+            else "requested_noaa_awc_taf_records"
+        ),
+        effective_start_utc=effective_start,
+        effective_end_utc=effective_end,
+    )
     with _CACHE_LOCK:
         _CACHE[key] = (now_monotonic, result)
     return deepcopy(result)

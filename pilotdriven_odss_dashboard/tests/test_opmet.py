@@ -100,6 +100,10 @@ def test_204_is_valid_available_no_data():
 
     assert snapshot["status"] == "available"
     assert snapshot["records"] == []
+    assert snapshot["snapshot_scope"] == "requested_noaa_awc_metar_records"
+    assert snapshot["completeness_status"] == "complete_for_declared_scope"
+    assert snapshot["refresh_after_utc"] == "2026-07-26T12:01:00+00:00"
+    assert snapshot["expires_at_utc"] == "2026-07-26T12:05:00+00:00"
 
 
 def test_malformed_json_fails_closed():

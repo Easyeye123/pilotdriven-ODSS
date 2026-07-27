@@ -142,6 +142,10 @@ def test_fetches_only_fixed_hko_paths():
         )
 
     assert snapshot["status"] == "available"
+    assert snapshot["snapshot_scope"] == "hko_published_tropical_cyclone_track_files"
+    assert snapshot["completeness_status"] == "complete_for_declared_scope"
+    assert snapshot["effective_start_utc"] is not None
+    assert snapshot["effective_end_utc"] is not None
     assert seen == [
         "https://www.weather.gov.hk/wxinfo/currwx/tc_list.xml",
         "https://www.weather.gov.hk/wxinfo/currwx/hko_tctrack_2617.xml",

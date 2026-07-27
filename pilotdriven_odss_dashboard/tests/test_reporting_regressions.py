@@ -98,6 +98,32 @@ def _pertinent_weather() -> dict[str, Any]:
     }
 
 
+def _no_overlap_weather(
+    *,
+    location: str,
+    phase: str,
+    window: str,
+) -> dict[str, Any]:
+    return {
+        "engine": "weather",
+        "severity": "information",
+        "title": f"{phase} weather - {location}",
+        "summary": "No significant weather group overlaps this window.",
+        "details": [],
+        "data": {
+            "phase": phase,
+            "location": location,
+            "utc_window": window,
+            "mechanism": "None in time-overlapping forecast groups",
+            "flight_effect": "No adverse flight effect was identified.",
+            "window_status": "no_significant_overlap",
+            "window_status_text": (
+                "No significant weather group overlaps this window."
+            ),
+        },
+    }
+
+
 def _flight() -> dict[str, Any]:
     return {
         "flight_number": "SQ304",
@@ -336,6 +362,67 @@ def test_level2_does_not_force_sparse_section_pages(tmp_path: Path) -> None:
     assert "Applicability and parser warnings" in page_text[1]
 
 
+def test_level2_cites_originating_evidence_without_exposing_trace_ids(
+    tmp_path: Path,
+) -> None:
+    level1_path = tmp_path / "level_1_source_contract.pdf"
+    level2_path = tmp_path / "level_2_source_contract.pdf"
+    item = _notam("A1000/26", "departure")
+    item["finding_id"] = "L2-NOTAM-internal-trace"
+    item["data"].update({
+        "audit_evidence_ref": "notam:42",
+        "source_references": [
+            {
+                "source_type": "uploaded_cfp",
+                "document_title": "SQ304_CFP.pdf",
+                "section": "NOTAM package",
+                "pages": [101, 102, 103],
+            }
+        ],
+    })
+
+    render_pdf(_flight(), [item], [], 1, level1_path)
+    render_pdf(_flight(), [item], [], 2, level2_path)
+
+    level1_text = "\n".join(
+        (page.extract_text() or "")
+        for page in PdfReader(level1_path).pages
+    )
+    level2_text = "\n".join(
+        (page.extract_text() or "")
+        for page in PdfReader(level2_path).pages
+    )
+    assert "Evidence:" not in level1_text
+    assert "Evidence: SQ304_CFP.pdf; NOTAM package; pp. 101-103." in level2_text
+    assert "L2-NOTAM-internal-trace" not in level2_text
+    assert "notam:42" not in level2_text
+
+
+def test_level2_uses_pilot_facing_title_for_internal_cfp_document_id(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_safe_source_title.pdf"
+    item = _notam("A1000/26", "departure")
+    item["data"]["source_references"] = [
+        {
+            "source_type": "uploaded_cfp",
+            "document_title": "cfp_98abe9902fa8439e874724881c1ac28e.pdf",
+            "display_title": "Uploaded company CFP",
+            "section": "NOTAM package",
+            "pages": [36, 37],
+        }
+    ]
+
+    render_pdf(_flight(), [item], [], 2, path)
+
+    text = "\n".join(
+        (page.extract_text() or "")
+        for page in PdfReader(path).pages
+    )
+    assert "Evidence: Uploaded company CFP; NOTAM package; pp. 36-37." in text
+    assert "cfp_98abe9902fa8439e874724881c1ac28e.pdf" not in text
+
+
 def test_level2_weather_is_concise_deduplicated_and_does_not_repeat_raw_opmet(
     tmp_path: Path,
 ) -> None:
@@ -361,6 +448,109 @@ def test_level2_weather_is_concise_deduplicated_and_does_not_repeat_raw_opmet(
         "Route deviation, flight-level strategy or timing may be affected."
         in text
     )
+
+
+def test_level2_groups_repeated_no_overlap_weather_into_one_checked_summary(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_grouped_clear_weather.pdf"
+    findings = [
+        _pertinent_weather(),
+        _no_overlap_weather(
+            location="KJFK",
+            phase="Departure",
+            window="25 JUL 0115Z-0315Z",
+        ),
+        _no_overlap_weather(
+            location="WSSS",
+            phase="Destination",
+            window="25 JUL 1930Z-2330Z",
+        ),
+    ]
+
+    render_pdf(_flight(), findings, [], 2, path)
+
+    text = "\n".join(
+        (page.extract_text() or "")
+        for page in PdfReader(path).pages
+    )
+    assert text.count(
+        "No significant CFP forecast-weather overlap in the checked windows:"
+    ) == 1
+    assert "KJFK (departure, 25 JUL 0115Z-0315Z)" in text
+    assert "WSSS (destination, 25 JUL 1930Z-2330Z)" in text
+    assert text.count("refresh from the latest official operational weather") == 1
+
+
+def test_level2_deduplicates_repeated_notam_window_detail_rows() -> None:
+    first = _notam("A1000/26", "departure")
+    second = _notam("A1001/26", "departure")
+
+    section = next(
+        item
+        for item in report_sections([first, second], 2)
+        if item["engine"] == "notam"
+    )
+
+    assert section["lines"].count(
+        "- Operating window 2026-07-11T09:30:00+00:00 to "
+        "2026-07-11T11:30:00+00:00."
+    ) == 1
+    assert section["lines"].count(
+        "- Location WSSS; category departure."
+    ) == 1
+
+
+def test_level2_formats_official_source_times_for_pilot_readability(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_source_times.pdf"
+    item = _notam("A1000/26", "departure")
+    item["data"]["source_references"] = [{
+        "source_type": "official_advisory",
+        "provider": "noaa-awc-international-sigmet",
+        "retrieved_at_utc": "2026-07-27T08:16:48.364917+00:00",
+        "valid_from_utc": "2026-07-27T02:30:00+00:00",
+        "valid_to_utc": "2026-07-27T13:20:00+00:00",
+        "availability_status": "source-incomplete",
+    }]
+
+    render_pdf(_flight(), [item], [], 2, path)
+
+    text = "\n".join(
+        (page.extract_text() or "")
+        for page in PdfReader(path).pages
+    )
+    assert "retrieved 27 JUL 2026 0816Z" in text
+    assert "valid 27 JUL 2026 0230Z to 27 JUL 2026 1320Z" in text
+    assert ".364917+00:00" not in text
+
+
+def test_level2_compacts_deterministic_event_details_without_losing_facts() -> None:
+    section = next(
+        item
+        for item in report_sections([{
+            "engine": "terrain",
+            "severity": "warning",
+            "title": "High-MSA event 1",
+            "summary": "ACTM 07.45-07.52, max 109*.",
+            "details": [
+                "First high-MSA waypoint SOKRU.",
+                "Maximum 109* at SOKRU.",
+                "Profile matching context begins at OLIMP.",
+            ],
+            "data": {},
+        }], 2)
+        if item["engine"] == "terrain"
+    )
+
+    assert section["lines"] == [
+        "High-MSA event 1: ACTM 07.45-07.52, max 109*.",
+        (
+            "- First high-MSA waypoint SOKRU; Maximum 109* at SOKRU; "
+            "Profile matching context begins at OLIMP."
+        ),
+    ]
 
 
 def test_run_analysis_normalizes_identity_before_json_and_reports(

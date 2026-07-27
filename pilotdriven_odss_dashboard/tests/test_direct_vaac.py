@@ -90,6 +90,10 @@ def test_fetch_is_bounded_to_flight_window_and_official_host():
 
     assert snapshot["status"] == "available"
     assert snapshot["advisory_count"] == 1
+    assert snapshot["snapshot_scope"] == "jma_tokyo_vaac_direct_advisories_for_requested_issue_window"
+    assert snapshot["completeness_status"] == "complete_for_declared_scope"
+    assert snapshot["effective_start_utc"] == snapshot["requested_issue_window_start_utc"]
+    assert snapshot["effective_end_utc"] == snapshot["requested_issue_window_end_utc"]
     assert seen == [
         "https://www.data.jma.go.jp/vaac/data/vaac_list.html",
         "https://www.data.jma.go.jp/vaac/data/TextData/2026/20260725_30027000_0294_Text.html",

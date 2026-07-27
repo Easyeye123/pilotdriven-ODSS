@@ -423,6 +423,9 @@ def test_emits_a_critical_tropical_cyclone_finding_when_affected():
     assert findings[0]["rule_id"] == "TROPICAL_CYCLONE-AUTO"
     assert findings[0]["severity"] == "critical"
     assert findings[0]["title"] == "Tropical cyclone affects the planned route"
+    assert findings[0]["data"]["source_references"][0]["provider"] == (
+        "fixture-approved-provider"
+    )
     assert warnings == []
 
 
@@ -436,6 +439,9 @@ def test_warns_when_the_cyclone_review_is_unresolved():
     assert any("Tropical cyclone applicability remains unresolved" in item for item in warnings)
     # The refusal must never be phrased as a clear result.
     assert any("no tropical cyclone" in detail for detail in findings[0]["details"])
+    assert findings[0]["data"]["source_references"][0][
+        "availability_status"
+    ] == "source-incomplete"
 
 
 def test_emits_no_finding_when_the_cyclone_review_is_clear():

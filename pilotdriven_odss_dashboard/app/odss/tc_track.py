@@ -25,6 +25,8 @@ from xml.etree import ElementTree
 
 import httpx
 
+from .snapshot_governance import govern_snapshot, mark_snapshot_reused
+
 
 HKO_ORIGIN = "https://www.weather.gov.hk"
 HKO_TC_LIST_PATH = "/wxinfo/currwx/tc_list.xml"
@@ -50,6 +52,51 @@ def _utc(value: Any) -> datetime | None:
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def _snapshot_cache_seconds() -> float:
+    try:
+        return max(
+            300.0,
+            min(
+                1800.0,
+                float(os.environ.get("ODSS_TC_TRACK_CACHE_SECONDS", 300)),
+            ),
+        )
+    except ValueError:
+        return 300.0
+
+
+def _track_effective_window(
+    tracks: list[dict[str, Any]],
+) -> tuple[datetime | None, datetime | None]:
+    values = [
+        _utc(position.get("time_utc"))
+        for track in tracks
+        for position in (track.get("positions") or [])
+        if isinstance(position, dict)
+    ]
+    valid = [value for value in values if value]
+    return min(valid, default=None), max(valid, default=None)
+
+
+def _govern_hko_snapshot(
+    snapshot: dict[str, Any],
+    retrieved_at: datetime,
+) -> dict[str, Any]:
+    effective_start, effective_end = _track_effective_window(
+        snapshot.get("tracks") or []
+    )
+    seconds = _snapshot_cache_seconds()
+    return govern_snapshot(
+        snapshot,
+        now=retrieved_at,
+        refresh_after_seconds=seconds,
+        expires_after_seconds=max(900.0, seconds * 3),
+        scope="hko_published_tropical_cyclone_track_files",
+        effective_start_utc=effective_start,
+        effective_end_utc=effective_end,
+    )
 
 
 def _coordinate(value: str | None, *, latitude: bool) -> float | None:
@@ -182,7 +229,7 @@ def fetch_hko_track_snapshot(
                     "cyclone_id": entry["cyclone_id"],
                     "error": f"{type(exc).__name__}: {str(exc)[:160]}",
                 })
-        return {
+        return _govern_hko_snapshot({
             "schema_version": "1.0",
             "status": "available" if not errors else "partial",
             "provider": "hong-kong-observatory-public-tc-track",
@@ -191,9 +238,9 @@ def fetch_hko_track_snapshot(
             "tracks": tracks,
             "errors": errors,
             "attribution": "Source: Hong Kong Observatory via DATA.GOV.HK",
-        }
+        }, retrieved_at)
     except (httpx.HTTPError, ValueError, ElementTree.ParseError) as exc:
-        return {
+        return _govern_hko_snapshot({
             "schema_version": "1.0",
             "status": "unavailable",
             "provider": "hong-kong-observatory-public-tc-track",
@@ -202,7 +249,7 @@ def fetch_hko_track_snapshot(
             "tracks": [],
             "errors": [{"error": f"{type(exc).__name__}: {str(exc)[:160]}"}],
             "attribution": "Source: Hong Kong Observatory via DATA.GOV.HK",
-        }
+        }, retrieved_at)
     finally:
         if own_client:
             active_client.close()
@@ -210,14 +257,11 @@ def fetch_hko_track_snapshot(
 
 def live_hko_track_snapshot() -> dict[str, Any]:
     global _CACHE
-    try:
-        seconds = max(300.0, min(1800.0, float(os.environ.get("ODSS_TC_TRACK_CACHE_SECONDS", 300))))
-    except ValueError:
-        seconds = 300.0
+    seconds = _snapshot_cache_seconds()
     now_monotonic = time.monotonic()
     with _CACHE_LOCK:
         if _CACHE and now_monotonic - _CACHE[0] < seconds:
-            return deepcopy(_CACHE[1])
+            return mark_snapshot_reused(_CACHE[1])
         snapshot = fetch_hko_track_snapshot()
         _CACHE = (now_monotonic, snapshot)
         return deepcopy(snapshot)

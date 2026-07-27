@@ -13,6 +13,20 @@ _SCHEDULE_LINE = re.compile(
 )
 
 
+def _record_source_page(pages: list[str], value: str) -> int | None:
+    """Locate a parsed source record without relying on flight-specific text."""
+    tokens = " ".join(str(value or "").split()).upper().split()
+    if not tokens:
+        return None
+    # A bounded leading fragment survives PDF whitespace normalization while
+    # remaining specific enough for METAR, TAF, SIGMET and NOTAM records.
+    needle = " ".join(tokens[:12])
+    for page_number, page in enumerate(pages, start=1):
+        if needle in " ".join(page.split()).upper():
+            return page_number
+    return None
+
+
 def _weather_section(pages: list[str]) -> str:
     start = next((i for i, text in enumerate(pages) if "AIRPORT WX LIST" in text.upper()), None)
     if start is None:
@@ -71,7 +85,10 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
     if "EDDM/MUC" in text:
         locations.append("EDDM")
     for icao in dict.fromkeys(locations):
-        flight["weather"].extend(_parse_station_weather(icao, _extract_station_block(text, icao)))
+        records = _parse_station_weather(icao, _extract_station_block(text, icao))
+        for record in records:
+            record["source_page"] = _record_source_page(pages, record["text"])
+        flight["weather"].extend(records)
 
     sigmet = re.search(r"(?ms)^SIGMETs:\s*(?P<body>.*?)(?=^Tropical Cyclone SIGMETs:)", text)
     if sigmet:
@@ -82,6 +99,7 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
                 "location": fir.group(1) if fir else "FIR",
                 "record_type": "SIGMET",
                 "text": body,
+                "source_page": _record_source_page(pages, body),
             })
 
 
@@ -227,4 +245,7 @@ def enrich_notams(flight: dict[str, Any], pages: list[str]) -> None:
     fallback = datetime.fromisoformat(flight["scheduled_departure_utc"])
     for icao in dict.fromkeys(locations):
         block = _extract_airport_notam_block(text, icao)
-        flight["notams"].extend(_parse_airport_notams(icao, block, fallback))
+        records = _parse_airport_notams(icao, block, fallback)
+        for record in records:
+            record["source_page"] = _record_source_page(pages, record["notam_id"])
+        flight["notams"].extend(records)

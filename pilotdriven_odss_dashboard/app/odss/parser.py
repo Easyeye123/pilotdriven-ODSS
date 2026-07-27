@@ -363,7 +363,12 @@ def _parse_edto_sectors(edto_text: str) -> list[dict[str, Any]]:
     return sectors
 
 
-def _parse_waypoints(route_pages: list[str], route_text: str) -> list[dict[str, Any]]:
+def _parse_waypoints(
+    route_pages: list[str],
+    route_text: str,
+    *,
+    start_page_number: int = 1,
+) -> list[dict[str, Any]]:
     pending: dict[str, Any] | None = None
     waypoints: list[dict[str, Any]] = []
     waypoint_line = re.compile(
@@ -376,7 +381,7 @@ def _parse_waypoints(route_pages: list[str], route_text: str) -> list[dict[str, 
         r"(?P<msa>\d{3})(?P<star>\*)?"
     )
     vws_line = re.compile(r"\s(?P<tas>\d{3})\s+(?P<vws>\d{3})\s+\d{2}\.\d\s")
-    for page_number, text in enumerate(route_pages, start=1):
+    for page_number, text in enumerate(route_pages, start=start_page_number):
         for line in text.splitlines():
             match = waypoint_line.match(line.strip())
             if match:
@@ -517,7 +522,11 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     departure = route_line.group("departure") if route_line else identity.group("dep_iata")
     destination = destination_line.group("destination") if destination_line else identity.group("dest_iata")
     route_text = _parse_route_text(page1)
-    waypoints = _parse_waypoints(cfp_pages[6:], route_text)
+    waypoints = _parse_waypoints(
+        cfp_pages[6:],
+        route_text,
+        start_page_number=cfp_start + 7,
+    )
 
     bobcat = None
     match = re.search(
@@ -580,7 +589,15 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     )
     perf_text = "\n".join(cfp_pages[:5])
     performance = _parse_performance(perf_text)
-    edto_text = next((text for text in cfp_pages if "EDTO INFORMATION" in text), "")
+    edto_page_index = next(
+        (
+            index
+            for index, text in enumerate(cfp_pages)
+            if "EDTO INFORMATION" in text
+        ),
+        None,
+    )
+    edto_text = cfp_pages[edto_page_index] if edto_page_index is not None else ""
     edto_sectors = _parse_edto_sectors(edto_text)
     entry_match = re.search(r"\n\s*(\d{1,2}\.\d{2})\s+N.*\nENTRY", edto_text)
     exit_match = re.search(r"\n\s*(\d{1,2}\.\d{2})\s+N.*\nEXIT", edto_text)
@@ -608,6 +625,17 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     aircraft_match = re.search(r"RTE NO\s+\S+\s+(?P<aircraft>[A-Z0-9-]+)", page1)
     flight = {
         "document_id": source_name,
+        "source_evidence": {
+            "page1": cfp_start + 1,
+            "performance_pages": list(
+                range(cfp_start + 1, cfp_start + min(5, len(cfp_pages)) + 1)
+            ),
+            "edto_page": (
+                cfp_start + edto_page_index + 1
+                if edto_page_index is not None
+                else None
+            ),
+        },
         "flight_number": identity.group("flight"),
         "flight_date": identity.group("date"),
         "aircraft_type": aircraft_match.group("aircraft") if aircraft_match else "UNKNOWN",

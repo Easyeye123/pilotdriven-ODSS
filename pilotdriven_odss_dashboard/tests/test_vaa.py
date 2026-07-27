@@ -267,11 +267,16 @@ N63 00.0 W140 00.0 076 0027 390
 N63 00.0 W130 00.0 111 0062 410
 """
 
-    waypoints = _parse_waypoints([route_page], "DCT 63N140W 63N130W")
+    waypoints = _parse_waypoints(
+        [route_page],
+        "DCT 63N140W 63N130W",
+        start_page_number=7,
+    )
 
     assert [item["name"] for item in waypoints] == ["63N40", "63N30"]
     assert waypoints[0]["latitude"] == 63.0
     assert waypoints[0]["longitude"] == -140.0
+    assert [item["source_page"] for item in waypoints] == [7, 7]
 
 
 def test_awc_snapshot_retains_auditable_source_evidence() -> None:
@@ -316,6 +321,10 @@ def test_awc_snapshot_retains_auditable_source_evidence() -> None:
     assert snapshot["advisory_count"] == 1
     assert len(snapshot["raw_sha256"]) == 64
     assert snapshot["advisories"][0]["upper_flight_level"] == 350
+    assert snapshot["snapshot_scope"] == "noaa_awc_current_active_international_sigmet_feed"
+    assert snapshot["completeness_status"] == "complete_for_declared_scope"
+    assert snapshot["effective_start_utc"] == snapshot["coverage_start_utc"]
+    assert snapshot["effective_end_utc"] == snapshot["coverage_end_utc"]
 
 
 def test_awc_vertical_limits_are_conservative_when_not_exact_hundreds() -> None:
