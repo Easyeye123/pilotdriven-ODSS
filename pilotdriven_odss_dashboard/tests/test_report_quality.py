@@ -59,13 +59,16 @@ def test_quality_gate_accepts_three_page_a4_landscape_level1(tmp_path: Path) -> 
 
 
 def test_report_typography_tokens_keep_pilot_content_legible() -> None:
-    assert LEVEL1_TYPOGRAPHY["body"] >= 8.0
-    assert LEVEL1_TYPOGRAPHY["body_small"] >= 6.8
-    assert LEVEL1_TYPOGRAPHY["table_header"] >= 6.2
-    assert LEVEL2_TYPOGRAPHY["body"] >= 7.4
-    assert LEVEL2_TYPOGRAPHY["body_small"] >= 6.6
-    assert LEVEL2_TYPOGRAPHY["table_body"] >= 6.6
-    assert LEVEL2_TYPOGRAPHY["table_header"] >= 6.6
+    assert LEVEL1_TYPOGRAPHY["body"] >= 10.0
+    assert LEVEL1_TYPOGRAPHY["body_small"] >= 10.0
+    assert LEVEL1_TYPOGRAPHY["body_light"] >= 10.0
+    assert LEVEL1_TYPOGRAPHY["body_light_small"] >= 10.0
+    assert LEVEL1_TYPOGRAPHY["metric"] >= 10.0
+    assert LEVEL2_TYPOGRAPHY["body"] >= 10.0
+    assert LEVEL2_TYPOGRAPHY["body_small"] >= 10.0
+    assert LEVEL2_TYPOGRAPHY["table_body"] >= 10.0
+    assert LEVEL2_TYPOGRAPHY["detail_label"] >= 10.0
+    assert LEVEL2_TYPOGRAPHY["detail_value"] >= 10.0
 
 
 def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:

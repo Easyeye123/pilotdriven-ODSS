@@ -56,11 +56,19 @@ _ORANGE = colors.HexColor("#E88B20")
 _RED = colors.HexColor("#D84A5B")
 
 REPORT_TYPOGRAPHY = {
-    "body": 7.4,
-    "body_small": 6.6,
-    "table_body": 6.6,
-    "table_header": 6.6,
+    # Pilot-facing report content targets normal 10pt print readability.
+    # Dense chart annotations, navigation labels and legal/footer metadata are
+    # intentionally smaller because they identify the visual rather than carry
+    # an operational finding.
+    "body": 10.5,
+    "body_small": 10.0,
+    "table_body": 10.0,
+    "table_header": 9.0,
+    "detail_label": 10.0,
+    "detail_value": 10.5,
 }
+_MIN_BODY_FONT_SIZE = 7.4
+_MIN_TABLE_FONT_SIZE = 6.6
 
 _STYLES = getSampleStyleSheet()
 _BODY = ParagraphStyle(
@@ -68,7 +76,7 @@ _BODY = ParagraphStyle(
     parent=_STYLES["BodyText"],
     fontName="Helvetica",
     fontSize=REPORT_TYPOGRAPHY["body"],
-    leading=9.2,
+    leading=12.6,
     textColor=_TEXT,
     spaceBefore=0,
     spaceAfter=0,
@@ -77,7 +85,7 @@ _BODY_SMALL = ParagraphStyle(
     "Operational body small",
     parent=_BODY,
     fontSize=REPORT_TYPOGRAPHY["body_small"],
-    leading=8.0,
+    leading=12.0,
 )
 
 _INTERNAL_DOCUMENT_NAME = re.compile(
@@ -105,14 +113,42 @@ def _pilot_text(value: Any, fallback: str = "Not available") -> str:
     return text
 
 
+def _pilot_source_name(reference: dict[str, Any]) -> str:
+    raw = " ".join(
+        str(reference.get(key) or "")
+        for key in ("provider", "display_title", "document_title")
+    ).lower()
+    source_type = str(reference.get("source_type") or "").lower()
+    if "sigmet" in raw:
+        return "Official SIGMET source"
+    if any(token in raw for token in ("vaac", "volcanic ash")):
+        return "Official volcanic ash source"
+    if any(token in raw for token in ("tropical cyclone", "typhoon")):
+        return "Official tropical cyclone source"
+    if (
+        source_type.startswith("official")
+        or any(token in raw for token in ("noaa", "awc", "weather data api"))
+    ):
+        return "Official aviation source"
+    return (
+        _text(
+            reference.get("display_title")
+            or reference.get("document_title")
+            or reference.get("provider"),
+            "Approved source",
+        )
+        .replace("-", " ")
+        .title()
+    )
+
+
 def _display_document_title(reference: dict[str, Any]) -> str:
     title = _text(
         reference.get("display_title") or reference.get("document_title"),
         "",
     )
     if not title:
-        provider = _text(reference.get("provider"), "Approved source")
-        return provider.replace("-", " ").title()
+        return _pilot_source_name(reference)
     if _INTERNAL_DOCUMENT_NAME.match(title):
         return "Uploaded company CFP"
     return title
@@ -203,12 +239,7 @@ def _compact_source_label(finding: dict[str, Any]) -> str:
             page = _page_label(reference.get("pages") or [])
             label = f"CFP {page}".strip()
         else:
-            label = _text(
-                reference.get("provider")
-                or reference.get("display_title")
-                or reference.get("document_title"),
-                "Approved source",
-            ).replace("-", " ")
+            label = _pilot_source_name(reference)
             validity = [
                 value
                 for value in (
@@ -221,9 +252,6 @@ def _compact_source_label(finding: dict[str, Any]) -> str:
                 label += " / valid " + " to ".join(
                     _utc(value) for value in validity
                 )
-        status = str(reference.get("availability_status") or "")
-        if status in {"source-incomplete", "controlled-source-not-mounted"}:
-            label += " / review required"
         if label not in labels:
             labels.append(label)
         if len(labels) == 2:
@@ -283,20 +311,40 @@ def _draw_wrapped(
     height: float,
     *,
     size: float = REPORT_TYPOGRAPHY["body"],
-    leading: float = 9.2,
+    leading: float = 12.6,
     colour: colors.Color = _TEXT,
     bold: bool = False,
 ) -> None:
-    style = ParagraphStyle(
-        "Operational dynamic",
-        parent=_BODY,
-        fontName="Helvetica-Bold" if bold else "Helvetica",
-        fontSize=size,
-        leading=leading,
-        textColor=colour,
-    )
-    paragraph = Paragraph(escape(_pilot_text(value)), style)
-    _, required = paragraph.wrap(width, height)
+    text = escape(_pilot_text(value))
+    fitted_size = size
+    while fitted_size >= _MIN_BODY_FONT_SIZE:
+        fitted_leading = leading * (fitted_size / size)
+        style = ParagraphStyle(
+            f"Operational dynamic {fitted_size:.1f}pt",
+            parent=_BODY,
+            fontName="Helvetica-Bold" if bold else "Helvetica",
+            fontSize=fitted_size,
+            leading=fitted_leading,
+            textColor=colour,
+        )
+        paragraph = Paragraph(text, style)
+        _, required = paragraph.wrap(width, height)
+        if required <= height:
+            break
+        fitted_size = round(fitted_size - 0.5, 1)
+    else:
+        fitted_size = _MIN_BODY_FONT_SIZE
+        fitted_leading = leading * (fitted_size / size)
+        style = ParagraphStyle(
+            f"Operational dynamic {fitted_size:.1f}pt",
+            parent=_BODY,
+            fontName="Helvetica-Bold" if bold else "Helvetica",
+            fontSize=fitted_size,
+            leading=fitted_leading,
+            textColor=colour,
+        )
+        paragraph = Paragraph(text, style)
+        _, required = paragraph.wrap(width, height)
     paragraph.drawOn(canvas, x, y_top - min(required, height))
 
 
@@ -562,7 +610,6 @@ def _draw_table(
         column_x += column_width
 
     top = y + height - header_h
-    leading = body_font_size + 1.5
     for row_index, row in enumerate(data):
         row_top = top - row_index * row_h
         row_bottom = row_top - row_h
@@ -575,34 +622,51 @@ def _draw_table(
         for column_index, column_width in enumerate(widths):
             value = row[column_index] if column_index < len(row) else ""
             inner_w = column_width - 4 * mm
-            lines = _wrap(
-                value,
-                inner_w,
-                font="Helvetica-Bold" if column_index == 0 else "Helvetica",
-                size=body_font_size,
-            )
-            max_lines = max(
-                1,
-                int((row_h - 2.4 * mm) // leading),
-            )
+            font_name = "Helvetica-Bold" if column_index == 0 else "Helvetica"
+            fitted_size = body_font_size
+            while fitted_size >= _MIN_TABLE_FONT_SIZE:
+                leading = fitted_size + 1.5
+                lines = _wrap(
+                    value,
+                    inner_w,
+                    font=font_name,
+                    size=fitted_size,
+                )
+                max_lines = max(
+                    1,
+                    int((row_h - 2.4 * mm) // leading),
+                )
+                if len(lines) <= max_lines:
+                    break
+                fitted_size = round(fitted_size - 0.5, 1)
+            else:
+                fitted_size = _MIN_TABLE_FONT_SIZE
+                leading = fitted_size + 1.5
+                lines = _wrap(
+                    value,
+                    inner_w,
+                    font=font_name,
+                    size=fitted_size,
+                )
+                max_lines = max(
+                    1,
+                    int((row_h - 2.4 * mm) // leading),
+                )
             lines = lines[:max_lines]
             if len(_pilot_text(value)) and len(lines) == max_lines:
                 lines[-1] = _clip(
                     lines[-1],
                     inner_w,
-                    font="Helvetica-Bold" if column_index == 0 else "Helvetica",
-                    size=body_font_size,
+                    font=font_name,
+                    size=fitted_size,
                 )
             canvas.setFillColor(_TEXT if column_index == 0 else _MUTED)
-            canvas.setFont(
-                "Helvetica-Bold" if column_index == 0 else "Helvetica",
-                body_font_size,
-            )
+            canvas.setFont(font_name, fitted_size)
             line_y = (
                 row_bottom
                 + row_h / 2
                 + (len(lines) - 1) * leading / 2
-                - body_font_size * 0.35
+                - fitted_size * 0.35
             )
             for line in lines:
                 canvas.drawString(column_x + 2 * mm, line_y, line)
@@ -703,8 +767,17 @@ def _notam_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
             "",
         )
         if not notam_id:
-            match = re.search(r"\b[A-Z]\d{3,5}/\d{2}\b", _text(item.get("title"), ""))
-            notam_id = match.group(0) if match else "CFP NOTAM"
+            match = re.search(
+                r"\b\d*([A-Z]\d{3,5}/\d{2})\b",
+                _text(item.get("title"), ""),
+            )
+            notam_id = match.group(1) if match else "CFP NOTAM"
+        prefixed = re.fullmatch(
+            r"\d+([A-Z]\d{3,5}/\d{2})",
+            notam_id.upper(),
+        )
+        if prefixed:
+            notam_id = prefixed.group(1)
         condition = _finding_summary(item)
         window = _text(
             data.get("operating_window")
@@ -953,16 +1026,13 @@ def _promotion_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
             counts.append(f"{len(promoted)} pertinent")
         if review:
             counts.append(f"{len(review)} unresolved")
-        rationale = (
-            f"{', '.join(counts) or f'{len(items)} checked'}; "
-            f"see the dedicated Level 2 section."
-        )
+        rationale = ", ".join(counts) or f"{len(items)} checked"
         rows.append(
             [
                 label,
                 brief,
                 rationale,
-                _source_label(items[0]),
+                _compact_source_label(items[0]),
             ]
         )
     return rows
@@ -1044,9 +1114,16 @@ def _terrain_rows(
             else "Not resolved"
         )
         event_profiles = profile_findings_for_terrain_event(event, profiles)
+        confirmed_profiles = [
+            item
+            for item in event_profiles
+            if (item.get("data") or {}).get("chart_number")
+            and (item.get("data") or {}).get("reference_status")
+            == "controlled-index-loaded"
+        ]
         profile = (
-            "; ".join(_finding_summary(item) for item in event_profiles)
-            if event_profiles
+            "; ".join(_finding_summary(item) for item in confirmed_profiles)
+            if confirmed_profiles
             else "Not confirmed"
         )
         rows.append([
@@ -1069,6 +1146,13 @@ def _terrain_rows(
                 },
                 profiles,
             )
+            confirmed_profiles = [
+                profile
+                for profile in event_profiles
+                if (profile.get("data") or {}).get("chart_number")
+                and (profile.get("data") or {}).get("reference_status")
+                == "controlled-index-loaded"
+            ]
             rows.append(
                 [
                     str(index),
@@ -1078,9 +1162,9 @@ def _terrain_rows(
                     (
                         "; ".join(
                             _finding_summary(profile)
-                            for profile in event_profiles
+                            for profile in confirmed_profiles
                         )
-                        if event_profiles
+                        if confirmed_profiles
                         else "Not confirmed"
                     ),
                 ]
@@ -1225,11 +1309,20 @@ def _page_one(
     for index, (label, value) in enumerate(metrics):
         y = body_y + body_h - (index + 0.7) * row_h
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 6.5)
+        canvas.setFont("Helvetica", REPORT_TYPOGRAPHY["detail_label"])
         canvas.drawString(body_x, y, label)
         canvas.setFillColor(_TEXT)
-        canvas.setFont("Helvetica-Bold", 6.8)
-        canvas.drawRightString(body_x + body_w, y, _clip(value, body_w * 0.58, font="Helvetica-Bold", size=6.8))
+        canvas.setFont("Helvetica-Bold", REPORT_TYPOGRAPHY["detail_value"])
+        canvas.drawRightString(
+            body_x + body_w,
+            y,
+            _clip(
+                value,
+                body_w * 0.58,
+                font="Helvetica-Bold",
+                size=REPORT_TYPOGRAPHY["detail_value"],
+            ),
+        )
 
     table_y = 18 * mm
     table_h = map_y - table_y - gap
@@ -1716,7 +1809,11 @@ def _page_five(
             item["gate"],
             item["basis"],
             item["time"],
-            f"{item['result']} {item['evidence']}",
+            (
+                item["evidence"]
+                if item["result"] == "Crossing time parsed."
+                else f"{item['result']} {item['evidence']}"
+            ),
         ]
         for item in selected
     ]
@@ -1914,9 +2011,9 @@ def _page_six(
         title="BOUNDARY",
         accent=_AMBER,
         body=(
-            "Only validated CFP MSA points and source-qualified profile matches "
-            "are presented; missing or unavailable controlled coverage remains "
-            "review required."
+            "Only validated CFP MSA points are shown. A profile is confirmed "
+            "only from the approved controlled profile source; otherwise chart "
+            "review is required."
         ),
     )
 
@@ -1970,23 +2067,18 @@ def _page_seven(
         empty_text="No complete current weather result is available - review required.",
         fill_height=True,
     )
-    compact_advisory_rows = [
-        [
-            f"{row[0]} / {row[1]}",
-            f"{row[2]} {row[3]}",
-            row[4],
-        ]
-        for row in advisory_rows
-    ]
-    if warnings:
+    compact_advisory_rows: list[list[str]] = []
+    seen_advisory_sources: set[str] = set()
+    for row in advisory_rows:
+        source = row[4]
         compact_advisory_rows.append(
             [
-                "SOURCE COVERAGE / REVIEW REQUIRED",
-                "Coverage note: "
-                + "; ".join(_pilot_text(item) for item in warnings[:2]),
-                "Coverage status",
+                row[0],
+                row[2],
+                "Same source" if source in seen_advisory_sources else source,
             ]
         )
+        seen_advisory_sources.add(source)
     _draw_table(
         canvas,
         x=margin + weather_w + gap,

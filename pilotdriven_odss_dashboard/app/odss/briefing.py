@@ -566,6 +566,18 @@ def render_route_svg(route_map: dict[str, Any], width: int = 1200, height: int =
     return "".join(parts)
 
 
+def _pilot_route_map_label(value: Any) -> str:
+    label = " ".join(str(value or "").split())
+    engineering_markers = (
+        "fallback",
+        "hybrid print",
+        "rendering unavailable",
+    )
+    if not label or any(marker in label.lower() for marker in engineering_markers):
+        return "Route map"
+    return label
+
+
 def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, width: float, height: float) -> None:
     snapshot_path = route_map.get("snapshot_path")
     if snapshot_path:
@@ -586,7 +598,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
             )
             canvas.setFillColor(colors.HexColor("#E8F2FF"))
             canvas.setFont("Helvetica", 4.8)
-            label = str(route_map.get("snapshot_label") or "Realistic route map")
+            label = _pilot_route_map_label(route_map.get("snapshot_label"))
             canvas.drawString(
                 x + 5,
                 y + 4,

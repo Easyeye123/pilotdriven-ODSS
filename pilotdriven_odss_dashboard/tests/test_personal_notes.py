@@ -136,8 +136,8 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     assert "DEPARTURE -" in level1_text
     assert "Confirm departure stand and pushback plan." in level1_compact
     assert "Pilot-entered note." in level1_compact
-    assert "Departure airport - personal notes" in level2_text
-    assert "Confirm departure stand and pushback plan." in level2_text
+    assert "Departure airport - personal notes" in level2_compact
+    assert "Confirm departure stand and pushback plan." in level2_compact
     assert "pilot-entered note" in level2_compact
 
     response = client.post(
@@ -154,7 +154,7 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     level2_compact = " ".join(level2_text.split())
     assert "Monitor the company frequency before the FIR transfer." not in level1_text
     assert "LEVEL 2 - OCEANIC / FIR COMMUNICATIONS" in level2_text
-    assert "PERSONAL NOTE" in level2_text
+    assert "PERSONAL NOTE" in level2_compact
     assert "Monitor the company frequency before the FIR transfer." in level2_compact
 
     response = client.post(

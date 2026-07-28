@@ -64,14 +64,19 @@ _CRITICAL = colors.HexColor(CATEGORY_COLOURS["critical"])
 _NEUTRAL = colors.HexColor(CATEGORY_COLOURS["neutral"])
 
 REPORT_TYPOGRAPHY = {
-    "body": 8.2,
-    "body_small": 6.8,
-    "body_light": 8.0,
-    "body_light_small": 7.2,
-    "metric": 6.2,
-    "panel_title": 7.4,
-    "table_header": 6.2,
+    # Pilot-facing report content targets normal 10pt print readability.
+    # Dense chart annotations, navigation labels and legal/footer metadata are
+    # intentionally smaller because they identify the visual rather than carry
+    # an operational finding.
+    "body": 10.5,
+    "body_small": 10.0,
+    "body_light": 10.5,
+    "body_light_small": 10.0,
+    "metric": 10.0,
+    "panel_title": 9.0,
+    "table_header": 9.0,
 }
+_MIN_BODY_FONT_SIZE = 6.8
 
 
 def _styles() -> dict[str, ParagraphStyle]:
@@ -82,7 +87,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             parent=base["BodyText"],
             fontName="Helvetica",
             fontSize=REPORT_TYPOGRAPHY["body"],
-            leading=10.4,
+            leading=12.6,
             textColor=_TEXT,
             spaceAfter=0,
             spaceBefore=0,
@@ -92,7 +97,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             parent=base["BodyText"],
             fontName="Helvetica",
             fontSize=REPORT_TYPOGRAPHY["body_small"],
-            leading=8.5,
+            leading=12.0,
             textColor=_TEXT,
             spaceAfter=0,
             spaceBefore=0,
@@ -102,7 +107,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             parent=base["BodyText"],
             fontName="Helvetica",
             fontSize=REPORT_TYPOGRAPHY["body_light"],
-            leading=9.8,
+            leading=12.6,
             textColor=colors.HexColor("#1F2937"),
             spaceAfter=0,
             spaceBefore=0,
@@ -112,7 +117,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             parent=base["BodyText"],
             fontName="Helvetica",
             fontSize=REPORT_TYPOGRAPHY["body_light_small"],
-            leading=8.9,
+            leading=12.0,
             textColor=colors.HexColor("#1F2937"),
             spaceAfter=0,
             spaceBefore=0,
@@ -122,7 +127,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             parent=base["BodyText"],
             fontName="Helvetica",
             fontSize=REPORT_TYPOGRAPHY["metric"],
-            leading=7.3,
+            leading=12.0,
             alignment=TA_CENTER,
             textColor=_TEXT,
             spaceAfter=0,
@@ -149,6 +154,32 @@ def _paragraph_height(lines: list[str], style: ParagraphStyle, width: float) -> 
     paragraph = _paragraph(lines, style)
     _, height = paragraph.wrap(max(1.0, width), 10_000)
     return height
+
+
+def _scaled_style(style: ParagraphStyle, font_size: float) -> ParagraphStyle:
+    return ParagraphStyle(
+        f"{style.name} {font_size:.1f}pt",
+        parent=style,
+        fontSize=font_size,
+        leading=font_size * 1.2,
+    )
+
+
+def _largest_fitting_style(
+    lines: list[str],
+    style: ParagraphStyle,
+    width: float,
+    height: float,
+) -> ParagraphStyle:
+    """Keep pilot text at its 10pt target unless fixed geometry requires less."""
+    target = float(style.fontSize)
+    size = target
+    while size >= _MIN_BODY_FONT_SIZE:
+        candidate = style if size == target else _scaled_style(style, size)
+        if _paragraph_height(lines, candidate, width) <= height:
+            return candidate
+        size = round(size - 0.5, 1)
+    return _scaled_style(style, _MIN_BODY_FONT_SIZE)
 
 
 def _panel_height(
@@ -222,8 +253,14 @@ def _draw_panel(
     body_y = y + 2.6 * mm
     body_width = width - 6 * mm
     body_height = max(1.0, height - title_height - 4.8 * mm)
-    fitted = _fit_lines(lines, style, body_width, body_height)
-    paragraph = _paragraph(fitted, style)
+    fitted_style = _largest_fitting_style(
+        lines,
+        style,
+        body_width,
+        body_height,
+    )
+    fitted = _fit_lines(lines, fitted_style, body_width, body_height)
+    paragraph = _paragraph(fitted, fitted_style)
     _, required = paragraph.wrap(body_width, body_height)
     paragraph.drawOn(canvas, body_x, body_y + max(0.0, body_height - required))
 
@@ -438,13 +475,19 @@ def _draw_compact_table(
             value = row[column_index] if column_index < len(row) else ""
             body_width = max(1.0, column_width - 4 * mm)
             body_height = max(1.0, row_h - 2.6 * mm)
-            fitted = _fit_lines(
+            fitted_style = _largest_fitting_style(
                 [str(value)],
                 _STYLES["dark_small"],
                 body_width,
                 body_height,
             )
-            paragraph = _paragraph(fitted, _STYLES["dark_small"])
+            fitted = _fit_lines(
+                [str(value)],
+                fitted_style,
+                body_width,
+                body_height,
+            )
+            paragraph = _paragraph(fitted, fitted_style)
             _, required = paragraph.wrap(body_width, body_height)
             paragraph.drawOn(
                 canvas,
@@ -1549,13 +1592,14 @@ def _draw_cover_airport_panel(
         overlay_lines = _surface_overlay_lines(overlay, detail_limit=2)
 
     lines = [
+        *(overlay_lines if overlay else []),
+        *personal_lines,
         f"WEATHER: {panel['weather']['primary']}",
         *(
             f"{item['kind'].upper()}: {item['text']}"
             for item in panel.get("considerations", [])[:3]
         ),
-        *overlay_lines,
-        *personal_lines,
+        *([] if overlay else overlay_lines),
     ]
     body_x = x + 3 * mm
     body_y = y + 3 * mm
@@ -1622,13 +1666,13 @@ def _draw_cover_metric_cards(
         canvas.setFont("Helvetica-Bold", 5.5)
         canvas.drawString(card_x + 2.5 * mm, y + height - 5.5 * mm, label)
         canvas.setFillColor(_TEXT)
-        canvas.setFont("Helvetica-Bold", 9.2)
+        canvas.setFont("Helvetica-Bold", REPORT_TYPOGRAPHY["metric"])
         canvas.drawString(card_x + 2.5 * mm, y + height - 12.3 * mm, value)
         canvas.setFillColor(_MUTED)
         canvas.setFont("Helvetica", 5.1)
         canvas.drawString(
             card_x + 2.5 * mm,
-            y + 3 * mm,
+            y + 1.8 * mm,
             note[:52],
         )
 

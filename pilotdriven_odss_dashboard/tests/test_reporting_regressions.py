@@ -12,7 +12,11 @@ from pypdf import PdfReader
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import analysis
-from app.odss.briefing import build_route_map, render_route_svg
+from app.odss.briefing import (
+    _pilot_route_map_label,
+    build_route_map,
+    render_route_svg,
+)
 from app.odss.pertinent_brief import CATEGORY_COLOURS
 from app.odss.report_facts import (
     build_route_gate_rows,
@@ -20,6 +24,7 @@ from app.odss.report_facts import (
     select_route_gate_rows,
 )
 from app.odss.engines import detect_terrain_events
+from app.odss.operational_brief import _source_label
 from app.odss.reporting import render_pdf, report_sections
 
 
@@ -556,8 +561,10 @@ def test_level2_matches_seven_page_operational_contract(tmp_path: Path) -> None:
     assert "EDTO SECTORS AND SUITABILITY INPUTS" in pages[3]
     assert "OCEANIC AND FIR COMMUNICATIONS" in pages[4]
     assert "PILOT USE" not in pages[4]
+    assert "Crossing time parsed." not in pages[4]
     assert "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE" in pages[5]
     assert "WEATHER, VAAC AND PROMOTION RESULT" in pages[6]
+    assert "see the dedicated Level 2 section" not in pages[6]
     assert all(f"Page {index} of 7" in text for index, text in enumerate(pages, 1))
 
 
@@ -584,7 +591,7 @@ def test_level2_preserves_page_contract_when_sections_are_sparse(tmp_path: Path)
     assert "FLIGHT-WINDOW NOTAM APPLICABILITY" in page_text[2]
     assert "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE" in page_text[5]
     assert "WEATHER, VAAC AND PROMOTION RESULT" in page_text[6]
-    assert "Coverage note: Source review required." in page_text[6]
+    assert "Coverage note:" not in page_text[6]
 
 
 def test_level2_uses_readable_centered_rows_without_blank_table_filler(
@@ -623,20 +630,80 @@ def test_level2_uses_readable_centered_rows_without_blank_table_filler(
             if needle in span["text"]
         ]
 
-    page_two_first = spans(1, "RUNWAY / SID")
-    page_two_last = spans(1, "SOURCE BOUNDARY")
-    page_seven_last = spans(6, "SOURCE")
+    def blocks(page_number: int, needle: str) -> list[dict[str, Any]]:
+        return [
+            block
+            for block in document[page_number].get_text("dict")["blocks"]
+            if needle in " ".join(
+                span["text"]
+                for line in block.get("lines", [])
+                for span in line.get("spans", [])
+            )
+        ]
 
-    assert page_two_first and min(span["size"] for span in page_two_first) >= 6.1
-    assert page_two_last and max(span["bbox"][1] for span in page_two_last) >= 430
-    assert page_seven_last and max(span["bbox"][1] for span in page_seven_last) >= 270
+    page_two_first = spans(1, "RUNWAY / SID")
+    page_two_last = blocks(1, "SOURCE BOUNDARY")
+    page_seven_advisory = blocks(
+        6,
+        "SIGMET review required",
+    )
+
+    assert page_two_first and min(span["size"] for span in page_two_first) >= 9.9
+    assert page_two_last and max(block["bbox"][1] for block in page_two_last) >= 430
+    assert page_seven_advisory
+    assert min(block["bbox"][1] for block in page_seven_advisory) >= 150
+
+
+def test_fixed_report_typography_stays_inside_page_without_text_overlap(
+    tmp_path: Path,
+) -> None:
+    findings = [
+        *[_weather(index) for index in range(12)],
+        *[
+            _notam(
+                f"A{index:04d}/26",
+                "departure" if index % 2 else "destination",
+            )
+            for index in range(1, 9)
+        ],
+    ]
+
+    for level, expected_pages in ((1, 3), (2, 7)):
+        path = tmp_path / f"level_{level}_typography_geometry.pdf"
+        render_pdf(_flight(), findings, ["Source review required."], level, path)
+        document = fitz.open(path)
+        assert len(document) == expected_pages
+
+        for page in document:
+            lines: list[tuple[fitz.Rect, int, str]] = []
+            for block_index, block in enumerate(page.get_text("dict")["blocks"]):
+                for line in block.get("lines", []):
+                    text = "".join(
+                        span["text"]
+                        for span in line.get("spans", [])
+                    ).strip()
+                    if not text:
+                        continue
+                    bounds = fitz.Rect(line["bbox"])
+                    assert page.rect.contains(bounds), text
+                    lines.append((bounds, block_index, text))
+
+            for index, (left, left_block, left_text) in enumerate(lines):
+                for right, right_block, right_text in lines[index + 1:]:
+                    if left_block == right_block:
+                        continue
+                    intersection = left & right
+                    assert not (
+                        intersection.width > 0.5
+                        and intersection.height > 0.5
+                    ), f"{left_text!r} overlaps {right_text!r}"
 
 
 def test_level2_notam_table_uses_actual_window_and_pilot_facing_effect(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "level_2_notam_window.pdf"
-    active = _notam("A1000/26", "departure")
+    active = _notam("1A6475/26", "departure")
     active["data"].update({
         "location": "WSSS",
         "applicability": "active",
@@ -656,6 +723,8 @@ def test_level2_notam_table_uses_actual_window_and_pilot_facing_effect(
 
     page = PdfReader(path).pages[2].extract_text() or ""
     normalized = " ".join(page.split())
+    assert "A6475/26" in normalized
+    assert "1A6475/26" not in normalized
     assert "11 JUL 0930Z-1130Z" in normalized
     assert "11 JUL 2100Z-12 JUL 0100Z" in normalized
     assert "Runway availability affected." in normalized
@@ -721,7 +790,10 @@ def test_level2_cites_originating_evidence_without_exposing_trace_ids(
         for page in PdfReader(level2_path).pages
     )
     assert "Evidence:" not in level1_text
-    assert "Evidence: SQ304_CFP.pdf; NOTAM package; pp. 101-103." in level2_text
+    assert "CFP pp. 101-103" in " ".join(level2_text.split())
+    assert _source_label(item) == (
+        "Evidence: SQ304_CFP.pdf; NOTAM package; pp. 101-103."
+    )
     assert "L2-NOTAM-internal-trace" not in level2_text
     assert "notam:42" not in level2_text
 
@@ -747,7 +819,10 @@ def test_level2_uses_pilot_facing_title_for_internal_cfp_document_id(
         (page.extract_text() or "")
         for page in PdfReader(path).pages
     )
-    assert "Evidence: Uploaded company CFP; NOTAM package; pp. 36-37." in text
+    assert "CFP pp. 36-37" in " ".join(text.split())
+    assert _source_label(item) == (
+        "Evidence: Uploaded company CFP; NOTAM package; pp. 36-37."
+    )
     assert "cfp_98abe9902fa8439e874724881c1ac28e.pdf" not in text
 
 
@@ -833,7 +908,7 @@ def test_level2_deduplicates_repeated_notam_window_detail_rows() -> None:
     ) == 1
 
 
-def test_level2_formats_official_source_times_for_pilot_readability(
+def test_level2_uses_human_source_names_without_raw_provider_identifiers(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "level_2_source_times.pdf"
@@ -854,9 +929,87 @@ def test_level2_formats_official_source_times_for_pilot_readability(
         for page in PdfReader(path).pages
     )
     normalized = " ".join(text.split())
-    assert "retrieved 27 JUL 2026 0816Z" in normalized
-    assert "valid 27 JUL 2026 0230Z to 27 JUL 2026 1320Z" in normalized
+    assert "Official SIGMET source" in normalized
+    assert "noaa" not in normalized.lower()
+    assert "awc" not in normalized.lower()
+    assert "international sigmet" not in normalized.lower()
     assert ".364917+00:00" not in normalized
+
+
+def test_level2_deduplicates_advisory_status_and_source_boilerplate(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_advisory_deduplication.pdf"
+    source = {
+        "source_type": "official_advisory",
+        "provider": "noaa-awc-international-sigmet",
+    }
+    findings = [
+        {
+            "engine": engine,
+            "severity": "unknown",
+            "title": title,
+            "summary": "Official coverage is incomplete for this flight.",
+            "details": [],
+            "data": {
+                "status": "review_required",
+                "reason_codes": ["coverage_not_complete_for_flight"],
+                "source_references": [source],
+            },
+        }
+        for engine, title in (
+            ("sigmet", "SIGMET review required"),
+            ("vaa", "Volcanic ash review required"),
+            ("tropical_cyclone", "Tropical cyclone review required"),
+        )
+    ]
+
+    render_pdf(_flight(), findings, [], 2, path)
+
+    page_seven = " ".join(
+        (PdfReader(path).pages[6].extract_text() or "").split()
+    )
+    assert page_seven.count("Official SIGMET source") == 2
+    assert "/ REVIEW REQUIRED" not in page_seven
+    assert "coverage not complete for flight" not in page_seven
+
+
+def test_level2_consolidates_unavailable_profile_wording_on_page_six(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_profile_boundary.pdf"
+    findings = [{
+        "engine": "depressurisation",
+        "severity": "unknown",
+        "title": "High terrain detected but no profile matched",
+        "summary": (
+            "No controlled profile is confirmed; manual chart-index review "
+            "is required."
+        ),
+        "details": ["The approved controlled profile index is not mounted."],
+        "data": {
+            "reference_status": "controlled-source-not-mounted",
+            "controlled_index_loaded": False,
+        },
+    }]
+
+    render_pdf(_flight(), findings, [], 2, path)
+
+    page_six = " ".join(
+        (PdfReader(path).pages[5].extract_text() or "").split()
+    )
+    assert "No controlled profile is confirmed" not in page_six
+    assert page_six.lower().count("controlled profile") == 1
+    assert "otherwise chart review is required" in page_six.lower()
+
+
+def test_route_map_label_hides_renderer_fallback_internals() -> None:
+    assert _pilot_route_map_label(
+        "Static map fallback - Hybrid print rendering unavailable"
+    ) == "Route map"
+    assert _pilot_route_map_label("Approved route display") == (
+        "Approved route display"
+    )
 
 
 def test_level2_compacts_deterministic_event_details_without_losing_facts() -> None:

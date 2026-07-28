@@ -474,7 +474,7 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         assert document.page_count == 3
     finally:
         document.close()
-    assert "Surface overlay: 1 exact closure mark." in text
+    assert "Surface overlay: 1 exact closure mark." in " ".join(text.split())
     assert "Closed: TAXIWAY S2" in text
 
     level2 = service_app.get(
