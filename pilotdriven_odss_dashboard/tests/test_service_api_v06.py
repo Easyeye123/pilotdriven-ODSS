@@ -164,6 +164,13 @@ def _surface_contract(
                 "featureIds": ["way/taxiway"],
                 "plainEnglish": "Taxiway S2 closed.",
                 "evidence": "TWY S2 CLSD",
+                "markClass": "closure",
+                "stateAtReference": "active_at_reference",
+                "referenceAt": "2026-07-11T09:30:00Z",
+                "referenceInterval": {
+                    "startsAt": "2026-07-11T08:30:00Z",
+                    "endsAt": "2026-07-11T12:30:00Z",
+                },
                 "markers": [],
             }
         ],
@@ -470,6 +477,18 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
     assert "Surface overlay: 1 exact closure mark." in text
     assert "Closed: TAXIWAY S2" in text
 
+    level2 = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-2",
+        headers=owner_headers,
+    )
+    level2_document = fitz.open(stream=level2.content, filetype="pdf")
+    try:
+        level2_text = "\n".join(page.get_text() for page in level2_document)
+        assert level2_document.page_count == 7
+    finally:
+        level2_document.close()
+    assert "1 active closure" in level2_text
+
     timing = service_app.post(
         f"/v1/analyses/{analysis_id}/timing",
         headers=owner_headers,
@@ -484,6 +503,64 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         headers=owner_headers,
     ).json()
     assert len(refreshed["flight"]["surface_overlays"]) == 2
+
+    accidental_clear = service_app.post(
+        f"/v1/analyses/{analysis_id}/surface-overlays",
+        headers=owner_headers,
+        json={},
+    )
+    cross_tenant_clear = service_app.post(
+        f"/v1/analyses/{analysis_id}/surface-overlays",
+        headers=other_headers,
+        json={"overlays": []},
+    )
+    assert accidental_clear.status_code == 422
+    assert cross_tenant_clear.status_code == 404
+
+    cleared = service_app.post(
+        f"/v1/analyses/{analysis_id}/surface-overlays",
+        headers=owner_headers,
+        json={"overlays": []},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["surface_overlays"] == []
+
+    cleared_briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=owner_headers,
+    ).json()
+    assert cleared_briefing["flight"]["surface_overlays"] == []
+
+    cleared_level1 = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-1",
+        headers=owner_headers,
+    )
+    cleared_document = fitz.open(stream=cleared_level1.content, filetype="pdf")
+    try:
+        cleared_text = "\n".join(page.get_text() for page in cleared_document)
+        assert cleared_document.page_count == 3
+    finally:
+        cleared_document.close()
+    assert "Closed: TAXIWAY S2" not in cleared_text
+    assert "exact closure mark" not in cleared_text
+
+    cleared_level2 = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-2",
+        headers=owner_headers,
+    )
+    cleared_level2_document = fitz.open(
+        stream=cleared_level2.content,
+        filetype="pdf",
+    )
+    try:
+        cleared_level2_text = "\n".join(
+            page.get_text()
+            for page in cleared_level2_document
+        )
+        assert cleared_level2_document.page_count == 7
+    finally:
+        cleared_level2_document.close()
+    assert "1 active closure" not in cleared_level2_text
 
 
 def test_report_worker_endpoint_preserves_labelled_schematic_fallback(

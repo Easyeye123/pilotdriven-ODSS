@@ -180,6 +180,138 @@ def test_asterisk_qualifies_exact_100_as_high_msa() -> None:
     events = detect_terrain_events(waypoints)
     assert len(events) == 1
     assert events[0]["first_high"]["name"] == "STAR100"
+    assert events[0]["terrain_event_id"] == "terrain:STAR100@2-STAR100@2"
+
+
+def test_same_profile_can_cover_two_separate_terrain_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    waypoints = [
+        _wp("START", 0, 90, "DCT"),
+        _wp("HIGH1", 10, 120, "DCT", star=True),
+        _wp("MIDDLE", 20, 90, "DCT"),
+        _wp("HIGH2", 30, 130, "DCT", star=True),
+        _wp("END", 40, 90, "DCT"),
+    ]
+    monkeypatch.setattr(
+        engines,
+        "DEPRESS_PROFILES",
+        [
+            {
+                "chart": "GEN-1",
+                "from": "START",
+                "to": "END",
+                "from_aliases": ["START"],
+                "to_aliases": ["END"],
+                "airways": [],
+                "critical": "MIDDLE",
+                "critical_aliases": ["MIDDLE"],
+                "effectivity": ["ALL"],
+            }
+        ],
+    )
+
+    events = detect_terrain_events(waypoints)
+    matches = match_profiles(
+        {
+            "aircraft_type": "A350-941",
+            "registration": "9V-SGE",
+            "route_waypoints": waypoints,
+        },
+        events,
+    )
+
+    assert len(events) == 2
+    assert len(matches) == 2
+    assert [item["terrain_event_id"] for item in matches] == [
+        events[0]["terrain_event_id"],
+        events[1]["terrain_event_id"],
+    ]
+    assert [item["profile"]["chart"] for item in matches] == ["GEN-1", "GEN-1"]
+
+
+def test_fallback_profile_candidate_remains_review_required(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    waypoints = [
+        _wp("START", 0, 90, "DCT"),
+        _wp("HIGH", 10, 120, "DCT", star=True),
+        _wp("END", 20, 90, "DCT"),
+    ]
+    monkeypatch.setattr(
+        engines,
+        "DEPRESS_PROFILES",
+        [
+            {
+                "chart": "GEN-1",
+                "from": "START",
+                "to": "HIGH",
+                "from_aliases": ["START"],
+                "to_aliases": ["HIGH"],
+                "airways": ["DCT"],
+                "critical": "HIGH",
+                "critical_aliases": ["HIGH"],
+                "effectivity": ["ALL"],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        engines,
+        "DEPRESS_LIBRARY_METADATA",
+        {
+            "title": "Controlled profile library",
+            "issue_date": "2026-01-01",
+            "status": "controlled-source-not-mounted",
+        },
+    )
+    flight = _flight(waypoints)
+
+    findings, _ = analyse(flight)
+    profile = next(
+        item for item in findings if item["engine"] == "depressurisation"
+    )
+
+    assert profile["severity"] == "unknown"
+    assert profile["data"]["terrain_event_id"].startswith("terrain:")
+    assert "controlled profile index unavailable" in profile["summary"].lower()
+
+
+def test_missing_controlled_profile_index_is_explicit_when_no_candidate_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    waypoints = [
+        _wp("START", 0, 90, "DCT"),
+        _wp("HIGH", 10, 120, "DCT", star=True),
+        _wp("END", 20, 90, "DCT"),
+    ]
+    monkeypatch.setattr(engines, "DEPRESS_PROFILES", [])
+    monkeypatch.setattr(
+        engines,
+        "DEPRESS_LIBRARY_METADATA",
+        {
+            "title": "Controlled profile library",
+            "issue_date": "2026-01-01",
+            "status": "controlled-source-not-mounted",
+        },
+    )
+
+    findings, _ = analyse(_flight(waypoints))
+    result = next(
+        item for item in findings if item["engine"] == "depressurisation"
+    )
+
+    assert result["severity"] == "unknown"
+    assert result["summary"] == (
+        "No controlled profile is confirmed; manual chart-index review is required."
+    )
+    assert result["details"] == [
+        "The approved controlled profile index is not mounted."
+    ]
+    assert result["data"]["controlled_index_loaded"] is False
+    assert result["data"]["reference_status"] == "controlled-source-not-mounted"
+    assert result["data"]["terrain_event_ids"] == [
+        "terrain:HIGH@10-HIGH@10"
+    ]
 
 
 def test_sq24_high_msa_uses_minimal_11_4_and_11_37_chain(
@@ -205,5 +337,11 @@ def test_sq24_high_msa_uses_minimal_11_4_and_11_37_chain(
         },
         events,
     )
-    assert [item["profile"]["chart"] for item in matches] == ["11-4", "11-37"]
+    assert [item["profile"]["chart"] for item in matches] == [
+        "11-4",
+        "11-37",
+        "11-37",
+    ]
+    assert len({item["terrain_event_id"] for item in matches}) == 2
+    assert {item["profile"]["chart"] for item in matches} == {"11-4", "11-37"}
     assert all(item["coverage_complete"] for item in matches)

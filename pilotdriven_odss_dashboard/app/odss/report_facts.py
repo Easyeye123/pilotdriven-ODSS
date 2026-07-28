@@ -189,8 +189,75 @@ def select_route_gate_rows(
     return [rows[index] for index in selected]
 
 
+def profile_findings_for_terrain_event(
+    event: dict[str, Any],
+    findings: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Select only profile findings that belong to this terrain event.
+
+    New analyses carry a stable ``terrain_event_id``. The ACTM fallback keeps
+    previously stored analyses renderable without returning to the unsafe
+    positional join that shifted profiles when an earlier event had no match.
+    """
+
+    candidates = [
+        finding
+        for finding in findings
+        if isinstance(finding, dict)
+        and finding.get("engine") == "depressurisation"
+    ]
+    event_id = _clean(event.get("terrain_event_id"))
+    if event_id:
+        direct = [
+            finding
+            for finding in candidates
+            if _clean((finding.get("data") or {}).get("terrain_event_id"))
+            == event_id
+        ]
+        if direct:
+            return sorted(
+                direct,
+                key=lambda item: (
+                    _clean((item.get("data") or {}).get("chart_number")),
+                    _clean(item.get("summary")),
+                ),
+            )
+
+    start_actm = (event.get("first_high") or {}).get("actm_minutes")
+    if start_actm is None:
+        return []
+    legacy = [
+        finding
+        for finding in candidates
+        if not _clean((finding.get("data") or {}).get("terrain_event_id"))
+        and (finding.get("data") or {}).get("start_actm_minutes") == start_actm
+    ]
+    if legacy:
+        return sorted(
+            legacy,
+            key=lambda item: (
+                _clean((item.get("data") or {}).get("chart_number")),
+                _clean(item.get("summary")),
+            ),
+        )
+    global_review = [
+        finding
+        for finding in candidates
+        if not _clean((finding.get("data") or {}).get("terrain_event_id"))
+        and (finding.get("data") or {}).get("start_actm_minutes") is None
+    ]
+    return sorted(
+        global_review,
+        key=lambda item: (
+            _clean((item.get("data") or {}).get("chart_number")),
+            _clean(item.get("summary")),
+        ),
+    )
+
+
 __all__ = [
     "actm_utc_label",
     "build_route_gate_rows",
+    "profile_findings_for_terrain_event",
     "select_route_gate_rows",
 ]

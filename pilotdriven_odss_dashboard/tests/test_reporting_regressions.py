@@ -16,8 +16,10 @@ from app.odss.briefing import build_route_map, render_route_svg
 from app.odss.pertinent_brief import CATEGORY_COLOURS
 from app.odss.report_facts import (
     build_route_gate_rows,
+    profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
+from app.odss.engines import detect_terrain_events
 from app.odss.reporting import render_pdf, report_sections
 
 
@@ -246,6 +248,74 @@ def test_route_gates_are_derived_from_generic_cfp_route_and_fail_closed() -> Non
     )
 
 
+def test_profile_findings_join_by_terrain_event_not_list_position() -> None:
+    events = detect_terrain_events(
+        [
+            {
+                "name": "START",
+                "actm_minutes": 0,
+                "msa_hundreds_ft": 90,
+            },
+            {
+                "name": "HIGH1",
+                "actm_minutes": 10,
+                "msa_hundreds_ft": 120,
+                "msa_asterisk": True,
+            },
+            {
+                "name": "MIDDLE",
+                "actm_minutes": 20,
+                "msa_hundreds_ft": 90,
+            },
+            {
+                "name": "HIGH2",
+                "actm_minutes": 30,
+                "msa_hundreds_ft": 130,
+                "msa_asterisk": True,
+            },
+            {
+                "name": "END",
+                "actm_minutes": 40,
+                "msa_hundreds_ft": 90,
+            },
+        ]
+    )
+    findings = [
+        {
+            "engine": "depressurisation",
+            "summary": "Manual chart-index review is required.",
+            "data": {},
+        },
+        {
+            "engine": "depressurisation",
+            "summary": "Candidate chart for the second event.",
+            "data": {
+                "terrain_event_id": events[1]["terrain_event_id"],
+                "start_actm_minutes": 30,
+                "chart_number": "GEN-2",
+            },
+        },
+        {
+            "engine": "depressurisation",
+            "summary": "Second chart for the same event.",
+            "data": {
+                "terrain_event_id": events[1]["terrain_event_id"],
+                "start_actm_minutes": 30,
+                "chart_number": "GEN-3",
+            },
+        },
+    ]
+
+    assert [
+        item["summary"]
+        for item in profile_findings_for_terrain_event(events[0], findings)
+    ] == ["Manual chart-index review is required."]
+    assert [
+        item["data"]["chart_number"]
+        for item in profile_findings_for_terrain_event(events[1], findings)
+    ] == ["GEN-2", "GEN-3"]
+
+
 def test_route_map_limits_routine_labels_on_dense_long_haul_routes() -> None:
     flight = _flight()
     flight["route_waypoints"] = [
@@ -319,9 +389,17 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
             "engine": "depressurisation",
             "severity": "unknown",
             "title": "High terrain detected but no profile matched",
-            "summary": "Manual chart-index review is required.",
-            "details": [],
-            "data": {},
+            "summary": (
+                "No controlled profile is confirmed; manual chart-index review "
+                "is required."
+            ),
+            "details": [
+                "The approved controlled profile index is not mounted."
+            ],
+            "data": {
+                "reference_status": "controlled-source-not-mounted",
+                "controlled_index_loaded": False,
+            },
         },
         *[
             {
@@ -376,7 +454,10 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "ACTUAL EXPOSURE" in third
     assert "PROFILE / COVERAGE" in third
     assert "BOUNDARY LOGIC" in third
-    assert "Manual chart-index review is required" in third
+    assert "CONFIRMED PROFILES" in third
+    assert "PROFILE FINDINGS" not in third
+    assert "No controlled profile is confirmed" in third
+    assert "approved controlled profile index is not mounted" in third
     assert "ACTM / CALCULATED UTC" not in third
     assert sum(
         "Filed route from CFP coordinates" in (page.extract_text() or "")

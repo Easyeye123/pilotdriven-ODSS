@@ -104,6 +104,20 @@ class SurfaceMarker(_StrictModel):
     geometry: SurfacePointGeometry
 
 
+SurfaceMarkClass = Literal["closure", "scheduled", "equipment", "locator"]
+SurfaceReferenceState = Literal[
+    "active_at_reference",
+    "begins_after_reference",
+    "ended_before_reference",
+    "unknown_at_reference",
+]
+
+
+class SurfaceReferenceInterval(_StrictModel):
+    startsAt: str | None = Field(default=None, max_length=64)
+    endsAt: str | None = Field(default=None, max_length=64)
+
+
 class SurfaceMappedFinding(_StrictModel):
     notamNumber: str | None = Field(default=None, max_length=64)
     entityType: Literal["runway", "taxiway", "apron"] | None = None
@@ -112,6 +126,10 @@ class SurfaceMappedFinding(_StrictModel):
     featureIds: list[str] = Field(default_factory=list, max_length=64)
     plainEnglish: str | None = Field(default=None, max_length=500)
     evidence: str | None = Field(default=None, max_length=2_000)
+    markClass: SurfaceMarkClass | None = None
+    stateAtReference: SurfaceReferenceState | None = None
+    referenceAt: str | None = Field(default=None, max_length=64)
+    referenceInterval: SurfaceReferenceInterval | None = None
     markers: list[SurfaceMarker] = Field(default_factory=list, max_length=64)
 
 
@@ -198,7 +216,10 @@ class SurfaceOverlayContract(_StrictModel):
 
 
 class SurfaceOverlayRequest(_StrictModel):
-    overlays: list[SurfaceOverlayContract] = Field(min_length=1, max_length=2)
+    # The field stays required so an omitted payload cannot clear an analysis by
+    # accident. An explicit empty list is the fail-safe clear after a timing
+    # refresh can no longer validate the previous marks.
+    overlays: list[SurfaceOverlayContract] = Field(max_length=2)
 
 
 def validated_surface_overlays(
@@ -234,12 +255,86 @@ def _sample_line(coordinates: list[Any], maximum: int = 16) -> list[Any]:
     ]
 
 
+_SURFACE_STYLES = {
+    "closure": {
+        "color": "#EF4444",
+        "width": 8,
+        "outline-color": "#7F1D1D",
+        "outline-width": 2,
+        "fill-color": "#EF4444",
+        "fill-opacity": 0.55,
+        "marker-label": "X",
+    },
+    "scheduled": {
+        "color": "#FBBF24",
+        "width": 7,
+        "outline-color": "#92400E",
+        "outline-width": 2,
+        "fill-color": "#FBBF24",
+        "fill-opacity": 0.42,
+        "marker-label": "S",
+    },
+    "equipment": {
+        "color": "#D97706",
+        "width": 6,
+        "outline-color": "#78350F",
+        "outline-width": 2,
+        "fill-color": "#D97706",
+        "fill-opacity": 0.36,
+        "marker-label": "!",
+    },
+    "locator": {
+        "color": "#94A3B8",
+        "width": 5,
+        "outline-color": "#475569",
+        "outline-width": 1,
+        "fill-color": "#94A3B8",
+        "fill-opacity": 0.24,
+        "marker-label": "?",
+    },
+}
+_SURFACE_STYLE_PRIORITY = {
+    "locator": 0,
+    "equipment": 1,
+    "scheduled": 2,
+    "closure": 3,
+}
+
+
+def surface_mark_presentation(match: dict[str, Any]) -> str | None:
+    """Return a fail-safe visual class for a time-qualified surface finding."""
+
+    state = str(match.get("stateAtReference") or "").strip().casefold()
+    mark_class = str(match.get("markClass") or "").strip().casefold()
+    if state == "ended_before_reference":
+        return None
+    if state == "begins_after_reference" or mark_class == "scheduled":
+        return "scheduled"
+    if mark_class == "equipment":
+        return "equipment"
+    if mark_class == "closure" and state == "active_at_reference":
+        return "closure"
+    # Missing/unknown timing, explicit locator rows, and legacy unclassified
+    # rows remain visible only as review locators. They must never become red.
+    return "locator"
+
+
 def _styled_surface_overlay(contract: dict[str, Any]) -> dict[str, Any]:
-    mapped_ids = {
-        str(feature_id)
-        for match in contract.get("mapped") or []
-        for feature_id in match.get("featureIds") or []
-    }
+    feature_marks: dict[str, str] = {}
+    for match in contract.get("mapped") or []:
+        presentation = surface_mark_presentation(match)
+        if presentation is None:
+            continue
+        for feature_id in match.get("featureIds") or []:
+            key = str(feature_id)
+            previous = feature_marks.get(key)
+            if (
+                previous is None
+                or _SURFACE_STYLE_PRIORITY[presentation]
+                > _SURFACE_STYLE_PRIORITY[previous]
+            ):
+                feature_marks[key] = presentation
+
     features: list[dict[str, Any]] = []
     for feature in (contract.get("featureCollection") or {}).get("features") or []:
         geometry = feature.get("geometry") or {}
@@ -253,17 +348,24 @@ def _styled_surface_overlay(contract: dict[str, Any]) -> dict[str, Any]:
             }
         elif geometry_type != "Polygon":
             continue
-        is_closed = feature_id in mapped_ids
-        properties = {
-            "color": "#EF4444" if is_closed else "#E5E7EB",
-            "width": 8 if is_closed else 3,
-            "outline-color": "#7F1D1D" if is_closed else "#334155",
-            "outline-width": 2 if is_closed else 1,
+        presentation = feature_marks.get(feature_id)
+        style = _SURFACE_STYLES.get(presentation or "")
+        properties: dict[str, Any] = {
+            "color": style["color"] if style else "#E5E7EB",
+            "width": style["width"] if style else 3,
+            "outline-color": (
+                style["outline-color"] if style else "#334155"
+            ),
+            "outline-width": style["outline-width"] if style else 1,
         }
         if geometry_type == "Polygon":
             properties.update({
-                "fill-color": "#EF4444" if is_closed else "#64748B",
-                "fill-opacity": 0.55 if is_closed else 0.18,
+                "fill-color": (
+                    style["fill-color"] if style else "#64748B"
+                ),
+                "fill-opacity": (
+                    style["fill-opacity"] if style else 0.18
+                ),
             })
         features.append({
             "type": "Feature",
@@ -271,13 +373,17 @@ def _styled_surface_overlay(contract: dict[str, Any]) -> dict[str, Any]:
             "properties": properties,
         })
     for match in contract.get("mapped") or []:
+        presentation = surface_mark_presentation(match)
+        if presentation is None:
+            continue
+        style = _SURFACE_STYLES[presentation]
         for marker in match.get("markers") or []:
             features.append({
                 "type": "Feature",
                 "geometry": marker["geometry"],
                 "properties": {
-                    "label": "X",
-                    "color": "#EF4444",
+                    "label": style["marker-label"],
+                    "color": style["color"],
                     "size": "small",
                 },
             })
@@ -386,5 +492,6 @@ async def attach_surface_report_maps(
 __all__ = [
     "SurfaceOverlayRequest",
     "attach_surface_report_maps",
+    "surface_mark_presentation",
     "validated_surface_overlays",
 ]

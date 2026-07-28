@@ -1176,10 +1176,15 @@ async def update_service_surface_overlays(
     record_audit_event(
         tenant_id=identity.tenant_id,
         actor_id=identity.user_id,
-        action="analysis.surface_overlays_published",
+        action=(
+            "analysis.surface_overlays_published"
+            if prepared
+            else "analysis.surface_overlays_cleared"
+        ),
         resource_type="analysis",
         resource_id=analysis_id,
         details={
+            "cleared": not prepared,
             "airports": [
                 {
                     "icao": overlay["icao"],

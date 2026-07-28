@@ -31,8 +31,10 @@ from .pertinent_brief import (
 from .report_facts import (
     actm_utc_label,
     build_route_gate_rows,
+    profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
+from .surface_overlays import surface_mark_presentation
 
 
 PAGE_SIZE = landscape(A4)
@@ -53,13 +55,20 @@ _TEAL = colors.HexColor("#39B8B6")
 _ORANGE = colors.HexColor("#E88B20")
 _RED = colors.HexColor("#D84A5B")
 
+REPORT_TYPOGRAPHY = {
+    "body": 7.4,
+    "body_small": 6.6,
+    "table_body": 6.6,
+    "table_header": 6.6,
+}
+
 _STYLES = getSampleStyleSheet()
 _BODY = ParagraphStyle(
     "Operational body",
     parent=_STYLES["BodyText"],
     fontName="Helvetica",
-    fontSize=6.2,
-    leading=8.0,
+    fontSize=REPORT_TYPOGRAPHY["body"],
+    leading=9.2,
     textColor=_TEXT,
     spaceBefore=0,
     spaceAfter=0,
@@ -67,8 +76,8 @@ _BODY = ParagraphStyle(
 _BODY_SMALL = ParagraphStyle(
     "Operational body small",
     parent=_BODY,
-    fontSize=5.4,
-    leading=6.7,
+    fontSize=REPORT_TYPOGRAPHY["body_small"],
+    leading=8.0,
 )
 
 _INTERNAL_DOCUMENT_NAME = re.compile(
@@ -273,8 +282,8 @@ def _draw_wrapped(
     width: float,
     height: float,
     *,
-    size: float = 6.2,
-    leading: float = 8.0,
+    size: float = REPORT_TYPOGRAPHY["body"],
+    leading: float = 9.2,
     colour: colors.Color = _TEXT,
     bold: bool = False,
 ) -> None:
@@ -335,7 +344,7 @@ def _draw_header(
         ),
     )
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica", 6.2)
+    canvas.setFont("Helvetica", 6.8)
     canvas.drawString(
         160 * mm,
         top - 7.2 * mm,
@@ -405,7 +414,7 @@ def _panel(
     title: str,
     accent: colors.Color,
     body: str | None = None,
-    body_size: float = 6.2,
+    body_size: float = REPORT_TYPOGRAPHY["body"],
 ) -> tuple[float, float, float, float]:
     canvas.setFillColor(_PANEL)
     canvas.setStrokeColor(_LINE)
@@ -416,8 +425,8 @@ def _panel(
     canvas.roundRect(x, y + height - bar_h, width, bar_h, 7, fill=1, stroke=0)
     canvas.rect(x, y + height - bar_h, width, bar_h / 2, fill=1, stroke=0)
     canvas.setFillColor(_BACKGROUND)
-    canvas.setFont("Helvetica-Bold", 6.5)
-    canvas.drawString(x + 3 * mm, y + height - 4.6 * mm, _clip(title, width - 6 * mm, font="Helvetica-Bold", size=6.5))
+    canvas.setFont("Helvetica-Bold", 7.0)
+    canvas.drawString(x + 3 * mm, y + height - 4.6 * mm, _clip(title, width - 6 * mm, font="Helvetica-Bold", size=7.0))
     body_x = x + 3 * mm
     body_y = y + 3 * mm
     body_w = width - 6 * mm
@@ -454,14 +463,14 @@ def _metric_cards(
         canvas.setFillColor(_GREEN if index % 3 == 0 else _CYAN if index % 3 == 1 else _AMBER)
         canvas.rect(cx, y + height - 1.2 * mm, cell_w, 1.2 * mm, fill=1, stroke=0)
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica-Bold", 5.8)
-        canvas.drawString(cx + 3 * mm, y + height - 5.3 * mm, _clip(label, cell_w - 6 * mm, font="Helvetica-Bold", size=5.8))
+        canvas.setFont("Helvetica-Bold", 6.5)
+        canvas.drawString(cx + 3 * mm, y + height - 5.3 * mm, _clip(label, cell_w - 6 * mm, font="Helvetica-Bold", size=6.5))
         canvas.setFillColor(_TEXT)
         canvas.setFont("Helvetica-Bold", 13)
         canvas.drawString(cx + 3 * mm, y + height - 11.8 * mm, _clip(value, cell_w - 6 * mm, font="Helvetica-Bold", size=13))
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 5.1)
-        canvas.drawString(cx + 3 * mm, y + 3 * mm, _clip(note, cell_w - 6 * mm, size=5.1))
+        canvas.setFont("Helvetica", 5.8)
+        canvas.drawString(cx + 3 * mm, y + 3 * mm, _clip(note, cell_w - 6 * mm, size=5.8))
 
 
 def _strip(
@@ -480,18 +489,18 @@ def _strip(
     canvas.roundRect(x, y, width, height, 7, fill=1, stroke=1)
     title_w = 38 * mm
     canvas.setFillColor(accent)
-    canvas.setFont("Helvetica-Bold", 5.6)
+    canvas.setFont("Helvetica-Bold", 6.3)
     canvas.drawString(
         x + 3 * mm,
         y + height / 2 - 1.8,
-        _clip(title, title_w - 5 * mm, font="Helvetica-Bold", size=5.6),
+        _clip(title, title_w - 5 * mm, font="Helvetica-Bold", size=6.3),
     )
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica", 5.4)
+    canvas.setFont("Helvetica", 6.2)
     canvas.drawString(
         x + title_w,
         y + height / 2 - 1.8,
-        _clip(body, width - title_w - 3 * mm, size=5.4),
+        _clip(body, width - title_w - 3 * mm, size=6.2),
     )
 
 
@@ -508,8 +517,8 @@ def _draw_table(
     empty_text: str = "No applicable item was extracted.",
     max_rows: int | None = None,
     fill_height: bool = False,
-    body_font_size: float = 6.2,
-    header_font_size: float = 6.0,
+    body_font_size: float = REPORT_TYPOGRAPHY["table_body"],
+    header_font_size: float = REPORT_TYPOGRAPHY["table_header"],
 ) -> int:
     data = list(rows)
     if max_rows is not None:
@@ -630,9 +639,7 @@ def _personal_note_row(
     return [
         "PERSONAL NOTE",
         " / ".join(notes),
-        (
-            f"{label}; pilot-entered note."
-        ),
+        f"{label}; pilot-entered note.",
     ]
 
 
@@ -1036,9 +1043,10 @@ def _terrain_rows(
             if max_msa is not None
             else "Not resolved"
         )
+        event_profiles = profile_findings_for_terrain_event(event, profiles)
         profile = (
-            _finding_summary(profiles[index - 1])
-            if index - 1 < len(profiles)
+            "; ".join(_finding_summary(item) for item in event_profiles)
+            if event_profiles
             else "Not confirmed"
         )
         rows.append([
@@ -1049,20 +1057,34 @@ def _terrain_rows(
             profile,
         ])
     if not rows and terrain_findings:
-        rows = [
-            [
-                str(index),
-                "Time review required",
-                _pilot_text(item.get("title")),
-                _finding_summary(item),
-                (
-                    _finding_summary(profiles[index - 1])
-                    if index - 1 < len(profiles)
-                    else "Not confirmed"
-                ),
-            ]
-            for index, item in enumerate(terrain_findings[:6], start=1)
-        ]
+        rows = []
+        for index, item in enumerate(terrain_findings[:6], start=1):
+            data = item.get("data") or {}
+            event_profiles = profile_findings_for_terrain_event(
+                {
+                    "terrain_event_id": data.get("terrain_event_id"),
+                    "first_high": {
+                        "actm_minutes": data.get("start_actm_minutes"),
+                    },
+                },
+                profiles,
+            )
+            rows.append(
+                [
+                    str(index),
+                    "Time review required",
+                    _pilot_text(item.get("title")),
+                    _finding_summary(item),
+                    (
+                        "; ".join(
+                            _finding_summary(profile)
+                            for profile in event_profiles
+                        )
+                        if event_profiles
+                        else "Not confirmed"
+                    ),
+                ]
+            )
     return rows
 
 
@@ -1203,11 +1225,11 @@ def _page_one(
     for index, (label, value) in enumerate(metrics):
         y = body_y + body_h - (index + 0.7) * row_h
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 5.7)
+        canvas.setFont("Helvetica", 6.5)
         canvas.drawString(body_x, y, label)
         canvas.setFillColor(_TEXT)
-        canvas.setFont("Helvetica-Bold", 5.9)
-        canvas.drawRightString(body_x + body_w, y, _clip(value, body_w * 0.58, font="Helvetica-Bold", size=5.9))
+        canvas.setFont("Helvetica-Bold", 6.8)
+        canvas.drawRightString(body_x + body_w, y, _clip(value, body_w * 0.58, font="Helvetica-Bold", size=6.8))
 
     table_y = 18 * mm
     table_h = map_y - table_y - gap
@@ -1347,9 +1369,34 @@ def _page_two(
                 "No validated overlay attached",
                 "Airport-chart review required",
             )
-        count = len(overlay.get("markers") or overlay.get("features") or [])
+        classes: dict[str, int] = defaultdict(int)
+        for item in overlay.get("mapped") or []:
+            presentation = surface_mark_presentation(item)
+            if presentation is not None:
+                classes[presentation] += 1
+        labels = {
+            "closure": "active closure",
+            "scheduled": "scheduled restriction",
+            "equipment": "equipment outage",
+            "locator": "review locator",
+        }
+        summary = "; ".join(
+            f"{count} {labels[key]}"
+            for key, count in classes.items()
+        )
+        review_count = len(overlay.get("reviewRequired") or [])
+        if review_count:
+            summary = "; ".join(
+                part
+                for part in (
+                    summary,
+                    f"{review_count} chart-review item"
+                    f"{'s' if review_count != 1 else ''}",
+                )
+                if part
+            )
         return (
-            f"{count} validated surface marks",
+            summary or "No applicable surface mark at selected time",
             "Overlay available in airport view",
         )
 
@@ -1434,7 +1481,7 @@ def _page_two(
             y=body_y,
             width=body_w,
             height=body_h,
-            columns=(("ITEM", 0.23), ("EVIDENCE", 0.49), ("EFFECT", 0.28)),
+            columns=(("ITEM", 0.23), ("EVIDENCE", 0.47), ("EFFECT", 0.30)),
             rows=rows,
             accent=accent,
             max_rows=7,
@@ -1866,7 +1913,11 @@ def _page_six(
         height=8 * mm,
         title="BOUNDARY",
         accent=_AMBER,
-        body="Only validated CFP MSA points and approved profile matches are presented; missing coverage remains review required.",
+        body=(
+            "Only validated CFP MSA points and source-qualified profile matches "
+            "are presented; missing or unavailable controlled coverage remains "
+            "review required."
+        ),
     )
 
 
@@ -1942,7 +1993,7 @@ def _page_seven(
         y=panel_y,
         width=advisory_w,
         height=panel_h,
-        columns=(("PRODUCT / STATUS", 0.27), ("RESULT", 0.47), ("SOURCE", 0.26)),
+        columns=(("PRODUCT / STATUS", 0.32), ("RESULT", 0.50), ("SOURCE", 0.18)),
         rows=compact_advisory_rows,
         accent=_TEAL,
         max_rows=4,
@@ -1977,8 +2028,8 @@ def _page_seven(
         columns=(
             ("CATEGORY", 0.22),
             ("BRIEF", 0.10),
-            ("PROMOTION RESULT", 0.43),
-            ("EVIDENCE", 0.25),
+            ("PROMOTION RESULT", 0.41),
+            ("EVIDENCE", 0.27),
         ),
         rows=promotion_rows,
         accent=_HEADER,

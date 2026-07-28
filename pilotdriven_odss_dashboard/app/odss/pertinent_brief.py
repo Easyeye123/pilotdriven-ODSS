@@ -25,8 +25,10 @@ from .pilot_briefing import prepare_pilot_findings
 from .report_facts import (
     actm_utc_label,
     build_route_gate_rows,
+    profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
+from .surface_overlays import surface_mark_presentation
 
 
 PAGE_SIZE = landscape(A4)
@@ -61,6 +63,16 @@ _TERRAIN = colors.HexColor(CATEGORY_COLOURS["terrain"])
 _CRITICAL = colors.HexColor(CATEGORY_COLOURS["critical"])
 _NEUTRAL = colors.HexColor(CATEGORY_COLOURS["neutral"])
 
+REPORT_TYPOGRAPHY = {
+    "body": 8.2,
+    "body_small": 6.8,
+    "body_light": 8.0,
+    "body_light_small": 7.2,
+    "metric": 6.2,
+    "panel_title": 7.4,
+    "table_header": 6.2,
+}
+
 
 def _styles() -> dict[str, ParagraphStyle]:
     base = getSampleStyleSheet()
@@ -69,8 +81,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent dark",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=7.2,
-            leading=10.0,
+            fontSize=REPORT_TYPOGRAPHY["body"],
+            leading=10.4,
             textColor=_TEXT,
             spaceAfter=0,
             spaceBefore=0,
@@ -79,8 +91,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent dark small",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.9,
-            leading=8.0,
+            fontSize=REPORT_TYPOGRAPHY["body_small"],
+            leading=8.5,
             textColor=_TEXT,
             spaceAfter=0,
             spaceBefore=0,
@@ -89,8 +101,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent light",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=7.0,
-            leading=9.2,
+            fontSize=REPORT_TYPOGRAPHY["body_light"],
+            leading=9.8,
             textColor=colors.HexColor("#1F2937"),
             spaceAfter=0,
             spaceBefore=0,
@@ -99,8 +111,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent light small",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=6.4,
-            leading=8.5,
+            fontSize=REPORT_TYPOGRAPHY["body_light_small"],
+            leading=8.9,
             textColor=colors.HexColor("#1F2937"),
             spaceAfter=0,
             spaceBefore=0,
@@ -109,8 +121,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "Pertinent metric",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=5.2,
-            leading=6.2,
+            fontSize=REPORT_TYPOGRAPHY["metric"],
+            leading=7.3,
             alignment=TA_CENTER,
             textColor=_TEXT,
             spaceAfter=0,
@@ -200,7 +212,10 @@ def _draw_panel(
     canvas.roundRect(x, y + height - title_height, width, title_height, 3.5, fill=1, stroke=0)
     canvas.rect(x, y + height - title_height, width, title_height / 2, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 5.8 if len(title) > 28 else 6.9)
+    canvas.setFont(
+        "Helvetica-Bold",
+        6.4 if len(title) > 28 else REPORT_TYPOGRAPHY["panel_title"],
+    )
     canvas.drawString(x + 3 * mm, y + height - 4.9 * mm, title)
 
     body_x = x + 3 * mm
@@ -398,7 +413,7 @@ def _draw_compact_table(
     column_x = x
     for index, ((label, _), column_width) in enumerate(zip(columns, widths)):
         canvas.setFillColor(colors.white)
-        canvas.setFont("Helvetica-Bold", 5.2)
+        canvas.setFont("Helvetica-Bold", REPORT_TYPOGRAPHY["table_header"])
         canvas.drawString(
             column_x + 2 * mm,
             y + height - 4.8 * mm,
@@ -808,6 +823,70 @@ def _surface_overlay(
     )
 
 
+def _surface_entity_label(item: dict[str, Any]) -> str:
+    return " ".join(
+        value
+        for value in (
+            str(item.get("entityType") or "").upper(),
+            str(item.get("entityRef") or ""),
+        )
+        if value
+    ) or str(item.get("notamNumber") or "surface item")
+
+
+def _surface_overlay_lines(
+    overlay: dict[str, Any],
+    *,
+    detail_limit: int,
+) -> list[str]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for item in overlay.get("mapped") or []:
+        presentation = surface_mark_presentation(item)
+        if presentation is not None:
+            grouped[presentation].append(item)
+
+    review_required = overlay.get("reviewRequired") or []
+    ordered = (
+        ("closure", "exact closure", "Closed"),
+        ("scheduled", "scheduled restriction", "Scheduled"),
+        ("equipment", "equipment-unavailable", "Equipment"),
+        ("locator", "locator/review", "Review locator"),
+    )
+    counts = [
+        f"{len(grouped[key])} {description} "
+        f"mark{'s' if len(grouped[key]) != 1 else ''}"
+        for key, description, _ in ordered
+        if grouped[key]
+    ]
+    if counts:
+        lines = ["Surface overlay: " + "; ".join(counts) + "."]
+        details = [
+            f"{prefix}: {_surface_entity_label(item)}"
+            for key, _, prefix in ordered
+            for item in grouped[key]
+        ]
+        lines.extend(details[:detail_limit])
+    elif review_required:
+        lines = [
+            "Surface overlay: no validated mark; "
+            f"{len(review_required)} item"
+            f"{'s' if len(review_required) != 1 else ''} require chart review."
+        ]
+    else:
+        lines = [
+            "Surface overlay: no applicable surface mark at the selected time."
+        ]
+    if review_required:
+        lines.append(
+            "Review required: "
+            + str(
+                review_required[0].get("plainEnglish")
+                or "surface location unresolved"
+            )
+        )
+    return lines
+
+
 def _airport_lines(
     panel: dict[str, Any],
     overlay: dict[str, Any] | None,
@@ -818,8 +897,6 @@ def _airport_lines(
         f"WX: {panel['weather']['primary']}",
     ]
     if overlay:
-        mapped = overlay.get("mapped") or []
-        review_required = overlay.get("reviewRequired") or []
         window = overlay.get("window") or {}
         if window.get("startsAt") and window.get("endsAt"):
             lines.append(
@@ -827,38 +904,7 @@ def _airport_lines(
                 f"{str(window['startsAt'])[11:16]}Z-"
                 f"{str(window['endsAt'])[11:16]}Z"
             )
-        if mapped:
-            lines.append(
-                f"Surface overlay: {len(mapped)} exact closure "
-                f"mark{'s' if len(mapped) != 1 else ''}."
-            )
-            lines.extend(
-                "Closed: "
-                + " ".join(
-                    value
-                    for value in (
-                        str(item.get("entityType") or "").upper(),
-                        str(item.get("entityRef") or ""),
-                    )
-                    if value
-                )
-                for item in mapped[:3]
-            )
-        elif review_required:
-            lines.append(
-                "Surface overlay: no exact mark; "
-                f"{len(review_required)} item"
-                f"{'s' if len(review_required) != 1 else ''} require chart review."
-            )
-        else:
-            lines.append(
-                "Surface overlay: no exact surface closure match in the checked window."
-            )
-        if review_required:
-            lines.extend(
-                f"Review required: {item.get('plainEnglish') or 'surface location unresolved'}"
-                for item in review_required[:1]
-            )
+        lines.extend(_surface_overlay_lines(overlay, detail_limit=3))
     else:
         lines.append("Surface overlay unavailable - review the current official chart.")
     lines.extend(personal_lines or [])
@@ -1325,7 +1371,7 @@ def _draw_action_strip(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 4, fill=1, stroke=1)
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica-Bold", 5.1)
+    canvas.setFont("Helvetica-Bold", 6.0)
     canvas.drawString(x + 3 * mm, y + height - 5 * mm, "DECISION GATES")
 
     body_y = y + 2.5 * mm
@@ -1338,7 +1384,7 @@ def _draw_action_strip(
             canvas.setStrokeColor(_LINE)
             canvas.line(cx, body_y, cx, y + height - 8 * mm)
         canvas.setFillColor(accent)
-        canvas.setFont("Helvetica-Bold", 4.9)
+        canvas.setFont("Helvetica-Bold", 5.8)
         title = action["title"]
         available_title_width = cell - 7 * mm
         while (
@@ -1346,7 +1392,7 @@ def _draw_action_strip(
             and pdfmetrics.stringWidth(
                 title + "...",
                 "Helvetica-Bold",
-                4.9,
+                5.8,
             )
             > available_title_width
         ):
@@ -1475,7 +1521,7 @@ def _draw_cover_airport_panel(
     )
     canvas.rect(x, y + height - title_h, width, title_h / 2, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 6.2)
+    canvas.setFont("Helvetica-Bold", 7.0)
     canvas.drawString(
         x + 3 * mm,
         y + height - 4.6 * mm,
@@ -1490,45 +1536,17 @@ def _draw_cover_airport_panel(
         f"RWY {panel['runway']}",
     )
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica-Bold", 4.6)
+    canvas.setFont("Helvetica-Bold", 5.6)
     canvas.drawString(x + 3 * mm, y + height - 20 * mm, "SCHEDULE")
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 5.6)
+    canvas.setFont("Helvetica-Bold", 6.6)
     canvas.drawRightString(x + width - 3 * mm, y + height - 20 * mm, schedule)
 
     overlay_lines = [
         "Surface overlay: no validated surface overlay attached; chart review required."
     ]
     if overlay:
-        mapped = overlay.get("mapped") or []
-        mapped_count = len(mapped)
-        review_count = len(overlay.get("reviewRequired") or [])
-        if mapped_count:
-            overlay_lines = [
-                f"Surface overlay: {mapped_count} exact closure "
-                f"mark{'s' if mapped_count != 1 else ''}."
-            ]
-            overlay_lines.extend(
-                "Closed: "
-                + " ".join(
-                    part
-                    for part in (
-                        str(item.get("entityType") or "").upper(),
-                        str(item.get("entityRef") or ""),
-                    )
-                    if part
-                )
-                for item in mapped[:2]
-            )
-        elif review_count:
-            overlay_lines = [
-                f"Surface overlay: {review_count} surface item"
-                f"{'s' if review_count != 1 else ''} require chart review."
-            ]
-        else:
-            overlay_lines = [
-                "Surface overlay: no exact surface closure matched the checked window."
-            ]
+        overlay_lines = _surface_overlay_lines(overlay, detail_limit=2)
 
     lines = [
         f"WEATHER: {panel['weather']['primary']}",
@@ -1566,7 +1584,7 @@ def _draw_cover_route_panel(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 4, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 5.8)
+    canvas.setFont("Helvetica-Bold", 6.6)
     canvas.drawString(
         x + 2.5 * mm,
         y + height - 5.5 * mm,
@@ -1601,13 +1619,13 @@ def _draw_cover_metric_cards(
         canvas.setFillColor(accent)
         canvas.rect(card_x, y + height - 1.2 * mm, card_w, 1.2 * mm, fill=1, stroke=0)
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica-Bold", 4.7)
+        canvas.setFont("Helvetica-Bold", 5.5)
         canvas.drawString(card_x + 2.5 * mm, y + height - 5.5 * mm, label)
         canvas.setFillColor(_TEXT)
         canvas.setFont("Helvetica-Bold", 9.2)
         canvas.drawString(card_x + 2.5 * mm, y + height - 12.3 * mm, value)
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 4.3)
+        canvas.setFont("Helvetica", 5.1)
         canvas.drawString(
             card_x + 2.5 * mm,
             y + 3 * mm,
@@ -1687,7 +1705,7 @@ def _draw_cover(
     centre_w = width - 2 * margin - left_w - right_w - 2 * gap
 
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica-Bold", 5.4)
+    canvas.setFont("Helvetica-Bold", 6.1)
     canvas.drawCentredString(
         width / 2,
         top - 3.5 * mm,
@@ -2156,6 +2174,18 @@ def _draw_route_detail(
     gap = 3 * mm
     bottom = 5 * mm
     depress_findings = grouped.get("depressurisation", [])
+    confirmed_profiles = [
+        finding
+        for finding in depress_findings
+        if (finding.get("data") or {}).get("reference_status")
+        == "controlled-index-loaded"
+        and (finding.get("data") or {}).get("chart_number")
+    ]
+    controlled_profile_index_loaded = any(
+        (finding.get("data") or {}).get("reference_status")
+        == "controlled-index-loaded"
+        for finding in depress_findings
+    )
     events = detect_terrain_events(flight.get("route_waypoints") or [])
     route_points = list((briefing.get("route_map") or {}).get("points") or [])
     maximum = max(
@@ -2183,8 +2213,8 @@ def _draw_route_detail(
                 ),
             ),
             (
-                "PROFILE FINDINGS",
-                str(len(depress_findings)),
+                "CONFIRMED PROFILES",
+                str(len(confirmed_profiles)),
             ),
             ("SOURCE", "CFP MSA POINTS"),
         ],
@@ -2293,13 +2323,21 @@ def _draw_route_detail(
             if max_msa is not None
             else "Not resolved"
         )
-        if index - 1 < len(depress_findings):
-            profile = str(
-                depress_findings[index - 1].get("summary")
-                or "Approved profile result available in Level 2."
+        event_profiles = profile_findings_for_terrain_event(
+            event,
+            depress_findings,
+        )
+        profile = (
+            "; ".join(
+                str(
+                    finding.get("summary")
+                    or "Profile result available in Level 2."
+                )
+                for finding in event_profiles
             )
-        else:
-            profile = "Not confirmed."
+            if event_profiles
+            else "Not confirmed."
+        )
         source_page = (
             maximum_point.get("source_page")
             or first.get("source_page")
@@ -2348,9 +2386,17 @@ def _draw_route_detail(
         "BOUNDARY LOGIC",
         [
             (
-                "Only validated CFP MSA points are shown. A starred MSA or value "
-                "above 10,000 ft starts an exposure window; missing approved "
-                "profile coverage remains review required."
+                (
+                    "Only validated CFP MSA points are shown. A starred MSA or "
+                    "value above 10,000 ft starts an exposure window; no complete "
+                    "approved profile match remains review required."
+                    if controlled_profile_index_loaded
+                    else (
+                        "Only validated CFP MSA points are shown. The approved "
+                        "controlled profile index is not mounted, so no profile "
+                        "is confirmed; manual chart-index review is required."
+                    )
+                )
             )
         ],
         _TERRAIN,

@@ -584,6 +584,37 @@ def _profile_applies_to_aircraft(
     return bool(effectivity & aircraft_effectivity_tokens(registration, aircraft_type))
 
 
+def terrain_event_identity(event: dict[str, Any]) -> str:
+    """Return a stable, human-auditable identity for one MSA exposure window."""
+
+    first = event.get("first_high") or {}
+    last = event.get("last_high") or first
+
+    def anchor(point: dict[str, Any]) -> str:
+        name = str(point.get("name") or "UNKNOWN").lstrip("-").upper()
+        actm = point.get("actm_minutes")
+        return f"{name}@{actm if actm is not None else 'NA'}"
+
+    return f"terrain:{anchor(first)}-{anchor(last)}"
+
+
+def _terrain_event(
+    *,
+    preceding: dict[str, Any] | None,
+    active: list[dict[str, Any]],
+    drop: dict[str, Any] | None,
+) -> dict[str, Any]:
+    event = {
+        "preceding": preceding,
+        "first_high": active[0],
+        "last_high": active[-1],
+        "drop": drop,
+        "maximum": max(active, key=lambda w: w.get("msa_hundreds_ft") or -1),
+    }
+    event["terrain_event_id"] = terrain_event_identity(event)
+    return event
+
+
 def detect_terrain_events(waypoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     active: list[dict[str, Any]] = []
@@ -598,24 +629,24 @@ def detect_terrain_events(waypoints: list[dict[str, Any]]) -> list[dict[str, Any
                 preceding = last_msa
             active.append(waypoint)
         elif active:
-            events.append({
-                "preceding": preceding,
-                "first_high": active[0],
-                "last_high": active[-1],
-                "drop": waypoint,
-                "maximum": max(active, key=lambda w: w.get("msa_hundreds_ft") or -1),
-            })
+            events.append(
+                _terrain_event(
+                    preceding=preceding,
+                    active=active,
+                    drop=waypoint,
+                )
+            )
             active = []
             preceding = None
         last_msa = waypoint
     if active:
-        events.append({
-            "preceding": preceding,
-            "first_high": active[0],
-            "last_high": active[-1],
-            "drop": None,
-            "maximum": max(active, key=lambda w: w.get("msa_hundreds_ft") or -1),
-        })
+        events.append(
+            _terrain_event(
+                preceding=preceding,
+                active=active,
+                drop=None,
+            )
+        )
     return events
 
 
@@ -816,6 +847,7 @@ def match_profiles(
             matches.append(
                 {
                     "event": event,
+                    "terrain_event_id": event["terrain_event_id"],
                     "profile": item["profile"],
                     "names": [
                         _route_waypoint_name(value)
@@ -832,9 +864,10 @@ def match_profiles(
                 }
             )
 
-    deduplicated: dict[tuple[str, int, int], dict[str, Any]] = {}
+    deduplicated: dict[tuple[str, str, int, int], dict[str, Any]] = {}
     for match in matches:
         key = (
+            match["terrain_event_id"],
             str(match["profile"]["chart"]),
             match["start_index"],
             match["end_index"],
@@ -849,6 +882,7 @@ def match_profiles(
         for candidate in candidates
         if not any(
             other is not candidate
+            and other["terrain_event_id"] == candidate["terrain_event_id"]
             and other["start_index"] <= candidate["start_index"]
             and other["end_index"] >= candidate["end_index"]
             and (
@@ -1688,6 +1722,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 ),
             ],
             {
+                "terrain_event_id": event["terrain_event_id"],
                 "start_actm_minutes": event["first_high"]["actm_minutes"],
                 "end_actm_minutes": end_wp["actm_minutes"],
                 "maximum_msa_hundreds_ft": max_msa,
@@ -1751,6 +1786,9 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         match_profiles(flight, terrain_events),
         key=lambda x: (x["event"]["first_high"]["actm_minutes"], x["start_index"]),
     )
+    depress_source_loaded = (
+        DEPRESS_LIBRARY_METADATA.get("status") == "controlled-index-loaded"
+    )
     for index, match in enumerate(matches, start=1):
         event = match["event"]
         profile = match["profile"]
@@ -1790,16 +1828,34 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             details.append(
                 f"Coverage incomplete: {match['uncovered_edge_count']} event route leg(s) remain unmatched."
             )
+        if not depress_source_loaded:
+            details.append(
+                "Controlled profile index is not mounted; this repository-safe "
+                "candidate requires review against the approved current source."
+            )
         findings.append(finding(
             "depressurisation",
-            "warning" if match["coverage_complete"] else "unknown",
+            (
+                "warning"
+                if match["coverage_complete"] and depress_source_loaded
+                else "unknown"
+            ),
             f"Profile {index} - {route_start} to {route_end} "
             f"({' / '.join(match['airways']) or 'airway review required'})",
-            f"Proposed depressurisation chart {profile['chart']}; critical point {critical}.",
+            (
+                f"Proposed depressurisation chart {profile['chart']}; "
+                f"critical point {critical}."
+                if depress_source_loaded
+                else (
+                    f"Candidate chart {profile['chart']}; controlled profile "
+                    "index unavailable - review required."
+                )
+            ),
             details,
             {
                 "chart_number": profile["chart"],
                 "critical_point": critical,
+                "terrain_event_id": match["terrain_event_id"],
                 "start_actm_minutes": event["first_high"]["actm_minutes"],
                 "route_start": route_start,
                 "route_end": route_end,
@@ -1843,7 +1899,23 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "depressurisation",
             "unknown",
             "High terrain detected but no profile matched",
-            "Manual chart-index review is required.",
+            "No controlled profile is confirmed; manual chart-index review is required.",
+            [
+                (
+                    "The approved controlled profile index is loaded, but no "
+                    "complete applicable match was found."
+                    if depress_source_loaded
+                    else "The approved controlled profile index is not mounted."
+                )
+            ],
+            {
+                "reference_status": DEPRESS_LIBRARY_METADATA.get("status"),
+                "controlled_index_loaded": depress_source_loaded,
+                "terrain_event_ids": [
+                    event["terrain_event_id"]
+                    for event in terrain_events
+                ],
+            },
         ))
 
     edto = flight["edto"]
