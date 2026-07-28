@@ -461,8 +461,13 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "BOUNDARY LOGIC" in third
     assert "CONFIRMED PROFILES" in third
     assert "PROFILE FINDINGS" not in third
-    assert "No controlled profile is confirmed" in third
+    assert "no profile is confirmed" in third
     assert "approved controlled profile index is not mounted" in third
+    assert third.count(
+        "No controlled profile is confirmed; manual chart-index review is required."
+    ) == 0
+    assert third.count("Not confirmed.") >= 1
+    assert third.lower().count("manual chart-index review is required") == 1
     assert "ACTM / CALCULATED UTC" not in third
     assert sum(
         "Filed route from CFP coordinates" in (page.extract_text() or "")
@@ -730,6 +735,90 @@ def test_level2_notam_table_uses_actual_window_and_pilot_facing_effect(
     assert "Runway availability affected." in normalized
     assert "Restriction unresolved - pilot review required." in normalized
     assert " active " not in f" {normalized.lower()} "
+
+
+def test_reference_timed_notam_uses_validity_not_screening_window(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_reference_timed_notam.pdf"
+    begins_after_etd = _notam("1A6475/26", "departure", severity="critical")
+    begins_after_etd.update({
+        "title": "Departure NOTAM 1A6475/26",
+        "summary": (
+            "Rwy 04L/22R closed or unavailable during the applicable "
+            "departure window."
+        ),
+    })
+    begins_after_etd["data"].update({
+        "location": "KJFK",
+        "notam_id": "1A6475/26",
+        "pertinence_kind": "runway_closure",
+        "applicability": "active",
+        "valid_from_utc": "2026-07-25T03:00:00+00:00",
+        "valid_to_utc": "2026-07-25T10:00:00+00:00",
+        "window_start_utc": "2026-07-25T01:15:00+00:00",
+        "window_end_utc": "2026-07-25T03:15:00+00:00",
+        "stateAtReference": "begins_after_reference",
+        "referenceAt": "2026-07-25T02:15:00+00:00",
+        "minutesDelta": 45,
+    })
+    active_at_etd = _notam("1A4842/26", "departure", severity="critical")
+    active_at_etd["data"].update({
+        "location": "KJFK",
+        "notam_id": "1A4842/26",
+        "pertinence_kind": "approach_navaid_closure",
+        "applicability": "active",
+        "valid_from_utc": "2026-05-13T16:30:00+00:00",
+        "valid_to_utc": "2026-08-31T23:59:00+00:00",
+        "stateAtReference": "active_at_reference",
+        "referenceAt": "2026-07-25T02:15:00+00:00",
+        "minutesDelta": 0,
+    })
+    flight = _flight()
+    flight.update({
+        "flight_number": "SQ23",
+        "departure": "KJFK",
+        "destination": "WSSS",
+        "flight_date": "25JUL26",
+        "scheduled_departure_utc": "2026-07-25T02:15:00+00:00",
+        "scheduled_arrival_utc": "2026-07-25T21:30:00+00:00",
+    })
+
+    render_pdf(flight, [begins_after_etd, active_at_etd], [], 2, path)
+
+    page = " ".join(
+        (PdfReader(path).pages[2].extract_text() or "").split()
+    )
+    assert "A6475/26" in page
+    assert "1A6475/26" not in page
+    assert "Rwy 04L/22R closed or unavailable." in page
+    assert "25 JUL 0300Z-1000Z" in page
+    assert "Begins 45 min after ETD; active 0300Z-1000Z." in page
+    assert "Active at ETD." in page
+    assert "25 JUL 0115Z-0315Z" not in page
+
+
+def test_level1_normalizes_prefixed_notam_references_in_decision_gates(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_1_normalized_notam_refs.pdf"
+    findings = [
+        _notam("1A4842/26", "departure", severity="critical", priority_score=30),
+        _notam("1A4843/26", "departure", severity="critical", priority_score=29),
+        _notam("1SX120/25", "destination", severity="critical", priority_score=28),
+    ]
+
+    render_pdf(_flight(), findings, [], 1, path)
+
+    first = " ".join(
+        (PdfReader(path).pages[0].extract_text() or "").split()
+    )
+    assert "A4842/26" in first
+    assert "A4843/26" in first
+    assert "SX120/25" in first
+    assert "1A4842/26" not in first
+    assert "1A4843/26" not in first
+    assert "1SX120/25" not in first
 
 
 def test_level2_notam_table_merges_duplicate_operational_conditions(

@@ -21,7 +21,11 @@ from .briefing import (
 )
 from .constants import edto_sectors, format_actm
 from .engines import detect_terrain_events
-from .pilot_briefing import prepare_pilot_findings
+from .pilot_briefing import (
+    normalize_notam_references,
+    pilot_notam_condition,
+    prepare_pilot_findings,
+)
 from .report_facts import (
     actm_utc_label,
     build_route_gate_rows,
@@ -1373,11 +1377,15 @@ def _top_actions(findings: list[dict[str, Any]], limit: int = 5) -> list[dict[st
                 )
                 if part
             )
+        elif item.get("engine") == "notam":
+            summary = pilot_notam_condition(item.get("summary"))
         else:
             summary = str(item.get("summary") or "")
         actions.append(
             {
-                "title": str(item.get("title") or "Operational item"),
+                "title": normalize_notam_references(
+                    item.get("title") or "Operational item"
+                ),
                 "summary": summary,
                 "severity": str(item.get("severity") or "warning"),
             }
@@ -2372,15 +2380,19 @@ def _draw_route_detail(
             depress_findings,
         )
         profile = (
-            "; ".join(
-                str(
-                    finding.get("summary")
-                    or "Profile result available in Level 2."
+            "Not confirmed."
+            if not controlled_profile_index_loaded
+            else (
+                "; ".join(
+                    str(
+                        finding.get("summary")
+                        or "Profile result available in Level 2."
+                    )
+                    for finding in event_profiles
                 )
-                for finding in event_profiles
+                if event_profiles
+                else "Not confirmed."
             )
-            if event_profiles
-            else "Not confirmed."
         )
         source_page = (
             maximum_point.get("source_page")

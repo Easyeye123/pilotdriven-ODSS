@@ -457,6 +457,53 @@ def _utc_window_label(window_start: datetime, window_end: datetime) -> str:
     return f"{start:%d %b %H%MZ}-{end:%d %b %H%MZ}".upper()
 
 
+def _notam_reference_at(
+    flight: dict[str, Any],
+    role: str,
+    window_start: datetime,
+) -> datetime:
+    if role == "departure":
+        return datetime.fromisoformat(flight["scheduled_departure_utc"])
+    if role in {"destination", "destination alternate"}:
+        return datetime.fromisoformat(flight["scheduled_arrival_utc"])
+    # EDTO windows use sector entry as their operational reference. Enroute
+    # informational records use the beginning of the checked flight window.
+    return window_start
+
+
+def _notam_reference_state(
+    record: dict[str, Any],
+    reference_at: datetime,
+    valid_from: datetime,
+    valid_to: datetime,
+) -> tuple[str, int | None]:
+    if record.get("validity_review"):
+        return "unknown_at_reference", None
+    if reference_at < valid_from:
+        return (
+            "begins_after_reference",
+            round((valid_from - reference_at).total_seconds() / 60),
+        )
+    if reference_at >= valid_to:
+        return (
+            "ended_before_reference",
+            round((reference_at - valid_to).total_seconds() / 60),
+        )
+
+    schedule = record.get("schedule")
+    if schedule:
+        active_at_reference = _schedule_overlaps(
+            schedule,
+            reference_at,
+            reference_at + timedelta(minutes=1),
+        )
+        if active_at_reference is not True:
+            return "unknown_at_reference", None
+    elif record.get("schedule_review"):
+        return "unknown_at_reference", None
+    return "active_at_reference", 0
+
+
 def _weather_role_window(
     flight: dict[str, Any],
     location: str,
@@ -1512,6 +1559,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             else datetime.max.replace(tzinfo=timezone.utc)
         )
         evidence_ref = f"notam:{len(notam_audit_records)}"
+        reference_at = _notam_reference_at(flight, role, window_start)
+        state_at_reference, minutes_delta = _notam_reference_state(
+            record,
+            reference_at,
+            valid_from,
+            valid_to,
+        )
         audit_record = {
             "evidence_ref": evidence_ref,
             "source": "uploaded_cfp",
@@ -1526,6 +1580,9 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "role": role,
             "window_start_utc": window_start.isoformat(),
             "window_end_utc": window_end.isoformat(),
+            "stateAtReference": state_at_reference,
+            "referenceAt": reference_at.isoformat(),
+            "minutesDelta": minutes_delta,
             "pilot_status": "pending",
         }
         notam_audit_records.append(audit_record)
@@ -1587,6 +1644,9 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "valid_to_utc": record.get("valid_to_utc"),
                 "window_start_utc": window_start.isoformat(),
                 "window_end_utc": window_end.isoformat(),
+                "stateAtReference": state_at_reference,
+                "referenceAt": reference_at.isoformat(),
+                "minutesDelta": minutes_delta,
                 "raw_text": record["text"],
                 "audit_evidence_ref": evidence_ref,
                 "source_references": [

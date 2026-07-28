@@ -19,6 +19,8 @@ from .briefing import build_briefing_view, draw_route_map_pdf
 from .constants import edto_sectors, format_actm
 from .engines import detect_terrain_events
 from .pilot_briefing import (
+    normalize_notam_references,
+    pilot_notam_condition,
     prepare_pilot_findings,
     select_concise_weather,
     select_pertinent_notams,
@@ -768,17 +770,12 @@ def _notam_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
         )
         if not notam_id:
             match = re.search(
-                r"\b\d*([A-Z]\d{3,5}/\d{2})\b",
+                r"\b\d*([A-Z]{1,3}\d{2,5}/\d{2})\b",
                 _text(item.get("title"), ""),
             )
             notam_id = match.group(1) if match else "CFP NOTAM"
-        prefixed = re.fullmatch(
-            r"\d+([A-Z]\d{3,5}/\d{2})",
-            notam_id.upper(),
-        )
-        if prefixed:
-            notam_id = prefixed.group(1)
-        condition = _finding_summary(item)
+        notam_id = normalize_notam_references(notam_id).upper()
+        condition = pilot_notam_condition(_finding_summary(item))
         window = _text(
             data.get("operating_window")
             or data.get("utc_window")
@@ -787,8 +784,8 @@ def _notam_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
         )
         if not window:
             window = _brief_utc_window(
-                data.get("window_start_utc"),
-                data.get("window_end_utc"),
+                data.get("valid_from_utc") or data.get("window_start_utc"),
+                data.get("valid_to_utc") or data.get("window_end_utc"),
             )
         applicability = _notam_flight_effect(item, role)
         key = (
@@ -871,6 +868,35 @@ def _notam_flight_effect(finding: dict[str, Any], role: str) -> str:
         "unresolved",
     }:
         return "Restriction unresolved - pilot review required."
+
+    reference_label = {
+        "departure": "ETD",
+        "destination": "ETA",
+        "destination alternate": "ETA",
+        "EDTO": "EDTO entry",
+    }.get(role, "flight reference")
+    state = str(data.get("stateAtReference") or "").strip()
+    minutes_delta = data.get("minutesDelta")
+    if state == "begins_after_reference" and isinstance(minutes_delta, int):
+        validity = _brief_utc_window(
+            data.get("valid_from_utc"),
+            data.get("valid_to_utc"),
+        )
+        time_range = re.sub(
+            r"^\d{2} [A-Z]{3} ",
+            "",
+            validity,
+        )
+        return (
+            f"Begins {minutes_delta} min after {reference_label}; "
+            f"active {time_range}."
+        )
+    if state == "active_at_reference":
+        return f"Active at {reference_label}."
+    if state == "ended_before_reference" and isinstance(minutes_delta, int):
+        return f"Ended {minutes_delta} min before {reference_label}."
+    if state == "unknown_at_reference":
+        return f"State at {reference_label} unresolved - pilot review required."
 
     pertinence_kind = str(data.get("pertinence_kind") or "").lower()
     category = str(data.get("category") or "").upper()

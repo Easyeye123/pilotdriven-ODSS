@@ -283,6 +283,53 @@ def test_destination_and_alternate_notams_use_two_hour_arrival_window() -> None:
     )
 
 
+def test_departure_notam_preserves_reference_state_and_actual_validity() -> None:
+    flight = _flight(notams=[
+        _record(
+            "1A6475/26",
+            "KJFK",
+            "2026-07-25T03:00:00+00:00",
+            "2026-07-25T10:00:00+00:00",
+            text="RWY 04L/22R CLSD",
+            category="RUNWAY",
+        ),
+        _record(
+            "OUTSIDE/26",
+            "KJFK",
+            "2026-07-25T03:16:00+00:00",
+            "2026-07-25T10:00:00+00:00",
+            text="RWY 13L/31R CLSD",
+            category="RUNWAY",
+        ),
+    ])
+    flight.update({
+        "departure": "KJFK",
+        "destination": "WSSS",
+        "flight_date": "25JUL26",
+        "scheduled_departure_utc": "2026-07-25T02:15:00+00:00",
+        "scheduled_arrival_utc": "2026-07-25T21:30:00+00:00",
+    })
+
+    findings, _ = analyse(flight)
+    item = next(
+        row
+        for row in findings
+        if row.get("engine") == "notam"
+        and (row.get("data") or {}).get("notam_id") == "1A6475/26"
+    )
+
+    assert item["data"]["stateAtReference"] == "begins_after_reference"
+    assert item["data"]["referenceAt"] == "2026-07-25T02:15:00+00:00"
+    assert item["data"]["minutesDelta"] == 45
+    assert item["data"]["valid_from_utc"] == "2026-07-25T03:00:00+00:00"
+    assert item["data"]["valid_to_utc"] == "2026-07-25T10:00:00+00:00"
+    assert {
+        record["notam_id"]
+        for record in flight["audit_evidence"]["notam"]["records"]
+        if record["pilot_status"] == "outside_time_window"
+    } == {"OUTSIDE/26"}
+
+
 def test_arrival_notam_window_is_configurable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

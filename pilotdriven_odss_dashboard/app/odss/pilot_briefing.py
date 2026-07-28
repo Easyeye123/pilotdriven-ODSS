@@ -24,6 +24,31 @@ _LIGHTING = (
     r"(?:LGT|LIGHT|LIGHTS|RCLL|RTHL|RTZL|RENL|HIRL|MIRL|LIRL|"
     r"TKOF\s+HOLD\s+LGT|LEAD\s+(?:ON|OFF)\s+LGT)"
 )
+_PREFIXED_NOTAM_REFERENCE = re.compile(
+    r"(?<![A-Z0-9])\d+(?P<reference>[A-Z]{1,3}\d{2,5}/\d{2})\b",
+    re.IGNORECASE,
+)
+_APPLICABLE_WINDOW_SUFFIX = re.compile(
+    r"\s+during the applicable "
+    r"(?:departure|destination|alternate|EDTO|flight) window\.?$",
+    re.IGNORECASE,
+)
+
+
+def normalize_notam_references(value: Any) -> str:
+    """Remove parser-added numeric prefixes from pilot-facing NOTAM IDs."""
+
+    return _PREFIXED_NOTAM_REFERENCE.sub(
+        lambda match: match.group("reference"),
+        str(value or ""),
+    )
+
+
+def pilot_notam_condition(value: Any) -> str:
+    """Keep the condition separate from its reference-time applicability."""
+
+    normalized = normalize_notam_references(value)
+    return _APPLICABLE_WINDOW_SUFFIX.sub(".", normalized)
 
 
 def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
