@@ -171,15 +171,29 @@ def test_controlled_cdl_finding_includes_penalties_and_source(
     assert any("jettison system is deactivated" in detail for detail in result["details"])
 
 
-def test_asterisk_qualifies_exact_100_as_high_msa() -> None:
+def test_exact_100_star_is_threshold_not_high_msa() -> None:
     waypoints = [
         _wp("BEFORE", 1, 90, "DCT"),
         _wp("STAR100", 2, 100, "DCT", star=True),
         _wp("DROP", 3, 90, "DCT"),
     ]
+    assert detect_terrain_events(waypoints) == []
+
+
+def test_exact_100_star_breaks_two_high_msa_events() -> None:
+    waypoints = [
+        _wp("BEFORE", 1, 90, "DCT"),
+        _wp("HIGH1", 2, 109, "DCT", star=True),
+        _wp("BOUNDARY", 3, 100, "DCT", star=True),
+        _wp("HIGH2", 4, 114, "DCT", star=True),
+        _wp("DROP", 5, 81, "DCT"),
+    ]
     events = detect_terrain_events(waypoints)
-    assert len(events) == 1
-    assert events[0]["first_high"]["name"] == "STAR100"
+    assert len(events) == 2
+    assert events[0]["first_high"]["name"] == "HIGH1"
+    assert events[0]["drop"]["name"] == "BOUNDARY"
+    assert events[1]["first_high"]["name"] == "HIGH2"
+    assert events[1]["drop"]["name"] == "DROP"
 
 
 def test_sq24_high_msa_uses_minimal_11_4_and_11_37_chain(

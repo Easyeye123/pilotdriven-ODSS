@@ -2,6 +2,16 @@
 
 from xml.sax.saxutils import escape as _xml_escape
 
+from . import engines as _engines
+from . import timing as _timing
+from .terrain import detect_terrain_events as _strict_detect_terrain_events
+
+
+# Protocol v1.2 uses a strict MSA > 100* trigger. Keep one canonical detector
+# across the deterministic engine, timing view and optional report renderer.
+_engines.detect_terrain_events = _strict_detect_terrain_events
+_timing.detect_terrain_events = _strict_detect_terrain_events
+
 
 def _visual_paragraph_escape(value: str) -> str:
     """Escape source text while preserving ODSS-controlled bold tags.
@@ -19,6 +29,7 @@ try:
     from . import briefing as _briefing
     from . import visual_reporting as _visual_reporting
 
+    _briefing.detect_terrain_events = _strict_detect_terrain_events
     _visual_reporting.escape = _visual_paragraph_escape
 
     _original_build_briefing_view = _briefing.build_briefing_view
