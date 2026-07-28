@@ -229,6 +229,7 @@ def _weather_coverage_gaps(analysis: dict[str, Any]) -> list[str]:
 
     flight = analysis.get("flight") if isinstance(analysis.get("flight"), dict) else {}
     for key, label in (
+        ("sigmet_review", "SIGMET"),
         ("vaa_review", "Volcanic-ash"),
         ("tropical_cyclone_review", "Tropical-cyclone"),
     ):
@@ -507,7 +508,7 @@ def build_level3_artifact(
     })
 
     weather_finding_gap = any(
-        item.get("engine") in {"weather", "vaa", "tropical_cyclone"}
+        item.get("engine") in {"weather", "sigmet", "vaa", "tropical_cyclone"}
         and (
             _text(item.get("severity")).casefold() == "unknown"
             or (item.get("data") or {}).get("status") == "review_required"

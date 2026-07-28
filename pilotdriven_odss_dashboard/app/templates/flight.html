@@ -15,7 +15,7 @@
   {% if flight.last_error %}<div class="error-box"><strong>Analysis error:</strong> {{ flight.last_error }}</div>{% endif %}
   {% if flight.status == 'Failed' and analysis %}<div class="notice-box"><strong>Last completed result preserved.</strong> You can still open the previous reports while the refresh error is investigated.</div>{% endif %}
   <div class="actions">
-    <form method="post" action="/flights/{{ flight.id }}/analyse" class="analysis-form"><button class="green" {% if flight.status == 'Processing' %}disabled{% endif %}>{% if flight.status == 'Processing' %}Analysis running…{% elif analysis %}Run analysis again{% else %}Run ODSS analysis{% endif %}</button></form>
+    <form method="post" action="/flights/{{ flight.id }}/analyse" class="analysis-form"><button class="green" {% if flight.status == 'Processing' %}disabled{% endif %}>{% if flight.status == 'Processing' %}Analysis running…{% elif analysis %}Run analysis again{% else %}Run flight analysis{% endif %}</button></form>
     {% if flight.level1_report %}<a class="button" href="/files/report/{{ flight.id }}/1">Download Level 1 PDF</a>{% endif %}
     {% if flight.level2_report %}<a class="button" href="/files/report/{{ flight.id }}/2">Download Level 2 PDF</a>{% endif %}
   </div>
@@ -36,12 +36,13 @@
     <p><strong>{{ analysis.flight.route_waypoints|length }}</strong> route entries</p>
     <p><strong>{{ analysis.view.notam_finding_count }}</strong> pertinent or review NOTAM findings</p>
     <p><strong>{{ analysis.flight.weather|length }}</strong> weather records</p>
+    {% if analysis.flight.sigmet_review %}<p><strong>SIGMET:</strong> {{ analysis.flight.sigmet_review.status|replace('_', ' ')|title }}</p>{% endif %}
     {% if analysis.flight.vaa_review %}<p><strong>Volcanic ash:</strong> {{ analysis.flight.vaa_review.status|replace('_', ' ')|title }}</p>{% endif %}
     {% if analysis.view.timing %}<p><strong>{{ analysis.view.timing.event_count }}</strong> pertinent actual-time events</p>{% endif %}
     {% if analysis.view.personal_note_count %}<p><strong>{{ analysis.view.personal_note_count }}</strong> personal notes included</p>{% endif %}
     {% if analysis.reference_library %}<p><strong>Reference library:</strong> {{ analysis.reference_library.status|replace('-', ' ')|title }}</p>{% endif %}
   {% else %}
-    <p class="muted">Upload is stored. Run the ODSS analysis to parse the CFP and generate reports.</p>
+    <p class="muted">Upload is stored. Run the flight analysis to parse the CFP and generate reports.</p>
   {% endif %}
 </aside>
 
@@ -146,7 +147,7 @@
 
 <section class="card span-12 notes-card" id="personal-notes">
   <h2>Personal notes</h2>
-  <p class="notes-intro">Add pilot-entered notes and choose where they appear in the pertinent briefs. Notes can be kept in a separate section or positioned beside the departure airport, destination airport, or enroute ATC/communications material. Personal notes are clearly labelled and are not treated as ODSS-validated findings.</p>
+  <p class="notes-intro">Add pilot-entered notes and choose where they appear in the pertinent briefs. Notes can be kept in a separate section or positioned beside the departure airport, destination airport, or enroute ATC/communications material. Personal notes are clearly labelled.</p>
   <form method="post" action="/flights/{{ flight.id }}/notes" class="personal-note-form">
     <div class="personal-note-form-grid">
       <label>Report placement

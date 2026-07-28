@@ -39,8 +39,8 @@ def test_quality_gate_accepts_three_page_a4_landscape_level1(tmp_path: Path) -> 
         path,
         pages=3,
         page_texts=[
-            "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS\n"
-            "Natural Earth 1:110m land context",
+                "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS\n"
+                "Filed route from CFP coordinates",
             "SQ304 - OPERATIONAL TIMING",
             "SQ304 - HIGH TERRAIN EXPOSURE",
         ],

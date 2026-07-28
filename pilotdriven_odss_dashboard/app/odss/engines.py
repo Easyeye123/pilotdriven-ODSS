@@ -98,11 +98,30 @@ def _weather_source_reference(
 # so they also share one finding shape. Only the wording differs.
 _HAZARD_REVIEWS = (
     {
+        "review_key": "sigmet_review",
+        "engine": "sigmet",
+        "affected_title": "SIGMET affects the planned route",
+        "review_title": "SIGMET review required",
+        "review_summary": (
+            "The official source could not fully cover the flight window."
+        ),
+        "record_phrase": "SIGMET",
+        "cfp_phrase": "SIGMET",
+        "negative_claim": "no SIGMET",
+        "unresolved_warning": (
+            "SIGMET applicability remains unresolved; "
+            "review the current official source."
+        ),
+    },
+    {
         "review_key": "vaa_review",
         "engine": "vaa",
         "affected_title": "Volcanic ash affects the planned route",
         "review_title": "Volcanic ash review required",
-        "review_summary": "ODSS could not safely confirm that volcanic ash is not applicable to the route.",
+        "review_summary": (
+            "The official sources could not safely confirm that volcanic ash "
+            "is not applicable to the route."
+        ),
         "record_phrase": "volcanic-ash",
         "cfp_phrase": "volcanic-ash",
         "negative_claim": "no volcanic ash",
@@ -117,7 +136,8 @@ _HAZARD_REVIEWS = (
         "affected_title": "Tropical cyclone affects the planned route",
         "review_title": "Tropical cyclone review required",
         "review_summary": (
-            "ODSS could not safely confirm that a tropical cyclone is not applicable to the route."
+            "The official sources could not safely confirm that a tropical "
+            "cyclone is not applicable to the route."
         ),
         "record_phrase": "tropical-cyclone",
         "cfp_phrase": "tropical-cyclone",
@@ -199,6 +219,7 @@ def _hazard_review_findings(
         first_match = matches[0] if matches else {}
         details = [
             (
+                f"{item.get('hazard_code') or 'SIGMET'} "
                 f"{item.get('advisory_id')}: {item.get('route_from')}-"
                 f"{item.get('route_to')} at FL{item.get('planned_flight_level')}, "
                 f"{item.get('segment_start_utc')} to {item.get('segment_end_utc')}."
@@ -227,6 +248,8 @@ def _hazard_review_findings(
         )], []
 
     if status != "review_required":
+        return [], []
+    if review.get("clean_current_feed_no_match"):
         return [], []
 
     reason_codes = review.get("reason_codes") or []

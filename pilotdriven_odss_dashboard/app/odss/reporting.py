@@ -40,6 +40,7 @@ _TITLES = {
     "cddl": "CDDL / CDL review",
     "performance": "Performance and fuel",
     "weather": "Weather",
+    "sigmet": "Significant weather advisory review",
     "vaa": "Volcanic ash advisory review",
     "tropical_cyclone": "Tropical cyclone review",
     "notam": "Applicable NOTAMs within STD / STA ±2 hours",
@@ -67,6 +68,7 @@ _REPORT_ORDER = [
     "cddl",
     "performance",
     "weather",
+    "sigmet",
     "vaa",
     "tropical_cyclone",
     "notam",
@@ -384,7 +386,7 @@ def _personal_note_section(
         lines.append(f"Personal note {index}: {text_lines[0]}")
         lines.extend(f"- {line}" for line in text_lines[1:])
     lines.append(
-        "Pilot-entered personal content; it is not extracted, validated or endorsed by the ODSS engine."
+        "Pilot-entered note."
     )
     return {
         "engine": f"personal_notes_{placement}",

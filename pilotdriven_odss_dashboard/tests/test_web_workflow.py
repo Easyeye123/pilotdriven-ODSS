@@ -210,7 +210,7 @@ def test_flight_workspace_uses_canonical_progressive_map_and_labelled_fallback(
     assert "/static/odss-map-geometry-v06.js" in workspace.text
     assert "unpkg.com" not in workspace.text
     assert "Schematic fallback" in workspace.text
-    assert "Briefing orientation · not for navigation" in workspace.text
+    assert "Not for operational use." in workspace.text
 
     assert config.status_code == 200
     assert config.json()["provider"] == "schematic"

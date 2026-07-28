@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 from typing import Any
 
+import fitz
 import pytest
 from pypdf import PdfReader
 
@@ -270,7 +271,7 @@ def test_route_map_limits_routine_labels_on_dense_long_haul_routes() -> None:
 
     svg = render_route_svg(route_map)
     assert 'fill="#153044"' in svg
-    assert "Natural Earth 1:110m land context" in svg
+    assert "Filed route from CFP coordinates" in svg
 
 
 def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> None:
@@ -359,7 +360,7 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "DESTINATION - EBBR" in first
     assert "DECISION GATES" in first
     assert "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS" in first
-    assert "Natural Earth 1:110m land context" in first
+    assert "Filed route from CFP coordinates" in first
     assert "SQ304 - OPERATIONAL TIMING" in second
     assert "FLIGHT PHASE WINDOWS" in second
     assert "EDTO 1 | ENTRY 02.00 | EXIT 02.30" in second
@@ -378,7 +379,7 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "Manual chart-index review is required" in third
     assert "ACTM / CALCULATED UTC" not in third
     assert sum(
-        "Natural Earth 1:110m land context" in (page.extract_text() or "")
+        "Filed route from CFP coordinates" in (page.extract_text() or "")
         for page in reader.pages
     ) == 1
 
@@ -473,6 +474,7 @@ def test_level2_matches_seven_page_operational_contract(tmp_path: Path) -> None:
     assert "FLIGHT-WINDOW NOTAM APPLICABILITY" in pages[2]
     assert "EDTO SECTORS AND SUITABILITY INPUTS" in pages[3]
     assert "OCEANIC AND FIR COMMUNICATIONS" in pages[4]
+    assert "PILOT USE" not in pages[4]
     assert "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE" in pages[5]
     assert "WEATHER, VAAC AND PROMOTION RESULT" in pages[6]
     assert all(f"Page {index} of 7" in text for index, text in enumerate(pages, 1))
@@ -502,6 +504,51 @@ def test_level2_preserves_page_contract_when_sections_are_sparse(tmp_path: Path)
     assert "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE" in page_text[5]
     assert "WEATHER, VAAC AND PROMOTION RESULT" in page_text[6]
     assert "Coverage note: Source review required." in page_text[6]
+
+
+def test_level2_uses_readable_centered_rows_without_blank_table_filler(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_readability.pdf"
+    findings = [
+        _weather(1),
+        _notam("A1000/26", "departure"),
+        {
+            "engine": "sigmet",
+            "severity": "unknown",
+            "title": "SIGMET review required",
+            "summary": "Current official coverage requires review.",
+            "details": [],
+            "data": {"status": "review_required"},
+        },
+    ]
+
+    render_pdf(
+        _flight(),
+        findings,
+        ["Current official coverage requires review."],
+        2,
+        path,
+    )
+
+    document = fitz.open(path)
+
+    def spans(page_number: int, needle: str) -> list[dict[str, Any]]:
+        return [
+            span
+            for block in document[page_number].get_text("dict")["blocks"]
+            for line in block.get("lines", [])
+            for span in line.get("spans", [])
+            if needle in span["text"]
+        ]
+
+    page_two_first = spans(1, "RUNWAY / SID")
+    page_two_last = spans(1, "SOURCE BOUNDARY")
+    page_seven_last = spans(6, "SOURCE")
+
+    assert page_two_first and min(span["size"] for span in page_two_first) >= 6.1
+    assert page_two_last and max(span["bbox"][1] for span in page_two_last) >= 430
+    assert page_seven_last and max(span["bbox"][1] for span in page_seven_last) >= 270
 
 
 def test_level2_notam_table_uses_actual_window_and_pilot_facing_effect(

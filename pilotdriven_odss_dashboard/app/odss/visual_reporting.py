@@ -414,7 +414,7 @@ def _note_lines(flight: dict[str, Any], placements: set[str], level: int) -> lis
     ]
     lines = [f"Personal note: {str(note.get('note_text') or '').strip()}" for note in selected]
     if lines:
-        lines.append("Pilot-entered content; not ODSS-validated.")
+        lines.append("Pilot-entered note.")
     return lines
 
 
@@ -427,7 +427,7 @@ def _draw_detail_header(canvas, width: float, height: float, title: str, page_nu
     canvas.setFont("Helvetica-Bold", 12)
     canvas.drawString(6 * mm, height - 8.5 * mm, title)
     canvas.setFont("Helvetica", 6)
-    canvas.drawRightString(width - 6 * mm, height - 8.3 * mm, f"PilotDriven ODSS | Page {page_number}")
+    canvas.drawRightString(width - 6 * mm, height - 8.3 * mm, f"PilotDriven | Page {page_number}")
     canvas.setFillColor(_GREY)
     canvas.setFont("Helvetica", 5)
     canvas.drawCentredString(width / 2, 2.2 * mm, "Decision support only - refer to current approved operational documents and live dispatch information.")
@@ -480,7 +480,11 @@ def _draw_operational_detail(canvas, flight: dict[str, Any], findings: list[dict
         item for item in grouped.get("notam", [])
         if item.get("data", {}).get("role") in {"destination alternate", "EDTO"}
     ]
-    weather_lines = _finding_lines(grouped.get("vaa", []) + grouped.get("weather", []), 7, 1)
+    weather_lines = _finding_lines(
+        grouped.get("sigmet", []) + grouped.get("vaa", []) + grouped.get("weather", []),
+        7,
+        1,
+    )
     _draw_panel(canvas, x3, body_bottom + half + gap, column_w, half, "ALTERNATES / EDTO AIRPORTS", _finding_lines(alternate_notams + grouped.get("edto", []), 7, 2), _PURPLE, False, _STYLES["detail_small"])
     _draw_panel(canvas, x3, body_bottom, column_w, half, "WEATHER / PERTINENT NOTAM", weather_lines + _finding_lines(grouped.get("notam", []), 4, 1), _RED, False, _STYLES["detail_small"])
 

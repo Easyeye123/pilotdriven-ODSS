@@ -22,9 +22,22 @@ from .snapshot_governance import govern_snapshot, mark_snapshot_reused
 
 
 AWC_ISIGMET_URL = "https://aviationweather.gov/api/data/isigmet?format=json"
+AWC_SUPPORTED_HAZARDS = frozenset({
+    "DS",
+    "ICE",
+    "MTW",
+    "RDOACT CLD",
+    "SS",
+    "TC",
+    "TS",
+    "TURB",
+    "VA",
+})
+_SURFACE_BASE_WHEN_OMITTED = frozenset({"DS", "SS", "TC", "TS"})
 _CACHE_LOCK = Lock()
-# Keyed by AWC hazard code so volcanic ash and tropical cyclone snapshots
-# never overwrite one another.
+# The live path stores one governed receipt for the shared AWC endpoint. Hazard
+# projections are filtered from that receipt so a single analysis never makes
+# separate VA, TC, and general-SIGMET requests to the same rate-limited feed.
 _CACHE_BY_HAZARD: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
@@ -134,7 +147,11 @@ def _normalize_awc_advisory(
     hazard_code: str = "VA",
 ) -> tuple[dict[str, Any] | None, str | None]:
     hazard_code = hazard_code.upper()
-    if str(record.get("hazard") or "").upper() != hazard_code:
+    record_hazard = str(record.get("hazard") or "").upper()
+    if (
+        (hazard_code == "ALL" and record_hazard not in AWC_SUPPORTED_HAZARDS)
+        or (hazard_code != "ALL" and record_hazard != hazard_code)
+    ):
         return None, None
     valid_from = _utc(record.get("validTimeFrom"))
     valid_to = _utc(record.get("validTimeTo"))
@@ -159,10 +176,10 @@ def _normalize_awc_advisory(
         ring.append(list(ring[0]))
 
     raw_base = record.get("base")
-    if raw_base is None and hazard_code == "TC":
-        # An ICAO tropical cyclone SIGMET describes a surface-based cyclone area
-        # and publishes only a top. An absent base means surface, not unknown.
-        # A missing top stays unknown and is refused below.
+    if raw_base is None and record_hazard in _SURFACE_BASE_WHEN_OMITTED:
+        # These international SIGMET phenomena are surface-based when the AWC
+        # normalized record publishes only a top. Missing tops and missing
+        # vertical limits for aloft hazards remain unresolved below.
         raw_base = 0
     try:
         lower_feet = int(raw_base)
@@ -175,12 +192,12 @@ def _normalize_awc_advisory(
     raw_text = str(record.get("rawSigmet") or "").strip()
     identifier_parts = [
         str(record.get("firId") or "GLOBAL"),
-        str(record.get("seriesId") or hazard_code),
+        str(record.get("seriesId") or record_hazard),
         str(int(valid_from.timestamp())),
     ]
     return {
         "advisory_id": "-".join(identifier_parts),
-        "hazard": hazard_code,
+        "hazard": record_hazard,
         "fir_id": record.get("firId"),
         "fir_name": record.get("firName"),
         "series_id": record.get("seriesId"),
@@ -203,9 +220,8 @@ def fetch_awc_snapshot(
 ) -> dict[str, Any]:
     """Fetch a bounded, auditable snapshot of current international SIGMETs.
 
-    ``hazard_code`` selects the AWC hazard class to normalise (``VA`` for
-    volcanic ash, ``TC`` for tropical cyclone). The upstream feed is the same
-    international SIGMET endpoint in both cases.
+    ``hazard_code`` selects one AWC hazard class or ``ALL`` for one normalized
+    receipt containing every supported international SIGMET hazard.
     """
     hazard_code = hazard_code.upper()
     retrieved_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -284,8 +300,16 @@ def fetch_awc_snapshot(
         advisory, warning = _normalize_awc_advisory(record, hazard_code)
         if advisory:
             advisories.append(advisory)
-        elif warning and str(record.get("hazard") or "").upper() == hazard_code:
-            parse_warnings.append(f"record_{index}:{warning}")
+        elif warning and (
+            hazard_code == "ALL"
+            or str(record.get("hazard") or "").upper() == hazard_code
+        ):
+            record_hazard = str(record.get("hazard") or "").upper()
+            parse_warnings.append(
+                f"record_{index}:{record_hazard}:{warning}"
+                if hazard_code == "ALL"
+                else f"record_{index}:{warning}"
+            )
 
     response_date = None
     try:
@@ -297,7 +321,11 @@ def fetch_awc_snapshot(
     freshness_minutes = abs((retrieved_at - reference_time).total_seconds()) / 60
     valid_starts = [_utc(item["valid_from_utc"]) for item in advisories]
     valid_ends = [_utc(item["valid_to_utc"]) for item in advisories]
-    hazard_label = "TC" if hazard_code == "TC" else "VA"
+    hazard_label = (
+        "all supported"
+        if hazard_code == "ALL"
+        else hazard_code
+    )
     return _govern_awc_snapshot({
         "schema_version": "1.0",
         "provider": "noaa-awc-international-sigmet",
@@ -323,18 +351,53 @@ def fetch_awc_snapshot(
     }, retrieved_at)
 
 
-def live_vaa_snapshot(hazard_code: str = "VA") -> dict[str, Any]:
-    """Cache the public feed briefly to respect the published API rate limit."""
-    hazard_code = hazard_code.upper()
+def filter_awc_snapshot(
+    snapshot: dict[str, Any],
+    hazard_codes: set[str] | frozenset[str],
+) -> dict[str, Any]:
+    """Project one governed AWC receipt onto selected hazard codes."""
+    selected = {str(code).upper() for code in hazard_codes}
+    projected = deepcopy(snapshot)
+    advisories = [
+        item
+        for item in (snapshot.get("advisories") or [])
+        if str(item.get("hazard") or "").upper() in selected
+    ]
+    warnings = []
+    for warning in snapshot.get("parse_warnings") or []:
+        parts = str(warning).split(":", 2)
+        if len(parts) == 3 and parts[1] in selected:
+            warnings.append(warning)
+        elif len(parts) != 3:
+            warnings.append(warning)
+    projected.update({
+        "hazard_code": ",".join(sorted(selected)),
+        "advisories": advisories,
+        "advisory_count": len(advisories),
+        "parse_warnings": warnings,
+    })
+    return projected
+
+
+def live_awc_snapshot() -> dict[str, Any]:
+    """Fetch or reuse the single governed receipt for the shared AWC feed."""
     cache_seconds = _snapshot_cache_seconds()
     now_monotonic = time.monotonic()
     with _CACHE_LOCK:
-        cached = _CACHE_BY_HAZARD.get(hazard_code)
+        cached = _CACHE_BY_HAZARD.get("ALL")
         if cached and now_monotonic - cached[0] < cache_seconds:
             return mark_snapshot_reused(cached[1])
-        snapshot = fetch_awc_snapshot(hazard_code=hazard_code)
-        _CACHE_BY_HAZARD[hazard_code] = (now_monotonic, snapshot)
+        # Keep the fetch inside the lock. A request is infrequent and bounded,
+        # while allowing concurrent misses would violate the upstream limit.
+        snapshot = fetch_awc_snapshot(hazard_code="ALL")
+        _CACHE_BY_HAZARD["ALL"] = (now_monotonic, snapshot)
         return deepcopy(snapshot)
+
+
+def live_vaa_snapshot(hazard_code: str = "VA") -> dict[str, Any]:
+    """Return one hazard projection from the shared cached AWC receipt."""
+    hazard_code = hazard_code.upper()
+    return filter_awc_snapshot(live_awc_snapshot(), {hazard_code})
 
 
 def _normalized_waypoint_name(waypoint: dict[str, Any]) -> str:
@@ -664,6 +727,7 @@ def evaluate_vaa(
             advisory_id = str(advisory.get("advisory_id") or default_advisory_id)
             matches.append({
                 "advisory_id": advisory_id,
+                "hazard_code": advisory.get("hazard"),
                 "fir_id": advisory.get("fir_id"),
                 "route_segment_index": segment_index,
                 "route_from": _normalized_waypoint_name(start),
@@ -685,7 +749,12 @@ def evaluate_vaa(
                 "geometry": _map_safe_geometry(advisory["geometry"]),
                 "properties": {
                     "advisory_id": advisory_id,
-                    "hazard": hazard_label,
+                    "hazard": (
+                        advisory.get("hazard")
+                        if hazard_label == "sigmet"
+                        else hazard_label
+                    ),
+                    "hazard_code": advisory.get("hazard"),
                     "fir_id": advisory.get("fir_id"),
                     "valid_from_utc": advisory.get("valid_from_utc"),
                     "valid_to_utc": advisory.get("valid_to_utc"),
@@ -807,9 +876,12 @@ def assess_volcanic_ash(
 
 __all__ = [
     "AWC_ISIGMET_URL",
+    "AWC_SUPPORTED_HAZARDS",
     "assess_volcanic_ash",
     "evaluate_vaa",
     "extract_embedded_vaa",
     "fetch_awc_snapshot",
+    "filter_awc_snapshot",
+    "live_awc_snapshot",
     "live_vaa_snapshot",
 ]

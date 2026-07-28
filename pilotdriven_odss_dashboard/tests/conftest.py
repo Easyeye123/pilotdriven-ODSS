@@ -11,5 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # Unit and regression suites must not depend on the live aviation feed. Tests
 # that exercise VAA pass an explicit, timestamped provider snapshot instead.
 os.environ.setdefault("ODSS_VA_SIGMET_SOURCE", "disabled")
+os.environ.setdefault("ODSS_SIGMET_SOURCE", "disabled")
 os.environ.setdefault("ODSS_OPMET_SOURCE", "disabled")
 os.environ.setdefault("ODSS_TC_TRACK_SOURCE", "disabled")

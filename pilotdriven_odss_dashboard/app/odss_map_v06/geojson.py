@@ -158,7 +158,13 @@ def build_map_contract(
         "features": marker_features,
     }
     vaa_review = flight.get("vaa_review") or {}
+    sigmet_review = flight.get("sigmet_review") or {}
     tropical_cyclone_review = flight.get("tropical_cyclone_review") or {}
+    sigmet_features = (
+        list(sigmet_review.get("hazard_features") or [])
+        if sigmet_review.get("status") == "affected"
+        else []
+    )
     vaa_features = (
         list(vaa_review.get("hazard_features") or [])
         if vaa_review.get("status") == "affected"
@@ -169,7 +175,7 @@ def build_map_contract(
         if tropical_cyclone_review.get("status") == "affected"
         else []
     )
-    hazard_features = vaa_features + tropical_cyclone_features
+    hazard_features = sigmet_features + vaa_features + tropical_cyclone_features
     hazards_geojson = {
         "type": "FeatureCollection",
         "features": hazard_features,
@@ -212,6 +218,7 @@ def build_map_contract(
             "point_count": len(points),
             "label_count": len(labels),
             "hazard_count": len(hazard_features),
+            "sigmet_status": sigmet_review.get("status"),
             "vaa_status": vaa_review.get("status"),
             "tropical_cyclone_status": tropical_cyclone_review.get("status"),
             "actual_takeoff_utc": flight.get("actual_takeoff_utc"),

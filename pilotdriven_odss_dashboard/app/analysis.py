@@ -20,6 +20,7 @@ from .odss.finding_ids import assign_finding_ids
 from .odss.parser import extract_pages, parse_lido
 from .odss.opmet import enrich_official_opmet
 from .odss.reporting import render_pdf
+from .odss.sigmet import assess_significant_weather
 from .odss.tropical_cyclone import assess_tropical_cyclone
 from .odss.tc_track import assess_tropical_cyclone_track
 from .odss.vaa import assess_volcanic_ash
@@ -76,6 +77,7 @@ def run_odss_analysis(
         }
 
     enrich_official_opmet(flight)
+    assess_significant_weather(flight)
     assess_volcanic_ash(flight, pages)
     tropical_cyclone_review = assess_tropical_cyclone(flight, pages)
     tropical_cyclone_review["track_context"] = assess_tropical_cyclone_track(flight)
@@ -178,6 +180,7 @@ def run_odss_analysis(
         "notam_records": sum(item["engine"] == "notam" for item in findings),
         "timing_event_count": timing_view["event_count"] if timing_view else 0,
         "personal_note_count": len(flight["personal_notes"]),
+        "sigmet_status": (flight.get("sigmet_review") or {}).get("status"),
         "vaa_status": (flight.get("vaa_review") or {}).get("status"),
         "tropical_cyclone_status": (flight.get("tropical_cyclone_review") or {}).get("status"),
         "warnings": warnings,

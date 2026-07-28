@@ -306,31 +306,35 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
             role = "edto"
         point["role"] = role
 
+    sigmet_features = list(
+        ((flight.get("sigmet_review") or {}).get("hazard_features") or [])
+    )
     vaa_features = list(
         ((flight.get("vaa_review") or {}).get("hazard_features") or [])
     )
     tc_features = list(
         ((flight.get("tropical_cyclone_review") or {}).get("hazard_features") or [])
     )
-    hazard_features = vaa_features + tc_features
+    hazard_features = sigmet_features + vaa_features + tc_features
 
     return {
         "available": len(points) >= 2,
         "points": points,
         "label_indices": sorted(priority_indices),
         "hazard_features": hazard_features,
+        "sigmet_status": (flight.get("sigmet_review") or {}).get("status"),
         "vaa_status": (flight.get("vaa_review") or {}).get("status"),
         "tropical_cyclone_status": (
             flight.get("tropical_cyclone_review") or {}
         ).get("status"),
         "note": (
-            "Natural Earth 1:110m land context; route from CFP coordinates - "
+            "Filed route from CFP coordinates"
             + (
-                "verified active SIGMET geometry shown; "
+                "; active SIGMET geometry shown"
                 if hazard_features
                 else ""
             )
-            + "briefing orientation only, not for navigation."
+            + "."
         ),
     }
 
@@ -583,7 +587,11 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
             canvas.setFillColor(colors.HexColor("#E8F2FF"))
             canvas.setFont("Helvetica", 4.8)
             label = str(route_map.get("snapshot_label") or "Realistic route map")
-            canvas.drawString(x + 5, y + 4, f"{label} - briefing orientation, not for navigation")
+            canvas.drawString(
+                x + 5,
+                y + 4,
+                f"{label} - Filed route from CFP coordinates",
+            )
             canvas.restoreState()
             return
 
@@ -760,7 +768,7 @@ def _enroute_weather_cards(findings: list[dict[str, Any]]) -> list[dict[str, str
         [
             item
             for item in findings
-            if item.get("engine") in {"vaa", "tropical_cyclone", "weather"}
+            if item.get("engine") in {"sigmet", "vaa", "tropical_cyclone", "weather"}
             and (
                 item.get("engine") != "weather"
                 or (item.get("data") or {}).get("window_status")
@@ -847,7 +855,7 @@ def build_briefing_view(
     ]
     weather_warnings = [
         item
-        for item in grouped.get("vaa", []) + grouped.get("tropical_cyclone", []) + grouped.get("weather", [])
+        for item in grouped.get("sigmet", []) + grouped.get("vaa", []) + grouped.get("tropical_cyclone", []) + grouped.get("weather", [])
         if item.get("severity") in {"warning", "critical", "unknown"}
     ]
     edto_issues = [item for item in grouped.get("edto", []) if item.get("severity") in {"warning", "critical", "unknown"}]
@@ -973,6 +981,15 @@ def build_briefing_view(
             "airports": edto_airports,
         },
         "weather_cards": _enroute_weather_cards(findings),
+        "sigmet": {
+            "status": (flight.get("sigmet_review") or {}).get("status"),
+            "page": (
+                4
+                if (flight.get("sigmet_review") or {}).get("status")
+                in {"affected", "review_required"}
+                else None
+            ),
+        },
         "vaa": {
             "status": (flight.get("vaa_review") or {}).get("status"),
             "page": (
@@ -1003,6 +1020,15 @@ def build_briefing_view(
             {"label": "Route / contingency", "target": "route_contingency", "page": 3},
             {"label": "Communication plan", "target": "communications_detail", "page": 3},
             {"label": "EDTO analysis", "target": "edto_detail", "page": 3},
+            *(
+                [{"label": "SIGMET review", "target": "sigmet_detail", "page": 4}]
+                if (flight.get("sigmet_review") or {}).get("status")
+                in {"affected", "review_required"}
+                and not (flight.get("sigmet_review") or {}).get(
+                    "clean_current_feed_no_match"
+                )
+                else []
+            ),
             *(
                 [{"label": "Volcanic ash review", "target": "vaa_detail", "page": 4}]
                 if (flight.get("vaa_review") or {}).get("status")

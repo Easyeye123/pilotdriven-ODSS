@@ -135,10 +135,10 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     level2_compact = " ".join(level2_text.split())
     assert "DEPARTURE -" in level1_text
     assert "Confirm departure stand and pushback plan." in level1_compact
-    assert "Pilot-entered content; not ODSS-validated." in level1_compact
+    assert "Pilot-entered note." in level1_compact
     assert "Departure airport - personal notes" in level2_text
     assert "Confirm departure stand and pushback plan." in level2_text
-    assert "not extracted, validated or endorsed" in level2_compact
+    assert "pilot-entered note" in level2_compact
 
     response = client.post(
         f"/flights/{flight_id}/notes",

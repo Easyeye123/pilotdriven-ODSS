@@ -376,8 +376,8 @@ def _draw_header(
         margin,
         footer_y,
         (
-            f"PILOTDRIVEN ODSS | {_pilot_text(briefing.get('flight_number'))} | "
-            f"Uploaded company CFP | {_pilot_text(briefing.get('flight_date'))}"
+            f"PILOTDRIVEN | {_pilot_text(briefing.get('flight_number'))} | "
+            f"{_pilot_text(briefing.get('flight_date'))} | Not for operational use."
         ),
     )
     canvas.drawRightString(
@@ -507,6 +507,9 @@ def _draw_table(
     accent: colors.Color = _HEADER,
     empty_text: str = "No applicable item was extracted.",
     max_rows: int | None = None,
+    fill_height: bool = False,
+    body_font_size: float = 6.2,
+    header_font_size: float = 6.0,
 ) -> int:
     data = list(rows)
     if max_rows is not None:
@@ -514,9 +517,10 @@ def _draw_table(
     if not data:
         data = [[empty_text] + [""] * (len(columns) - 1)]
 
-    header_h = 8.5 * mm
+    header_h = 9 * mm
     available = height - header_h
-    row_h = min(10 * mm, available / max(1, len(data)))
+    natural_row_h = available / max(1, len(data))
+    row_h = natural_row_h if fill_height else min(10 * mm, natural_row_h)
     if row_h < 6.5 * mm:
         visible_count = max(1, int(available // (6.5 * mm)))
         data = data[:visible_count]
@@ -532,11 +536,16 @@ def _draw_table(
     widths = [width * fraction for _, fraction in columns]
     for index, ((label, _), column_width) in enumerate(zip(columns, widths)):
         canvas.setFillColor(_BACKGROUND)
-        canvas.setFont("Helvetica-Bold", 5.5)
+        canvas.setFont("Helvetica-Bold", header_font_size)
         canvas.drawString(
             column_x + 2 * mm,
-            y + height - 5.4 * mm,
-            _clip(label, column_width - 4 * mm, font="Helvetica-Bold", size=5.5),
+            y + height - header_h / 2 - header_font_size * 0.35,
+            _clip(
+                label,
+                column_width - 4 * mm,
+                font="Helvetica-Bold",
+                size=header_font_size,
+            ),
         )
         if index:
             canvas.setStrokeColor(_LINE)
@@ -544,7 +553,7 @@ def _draw_table(
         column_x += column_width
 
     top = y + height - header_h
-    canvas.setFont("Helvetica", 5.3)
+    leading = body_font_size + 1.5
     for row_index, row in enumerate(data):
         row_top = top - row_index * row_h
         row_bottom = row_top - row_h
@@ -561,26 +570,34 @@ def _draw_table(
                 value,
                 inner_w,
                 font="Helvetica-Bold" if column_index == 0 else "Helvetica",
-                size=5.2,
+                size=body_font_size,
             )
-            max_lines = max(1, int((row_h - 2.4 * mm) // 5.9))
+            max_lines = max(
+                1,
+                int((row_h - 2.4 * mm) // leading),
+            )
             lines = lines[:max_lines]
             if len(_pilot_text(value)) and len(lines) == max_lines:
                 lines[-1] = _clip(
                     lines[-1],
                     inner_w,
                     font="Helvetica-Bold" if column_index == 0 else "Helvetica",
-                    size=5.2,
+                    size=body_font_size,
                 )
             canvas.setFillColor(_TEXT if column_index == 0 else _MUTED)
             canvas.setFont(
                 "Helvetica-Bold" if column_index == 0 else "Helvetica",
-                5.2,
+                body_font_size,
             )
-            line_y = row_top - 3.6 * mm
+            line_y = (
+                row_bottom
+                + row_h / 2
+                + (len(lines) - 1) * leading / 2
+                - body_font_size * 0.35
+            )
             for line in lines:
                 canvas.drawString(column_x + 2 * mm, line_y, line)
-                line_y -= 2.2 * mm
+                line_y -= leading
             column_x += column_width
     return len(data)
 
@@ -614,8 +631,7 @@ def _personal_note_row(
         "PERSONAL NOTE",
         " / ".join(notes),
         (
-            f"{label}; pilot-entered content, not extracted, validated "
-            "or endorsed."
+            f"{label}; pilot-entered note."
         ),
     ]
 
@@ -900,7 +916,7 @@ def _promotion_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
         ("EDTO", {"edto"}),
         ("TERRAIN / PROFILE", {"terrain", "vws", "depressurisation"}),
         ("COMMUNICATIONS", {"communications", "bobcat"}),
-        ("ADVISORIES", {"vaa", "tropical_cyclone"}),
+        ("ADVISORIES", {"sigmet", "vaa", "tropical_cyclone"}),
     )
     rank = {"critical": 0, "warning": 1, "unknown": 2, "information": 3}
     rows: list[list[str]] = []
@@ -984,9 +1000,9 @@ def _overview_rows(
             "CFP / official sources",
         ],
         [
-            "VAAC / TC",
+            "SIGMET / VAAC / TC",
             (
-                f"{len(grouped.get('vaa', [])) + len(grouped.get('tropical_cyclone', []))} "
+                f"{len(grouped.get('sigmet', [])) + len(grouped.get('vaa', [])) + len(grouped.get('tropical_cyclone', []))} "
                 "coverage results"
             ),
             "Page 7",
@@ -1422,6 +1438,7 @@ def _page_two(
             rows=rows,
             accent=accent,
             max_rows=7,
+            fill_height=True,
         )
 
 
@@ -1683,12 +1700,8 @@ def _page_five(
             ]
         ]
     left_w = (PAGE_SIZE[0] - 2 * margin - gap) / 2
-    visible_rows = max(len(left_rows), len(right_rows))
-    table_h = min(
-        top - 58 * mm,
-        8.5 * mm + max(1, visible_rows) * 10 * mm,
-    )
-    table_y = top - table_h
+    table_y = 31 * mm
+    table_h = top - table_y
     _draw_table(
         canvas,
         x=margin,
@@ -1700,6 +1713,7 @@ def _page_five(
         accent=_CYAN,
         max_rows=10,
         empty_text="No CFP route gate was extracted.",
+        fill_height=True,
     )
     _draw_table(
         canvas,
@@ -1712,12 +1726,13 @@ def _page_five(
         accent=_CYAN,
         max_rows=10,
         empty_text="No additional CFP route gate was extracted.",
+        fill_height=True,
     )
     source_finding = (group.get("communications") or [{}])[0]
     _strip(
         canvas,
         x=margin,
-        y=32 * mm,
+        y=18 * mm,
         width=PAGE_SIZE[0] - 2 * margin,
         height=10 * mm,
         title="PROCEDURE STATUS",
@@ -1725,19 +1740,6 @@ def _page_five(
         body=(
             "CFP route and crossing times are shown. Current approved contact "
             f"procedures are unavailable - review required. {_compact_source_label(source_finding)}"
-        ),
-    )
-    _strip(
-        canvas,
-        x=margin,
-        y=18 * mm,
-        width=PAGE_SIZE[0] - 2 * margin,
-        height=10 * mm,
-        title="PILOT USE",
-        accent=_HEADER,
-        body=(
-            "Use the official CFP and current authorised communications source; "
-            "no frequency or early-contact instruction is inferred."
         ),
     )
 
@@ -1880,7 +1882,11 @@ def _page_seven(
     margin = 7 * mm
     gap = 3 * mm
     group = _grouped(findings)
-    advisories = group.get("vaa", []) + group.get("tropical_cyclone", [])
+    advisories = (
+        group.get("sigmet", [])
+        + group.get("vaa", [])
+        + group.get("tropical_cyclone", [])
+    )
     weather_rows = _weather_rows(
         [
             item
@@ -1911,6 +1917,7 @@ def _page_seven(
         accent=_AMBER,
         max_rows=8,
         empty_text="No complete current weather result is available - review required.",
+        fill_height=True,
     )
     compact_advisory_rows = [
         [
@@ -1940,6 +1947,7 @@ def _page_seven(
         accent=_TEAL,
         max_rows=4,
         empty_text="No complete current advisory coverage is available - review required.",
+        fill_height=True,
     )
 
     promotion_rows = _promotion_rows(findings)

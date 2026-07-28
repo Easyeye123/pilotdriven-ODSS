@@ -15,7 +15,7 @@
       <strong>{{ contract.metadata.flight_number or analysis_id }}</strong>
       <strong>{{ contract.metadata.departure or '----' }} → {{ contract.metadata.destination or '----' }}</strong>
       <span>Amazon Location Hybrid</span>
-      <span>Briefing orientation · not for navigation</span>
+      <span>Not for operational use.</span>
     </div>
     <div class="odss-map-attribution">
       {% for item in contract.attribution %}<span>{{ item }}</span>{% endfor %}

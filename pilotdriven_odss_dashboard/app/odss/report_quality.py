@@ -46,8 +46,7 @@ _LEVEL_1_NOTAM_WINDOW = re.compile(
     re.IGNORECASE,
 )
 _LEVEL_1_MAP_MARKERS = (
-    "Natural Earth 1:110m land context",
-    "briefing orientation, not for navigation",
+    "Filed route from CFP coordinates",
     "Route coordinates unavailable",
 )
 _LEVEL_1_RETIRED_HEADINGS = (

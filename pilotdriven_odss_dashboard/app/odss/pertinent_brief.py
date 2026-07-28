@@ -1138,11 +1138,15 @@ def _pilot_weather_lines(
             continue
 
         if (
-            engine in {"vaa", "tropical_cyclone"}
+            engine in {"sigmet", "vaa", "tropical_cyclone"}
             and data.get("status") == "review_required"
         ):
             incomplete_advisories.append(
-                "VAA" if engine == "vaa" else "tropical-cyclone"
+                (
+                    "SIGMET"
+                    if engine == "sigmet"
+                    else "VAA" if engine == "vaa" else "tropical-cyclone"
+                )
             )
             continue
 
@@ -1626,8 +1630,8 @@ def _draw_cover_footer(
         margin,
         4.8 * mm,
         (
-            f"PILOTDRIVEN ODSS | {briefing['flight_number']} | "
-            f"Uploaded company CFP | {briefing['flight_date']}"
+            f"PILOTDRIVEN | {briefing['flight_number']} | "
+            f"{briefing['flight_date']} | Not for operational use."
         ),
     )
     canvas.drawRightString(width - margin, 4.8 * mm, "Page 1 of 3")
@@ -1851,7 +1855,7 @@ def _note_lines(flight: dict[str, Any], placements: set[str]) -> list[str]:
         if note.get("placement") in placements and note.get("include_level1")
     ]
     if lines:
-        lines.append("Pilot-entered content; not ODSS-validated.")
+        lines.append("Pilot-entered note.")
     return lines
 
 
@@ -2071,9 +2075,17 @@ def _draw_operational_detail(
         (item.get("data") or {}).get("window_status") == "review_required"
         for item in weather_items
     )
-    advisory_items = grouped.get("vaa", []) + grouped.get("tropical_cyclone", [])
+    advisory_items = (
+        grouped.get("sigmet", [])
+        + grouped.get("vaa", [])
+        + grouped.get("tropical_cyclone", [])
+    )
     advisory_labels = [
-        "VAA" if item.get("engine") == "vaa" else "tropical-cyclone"
+        (
+            "SIGMET"
+            if item.get("engine") == "sigmet"
+            else "VAA" if item.get("engine") == "vaa" else "tropical-cyclone"
+        )
         for item in advisory_items
         if (item.get("data") or {}).get("status") == "review_required"
     ]
