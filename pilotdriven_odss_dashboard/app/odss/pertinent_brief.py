@@ -1800,11 +1800,12 @@ def _draw_cover_metric_cards(
         )
 
 
-def _draw_cover_footer(
+def _draw_footer(
     canvas,
     *,
     briefing: dict[str, Any],
     width: float,
+    page_number: int,
 ) -> None:
     margin = 7 * mm
     canvas.setStrokeColor(_LINE)
@@ -1819,7 +1820,25 @@ def _draw_cover_footer(
             f"{briefing['flight_date']} | Not for operational use."
         ),
     )
-    canvas.drawRightString(width - margin, 4.8 * mm, "Page 1 of 3")
+    canvas.drawRightString(
+        width - margin,
+        4.8 * mm,
+        f"Page {page_number} of 3",
+    )
+
+
+def _draw_cover_footer(
+    canvas,
+    *,
+    briefing: dict[str, Any],
+    width: float,
+) -> None:
+    _draw_footer(
+        canvas,
+        briefing=briefing,
+        width=width,
+        page_number=1,
+    )
 
 
 def _draw_page_title(
@@ -2062,7 +2081,7 @@ def _draw_operational_detail(
     grouped = _group_findings(findings)
     margin = 6 * mm
     gap = 3 * mm
-    bottom = 5 * mm
+    bottom = 13 * mm
     route_points = list((briefing.get("route_map") or {}).get("points") or [])
     sectors = edto_sectors(flight.get("edto") or {})
     final_actm = max(
@@ -2313,6 +2332,12 @@ def _draw_operational_detail(
         dark=True,
         style=_STYLES["dark_small"],
     )
+    _draw_footer(
+        canvas,
+        briefing=briefing,
+        width=width,
+        page_number=2,
+    )
 
 
 def _draw_route_detail(
@@ -2336,7 +2361,7 @@ def _draw_route_detail(
     grouped = _group_findings(findings)
     margin = 6 * mm
     gap = 3 * mm
-    bottom = 5 * mm
+    bottom = 13 * mm
     depress_findings = grouped.get("depressurisation", [])
     confirmed_profiles = [
         finding
@@ -2569,6 +2594,12 @@ def _draw_route_detail(
         _TERRAIN,
         dark=True,
         style=_STYLES["dark_small"],
+    )
+    _draw_footer(
+        canvas,
+        briefing=briefing,
+        width=width,
+        page_number=3,
     )
 
 

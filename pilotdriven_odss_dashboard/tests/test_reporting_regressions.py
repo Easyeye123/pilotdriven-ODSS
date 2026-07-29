@@ -485,6 +485,7 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     for page_number, page_text in enumerate((first, second, third), start=1):
         assert "A350-941 / 9V-SMG" in page_text
         assert f"PAGE {page_number} OF 3" in page_text
+        assert f"Page {page_number} of 3" in page_text
     assert "representative gates" not in second
     assert "CFP p." not in second
     assert "CFP p." not in third
@@ -736,6 +737,67 @@ def test_level2_uses_readable_centered_rows_without_blank_table_filler(
     assert page_two_last and max(block["bbox"][1] for block in page_two_last) >= 430
     assert page_seven_advisory
     assert min(block["bbox"][1] for block in page_seven_advisory) >= 100
+
+
+def test_level2_edto_weather_result_is_concise_and_readable(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_edto_weather.pdf"
+    flight = _flight()
+    flight["edto"]["airports"] = [
+        {
+            "airport": "VTSP",
+            "period": "25 JUL 1821Z-2039Z",
+            "runway": "09",
+            "approach": "CAT1DME",
+            "minima": "450FT/1800M",
+        },
+        {
+            "airport": "WMKK",
+            "period": "25 JUL 1821Z-2039Z",
+            "runway": "14L",
+            "approach": "CAT1DME",
+            "minima": "420FT/1500M",
+        },
+        {
+            "airport": "VOMM",
+            "period": "25 JUL 1821Z-2039Z",
+            "runway": "25",
+            "approach": "CAT1DME",
+            "minima": "450FT/1800M",
+        },
+        {
+            "airport": "WSSS",
+            "period": "25 JUL 1821Z-2039Z",
+            "runway": "20C",
+            "approach": "CAT1DME",
+            "minima": "420FT/1500M",
+        },
+    ]
+
+    render_pdf(flight, [_pertinent_weather()], [], 2, path)
+
+    page = fitz.open(path)[3]
+    page_text = page.get_text()
+    normalized_text = " ".join(page_text.split())
+    assert "Convection / thunderstorms" in page_text
+    assert "Suitability review required." in normalized_text
+    assert "VTSP: Convection / thunderstorms" in normalized_text
+    assert "current airport suitability" not in normalized_text
+    assert "EDTO / VTSP / 25 JUL 1821Z-2039Z" not in page_text
+    readable_result_spans = [
+        span
+        for block in page.get_text("dict")["blocks"]
+        for line in block.get("lines", [])
+        for span in line.get("spans", [])
+        if span["size"] >= 8.9
+    ]
+    readable_result = " ".join(
+        span["text"]
+        for span in readable_result_spans
+    )
+    assert "Convection / thunderstorms" in readable_result
+    assert "Suitability review required." in readable_result
 
 
 def test_fixed_report_typography_stays_inside_page_without_text_overlap(

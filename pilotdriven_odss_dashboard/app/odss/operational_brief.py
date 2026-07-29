@@ -729,6 +729,42 @@ def _weather_summary(finding: dict[str, Any]) -> str:
     return f"{context}: {mechanism}. {effect}"
 
 
+def _weather_result(finding: dict[str, Any]) -> str:
+    """Return the result only when phase, airport and time have own columns."""
+
+    data = finding.get("data") or {}
+    status = _text(data.get("window_status"), "").lower()
+    status_text = _first_sentence(data.get("window_status_text"), "")
+    if status == "no_significant_overlap" and status_text:
+        return status_text
+
+    parts: list[str] = []
+    mechanism = _text(data.get("mechanism"), "").strip().rstrip(".")
+    if mechanism:
+        parts.append(mechanism[:1].upper() + mechanism[1:])
+
+    effect = _first_sentence(data.get("flight_effect"), "").strip().rstrip(".")
+    if "requires review" in effect.lower():
+        effect = "Suitability review required"
+    if effect:
+        parts.append(effect)
+
+    unique: list[str] = []
+    for value in parts:
+        text = _text(value, "").strip().rstrip(".")
+        if text and text.casefold() not in {
+            existing.casefold()
+            for existing in unique
+        }:
+            unique.append(text)
+    if not unique:
+        return _first_sentence(
+            finding.get("summary"),
+            "Weather result unavailable - review required.",
+        )
+    return ". ".join(unique) + "."
+
+
 def _finding_summary(finding: dict[str, Any]) -> str:
     if finding.get("engine") == "weather":
         return _weather_summary(finding)
@@ -1857,7 +1893,7 @@ def _page_four(
                     f"{_text(item.get('minima') or source_airport.get('minima'), 'minima review')}"
                 ),
                 (
-                    _weather_summary(weather_item)
+                    _weather_result(weather_item)
                     if weather_item
                     else "No complete weather result - review required."
                 ),
@@ -1868,11 +1904,21 @@ def _page_four(
                 ),
             ]
         )
+    decision_input = "; ".join(
+        f"{row[0]}: {_text(row[3], '').rstrip('.; ')}"
+        for row in airport_rows
+        if row and len(row) > 3 and row[3]
+    )
+    decision_input = (
+        f"{decision_input}."
+        if decision_input
+        else "No EDTO airport result is available."
+    )
 
     strip_y = 18 * mm
     strip_h = 9 * mm
     airport_h = (
-        9 + max(1, min(4, len(airport_rows))) * 11
+        9 + max(1, min(4, len(airport_rows))) * 14
     ) * mm
     airport_y = strip_y + strip_h + gap
     sector_h = (
@@ -1959,7 +2005,8 @@ def _page_four(
         accent=_GREEN,
         max_rows=4,
         empty_text="No EDTO airport checked period is available.",
-        body_font_size=8.2,
+        fill_height=True,
+        body_font_size=9.0,
         header_font_size=7.0,
     )
     _strip(
@@ -1970,10 +2017,7 @@ def _page_four(
         height=strip_h,
         title="EDTO DECISION INPUT",
         accent=_GREEN,
-        body=(
-            "CFP sector timing and checked-period weather are shown; current "
-            "airport suitability, minima, NOTAMs and weather remain controlling."
-        ),
+        body=decision_input,
     )
 
 
