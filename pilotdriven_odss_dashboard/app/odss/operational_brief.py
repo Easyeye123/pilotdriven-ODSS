@@ -33,6 +33,9 @@ from .pertinent_brief import (
 from .report_facts import (
     actm_utc_label,
     build_route_gate_rows,
+    is_confirmed_profile_finding,
+    profile_coverage_label,
+    profile_finding_label,
     profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
@@ -238,8 +241,7 @@ def _compact_source_label(finding: dict[str, Any]) -> str:
     for reference in references:
         source_type = str(reference.get("source_type") or "")
         if source_type == "uploaded_cfp":
-            page = _page_label(reference.get("pages") or [])
-            label = f"CFP {page}".strip()
+            label = "Uploaded CFP"
         else:
             label = _pilot_source_name(reference)
             validity = [
@@ -260,8 +262,15 @@ def _compact_source_label(finding: dict[str, Any]) -> str:
             break
     if labels:
         return " / ".join(labels)
-    page = data.get("source_page") or data.get("page")
-    return f"CFP p. {page}" if isinstance(page, int) and page > 0 else "Uploaded CFP"
+    return "Uploaded CFP"
+
+
+def _first_sentence(value: Any, fallback: str = "Review required.") -> str:
+    """Return one complete pilot-facing sentence without parser chatter."""
+
+    text = _pilot_text(value, fallback)
+    parts = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)
+    return parts[0].strip() or fallback
 
 
 def _utc(value: Any) -> str:
@@ -967,27 +976,46 @@ def _weather_rows(items: list[dict[str, Any]]) -> list[list[str]]:
         window = _text(data.get("utc_window"), "Window unresolved")
         status = _text(data.get("window_status"), "review_required")
         if status == "no_significant_overlap":
+            phase_label = phase.upper()[:4]
             clear.append(
-                " / ".join(part for part in (phase, location, window) if part)
+                " ".join(
+                    part
+                    for part in (phase_label, location, window)
+                    if part
+                )
             )
             continue
         rows.append(
             [
                 " / ".join(part for part in (phase, location) if part),
                 window,
-                _text(data.get("mechanism"), "Not safely classified"),
-                _text(data.get("flight_effect"), "Pilot review required."),
+                _first_sentence(
+                    data.get("mechanism"),
+                    "Not safely classified.",
+                ),
+                _first_sentence(
+                    data.get("flight_effect"),
+                    "Pilot review required.",
+                ),
                 _compact_source_label(item),
             ]
         )
-    if clear:
+    for index, context in enumerate(clear[:4]):
         rows.append(
             [
-                "Checked windows",
-                "; ".join(clear[:4]),
-                "No significant CFP forecast group overlapped.",
-                "Confirm the latest operational weather before use.",
-                "Uploaded CFP",
+                "Checked windows" if index == 0 else "",
+                context,
+                (
+                    "No significant CFP forecast group overlapped."
+                    if index == 0
+                    else ""
+                ),
+                (
+                    "Confirm the latest operational weather before use."
+                    if index == 0
+                    else ""
+                ),
+                "Uploaded CFP" if index == 0 else "",
             ]
         )
     return rows
@@ -1036,29 +1064,56 @@ def _promotion_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
         if not items:
             continue
         items.sort(key=lambda item: rank.get(str(item.get("severity")), 4))
-        promoted = [
-            item
-            for item in items
-            if item.get("severity") in {"critical", "warning"}
-        ]
-        review = [
-            item
-            for item in items
-            if item.get("severity") == "unknown"
-        ]
-        brief = "LEVEL 1" if promoted else "LEVEL 2 REVIEW"
-        counts: list[str] = []
-        if promoted:
-            counts.append(f"{len(promoted)} pertinent")
-        if review:
-            counts.append(f"{len(review)} unresolved")
-        rationale = ", ".join(counts) or f"{len(items)} checked"
+        principal = items[0]
+        if label == "TERRAIN / PROFILE":
+            principal = (
+                next(
+                    (
+                        item
+                        for item in items
+                        if item.get("engine") == "depressurisation"
+                        and is_confirmed_profile_finding(item)
+                    ),
+                    None,
+                )
+                or next(
+                    (
+                        item
+                        for item in items
+                        if item.get("engine") == "depressurisation"
+                    ),
+                    None,
+                )
+                or principal
+            )
+        severity = str(principal.get("severity") or "information")
+        brief = (
+            "LEVEL 1"
+            if severity in {"critical", "warning"}
+            else "REVIEW"
+            if severity == "unknown"
+            else "LEVEL 2"
+        )
+        rationale = _first_sentence(
+            _finding_summary(principal),
+            "No complete result is available - review required.",
+        )
+        if label == "WEATHER":
+            weather_data = principal.get("data") or {}
+            rationale = _first_sentence(
+                weather_data.get("window_status_text")
+                or (
+                    "Pertinent weather finding requires Level 1 review."
+                    if severity in {"critical", "warning"}
+                    else "Time-matched weather finding requires review."
+                )
+            )
         rows.append(
             [
                 label,
                 brief,
                 rationale,
-                _compact_source_label(items[0]),
+                _compact_source_label(principal),
             ]
         )
     return rows
@@ -1070,48 +1125,131 @@ def _overview_rows(
 ) -> list[list[str]]:
     grouped = _grouped(findings)
     route_gates = build_route_gate_rows(flight)
-    terrain_windows = detect_terrain_events(flight.get("route_waypoints") or [])
-    rows = [
-        [
-            "FLIGHT-WINDOW NOTAMS",
-            f"{len(select_pertinent_notams(grouped.get('notam', []), limit=24))} pertinent records",
-            "Page 3",
-            "Uploaded CFP",
-        ],
-        [
-            "EDTO",
-            f"{len(edto_sectors(flight.get('edto') or {}))} parsed sectors",
-            "Page 4",
-            "Uploaded CFP",
-        ],
-        [
-            "OCEANIC / FIR",
-            f"{len(route_gates)} parsed route gates",
-            "Page 5",
-            "CFP route",
-        ],
-        [
-            "TERRAIN / PROFILE",
-            f"{len(terrain_windows)} exposure windows",
-            "Page 6",
-            "CFP MSA points",
-        ],
-        [
-            "WEATHER",
-            f"{len(grouped.get('weather', []))} checked flight windows",
-            "Page 7",
-            "CFP / official sources",
-        ],
-        [
-            "SIGMET / VAAC / TC",
+    rows: list[list[str]] = []
+
+    def add_finding(
+        identifier: str,
+        finding_label: str,
+        result: str,
+        promotion: str,
+    ) -> None:
+        rows.append([identifier, finding_label, result, promotion])
+
+    notams = select_pertinent_notams(grouped.get("notam", []), limit=24)
+    if notams:
+        principal = notams[0]
+        add_finding(
+            "NOTAM",
+            _pilot_text(principal.get("title"), "Flight-window NOTAM"),
+            _first_sentence(_finding_summary(principal)),
+            "LEVEL 1" if principal.get("severity") in {"critical", "warning"} else "LEVEL 2",
+        )
+
+    performance = (grouped.get("performance") or grouped.get("page1") or [])
+    if performance:
+        principal = performance[0]
+        add_finding(
+            "PERFORMANCE",
+            _pilot_text(principal.get("title"), "Performance result"),
+            _first_sentence(_finding_summary(principal)),
+            "LEVEL 1" if principal.get("severity") in {"critical", "warning"} else "LEVEL 2",
+        )
+
+    sectors = edto_sectors(flight.get("edto") or {})
+    edto_result = (grouped.get("edto") or [])
+    if edto_result:
+        result = _first_sentence(_finding_summary(edto_result[0]))
+    elif sectors:
+        result = "; ".join(
             (
-                f"{len(grouped.get('sigmet', [])) + len(grouped.get('vaa', [])) + len(grouped.get('tropical_cyclone', []))} "
-                "coverage results"
-            ),
-            "Page 7",
-            "Approved advisory sources",
-        ],
+                f"S{index} ACTM "
+                f"{format_actm(sector.get('entry_actm_minutes'))}-"
+                f"{format_actm(sector.get('exit_actm_minutes'))}"
+            )
+            for index, sector in enumerate(sectors, start=1)
+        )
+    else:
+        result = "No EDTO sector is present in the uploaded flight data."
+    add_finding("EDTO", "EDTO timing", result, "LEVEL 2")
+
+    if route_gates:
+        principal_gate = next(
+            (row for row in route_gates if row.get("kind") == "oceanic"),
+            route_gates[0],
+        )
+        add_finding(
+            "ROUTE",
+            f"{principal_gate['gate']} / {principal_gate['basis']}",
+            f"{principal_gate['result']}; {principal_gate['time']}",
+            "REVIEW",
+        )
+
+    terrain_windows = detect_terrain_events(flight.get("route_waypoints") or [])
+    profile_findings = grouped.get("depressurisation", [])
+    confirmed_profiles = [
+        item
+        for item in profile_findings
+        if is_confirmed_profile_finding(item)
     ]
+    if confirmed_profiles:
+        profile_result = "; ".join(
+            dict.fromkeys(
+                profile_finding_label(item)
+                for item in confirmed_profiles
+            )
+        )
+    elif terrain_windows:
+        profile_result = "No exact profile confirmed from the controlled source - manual review required."
+    else:
+        profile_result = "No high-terrain exposure was extracted."
+    add_finding(
+        "TERRAIN",
+        "High terrain / depressurisation",
+        profile_result,
+        "LEVEL 1" if terrain_windows else "LEVEL 2",
+    )
+
+    weather = sorted(
+        grouped.get("weather", []),
+        key=lambda item: (
+            0 if item.get("severity") in {"critical", "warning"} else 1,
+            _pilot_text(item.get("title")),
+        ),
+    )
+    if weather:
+        principal = weather[0]
+        data = principal.get("data") or {}
+        weather_label = " / ".join(
+            part
+            for part in (
+                _pilot_text(data.get("phase"), "Flight"),
+                _pilot_text(data.get("location"), ""),
+            )
+            if part
+        )
+        add_finding(
+            "WEATHER",
+            weather_label,
+            _first_sentence(
+                data.get("flight_effect"),
+                "Time-matched weather finding requires review.",
+            ),
+            "LEVEL 1" if principal.get("severity") in {"critical", "warning"} else "LEVEL 2",
+        )
+
+    advisories = (
+        grouped.get("sigmet", [])
+        + grouped.get("vaa", [])
+        + grouped.get("tropical_cyclone", [])
+    )
+    if advisories:
+        principal = advisories[0]
+        add_finding(
+            "ADVISORY",
+            _pilot_text(principal.get("title"), "Advisory result"),
+            _first_sentence(_finding_summary(principal)),
+            "LEVEL 1" if principal.get("severity") in {"critical", "warning"} else "REVIEW",
+        )
     return rows
 
 
@@ -1124,7 +1262,7 @@ def _terrain_rows(
     profiles = depress_findings
     for index, event in enumerate(detect_terrain_events(flight.get("route_waypoints") or []), start=1):
         first = event.get("first_high") or {}
-        last = event.get("last_high") or first
+        last = event.get("drop") or event.get("last_high") or first
         maximum = event.get("maximum") or {}
         start = first.get("actm_minutes")
         end = last.get("actm_minutes")
@@ -1143,19 +1281,26 @@ def _terrain_rows(
         confirmed_profiles = [
             item
             for item in event_profiles
-            if (item.get("data") or {}).get("chart_number")
-            and (item.get("data") or {}).get("reference_status")
-            == "controlled-index-loaded"
+            if is_confirmed_profile_finding(item)
         ]
-        profile = (
-            "; ".join(_finding_summary(item) for item in confirmed_profiles)
-            if confirmed_profiles
-            else "Not confirmed"
+        profile = profile_coverage_label(event_profiles)
+        start_clock = actm_utc_label(flight, start)
+        end_clock = actm_utc_label(flight, end)
+        utc_range = " - ".join(
+            item.split("/", 1)[-1].strip()
+            for item in (start_clock, end_clock)
+        )
+        duration = (
+            f"{max(0, int(end) - int(start))} min"
+            if start is not None and end is not None
+            else "Review"
         )
         rows.append([
             str(index),
             f"{format_actm(start)}-{format_actm(end)}",
+            utc_range,
             exposure,
+            duration,
             maximum_label,
             profile,
         ])
@@ -1175,24 +1320,17 @@ def _terrain_rows(
             confirmed_profiles = [
                 profile
                 for profile in event_profiles
-                if (profile.get("data") or {}).get("chart_number")
-                and (profile.get("data") or {}).get("reference_status")
-                == "controlled-index-loaded"
+                if is_confirmed_profile_finding(profile)
             ]
             rows.append(
                 [
                     str(index),
                     "Time review required",
+                    "UTC review required",
                     _pilot_text(item.get("title")),
+                    "Review",
                     _finding_summary(item),
-                    (
-                        "; ".join(
-                            _finding_summary(profile)
-                            for profile in confirmed_profiles
-                        )
-                        if confirmed_profiles
-                        else "Not confirmed"
-                    ),
+                    profile_coverage_label(event_profiles),
                 ]
             )
     return rows
@@ -1338,16 +1476,22 @@ def _page_one(
         canvas.setFont("Helvetica", REPORT_TYPOGRAPHY["detail_label"])
         canvas.drawString(body_x, y, label)
         canvas.setFillColor(_TEXT)
-        canvas.setFont("Helvetica-Bold", REPORT_TYPOGRAPHY["detail_value"])
+        value_size = REPORT_TYPOGRAPHY["detail_value"]
+        while (
+            value_size > 5.8
+            and pdfmetrics.stringWidth(
+                _pilot_text(value),
+                "Helvetica-Bold",
+                value_size,
+            )
+            > body_w * 0.68
+        ):
+            value_size -= 0.5
+        canvas.setFont("Helvetica-Bold", value_size)
         canvas.drawRightString(
             body_x + body_w,
             y,
-            _clip(
-                value,
-                body_w * 0.58,
-                font="Helvetica-Bold",
-                size=REPORT_TYPOGRAPHY["detail_value"],
-            ),
+            _pilot_text(value),
         )
 
     table_y = 18 * mm
@@ -1360,13 +1504,14 @@ def _page_one(
         width=PAGE_SIZE[0] - 2 * margin,
         height=table_h,
         columns=(
-            ("ANALYSIS AREA", 0.22),
-            ("COVERAGE", 0.43),
-            ("CONTINUE", 0.10),
-            ("SOURCE BASIS", 0.25),
+            ("AREA", 0.13),
+            ("FINDING", 0.25),
+            ("DETERMINISTIC RESULT", 0.47),
+            ("PROMOTION", 0.15),
         ),
         rows=rows,
-        max_rows=6,
+        max_rows=7,
+        header_font_size=7.2,
     )
 
 
@@ -1435,20 +1580,21 @@ def _page_two(
             if _text((item.get("data") or {}).get("role"), "").lower()
             in roles
         ]
-        kinds: dict[str, int] = defaultdict(int)
-        for item in selected:
-            kind = _text(
-                (item.get("data") or {}).get("pertinence_kind"),
-                "other",
-            ).replace("_", " ")
-            kinds[kind] += 1
-        summary = "; ".join(
-            f"{count} {kind}"
-            for kind, count in sorted(kinds.items())
-        )
+        principal = selected[0] if selected else None
         return (
-            summary or "No pertinent record promoted",
-            f"{len(selected)} records; details on Page 3",
+            (
+                _first_sentence(_finding_summary(principal))
+                if principal
+                else "No pertinent time-applicable NOTAM was extracted."
+            ),
+            (
+                _notam_flight_effect(
+                    principal,
+                    _text((principal.get("data") or {}).get("role"), "flight"),
+                )
+                if principal
+                else "Source coverage must still be checked."
+            ),
         )
 
     def _weather_basis(phases: set[str]) -> tuple[str, str]:
@@ -1458,20 +1604,30 @@ def _page_two(
             if _text((item.get("data") or {}).get("phase"), "").lower()
             in phases
         ]
-        statuses: dict[str, int] = defaultdict(int)
-        for item in selected:
-            status = _text(
-                (item.get("data") or {}).get("window_status"),
-                "review required",
-            ).replace("_", " ")
-            statuses[status] += 1
-        summary = "; ".join(
-            f"{count} {status}"
-            for status, count in sorted(statuses.items())
+        principal = next(
+            (
+                item
+                for item in selected
+                if (item.get("data") or {}).get("window_status")
+                in {"pertinent", "review_required"}
+            ),
+            selected[0] if selected else None,
         )
+        data = (principal or {}).get("data") or {}
         return (
-            summary or "Weather window unavailable",
-            "Flight-time assessment on Page 7",
+            (
+                _text(data.get("mechanism"), "No significant overlap identified.")
+                if principal
+                else "Weather window unavailable."
+            ),
+            (
+                _text(
+                    data.get("flight_effect"),
+                    "Current weather review required.",
+                )
+                if principal
+                else "Current weather review required."
+            ),
         )
 
     def _surface_basis(role: str, icao: str) -> tuple[str, str]:
@@ -1488,30 +1644,26 @@ def _page_two(
                 "No validated overlay attached",
                 "Airport-chart review required",
             )
-        classes: dict[str, int] = defaultdict(int)
-        for item in overlay.get("mapped") or []:
-            presentation = surface_mark_presentation(item)
-            if presentation is not None:
-                classes[presentation] += 1
-        labels = {
-            "closure": "active closure",
-            "scheduled": "scheduled restriction",
-            "equipment": "equipment outage",
-            "locator": "review locator",
+        presentations = {
+            surface_mark_presentation(item)
+            for item in overlay.get("mapped") or []
         }
-        summary = "; ".join(
-            f"{count} {labels[key]}"
-            for key, count in classes.items()
+        presentations.discard(None)
+        labels = {
+            "closure": "active closures",
+            "scheduled": "scheduled restrictions",
+            "equipment": "equipment outages",
+            "locator": "review locators",
+        }
+        summary = ", ".join(
+            labels[value]
+            for value in ("closure", "scheduled", "equipment", "locator")
+            if value in presentations
         )
-        review_count = len(overlay.get("reviewRequired") or [])
-        if review_count:
+        if overlay.get("reviewRequired"):
             summary = "; ".join(
                 part
-                for part in (
-                    summary,
-                    f"{review_count} chart-review item"
-                    f"{'s' if review_count != 1 else ''}",
-                )
+                for part in (summary, "unresolved marks require chart review")
                 if part
             )
         return (
@@ -1554,15 +1706,13 @@ def _page_two(
         ["WEATHER", dep_weather, dep_weather_effect],
         ["PERTINENT NOTAMS", dep_notam, dep_notam_effect],
         ["SURFACE OVERLAY", dep_surface, dep_surface_effect],
-        ["SOURCE BOUNDARY", "Uploaded company CFP", "Current operational sources remain controlling"],
     ]
     right_rows = [
         ["RUNWAY / ARRIVAL", f"{flight.get('destination_runway') or '--'} / {destination}", "Planned CFP basis"],
         ["WEATHER", dest_weather, dest_weather_effect],
         ["PERTINENT NOTAMS", dest_notam, dest_notam_effect],
-        ["ALTERNATES", alternates, "Suitability inputs continue on Page 4"],
+        ["ALTERNATES", alternates, "Checked-period suitability required"],
         ["SURFACE OVERLAY", dest_surface, dest_surface_effect],
-        ["SOURCE BOUNDARY", "Uploaded company CFP", "Current operational sources remain controlling"],
     ]
     departure_note = _personal_note_row(
         flight,
@@ -1575,9 +1725,9 @@ def _page_two(
         "Destination airport - personal notes",
     )
     if departure_note:
-        left_rows.insert(-1, departure_note)
+        left_rows.append(departure_note)
     if destination_note:
-        right_rows.insert(-1, destination_note)
+        right_rows.append(destination_note)
     content_h = 112 * mm
     content_y = cards_y - content_h - 4 * mm
     column_w = (PAGE_SIZE[0] - 2 * margin - gap) / 2
@@ -1603,7 +1753,7 @@ def _page_two(
             columns=(("ITEM", 0.23), ("EVIDENCE", 0.47), ("EFFECT", 0.30)),
             rows=rows,
             accent=accent,
-            max_rows=7,
+            max_rows=6,
             fill_height=True,
         )
 
@@ -1661,49 +1811,8 @@ def _page_four(
     top = _draw_title(canvas, "EDTO SECTORS AND SUITABILITY INPUTS", top)
     margin = 7 * mm
     gap = 3 * mm
-    map_h = 70 * mm
-    map_y = top - map_h
     sectors = edto_sectors(flight.get("edto") or {})
     route_points = list((briefing.get("route_map") or {}).get("points") or [])
-    if sectors:
-        chart_gap = 3 * mm
-        chart_count = min(2, len(sectors))
-        chart_w = (
-            PAGE_SIZE[0] - 2 * margin - chart_gap * (chart_count - 1)
-        ) / chart_count
-        for index, sector in enumerate(sectors[:2], start=1):
-            start = int(sector.get("entry_actm_minutes") or 0)
-            end = int(sector.get("exit_actm_minutes") or start)
-            markers = _sector_etp_markers(route_points, sector, index)
-            points = _route_window_points(
-                route_points,
-                start,
-                end,
-                markers=markers,
-            )
-            _draw_route_evidence_chart(
-                canvas,
-                points,
-                margin + (index - 1) * (chart_w + chart_gap),
-                map_y,
-                chart_w,
-                map_h,
-                title=(
-                    f"EDTO {index} | ENTRY {format_actm(start)} | "
-                    f"EXIT {format_actm(end)}"
-                ),
-                mode="edto",
-            )
-    else:
-        _draw_route_panel(
-            canvas,
-            briefing["route_map"],
-            margin,
-            map_y,
-            PAGE_SIZE[0] - 2 * margin,
-            map_h,
-            f"{briefing['flight_number']} EDTO ROUTE / CFP COORDINATES",
-        )
     sector_rows = [
         [
             str(index),
@@ -1760,8 +1869,59 @@ def _page_four(
             ]
         )
 
-    sector_h = 24 * mm
-    sector_y = map_y - gap - sector_h
+    strip_y = 18 * mm
+    strip_h = 9 * mm
+    airport_h = (
+        9 + max(1, min(4, len(airport_rows))) * 11
+    ) * mm
+    airport_y = strip_y + strip_h + gap
+    sector_h = (
+        9 + max(1, min(2, len(sector_rows))) * 11
+    ) * mm
+    sector_y = airport_y + airport_h + gap
+    map_y = sector_y + sector_h + gap
+    map_h = max(42 * mm, top - map_y)
+
+    if sectors:
+        chart_gap = 3 * mm
+        chart_count = min(2, len(sectors))
+        chart_w = (
+            PAGE_SIZE[0] - 2 * margin - chart_gap * (chart_count - 1)
+        ) / chart_count
+        for index, sector in enumerate(sectors[:2], start=1):
+            start = int(sector.get("entry_actm_minutes") or 0)
+            end = int(sector.get("exit_actm_minutes") or start)
+            markers = _sector_etp_markers(route_points, sector, index)
+            points = _route_window_points(
+                route_points,
+                start,
+                end,
+                markers=markers,
+            )
+            _draw_route_evidence_chart(
+                canvas,
+                points,
+                margin + (index - 1) * (chart_w + chart_gap),
+                map_y,
+                chart_w,
+                map_h,
+                title=(
+                    f"EDTO {index} | ENTRY {format_actm(start)} | "
+                    f"EXIT {format_actm(end)}"
+                ),
+                mode="edto",
+            )
+    else:
+        _draw_route_panel(
+            canvas,
+            briefing["route_map"],
+            margin,
+            map_y,
+            PAGE_SIZE[0] - 2 * margin,
+            map_h,
+            f"{briefing['flight_number']} EDTO ROUTE / CFP COORDINATES",
+        )
+
     _draw_table(
         canvas,
         x=margin,
@@ -1778,10 +1938,10 @@ def _page_four(
         rows=sector_rows,
         accent=_GREEN,
         max_rows=2,
-        empty_text="No EDTO sector was parsed from the uploaded CFP.",
+        empty_text="No EDTO sector is present in the uploaded flight data.",
+        body_font_size=8.2,
+        header_font_size=7.0,
     )
-    airport_h = 35 * mm
-    airport_y = sector_y - gap - airport_h
     _draw_table(
         canvas,
         x=margin,
@@ -1798,14 +1958,16 @@ def _page_four(
         rows=airport_rows,
         accent=_GREEN,
         max_rows=4,
-        empty_text="No EDTO airport suitability period was parsed.",
+        empty_text="No EDTO airport checked period is available.",
+        body_font_size=8.2,
+        header_font_size=7.0,
     )
     _strip(
         canvas,
         x=margin,
-        y=18 * mm,
+        y=strip_y,
         width=PAGE_SIZE[0] - 2 * margin,
-        height=9 * mm,
+        height=strip_h,
         title="EDTO DECISION INPUT",
         accent=_GREEN,
         body=(
@@ -1835,11 +1997,7 @@ def _page_five(
             item["gate"],
             item["basis"],
             item["time"],
-            (
-                item["evidence"]
-                if item["result"] == "Crossing time parsed."
-                else f"{item['result']} {item['evidence']}"
-            ),
+            item["result"],
         ]
         for item in selected
     ]
@@ -1883,7 +2041,8 @@ def _page_five(
         accent=_CYAN,
         max_rows=10,
         empty_text="No CFP route gate was extracted.",
-        fill_height=True,
+        fill_height=False,
+        header_font_size=7.0,
     )
     _draw_table(
         canvas,
@@ -1896,9 +2055,9 @@ def _page_five(
         accent=_CYAN,
         max_rows=10,
         empty_text="No additional CFP route gate was extracted.",
-        fill_height=True,
+        fill_height=False,
+        header_font_size=7.0,
     )
-    source_finding = (group.get("communications") or [{}])[0]
     _strip(
         canvas,
         x=margin,
@@ -1909,7 +2068,7 @@ def _page_five(
         accent=_AMBER,
         body=(
             "CFP route and crossing times are shown. Current approved contact "
-            f"procedures are unavailable - review required. {_compact_source_label(source_finding)}"
+            "procedures are unavailable - review required."
         ),
     )
 
@@ -2017,11 +2176,13 @@ def _page_six(
         width=PAGE_SIZE[0] - 2 * margin,
         height=table_h,
         columns=(
-            ("REF", 0.08),
-            ("ACTM", 0.15),
-            ("ACTUAL EXPOSURE", 0.25),
-            ("MAX", 0.18),
-            ("PROFILE COVERAGE", 0.34),
+            ("REF", 0.05),
+            ("ACTM", 0.12),
+            ("UTC", 0.18),
+            ("ACTUAL EXPOSURE", 0.18),
+            ("DUR", 0.08),
+            ("MAX", 0.13),
+            ("PROFILE COVERAGE", 0.26),
         ),
         rows=rows,
         accent=_AMBER,
@@ -2070,7 +2231,28 @@ def _page_seven(
         ]
     )
     advisory_rows = _advisory_rows(advisories)
-    panel_h = 84 * mm
+    compact_advisory_rows: list[list[str]] = []
+    seen_advisory_sources: set[str] = set()
+    for row in advisory_rows:
+        source = row[4]
+        compact_advisory_rows.append(
+            [
+                row[0],
+                _first_sentence(row[2]),
+                "Same source" if source in seen_advisory_sources else source,
+            ]
+        )
+        seen_advisory_sources.add(source)
+
+    visible_panel_rows = max(
+        1,
+        min(6, len(weather_rows)),
+        min(4, len(compact_advisory_rows)),
+    )
+    panel_h = max(
+        48 * mm,
+        min(78 * mm, (9 + visible_panel_rows * 13) * mm),
+    )
     panel_y = top - panel_h
     weather_w = 184 * mm
     advisory_w = PAGE_SIZE[0] - 2 * margin - gap - weather_w
@@ -2081,9 +2263,9 @@ def _page_seven(
         width=weather_w,
         height=panel_h,
         columns=(
-            ("PHASE / LOCATION", 0.17),
-            ("UTC WINDOW", 0.18),
-            ("MECHANISM", 0.20),
+            ("LOCATION", 0.17),
+            ("UTC", 0.18),
+            ("WEATHER", 0.20),
             ("FLIGHT EFFECT", 0.29),
             ("SOURCE", 0.16),
         ),
@@ -2091,32 +2273,24 @@ def _page_seven(
         accent=_AMBER,
         max_rows=8,
         empty_text="No complete current weather result is available - review required.",
-        fill_height=True,
+        fill_height=False,
+        body_font_size=8.0,
+        header_font_size=7.0,
     )
-    compact_advisory_rows: list[list[str]] = []
-    seen_advisory_sources: set[str] = set()
-    for row in advisory_rows:
-        source = row[4]
-        compact_advisory_rows.append(
-            [
-                row[0],
-                row[2],
-                "Same source" if source in seen_advisory_sources else source,
-            ]
-        )
-        seen_advisory_sources.add(source)
     _draw_table(
         canvas,
         x=margin + weather_w + gap,
         y=panel_y,
         width=advisory_w,
         height=panel_h,
-        columns=(("PRODUCT / STATUS", 0.32), ("RESULT", 0.50), ("SOURCE", 0.18)),
+        columns=(("PRODUCT", 0.32), ("RESULT", 0.50), ("SOURCE", 0.18)),
         rows=compact_advisory_rows,
         accent=_TEAL,
         max_rows=4,
         empty_text="No complete current advisory coverage is available - review required.",
-        fill_height=True,
+        fill_height=False,
+        body_font_size=8.0,
+        header_font_size=6.8,
     )
 
     promotion_rows = _promotion_rows(findings)
@@ -2144,14 +2318,16 @@ def _page_seven(
         width=PAGE_SIZE[0] - 2 * margin,
         height=table_h,
         columns=(
-            ("CATEGORY", 0.22),
-            ("BRIEF", 0.10),
-            ("PROMOTION RESULT", 0.41),
-            ("EVIDENCE", 0.27),
+            ("AREA", 0.20),
+            ("STATUS", 0.12),
+            ("PERTINENT RESULT", 0.43),
+            ("SOURCE", 0.25),
         ),
         rows=promotion_rows,
         accent=_HEADER,
         max_rows=7,
+        fill_height=False,
+        header_font_size=7.0,
     )
 
 

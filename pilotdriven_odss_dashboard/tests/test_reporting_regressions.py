@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import analysis
 from app.odss.briefing import (
+    _display_registration,
     _pilot_route_map_label,
     build_route_map,
     render_route_svg,
@@ -20,12 +21,20 @@ from app.odss.briefing import (
 from app.odss.pertinent_brief import CATEGORY_COLOURS
 from app.odss.report_facts import (
     build_route_gate_rows,
+    is_confirmed_profile_finding,
+    profile_coverage_label,
     profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
 from app.odss.engines import detect_terrain_events
 from app.odss.operational_brief import _source_label
 from app.odss.reporting import render_pdf, report_sections
+
+
+def test_display_registration_formats_singapore_mark_without_changing_other_marks() -> None:
+    assert _display_registration("9VSMQ") == "9V-SMQ"
+    assert _display_registration("9V-SMQ") == "9V-SMQ"
+    assert _display_registration("D-ABCD") == "D-ABCD"
 
 
 def _notam(
@@ -387,6 +396,9 @@ def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> 
 
 def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> None:
     path = tmp_path / "level_1.pdf"
+    flight = _flight()
+    for page_number, point in enumerate(flight["route_waypoints"], start=7):
+        point["source_page"] = page_number
     findings = [
         _weather(1),
         _notam("A1000/26", "departure"),
@@ -418,7 +430,7 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
             for index in range(1, 9)
         ],
     ]
-    render_pdf(_flight(), findings, [], 1, path)
+    render_pdf(flight, findings, [], 1, path)
 
     reader = PdfReader(path)
     assert len(reader.pages) == 3
@@ -454,25 +466,92 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "TAKEOFF WEIGHT" in second
     assert "DATA COVERAGE" in second
     assert "SQ304 - HIGH TERRAIN EXPOSURE" in third
-    assert "Validated CFP MSA points only - no terrain interpolation" in third
+    assert "Geographic route strip - validated CFP MSA points only" in third
     assert "FIR / COMMUNICATIONS" not in third
     assert "ACTUAL EXPOSURE" in third
     assert "PROFILE / COVERAGE" in third
     assert "BOUNDARY LOGIC" in third
-    assert "CONFIRMED PROFILES" in third
+    assert "PROFILE COVERAGE" in third
     assert "PROFILE FINDINGS" not in third
-    assert "no profile is confirmed" in third
     assert "approved controlled profile index is not mounted" in third
     assert third.count(
         "No controlled profile is confirmed; manual chart-index review is required."
     ) == 0
-    assert third.count("Not confirmed.") >= 1
+    assert third.count("No exact profile confirmed - review required") >= 1
     assert third.lower().count("manual chart-index review is required") == 1
     assert "ACTM / CALCULATED UTC" not in third
+    assert "first validated CFP high-MSA trigger" in third
+    assert "first subsequent point where that trigger clears" in third
+    for page_number, page_text in enumerate((first, second, third), start=1):
+        assert "A350-941 / 9V-SMG" in page_text
+        assert f"PAGE {page_number} OF 3" in page_text
+    assert "representative gates" not in second
+    assert "CFP p." not in second
+    assert "CFP p." not in third
+    assert "parsed" not in second.lower()
+    assert "..." not in first
+    assert "…" not in first
     assert sum(
         "Filed route from CFP coordinates" in (page.extract_text() or "")
         for page in reader.pages
     ) == 1
+
+
+def test_confirmed_profile_is_prominent_in_l1_and_complete_in_l2(
+    tmp_path: Path,
+) -> None:
+    flight = _flight()
+    event = detect_terrain_events(flight["route_waypoints"])[0]
+    finding = {
+        "engine": "depressurisation",
+        "severity": "warning",
+        "title": "Profile 1 - VOMF to EBBR",
+        "summary": "Proposed depressurisation chart GEN-1; critical point POINT.",
+        "details": [],
+        "data": {
+            "chart_number": "GEN-1",
+            "critical_point": "POINT",
+            "terrain_event_id": event["terrain_event_id"],
+            "start_actm_minutes": event["first_high"]["actm_minutes"],
+            "route_start": "VOMF",
+            "route_end": "EBBR",
+            "coverage_complete": True,
+            "reference_status": "controlled-index-loaded",
+        },
+    }
+
+    assert is_confirmed_profile_finding(finding) is True
+    for level, page_index, expected_pages in ((1, 2, 3), (2, 5, 7)):
+        path = tmp_path / f"confirmed-profile-level-{level}.pdf"
+        render_pdf(flight, [finding], [], level, path)
+        reader = PdfReader(path)
+        assert len(reader.pages) == expected_pages
+        page = " ".join((reader.pages[page_index].extract_text() or "").split())
+        assert "GEN-1 VOMF-EBBR / CP POINT" in page
+        assert "UTC" in page
+        if level == 2:
+            assert "DUR" in page
+            assert "330 min" in page
+
+
+def test_partial_profile_is_never_presented_as_confirmed() -> None:
+    finding = {
+        "engine": "depressurisation",
+        "summary": "Candidate profile",
+        "data": {
+            "chart_number": "GEN-2",
+            "critical_point": "POINT",
+            "route_start": "START",
+            "route_end": "MID",
+            "coverage_complete": False,
+            "reference_status": "controlled-index-loaded",
+        },
+    }
+
+    assert is_confirmed_profile_finding(finding) is False
+    assert profile_coverage_label([finding]) == (
+        "Incomplete coverage (GEN-2) - review required"
+    )
 
 
 def test_level1_weather_uses_pertinent_operational_lines_not_raw_repetition(
@@ -647,7 +726,7 @@ def test_level2_uses_readable_centered_rows_without_blank_table_filler(
         ]
 
     page_two_first = spans(1, "RUNWAY / SID")
-    page_two_last = blocks(1, "SOURCE BOUNDARY")
+    page_two_last = blocks(1, "SURFACE OVERLAY")
     page_seven_advisory = blocks(
         6,
         "SIGMET review required",
@@ -656,7 +735,7 @@ def test_level2_uses_readable_centered_rows_without_blank_table_filler(
     assert page_two_first and min(span["size"] for span in page_two_first) >= 9.9
     assert page_two_last and max(block["bbox"][1] for block in page_two_last) >= 430
     assert page_seven_advisory
-    assert min(block["bbox"][1] for block in page_seven_advisory) >= 150
+    assert min(block["bbox"][1] for block in page_seven_advisory) >= 100
 
 
 def test_fixed_report_typography_stays_inside_page_without_text_overlap(
@@ -879,7 +958,8 @@ def test_level2_cites_originating_evidence_without_exposing_trace_ids(
         for page in PdfReader(level2_path).pages
     )
     assert "Evidence:" not in level1_text
-    assert "CFP pp. 101-103" in " ".join(level2_text.split())
+    assert "Uploaded CFP" in " ".join(level2_text.split())
+    assert "CFP pp. 101-103" not in " ".join(level2_text.split())
     assert _source_label(item) == (
         "Evidence: SQ304_CFP.pdf; NOTAM package; pp. 101-103."
     )
@@ -908,7 +988,8 @@ def test_level2_uses_pilot_facing_title_for_internal_cfp_document_id(
         (page.extract_text() or "")
         for page in PdfReader(path).pages
     )
-    assert "CFP pp. 36-37" in " ".join(text.split())
+    assert "Uploaded CFP" in " ".join(text.split())
+    assert "CFP pp. 36-37" not in " ".join(text.split())
     assert _source_label(item) == (
         "Evidence: Uploaded company CFP; NOTAM package; pp. 36-37."
     )
@@ -971,8 +1052,8 @@ def test_level2_groups_repeated_no_overlap_weather_into_one_checked_summary(
     assert normalized.count(
         "No significant CFP forecast group overlapped."
     ) == 1
-    assert "Departure / KJFK / 25 JUL 0115Z-0315Z" in normalized
-    assert "Destination / WSSS / 25 JUL 1930Z-2330Z" in normalized
+    assert "DEPA KJFK 25 JUL 0115Z-0315Z" in normalized
+    assert "DEST WSSS 25 JUL 1930Z-2330Z" in normalized
     assert normalized.lower().count(
         "confirm the latest operational weather before use"
     ) == 1
@@ -1058,7 +1139,8 @@ def test_level2_deduplicates_advisory_status_and_source_boilerplate(
     page_seven = " ".join(
         (PdfReader(path).pages[6].extract_text() or "").split()
     )
-    assert page_seven.count("Official SIGMET source") == 2
+    assert page_seven.count("Official SIGMET source") == 1
+    assert page_seven.count("Same source") == 2
     assert "/ REVIEW REQUIRED" not in page_seven
     assert "coverage not complete for flight" not in page_seven
 

@@ -29,6 +29,9 @@ from .pilot_briefing import (
 from .report_facts import (
     actm_utc_label,
     build_route_gate_rows,
+    is_confirmed_profile_finding,
+    profile_coverage_label,
+    profile_finding_label,
     profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
@@ -675,7 +678,7 @@ def _draw_route_evidence_chart(
     canvas.setFont("Helvetica-Bold", 6.2)
     canvas.drawString(x + 3 * mm, y + height - 5.3 * mm, title[:58])
     note = (
-        "Validated CFP MSA points only - no terrain interpolation"
+        "Geographic route strip - validated CFP MSA points only"
         if mode == "terrain"
         else "CFP route coordinates and EDTO times"
     )
@@ -687,11 +690,12 @@ def _draw_route_evidence_chart(
     plot_y = y + 4 * mm
     plot_width = width - 6 * mm
     plot_height = height - 12 * mm
+    projection_padding = 18.0 if mode == "terrain" else 10.0
     projection = project_route_map(
         {"points": points},
         plot_width,
         plot_height,
-        10.0,
+        projection_padding,
     )
     projected = projection.get("points") or []
     if len(projected) < 2:
@@ -704,37 +708,53 @@ def _draw_route_evidence_chart(
         )
         return
 
-    canvas.setStrokeColor(colors.HexColor("#203C57"))
-    canvas.setLineWidth(0.35)
-    for fraction in (0.25, 0.5, 0.75):
-        canvas.line(
+    if mode == "terrain":
+        draw_route_map_pdf(
+            canvas,
+            {
+                "points": points,
+                "label_indices": [],
+                "hazard_features": [],
+                "note": "",
+            },
             plot_x,
-            plot_y + plot_height * fraction,
-            plot_x + plot_width,
-            plot_y + plot_height * fraction,
-        )
-        canvas.line(
-            plot_x + plot_width * fraction,
             plot_y,
-            plot_x + plot_width * fraction,
-            plot_y + plot_height,
+            plot_width,
+            plot_height,
         )
+    else:
+        canvas.setStrokeColor(colors.HexColor("#203C57"))
+        canvas.setLineWidth(0.35)
+        for fraction in (0.25, 0.5, 0.75):
+            canvas.line(
+                plot_x,
+                plot_y + plot_height * fraction,
+                plot_x + plot_width,
+                plot_y + plot_height * fraction,
+            )
+            canvas.line(
+                plot_x + plot_width * fraction,
+                plot_y,
+                plot_x + plot_width * fraction,
+                plot_y + plot_height,
+            )
 
-    canvas.setStrokeColor(_TEXT)
-    canvas.setLineWidth(1.4)
     route_sequence = [
         point
         for point in projected
         if point.get("role") != "edto_etp"
     ]
-    route_path = canvas.beginPath()
-    route_path.moveTo(
-        plot_x + route_sequence[0]["x"],
-        plot_y + route_sequence[0]["y"],
-    )
-    for point in route_sequence[1:]:
-        route_path.lineTo(plot_x + point["x"], plot_y + point["y"])
-    canvas.drawPath(route_path, stroke=1, fill=0)
+    if mode != "terrain":
+        canvas.setStrokeColor(_TEXT)
+        canvas.setLineWidth(1.4)
+        route_path = canvas.beginPath()
+        route_path.moveTo(
+            plot_x + route_sequence[0]["x"],
+            plot_y + route_sequence[0]["y"],
+        )
+        for point in route_sequence[1:]:
+            route_path.lineTo(plot_x + point["x"], plot_y + point["y"])
+        canvas.drawPath(route_path, stroke=1, fill=0)
 
     label_count = 0
     for index, point in enumerate(projected):
@@ -1428,48 +1448,64 @@ def _draw_action_strip(
     body_y = y + 2.5 * mm
     body_h = height - 9 * mm
     cell = width / len(actions)
+    title_style = ParagraphStyle(
+        "Decision gate title",
+        fontName="Helvetica-Bold",
+        fontSize=6.0,
+        leading=7.0,
+        textColor=_WEATHER,
+        spaceAfter=0,
+        spaceBefore=0,
+    )
+    summary_style = ParagraphStyle(
+        "Decision gate summary",
+        fontName="Helvetica",
+        fontSize=7.0,
+        leading=8.4,
+        textColor=_TEXT,
+        spaceAfter=0,
+        spaceBefore=0,
+    )
     for index, action in enumerate(actions):
         cx = x + index * cell
         accent = _CRITICAL if action["severity"] == "critical" else _WEATHER
         if index:
             canvas.setStrokeColor(_LINE)
             canvas.line(cx, body_y, cx, y + height - 8 * mm)
-        canvas.setFillColor(accent)
-        canvas.setFont("Helvetica-Bold", 5.8)
-        title = action["title"]
-        available_title_width = cell - 7 * mm
-        while (
-            title
-            and pdfmetrics.stringWidth(
-                title + "...",
-                "Helvetica-Bold",
-                5.8,
-            )
-            > available_title_width
-        ):
-            title = title[:-1]
-        if title != action["title"]:
-            title = title.rstrip() + "..."
-        canvas.drawString(cx + 3.5 * mm, y + height - 10.5 * mm, title)
         body_width = cell - 7 * mm
-        body_height = body_h - 5 * mm
-        summary_words = action["summary"].split()
-        summary = action["summary"]
-        paragraph = _paragraph([summary], _STYLES["dark_small"])
-        _, required = paragraph.wrap(body_width, body_height)
-        while required > body_height and len(summary_words) > 4:
-            summary_words = summary_words[:-2]
-            summary = " ".join(summary_words) + "..."
-            paragraph = _paragraph([summary], _STYLES["dark_small"])
-            _, required = paragraph.wrap(body_width, body_height)
-        paragraph.drawOn(
+        action_title_style = ParagraphStyle(
+            f"Decision gate title {index}",
+            parent=title_style,
+            textColor=accent,
+        )
+        title = _paragraph([action["title"]], action_title_style)
+        _, title_height = title.wrap(body_width, body_h)
+        title.drawOn(
             canvas,
             cx + 3.5 * mm,
-            body_y + max(0.0, body_height - required),
+            body_y + max(0.0, body_h - title_height),
         )
+        summary_height = max(1.0, body_h - title_height - 1.2 * mm)
+        fitted_summary_style = _largest_fitting_style(
+            [action["summary"]],
+            summary_style,
+            body_width,
+            summary_height,
+        )
+        summary = _paragraph([action["summary"]], fitted_summary_style)
+        _, required = summary.wrap(body_width, summary_height)
+        summary.drawOn(canvas, cx + 3.5 * mm, body_y + max(0.0, summary_height - required))
 
 
-def _draw_header(canvas, briefing: dict[str, Any], width: float, height: float) -> float:
+def _draw_header(
+    canvas,
+    briefing: dict[str, Any],
+    width: float,
+    height: float,
+    *,
+    section_title: str = "LEVEL 1 - PERTINENT BRIEF",
+    page_number: int = 1,
+) -> float:
     header_height = 24 * mm
     margin = 7 * mm
     canvas.setFillColor(_DARK)
@@ -1515,7 +1551,7 @@ def _draw_header(canvas, briefing: dict[str, Any], width: float, height: float) 
         ),
     )
 
-    badge_w = 57 * mm
+    badge_w = 67 * mm
     badge_h = 8 * mm
     badge_x = width - margin - badge_w
     badge_y = height - 13.5 * mm
@@ -1531,11 +1567,18 @@ def _draw_header(canvas, briefing: dict[str, Any], width: float, height: float) 
         stroke=1,
     )
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica", 6.0)
+    canvas.setFont("Helvetica", 5.5)
     canvas.drawCentredString(
         badge_x + badge_w / 2,
         badge_y + 2.8 * mm,
-        "LEVEL 1 - PERTINENT BRIEF",
+        section_title,
+    )
+    canvas.setFillColor(_MUTED)
+    canvas.setFont("Helvetica", 4.8)
+    canvas.drawRightString(
+        width - margin,
+        height - 5.2 * mm,
+        f"PAGE {page_number} OF 3",
     )
     canvas.setStrokeColor(_LINE)
     canvas.line(margin, height - header_height, width - margin, height - header_height)
@@ -1546,6 +1589,7 @@ def _draw_cover_airport_panel(
     canvas,
     *,
     panel: dict[str, Any],
+    findings: list[dict[str, Any]],
     overlay: dict[str, Any] | None,
     personal_lines: list[str],
     schedule: str,
@@ -1599,14 +1643,74 @@ def _draw_cover_airport_panel(
     if overlay:
         overlay_lines = _surface_overlay_lines(overlay, detail_limit=2)
 
+    location = str(panel.get("icao") or "").upper()
+    role = str(panel.get("role") or "")
+    weather_findings = sorted(
+        [
+            item
+            for item in findings
+            if item.get("engine") == "weather"
+            and (
+                str((item.get("data") or {}).get("location") or "").upper()
+                == location
+            )
+        ],
+        key=_finding_sort_key,
+    )
+    if weather_findings:
+        weather = weather_findings[0]
+        weather_data = weather.get("data") or {}
+        weather_window = str(weather_data.get("utc_window") or "the operating window")
+        weather_status = str(weather_data.get("window_status") or "")
+        if weather_status == "no_significant_overlap":
+            weather_line = (
+                f"WEATHER: No significant forecast overlap during {weather_window}."
+            )
+        elif weather_status == "review_required":
+            weather_line = f"WEATHER: Coverage incomplete for {weather_window}."
+        else:
+            weather_line = "WEATHER: " + "; ".join(
+                part.rstrip(".")
+                for part in (
+                    str(weather_data.get("mechanism") or "").strip(),
+                    str(weather_data.get("flight_effect") or "").strip(),
+                )
+                if part
+            )
+            if weather_line == "WEATHER: ":
+                weather_line += str(weather.get("summary") or "Review required.")
+    else:
+        fallback_weather = str(
+            (panel.get("weather") or {}).get("primary") or ""
+        ).strip()
+        weather_line = (
+            "WEATHER: Review the operating-window forecast."
+            if fallback_weather.endswith("…")
+            else f"WEATHER: {fallback_weather}"
+        )
+
+    notam_lines = []
+    for item in sorted(
+        [
+            finding
+            for finding in findings
+            if finding.get("engine") == "notam"
+            and str((finding.get("data") or {}).get("role") or "") == role
+        ],
+        key=_finding_sort_key,
+    )[:2]:
+        data = item.get("data") or {}
+        reference = str(data.get("notam_id") or item.get("title") or "NOTAM")
+        notam_lines.append(
+            f"NOTAM {normalize_notam_references(reference)}: "
+            f"{pilot_notam_condition(item.get('summary'))}"
+        )
+
     lines = [
         *(overlay_lines if overlay else []),
         *personal_lines,
-        f"WEATHER: {panel['weather']['primary']}",
-        *(
-            f"{item['kind'].upper()}: {item['text']}"
-            for item in panel.get("considerations", [])[:3]
-        ),
+        weather_line,
+        *notam_lines,
         *([] if overlay else overlay_lines),
     ]
     body_x = x + 3 * mm
@@ -1677,11 +1781,22 @@ def _draw_cover_metric_cards(
         canvas.setFont("Helvetica-Bold", REPORT_TYPOGRAPHY["metric"])
         canvas.drawString(card_x + 2.5 * mm, y + height - 12.3 * mm, value)
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 5.1)
-        canvas.drawString(
+        note_style = ParagraphStyle(
+            "Cover metric note",
+            fontName="Helvetica",
+            fontSize=5.1,
+            leading=5.8,
+            textColor=_MUTED,
+            spaceAfter=0,
+            spaceBefore=0,
+        )
+        note_paragraph = _paragraph([note], note_style)
+        note_width = card_w - 5 * mm
+        _, note_height = note_paragraph.wrap(note_width, 6.4 * mm)
+        note_paragraph.drawOn(
+            canvas,
             card_x + 2.5 * mm,
-            y + 1.8 * mm,
-            note[:52],
+            y + 1.6 * mm + max(0.0, 6.4 * mm - note_height),
         )
 
 
@@ -1715,21 +1830,16 @@ def _draw_page_title(
     title: str,
     page_number: int,
 ) -> float:
-    header_height = 13 * mm
     canvas.setFillColor(_DARK)
     canvas.rect(0, 0, width, height, fill=1, stroke=0)
-    canvas.setFillColor(colors.HexColor("#102A46"))
-    canvas.rect(0, height - header_height, width, header_height, fill=1, stroke=0)
-    canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 11.5)
-    canvas.drawString(6 * mm, height - 8.4 * mm, title)
-    canvas.setFont("Helvetica", 6)
-    canvas.drawRightString(
-        width - 6 * mm,
-        height - 8.3 * mm,
-        f"{briefing['flight_number']} | Page {page_number}",
+    return _draw_header(
+        canvas,
+        briefing,
+        width,
+        height,
+        section_title=title,
+        page_number=page_number,
     )
-    return height - header_height - 3 * mm
 
 
 def _draw_cover(
@@ -1777,6 +1887,7 @@ def _draw_cover(
     _draw_cover_airport_panel(
         canvas,
         panel=briefing["departure"],
+        findings=findings,
         overlay=departure_overlay,
         personal_lines=_note_lines(flight, {"departure"}),
         schedule=briefing["metrics"]["etd"],
@@ -1796,6 +1907,7 @@ def _draw_cover(
     _draw_cover_airport_panel(
         canvas,
         panel=briefing["destination"],
+        findings=findings,
         overlay=destination_overlay,
         personal_lines=_note_lines(flight, {"destination"}),
         schedule=briefing["metrics"]["eta"],
@@ -1818,7 +1930,7 @@ def _draw_cover(
         performance_note = "RTOW margin to planned takeoff weight"
     else:
         performance_value = "REVIEW"
-        performance_note = "Performance margin not fully parsed"
+        performance_note = "Performance margin unavailable"
 
     excess_fuel = fuel.get("excess_fuel_kg")
     fuel_value = (
@@ -1862,9 +1974,9 @@ def _draw_cover(
         f"{'*' if maximum.get('msa_asterisk') else ''} "
         f"{maximum.get('name') or ''}".strip()
         if maximum_value is not None
-        else "NONE PARSED"
+        else "NONE IDENTIFIED"
     )
-    metric_h = 18 * mm
+    metric_h = 22 * mm
     metric_y = main_y - gap - metric_h
     _draw_cover_metric_cards(
         canvas,
@@ -1884,13 +1996,13 @@ def _draw_cover(
             (
                 "EDTO",
                 f"{len(sectors)} sector{'s' if len(sectors) != 1 else ''}",
-                " / ".join(dict.fromkeys(sector_airports)) or "No sector airports parsed",
+                " / ".join(dict.fromkeys(sector_airports)) or "No sector airports identified",
                 _EDTO,
             ),
             (
                 "OCEANIC",
                 (oceanic or {}).get("gate", "NO TRACK"),
-                (oceanic or {}).get("basis", "No named track parsed"),
+                (oceanic or {}).get("basis", "No named track identified"),
                 _COMMUNICATIONS,
             ),
             (
@@ -1905,7 +2017,7 @@ def _draw_cover(
         width=width - 2 * margin,
         height=metric_h,
     )
-    decision_h = 24 * mm
+    decision_h = 27 * mm
     decision_y = metric_y - gap - decision_h
     _draw_action_strip(
         canvas,
@@ -1981,7 +2093,7 @@ def _draw_operational_detail(
         height=timeline_h,
     )
     content_top = timeline_y - gap
-    cards_h = 23 * mm
+    cards_h = 26 * mm
     cards_y = bottom
     content_bottom = cards_y + cards_h + gap
     left_width = 167 * mm
@@ -2027,7 +2139,7 @@ def _draw_operational_detail(
             left_width,
             chart_height,
             "EDTO ROUTE EVIDENCE",
-            ["No EDTO sector was parsed from the uploaded CFP."],
+            ["No EDTO sector identified for this flight."],
             _EDTO,
             dark=True,
             style=_STYLES["dark"],
@@ -2074,14 +2186,14 @@ def _draw_operational_detail(
         ],
         rows=airport_rows,
         accent=_EDTO,
-        empty_text="No EDTO airport suitability period was parsed.",
+        empty_text="No EDTO airport suitability period available.",
     )
 
     route_gate_rows = [
         [
             row["time"],
             f"{row['gate']} / {row['basis']}",
-            f"{row['result']} {row['evidence']}",
+            row["result"],
         ]
         for row in select_route_gate_rows(
             build_route_gate_rows(flight),
@@ -2101,7 +2213,7 @@ def _draw_operational_detail(
         ],
         rows=route_gate_rows,
         accent=_COMMUNICATIONS,
-        empty_text="No CFP route gate was resolved.",
+        empty_text="Route-gate timing unavailable.",
     )
 
     performance = flight.get("performance") or {}
@@ -2111,12 +2223,12 @@ def _draw_operational_detail(
         (
             f"Structural RTOW: {int(performance['structural_rtow_kg']):,} kg."
             if performance.get("structural_rtow_kg") is not None
-            else "Structural RTOW not parsed - review required."
+            else "Structural RTOW unavailable - review required."
         ),
         (
             f"Obstacle RTOW: {int(performance['obstacle_rtow_kg']):,} kg."
             if performance.get("obstacle_rtow_kg") is not None
-            else "Obstacle RTOW not parsed - review required."
+            else "Obstacle RTOW unavailable - review required."
         ),
     ]
     if (
@@ -2165,10 +2277,10 @@ def _draw_operational_detail(
         if (item.get("data") or {}).get("status") == "affected"
     ]
     coverage_lines = [
-        f"Route: {len(route_points)} CFP points; {len(route_gate_rows)} representative gates shown.",
         (
-            f"Weather: {len(weather_items)} flight windows; "
-            f"{incomplete_weather} require current-source review."
+            "Weather: current-source review required for incomplete flight windows."
+            if incomplete_weather
+            else "Weather: checked flight windows complete."
         ),
         (
             "VAAC / TC: "
@@ -2229,10 +2341,14 @@ def _draw_route_detail(
     confirmed_profiles = [
         finding
         for finding in depress_findings
-        if (finding.get("data") or {}).get("reference_status")
-        == "controlled-index-loaded"
-        and (finding.get("data") or {}).get("chart_number")
+        if is_confirmed_profile_finding(finding)
     ]
+    unique_confirmed_profiles = list(
+        {
+            profile_finding_label(finding): finding
+            for finding in confirmed_profiles
+        }.values()
+    )
     controlled_profile_index_loaded = any(
         (finding.get("data") or {}).get("reference_status")
         == "controlled-index-loaded"
@@ -2250,6 +2366,24 @@ def _draw_route_detail(
     )
     metrics_h = 16 * mm
     metrics_y = top - metrics_h - gap
+    profile_metrics = [
+        (
+            f"PROFILE {index}",
+            profile_finding_label(finding),
+        )
+        for index, finding in enumerate(unique_confirmed_profiles[:2], start=1)
+    ]
+    while len(profile_metrics) < 2:
+        profile_metrics.append(
+            (
+                "PROFILE COVERAGE",
+                (
+                    "REVIEW REQUIRED"
+                    if events
+                    else "NO EXPOSURE"
+                ),
+            )
+        )
     _draw_metric_strip(
         canvas,
         [
@@ -2264,11 +2398,7 @@ def _draw_route_detail(
                     else "NOT RESOLVED"
                 ),
             ),
-            (
-                "CONFIRMED PROFILES",
-                str(len(confirmed_profiles)),
-            ),
-            ("SOURCE", "CFP MSA POINTS"),
+            *profile_metrics,
         ],
         margin,
         metrics_y,
@@ -2358,7 +2488,7 @@ def _draw_route_detail(
     terrain_rows: list[list[str]] = []
     for index, event in enumerate(events, start=1):
         first = event.get("first_high") or {}
-        last = event.get("last_high") or first
+        last = event.get("drop") or event.get("last_high") or first
         maximum_point = event.get("maximum") or {}
         start_actm = first.get("actm_minutes")
         end_actm = last.get("actm_minutes")
@@ -2379,28 +2509,7 @@ def _draw_route_detail(
             event,
             depress_findings,
         )
-        profile = (
-            "Not confirmed."
-            if not controlled_profile_index_loaded
-            else (
-                "; ".join(
-                    str(
-                        finding.get("summary")
-                        or "Profile result available in Level 2."
-                    )
-                    for finding in event_profiles
-                )
-                if event_profiles
-                else "Not confirmed."
-            )
-        )
-        source_page = (
-            maximum_point.get("source_page")
-            or first.get("source_page")
-            or last.get("source_page")
-        )
-        if source_page:
-            profile += f" CFP p. {source_page}."
+        profile = profile_coverage_label(event_profiles)
         terrain_rows.append(
             [
                 chr(64 + index),
@@ -2443,14 +2552,16 @@ def _draw_route_detail(
         [
             (
                 (
-                    "Only validated CFP MSA points are shown. A starred MSA or "
-                    "value above 10,000 ft starts an exposure window; no complete "
-                    "approved profile match remains review required."
+                    "Each window begins at the first validated CFP high-MSA trigger "
+                    "and ends at the first subsequent point where that trigger "
+                    "clears. The geographic strip includes one preceding point for "
+                    "route context. Any incomplete profile coverage remains review required."
                     if controlled_profile_index_loaded
                     else (
-                        "Only validated CFP MSA points are shown. The approved "
-                        "controlled profile index is not mounted, so no profile "
-                        "is confirmed; manual chart-index review is required."
+                        "Each window begins at the first validated CFP high-MSA trigger "
+                        "and ends at the first subsequent point where that trigger "
+                        "clears. The approved controlled profile index is not mounted, "
+                        "so manual chart-index review is required."
                     )
                 )
             )

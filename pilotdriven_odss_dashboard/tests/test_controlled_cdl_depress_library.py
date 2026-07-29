@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from datetime import timezone
+import io
+import json
+import sys
+from types import SimpleNamespace
 
 import pytest
 
 from app.odss import engines
+from app.odss import controlled_library
 from app.odss.controlled_library import (
     aircraft_effectivity_tokens,
     load_depress_profiles,
@@ -230,6 +235,364 @@ def test_same_profile_can_cover_two_separate_terrain_events(
     assert [item["profile"]["chart"] for item in matches] == ["GEN-1", "GEN-1"]
 
 
+def test_airway_alternatives_and_upper_airway_prefix_match_generically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    waypoints = [
+        _wp("TEMEL", 0, 90, "DCT"),
+        _wp("HIGH", 10, 150, "UW71", star=True),
+        _wp("REBLO", 20, 140, "UR317", star=True),
+        _wp("MID", 30, 130, "M11", star=True),
+        _wp("RASAM", 40, 110, "N199", star=True),
+        _wp("DROP", 50, 90, "N199"),
+    ]
+    monkeypatch.setattr(
+        engines,
+        "DEPRESS_PROFILES",
+        [
+            {
+                "chart": "8-7",
+                "from": "TEMEL",
+                "to": "RASAM",
+                "from_aliases": ["TEMEL"],
+                "to_aliases": ["RASAM"],
+                "airways": ["N199", "M11", "UM11/UR317", "UW71"],
+                "critical": "REBLO",
+                "critical_aliases": ["REBLO"],
+                "effectivity": ["LH", "ULR"],
+            }
+        ],
+    )
+
+    matches = match_profiles(
+        {
+            "aircraft_type": "A350-941",
+            "registration": "9V-SGE",
+            "route_waypoints": waypoints,
+        },
+        detect_terrain_events(waypoints),
+    )
+
+    assert [item["profile"]["chart"] for item in matches] == ["8-7"]
+    assert matches[0]["coverage_complete"] is True
+
+
+def test_local_controlled_index_is_validated_and_hashed(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "profiles.json"
+    path.write_text(
+        json.dumps(
+            {
+                "document": {
+                    "title": "Controlled partial issue",
+                    "issue_date": "2026-06-12",
+                    "coverage_scope": "partial_issue",
+                    "source_document_sha256": "source-hash",
+                    "tenant_id": "tenant-a",
+                    "governance_state": "approved",
+                    "is_current": True,
+                },
+                "profiles": [
+                    {
+                        "chart": "GEN-1",
+                        "from": "START",
+                        "to": "END",
+                        "airways": ["DCT"],
+                        "critical": "HIGH",
+                        "effectivity": ["ALL"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(controlled_library.DEPRESS_INDEX_ENV, str(path))
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_S3_ENV, raising=False)
+    monkeypatch.setenv(controlled_library.TENANT_ID_ENV, "tenant-a")
+
+    profiles = controlled_library.load_depress_profiles()
+
+    assert [item["chart"] for item in profiles] == ["GEN-1"]
+    assert controlled_library.DEPRESS_LIBRARY_METADATA["status"] == (
+        "controlled-index-loaded"
+    )
+    assert controlled_library.DEPRESS_LIBRARY_METADATA["profile_count"] == 1
+    assert controlled_library.DEPRESS_LIBRARY_METADATA["coverage_scope"] == (
+        "partial_issue"
+    )
+    assert controlled_library.DEPRESS_LIBRARY_METADATA["tenant_id"] == "tenant-a"
+    assert len(controlled_library.DEPRESS_LIBRARY_METADATA["index_sha256"]) == 64
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_ENV)
+    controlled_library.load_depress_profiles()
+
+
+def test_missing_controlled_index_has_no_built_in_profile_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_ENV, raising=False)
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_S3_ENV, raising=False)
+    monkeypatch.delenv(controlled_library.TENANT_ID_ENV, raising=False)
+
+    assert controlled_library.load_depress_profiles() == []
+    assert controlled_library.DEPRESS_LIBRARY_METADATA["status"] == (
+        "controlled-source-not-mounted"
+    )
+    assert controlled_library.DEPRESS_LIBRARY_METADATA["coverage_scope"] == "unavailable"
+    assert controlled_library.DEPRESS_LIBRARY_METADATA["profile_count"] == 0
+
+
+def test_empty_configured_controlled_index_fails_closed(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "empty-profiles.json"
+    path.write_text(
+        json.dumps({"document": {}, "profiles": []}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(controlled_library.DEPRESS_INDEX_ENV, str(path))
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_S3_ENV, raising=False)
+    monkeypatch.setenv(controlled_library.TENANT_ID_ENV, "tenant-a")
+
+    with pytest.raises(ValueError, match="non-empty list"):
+        controlled_library.load_depress_profiles()
+
+
+def test_configured_profile_index_requires_explicit_tenant(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "profiles.json"
+    path.write_text(
+        json.dumps(
+            {
+                "document": {
+                    "tenant_id": "tenant-a",
+                    "governance_state": "approved",
+                    "is_current": True,
+                },
+                "profiles": [
+                    {
+                        "chart": "GEN-1",
+                        "from": "START",
+                        "to": "END",
+                        "critical": "HIGH",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(controlled_library.DEPRESS_INDEX_ENV, str(path))
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_S3_ENV, raising=False)
+    monkeypatch.delenv(controlled_library.TENANT_ID_ENV, raising=False)
+
+    with pytest.raises(ValueError, match="ODSS_TENANT_ID is required"):
+        controlled_library.load_depress_profiles()
+
+
+@pytest.mark.parametrize(
+    ("document_update", "message"),
+    (
+        ({"tenant_id": "tenant-b"}, "tenant does not match"),
+        ({"governance_state": "draft"}, "not approved"),
+        ({"is_current": False}, "not current"),
+    ),
+)
+def test_local_profile_index_enforces_governance_and_tenant(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    document_update: dict,
+    message: str,
+) -> None:
+    document = {
+        "tenant_id": "tenant-a",
+        "governance_state": "approved",
+        "is_current": True,
+    }
+    document.update(document_update)
+    path = tmp_path / "profiles.json"
+    path.write_text(
+        json.dumps(
+            {
+                "document": document,
+                "profiles": [
+                    {
+                        "chart": "GEN-1",
+                        "from": "START",
+                        "to": "END",
+                        "critical": "HIGH",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(controlled_library.DEPRESS_INDEX_ENV, str(path))
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_S3_ENV, raising=False)
+    monkeypatch.setenv(controlled_library.TENANT_ID_ENV, "tenant-a")
+
+    with pytest.raises(ValueError, match=message):
+        controlled_library.load_depress_profiles()
+
+
+def test_s3_profile_index_loads_only_for_matching_approved_tenant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = json.dumps(
+        {
+            "document": {
+                "tenant_id": "tenant-a",
+                "governance_state": "approved",
+                "is_current": True,
+                "coverage_scope": "partial_issue",
+            },
+            "profiles": [
+                {
+                    "chart": "GEN-1",
+                    "from": "START",
+                    "to": "END",
+                    "critical": "HIGH",
+                }
+            ],
+        }
+    ).encode("utf-8")
+
+    class Body(io.BytesIO):
+        closed_by_loader = False
+
+        def close(self) -> None:
+            self.closed_by_loader = True
+            super().close()
+
+    body = Body(payload)
+
+    def get_object(**kwargs):
+        assert kwargs == {
+            "Bucket": "private-bucket",
+            "Key": "tenant-a/profiles.json",
+        }
+        return {"Body": body, "ContentLength": len(payload)}
+
+    fake_client = SimpleNamespace(get_object=get_object)
+    monkeypatch.setitem(
+        sys.modules,
+        "boto3",
+        SimpleNamespace(client=lambda _: fake_client),
+    )
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_ENV, raising=False)
+    monkeypatch.setenv(
+        controlled_library.DEPRESS_INDEX_S3_ENV,
+        "s3://private-bucket/tenant-a/profiles.json",
+    )
+    monkeypatch.setenv(controlled_library.TENANT_ID_ENV, "tenant-a")
+
+    profiles = controlled_library.load_depress_profiles()
+
+    assert [item["chart"] for item in profiles] == ["GEN-1"]
+    assert controlled_library.DEPRESS_LIBRARY_METADATA["status"] == (
+        "controlled-index-loaded"
+    )
+    assert controlled_library.DEPRESS_LIBRARY_METADATA["source"] == (
+        "tenant-private-s3"
+    )
+    assert controlled_library.DEPRESS_LIBRARY_METADATA["tenant_id"] == "tenant-a"
+    assert body.closed_by_loader is True
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_S3_ENV)
+    controlled_library.load_depress_profiles()
+
+
+def test_s3_profile_index_is_bounded_and_body_is_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Body(io.BytesIO):
+        closed_by_loader = False
+
+        def close(self) -> None:
+            self.closed_by_loader = True
+            super().close()
+
+    body = Body(b"{}")
+    fake_client = SimpleNamespace(
+        get_object=lambda **_: {
+            "Body": body,
+            "ContentLength": controlled_library.MAX_DEPRESS_INDEX_BYTES + 1,
+        }
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "boto3",
+        SimpleNamespace(client=lambda _: fake_client),
+    )
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_ENV, raising=False)
+    monkeypatch.setenv(
+        controlled_library.DEPRESS_INDEX_S3_ENV,
+        "s3://private-bucket/tenant-a/profiles.json",
+    )
+    monkeypatch.setenv(controlled_library.TENANT_ID_ENV, "tenant-a")
+
+    with pytest.raises(ValueError, match="exceeds the size limit"):
+        controlled_library.load_depress_profiles()
+
+    assert body.closed_by_loader is True
+
+
+def test_local_profile_index_rejects_oversize_file(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "oversize-profiles.json"
+    path.write_bytes(b"x" * (controlled_library.MAX_DEPRESS_INDEX_BYTES + 1))
+    monkeypatch.setenv(controlled_library.DEPRESS_INDEX_ENV, str(path))
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_S3_ENV, raising=False)
+    monkeypatch.setenv(controlled_library.TENANT_ID_ENV, "tenant-a")
+
+    with pytest.raises(ValueError, match="exceeds the size limit"):
+        controlled_library.load_depress_profiles()
+
+
+def test_s3_profile_index_read_limit_rejects_unreported_oversize_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Body(io.BytesIO):
+        read_amount: int | None = None
+        closed_by_loader = False
+
+        def read(self, amount: int = -1) -> bytes:
+            self.read_amount = amount
+            return super().read(amount)
+
+        def close(self) -> None:
+            self.closed_by_loader = True
+            super().close()
+
+    body = Body(b"x" * (controlled_library.MAX_DEPRESS_INDEX_BYTES + 1))
+    fake_client = SimpleNamespace(
+        get_object=lambda **_: {
+            "Body": body,
+        }
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "boto3",
+        SimpleNamespace(client=lambda _: fake_client),
+    )
+    monkeypatch.delenv(controlled_library.DEPRESS_INDEX_ENV, raising=False)
+    monkeypatch.setenv(
+        controlled_library.DEPRESS_INDEX_S3_ENV,
+        "s3://private-bucket/tenant-a/profiles.json",
+    )
+    monkeypatch.setenv(controlled_library.TENANT_ID_ENV, "tenant-a")
+
+    with pytest.raises(ValueError, match="exceeds the size limit"):
+        controlled_library.load_depress_profiles()
+
+    assert body.read_amount == controlled_library.MAX_DEPRESS_INDEX_BYTES + 1
+    assert body.closed_by_loader is True
+
+
 def test_fallback_profile_candidate_remains_review_required(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -296,22 +659,118 @@ def test_missing_controlled_profile_index_is_explicit_when_no_candidate_matches(
     )
 
     findings, _ = analyse(_flight(waypoints))
-    result = next(
+    results = [
         item for item in findings if item["engine"] == "depressurisation"
+    ]
+    result = next(
+        item
+        for item in results
+        if item["data"].get("terrain_event_id") == "terrain:HIGH@10-HIGH@10"
     )
 
     assert result["severity"] == "unknown"
     assert result["summary"] == (
-        "No controlled profile is confirmed; manual chart-index review is required."
+        "No exact profile confirmed because the controlled profile index is "
+        "unavailable - manual review required."
     )
-    assert result["details"] == [
-        "The approved controlled profile index is not mounted."
-    ]
+    assert result["data"]["confirmed"] is False
+    assert result["data"]["coverage_complete"] is False
     assert result["data"]["controlled_index_loaded"] is False
-    assert result["data"]["reference_status"] == "controlled-source-not-mounted"
-    assert result["data"]["terrain_event_ids"] == [
+    assert result["data"]["reference_status"] == "unavailable"
+    assert result["data"]["first_high_waypoint"] == "HIGH"
+    assert result["data"]["last_high_waypoint"] == "HIGH"
+    assert result["data"]["profile_context_start_waypoint"] == "START"
+    assert result["data"]["threshold_drop_waypoint"] == "END"
+    assert result["data"]["start_actm_minutes"] == 10
+    assert result["data"]["end_actm_minutes"] == 20
+    global_result = next(
+        item
+        for item in results
+        if not item["data"].get("terrain_event_id")
+    )
+    assert global_result["data"]["reference_status"] == (
+        "controlled-source-not-mounted"
+    )
+    assert global_result["data"]["terrain_event_ids"] == [
         "terrain:HIGH@10-HIGH@10"
     ]
+
+
+def test_loaded_partial_index_emits_one_unmatched_result_per_terrain_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    waypoints = [
+        _wp("START", 0, 90, "DCT"),
+        _wp("HIGH1", 10, 120, "DCT", star=True),
+        _wp("MIDDLE", 20, 90, "DCT"),
+        _wp("HIGH2", 30, 130, "DCT", star=True),
+        _wp("END", 40, 90, "DCT"),
+    ]
+    monkeypatch.setattr(
+        engines,
+        "DEPRESS_PROFILES",
+        [
+            {
+                "chart": "GEN-1",
+                "from": "START",
+                "to": "HIGH1",
+                "from_aliases": ["START"],
+                "to_aliases": ["HIGH1"],
+                "airways": ["DCT"],
+                "critical": "HIGH1",
+                "critical_aliases": ["HIGH1"],
+                "effectivity": ["ALL"],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        engines,
+        "DEPRESS_LIBRARY_METADATA",
+        {
+            "title": "Controlled partial profile library",
+            "issue_date": "2026-06-12",
+            "status": "controlled-index-loaded",
+            "coverage_scope": "partial_issue",
+        },
+    )
+
+    events = detect_terrain_events(waypoints)
+    findings, _ = analyse(_flight(waypoints))
+    profile_findings = [
+        item for item in findings if item["engine"] == "depressurisation"
+    ]
+    unmatched = [
+        item
+        for item in profile_findings
+        if item["data"].get("confirmed") is False
+    ]
+
+    assert any(
+        item["data"].get("terrain_event_id") == events[0]["terrain_event_id"]
+        and item["data"].get("chart_number") == "GEN-1"
+        for item in profile_findings
+    )
+    assert [item["data"]["terrain_event_id"] for item in unmatched] == [
+        events[1]["terrain_event_id"]
+    ]
+    assert unmatched[0]["summary"] == (
+        "No exact profile confirmed from controlled partial issue - "
+        "manual review required."
+    )
+    data = unmatched[0]["data"]
+    assert data["confirmed"] is False
+    assert data["coverage_complete"] is False
+    assert data["reference_status"] == "partial"
+    assert data["controlled_library_status"] == "controlled-index-loaded"
+    assert data["controlled_index_loaded"] is True
+    assert data["coverage_scope"] == "partial_issue"
+    assert data["candidate_chart_numbers"] == []
+    assert data["start_actm_minutes"] == 30
+    assert data["end_actm_minutes"] == 40
+    assert data["profile_context_start_waypoint"] == "MIDDLE"
+    assert data["first_high_waypoint"] == "HIGH2"
+    assert data["last_high_waypoint"] == "HIGH2"
+    assert data["threshold_drop_waypoint"] == "END"
 
 
 def test_sq24_high_msa_uses_minimal_11_4_and_11_37_chain(
@@ -327,7 +786,34 @@ def test_sq24_high_msa_uses_minimal_11_4_and_11_37_chain(
         _wp("62N20", 797, 111, "DCT", star=True),
         _wp("59N10", 837, 48, "DCT"),
     ]
-    monkeypatch.setattr(engines, "DEPRESS_PROFILES", load_depress_profiles())
+    monkeypatch.setattr(
+        engines,
+        "DEPRESS_PROFILES",
+        [
+            {
+                "chart": "11-4",
+                "from": "HAMND",
+                "to": "TED",
+                "from_aliases": ["HAMND"],
+                "to_aliases": ["TED"],
+                "airways": ["DCT"],
+                "critical": "HAMND",
+                "critical_aliases": ["HAMND"],
+                "effectivity": ["A350-941", "ULR"],
+            },
+            {
+                "chart": "11-37",
+                "from": "TED",
+                "to": "62N20",
+                "from_aliases": ["TED"],
+                "to_aliases": ["62N20", "62N120W"],
+                "airways": ["J511", "J124", "DCT"],
+                "critical": "ORT",
+                "critical_aliases": ["ORT"],
+                "effectivity": ["A350-941", "ULR"],
+            },
+        ],
+    )
     events = detect_terrain_events(waypoints)
     matches = match_profiles(
         {

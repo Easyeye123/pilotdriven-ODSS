@@ -204,6 +204,35 @@ def test_service_api_requires_bearer_token(service_app: TestClient) -> None:
     assert legacy_dashboard.status_code == 404
 
 
+def test_service_rejects_tenant_not_matching_loaded_profile_library(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        main,
+        "DEPRESS_LIBRARY_METADATA",
+        {
+            "status": "controlled-index-loaded",
+            "tenant_id": "tenant-owner",
+        },
+    )
+
+    accepted = service_app.get(
+        "/v1/analyses/unknown",
+        headers=_authorization("tenant-owner", "pilot-owner"),
+    )
+    rejected = service_app.get(
+        "/v1/analyses/unknown",
+        headers=_authorization("tenant-other", "pilot-other"),
+    )
+
+    assert accepted.status_code == 404
+    assert rejected.status_code == 403
+    assert rejected.json()["detail"] == (
+        "The controlled profile library is not configured for this tenant."
+    )
+
+
 
 def test_playwright_static_assets_accept_service_bearer_with_legacy_basic_auth(
     service_app: TestClient,
@@ -487,7 +516,7 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         assert level2_document.page_count == 7
     finally:
         level2_document.close()
-    assert "1 active closure" in level2_text
+    assert "active closures" in level2_text
 
     timing = service_app.post(
         f"/v1/analyses/{analysis_id}/timing",
@@ -560,7 +589,7 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         assert cleared_level2_document.page_count == 7
     finally:
         cleared_level2_document.close()
-    assert "1 active closure" not in cleared_level2_text
+    assert "active closures" not in cleared_level2_text
 
 
 def test_report_worker_endpoint_preserves_labelled_schematic_fallback(

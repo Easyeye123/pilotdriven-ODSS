@@ -70,6 +70,14 @@ def _display_utc(value: str | None) -> str:
     return parsed.strftime("%d %b %H%MZ").upper() if parsed else "--"
 
 
+def _display_registration(value: str | None) -> str:
+    text = str(value or "").strip().upper()
+    compact = re.sub(r"[^A-Z0-9]", "", text)
+    if compact.startswith("9V") and len(compact) == 5:
+        return f"9V-{compact[2:]}"
+    return text
+
+
 def _shorten(value: str | None, limit: int = 120) -> str:
     text = " ".join(str(value or "").split())
     if len(text) <= limit:
@@ -935,7 +943,7 @@ def build_briefing_view(
         "generated_at_utc": generated_at.isoformat(),
         "generated_at_display": generated_at.strftime("%d %b %Y %H%MZ").upper(),
         "flight_number": flight.get("flight_number") or "----",
-        "registration": flight.get("registration") or "--",
+        "registration": _display_registration(flight.get("registration")) or "--",
         "route_label": f"{flight.get('departure') or '----'} → {flight.get('destination') or '----'}",
         "flight_date": flight.get("flight_date") or "--",
         "metrics": {
@@ -944,7 +952,15 @@ def build_briefing_view(
             "fir_count": len(unique_firs),
             "etd": scheduled_departure.strftime("%d %b %H%MZ").upper() if scheduled_departure else "--",
             "eta": scheduled_arrival.strftime("%d %b %H%MZ").upper() if scheduled_arrival else "--",
-            "aircraft": flight.get("aircraft_type") or "--",
+            "aircraft": " / ".join(
+                value
+                for value in (
+                    str(flight.get("aircraft_type") or "").strip(),
+                    _display_registration(flight.get("registration")),
+                )
+                if value
+            )
+            or "--",
             "cruise": _cruise_summary(flight.get("planned_level_profile")),
             "alternate": (alternates[0].get("airport") if alternates else "--"),
             "clock_basis": "ATOT + CFP ACTM" if timing_view else "CFP ACTM only",

@@ -25,7 +25,10 @@ A local FastAPI dashboard for uploading Lido CFP PDFs, running the deterministic
   a fail-closed completeness ledger rather than a benign answer.
 - Store a canonical `view.briefing` object in the analysis JSON so the current dashboard, PDF renderer and future PilotDriven frontend share the same facts.
 - Detect continuous MSA greater than `100*` events and VWS greater than 4 events.
-- Match the bundled route-aware depressurisation profiles and early FIR-contact rules when applicable.
+- Match route-aware depressurisation profiles only from the approved tenant-private
+  controlled index. If that index is unavailable or no exact route/effectivity
+  match exists, keep the terrain event review-required instead of using a
+  built-in answer.
 - Extract weather and airport NOTAM records without silently truncating the airport list.
 - Evaluate NOTAM B/C validity and supported Item D daily, weekday, date-list, month-range and overnight schedules against airport-specific operational windows.
 - Keep unsupported Item D schedules visible for manual review instead of guessing applicability.

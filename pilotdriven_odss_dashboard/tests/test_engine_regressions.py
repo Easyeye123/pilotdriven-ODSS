@@ -8,6 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.odss import engines
 from app.odss.engines import _schedule_overlaps, analyse, detect_terrain_events, match_profiles
 from app.odss.enrichment import (
     _notice_score,
@@ -825,7 +826,26 @@ N03 10.0 E105 40.0 090
     }
 
 
-def test_depressurisation_profiles_require_aircraft_effectivity() -> None:
+def test_depressurisation_profiles_require_aircraft_effectivity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        engines,
+        "DEPRESS_PROFILES",
+        [
+            {
+                "chart": "10-4",
+                "from": "RANAH",
+                "to": "HILAL",
+                "from_aliases": ["RANAH"],
+                "to_aliases": ["HILAL"],
+                "airways": ["L750", "G202"],
+                "critical": "DUDEG",
+                "critical_aliases": ["DUDEG"],
+                "effectivity": ["A350-941"],
+            }
+        ],
+    )
     waypoints = [
         {"name": "RANAH", "actm_minutes": 1, "msa_hundreds_ft": 90, "airway_in": "L750"},
         {"name": "DUDEG", "actm_minutes": 2, "msa_hundreds_ft": 146, "airway_in": "L750"},

@@ -735,9 +735,20 @@ def detect_vws_events(waypoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _subsequence(sequence: list[str], candidate: list[str]) -> bool:
     if not candidate:
         return True
+
+    def aliases(value: str) -> set[str]:
+        values: set[str] = set()
+        for part in str(value or "").upper().replace(" ", "").split("/"):
+            if not part:
+                continue
+            values.add(part)
+            if re.fullmatch(r"U[A-Z]{1,2}\d+", part):
+                values.add(part[1:])
+        return values
+
     position = 0
     for item in sequence:
-        if item == candidate[position]:
+        if aliases(item) & aliases(candidate[position]):
             position += 1
             if position == len(candidate):
                 return True
@@ -793,8 +804,22 @@ def _profile_route_spans(
                 expected_airways = list(reversed(published_airways))
                 direction = "reverse"
             route_airways = _route_airways_between(waypoints, start_index, end_index)
-            if expected_airways and not _subsequence(route_airways, expected_airways):
-                continue
+            if expected_airways:
+                candidate_orders = [
+                    expected_airways,
+                    list(reversed(expected_airways)),
+                ]
+                matched_order = next(
+                    (
+                        order
+                        for order in candidate_orders
+                        if _subsequence(route_airways, order)
+                    ),
+                    None,
+                )
+                if matched_order is None:
+                    continue
+                expected_airways = matched_order
             spans.append(
                 {
                     "start_index": start_index,
@@ -1954,6 +1979,121 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 ],
             },
         ))
+
+    matches_by_event: dict[str, list[dict[str, Any]]] = {}
+    for match in matches:
+        matches_by_event.setdefault(match["terrain_event_id"], []).append(match)
+    coverage_scope = str(
+        DEPRESS_LIBRARY_METADATA.get("coverage_scope") or "not stated"
+    )
+    for event in terrain_events:
+        event_id = event["terrain_event_id"]
+        event_matches = matches_by_event.get(event_id, [])
+        exact_profile_confirmed = bool(
+            depress_source_loaded
+            and any(match["coverage_complete"] for match in event_matches)
+        )
+        if exact_profile_confirmed:
+            continue
+
+        first_high = event["first_high"]
+        last_high = event["last_high"]
+        threshold_drop = event.get("drop")
+        context_start = event.get("preceding") or first_high
+        event_end = threshold_drop or last_high
+        candidate_charts = sorted(
+            {
+                str(match["profile"].get("chart") or "")
+                for match in event_matches
+                if match["profile"].get("chart")
+            }
+        )
+        reference_status = "partial" if depress_source_loaded else "unavailable"
+        summary = (
+            "No exact profile confirmed from controlled partial issue - "
+            "manual review required."
+            if depress_source_loaded and coverage_scope == "partial_issue"
+            else (
+                "No exact profile confirmed from controlled index - "
+                "manual review required."
+                if depress_source_loaded
+                else (
+                    "No exact profile confirmed because the controlled profile "
+                    "index is unavailable - manual review required."
+                )
+            )
+        )
+        details = [
+            f"High-MSA event ACTM {format_actm(first_high['actm_minutes'])}-"
+            f"{format_actm(event_end['actm_minutes'])}.",
+            f"Validated exposure boundary {first_high['name']}-{last_high['name']}; "
+            f"profile matching context begins at {context_start['name']}.",
+        ]
+        if candidate_charts:
+            details.append(
+                "Candidate chart coverage is incomplete: "
+                f"{', '.join(candidate_charts)}."
+            )
+        details.append(
+            (
+                f"Controlled profile coverage scope is {coverage_scope}; no "
+                "complete endpoint, airway and effectivity match was found."
+                if depress_source_loaded
+                else "The approved controlled profile index is not mounted."
+            )
+        )
+        findings.append(finding(
+            "depressurisation",
+            "unknown",
+            f"Profile unresolved - {first_high['name']} to {last_high['name']}",
+            summary,
+            details,
+            {
+                "terrain_event_id": event_id,
+                "confirmed": False,
+                "coverage_complete": False,
+                "reference_status": reference_status,
+                "controlled_library_status": DEPRESS_LIBRARY_METADATA.get("status"),
+                "controlled_index_loaded": depress_source_loaded,
+                "coverage_scope": coverage_scope,
+                "candidate_chart_numbers": candidate_charts,
+                "start_actm_minutes": first_high["actm_minutes"],
+                "end_actm_minutes": event_end["actm_minutes"],
+                "profile_context_start_waypoint": context_start["name"],
+                "first_high_waypoint": first_high["name"],
+                "last_high_waypoint": last_high["name"],
+                "threshold_drop_waypoint": (
+                    threshold_drop["name"] if threshold_drop else None
+                ),
+                "source_references": [
+                    _cfp_source_reference(
+                        flight,
+                        [
+                            waypoint.get("source_page")
+                            for waypoint in (
+                                event.get("preceding"),
+                                first_high,
+                                last_high,
+                                event.get("maximum"),
+                                threshold_drop,
+                            )
+                            if waypoint
+                        ],
+                        "Route MSA data",
+                    ),
+                    {
+                        "source_type": "controlled_document",
+                        "document_title": DEPRESS_LIBRARY_METADATA.get("title"),
+                        "revision": DEPRESS_LIBRARY_METADATA.get("issue_date"),
+                        "pages": [],
+                        "section": "Depressurisation profile index",
+                        "availability_status": DEPRESS_LIBRARY_METADATA.get("status"),
+                        "coverage_scope": coverage_scope,
+                    },
+                ],
+            },
+        ))
+
     if terrain_events and not matches:
         findings.append(finding(
             "depressurisation",

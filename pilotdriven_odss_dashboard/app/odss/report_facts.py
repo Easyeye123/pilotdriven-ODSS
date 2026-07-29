@@ -110,7 +110,7 @@ def build_route_gate_rows(flight: dict[str, Any]) -> list[dict[str, str]]:
                 "gate": f"NAT {track.upper()}",
                 "basis": f"{entry_name.upper()} - {exit_name.upper()}",
                 "time": time_label,
-                "result": "Track and timing parsed.",
+                "result": f"NAT {track.upper()} route segment",
                 "status": "review_required",
                 "evidence": evidence or "Uploaded CFP",
             }
@@ -128,7 +128,7 @@ def build_route_gate_rows(flight: dict[str, Any]) -> list[dict[str, str]]:
                 "gate": boundary,
                 "basis": _clean(point.get("name"), boundary).lstrip("-"),
                 "time": actm_utc_label(flight, point.get("actm_minutes")),
-                "result": "Crossing time parsed.",
+                "result": "FIR boundary crossing",
                 "status": "review_required",
                 "evidence": _source_page(point),
             }
@@ -146,7 +146,7 @@ def build_route_gate_rows(flight: dict[str, Any]) -> list[dict[str, str]]:
                     flight,
                     arrival_point.get("actm_minutes"),
                 ),
-                "result": "Arrival timing parsed.",
+                "result": "Arrival",
                 "status": "parsed",
                 "evidence": _source_page(arrival_point),
             }
@@ -255,9 +255,46 @@ def profile_findings_for_terrain_event(
     )
 
 
+def is_confirmed_profile_finding(finding: dict[str, Any]) -> bool:
+    data = finding.get("data") or {}
+    return bool(
+        data.get("chart_number")
+        and data.get("reference_status") == "controlled-index-loaded"
+        and data.get("coverage_complete") is True
+    )
+
+
+def profile_finding_label(finding: dict[str, Any]) -> str:
+    data = finding.get("data") or {}
+    chart = _clean(data.get("chart_number"), "UNNUMBERED")
+    route_start = _clean(data.get("route_start"), "START")
+    route_end = _clean(data.get("route_end"), "END")
+    critical = _clean(data.get("critical_point"), "REVIEW")
+    return f"{chart} {route_start}-{route_end} / CP {critical}"
+
+
+def profile_coverage_label(findings: Iterable[dict[str, Any]]) -> str:
+    candidates = [item for item in findings if isinstance(item, dict)]
+    confirmed = [item for item in candidates if is_confirmed_profile_finding(item)]
+    if confirmed:
+        return "; ".join(profile_finding_label(item) for item in confirmed)
+    partial = [
+        _clean((item.get("data") or {}).get("chart_number"))
+        for item in candidates
+        if (item.get("data") or {}).get("chart_number")
+    ]
+    if partial:
+        charts = ", ".join(dict.fromkeys(partial))
+        return f"Incomplete coverage ({charts}) - review required"
+    return "No exact profile confirmed - review required"
+
+
 __all__ = [
     "actm_utc_label",
     "build_route_gate_rows",
+    "is_confirmed_profile_finding",
+    "profile_coverage_label",
+    "profile_finding_label",
     "profile_findings_for_terrain_event",
     "select_route_gate_rows",
 ]

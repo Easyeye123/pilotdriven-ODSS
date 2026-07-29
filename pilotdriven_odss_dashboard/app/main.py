@@ -41,6 +41,7 @@ from .database import (
     update_status,
 )
 from .odss.constants import format_actm
+from .odss.controlled_library import DEPRESS_LIBRARY_METADATA
 from .odss.level3 import generate_level3_artifacts
 from .odss.reporting import render_pdf
 from .odss.surface_overlays import (
@@ -109,7 +110,19 @@ def _dashboard_tenant_id() -> str:
         for character in tenant_id
     ):
         raise RuntimeError("ODSS_LEGACY_DASHBOARD_TENANT_ID is invalid.")
+    controlled_tenant = _controlled_library_tenant_id()
+    if controlled_tenant and tenant_id != controlled_tenant:
+        raise RuntimeError(
+            "ODSS_LEGACY_DASHBOARD_TENANT_ID does not match the controlled "
+            "profile library tenant."
+        )
     return tenant_id
+
+
+def _controlled_library_tenant_id() -> str | None:
+    if DEPRESS_LIBRARY_METADATA.get("status") != "controlled-index-loaded":
+        return None
+    return str(DEPRESS_LIBRARY_METADATA.get("tenant_id") or "").strip() or None
 
 
 def _legacy_dashboard_enabled() -> bool:
@@ -196,7 +209,7 @@ async def protect_dashboard(request: Request, call_next):
             )
         if request.url.path != "/v1/health":
             try:
-                request.state.service_identity = service_identity_from_request(request)
+                identity = service_identity_from_request(request)
             except HTTPException as exc:
                 return _secure_response(
                     JSONResponse(
@@ -204,6 +217,20 @@ async def protect_dashboard(request: Request, call_next):
                         status_code=exc.status_code,
                     )
                 )
+            controlled_tenant = _controlled_library_tenant_id()
+            if controlled_tenant and identity.tenant_id != controlled_tenant:
+                return _secure_response(
+                    JSONResponse(
+                        {
+                            "detail": (
+                                "The controlled profile library is not "
+                                "configured for this tenant."
+                            )
+                        },
+                        status_code=403,
+                    )
+                )
+            request.state.service_identity = identity
         return _secure_response(await call_next(request))
 
     # The protected print page loads same-origin static assets. A worker's
@@ -1025,6 +1052,19 @@ def _service_summary(flight) -> dict:
 
 @app.get("/v1/health")
 def service_health():
+    profile_source = {
+        key: DEPRESS_LIBRARY_METADATA.get(key)
+        for key in (
+            "status",
+            "issue_date",
+            "coverage_scope",
+            "profile_count",
+            "source",
+            "source_document_sha256",
+            "index_sha256",
+        )
+        if DEPRESS_LIBRARY_METADATA.get(key) is not None
+    }
     return JSONResponse({
         "status": "ok",
         "version": APP_VERSION,
@@ -1034,6 +1074,7 @@ def service_health():
         "playwright_capture_configured": bool(
             map_settings.aws_location_api_key and map_settings.service_token
         ),
+        "depressurization_profile_source": profile_source,
     })
 
 
