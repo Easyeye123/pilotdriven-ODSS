@@ -97,6 +97,19 @@ def sample_flight():
         "notams": [],
         "bobcat": None,
         "personal_notes": [],
+        "depressurisation_profile_charts": [{
+            "chart_number": "10-5",
+            "source_document": "A350 Depressurization Profiles - CI controlled fixture",
+            "source_revision": "29 OCT 2024",
+            "source_page": 270,
+            "source_link": "ci://controlled-profile/10-5",
+            "route_airway_match_verified": True,
+            "aircraft_effectivity_verified": True,
+            "chart_image_validated": True,
+            "level1_analysis_chart_embedded": True,
+            "level2_full_source_chart_embedded": True,
+            "test_fixture_only": True,
+        }],
     }
 
 

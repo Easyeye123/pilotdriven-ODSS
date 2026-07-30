@@ -4,6 +4,7 @@ from xml.sax.saxutils import escape as _xml_escape
 
 from . import engines as _engines
 from . import timing as _timing
+from .profile_chart_gate import validate_depressurisation_profile_charts
 from .terrain import detect_terrain_events as _strict_detect_terrain_events
 
 
@@ -27,12 +28,14 @@ def _visual_paragraph_escape(value: str) -> str:
 
 try:
     from . import briefing as _briefing
+    from . import reporting as _reporting
     from . import visual_reporting as _visual_reporting
 
     _briefing.detect_terrain_events = _strict_detect_terrain_events
     _visual_reporting.escape = _visual_paragraph_escape
 
     _original_build_briefing_view = _briefing.build_briefing_view
+    _original_render_pdf = _reporting.render_pdf
 
     def _build_briefing_view_with_saved_clock(
         flight,
@@ -49,8 +52,28 @@ try:
             selected_timing,
         )
 
+    def _render_pdf_with_profile_chart_gate(
+        flight,
+        findings,
+        warnings,
+        level,
+        path,
+        **kwargs,
+    ):
+        """Block publication when a named profile chart is not visibly embedded."""
+        validate_depressurisation_profile_charts(flight, findings, level)
+        return _original_render_pdf(
+            flight,
+            findings,
+            warnings,
+            level,
+            path,
+            **kwargs,
+        )
+
     _briefing.build_briefing_view = _build_briefing_view_with_saved_clock
     _visual_reporting.build_briefing_view = _build_briefing_view_with_saved_clock
+    _reporting.render_pdf = _render_pdf_with_profile_chart_gate
 except ImportError:
     # The deterministic engines remain importable even when optional PDF
     # dependencies have not yet been installed.

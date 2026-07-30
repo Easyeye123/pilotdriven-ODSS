@@ -7,7 +7,10 @@ These files preserve reviewed product decisions and historical regression lesson
 - [`BRIEFING_PUBLICATION_MEMORY_2026-07-28.md`](./BRIEFING_PUBLICATION_MEMORY_2026-07-28.md) — accepted Level 1/Level 2 identity header, typography, middle-cell alignment, authoritative-link and strict `MSA >100*` publication baseline.
 - [`SQ24_SHEVELUCH_VAAC_CASE_STUDY.md`](./SQ24_SHEVELUCH_VAAC_CASE_STUDY.md) — historical SQ24 volcanic-ash review and regression requirements.
 
-Detailed standing protocols remain in [`../protocols/`](../protocols/), including [`ODSS_BRIEFING_PUBLICATION_PROTOCOL_V1_2.md`](../protocols/ODSS_BRIEFING_PUBLICATION_PROTOCOL_V1_2.md).
+Detailed standing protocols remain in [`../protocols/`](../protocols/), including:
+
+- [`ODSS_BRIEFING_PUBLICATION_PROTOCOL_V1_2.md`](../protocols/ODSS_BRIEFING_PUBLICATION_PROTOCOL_V1_2.md)
+- [`DEPRESSURISATION_PROFILE_CHART_PUBLICATION_GATE.md`](../protocols/DEPRESSURISATION_PROFILE_CHART_PUBLICATION_GATE.md) — fail-closed rule requiring a validated Level 1 analysis chart and the complete authoritative Level 2 source chart whenever ODSS proposes an approved profile.
 
 ## Authority boundary
 
