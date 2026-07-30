@@ -395,7 +395,7 @@ def draw_source_chart_page(
         " | ".join(
             (
                 "PILOTDRIVEN ODSS",
-                str(flight.get("flight_number") or ""),
+                theme.display_flight_number(flight),
                 (
                     f"{flight.get('aircraft_type') or ''} "
                     f"{normalized_registration(flight.get('registration'))}"

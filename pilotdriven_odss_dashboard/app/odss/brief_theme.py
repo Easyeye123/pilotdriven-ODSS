@@ -143,6 +143,12 @@ def ofp_label(flight: dict[str, Any]) -> str:
     return value or "not stated"
 
 
+def display_flight_number(flight: dict[str, Any]) -> str:
+    """Prefer the CFP-declared operating designator (e.g. SQ352 over SIA352)."""
+    operating = str(flight.get("operating_flight_number") or "").strip()
+    return operating or str(flight.get("flight_number") or "")
+
+
 def draw_header(
     canvas: Any,
     flight: dict[str, Any],
@@ -170,7 +176,7 @@ def draw_header(
     identity_x = width * 0.205
     canvas.setFillColor(TEXT)
     canvas.setFont(SANS_BOLD, 21)
-    flight_number = str(flight.get("flight_number") or "")
+    flight_number = display_flight_number(flight)
     canvas.drawString(identity_x, top - 6, flight_number)
     tag = month_tag(flight)
     if tag:
@@ -271,7 +277,7 @@ def draw_footer(
             value
             for value in (
                 "PILOTDRIVEN ODSS",
-                str(flight.get("flight_number") or ""),
+                display_flight_number(flight),
                 f"CFP OFP {ofp_label(flight)}",
                 (
                     f"{flight.get('aircraft_type') or ''} "

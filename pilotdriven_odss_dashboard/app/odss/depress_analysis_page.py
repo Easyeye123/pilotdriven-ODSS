@@ -276,8 +276,9 @@ def _draw_card(
 
     # Flight direction annotation, offset from the CP label.
     if event is not None:
+        from .brief_theme import display_flight_number as _dfn
         direction = (
-            f"{flight.get('flight_number') or ''} direction "
+            f"{_dfn(flight)} direction "
             f"{event['first_high'].get('name')} -> {event['last_high'].get('name')}"
         )
         canvas.setFillColor(theme.BLUE)

@@ -651,6 +651,12 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
             r"\bOFP\s*:?\s*(\d+/\d+/\d+)\b",
             r"\bPLAN\s+(\d+/\d+/\d+)\b",
         ),
+        # The commercial (operating) designator the CFP itself declares,
+        # e.g. "OPTG SQ352" alongside an ICAO identity line "SIA352".
+        "operating_flight_number": _first_group(
+            page1,
+            r"\bOPTG\s+([A-Z]{2,3}\d{2,4})\b",
+        ),
         "aircraft_type": aircraft_match.group("aircraft") if aircraft_match else "UNKNOWN",
         "registration": identity.group("reg"),
         "departure": departure,
