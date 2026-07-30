@@ -176,16 +176,30 @@ def test_controlled_cdl_finding_includes_penalties_and_source(
     assert any("jettison system is deactivated" in detail for detail in result["details"])
 
 
-def test_asterisk_qualifies_exact_100_as_high_msa() -> None:
+def test_exact_100_star_is_a_boundary_not_high_msa() -> None:
+    """v1.3 strict trigger: only MSA strictly above 100 (10,000 ft) qualifies.
+
+    An exact ``100*`` row is a boundary - it never starts an exposure, and it
+    terminates an active one (the approved SQ352 example: exact 100* at LUSAL
+    terminates the ALUVO event).
+    """
     waypoints = [
         _wp("BEFORE", 1, 90, "DCT"),
         _wp("STAR100", 2, 100, "DCT", star=True),
         _wp("DROP", 3, 90, "DCT"),
     ]
-    events = detect_terrain_events(waypoints)
-    assert len(events) == 1
-    assert events[0]["first_high"]["name"] == "STAR100"
-    assert events[0]["terrain_event_id"] == "terrain:STAR100@2-STAR100@2"
+    assert detect_terrain_events(waypoints) == []
+
+    terminating = [
+        _wp("HIGH", 1, 130, "DCT", star=True),
+        _wp("STAR100", 2, 100, "DCT", star=True),
+        _wp("AFTER", 3, 120, "DCT", star=True),
+    ]
+    events = detect_terrain_events(terminating)
+    assert [
+        (event["first_high"]["name"], (event.get("drop") or {}).get("name"))
+        for event in events
+    ] == [("HIGH", "STAR100"), ("AFTER", None)]
 
 
 def test_same_profile_can_cover_two_separate_terrain_events(
@@ -773,7 +787,7 @@ def test_loaded_partial_index_emits_one_unmatched_result_per_terrain_event(
     assert data["threshold_drop_waypoint"] == "END"
 
 
-def test_sq24_high_msa_uses_minimal_11_4_and_11_37_chain(
+def test_sq24_high_msa_uses_minimal_profile_chain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     waypoints = [
@@ -823,11 +837,13 @@ def test_sq24_high_msa_uses_minimal_11_4_and_11_37_chain(
         },
         events,
     )
+    # v1.3: coverage is judged against the actual exposure legs (first to
+    # last high waypoint). The approach leg before TED is route context, so
+    # the minimal chain is 11-37 alone for each exposure window; 11-4 would
+    # be a redundant chart and must not be added.
     assert [item["profile"]["chart"] for item in matches] == [
-        "11-4",
         "11-37",
         "11-37",
     ]
     assert len({item["terrain_event_id"] for item in matches}) == 2
-    assert {item["profile"]["chart"] for item in matches} == {"11-4", "11-37"}
     assert all(item["coverage_complete"] for item in matches)

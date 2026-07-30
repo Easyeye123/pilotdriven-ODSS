@@ -671,7 +671,10 @@ def detect_terrain_events(waypoints: list[dict[str, Any]]) -> list[dict[str, Any
         msa = waypoint.get("msa_hundreds_ft")
         if msa is None:
             continue
-        if waypoint.get("msa_asterisk") or msa > 100:
+        # Strict v1.3 trigger: only MSA strictly above 10,000 ft qualifies.
+        # An exact 100* value is a boundary row - it terminates an active
+        # exposure (becoming its drop point) and never starts one.
+        if msa > 100:
             if not active:
                 preceding = last_msa
             active.append(waypoint)
@@ -829,9 +832,93 @@ def _profile_route_spans(
                     "airways": expected_airways,
                     "route_airways": route_airways,
                     "direction": direction,
+                    "match_class": "published-route",
                 }
             )
     return spans
+
+
+def _airway_alias_tokens(values: list[Any]) -> set[str]:
+    tokens: set[str] = set()
+    for value in values:
+        for part in str(value or "").upper().replace(" ", "").split("/"):
+            if not part:
+                continue
+            tokens.add(part)
+            if re.fullmatch(r"U[A-Z]{1,2}\d+", part):
+                tokens.add(part[1:])
+    return tokens
+
+
+def _corridor_spans(
+    profile: dict[str, Any],
+    waypoints: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Single-endpoint subsegment coverage along the chart's published corridor.
+
+    A chart whose route shares only one endpoint with the filed route still
+    protects the filed legs that run between the chart's own published points
+    (from, critical point, to) on the chart's published airways. The span is
+    bounded by the outermost chart points that are filed waypoints, so a chart
+    never extends past its own corridor onto same-named airway legs elsewhere
+    (the approved v1.3 example: chart 8-5 covers MATAL-TEMEL on SQ352 but must
+    not reach the separate ALUVO exposure east of its critical point, and
+    chart 8-7 is not promoted because its published leg adjacent to the shared
+    endpoint is a different airway than the filed leg).
+    """
+    names = [_route_waypoint_name(item) for item in waypoints]
+    from_aliases = _profile_aliases(profile, "from")
+    to_aliases = _profile_aliases(profile, "to")
+    critical_aliases = _profile_aliases(profile, "critical")
+    has_from = any(name in from_aliases for name in names)
+    has_to = any(name in to_aliases for name in names)
+    if has_from and has_to:
+        # Both endpoints filed: the published-route span logic owns this chart.
+        return []
+    airway_tokens = _airway_alias_tokens(profile.get("airways", []))
+    if not airway_tokens:
+        return []
+    ordered_groups: list[set[str]] = [from_aliases, critical_aliases, to_aliases]
+    filed_points: list[tuple[int, int]] = []
+    for chart_position, aliases in enumerate(ordered_groups):
+        for index, name in enumerate(names):
+            if name and name in aliases:
+                filed_points.append((index, chart_position))
+    if len({position for _, position in filed_points}) < 2:
+        return []
+    filed_points.sort()
+    chart_positions = [position for _, position in filed_points]
+    ascending = all(a <= b for a, b in zip(chart_positions, chart_positions[1:]))
+    descending = all(a >= b for a, b in zip(chart_positions, chart_positions[1:]))
+    if not ascending and not descending:
+        return []
+    start_index = filed_points[0][0]
+    end_index = filed_points[-1][0]
+    if end_index <= start_index:
+        return []
+    route_airways: list[str] = []
+    for index in range(start_index + 1, end_index + 1):
+        airway = waypoints[index].get("airway_in")
+        if not airway:
+            # FIR-boundary annotation rows carry no leg of their own.
+            continue
+        if not (_airway_alias_tokens([airway]) & airway_tokens):
+            return []
+        route_airways.append(str(airway).upper())
+    if not route_airways:
+        return []
+    return [
+        {
+            "start_index": start_index,
+            "end_index": end_index,
+            "route_start": names[start_index],
+            "route_end": names[end_index],
+            "airways": [str(value).upper() for value in profile.get("airways", [])],
+            "route_airways": route_airways,
+            "direction": "forward" if ascending else "reverse",
+            "match_class": "corridor-subsegment",
+        }
+    ]
 
 
 def match_profiles(
@@ -841,8 +928,9 @@ def match_profiles(
     waypoints = flight["route_waypoints"]
     matches: list[dict[str, Any]] = []
     for event in terrain_events:
-        event_start_wp = event.get("preceding") or event["first_high"]
-        event_start_index = waypoints.index(event_start_wp)
+        # Coverage is judged against the actual exposure legs (first to last
+        # high waypoint); the preceding point is route context only (v1.3).
+        event_start_index = waypoints.index(event["first_high"])
         event_end_index = waypoints.index(event["last_high"])
         required_edges = set(range(event_start_index, event_end_index))
         if not required_edges:
@@ -856,7 +944,10 @@ def match_profiles(
                 flight.get("aircraft_type"),
             ):
                 continue
-            for span in _profile_route_spans(profile, waypoints):
+            for span in (
+                _profile_route_spans(profile, waypoints)
+                + _corridor_spans(profile, waypoints)
+            ):
                 if event_end_index == event_start_index:
                     covered = (
                         {event_start_index}
@@ -880,13 +971,18 @@ def match_profiles(
                 }
                 chart = str(profile.get("chart") or "")
                 current = candidate_by_chart.get(chart)
-                candidate_score = (len(covered), -(span["end_index"] - span["start_index"]))
-                current_score = (
-                    (len(current["covered_edges"]), -(current["end_index"] - current["start_index"]))
-                    if current
-                    else (-1, 0)
-                )
-                if current is None or candidate_score > current_score:
+
+                def _score(item: dict[str, Any]) -> tuple[int, int, int]:
+                    class_rank = (
+                        1 if item.get("match_class") == "published-route" else 0
+                    )
+                    return (
+                        class_rank,
+                        len(item["covered_edges"]),
+                        -(item["end_index"] - item["start_index"]),
+                    )
+
+                if current is None or _score(candidate) > _score(current):
                     candidate_by_chart[chart] = candidate
 
         uncovered = set(required_edges)
@@ -904,6 +1000,7 @@ def match_profiles(
                 useful,
                 key=lambda entry: (
                     entry[0],
+                    1 if entry[1].get("match_class") == "published-route" else 0,
                     len(entry[1]["covered_edges"]),
                     entry[1]["end_index"] - entry[1]["start_index"],
                     str(entry[1]["profile"].get("chart") or ""),
@@ -929,6 +1026,7 @@ def match_profiles(
                     "route_start": item["route_start"],
                     "route_end": item["route_end"],
                     "direction": item["direction"],
+                    "match_class": item.get("match_class", "published-route"),
                     "coverage_complete": coverage_complete,
                     "uncovered_edge_count": len(uncovered),
                     "start_index": item["start_index"],

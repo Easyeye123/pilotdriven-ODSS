@@ -7,3 +7,6 @@ __pycache__/
 /tmp/
 pilotdriven_odss_dashboard/data/
 pilotdriven_odss_dashboard/visual-samples/
+
+# Proprietary reference briefs and CFP-derived fixtures stay out of git
+pilotdriven_odss_dashboard/tests/fixtures/reference-briefs/
