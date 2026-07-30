@@ -11,8 +11,10 @@ from urllib.parse import urlparse
 CDL_INDEX_ENV = "ODSS_CDL_INDEX_PATH"
 DEPRESS_INDEX_ENV = "ODSS_DEPRESS_PROFILE_INDEX_PATH"
 DEPRESS_INDEX_S3_ENV = "ODSS_DEPRESS_PROFILE_INDEX_S3_URI"
+DEPRESS_CHART_DIR_ENV = "ODSS_DEPRESS_CHART_DIR"
 TENANT_ID_ENV = "ODSS_TENANT_ID"
 MAX_DEPRESS_INDEX_BYTES = 5 * 1024 * 1024
+MAX_DEPRESS_CHART_BYTES = 8 * 1024 * 1024
 
 CDL_LIBRARY_METADATA: dict[str, Any] = {
     "title": "A350 Fleet Configuration Deviation List",
@@ -231,6 +233,102 @@ def load_depress_profiles() -> list[dict[str, Any]]:
         }
     )
     return []
+
+
+class ProfileChartUnavailableError(RuntimeError):
+    """Raised when a matched profile's chart artifact cannot be served.
+
+    The publication gate treats this as fail-closed: a report naming the
+    profile must not be released without the embedded chart.
+    """
+
+
+def load_profile_chart_bytes(profile: dict[str, Any]) -> bytes:
+    """Fetch and verify the single-page chart artifact for a matched profile.
+
+    The artifact must be pinned in the approved index (``chart_artifact_key``
+    + ``chart_sha256``). It is served from ``ODSS_DEPRESS_CHART_DIR`` or from
+    the same private S3 prefix as the mounted index; the bytes must match the
+    pinned hash exactly.
+    """
+    chart = str(profile.get("chart") or "")
+    artifact_key = str(profile.get("chart_artifact_key") or "").strip()
+    pinned_sha256 = str(profile.get("chart_sha256") or "").strip().lower()
+    if not artifact_key or not pinned_sha256:
+        raise ProfileChartUnavailableError(
+            f"Profile {chart or 'unknown'} has no pinned chart artifact in the "
+            "approved index"
+        )
+    if ".." in artifact_key or artifact_key.startswith(("/", "s3:")):
+        raise ProfileChartUnavailableError(
+            f"Profile {chart} chart artifact key is not a safe relative key"
+        )
+
+    chart_dir = os.environ.get(DEPRESS_CHART_DIR_ENV)
+    index_s3_uri = os.environ.get(DEPRESS_INDEX_S3_ENV)
+    if chart_dir:
+        path = Path(chart_dir).expanduser() / Path(artifact_key).name
+        if not path.is_file():
+            raise ProfileChartUnavailableError(
+                f"Profile {chart} chart artifact is missing: {path}"
+            )
+        if path.stat().st_size > MAX_DEPRESS_CHART_BYTES:
+            raise ProfileChartUnavailableError(
+                f"Profile {chart} chart artifact exceeds the size limit"
+            )
+        raw = path.read_bytes()
+    elif index_s3_uri:
+        parsed = urlparse(str(index_s3_uri))
+        key_prefix = parsed.path.lstrip("/").rsplit("/", 1)[0]
+        artifact_s3_key = f"{key_prefix}/{artifact_key}" if key_prefix else artifact_key
+        try:
+            import boto3
+        except ImportError as exc:  # pragma: no cover - deployment dependency gate
+            raise ProfileChartUnavailableError(
+                "boto3 is required to fetch private chart artifacts"
+            ) from exc
+        try:
+            response = boto3.client("s3").get_object(
+                Bucket=parsed.netloc,
+                Key=artifact_s3_key,
+            )
+        except Exception as exc:
+            raise ProfileChartUnavailableError(
+                f"Profile {chart} chart artifact could not be fetched from "
+                "private storage"
+            ) from exc
+        body = response.get("Body")
+        if body is None or not callable(getattr(body, "read", None)):
+            raise ProfileChartUnavailableError(
+                f"Profile {chart} chart artifact response has no body"
+            )
+        try:
+            raw = body.read(MAX_DEPRESS_CHART_BYTES + 1)
+        finally:
+            close = getattr(body, "close", None)
+            if callable(close):
+                close()
+        if not isinstance(raw, (bytes, bytearray)):
+            raise ProfileChartUnavailableError(
+                f"Profile {chart} chart artifact body must be bytes"
+            )
+        raw = bytes(raw)
+        if len(raw) > MAX_DEPRESS_CHART_BYTES:
+            raise ProfileChartUnavailableError(
+                f"Profile {chart} chart artifact exceeds the size limit"
+            )
+    else:
+        raise ProfileChartUnavailableError(
+            f"No chart artifact source is configured; set {DEPRESS_CHART_DIR_ENV} "
+            f"or mount the index via {DEPRESS_INDEX_S3_ENV}"
+        )
+
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != pinned_sha256:
+        raise ProfileChartUnavailableError(
+            f"Profile {chart} chart artifact hash does not match the approved index"
+        )
+    return raw
 
 
 def load_cdl_references() -> dict[str, dict[str, Any]]:

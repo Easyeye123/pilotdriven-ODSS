@@ -256,6 +256,113 @@ def parse_effective_pages(text: str, *, first_chart_page: int = 22) -> dict[str,
     }
 
 
+_ALTITUDE = re.compile(r"\b(\d{1,2}),000\s*(?:FT|ft)\b")
+_DISTANCE = re.compile(r"\b(\d{1,3})\s*(?:NM|nm)\b")
+
+
+def parse_chart_page(text: str, profile: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract drawable schematic facts from one profile chart page.
+
+    Returns None (fail closed) unless the page can be validated against the
+    profile's own LOEP row: the corridor header must name both endpoints and
+    the critical point must appear on the page. Only a validated page may
+    drive the Level 1 analysis card; anything else falls back to the
+    index-only card.
+    """
+    upper = text.upper()
+    endpoints = [str(profile.get("from") or "").upper(), str(profile.get("to") or "").upper()]
+    critical = str(profile.get("critical") or "").upper()
+    if not all(value and value in upper for value in endpoints + [critical]):
+        return None
+    header = None
+    for line in upper.splitlines():
+        if "DEPRESSURIZATION ALONG" in line:
+            header = " ".join(line.split())
+            break
+    if header is None or not all(value in header for value in endpoints):
+        return None
+
+    body = upper.split("DEPRESSURIZATION ALONG", 1)[1]
+    body = body.split("IF DEPRESSURIZATION OCCURS", 1)[0]
+
+    # Chart points in reading order: both endpoints, the critical point and
+    # any intermediate fixes that carry a leg distance next to them.
+    ordered: list[str] = []
+    for line in body.splitlines():
+        for token in re.findall(r"\b[A-Z]{4,5}\b", line):
+            if token in ordered:
+                continue
+            if token in endpoints or token == critical:
+                ordered.append(token)
+            elif _DISTANCE.search(line) and token not in {
+                "ALONG", "LEVEL", "FIRST", "POINT",
+            }:
+                ordered.append(token)
+    if not (set(endpoints) <= set(ordered) and critical in ordered):
+        return None
+
+    altitudes = [f"{value},000 ft" for value in _ALTITUDE.findall(body)]
+    distances = [int(value) for value in _DISTANCE.findall(body)]
+    note = None
+    if "IF DEPRESSURIZATION OCCURS" in upper:
+        tail = upper.split("IF DEPRESSURIZATION OCCURS", 1)[1]
+        note = " ".join(
+            ("IF DEPRESSURIZATION OCCURS" + tail.split("\n\n", 1)[0]).split()
+        )
+    return {
+        "header": header,
+        "points": ordered,
+        "critical": critical,
+        "level_off_altitudes": altitudes,
+        "segment_distances_nm": distances,
+        "turn_note": note,
+    }
+
+
+def extract_chart_artifacts(
+    pdf_path: Path,
+    profiles: list[dict[str, Any]],
+    charts_dir: Path,
+) -> None:
+    """Write one single-page PDF per profile chart and pin its sha256.
+
+    Each profile gains ``chart_artifact_key`` + ``chart_sha256`` and a parsed
+    ``schematic`` (or ``schematic_status: unavailable``). Artifact files live
+    beside the index in private storage, never inside a repository.
+    """
+    from pypdf import PdfReader, PdfWriter
+
+    reader = PdfReader(str(pdf_path))
+    charts_dir.mkdir(parents=True, exist_ok=True)
+    for profile in profiles:
+        page_number = profile.get("chart_page")
+        chart = str(profile.get("chart") or "")
+        if not chart or not isinstance(page_number, int):
+            continue
+        if page_number < 1 or page_number > len(reader.pages):
+            raise ValueError(
+                f"Chart {chart} points at page {page_number}, outside the source document"
+            )
+        writer = PdfWriter()
+        writer.add_page(reader.pages[page_number - 1])
+        artifact_path = charts_dir / f"profile-{chart}.pdf"
+        with artifact_path.open("wb") as handle:
+            writer.write(handle)
+        profile["chart_artifact_key"] = f"charts/profile-{chart}.pdf"
+        profile["chart_sha256"] = hashlib.sha256(
+            artifact_path.read_bytes()
+        ).hexdigest()
+        schematic = parse_chart_page(
+            _pdftotext(pdf_path, page_number, page_number),
+            profile,
+        )
+        if schematic is None:
+            profile["schematic_status"] = "unavailable"
+        else:
+            profile["schematic_status"] = "parsed"
+            profile["schematic"] = schematic
+
+
 def build_index(
     pdf_path: Path,
     *,
@@ -263,6 +370,7 @@ def build_index(
     title: str,
     issue_date: str,
     coverage_scope: str,
+    charts_dir: Path | None = None,
 ) -> dict[str, Any]:
     first_page = _pdftotext(pdf_path, 1, 1).lower()
     if "partial issue" in first_page and coverage_scope == "complete":
@@ -270,6 +378,8 @@ def build_index(
             "The source declares itself a partial issue; it cannot be indexed as complete"
         )
     parsed = parse_effective_pages(_pdftotext(pdf_path, 7, 21))
+    if charts_dir is not None:
+        extract_chart_artifacts(pdf_path, parsed["profiles"], charts_dir)
     source_sha256 = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
     return {
         "schema_version": 1,
@@ -303,6 +413,15 @@ def main() -> int:
         choices=("partial_issue", "complete"),
         default="partial_issue",
     )
+    parser.add_argument(
+        "--charts-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Also extract one single-page chart PDF per profile into this "
+            "private directory and pin each artifact's sha256 in the index"
+        ),
+    )
     args = parser.parse_args()
     index = build_index(
         args.pdf,
@@ -310,6 +429,7 @@ def main() -> int:
         title=args.title,
         issue_date=args.issue_date,
         coverage_scope=args.coverage_scope,
+        charts_dir=args.charts_dir,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
