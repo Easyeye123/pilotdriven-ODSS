@@ -20,6 +20,8 @@ from .briefing import (
     project_route_map,
 )
 from .constants import edto_sectors, format_actm
+from .controlled_library import DEPRESS_LIBRARY_METADATA
+from .depress_analysis_page import draw_depressurisation_analysis
 from .engines import detect_terrain_events
 from .pilot_briefing import (
     normalize_notam_references,
@@ -2664,7 +2666,16 @@ def render_level1_visual(
         PageBreak(),
         _FullPageFlowable(lambda canvas, width, height: _draw_operational_detail(canvas, flight, findings, briefing, width, height)),
         PageBreak(),
-        _FullPageFlowable(lambda canvas, width, height: _draw_route_detail(canvas, flight, findings, briefing, width, height)),
+        _FullPageFlowable(
+            lambda canvas, width, height: draw_depressurisation_analysis(
+                canvas,
+                flight,
+                findings,
+                width,
+                height,
+                issue_date=DEPRESS_LIBRARY_METADATA.get("issue_date"),
+            )
+        ),
     ]
     document.build(story)
 

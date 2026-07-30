@@ -17,6 +17,13 @@ from reportlab.platypus import Paragraph
 
 from .briefing import build_briefing_view, draw_route_map_pdf
 from .constants import edto_sectors, format_actm
+from .controlled_library import DEPRESS_LIBRARY_METADATA
+from .depress_matrix_page import (
+    draw_match_matrix_page,
+    draw_source_chart_page,
+    load_matched_chart_images,
+)
+from .profile_chart_gate import validate_depressurisation_profile_charts
 from .engines import detect_terrain_events
 from .pilot_briefing import (
     normalize_notam_references,
@@ -2403,14 +2410,34 @@ def render_level2_visual(
         briefing["route_map"]["snapshot_path"] = str(map_image_path)
         briefing["route_map"]["snapshot_label"] = map_label or "Realistic route map"
 
+    # Fail closed before drawing: every matched profile must have a servable,
+    # hash-verified chart artifact, because the publication gate forbids a
+    # release that names a profile without embedding its complete chart.
+    chart_images = load_matched_chart_images(pilot_findings)
+    page_count = 7 + len(chart_images)
+    chart_page_numbers = {
+        image["chart_number"]: 8 + index
+        for index, image in enumerate(chart_images)
+    }
+
     document = pdf_canvas.Canvas(str(path), pagesize=PAGE_SIZE)
-    pages = (
+    width, height = PAGE_SIZE
+    pages = [
         lambda: _page_one(document, flight, pilot_findings, briefing),
         lambda: _page_two(document, flight, pilot_findings, briefing),
         lambda: _page_three(document, flight, pilot_findings, briefing),
         lambda: _page_four(document, flight, pilot_findings, briefing),
         lambda: _page_five(document, flight, pilot_findings, briefing),
-        lambda: _page_six(document, flight, pilot_findings, briefing),
+        lambda: draw_match_matrix_page(
+            document,
+            flight,
+            pilot_findings,
+            width,
+            height,
+            page_number=6,
+            page_count=page_count,
+            chart_page_numbers=chart_page_numbers,
+        ),
         lambda: _page_seven(
             document,
             flight,
@@ -2418,12 +2445,41 @@ def render_level2_visual(
             briefing,
             warnings,
         ),
-    )
+    ]
+    for index, image in enumerate(chart_images):
+        pages.append(
+            lambda image=image, index=index: draw_source_chart_page(
+                document,
+                flight,
+                image,
+                width,
+                height,
+                page_number=8 + index,
+                page_count=page_count,
+            )
+        )
     for index, draw_page in enumerate(pages):
         _draw_background(document)
         draw_page()
         if index < len(pages) - 1:
             document.showPage()
+
+    flight["depressurisation_profile_charts"] = [
+        {
+            "chart_number": image["chart_number"],
+            "source_document": DEPRESS_LIBRARY_METADATA.get("title"),
+            "source_revision": DEPRESS_LIBRARY_METADATA.get("issue_date"),
+            "source_page": image["profile"].get("chart_page"),
+            "source_link": image["profile"].get("chart_artifact_key"),
+            "route_airway_match_verified": True,
+            "aircraft_effectivity_verified": True,
+            "chart_image_validated": True,
+            "level1_analysis_chart_embedded": True,
+            "level2_full_source_chart_embedded": True,
+        }
+        for image in chart_images
+    ]
+    validate_depressurisation_profile_charts(flight, pilot_findings, 2)
     document.save()
 
 

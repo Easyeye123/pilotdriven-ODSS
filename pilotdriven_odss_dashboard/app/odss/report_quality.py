@@ -38,7 +38,7 @@ _LEVEL_1_PAGE_2_TITLE = re.compile(
     re.IGNORECASE,
 )
 _LEVEL_1_PAGE_3_TITLE = re.compile(
-    r"\bS(?:IA|Q)\s*\d+\s*-\s*HIGH TERRAIN EXPOSURE\b",
+    r"\bDEPRESSURISATION PROFILE ANALYSIS\b",
     re.IGNORECASE,
 )
 _LEVEL_1_NOTAM_WINDOW = re.compile(
@@ -60,9 +60,10 @@ _LEVEL_2_PAGE_TITLES = (
     "FLIGHT-WINDOW NOTAM APPLICABILITY",
     "EDTO SECTORS AND SUITABILITY INPUTS",
     "OCEANIC AND FIR COMMUNICATIONS",
-    "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE",
+    "DEPRESSURISATION PROFILE MATCH MATRIX",
     "WEATHER, VAAC AND PROMOTION RESULT",
 )
+_LEVEL_2_SOURCE_CHART_MARKER = "LEVEL 2 SOURCE CHART - PROFILE"
 
 
 def validate_report_pdf(
@@ -93,10 +94,12 @@ def validate_report_pdf(
             "LEVEL_1_PAGE_CONTRACT",
             f"Level 1 must contain exactly 3 pages; generated {page_count}.",
         ))
-    elif level == 2 and page_count != 7:
+    elif level == 2 and page_count < 7:
+        # Seven structured pages plus one appended page per embedded
+        # depressurisation source chart (v1.3 publication gate).
         violations.append(ReportQualityViolation(
             "LEVEL_2_PAGE_CONTRACT",
-            f"Level 2 must contain exactly 7 pages; generated {page_count}.",
+            f"Level 2 must contain at least 7 pages; generated {page_count}.",
         ))
     elif level == 3:
         maximum = 1 if str(level3_status).upper() == "PARTIAL" else 5
@@ -170,7 +173,7 @@ def validate_report_pdf(
                     f"Level 1 contains retired duplicate section heading: {retired_heading}.",
                 ))
 
-    if level == 2 and page_count == 7:
+    if level == 2 and page_count >= 7:
         for page_index, required_title in enumerate(_LEVEL_2_PAGE_TITLES):
             if required_title.lower() not in extracted_pages[page_index].lower():
                 violations.append(ReportQualityViolation(
@@ -178,6 +181,18 @@ def validate_report_pdf(
                     (
                         f"Level 2 page {page_index + 1} must contain "
                         f"{required_title}."
+                    ),
+                ))
+        for page_index in range(7, page_count):
+            if (
+                _LEVEL_2_SOURCE_CHART_MARKER.lower()
+                not in extracted_pages[page_index].lower()
+            ):
+                violations.append(ReportQualityViolation(
+                    "LEVEL_2_SOURCE_CHART_STRUCTURE",
+                    (
+                        f"Level 2 page {page_index + 1} must be an embedded "
+                        "depressurisation source-chart page."
                     ),
                 ))
 

@@ -48,7 +48,7 @@ def test_quality_gate_accepts_three_page_a4_landscape_level1(tmp_path: Path) -> 
                 "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS\n"
                 "Filed route from CFP coordinates",
             "SQ304 - OPERATIONAL TIMING",
-            "SQ304 - HIGH TERRAIN EXPOSURE",
+            "DEPRESSURISATION PROFILE ANALYSIS",
         ],
     )
 
@@ -91,7 +91,7 @@ def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:
             [
                 "Natural Earth 1:110m land context",
                 "SQ304 - OPERATIONAL TIMING",
-                "SQ304 - HIGH TERRAIN EXPOSURE",
+                "DEPRESSURISATION PROFILE ANALYSIS",
             ],
             "LEVEL_1_NOTAM_WINDOW_HEADING",
         ),
@@ -100,7 +100,7 @@ def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:
                 "APPLICABLE NOTAMS WITHIN STD / STA +/- 2 HOURS\n"
                 "Natural Earth 1:110m land context",
                 "SQ304 - OPERATIONAL DETAIL",
-                "SQ304 - HIGH TERRAIN EXPOSURE",
+                "DEPRESSURISATION PROFILE ANALYSIS",
             ],
             "LEVEL_1_PAGE_2_STRUCTURE",
         ),
@@ -119,7 +119,7 @@ def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:
                 "Natural Earth 1:110m land context",
                 "SQ304 - OPERATIONAL TIMING\n"
                 "Natural Earth 1:110m land context",
-                "SQ304 - HIGH TERRAIN EXPOSURE",
+                "DEPRESSURISATION PROFILE ANALYSIS",
             ],
             "LEVEL_1_SINGLE_MAP_CONTRACT",
         ),
@@ -164,7 +164,7 @@ def test_quality_gate_requires_fixed_level2_page_contract(tmp_path: Path) -> Non
             "FLIGHT-WINDOW NOTAM APPLICABILITY",
             "EDTO SECTORS AND SUITABILITY INPUTS",
             "OCEANIC AND FIR COMMUNICATIONS",
-            "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE",
+            "DEPRESSURISATION PROFILE MATCH MATRIX",
             "WEATHER, VAAC AND PROMOTION RESULT",
         ],
     )
@@ -186,7 +186,7 @@ def test_quality_gate_rejects_wrong_level2_page_order(tmp_path: Path) -> None:
             "PERFORMANCE, FUEL AND AIRPORT BASIS",
             "EDTO SECTORS AND SUITABILITY INPUTS",
             "OCEANIC AND FIR COMMUNICATIONS",
-            "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE",
+            "DEPRESSURISATION PROFILE MATCH MATRIX",
             "WEATHER, VAAC AND PROMOTION RESULT",
         ],
     )

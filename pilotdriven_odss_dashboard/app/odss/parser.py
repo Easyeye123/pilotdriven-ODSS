@@ -53,6 +53,14 @@ def _int_group(text: str, pattern: str, default: int | None = None) -> int | Non
     return int(match.group(1)) if match else default
 
 
+def _first_group(text: str, *patterns: str) -> str | None:
+    for pattern in patterns:
+        match = re.search(pattern, text, re.MULTILINE)
+        if match:
+            return match.group(1)
+    return None
+
+
 def _weight_group_kg(text: str, pattern: str) -> int | None:
     match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
     if not match:
@@ -638,6 +646,11 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         },
         "flight_number": identity.group("flight"),
         "flight_date": identity.group("date"),
+        "ofp_identifier": _first_group(
+            page1,
+            r"\bOFP\s*:?\s*(\d+/\d+/\d+)\b",
+            r"\bPLAN\s+(\d+/\d+/\d+)\b",
+        ),
         "aircraft_type": aircraft_match.group("aircraft") if aircraft_match else "UNKNOWN",
         "registration": identity.group("reg"),
         "departure": departure,

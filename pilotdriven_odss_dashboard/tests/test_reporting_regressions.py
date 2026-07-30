@@ -465,26 +465,19 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "ROUTE GATE" in second
     assert "TAKEOFF WEIGHT" in second
     assert "DATA COVERAGE" in second
-    assert "SQ304 - HIGH TERRAIN EXPOSURE" in third
-    assert "Geographic route strip - validated CFP MSA points only" in third
+    assert "DEPRESSURISATION PROFILE ANALYSIS" in third
+    assert "STRICT MSA >100* WINDOWS" in third
     assert "FIR / COMMUNICATIONS" not in third
-    assert "ACTUAL EXPOSURE" in third
-    assert "PROFILE / COVERAGE" in third
-    assert "BOUNDARY LOGIC" in third
-    assert "PROFILE COVERAGE" in third
+    assert "UNMATCHED EXPOSURES - NO APPROVED CHART SUBSTITUTED" in third
     assert "PROFILE FINDINGS" not in third
-    assert "approved controlled profile index is not mounted" in third
+    assert "manual profile-index review" in third
     assert third.count(
         "No controlled profile is confirmed; manual chart-index review is required."
     ) == 0
-    assert third.count("No exact profile confirmed - review required") >= 1
-    assert third.lower().count("manual chart-index review is required") == 1
     assert "ACTM / CALCULATED UTC" not in third
-    assert "first validated CFP high-MSA trigger" in third
-    assert "first subsequent point where that trigger clears" in third
     for page_number, page_text in enumerate((first, second, third), start=1):
-        assert "A350-941 / 9V-SMG" in page_text
-        assert f"PAGE {page_number} OF 3" in page_text
+        assert "A350-941" in page_text and "9V-SMG" in page_text
+        assert f"page {page_number} of 3" in page_text.lower()
         assert f"Page {page_number} of 3" in page_text
     assert "representative gates" not in second
     assert "CFP p." not in second
@@ -522,17 +515,65 @@ def test_confirmed_profile_is_prominent_in_l1_and_complete_in_l2(
     }
 
     assert is_confirmed_profile_finding(finding) is True
-    for level, page_index, expected_pages in ((1, 2, 3), (2, 5, 7)):
-        path = tmp_path / f"confirmed-profile-level-{level}.pdf"
-        render_pdf(flight, [finding], [], level, path)
-        reader = PdfReader(path)
-        assert len(reader.pages) == expected_pages
-        page = " ".join((reader.pages[page_index].extract_text() or "").split())
-        assert "GEN-1 VOMF-EBBR / CP POINT" in page
-        assert "UTC" in page
-        if level == 2:
-            assert "DUR" in page
-            assert "330 min" in page
+
+    # v1.3 gate: a named profile requires a servable, hash-pinned chart
+    # artifact; give the synthetic GEN-1 profile one.
+    from reportlab.pdfgen import canvas as _test_canvas
+
+    chart_dir = tmp_path / "charts"
+    chart_dir.mkdir()
+    chart_path = chart_dir / "profile-GEN-1.pdf"
+    stub = _test_canvas.Canvas(str(chart_path))
+    stub.drawString(72, 720, "GEN-1 synthetic source chart")
+    stub.save()
+    import hashlib as _hashlib
+    import os as _os
+
+    from app.odss import engines as _engines
+
+    synthetic_profile = {
+        "chart": "GEN-1",
+        "chart_page": 1,
+        "from": "VOMF",
+        "from_aliases": ["VOMF"],
+        "to": "EBBR",
+        "to_aliases": ["EBBR"],
+        "critical": "POINT",
+        "critical_aliases": ["POINT"],
+        "airways": ["DCT"],
+        "effectivity": [],
+        "chart_artifact_key": "charts/profile-GEN-1.pdf",
+        "chart_sha256": _hashlib.sha256(chart_path.read_bytes()).hexdigest(),
+    }
+    original_profiles = _engines.DEPRESS_PROFILES
+    original_chart_dir = _os.environ.get("ODSS_DEPRESS_CHART_DIR")
+    _engines.DEPRESS_PROFILES = [synthetic_profile]
+    _os.environ["ODSS_DEPRESS_CHART_DIR"] = str(chart_dir)
+    try:
+        for level, page_index, expected_pages in ((1, 2, 3), (2, 5, 8)):
+            path = tmp_path / f"confirmed-profile-level-{level}.pdf"
+            render_pdf(flight, [finding], [], level, path)
+            reader = PdfReader(path)
+            assert len(reader.pages) == expected_pages
+            page = " ".join(
+                (reader.pages[page_index].extract_text() or "").split()
+            )
+            assert "GEN-1" in page
+            assert "POINT" in page
+            if level == 1:
+                assert "PROFILE GEN-1" in page
+            if level == 2:
+                assert "MATCH" in page
+                last = " ".join(
+                    (reader.pages[-1].extract_text() or "").split()
+                )
+                assert "LEVEL 2 SOURCE CHART - PROFILE GEN-1" in last
+    finally:
+        _engines.DEPRESS_PROFILES = original_profiles
+        if original_chart_dir is None:
+            _os.environ.pop("ODSS_DEPRESS_CHART_DIR", None)
+        else:
+            _os.environ["ODSS_DEPRESS_CHART_DIR"] = original_chart_dir
 
 
 def test_partial_profile_is_never_presented_as_confirmed() -> None:
@@ -647,7 +688,7 @@ def test_level2_matches_seven_page_operational_contract(tmp_path: Path) -> None:
     assert "OCEANIC AND FIR COMMUNICATIONS" in pages[4]
     assert "PILOT USE" not in pages[4]
     assert "Crossing time parsed." not in pages[4]
-    assert "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE" in pages[5]
+    assert "DEPRESSURISATION PROFILE MATCH MATRIX" in pages[5]
     assert "WEATHER, VAAC AND PROMOTION RESULT" in pages[6]
     assert "see the dedicated Level 2 section" not in pages[6]
     assert all(f"Page {index} of 7" in text for index, text in enumerate(pages, 1))
@@ -674,7 +715,7 @@ def test_level2_preserves_page_contract_when_sections_are_sparse(tmp_path: Path)
     page_text = [(page.extract_text() or "").strip() for page in reader.pages]
     assert len(reader.pages) == 7
     assert "FLIGHT-WINDOW NOTAM APPLICABILITY" in page_text[2]
-    assert "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE" in page_text[5]
+    assert "DEPRESSURISATION PROFILE MATCH MATRIX" in page_text[5]
     assert "WEATHER, VAAC AND PROMOTION RESULT" in page_text[6]
     assert "Coverage note:" not in page_text[6]
 
@@ -1232,8 +1273,8 @@ def test_level2_consolidates_unavailable_profile_wording_on_page_six(
         (PdfReader(path).pages[5].extract_text() or "").split()
     )
     assert "No controlled profile is confirmed" not in page_six
-    assert page_six.lower().count("controlled profile") == 1
-    assert "otherwise chart review is required" in page_six.lower()
+    assert "depressurisation profile match matrix" in page_six.lower()
+    assert "no nearby or generic profile is substituted" in page_six.lower()
 
 
 def test_route_map_label_hides_renderer_fallback_internals() -> None:
