@@ -4,8 +4,10 @@ on:
   push:
     branches:
       - feature/v0.6-pilotdriven-handoff
+      - feature/helpyou-framework-v1
     paths:
       - "integration/v0.6/**"
+      - "integration/helpyou/**"
       - "docs/**"
       - "HANDOFF_MANIFEST.md"
       - "README.md"
@@ -16,6 +18,7 @@ on:
   pull_request:
     paths:
       - "integration/v0.6/**"
+      - "integration/helpyou/**"
       - "docs/**"
       - "HANDOFF_MANIFEST.md"
       - "README.md"
@@ -50,6 +53,7 @@ jobs:
         run: |
           python -m compileall -q pilotdriven_odss_dashboard/app
           python -m compileall -q integration/v0.6/reference/odss_map_v06
+          python -m compileall -q integration/helpyou
 
       - name: Test working dashboard
         working-directory: pilotdriven_odss_dashboard
@@ -60,6 +64,10 @@ jobs:
         env:
           PYTHONPATH: .
         run: pytest -q
+
+      - name: Test Helpyou policy
+        working-directory: integration/helpyou
+        run: python -m unittest -v test_helpyou_policy.py
 
       - name: Build complete handoff archive
         run: |
