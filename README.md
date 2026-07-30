@@ -48,6 +48,18 @@ HANDOFF_MANIFEST.md
   File-level handoff inventory
 ```
 
+## Helpyou framework
+
+The first source-governed Helpyou product and integration baseline is documented at:
+
+1. [`docs/helpyou/README.md`](docs/helpyou/README.md)
+2. [`docs/helpyou/HELPYOU_SYSTEM_REQUIREMENTS_V1.md`](docs/helpyou/HELPYOU_SYSTEM_REQUIREMENTS_V1.md)
+3. [`docs/helpyou/HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md`](docs/helpyou/HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md)
+4. [`docs/helpyou/HELPYOU_DATA_CONTRACTS_V1.md`](docs/helpyou/HELPYOU_DATA_CONTRACTS_V1.md)
+5. [`integration/helpyou/README.md`](integration/helpyou/README.md)
+
+Helpyou routes Lido CFPs to ODSS, keeps pilot memory outside the ODSS evidence boundary, uses Axiomatic Design to structure teaching replies, and activates Endsley, Rasmussen and developmental CBTA review only when pilot reasoning is available.
+
 ### v0.6 architecture
 
 ```text
@@ -91,8 +103,9 @@ python -m uvicorn app.main:app \
 1. [`HANDOFF_MANIFEST.md`](HANDOFF_MANIFEST.md)
 2. [`docs/handoff/PHASES_1_TO_7_IMPLEMENTATION.md`](docs/handoff/PHASES_1_TO_7_IMPLEMENTATION.md)
 3. [`docs/handoff/PILOTDRIVEN_COMBINATION_GUIDE.md`](docs/handoff/PILOTDRIVEN_COMBINATION_GUIDE.md)
-4. [`docs/architecture/ADR-006-realistic-map-rendering.md`](docs/architecture/ADR-006-realistic-map-rendering.md)
-5. [`integration/v0.6/README.md`](integration/v0.6/README.md)
+4. [`docs/helpyou/README.md`](docs/helpyou/README.md)
+5. [`docs/architecture/ADR-006-realistic-map-rendering.md`](docs/architecture/ADR-006-realistic-map-rendering.md)
+6. [`integration/v0.6/README.md`](integration/v0.6/README.md)
 
 ## Important
 
