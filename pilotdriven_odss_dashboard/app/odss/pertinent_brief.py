@@ -19,6 +19,7 @@ from .briefing import (
     draw_route_map_pdf,
     project_route_map,
 )
+from . import brief_theme as theme
 from .constants import edto_sectors, format_actm
 from .controlled_library import DEPRESS_LIBRARY_METADATA
 from .depress_analysis_page import draw_depressurisation_analysis
@@ -44,22 +45,22 @@ PAGE_SIZE = landscape(A4)
 
 # Information-category colours. Urgency is communicated separately.
 CATEGORY_COLOURS = {
-    "departure": "#2F80ED",
-    "destination": "#7C4DFF",
-    "edto": "#2EAD74",
-    "weather": "#D99116",
-    "communications": "#0F8B8D",
-    "terrain": "#D97706",
-    "critical": "#C62828",
-    "neutral": "#64748B",
+    "departure": "#2DB4F0",
+    "destination": "#8B5CF6",
+    "edto": "#38C18C",
+    "weather": "#F4A91D",
+    "communications": "#35C0BC",
+    "terrain": "#FFB21A",
+    "critical": "#FF5B68",
+    "neutral": "#6D8798",
 }
 
-_DARK = colors.HexColor("#07111F")
-_PANEL = colors.HexColor("#0D1B2C")
-_PANEL_2 = colors.HexColor("#13283E")
-_LINE = colors.HexColor("#28425F")
-_TEXT = colors.HexColor("#E8F2FF")
-_MUTED = colors.HexColor("#93A4B8")
+_DARK = theme.PAGE_BG
+_PANEL = theme.PANEL_DEEP
+_PANEL_2 = theme.PANEL
+_LINE = theme.LINE
+_TEXT = theme.TEXT
+_MUTED = theme.MUTED
 _WHITE_BG = colors.HexColor("#F4F7FA")
 _NAVY = colors.HexColor("#173B65")
 
@@ -94,7 +95,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "dark": ParagraphStyle(
             "Pertinent dark",
             parent=base["BodyText"],
-            fontName="Helvetica",
+            fontName=theme.SANS,
             fontSize=REPORT_TYPOGRAPHY["body"],
             leading=12.6,
             textColor=_TEXT,
@@ -104,7 +105,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "dark_small": ParagraphStyle(
             "Pertinent dark small",
             parent=base["BodyText"],
-            fontName="Helvetica",
+            fontName=theme.SANS,
             fontSize=REPORT_TYPOGRAPHY["body_small"],
             leading=12.0,
             textColor=_TEXT,
@@ -114,7 +115,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "light": ParagraphStyle(
             "Pertinent light",
             parent=base["BodyText"],
-            fontName="Helvetica",
+            fontName=theme.SANS,
             fontSize=REPORT_TYPOGRAPHY["body_light"],
             leading=12.6,
             textColor=colors.HexColor("#1F2937"),
@@ -124,7 +125,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "light_small": ParagraphStyle(
             "Pertinent light small",
             parent=base["BodyText"],
-            fontName="Helvetica",
+            fontName=theme.SANS,
             fontSize=REPORT_TYPOGRAPHY["body_light_small"],
             leading=12.0,
             textColor=colors.HexColor("#1F2937"),
@@ -134,7 +135,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "metric": ParagraphStyle(
             "Pertinent metric",
             parent=base["BodyText"],
-            fontName="Helvetica",
+            fontName=theme.SANS,
             fontSize=REPORT_TYPOGRAPHY["metric"],
             leading=12.0,
             alignment=TA_CENTER,
@@ -253,7 +254,7 @@ def _draw_panel(
     canvas.rect(x, y + height - title_height, width, title_height / 2, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
     canvas.setFont(
-        "Helvetica-Bold",
+        theme.SANS_BOLD,
         6.4 if len(title) > 28 else REPORT_TYPOGRAPHY["panel_title"],
     )
     canvas.drawString(x + 3 * mm, y + height - 4.9 * mm, title)
@@ -383,10 +384,10 @@ def _draw_centered_metric_cell(
     canvas.rect(x, y, width, height, fill=1, stroke=1)
     centre_y = y + height / 2
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica-Bold", 4.8)
+    canvas.setFont(theme.SANS_BOLD, 4.8)
     canvas.drawCentredString(x + width / 2, centre_y + 1.6 * mm, str(label))
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 6.5)
+    canvas.setFont(theme.SANS_BOLD, 6.5)
     canvas.drawCentredString(x + width / 2, centre_y - 2.6 * mm, str(value))
 
 
@@ -459,7 +460,7 @@ def _draw_compact_table(
     column_x = x
     for index, ((label, _), column_width) in enumerate(zip(columns, widths)):
         canvas.setFillColor(colors.white)
-        canvas.setFont("Helvetica-Bold", REPORT_TYPOGRAPHY["table_header"])
+        canvas.setFont(theme.SANS_BOLD, REPORT_TYPOGRAPHY["table_header"])
         canvas.drawString(
             column_x + 2 * mm,
             y + height - 4.8 * mm,
@@ -677,7 +678,7 @@ def _draw_route_evidence_chart(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 3.5, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 6.2)
+    canvas.setFont(theme.SANS_BOLD, 6.2)
     canvas.drawString(x + 3 * mm, y + height - 5.3 * mm, title[:58])
     note = (
         "Geographic route strip - validated CFP MSA points only"
@@ -685,7 +686,7 @@ def _draw_route_evidence_chart(
         else "CFP route coordinates and EDTO times"
     )
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica", 4.5)
+    canvas.setFont(theme.SANS, 4.5)
     canvas.drawRightString(x + width - 3 * mm, y + height - 5.2 * mm, note)
 
     plot_x = x + 3 * mm
@@ -702,7 +703,7 @@ def _draw_route_evidence_chart(
     projected = projection.get("points") or []
     if len(projected) < 2:
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica-Bold", 7)
+        canvas.setFont(theme.SANS_BOLD, 7)
         canvas.drawCentredString(
             x + width / 2,
             y + height / 2,
@@ -791,8 +792,8 @@ def _draw_route_evidence_chart(
         if mode == "terrain" and msa is not None:
             label += f" {int(msa):03d}{'*' if point.get('msa_asterisk') else ''}"
         canvas.setFillColor(colour)
-        canvas.setFont("Helvetica-Bold", 4.4)
-        label_width = pdfmetrics.stringWidth(label[:22], "Helvetica-Bold", 4.4)
+        canvas.setFont(theme.SANS_BOLD, 4.4)
+        label_width = pdfmetrics.stringWidth(label[:22], theme.SANS_BOLD, 4.4)
         dx = (
             -label_width - 3
             if px > plot_x + plot_width * 0.76
@@ -821,7 +822,7 @@ def _draw_phase_timeline(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 3.5, fill=1, stroke=1)
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica-Bold", 5.2)
+    canvas.setFont(theme.SANS_BOLD, 5.2)
     canvas.drawString(x + 3 * mm, y + height - 4.8 * mm, "FLIGHT PHASE WINDOWS")
     canvas.drawRightString(
         x + width - 3 * mm,
@@ -845,14 +846,14 @@ def _draw_phase_timeline(
         canvas.setLineWidth(3.2)
         canvas.line(sx, line_y, max(sx + 2, ex), line_y)
         canvas.setFillColor(_EDTO)
-        canvas.setFont("Helvetica-Bold", 4.6)
+        canvas.setFont(theme.SANS_BOLD, 4.6)
         canvas.drawCentredString(
             (sx + ex) / 2,
             line_y + 3.3 * mm,
             f"EDTO {index}",
         )
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 4.2)
+        canvas.setFont(theme.SANS, 4.2)
         canvas.drawCentredString(
             (sx + ex) / 2,
             line_y - 4.4 * mm,
@@ -867,7 +868,7 @@ def _draw_phase_timeline(
         canvas.setFillColor(_WEATHER)
         canvas.circle(px, line_y, 2.0, fill=1, stroke=0)
         canvas.setFillColor(_WEATHER)
-        canvas.setFont("Helvetica-Bold", 4.1)
+        canvas.setFont(theme.SANS_BOLD, 4.1)
         label = str(item.get("title") or "ATC").rsplit(" ", 1)[-1]
         canvas.drawCentredString(
             px,
@@ -1025,7 +1026,7 @@ def _draw_surface_schematic(
     north = bounds.get("north")
     if not all(isinstance(value, (int, float)) for value in (west, south, east, north)):
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 5.2)
+        canvas.setFont(theme.SANS, 5.2)
         canvas.drawCentredString(
             x + width / 2,
             y + height / 2,
@@ -1071,10 +1072,10 @@ def _draw_surface_schematic(
             label = str(properties.get("ref") or "")
             if label:
                 canvas.setFillColor(_CRITICAL if is_closed else _MUTED)
-                canvas.setFont("Helvetica-Bold", 4.1)
+                canvas.setFont(theme.SANS_BOLD, 4.1)
                 canvas.drawCentredString(midpoint_x, midpoint_y + 1.5 * mm, label[:12])
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica", 4.0)
+    canvas.setFont(theme.SANS, 4.0)
     canvas.drawString(x + 1.5 * mm, y + 1.2 * mm, "Validated OSM surface schematic")
 
 
@@ -1109,7 +1110,7 @@ def _draw_surface_map(
         _draw_surface_schematic(canvas, overlay, x, y, width, height)
     else:
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 5.1)
+        canvas.setFont(theme.SANS, 5.1)
         canvas.drawCentredString(
             x + width / 2,
             y + height / 2,
@@ -1124,7 +1125,7 @@ def _draw_surface_map(
         canvas.setFillColor(colors.Color(0, 0, 0, alpha=0.72))
         canvas.rect(x, y, width, 5 * mm, fill=1, stroke=0)
         canvas.setFillColor(colors.white)
-        canvas.setFont("Helvetica", 4.0)
+        canvas.setFont(theme.SANS, 4.0)
         canvas.drawString(x + 1.5 * mm, y + 1.7 * mm, label[:58])
     canvas.restoreState()
 
@@ -1163,7 +1164,7 @@ def _draw_airport_panel(
         stroke=0,
     )
     canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 6.4)
+    canvas.setFont(theme.SANS_BOLD, 6.4)
     canvas.drawString(x + 3 * mm, y + height - 4.9 * mm, title)
 
     map_height = min(49 * mm, max(34 * mm, height * 0.47))
@@ -1444,7 +1445,7 @@ def _draw_action_strip(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 4, fill=1, stroke=1)
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica-Bold", 6.0)
+    canvas.setFont(theme.SANS_BOLD, 6.0)
     canvas.drawString(x + 3 * mm, y + height - 5 * mm, "DECISION GATES")
 
     body_y = y + 2.5 * mm
@@ -1452,7 +1453,7 @@ def _draw_action_strip(
     cell = width / len(actions)
     title_style = ParagraphStyle(
         "Decision gate title",
-        fontName="Helvetica-Bold",
+        fontName=theme.SANS_BOLD,
         fontSize=6.0,
         leading=7.0,
         textColor=_WEATHER,
@@ -1461,7 +1462,7 @@ def _draw_action_strip(
     )
     summary_style = ParagraphStyle(
         "Decision gate summary",
-        fontName="Helvetica",
+        fontName=theme.SANS,
         fontSize=7.0,
         leading=8.4,
         textColor=_TEXT,
@@ -1508,83 +1509,54 @@ def _draw_header(
     section_title: str = "LEVEL 1 - PERTINENT BRIEF",
     page_number: int = 1,
 ) -> float:
-    header_height = 24 * mm
-    margin = 7 * mm
-    canvas.setFillColor(_DARK)
-    canvas.rect(0, height - header_height, width, header_height, fill=1, stroke=0)
-    canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 12)
-    canvas.drawString(margin, height - 10 * mm, "PILOT")
-    pilot_width = pdfmetrics.stringWidth("PILOT", "Helvetica-Bold", 12)
-    canvas.setFillColor(_DEPARTURE)
-    canvas.drawString(margin + pilot_width, height - 10 * mm, "DRIVEN")
+    flight = briefing.get("_flight") or {}
+    metrics = briefing.get("metrics") or {}
+    atot = metrics.get("atot")
+    clock_basis = metrics.get("clock_basis")
+    atot_note = None
+    if atot:
+        atot_note = f"ATOT {atot}"
+        if clock_basis:
+            atot_note += f" | {clock_basis}"
+    top = theme.draw_header(
+        canvas,
+        flight,
+        width=width,
+        height=height,
+        pill_text=section_title,
+        extra_utc_note=atot_note,
+    )
+    theme.draw_footer(
+        canvas,
+        flight,
+        width=width,
+        page_number=page_number,
+        page_count=3,
+    )
+    theme.draw_source_chips(
+        canvas,
+        _page_source_chips(flight, page_number),
+        width=width,
+    )
+    return top
 
-    canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 15)
-    canvas.drawString(62 * mm, height - 8.7 * mm, briefing["flight_number"])
-    canvas.setFont("Helvetica-Bold", 9)
-    canvas.drawString(62 * mm, height - 16.1 * mm, briefing["route_label"])
 
-    canvas.setFont("Helvetica-Bold", 6.5)
-    canvas.drawString(
-        160 * mm,
-        height - 7.8 * mm,
-        (
-            f"{briefing['flight_date']} UTC · {briefing['metrics']['clock_basis']}"
-            if briefing["metrics"].get("atot")
-            else f"{briefing['flight_date']} UTC"
-        ),
-    )
-    canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica", 5.4)
-    canvas.drawString(
-        160 * mm,
-        height - 13.2 * mm,
-        f"DEP {briefing['metrics']['etd']}  ->  ARR {briefing['metrics']['eta']}",
-    )
-    canvas.drawString(
-        160 * mm,
-        height - 18.3 * mm,
-        (
-            f"Aircraft {briefing['metrics']['aircraft']} · "
-            f"ATOT {briefing['metrics']['atot']}"
-            if briefing["metrics"].get("atot")
-            else f"Aircraft {briefing['metrics']['aircraft']}"
-        ),
-    )
-
-    badge_w = 67 * mm
-    badge_h = 8 * mm
-    badge_x = width - margin - badge_w
-    badge_y = height - 13.5 * mm
-    canvas.setStrokeColor(colors.HexColor("#1DB9FF"))
-    canvas.setFillColor(_DARK)
-    canvas.roundRect(
-        badge_x,
-        badge_y,
-        badge_w,
-        badge_h,
-        badge_h / 2,
-        fill=1,
-        stroke=1,
-    )
-    canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica", 5.5)
-    canvas.drawCentredString(
-        badge_x + badge_w / 2,
-        badge_y + 2.8 * mm,
-        section_title,
-    )
-    canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica", 4.8)
-    canvas.drawRightString(
-        width - margin,
-        height - 5.2 * mm,
-        f"PAGE {page_number} OF 3",
-    )
-    canvas.setStrokeColor(_LINE)
-    canvas.line(margin, height - header_height, width - margin, height - header_height)
-    return height - header_height - 5 * mm
+def _page_source_chips(flight: dict[str, Any], page_number: int) -> list[str]:
+    if page_number == 1:
+        chips = ["CFP P1", "CFP PERF"]
+        for value in (flight.get("departure"), flight.get("destination")):
+            if value:
+                chips.append(str(value))
+        if flight.get("bobcat"):
+            chips.append("BOBCAT")
+        return chips
+    if page_number == 2:
+        chips = ["CFP EDTO"]
+        if flight.get("deferred_items"):
+            chips.append("MEL / CDL")
+        chips.append("CFP WX")
+        return chips
+    return []
 
 
 def _draw_cover_airport_panel(
@@ -1618,7 +1590,7 @@ def _draw_cover_airport_panel(
     )
     canvas.rect(x, y + height - title_h, width, title_h / 2, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 7.0)
+    canvas.setFont(theme.SANS_BOLD, 7.0)
     canvas.drawString(
         x + 3 * mm,
         y + height - 4.6 * mm,
@@ -1626,17 +1598,17 @@ def _draw_cover_airport_panel(
     )
 
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 10)
+    canvas.setFont(theme.SANS_BOLD, 10)
     canvas.drawString(
         x + 3 * mm,
         y + height - 14.2 * mm,
         f"RWY {panel['runway']}",
     )
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica-Bold", 5.6)
+    canvas.setFont(theme.SANS_BOLD, 5.6)
     canvas.drawString(x + 3 * mm, y + height - 20 * mm, "SCHEDULE")
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 6.6)
+    canvas.setFont(theme.SANS_BOLD, 6.6)
     canvas.drawRightString(x + width - 3 * mm, y + height - 20 * mm, schedule)
 
     overlay_lines = [
@@ -1742,7 +1714,7 @@ def _draw_cover_route_panel(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 4, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 6.6)
+    canvas.setFont(theme.SANS_BOLD, 6.6)
     canvas.drawString(
         x + 2.5 * mm,
         y + height - 5.5 * mm,
@@ -1777,15 +1749,15 @@ def _draw_cover_metric_cards(
         canvas.setFillColor(accent)
         canvas.rect(card_x, y + height - 1.2 * mm, card_w, 1.2 * mm, fill=1, stroke=0)
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica-Bold", 5.5)
+        canvas.setFont(theme.SANS_BOLD, 5.5)
         canvas.drawString(card_x + 2.5 * mm, y + height - 5.5 * mm, label)
         canvas.setFillColor(_TEXT)
-        canvas.setFont("Helvetica-Bold", REPORT_TYPOGRAPHY["metric"])
+        canvas.setFont(theme.SANS_BOLD, REPORT_TYPOGRAPHY["metric"])
         canvas.drawString(card_x + 2.5 * mm, y + height - 12.3 * mm, value)
         canvas.setFillColor(_MUTED)
         note_style = ParagraphStyle(
             "Cover metric note",
-            fontName="Helvetica",
+            fontName=theme.SANS,
             fontSize=5.1,
             leading=5.8,
             textColor=_MUTED,
@@ -1809,24 +1781,8 @@ def _draw_footer(
     width: float,
     page_number: int,
 ) -> None:
-    margin = 7 * mm
-    canvas.setStrokeColor(_LINE)
-    canvas.line(margin, 8 * mm, width - margin, 8 * mm)
-    canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica", 4.4)
-    canvas.drawString(
-        margin,
-        4.8 * mm,
-        (
-            f"PILOTDRIVEN | {briefing['flight_number']} | "
-            f"{briefing['flight_date']} | Not for operational use."
-        ),
-    )
-    canvas.drawRightString(
-        width - margin,
-        4.8 * mm,
-        f"Page {page_number} of 3",
-    )
+    # The shared v1.3 footer is drawn by _draw_header for every page.
+    return None
 
 
 def _draw_cover_footer(
@@ -1888,7 +1844,7 @@ def _draw_cover(
     centre_w = width - 2 * margin - left_w - right_w - 2 * gap
 
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica-Bold", 6.1)
+    canvas.setFont(theme.SANS_BOLD, 6.1)
     canvas.drawCentredString(
         width / 2,
         top - 3.5 * mm,
@@ -2640,6 +2596,7 @@ def render_level1_visual(
     if map_image_path:
         briefing["route_map"]["snapshot_path"] = str(map_image_path)
         briefing["route_map"]["snapshot_label"] = map_label or "Realistic route map"
+    briefing["_flight"] = flight
 
     document = BaseDocTemplate(
         str(path),

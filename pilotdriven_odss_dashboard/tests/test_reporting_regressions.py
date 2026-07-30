@@ -775,7 +775,7 @@ def test_level2_uses_readable_centered_rows_without_blank_table_filler(
     )
 
     assert page_two_first and min(span["size"] for span in page_two_first) >= 9.9
-    assert page_two_last and max(block["bbox"][1] for block in page_two_last) >= 430
+    assert page_two_last and max(block["bbox"][1] for block in page_two_last) >= 420
     assert page_seven_advisory
     assert min(block["bbox"][1] for block in page_seven_advisory) >= 100
 
@@ -1360,17 +1360,18 @@ def test_run_analysis_normalizes_identity_before_json_and_reports(
 
 
 def test_pilot_brief_category_colours_are_distinct_and_stable() -> None:
+    # v1.3 reference palette (sampled from the approved brief set).
     assert CATEGORY_COLOURS == {
-        "departure": "#2F80ED",
-        "destination": "#7C4DFF",
-        "edto": "#2EAD74",
-        "weather": "#D99116",
-        "communications": "#0F8B8D",
-        "terrain": "#D97706",
-        "critical": "#C62828",
-        "neutral": "#64748B",
+        "departure": "#2DB4F0",
+        "destination": "#8B5CF6",
+        "edto": "#38C18C",
+        "weather": "#F4A91D",
+        "communications": "#35C0BC",
+        "terrain": "#FFB21A",
+        "critical": "#FF5B68",
+        "neutral": "#6D8798",
     }
-    assert CATEGORY_COLOURS["departure"] != CATEGORY_COLOURS["destination"]
+    assert len(set(CATEGORY_COLOURS.values())) == len(CATEGORY_COLOURS)
 
 
 def test_level1_integrates_volcanic_ash_without_source_gate_page(

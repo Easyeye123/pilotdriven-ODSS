@@ -15,6 +15,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.platypus import Paragraph
 
+from . import brief_theme as theme
 from .briefing import build_briefing_view, draw_route_map_pdf
 from .constants import edto_sectors, format_actm
 from .controlled_library import DEPRESS_LIBRARY_METADATA
@@ -86,7 +87,7 @@ _STYLES = getSampleStyleSheet()
 _BODY = ParagraphStyle(
     "Operational body",
     parent=_STYLES["BodyText"],
-    fontName="Helvetica",
+    fontName=theme.SANS,
     fontSize=REPORT_TYPOGRAPHY["body"],
     leading=12.6,
     textColor=_TEXT,
@@ -293,7 +294,7 @@ def _utc(value: Any) -> str:
     return parsed.astimezone(timezone.utc).strftime("%d %b %Y %H%MZ").upper()
 
 
-def _clip(value: Any, width: float, *, font: str = "Helvetica", size: float = 5.6) -> str:
+def _clip(value: Any, width: float, *, font: str = theme.SANS, size: float = 5.6) -> str:
     text = _pilot_text(value)
     if pdfmetrics.stringWidth(text, font, size) <= width:
         return text
@@ -303,7 +304,7 @@ def _clip(value: Any, width: float, *, font: str = "Helvetica", size: float = 5.
     return text.rstrip() + suffix
 
 
-def _wrap(value: Any, width: float, *, font: str = "Helvetica", size: float = 5.6) -> list[str]:
+def _wrap(value: Any, width: float, *, font: str = theme.SANS, size: float = 5.6) -> list[str]:
     words = _pilot_text(value).split()
     if not words:
         return ["Not available"]
@@ -340,7 +341,7 @@ def _draw_wrapped(
         style = ParagraphStyle(
             f"Operational dynamic {fitted_size:.1f}pt",
             parent=_BODY,
-            fontName="Helvetica-Bold" if bold else "Helvetica",
+            fontName=theme.SANS_BOLD if bold else theme.SANS,
             fontSize=fitted_size,
             leading=fitted_leading,
             textColor=colour,
@@ -356,7 +357,7 @@ def _draw_wrapped(
         style = ParagraphStyle(
             f"Operational dynamic {fitted_size:.1f}pt",
             parent=_BODY,
-            fontName="Helvetica-Bold" if bold else "Helvetica",
+            fontName=theme.SANS_BOLD if bold else theme.SANS,
             fontSize=fitted_size,
             leading=fitted_leading,
             textColor=colour,
@@ -381,91 +382,36 @@ def _draw_header(
     page_number: int,
 ) -> float:
     width, height = PAGE_SIZE
-    margin = 7 * mm
-    top = height - 6 * mm
-
-    canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 12)
-    canvas.drawString(margin, top - 4 * mm, "PILOT")
-    pilot_width = pdfmetrics.stringWidth("PILOT", "Helvetica-Bold", 12)
-    canvas.setFillColor(_CYAN)
-    canvas.drawString(margin + pilot_width, top - 4 * mm, "DRIVEN")
-
-    canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 20)
-    canvas.drawString(62 * mm, top - 3.2 * mm, _pilot_text(briefing.get("flight_number")))
-    canvas.setFont("Helvetica-Bold", 10.2)
-    canvas.drawString(62 * mm, top - 9.4 * mm, _pilot_text(briefing.get("route_label")))
-
-    canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 7.5)
-    canvas.drawString(
-        160 * mm,
-        top - 2.8 * mm,
-        (
-            f"{_pilot_text(briefing.get('flight_date'))} UTC · "
-            f"{_pilot_text(briefing['metrics'].get('clock_basis'))}"
-            if briefing["metrics"].get("atot")
-            else f"{_pilot_text(briefing.get('flight_date'))} UTC"
-        ),
+    page_count = int(flight.get("_l2_page_count") or 7)
+    metrics = briefing.get("metrics") or {}
+    atot = metrics.get("atot")
+    clock_basis = metrics.get("clock_basis")
+    atot_note = None
+    if atot:
+        atot_note = f"ATOT {atot}"
+        if clock_basis:
+            atot_note += f" | {clock_basis}"
+    top = theme.draw_header(
+        canvas,
+        flight,
+        width=width,
+        height=height,
+        pill_text=label,
+        extra_utc_note=atot_note,
     )
-    canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica", 6.8)
-    canvas.drawString(
-        160 * mm,
-        top - 7.2 * mm,
-        f"DEP {_pilot_text(briefing['metrics'].get('etd'))} -> ARR {_pilot_text(briefing['metrics'].get('eta'))}",
+    theme.draw_footer(
+        canvas,
+        flight,
+        width=width,
+        page_number=page_number,
+        page_count=page_count,
     )
-    canvas.drawString(
-        160 * mm,
-        top - 11.1 * mm,
-        (
-            f"Aircraft {_pilot_text(briefing['metrics'].get('aircraft'))} · "
-            f"ATOT {_pilot_text(briefing['metrics'].get('atot'))}"
-            if briefing["metrics"].get("atot")
-            else f"Aircraft {_pilot_text(briefing['metrics'].get('aircraft'))}"
-        ),
-    )
-
-    pill_w = 57 * mm
-    pill_h = 6.2 * mm
-    pill_x = width - margin - pill_w
-    pill_y = top - 7.2 * mm
-    canvas.setStrokeColor(_CYAN)
-    canvas.setLineWidth(0.8)
-    canvas.roundRect(pill_x, pill_y, pill_w, pill_h, 7, fill=0, stroke=1)
-    canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica", 6.3)
-    canvas.drawCentredString(pill_x + pill_w / 2, pill_y + 2.1 * mm, label)
-
-    line_y = top - 16 * mm
-    canvas.setStrokeColor(_LINE)
-    canvas.setLineWidth(0.5)
-    canvas.line(margin, line_y, width - margin, line_y)
-
-    footer_y = 5.4 * mm
-    canvas.line(margin, footer_y + 2.6 * mm, width - margin, footer_y + 2.6 * mm)
-    canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica", 5.2)
-    canvas.drawString(
-        margin,
-        footer_y,
-        (
-            f"PILOTDRIVEN | {_pilot_text(briefing.get('flight_number'))} | "
-            f"{_pilot_text(briefing.get('flight_date'))} | Not for operational use."
-        ),
-    )
-    canvas.drawRightString(
-        width - margin,
-        footer_y,
-        f"Page {page_number} of 7",
-    )
-    return line_y - 7 * mm
+    return top
 
 
 def _draw_title(canvas: pdf_canvas.Canvas, title: str, y: float) -> float:
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 13)
+    canvas.setFont(theme.SANS_BOLD, 13)
     canvas.drawString(7 * mm, y, title)
     return y - 5.5 * mm
 
@@ -491,8 +437,8 @@ def _panel(
     canvas.roundRect(x, y + height - bar_h, width, bar_h, 7, fill=1, stroke=0)
     canvas.rect(x, y + height - bar_h, width, bar_h / 2, fill=1, stroke=0)
     canvas.setFillColor(_BACKGROUND)
-    canvas.setFont("Helvetica-Bold", 7.0)
-    canvas.drawString(x + 3 * mm, y + height - 4.6 * mm, _clip(title, width - 6 * mm, font="Helvetica-Bold", size=7.0))
+    canvas.setFont(theme.SANS_BOLD, 7.0)
+    canvas.drawString(x + 3 * mm, y + height - 4.6 * mm, _clip(title, width - 6 * mm, font=theme.SANS_BOLD, size=7.0))
     body_x = x + 3 * mm
     body_y = y + 3 * mm
     body_w = width - 6 * mm
@@ -529,13 +475,13 @@ def _metric_cards(
         canvas.setFillColor(_GREEN if index % 3 == 0 else _CYAN if index % 3 == 1 else _AMBER)
         canvas.rect(cx, y + height - 1.2 * mm, cell_w, 1.2 * mm, fill=1, stroke=0)
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica-Bold", 6.5)
-        canvas.drawString(cx + 3 * mm, y + height - 5.3 * mm, _clip(label, cell_w - 6 * mm, font="Helvetica-Bold", size=6.5))
+        canvas.setFont(theme.SANS_BOLD, 6.5)
+        canvas.drawString(cx + 3 * mm, y + height - 5.3 * mm, _clip(label, cell_w - 6 * mm, font=theme.SANS_BOLD, size=6.5))
         canvas.setFillColor(_TEXT)
-        canvas.setFont("Helvetica-Bold", 13)
-        canvas.drawString(cx + 3 * mm, y + height - 11.8 * mm, _clip(value, cell_w - 6 * mm, font="Helvetica-Bold", size=13))
+        canvas.setFont(theme.SANS_BOLD, 13)
+        canvas.drawString(cx + 3 * mm, y + height - 11.8 * mm, _clip(value, cell_w - 6 * mm, font=theme.SANS_BOLD, size=13))
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 5.8)
+        canvas.setFont(theme.SANS, 5.8)
         canvas.drawString(cx + 3 * mm, y + 3 * mm, _clip(note, cell_w - 6 * mm, size=5.8))
 
 
@@ -555,14 +501,14 @@ def _strip(
     canvas.roundRect(x, y, width, height, 7, fill=1, stroke=1)
     title_w = 38 * mm
     canvas.setFillColor(accent)
-    canvas.setFont("Helvetica-Bold", 6.3)
+    canvas.setFont(theme.SANS_BOLD, 6.3)
     canvas.drawString(
         x + 3 * mm,
         y + height / 2 - 1.8,
-        _clip(title, title_w - 5 * mm, font="Helvetica-Bold", size=6.3),
+        _clip(title, title_w - 5 * mm, font=theme.SANS_BOLD, size=6.3),
     )
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica", 6.2)
+    canvas.setFont(theme.SANS, 6.2)
     canvas.drawString(
         x + title_w,
         y + height / 2 - 1.8,
@@ -611,14 +557,14 @@ def _draw_table(
     widths = [width * fraction for _, fraction in columns]
     for index, ((label, _), column_width) in enumerate(zip(columns, widths)):
         canvas.setFillColor(_BACKGROUND)
-        canvas.setFont("Helvetica-Bold", header_font_size)
+        canvas.setFont(theme.SANS_BOLD, header_font_size)
         canvas.drawString(
             column_x + 2 * mm,
             y + height - header_h / 2 - header_font_size * 0.35,
             _clip(
                 label,
                 column_width - 4 * mm,
-                font="Helvetica-Bold",
+                font=theme.SANS_BOLD,
                 size=header_font_size,
             ),
         )
@@ -640,7 +586,7 @@ def _draw_table(
         for column_index, column_width in enumerate(widths):
             value = row[column_index] if column_index < len(row) else ""
             inner_w = column_width - 4 * mm
-            font_name = "Helvetica-Bold" if column_index == 0 else "Helvetica"
+            font_name = theme.SANS_BOLD if column_index == 0 else theme.SANS
             fitted_size = body_font_size
             while fitted_size >= _MIN_TABLE_FONT_SIZE:
                 leading = fitted_size + 1.5
@@ -1392,8 +1338,8 @@ def _draw_route_panel(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 7, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 6.5)
-    canvas.drawString(x + 3 * mm, y + height - 5 * mm, _clip(title, width - 6 * mm, font="Helvetica-Bold", size=6.5))
+    canvas.setFont(theme.SANS_BOLD, 6.5)
+    canvas.drawString(x + 3 * mm, y + height - 5 * mm, _clip(title, width - 6 * mm, font=theme.SANS_BOLD, size=6.5))
     draw_route_map_pdf(
         canvas,
         route_map,
@@ -1422,7 +1368,7 @@ def _draw_terrain_profile(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 7, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 6.5)
+    canvas.setFont(theme.SANS_BOLD, 6.5)
     canvas.drawString(x + 3 * mm, y + height - 5 * mm, "CFP MSA PROFILE")
     chart_x = x + 7 * mm
     chart_y = y + 7 * mm
@@ -1433,7 +1379,7 @@ def _draw_terrain_profile(
     canvas.line(chart_x, chart_y, chart_x + chart_w, chart_y)
     if not points:
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 6)
+        canvas.setFont(theme.SANS, 6)
         canvas.drawCentredString(x + width / 2, y + height / 2, "No CFP MSA points available.")
         return
     min_t = min(int(item["actm_minutes"]) for item in points)
@@ -1454,14 +1400,14 @@ def _draw_terrain_profile(
         canvas.circle(px, py, 1.7, fill=1, stroke=0)
         if point.get("msa_asterisk") or int(point["msa_hundreds_ft"]) > 100:
             canvas.setFillColor(_TEXT)
-            canvas.setFont("Helvetica-Bold", 4.5)
+            canvas.setFont(theme.SANS_BOLD, 4.5)
             canvas.drawCentredString(
                 px,
                 py + 2.3 * mm,
                 _clip(
                     f"{_text(point.get('name'), '')} {int(point['msa_hundreds_ft']):03d}{'*' if point.get('msa_asterisk') else ''}",
                     22 * mm,
-                    font="Helvetica-Bold",
+                    font=theme.SANS_BOLD,
                     size=4.5,
                 ),
             )
@@ -1516,7 +1462,7 @@ def _page_one(
     for index, (label, value) in enumerate(metrics):
         y = body_y + body_h - (index + 0.7) * row_h
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", REPORT_TYPOGRAPHY["detail_label"])
+        canvas.setFont(theme.SANS, REPORT_TYPOGRAPHY["detail_label"])
         canvas.drawString(body_x, y, label)
         canvas.setFillColor(_TEXT)
         value_size = REPORT_TYPOGRAPHY["detail_value"]
@@ -1524,13 +1470,13 @@ def _page_one(
             value_size > 5.8
             and pdfmetrics.stringWidth(
                 _pilot_text(value),
-                "Helvetica-Bold",
+                theme.SANS_BOLD,
                 value_size,
             )
             > body_w * 0.68
         ):
             value_size -= 0.5
-        canvas.setFont("Helvetica-Bold", value_size)
+        canvas.setFont(theme.SANS_BOLD, value_size)
         canvas.drawRightString(
             body_x + body_w,
             y,
@@ -2415,6 +2361,7 @@ def render_level2_visual(
     # release that names a profile without embedding its complete chart.
     chart_images = load_matched_chart_images(pilot_findings)
     page_count = 7 + len(chart_images)
+    flight["_l2_page_count"] = page_count
     chart_page_numbers = {
         image["chart_number"]: 8 + index
         for index, image in enumerate(chart_images)

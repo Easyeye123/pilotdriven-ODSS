@@ -151,6 +151,7 @@ def draw_header(
     height: float,
     pill_text: str,
     pill_color: colors.Color = BLUE,
+    extra_utc_note: str | None = None,
 ) -> float:
     """Draw the standard v1.3 header band; returns the content top y."""
     register_fonts()
@@ -206,14 +207,15 @@ def draw_header(
     )
     canvas.setFillColor(MUTED)
     canvas.setFont(SANS, 6.8)
-    canvas.drawString(
-        schedule_x,
-        top - 17,
+    utc_line = (
         "UTC  DEP "
         + utc_hhmm(flight.get("scheduled_departure_utc"))
         + "  ->  ARR "
-        + utc_hhmm(flight.get("scheduled_arrival_utc")),
+        + utc_hhmm(flight.get("scheduled_arrival_utc"))
     )
+    if extra_utc_note:
+        utc_line += f"  |  {extra_utc_note}"
+    canvas.drawString(schedule_x, top - 17, utc_line)
     departure_segment = local_time_segment(
         flight.get("departure"), flight.get("scheduled_departure_utc")
     )
