@@ -28,6 +28,7 @@ from .depress_analysis_page import (
     _actm_utc,
     _event_for_id,
     _filed_segment,
+    _matched_event_findings,
     _matched_findings,
     _profile_by_chart,
     _terr_ref,
@@ -145,7 +146,7 @@ def draw_match_matrix_page(
     )
     matched_by_event = {
         (finding.get("data") or {}).get("terrain_event_id"): finding
-        for finding in _matched_findings(findings)
+        for finding in _matched_event_findings(findings)
     }
 
     columns = [

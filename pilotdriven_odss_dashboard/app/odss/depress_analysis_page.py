@@ -61,18 +61,34 @@ def _effectivity_label(flight: dict[str, Any]) -> str:
     return "-"
 
 
+def _matched_event_findings(
+    findings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return every complete controlled match, including repeated charts.
+
+    One approved profile can legitimately cover more than one distinct
+    high-terrain exposure window. Event-level consumers (for example the
+    Level 2 match matrix) must retain every match; profile-level consumers
+    can deduplicate the result separately.
+    """
+    return [
+        finding
+        for finding in findings
+        if finding.get("engine") == "depressurisation"
+        and bool((finding.get("data") or {}).get("chart_number"))
+        and bool((finding.get("data") or {}).get("coverage_complete"))
+        and (finding.get("data") or {}).get("reference_status")
+        == "controlled-index-loaded"
+    ]
+
+
 def _matched_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return one representative finding per approved profile chart."""
     seen: set[str] = set()
     result = []
-    for finding in findings:
-        if finding.get("engine") != "depressurisation":
-            continue
+    for finding in _matched_event_findings(findings):
         data = finding.get("data") or {}
         chart = str(data.get("chart_number") or "")
-        if not chart or not data.get("coverage_complete"):
-            continue
-        if data.get("reference_status") != "controlled-index-loaded":
-            continue
         if chart in seen:
             continue
         seen.add(chart)
@@ -186,6 +202,7 @@ def _draw_card(
     canvas: Any,
     flight: dict[str, Any],
     finding: dict[str, Any],
+    related_findings: list[dict[str, Any]],
     events: list[dict[str, Any]],
     x: float,
     y: float,
@@ -196,6 +213,23 @@ def _draw_card(
     chart = str(data.get("chart_number") or "")
     profile = _profile_by_chart(chart) or {}
     event = _event_for_id(events, data.get("terrain_event_id"))
+    related_events: list[dict[str, Any]] = []
+    seen_event_ids: set[str] = set()
+    for related_finding in related_findings:
+        related_data = related_finding.get("data") or {}
+        related_event = _event_for_id(
+            events,
+            related_data.get("terrain_event_id"),
+        )
+        if related_event is None:
+            continue
+        event_id = str(related_event.get("terrain_event_id") or "")
+        if event_id in seen_event_ids:
+            continue
+        seen_event_ids.add(event_id)
+        related_events.append(related_event)
+    if not related_events and event is not None:
+        related_events.append(event)
 
     canvas.setFillColor(theme.PANEL)
     canvas.roundRect(x, y, width, height, 5, stroke=0, fill=1)
@@ -299,10 +333,34 @@ def _draw_card(
 
     # Fact rows.
     rows: list[tuple[str, str, Any]] = []
-    if event is not None:
-        rows.append(("ACTUAL EXPOSURE", _exposure_line(flight, event), theme.TEXT))
+    for index, related_event in enumerate(related_events[:2], start=1):
         rows.append(
-            ("MAX / CP", _max_cp_line(flight, event, critical_name), theme.TEXT)
+            (
+                (
+                    "ACTUAL EXPOSURE"
+                    if len(related_events) == 1
+                    else f"EXPOSURE {index}"
+                ),
+                (
+                    f"{_terr_ref(events, related_event)} | "
+                    f"{_exposure_line(flight, related_event)}"
+                ),
+                theme.TEXT,
+            )
+        )
+    if related_events:
+        maximum_event = max(
+            related_events,
+            key=lambda item: int(
+                (item.get("maximum") or {}).get("msa_hundreds_ft") or -1
+            ),
+        )
+        rows.append(
+            (
+                "MAX / CP",
+                _max_cp_line(flight, maximum_event, critical_name),
+                theme.TEXT,
+            )
         )
     coverage = (
         "FULL route-profile match"
@@ -315,7 +373,11 @@ def _draw_card(
     rows.append(
         (
             "COVERAGE",
-            f"{coverage}; {normalized_registration(flight.get('registration'))} "
+            (
+                f"{len(related_events)} window"
+                f"{'s' if len(related_events) != 1 else ''}; "
+            )
+            + f"{coverage}; {normalized_registration(flight.get('registration'))} "
             f"effectivity = {_effectivity_label(flight)}",
             theme.GREEN,
         )
@@ -388,6 +450,7 @@ def draw_depressurisation_analysis(
 
     events = detect_terrain_events(flight.get("route_waypoints") or [])
     matched = _matched_findings(findings)
+    matched_events = _matched_event_findings(findings)
     unresolved = _unresolved_findings(findings)
 
     # Summary strip.
@@ -425,7 +488,7 @@ def draw_depressurisation_analysis(
 
     # Profile analysis cards.
     cards_top = strip_y - 10
-    card_height = 172.0
+    card_height = 250.0 if matched and not unresolved else 172.0
     card_y = cards_top - card_height
     if matched:
         gap = 10.0
@@ -437,6 +500,15 @@ def draw_depressurisation_analysis(
                 canvas,
                 flight,
                 finding,
+                [
+                    event_finding
+                    for event_finding in matched_events
+                    if str(
+                        (event_finding.get("data") or {}).get("chart_number")
+                        or ""
+                    )
+                    == str((finding.get("data") or {}).get("chart_number") or "")
+                ],
                 events,
                 margin + index * (card_width + gap),
                 card_y,
@@ -459,7 +531,8 @@ def draw_depressurisation_analysis(
     # Unmatched exposures panel, sized to its content.
     panel_top = card_y - 10
     entry_rows = max(1, (len(unresolved[:4]) + 1) // 2)
-    panel_bottom = max(40.0, panel_top - (34 + entry_rows * 50 + 40))
+    panel_height = 34 + entry_rows * 50 + 40 if unresolved else 72
+    panel_bottom = max(40.0, panel_top - panel_height)
     canvas.setFillColor(theme.PANEL)
     canvas.roundRect(
         margin,
@@ -472,12 +545,16 @@ def draw_depressurisation_analysis(
     )
     pad = 12
     text_y = panel_top - 16
-    canvas.setFillColor(theme.RED)
+    canvas.setFillColor(theme.RED if unresolved else theme.GREEN)
     canvas.setFont(theme.SANS_BOLD, 8.6)
     canvas.drawString(
         margin + pad,
         text_y,
-        "UNMATCHED EXPOSURES - NO APPROVED CHART SUBSTITUTED",
+        (
+            "UNMATCHED EXPOSURES - NO APPROVED CHART SUBSTITUTED"
+            if unresolved
+            else "ALL HIGH-TERRAIN EXPOSURE WINDOWS COVERED"
+        ),
     )
     text_y -= 14
     column_width = (width - 2 * margin - 3 * pad) / 2
@@ -521,6 +598,32 @@ def draw_depressurisation_analysis(
         for line in lines:
             canvas.drawString(column_x, line_y, line[:118])
             line_y -= 8
+    if not unresolved:
+        profile_refs = ", ".join(
+            f"PROFILE {(finding.get('data') or {}).get('chart_number')}"
+            for finding in matched
+        )
+        event_refs = ", ".join(
+            _terr_ref(
+                events,
+                _event_for_id(
+                    events,
+                    (finding.get("data") or {}).get("terrain_event_id"),
+                ),
+            )
+            for finding in matched_events
+        )
+        canvas.setFillColor(theme.MUTED)
+        canvas.setFont(theme.SANS, 5.8)
+        canvas.drawString(
+            margin + pad,
+            text_y,
+            (
+                f"{event_refs or 'All detected windows'} covered by "
+                f"{profile_refs or 'the approved profile set'}; "
+                "no nearby or generic chart substituted."
+            )[:180],
+        )
 
     # Method + source pointer.
     canvas.setFillColor(theme.BLUE)

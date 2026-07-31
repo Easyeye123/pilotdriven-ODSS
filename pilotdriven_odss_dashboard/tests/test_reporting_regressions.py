@@ -576,6 +576,145 @@ def test_confirmed_profile_is_prominent_in_l1_and_complete_in_l2(
             _os.environ["ODSS_DEPRESS_CHART_DIR"] = original_chart_dir
 
 
+def test_one_approved_profile_can_cover_multiple_distinct_terrain_windows(
+    tmp_path: Path,
+) -> None:
+    flight = _flight()
+    flight["route_waypoints"] = [
+        {
+            "name": "START",
+            "actm_minutes": 0,
+            "latitude": 1.0,
+            "longitude": 100.0,
+            "airway_in": None,
+            "msa_hundreds_ft": 90,
+            "source_page": 10,
+        },
+        {
+            "name": "HIGH1",
+            "actm_minutes": 10,
+            "latitude": 2.0,
+            "longitude": 101.0,
+            "airway_in": "Q1",
+            "msa_hundreds_ft": 120,
+            "msa_asterisk": True,
+            "source_page": 10,
+        },
+        {
+            "name": "LOW",
+            "actm_minutes": 20,
+            "latitude": 3.0,
+            "longitude": 102.0,
+            "airway_in": "Q1",
+            "msa_hundreds_ft": 90,
+            "source_page": 10,
+        },
+        {
+            "name": "HIGH2",
+            "actm_minutes": 30,
+            "latitude": 4.0,
+            "longitude": 103.0,
+            "airway_in": "Q2",
+            "msa_hundreds_ft": 130,
+            "msa_asterisk": True,
+            "source_page": 11,
+        },
+        {
+            "name": "END",
+            "actm_minutes": 40,
+            "latitude": 5.0,
+            "longitude": 104.0,
+            "airway_in": "Q2",
+            "msa_hundreds_ft": 90,
+            "source_page": 11,
+        },
+    ]
+    events = detect_terrain_events(flight["route_waypoints"])
+    assert len(events) == 2
+    findings = [
+        {
+            "engine": "depressurisation",
+            "severity": "warning",
+            "title": f"Profile {index} - START to END",
+            "summary": "Proposed depressurisation chart GEN-1; critical point HIGH2.",
+            "details": [],
+            "data": {
+                "chart_number": "GEN-1",
+                "critical_point": "HIGH2",
+                "terrain_event_id": event["terrain_event_id"],
+                "start_actm_minutes": event["first_high"]["actm_minutes"],
+                "route_start": "START",
+                "route_end": "END",
+                "coverage_complete": True,
+                "reference_status": "controlled-index-loaded",
+            },
+        }
+        for index, event in enumerate(events, start=1)
+    ]
+
+    from reportlab.pdfgen import canvas as _test_canvas
+    import hashlib as _hashlib
+    import os as _os
+    from app.odss import engines as _engines
+
+    chart_dir = tmp_path / "charts"
+    chart_dir.mkdir()
+    chart_path = chart_dir / "profile-GEN-1.pdf"
+    stub = _test_canvas.Canvas(str(chart_path))
+    stub.drawString(72, 720, "GEN-1 synthetic source chart")
+    stub.save()
+    synthetic_profile = {
+        "chart": "GEN-1",
+        "chart_page": 1,
+        "from": "START",
+        "from_aliases": ["START"],
+        "to": "END",
+        "to_aliases": ["END"],
+        "critical": "HIGH2",
+        "critical_aliases": ["HIGH2"],
+        "airways": ["Q1", "Q2"],
+        "effectivity": [],
+        "chart_artifact_key": "charts/profile-GEN-1.pdf",
+        "chart_sha256": _hashlib.sha256(chart_path.read_bytes()).hexdigest(),
+    }
+    original_profiles = _engines.DEPRESS_PROFILES
+    original_chart_dir = _os.environ.get("ODSS_DEPRESS_CHART_DIR")
+    _engines.DEPRESS_PROFILES = [synthetic_profile]
+    _os.environ["ODSS_DEPRESS_CHART_DIR"] = str(chart_dir)
+    try:
+        level1_path = tmp_path / "multi-window-level-1.pdf"
+        level2_path = tmp_path / "multi-window-level-2.pdf"
+        render_pdf(flight, findings, [], 1, level1_path)
+        render_pdf(flight, findings, [], 2, level2_path)
+
+        level1_reader = PdfReader(level1_path)
+        level1_page3 = " ".join(
+            (level1_reader.pages[2].extract_text() or "").split()
+        )
+        assert "HIGH1 00.10" in level1_page3
+        assert "HIGH2 00.30" in level1_page3
+        assert "ALL HIGH-TERRAIN EXPOSURE WINDOWS COVERED" in level1_page3
+        assert (
+            "UNMATCHED EXPOSURES - NO APPROVED CHART SUBSTITUTED"
+            not in level1_page3
+        )
+
+        level2_reader = PdfReader(level2_path)
+        level2_text = " ".join(
+            (page.extract_text() or "") for page in level2_reader.pages
+        )
+        assert "TERR-01" in level2_text
+        assert "TERR-02" in level2_text
+        assert "UNRESOLVED" not in level2_text
+        assert len(level2_reader.pages) == 8
+    finally:
+        _engines.DEPRESS_PROFILES = original_profiles
+        if original_chart_dir is None:
+            _os.environ.pop("ODSS_DEPRESS_CHART_DIR", None)
+        else:
+            _os.environ["ODSS_DEPRESS_CHART_DIR"] = original_chart_dir
+
+
 def test_partial_profile_is_never_presented_as_confirmed() -> None:
     finding = {
         "engine": "depressurisation",
