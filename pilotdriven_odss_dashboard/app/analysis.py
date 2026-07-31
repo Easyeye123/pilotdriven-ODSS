@@ -16,6 +16,7 @@ from .odss.constants import (
     format_actm,
 )
 from .odss.engines import analyse
+from .odss.hazard_assessment import assess_operational_hazards
 from .odss.parser import extract_pages, parse_lido
 from .odss.reporting import render_pdf
 from .odss.tropical_cyclone import assess_tropical_cyclone
@@ -69,6 +70,9 @@ def run_odss_analysis(
 
     assess_volcanic_ash(flight, pages)
     assess_tropical_cyclone(flight, pages)
+    # Permanent gate: every CFP receives one route/time/level-aware hazardous
+    # weather assessment before any finding or report is generated.
+    assess_operational_hazards(flight, pages)
     findings, warnings = analyse(flight)
     timing_view = None
     if actual_takeoff_utc:
@@ -150,6 +154,7 @@ def run_odss_analysis(
             result_path.unlink(missing_ok=True)
             level1_path.unlink(missing_ok=True)
             level2_path.unlink(missing_ok=True)
+    hazard_assessment = flight.get("operational_hazard_assessment") or {}
     return {
         "status": "Completed",
         "analysis_path": str(result_path),
@@ -169,6 +174,9 @@ def run_odss_analysis(
         "personal_note_count": len(flight["personal_notes"]),
         "vaa_status": (flight.get("vaa_review") or {}).get("status"),
         "tropical_cyclone_status": (flight.get("tropical_cyclone_review") or {}).get("status"),
+        "hazard_assessment_status": hazard_assessment.get("status"),
+        "promoted_hazard_count": (hazard_assessment.get("counts") or {}).get("promoted", 0),
+        "hazard_coverage_gap_count": (hazard_assessment.get("counts") or {}).get("coverage_gaps", 0),
         "warnings": warnings,
         "analysis_version": "0.6.1",
     }
