@@ -24,7 +24,12 @@ from app.odss.enrichment import (
     _record_source_page,
 )
 from app.odss.briefing import _weather_summary
-from app.odss.parser import _parse_deferred_items, _parse_edto_sectors, parse_lido
+from app.odss.parser import (
+    _parse_deferred_items,
+    _parse_edto_sectors,
+    _parse_named_procedure,
+    parse_lido,
+)
 from app.odss.pilot_briefing import concise_weather_finding
 
 
@@ -1107,6 +1112,81 @@ def test_incomplete_lido_pages_fail_before_zero_value_analysis() -> None:
     )
     with pytest.raises(ValueError, match="Incomplete or unsupported Lido CFP"):
         parse_lido([page], "partial.pdf")
+
+
+def test_lido_parser_keeps_sid_and_star_names_instead_of_airport_tokens() -> None:
+    pages = [
+        """SUMMARY STANDARD CFP
+9VAAA SQ722 SIN/BKK ETD 0250 01AUG26
+SCHED DEP 0250 UTC SCHED ARR 0520 UTC
+RTE NO 001 A350-941
+WSSS/20C VMR B469 VPK
+VTBS/20R
+GND  MILES    900
+AIR  MILES    930
+BURNOFF 02.00 010000
+TAXI FUEL 001000
+FLT PLAN REQMT 03.00 015000
+FUEL IN TANKS 04.00 020000
+PZFW 180000
+PTOW 200000
+PLWT 190000
+""",
+        "",
+        "SID: WSSS/20C VMR9B",
+        "",
+        "STAR: VTBS/20R TUMGA1C",
+        "",
+        """BOBI1 00.15
+N01 20.0 E103 50.0 105*
+BOBI2 00.25
+N03 10.0 E105 40.0 090
+""",
+    ]
+
+    flight = parse_lido(pages, "procedures.pdf")
+
+    assert flight["sid"] == "VMR9B"
+    assert flight["sid_source_page"] == 3
+    assert flight["star"] == "TUMGA1C"
+    assert flight["star_source_page"] == 5
+
+
+@pytest.mark.parametrize(
+    ("label", "declaration"),
+    (
+        ("SID", "SID: NIL"),
+        ("SID", "SID: NONE"),
+        ("SID", "SID: N/A"),
+        ("SID", "SID: WSSS/20C"),
+        ("SID", "SID: NOT AVAILABLE"),
+        ("STAR", "STAR: NOT STATED"),
+        ("SID", "SID: WSSS/20C NOT AVAILABLE"),
+        ("STAR", "STAR: VTBS/20R NOT STATED - USE ATC ASSIGNMENT"),
+    ),
+)
+def test_named_procedure_rejects_non_procedure_declarations(
+    label: str,
+    declaration: str,
+) -> None:
+    assert _parse_named_procedure([declaration], label) == (None, None)
+
+
+def test_named_procedure_stays_on_its_label_line_and_accepts_trailing_context() -> None:
+    page = "\n".join(
+        (
+            "SID: WSSS/20C",
+            "STAR: VTBS/20R TUMGA1C",
+            "SID: WSSS/20C VMR9B TRANSITION",
+        )
+    )
+
+    assert _parse_named_procedure([page], "SID") == ("VMR9B", 1)
+    assert _parse_named_procedure([page], "STAR") == ("TUMGA1C", 1)
+    assert _parse_named_procedure(["SID: WSSS/20C NOTUS1A"], "SID") == (
+        "NOTUS1A",
+        1,
+    )
 
 
 def test_edto_periods_follow_overnight_flight_dates() -> None:

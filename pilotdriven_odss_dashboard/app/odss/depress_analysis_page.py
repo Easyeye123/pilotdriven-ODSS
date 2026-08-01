@@ -330,7 +330,7 @@ def _draw_card(
         rows.append(
             (
                 (
-                    "ACTUAL EXPOSURE"
+                    "CFP ROUTE EXPOSURE"
                     if len(related_events) == 1
                     else f"EXPOSURE {index}"
                 ),
@@ -437,7 +437,7 @@ def draw_depressurisation_analysis(
         top - 12,
         (
             f"Approved A350 profile set {issue_date or 'not stated'} | "
-            "actual exposure and chart coverage shown separately"
+            "CFP route exposure and chart coverage shown separately"
         ),
     )
 
@@ -518,7 +518,11 @@ def draw_depressurisation_analysis(
         canvas.drawCentredString(
             width / 2,
             card_y + card_height / 2,
-            "No approved profile match in the mounted controlled index.",
+            (
+                "NO CFP ROUTE HIGH-TERRAIN EXPOSURE DETECTED"
+                if not events
+                else "No approved profile match in the mounted controlled index."
+            ),
         )
 
     # Unmatched exposures panel, sized to its content.
@@ -546,7 +550,11 @@ def draw_depressurisation_analysis(
         (
             "UNMATCHED EXPOSURES - NO APPROVED CHART SUBSTITUTED"
             if unresolved
-            else "ALL HIGH-TERRAIN EXPOSURE WINDOWS COVERED"
+            else (
+                "ALL HIGH-TERRAIN EXPOSURE WINDOWS COVERED"
+                if events
+                else "METHOD / SOURCE BASIS"
+            )
         ),
     )
     text_y -= 14
@@ -615,9 +623,16 @@ def draw_depressurisation_analysis(
             margin + pad,
             text_y,
             (
-                f"{event_refs or 'All detected windows'} covered by "
-                f"{profile_refs or 'the approved profile set'}; "
-                "no nearby or generic chart substituted."
+                (
+                    f"{event_refs or 'All detected windows'} covered by "
+                    f"{profile_refs or 'the approved profile set'}; "
+                    "no nearby or generic chart substituted."
+                )
+                if events
+                else (
+                    "No strict MSA >100* window was detected in the parsed CFP "
+                    "route; no profile match was required."
+                )
             )[:180],
         )
 
@@ -635,13 +650,14 @@ def draw_depressurisation_analysis(
             "verify route/airways and aircraft effectivity."
         ),
     )
-    canvas.setFillColor(theme.GREEN)
-    canvas.setFont(theme.SANS_BOLD, 6.0)
-    canvas.drawString(
-        margin + pad,
-        panel_bottom + 10,
-        "FULL AUTHORITATIVE SOURCE CHARTS: LEVEL 2 SOURCE-CHART PAGES",
-    )
+    if matched:
+        canvas.setFillColor(theme.GREEN)
+        canvas.setFont(theme.SANS_BOLD, 6.0)
+        canvas.drawString(
+            margin + pad,
+            panel_bottom + 10,
+            "FULL AUTHORITATIVE SOURCE CHARTS: LEVEL 2 SOURCE-CHART PAGES",
+        )
     button_x = width - margin - pad
     for finding in reversed(matched[:2]):
         chart = str((finding.get("data") or {}).get("chart_number") or "")

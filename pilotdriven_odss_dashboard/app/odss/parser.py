@@ -240,6 +240,72 @@ def _parse_route_text(page1: str) -> str:
     return " ".join(route_lines)
 
 
+def _parse_named_procedure(
+    cfp_pages: list[str],
+    label: str,
+) -> tuple[str | None, int | None]:
+    """Return the CFP-declared SID/STAR name and its one-based source page.
+
+    Lido prints the procedure after an airport/runway token, for example
+    ``SID: WSSS/20C VMR9B``.  The airport and runway are evidence for the
+    procedure, not the procedure name itself, so the report must retain the
+    final token rather than substituting WSSS or VTBS.
+    """
+
+    line_pattern = re.compile(
+        rf"^\s*{re.escape(label)}\s*:\s*(?P<body>[^\r\n]*)$",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    airport_runway = re.compile(
+        r"^[A-Z]{4}/[0-9]{2}[LCR]?\b(?P<remainder>.*)$",
+        re.IGNORECASE,
+    )
+    bare_procedure = re.compile(
+        r"^(?P<procedure>[A-Z0-9][A-Z0-9-]*)\b",
+        re.IGNORECASE,
+    )
+    unavailable_values = {
+        "NIL",
+        "NONE",
+        "N/A",
+        "NA",
+        "NOT APPLICABLE",
+        "NOT AVAILABLE",
+        "NOT STATED",
+    }
+
+    def is_unavailable(value: str) -> bool:
+        normalized = " ".join(value.upper().split())
+        return any(
+            normalized == placeholder or normalized.startswith(f"{placeholder} ")
+            for placeholder in unavailable_values
+        )
+
+    for page_number, page in enumerate(cfp_pages, start=1):
+        for match in line_pattern.finditer(page):
+            body = match.group("body").strip()
+            if not body or is_unavailable(body):
+                continue
+
+            airport_match = airport_runway.match(body)
+            if airport_match:
+                # An airport/runway token is context, never a procedure name.
+                body = airport_match.group("remainder").strip()
+                if not body or is_unavailable(body):
+                    continue
+
+            bare_match = bare_procedure.match(body)
+            if not bare_match:
+                continue
+            procedure = bare_match.group("procedure")
+
+            procedure = procedure.upper()
+            if is_unavailable(procedure):
+                continue
+            return procedure, page_number
+    return None, None
+
+
 def _parse_alternates(cfp_pages: list[str]) -> list[dict[str, Any]]:
     # The alternate table spills past the first page on long-haul plans, so the
     # whole CFP section is scanned. The scan stays inside that section, never
@@ -679,6 +745,8 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     departure = route_line.group("departure") if route_line else identity.group("dep_iata")
     destination = destination_line.group("destination") if destination_line else identity.group("dest_iata")
     route_text = _parse_route_text(page1)
+    sid, sid_source_page = _parse_named_procedure(cfp_pages, "SID")
+    star, star_source_page = _parse_named_procedure(cfp_pages, "STAR")
     waypoints = _parse_waypoints(
         cfp_pages[6:],
         route_text,
@@ -824,6 +892,14 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "destination": destination,
         "departure_runway": route_line.group("dep_rwy") if route_line else None,
         "destination_runway": destination_line.group("dest_rwy") if destination_line else None,
+        "sid": sid,
+        "sid_source_page": (
+            cfp_start + sid_source_page if sid_source_page is not None else None
+        ),
+        "star": star,
+        "star_source_page": (
+            cfp_start + star_source_page if star_source_page is not None else None
+        ),
         "scheduled_departure_utc": departure_utc.isoformat(),
         "scheduled_arrival_utc": arrival_utc.isoformat(),
         "ground_distance_nm": _int_group(page1, r"GND\s+MILES\s+(\d+)"),

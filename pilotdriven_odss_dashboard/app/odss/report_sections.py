@@ -27,7 +27,7 @@ LEVEL2_SECTIONS = MappingProxyType(
             {"page": 6, "heading": "DEPRESSURISATION PROFILE MATCH MATRIX"}
         ),
         "weather_detail": MappingProxyType(
-            {"page": 7, "heading": "WEATHER, VAAC AND PROMOTION RESULT"}
+            {"page": 7, "heading": "WEATHER AND PROMOTION RESULT"}
         ),
     }
 )

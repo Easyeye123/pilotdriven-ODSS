@@ -58,6 +58,30 @@ def test_quality_gate_accepts_three_page_a4_landscape_level1(tmp_path: Path) -> 
     assert result["page_count"] == 3
 
 
+def test_quality_gate_accepts_non_sq_level1_operational_timing_title(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level1-other-carrier.pdf"
+    _pdf(
+        path,
+        pages=3,
+        page_texts=[
+            "APPLICABLE NOTAMS WITHIN STD / STA +/- 2 HOURS\n"
+            "Filed route from CFP coordinates",
+            "BAW304 - OPERATIONAL TIMING",
+            "DEPRESSURISATION PROFILE ANALYSIS",
+        ],
+    )
+
+    result = validate_report_pdf(path, level=1)
+
+    assert result["valid"] is True
+    assert not any(
+        item.code == "LEVEL_1_PAGE_2_STRUCTURE"
+        for item in result["violations"]
+    )
+
+
 def test_report_typography_tokens_keep_pilot_content_legible() -> None:
     assert LEVEL1_TYPOGRAPHY["body"] >= 10.0
     assert LEVEL1_TYPOGRAPHY["body_small"] >= 10.0
@@ -165,7 +189,7 @@ def test_quality_gate_requires_fixed_level2_page_contract(tmp_path: Path) -> Non
             "EDTO SECTORS AND SUITABILITY INPUTS",
             "OCEANIC AND FIR COMMUNICATIONS",
             "DEPRESSURISATION PROFILE MATCH MATRIX",
-            "WEATHER, VAAC AND PROMOTION RESULT",
+            "WEATHER AND PROMOTION RESULT",
         ],
     )
 
@@ -173,6 +197,37 @@ def test_quality_gate_requires_fixed_level2_page_contract(tmp_path: Path) -> Non
 
     assert result["valid"] is True
     assert result["page_count"] == 7
+
+
+def test_quality_gate_rejects_incomplete_fail_closed_advisory_result(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level2-clipped-advisory.pdf"
+    _pdf(
+        path,
+        pages=7,
+        page_texts=[
+            "ANALYSIS OVERVIEW",
+            "PERFORMANCE, FUEL AND AIRPORT BASIS",
+            "FLIGHT-WINDOW NOTAM APPLICABILITY",
+            "EDTO SECTORS AND SUITABILITY INPUTS",
+            "OCEANIC AND FIR COMMUNICATIONS",
+            "DEPRESSURISATION PROFILE MATCH MATRIX",
+            (
+                "WEATHER AND PROMOTION RESULT\n"
+                "Volcanic ash review required\n"
+                "The official sources could not safely confirm that volcanic ash is not"
+            ),
+        ],
+    )
+
+    result = validate_report_pdf(path, level=2)
+
+    assert result["valid"] is False
+    assert any(
+        item.code == "LEVEL_2_ADVISORY_RESULT_INCOMPLETE"
+        for item in result["violations"]
+    )
 
 
 def test_quality_gate_rejects_wrong_level2_page_order(tmp_path: Path) -> None:
@@ -187,7 +242,7 @@ def test_quality_gate_rejects_wrong_level2_page_order(tmp_path: Path) -> None:
             "EDTO SECTORS AND SUITABILITY INPUTS",
             "OCEANIC AND FIR COMMUNICATIONS",
             "DEPRESSURISATION PROFILE MATCH MATRIX",
-            "WEATHER, VAAC AND PROMOTION RESULT",
+            "WEATHER AND PROMOTION RESULT",
         ],
     )
 

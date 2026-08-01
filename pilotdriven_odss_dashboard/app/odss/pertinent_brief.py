@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from xml.sax.saxutils import escape
@@ -939,6 +940,47 @@ def _surface_period(item: dict[str, Any]) -> str | None:
     return None
 
 
+def _surface_source_conflict_line(item: dict[str, Any]) -> str | None:
+    conflict = item.get("sourceConflict") or {}
+    if not isinstance(conflict, dict) or not conflict:
+        return None
+
+    def full_time(value: Any) -> str:
+        text = str(value or "").strip()
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return text or "unavailable"
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).strftime("%d %b %y %H%MZ").upper()
+
+    source_url = str(conflict.get("sourceUrl") or "")
+    authority = (
+        "CAAS"
+        if "aim-sg.caas.gov.sg" in source_url.lower()
+        else "reviewed source"
+    )
+    publication = str(conflict.get("publicationId") or "publication").strip()
+    uploaded = conflict.get("uploaded") or {}
+    reviewed = conflict.get("reviewed") or {}
+    field_labels = {"startsAt": "start", "endsAt": "end"}
+    comparisons = [
+        (
+            f"{field_labels[field]} uploaded {full_time(uploaded.get(field))}, "
+            f"reviewed {full_time(reviewed.get(field))}"
+        )
+        for field in conflict.get("conflictingFields") or []
+        if field in field_labels
+    ]
+    detail = "; ".join(comparisons) or str(item.get("evidence") or "").strip()
+    return (
+        f"Source conflict: {authority} {publication}"
+        + (f"; {detail}" if detail else "")
+        + "; pilot review required."
+    )
+
+
 def _surface_detail_line(prefix: str, item: dict[str, Any]) -> str:
     # "There has to be a period": every stated restriction carries its NOTAM id
     # and window; a missing window states itself instead of hiding.
@@ -961,7 +1003,13 @@ def _surface_overlay_lines(
         if presentation is not None:
             grouped[presentation].append(item)
 
-    review_required = overlay.get("reviewRequired") or []
+    # Stable ordering keeps the producer's order within each class while
+    # guaranteeing that a governed-source disagreement cannot be clipped by a
+    # compact panel's review-row limit.
+    review_required = sorted(
+        overlay.get("reviewRequired") or [],
+        key=lambda item: 0 if item.get("sourceConflict") else 1,
+    )
     ordered = (
         ("closure", "exact closure", "Closed"),
         ("scheduled", "scheduled restriction", "Scheduled"),
@@ -981,19 +1029,21 @@ def _surface_overlay_lines(
             for key, _, prefix in ordered
             for item in grouped[key]
         ]
-        lines.extend(details[:detail_limit])
     elif review_required:
         lines = [
             "Surface overlay: no validated mark; "
             f"{len(review_required)} item"
             f"{'s' if len(review_required) != 1 else ''} require chart review."
         ]
+        details = []
     else:
         lines = [
             "Surface overlay: no applicable surface mark at the selected time."
         ]
+        details = []
     # Review lines name their subject — "doesn't say what" is not a state a
-    # pilot can act on. Each row leads with the NOTAM id.
+    # pilot can act on. Safety-significant source conflicts precede lower-risk
+    # mapped detail so compact report panels cannot silently clip them.
     for row in review_required[:2]:
         notam = str(row.get("notamNumber") or "").strip()
         entity = " ".join(
@@ -1006,9 +1056,17 @@ def _surface_overlay_lines(
         )
         subject = " ".join(part for part in (notam, entity) if part)
         plain = str(row.get("plainEnglish") or "surface location unresolved")
-        lines.append(
-            f"Review required: {subject + ' - ' if subject else ''}{plain}"
-        )
+        conflict_line = _surface_source_conflict_line(row)
+        if conflict_line:
+            lines.append(
+                f"Review required: {subject + ' - ' if subject else ''}"
+                f"{conflict_line}"
+            )
+        else:
+            lines.append(
+                f"Review required: {subject + ' - ' if subject else ''}{plain}"
+            )
+    lines.extend(details[:detail_limit])
     return lines
 
 
@@ -1177,6 +1235,23 @@ def _draw_surface_map(
             report_map.get("label")
             or "Validated OSM surface schematic"
         )
+        conflict = next(
+            (
+                item.get("sourceConflict") or {}
+                for item in overlay.get("reviewRequired") or []
+                if item.get("sourceConflict")
+            ),
+            {},
+        )
+        if conflict:
+            publication = str(
+                conflict.get("publicationId") or "source"
+            ).strip()
+            source_url = str(conflict.get("sourceUrl") or "").lower()
+            authority = (
+                "CAAS" if "aim-sg.caas.gov.sg" in source_url else "SOURCE"
+            )
+            label = f"{authority} {publication} TIMING CONFLICT - REVIEW"
         canvas.setFillColor(colors.Color(0, 0, 0, alpha=0.72))
         canvas.rect(x, y, width, 5 * mm, fill=1, stroke=0)
         canvas.setFillColor(colors.white)
@@ -2004,8 +2079,8 @@ def _draw_cover(
         or "review_required"
     )
     if edto_assessment_status == "verified_not_applicable":
-        edto_metric_value = "VERIFIED"
-        edto_metric_note = "Not applicable by complete CFP evidence"
+        edto_metric_value = "ASSESSED"
+        edto_metric_note = "Governed status compiled once on page 2"
     elif edto_assessment_status == "affected":
         edto_metric_value = f"{len(sectors)} sector{'s' if len(sectors) != 1 else ''}"
         edto_metric_note = (
@@ -2170,9 +2245,12 @@ def _draw_operational_detail(
     )
     if edto_assessment_status == "verified_not_applicable":
         edto_sector_empty_text = (
-            "Complete company CFP checked - no EDTO section was published."
+            "Complete company CFP checked; the single governed status is stated "
+            "in DATA COVERAGE."
         )
-        edto_airport_empty_text = "No EDTO airport period required."
+        edto_airport_empty_text = (
+            "Airport details are shown only when an EDTO sector is present."
+        )
     elif edto_assessment_status == "affected":
         edto_sector_empty_text = (
             "EDTO applies, but no sector timeline was published - review required."
@@ -2427,7 +2505,14 @@ def _draw_operational_detail(
         ),
     ]
     if nil_labels:
-        coverage_lines.append("NIL " + " / ".join(nil_labels) + ".")
+        nil_result = "NIL " + " / ".join(nil_labels)
+        if nil_labels == ["EDTO"]:
+            nil_result += (
+                " - verified not applicable from the complete uploaded CFP"
+            )
+        elif "EDTO" in nil_labels:
+            nil_result += " - each explicitly verified from its governed source"
+        coverage_lines.append(nil_result + ".")
     if affected_labels:
         coverage_lines.append(
             " and ".join(affected_labels)
@@ -2678,7 +2763,7 @@ def _draw_route_detail(
             ("REF", 0.06),
             ("ACTM", 0.12),
             ("UTC" if actual_timing_anchor(flight) else "UTC — NO ANCHOR", 0.20),
-            ("ACTUAL EXPOSURE", 0.20),
+            ("CFP ROUTE EXPOSURE", 0.20),
             ("MAX MSA", 0.14),
             ("PROFILE / COVERAGE", 0.28),
         ],

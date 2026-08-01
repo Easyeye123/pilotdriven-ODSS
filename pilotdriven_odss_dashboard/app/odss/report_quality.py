@@ -34,8 +34,8 @@ _PILOT_FACING_FORBIDDEN = (
     ("PILOT_DECISION_POINT_LABEL", re.compile(r"\bDecision point\s*:", re.IGNORECASE)),
 )
 _LEVEL_1_PAGE_2_TITLE = re.compile(
-    r"\bS(?:IA|Q)\s*\d+\s*-\s*OPERATIONAL TIMING\b",
-    re.IGNORECASE,
+    r"^\s*[A-Z0-9][A-Z0-9 -]{1,15}\s*-\s*OPERATIONAL TIMING\s*$",
+    re.IGNORECASE | re.MULTILINE,
 )
 _LEVEL_1_PAGE_3_TITLE = re.compile(
     r"\bDEPRESSURISATION PROFILE ANALYSIS\b",
@@ -55,16 +55,30 @@ _LEVEL_1_RETIRED_HEADINGS = (
     "ROUTE / CONTINGENCY",
 )
 _LEVEL_2_PAGE_TITLES = (
-    "ANALYSIS OVERVIEW",
-    "PERFORMANCE, FUEL AND AIRPORT BASIS",
-    "FLIGHT-WINDOW NOTAM APPLICABILITY",
-    "EDTO SECTORS AND SUITABILITY INPUTS",
-    "OCEANIC AND FIR COMMUNICATIONS",
-    "DEPRESSURISATION PROFILE MATCH MATRIX",
-    "WEATHER, VAAC AND PROMOTION RESULT",
+    ("ANALYSIS OVERVIEW",),
+    ("PERFORMANCE, FUEL AND AIRPORT BASIS",),
+    ("FLIGHT-WINDOW NOTAM APPLICABILITY",),
+    ("EDTO SECTORS AND SUITABILITY INPUTS", "EDTO STATUS"),
+    ("OCEANIC AND FIR COMMUNICATIONS",),
+    ("DEPRESSURISATION PROFILE MATCH MATRIX",),
+    ("WEATHER AND PROMOTION RESULT",),
 )
 _LEVEL_2_SOURCE_CHART_MARKER = "LEVEL 2 SOURCE CHART - PROFILE"
 _LEVEL_2_NOTAM_CONTINUATION_MARKER = "LEVEL 2 - NOTAM CONTINUATION"
+_LEVEL_2_FAIL_CLOSED_ADVISORY_RESULTS = (
+    (
+        "SIGMET review required",
+        "Flight-window coverage incomplete - review the current official source.",
+    ),
+    (
+        "Volcanic ash review required",
+        "Applicability unresolved - review official volcanic-ash source.",
+    ),
+    (
+        "Tropical cyclone review required",
+        "Applicability unresolved - review official cyclone source.",
+    ),
+)
 
 
 def validate_report_pdf(
@@ -175,13 +189,30 @@ def validate_report_pdf(
                 ))
 
     if level == 2 and page_count >= 7:
-        for page_index, required_title in enumerate(_LEVEL_2_PAGE_TITLES):
-            if required_title.lower() not in extracted_pages[page_index].lower():
+        for page_index, accepted_titles in enumerate(_LEVEL_2_PAGE_TITLES):
+            if not any(
+                title.lower() in extracted_pages[page_index].lower()
+                for title in accepted_titles
+            ):
                 violations.append(ReportQualityViolation(
                     "LEVEL_2_PAGE_STRUCTURE",
                     (
                         f"Level 2 page {page_index + 1} must contain "
-                        f"{required_title}."
+                        f"one of {', '.join(accepted_titles)}."
+                    ),
+                ))
+        weather_page = " ".join(extracted_pages[6].split())
+        weather_page_folded = weather_page.casefold()
+        for title, complete_result in _LEVEL_2_FAIL_CLOSED_ADVISORY_RESULTS:
+            if (
+                title.casefold() in weather_page_folded
+                and complete_result.casefold() not in weather_page_folded
+            ):
+                violations.append(ReportQualityViolation(
+                    "LEVEL_2_ADVISORY_RESULT_INCOMPLETE",
+                    (
+                        f"Level 2 page 7 contains {title!r} without its complete "
+                        "fail-closed result and official-source instruction."
                     ),
                 ))
         source_chart_seen = False

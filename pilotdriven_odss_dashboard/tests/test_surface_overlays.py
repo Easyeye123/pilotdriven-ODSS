@@ -152,6 +152,47 @@ def test_review_required_surface_accepts_bounded_official_source_conflict() -> N
     assert conflict.conflictingFields == ["startsAt"]
 
 
+def test_report_names_caas_timing_conflict_and_both_zulu_values() -> None:
+    overlay = {
+        "mapped": [],
+        "reviewRequired": [
+            {
+                "notamNumber": "A1000/26",
+                "entityType": "taxiway",
+                "entityRef": "S1",
+                "plainEnglish": "Surface location unresolved.",
+            },
+            {
+                "notamNumber": "A1001/26",
+                "entityType": "taxiway",
+                "entityRef": "S2",
+                "plainEnglish": "Surface location unresolved.",
+            },
+            {
+                "notamNumber": "SX68/26",
+                "entityType": "taxiway",
+                "entityRef": "W9/W/R",
+                "plainEnglish": "Uploaded and reviewed publication times conflict.",
+                "sourceConflict": {
+                    "publicationId": "SUP 068/2026",
+                    "sourceUrl": "https://aim-sg.caas.gov.sg/example",
+                    "conflictingFields": ["startsAt"],
+                    "uploaded": {"startsAt": "2026-05-14T14:30:00Z"},
+                    "reviewed": {"startsAt": "2026-05-14T17:30:00Z"},
+                },
+            }
+        ],
+    }
+
+    text = "\n".join(_surface_overlay_lines(overlay, detail_limit=4))
+
+    assert "CAAS SUP 068/2026" in text
+    assert "start uploaded 14 MAY 26 1430Z" in text
+    assert "reviewed 14 MAY 26 1730Z" in text
+    assert "pilot review required" in text
+    assert "A1001/26" not in text
+
+
 def test_report_summary_does_not_call_nonclosures_closed() -> None:
     overlay = {
         "mapped": [

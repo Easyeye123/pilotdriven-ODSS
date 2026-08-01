@@ -34,8 +34,9 @@ from app.odss.report_facts import (
     select_route_gate_rows,
 )
 from app.odss.engines import detect_terrain_events
-from app.odss.operational_brief import _notam_rows, _source_label
+from app.odss.operational_brief import _brief_utc_window, _notam_rows, _source_label
 from app.odss.reporting import render_pdf, report_sections
+from app.odss.report_quality import validate_report_pdf
 from app.odss.report_sections import LEVEL2_SECTIONS
 
 
@@ -43,6 +44,17 @@ def test_display_registration_formats_singapore_mark_without_changing_other_mark
     assert _display_registration("9VSMQ") == "9V-SMQ"
     assert _display_registration("9V-SMQ") == "9V-SMQ"
     assert _display_registration("D-ABCD") == "D-ABCD"
+
+
+def test_notam_windows_keep_years_visible_for_multi_year_closures() -> None:
+    assert _brief_utc_window(
+        "2024-11-28T00:00:00Z",
+        "2027-12-22T23:59:00Z",
+    ) == "28 NOV 24 0000Z-22 DEC 27 2359Z"
+    assert _brief_utc_window(
+        "2026-08-01T02:00:00Z",
+        "2026-08-01T04:00:00Z",
+    ) == "01 AUG 26 0200Z-0400Z"
 
 
 def test_sq338_header_uses_offline_airport_zones_and_prominent_block_time(
@@ -85,6 +97,8 @@ def test_sq338_header_uses_offline_airport_zones_and_prominent_block_time(
     normalized = " ".join(first_page.split())
 
     assert "01 AUG 2026 BLOCK 13:40" in normalized
+    assert "UTC STD 0535Z -> STA 1915Z" in normalized
+    assert "UTC DEP" not in normalized
     assert "LOCAL SIN 01 AUG 1335 UTC+8 -> CDG 01 AUG 2115 UTC+2" in normalized
 
 
@@ -376,6 +390,100 @@ def test_depressurisation_profile_clocks_require_actual_timing_anchor() -> None:
     assert _actm_utc(flight, 331) == "1616Z"
 
 
+def test_zero_terrain_level1_reports_one_truthful_no_exposure_status(
+    tmp_path: Path,
+) -> None:
+    flight = _flight()
+    flight["route_waypoints"] = [
+        {
+            "name": "WSSS",
+            "actm_minutes": 0,
+            "latitude": 1.36,
+            "longitude": 103.99,
+            "msa_hundreds_ft": 4,
+            "source_page": 8,
+        },
+        {
+            "name": "CRUISE",
+            "actm_minutes": 90,
+            "latitude": 8.0,
+            "longitude": 101.0,
+            "msa_hundreds_ft": 100,
+            "source_page": 9,
+        },
+        {
+            "name": "EBBR",
+            "actm_minutes": 690,
+            "latitude": 50.90,
+            "longitude": 4.48,
+            "msa_hundreds_ft": 5,
+            "source_page": 15,
+        },
+    ]
+    path = tmp_path / "zero-terrain-level-1.pdf"
+
+    render_pdf(flight, [], [], 1, path)
+
+    page = " ".join((PdfReader(path).pages[2].extract_text() or "").split())
+    assert page.count("NO CFP ROUTE HIGH-TERRAIN EXPOSURE DETECTED") == 1
+    assert "ALL HIGH-TERRAIN EXPOSURE WINDOWS COVERED" not in page
+    assert "No approved profile match in the mounted controlled index." not in page
+    assert "CFP route exposure and chart coverage shown separately" in page
+    assert "actual exposure" not in page.lower()
+    assert "FULL AUTHORITATIVE SOURCE CHARTS" not in page
+
+
+def test_sparse_report_header_pills_remain_inside_page_bounds(
+    tmp_path: Path,
+) -> None:
+    flight = _flight()
+    flight["route_waypoints"] = [
+        {
+            "name": "WSSS",
+            "actm_minutes": 0,
+            "latitude": 1.36,
+            "longitude": 103.99,
+            "msa_hundreds_ft": 4,
+        },
+        {
+            "name": "EBBR",
+            "actm_minutes": 690,
+            "latitude": 50.90,
+            "longitude": 4.48,
+            "msa_hundreds_ft": 5,
+        },
+    ]
+    flight["edto"] = {
+        "assessment": {
+            "status": "verified_not_applicable",
+            "evidence": [{"source": "uploaded_company_cfp"}],
+        },
+    }
+    level1_path = tmp_path / "sparse-level-1.pdf"
+    level2_path = tmp_path / "sparse-level-2.pdf"
+    render_pdf(flight, [], [], 1, level1_path)
+    render_pdf(flight, [], [], 2, level2_path)
+
+    checks = (
+        (level1_path, 2, "LEVEL 1 - DEPRESSURISATION"),
+        (level2_path, 3, "LEVEL 2 - EDTO"),
+        (level2_path, 4, "LEVEL 2 - OCEANIC / FIR COMMUNICATIONS"),
+    )
+    for path, page_index, label in checks:
+        with fitz.open(path) as document:
+            page = document[page_index]
+            header_words = [
+                word for word in page.get_text("words")
+                if word[1] < 100
+            ]
+            assert label in " ".join(word[4] for word in header_words)
+            assert all(
+                0 <= word[0] < word[2] <= page.rect.width
+                and 0 <= word[1] < word[3] <= page.rect.height
+                for word in header_words
+            )
+
+
 def test_profile_findings_join_by_terrain_event_not_list_position() -> None:
     events = detect_terrain_events(
         [
@@ -586,6 +694,7 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "UNMATCHED EXPOSURES - NO APPROVED CHART SUBSTITUTED" in third
     assert "PROFILE FINDINGS" not in third
     assert "manual profile-index review" in third
+    assert "ACTUAL EXPOSURE" not in third
     assert third.count(
         "No controlled profile is confirmed; manual chart-index review is required."
     ) == 0
@@ -830,10 +939,11 @@ def test_level1_edto_summary_distinguishes_verified_nil_from_unverified_empty(
         (page.extract_text() or "")
         for page in PdfReader(verified_path).pages
     )
-    assert "Not applicable by complete CFP evidence" in verified_text
-    assert "Complete company CFP checked - no EDTO section was published" in verified_text
-    assert "No EDTO" in verified_text
+    assert "Not applicable by complete CFP evidence" not in verified_text
+    assert "no EDTO section was published" not in verified_text
+    assert "No EDTO airport period required" not in verified_text
     assert verified_text.count("NIL EDTO / SIGMET / VAA / TROPICAL CYCLONE") == 1
+    assert verified_text.count("NIL EDTO") == 1
 
     incomplete = _flight()
     incomplete["edto"] = verified["edto"]
@@ -848,7 +958,11 @@ def test_level1_edto_summary_distinguishes_verified_nil_from_unverified_empty(
         for page in PdfReader(incomplete_path).pages
     )
     assert "NIL EDTO / SIGMET" not in incomplete_text
-    assert "NIL EDTO" in incomplete_text
+    assert incomplete_text.count("NIL EDTO") == 1
+    assert (
+        "NIL EDTO - verified not applicable from the complete uploaded CFP."
+        in incomplete_text
+    )
     assert "SIGMET: review required" in incomplete_text
 
 
@@ -1195,9 +1309,146 @@ def test_level2_matches_seven_page_operational_contract(tmp_path: Path) -> None:
     assert "PILOT USE" not in pages[4]
     assert "Crossing time parsed." not in pages[4]
     assert "DEPRESSURISATION PROFILE MATCH MATRIX" in pages[5]
-    assert "WEATHER, VAAC AND PROMOTION RESULT" in pages[6]
+    assert "CFP ROUTE EXPOSURE" in pages[5]
+    assert (
+        "cfp route exposure is not replaced by chart altitude"
+        in pages[5].casefold()
+    )
+    assert "actual exposure" not in "\n".join(pages).casefold()
+    assert "actual msa exposure" not in "\n".join(pages).casefold()
+    assert "WEATHER AND PROMOTION RESULT" in pages[6]
+    assert "LEVEL 2 - WEATHER / VAAC / PROMOTION" not in pages[6]
     assert "see the dedicated Level 2 section" not in pages[6]
     assert all(f"Page {index} of 7" in text for index, text in enumerate(pages, 1))
+
+
+def test_level2_prints_source_sid_and_star_on_the_airport_basis_page(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_procedures.pdf"
+    flight = _flight()
+    flight.update({"sid": "VMR9B", "star": "TUMGA1C"})
+
+    render_pdf(flight, [], [], 2, path)
+
+    page = " ".join(
+        (PdfReader(path).pages[1].extract_text() or "").split()
+    )
+    assert "RUNWAY / SID 20C / VMR9B" in page
+    assert "RUNWAY / STAR 07L / TUMGA1C" in page
+    assert "20C / WSSS" not in page
+    assert "07L / EBBR" not in page
+
+
+def test_level2_compiles_verified_nil_edto_once_and_hides_vaac_title_without_ash(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_nil_edto.pdf"
+    flight = _flight()
+    flight["edto"] = {
+        "assessment": {
+            "status": "verified_not_applicable",
+            "evidence": [{
+                "source": "uploaded_company_cfp",
+                "reason_code": "complete_lido_cfp_no_edto_section",
+            }],
+        },
+    }
+    flight["vaa_review"] = {"status": "review_required"}
+    findings = [{
+        "engine": "vaa",
+        "severity": "unknown",
+        "title": "Volcanic ash review required",
+        "summary": "Official coverage is incomplete.",
+        "details": [],
+        "data": {"status": "review_required"},
+    }]
+
+    render_pdf(flight, findings, [], 2, path)
+
+    pages = [page.extract_text() or "" for page in PdfReader(path).pages]
+    text = "\n".join(pages)
+    assert text.count("NIL EDTO") == 1
+    assert "EDTO STATUS" in pages[3]
+    assert "WEATHER AND PROMOTION RESULT" in pages[6]
+    assert "LEVEL 2 - WEATHER / VAAC / PROMOTION" not in pages[6]
+
+
+def test_level2_names_vaac_in_header_only_for_an_affected_ash_advisory(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_affected_vaa.pdf"
+    flight = _flight()
+    flight["vaa_review"] = {"status": "affected"}
+    findings = [{
+        "engine": "vaa",
+        "severity": "critical",
+        "title": "Volcanic ash affects the planned route",
+        "summary": "A current ash advisory intersects the route.",
+        "details": [],
+        "data": {"status": "affected"},
+    }]
+
+    render_pdf(flight, findings, [], 2, path)
+
+    weather_page = PdfReader(path).pages[6].extract_text() or ""
+    assert "LEVEL 2 - WEATHER / VAAC / PROMOTION" in weather_page
+
+
+def test_level2_keeps_fail_closed_advisory_results_complete(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_fail_closed_advisories.pdf"
+    flight = _flight()
+    flight["vaa_review"] = {"status": "review_required"}
+    findings = [
+        {
+            "engine": "sigmet",
+            "severity": "unknown",
+            "title": "SIGMET review required",
+            "summary": "The official source could not fully cover the flight window.",
+            "details": [],
+            "data": {"status": "review_required"},
+        },
+        {
+            "engine": "vaa",
+            "severity": "unknown",
+            "title": "Volcanic ash review required",
+            "summary": (
+                "The official sources could not safely confirm that volcanic ash "
+                "is not applicable to the route."
+            ),
+            "details": [],
+            "data": {"status": "review_required"},
+        },
+        {
+            "engine": "tropical_cyclone",
+            "severity": "unknown",
+            "title": "Tropical cyclone review required",
+            "summary": (
+                "The official sources could not safely confirm that a tropical "
+                "cyclone is not applicable to the route."
+            ),
+            "details": [],
+            "data": {"status": "review_required"},
+        },
+    ]
+
+    render_pdf(flight, findings, [], 2, path)
+
+    page = " ".join(
+        (PdfReader(path).pages[6].extract_text() or "").split()
+    )
+    assert (
+        "Flight-window coverage incomplete - review the current official source."
+        in page
+    )
+    assert (
+        "Applicability unresolved - review official volcanic-ash source."
+        in page
+    )
+    assert "Applicability unresolved - review official cyclone source." in page
+    assert validate_report_pdf(path, level=2)["valid"] is True
 
 
 def test_level2_quick_links_land_on_the_rendered_section_heading(
@@ -1281,7 +1532,7 @@ def test_level2_preserves_page_contract_when_sections_are_sparse(tmp_path: Path)
     assert len(reader.pages) == 7
     assert "FLIGHT-WINDOW NOTAM APPLICABILITY" in page_text[2]
     assert "DEPRESSURISATION PROFILE MATCH MATRIX" in page_text[5]
-    assert "WEATHER, VAAC AND PROMOTION RESULT" in page_text[6]
+    assert "WEATHER AND PROMOTION RESULT" in page_text[6]
     assert "Coverage note:" not in page_text[6]
 
 
@@ -1477,8 +1728,8 @@ def test_level2_notam_table_uses_actual_window_and_pilot_facing_effect(
     normalized = " ".join(page.split())
     assert "A6475/26" in normalized
     assert "1A6475/26" not in normalized
-    assert "11 JUL 0930Z-1130Z" in normalized
-    assert "11 JUL 2100Z-12 JUL 0100Z" in normalized
+    assert "11 JUL 26 0930Z-1130Z" in normalized
+    assert "11 JUL 26 2100Z-12 JUL 26 0100Z" in normalized
     assert "Runway availability affected." in normalized
     assert "Restriction unresolved - pilot review required." in normalized
     assert " active " not in f" {normalized.lower()} "
@@ -1539,9 +1790,9 @@ def test_reference_timed_notam_uses_validity_not_screening_window(
     assert "A6475/26" in page
     assert "1A6475/26" not in page
     assert "Rwy 04L/22R closed or unavailable." in page
-    assert "25 JUL 0300Z-1000Z" in page
-    assert "Begins 45 min after ETD; active 0300Z-1000Z." in page
-    assert "Active at ETD." in page
+    assert "25 JUL 26 0300Z-1000Z" in page
+    assert "Begins 45 min after STD; active 25 JUL 26 0300Z-1000Z." in page
+    assert "Active at STD." in page
     assert "25 JUL 0115Z-0315Z" not in page
 
 

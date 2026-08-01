@@ -1140,6 +1140,7 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         document.close()
     assert "Surface overlay: 1 exact closure mark." in " ".join(text.split())
     assert "Closed: TAXIWAY S2" in text
+    assert "CAAS SUP 068/2026" in text
 
     level2 = service_app.get(
         f"/v1/analyses/{analysis_id}/reports/level-2",
@@ -1152,6 +1153,10 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
     finally:
         level2_document.close()
     assert "active closures" in level2_text
+    assert "CAAS SUP 068/2026" in level2_text
+    assert "1430Z" in level2_text
+    assert "1730Z" in level2_text
+    assert "review required" in level2_text
 
     timing = service_app.post(
         f"/v1/analyses/{analysis_id}/timing",

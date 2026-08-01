@@ -224,9 +224,9 @@ def draw_header(
     canvas.setFillColor(MUTED)
     canvas.setFont(SANS, 7.2)
     utc_line = (
-        "UTC  DEP "
+        "UTC  STD "
         + utc_hhmm(flight.get("scheduled_departure_utc"))
-        + "  ->  ARR "
+        + "  ->  STA "
         + utc_hhmm(flight.get("scheduled_arrival_utc"))
     )
     if extra_utc_note:

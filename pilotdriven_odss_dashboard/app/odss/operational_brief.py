@@ -591,6 +591,7 @@ def _draw_table(
     fill_height: bool = False,
     body_font_size: float = REPORT_TYPOGRAPHY["table_body"],
     header_font_size: float = REPORT_TYPOGRAPHY["table_header"],
+    require_complete_text: bool = False,
 ) -> int:
     data = list(rows)
     if max_rows is not None:
@@ -675,6 +676,11 @@ def _draw_table(
                 max_lines = max(
                     1,
                     int((row_h - 2.4 * mm) // leading),
+                )
+            if require_complete_text and len(lines) > max_lines:
+                raise ValueError(
+                    "Pilot-facing table cell cannot be rendered completely "
+                    f"at row {row_index + 1}, column {column_index + 1}."
                 )
             lines = lines[:max_lines]
             if len(_pilot_text(value)) and len(lines) == max_lines:
@@ -908,12 +914,12 @@ def _brief_utc_window(start_value: Any, end_value: Any) -> str:
         return "Applicable flight window"
     if start.date() == end.date():
         return (
-            f"{start.strftime('%d %b').upper()} "
+            f"{start.strftime('%d %b %y').upper()} "
             f"{start.strftime('%H%M')}Z-{end.strftime('%H%M')}Z"
         )
     return (
-        f"{start.strftime('%d %b %H%M').upper()}Z-"
-        f"{end.strftime('%d %b %H%M').upper()}Z"
+        f"{start.strftime('%d %b %y %H%M').upper()}Z-"
+        f"{end.strftime('%d %b %y %H%M').upper()}Z"
     )
 
 
@@ -931,9 +937,9 @@ def _notam_flight_effect(finding: dict[str, Any], role: str) -> str:
         return "Restriction unresolved - pilot review required."
 
     reference_label = {
-        "departure": "ETD",
-        "destination": "ETA",
-        "destination alternate": "ETA",
+        "departure": "STD",
+        "destination": "STA",
+        "destination alternate": "STA",
         "EDTO": "EDTO entry",
     }.get(role, "flight reference")
     state = str(data.get("stateAtReference") or "").strip()
@@ -943,14 +949,9 @@ def _notam_flight_effect(finding: dict[str, Any], role: str) -> str:
             data.get("valid_from_utc"),
             data.get("valid_to_utc"),
         )
-        time_range = re.sub(
-            r"^\d{2} [A-Z]{3} ",
-            "",
-            validity,
-        )
         return (
             f"Begins {minutes_delta} min after {reference_label}; "
-            f"active {time_range}."
+            f"active {validity}."
         )
     if state == "active_at_reference":
         return f"Active at {reference_label}."
@@ -1094,6 +1095,37 @@ def _advisory_rows(items: list[dict[str, Any]]) -> list[list[str]]:
     return rows
 
 
+_COMPACT_FAIL_CLOSED_ADVISORY_RESULTS = {
+    "sigmet": (
+        "Flight-window coverage incomplete - review the current official source."
+    ),
+    "vaa": (
+        "Applicability unresolved - review official volcanic-ash source."
+    ),
+    "tropical_cyclone": (
+        "Applicability unresolved - review official cyclone source."
+    ),
+}
+
+
+def _compact_advisory_result(item: dict[str, Any]) -> str:
+    data = item.get("data") or {}
+    if str(data.get("status") or "").lower() == "review_required":
+        result = _COMPACT_FAIL_CLOSED_ADVISORY_RESULTS.get(
+            str(item.get("engine") or "").lower()
+        )
+        if result:
+            return result
+    return _first_sentence(_finding_summary(item))
+
+
+def _compact_advisory_source(item: dict[str, Any]) -> str:
+    # Validity detail remains in the full source/evidence rows below. Return a
+    # stable concise label so repeated sources can be deduplicated explicitly.
+    source = _compact_source_label(item)
+    return source.split(" / valid ", 1)[0]
+
+
 def _promotion_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
     categories: Sequence[tuple[str, set[str]]] = (
         ("AIRPORT / NOTAM", {"notam"}),
@@ -1227,7 +1259,12 @@ def _overview_rows(
         result = "NIL EDTO - explicitly verified not applicable in the uploaded CFP."
     else:
         result = "EDTO applicability is not explicitly verified - review required."
-    add_finding("EDTO", "EDTO timing", result, "LEVEL 2")
+    # A verified NIL is published once on the dedicated EDTO-status page.
+    # Repeating it in the overview created several visually different "NO"
+    # statements for one fact, which is exactly the ambiguity the pilot asked
+    # us to remove. Affected and unresolved cases remain in the overview.
+    if edto_assessment_status != "verified_not_applicable" or sectors:
+        add_finding("EDTO", "EDTO timing", result, "LEVEL 2")
 
     if route_gates:
         principal_gate = next(
@@ -1722,9 +1759,44 @@ def _page_two(
                 for part in (summary, "unresolved marks require chart review")
                 if part
             )
+        source_conflict_item = next(
+            (
+                item
+                for item in overlay.get("reviewRequired") or []
+                if item.get("sourceConflict")
+            ),
+            None,
+        )
+        source_conflict = None
+        if source_conflict_item:
+            conflict = source_conflict_item.get("sourceConflict") or {}
+            uploaded = conflict.get("uploaded") or {}
+            reviewed = conflict.get("reviewed") or {}
+
+            def short_clock(value: Any) -> str:
+                text = str(value or "")
+                return (
+                    text[11:16].replace(":", "") + "Z"
+                    if len(text) >= 16
+                    else "unavailable"
+                )
+
+            source_url = str(conflict.get("sourceUrl") or "").lower()
+            authority = (
+                "CAAS" if "aim-sg.caas.gov.sg" in source_url else "SOURCE"
+            )
+            publication = _text(
+                conflict.get("publicationId"),
+                "publication",
+            )
+            source_conflict = (
+                f"{authority} {publication}: uploaded "
+                f"{short_clock(uploaded.get('startsAt'))} vs reviewed "
+                f"{short_clock(reviewed.get('startsAt'))} - review required"
+            )
         return (
             summary or "No applicable surface mark at selected time",
-            "Overlay available in airport view",
+            source_conflict or "Overlay available in airport view",
         )
 
     departure = _text(flight.get("departure"), "Departure")
@@ -1756,8 +1828,10 @@ def _page_two(
         for item in (flight.get("alternates") or [])
         if isinstance(item, dict) and item.get("airport")
     ) or "No destination alternate parsed"
+    sid = _text(flight.get("sid"), "SID not found in CFP - review required")
+    star = _text(flight.get("star"), "STAR not found in CFP - review required")
     left_rows = [
-        ["RUNWAY / SID", f"{flight.get('departure_runway') or '--'} / {departure}", "Planned CFP basis"],
+        ["RUNWAY / SID", f"{flight.get('departure_runway') or '--'} / {sid}", "Planned CFP basis"],
         ["PERFORMANCE", performance_basis, "RTOW results shown above"],
         ["WEATHER", dep_weather, dep_weather_effect],
         ["PERTINENT NOTAMS", dep_notam, dep_notam_effect],
@@ -1773,7 +1847,7 @@ def _page_two(
             ]
         )
     right_rows = [
-        ["RUNWAY / ARRIVAL", f"{flight.get('destination_runway') or '--'} / {destination}", "Planned CFP basis"],
+        ["RUNWAY / STAR", f"{flight.get('destination_runway') or '--'} / {star}", "Planned CFP basis"],
         ["WEATHER", dest_weather, dest_weather_effect],
         ["PERTINENT NOTAMS", dest_notam, dest_notam_effect],
         ["ALTERNATES", alternates, "Checked-period suitability required"],
@@ -1944,15 +2018,50 @@ def _page_four(
     findings: list[dict[str, Any]],
     briefing: dict[str, Any],
 ) -> None:
-    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - EDTO / WEATHER", page_number=level2_page("edto_detail"))
-    top = _draw_title(canvas, level2_heading("edto_detail"), top)
-    margin = 7 * mm
-    gap = 3 * mm
-    sectors = edto_sectors(flight.get("edto") or {})
     edto_assessment_status = str(
         ((briefing.get("edto") or {}).get("assessment") or {}).get("status")
         or "review_required"
     )
+    sectors = edto_sectors(flight.get("edto") or {})
+    nil_edto = edto_assessment_status == "verified_not_applicable" and not sectors
+    top = _draw_header(
+        canvas,
+        flight,
+        briefing,
+        label="LEVEL 2 - EDTO STATUS" if nil_edto else "LEVEL 2 - EDTO / WEATHER",
+        page_number=level2_page("edto_detail"),
+    )
+    top = _draw_title(
+        canvas,
+        "EDTO STATUS" if nil_edto else level2_heading("edto_detail"),
+        top,
+    )
+    margin = 7 * mm
+    gap = 3 * mm
+    if nil_edto:
+        strip_y = 18 * mm
+        strip_h = 12 * mm
+        route_y = strip_y + strip_h + gap
+        _draw_route_panel(
+            canvas,
+            briefing["route_map"],
+            margin,
+            route_y,
+            PAGE_SIZE[0] - 2 * margin,
+            max(42 * mm, top - route_y),
+            f"{briefing['flight_number']} ROUTE / CFP COORDINATES",
+        )
+        _strip(
+            canvas,
+            x=margin,
+            y=strip_y,
+            width=PAGE_SIZE[0] - 2 * margin,
+            height=strip_h,
+            title="EDTO STATUS",
+            accent=_GREEN,
+            body="NIL EDTO - verified not applicable from the complete uploaded CFP.",
+        )
+        return
     if edto_assessment_status == "verified_not_applicable":
         sector_empty_text = (
             "NIL EDTO - explicitly verified not applicable in the uploaded CFP."
@@ -2350,7 +2459,7 @@ def _page_six(
             ("REF", 0.05),
             ("ACTM", 0.12),
             ("UTC" if actual_timing_anchor(flight) else "UTC — NO ANCHOR", 0.18),
-            ("ACTUAL EXPOSURE", 0.18),
+            ("CFP ROUTE EXPOSURE", 0.18),
             ("DUR", 0.08),
             ("MAX", 0.13),
             ("PROFILE COVERAGE", 0.26),
@@ -2383,11 +2492,30 @@ def _page_seven(
     briefing: dict[str, Any],
     warnings: list[str],
 ) -> None:
-    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - WEATHER / VAAC / PROMOTION", page_number=level2_page("weather_detail"))
+    group = _grouped(findings)
+    vaa_affected = (
+        str((flight.get("vaa_review") or {}).get("status") or "").lower()
+        == "affected"
+        or any(
+            str((item.get("data") or {}).get("status") or "").lower()
+            == "affected"
+            for item in group.get("vaa", [])
+        )
+    )
+    top = _draw_header(
+        canvas,
+        flight,
+        briefing,
+        label=(
+            "LEVEL 2 - WEATHER / VAAC / PROMOTION"
+            if vaa_affected
+            else "LEVEL 2 - WEATHER / PROMOTION"
+        ),
+        page_number=level2_page("weather_detail"),
+    )
     top = _draw_title(canvas, level2_heading("weather_detail"), top)
     margin = 7 * mm
     gap = 3 * mm
-    group = _grouped(findings)
     advisories = (
         group.get("sigmet", [])
         + group.get("vaa", [])
@@ -2401,15 +2529,14 @@ def _page_seven(
             != "edto"
         ]
     )
-    advisory_rows = _advisory_rows(advisories)
     compact_advisory_rows: list[list[str]] = []
     seen_advisory_sources: set[str] = set()
-    for row in advisory_rows:
-        source = row[4]
+    for item in advisories:
+        source = _compact_advisory_source(item)
         compact_advisory_rows.append(
             [
-                row[0],
-                _first_sentence(row[2]),
+                _pilot_text(item.get("title"), "Advisory review"),
+                _compact_advisory_result(item),
                 "Same source" if source in seen_advisory_sources else source,
             ]
         )
@@ -2422,7 +2549,15 @@ def _page_seven(
     )
     panel_h = max(
         48 * mm,
-        min(78 * mm, (9 + visible_panel_rows * 13) * mm),
+        min(
+            78 * mm,
+            (
+                9
+                + visible_panel_rows
+                * (18 if compact_advisory_rows else 13)
+            )
+            * mm,
+        ),
     )
     panel_y = top - panel_h
     weather_w = 184 * mm
@@ -2459,12 +2594,17 @@ def _page_seven(
         accent=_TEAL,
         max_rows=4,
         empty_text="No complete current advisory coverage is available - review required.",
-        fill_height=False,
+        fill_height=True,
         body_font_size=8.0,
         header_font_size=6.8,
+        require_complete_text=True,
     )
 
     promotion_rows = _promotion_rows(findings)
+    if compact_advisory_rows:
+        for row in promotion_rows:
+            if row and row[0] == "ADVISORIES" and len(row) > 3:
+                row[3] = "See advisory table"
     separate_note = _personal_note_row(
         flight,
         "separate",
