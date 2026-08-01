@@ -16,7 +16,7 @@ from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.platypus import Paragraph
 
 from . import brief_theme as theme
-from .briefing import build_briefing_view, draw_route_map_pdf
+from .briefing import _edto_assessment_view, build_briefing_view, draw_route_map_pdf
 from .constants import edto_sectors, format_actm
 from .controlled_library import DEPRESS_LIBRARY_METADATA
 from .depress_matrix_page import (
@@ -24,7 +24,10 @@ from .depress_matrix_page import (
     draw_source_chart_page,
     load_matched_chart_images,
 )
-from .profile_chart_gate import validate_depressurisation_profile_charts
+from .profile_chart_gate import (
+    build_profile_chart_artifact_contracts,
+    validate_depressurisation_profile_charts,
+)
 from .engines import detect_terrain_events
 from .pilot_briefing import (
     normalize_notam_references,
@@ -1145,6 +1148,9 @@ def _overview_rows(
         )
 
     sectors = edto_sectors(flight.get("edto") or {})
+    edto_assessment_status = _edto_assessment_view(
+        flight.get("edto") or {}
+    )["status"]
     edto_result = (grouped.get("edto") or [])
     if edto_result:
         result = _first_sentence(_finding_summary(edto_result[0]))
@@ -1157,8 +1163,10 @@ def _overview_rows(
             )
             for index, sector in enumerate(sectors, start=1)
         )
+    elif edto_assessment_status == "verified_not_applicable":
+        result = "NIL EDTO - explicitly verified not applicable in the uploaded CFP."
     else:
-        result = "No EDTO sector is present in the uploaded flight data."
+        result = "EDTO applicability is not explicitly verified - review required."
     add_finding("EDTO", "EDTO timing", result, "LEVEL 2")
 
     if route_gates:
@@ -1801,6 +1809,27 @@ def _page_four(
     margin = 7 * mm
     gap = 3 * mm
     sectors = edto_sectors(flight.get("edto") or {})
+    edto_assessment_status = str(
+        ((briefing.get("edto") or {}).get("assessment") or {}).get("status")
+        or "review_required"
+    )
+    if edto_assessment_status == "verified_not_applicable":
+        sector_empty_text = (
+            "NIL EDTO - explicitly verified not applicable in the uploaded CFP."
+        )
+        airport_empty_text = sector_empty_text
+    elif edto_assessment_status == "affected":
+        sector_empty_text = (
+            "EDTO applies, but no sector timing row was published - review required."
+        )
+        airport_empty_text = (
+            "EDTO applies, but no airport checked-period row was published - review required."
+        )
+    else:
+        sector_empty_text = (
+            "EDTO applicability is not explicitly verified - review required."
+        )
+        airport_empty_text = sector_empty_text
     route_points = list((briefing.get("route_map") or {}).get("points") or [])
     sector_rows = [
         [
@@ -1865,7 +1894,7 @@ def _page_four(
     decision_input = (
         f"{decision_input}."
         if decision_input
-        else "No EDTO airport result is available."
+        else airport_empty_text
     )
 
     strip_y = 18 * mm
@@ -1937,7 +1966,7 @@ def _page_four(
         rows=sector_rows,
         accent=_GREEN,
         max_rows=2,
-        empty_text="No EDTO sector is present in the uploaded flight data.",
+        empty_text=sector_empty_text,
         body_font_size=8.2,
         header_font_size=7.0,
     )
@@ -1957,7 +1986,7 @@ def _page_four(
         rows=airport_rows,
         accent=_GREEN,
         max_rows=4,
-        empty_text="No EDTO airport checked period is available.",
+        empty_text=airport_empty_text,
         fill_height=True,
         body_font_size=9.0,
         header_font_size=7.0,
@@ -2328,6 +2357,18 @@ def _page_seven(
     )
 
 
+def build_profile_chart_artifacts(
+    chart_images: list[dict[str, Any]],
+    chart_page_numbers: dict[str, int],
+) -> list[dict[str, Any]]:
+    """Publish the exact source-chart targets embedded in the Level 2 PDF."""
+    return build_profile_chart_artifact_contracts(
+        chart_images,
+        level1_report_page=3,
+        level2_report_pages=chart_page_numbers,
+    )
+
+
 def render_level2_visual(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -2411,23 +2452,12 @@ def render_level2_visual(
         if index < len(pages) - 1:
             document.showPage()
 
-    flight["depressurisation_profile_charts"] = [
-        {
-            "chart_number": image["chart_number"],
-            "source_document": DEPRESS_LIBRARY_METADATA.get("title"),
-            "source_revision": DEPRESS_LIBRARY_METADATA.get("issue_date"),
-            "source_page": image["profile"].get("chart_page"),
-            "source_link": image["profile"].get("chart_artifact_key"),
-            "route_airway_match_verified": True,
-            "aircraft_effectivity_verified": True,
-            "chart_image_validated": True,
-            "level1_analysis_chart_embedded": True,
-            "level2_full_source_chart_embedded": True,
-        }
-        for image in chart_images
-    ]
+    flight["depressurisation_profile_charts"] = build_profile_chart_artifacts(
+        chart_images,
+        chart_page_numbers,
+    )
     validate_depressurisation_profile_charts(flight, pilot_findings, 2)
     document.save()
 
 
-__all__ = ["PAGE_SIZE", "render_level2_visual"]
+__all__ = ["PAGE_SIZE", "build_profile_chart_artifacts", "render_level2_visual"]

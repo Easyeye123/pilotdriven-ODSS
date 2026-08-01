@@ -354,6 +354,10 @@ def test_service_analysis_exposes_stable_contract_and_explicit_fallback(
     ).json()
     assert briefing["schema_version"] == "0.6.1"
     assert briefing["flight"]["flight_number"] == "SQ304"
+    assert briefing["flight"]["edto"]["assessment"]["status"] == "review_required"
+    assert briefing["briefing"]["edto"]["assessment"]["evidence"][-1][
+        "reason_code"
+    ] == "explicit_edto_assessment_missing"
 
     level3 = service_app.get(
         f"/v1/analyses/{analysis_id}/level-3",
@@ -405,12 +409,22 @@ def test_service_analysis_request_id_is_idempotent(
 def test_service_timing_accepts_atot_and_rejects_unknown_reference(
     service_app: TestClient,
 ) -> None:
-    created = service_app.post(
+    create_response = service_app.post(
         "/v1/analyses",
         headers=_authorization(),
         files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
-    ).json()
+        data={
+            "weather_before_minutes": "45",
+            "weather_after_minutes": "75",
+        },
+    )
+    assert create_response.status_code == 201
+    created = create_response.json()
     analysis_id = created["analysis_id"]
+    initial_briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=_authorization(),
+    ).json()
 
     updated = service_app.post(
         f"/v1/analyses/{analysis_id}/timing",
@@ -418,6 +432,8 @@ def test_service_timing_accepts_atot_and_rejects_unknown_reference(
         json={
             "reference_type": "takeoff",
             "reference_utc": "2026-07-11T10:42:00+00:00",
+            "weather_before_minutes": 30,
+            "weather_after_minutes": 90,
         },
     )
     invalid = service_app.post(
@@ -435,7 +451,17 @@ def test_service_timing_accepts_atot_and_rejects_unknown_reference(
 
     assert updated.status_code == 200
     assert invalid.status_code == 422
+    assert initial_briefing["flight"]["weather_window_preference"] == {
+        "before_minutes": 45,
+        "after_minutes": 75,
+        "basis": "scheduled_phase_reference",
+    }
     assert briefing["timing"]["actual_takeoff_utc"] == "2026-07-11T10:42:00+00:00"
+    assert briefing["flight"]["weather_window_preference"] == {
+        "before_minutes": 30,
+        "after_minutes": 90,
+        "basis": "scheduled_phase_reference",
+    }
 
 
 def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(

@@ -482,11 +482,20 @@ def _refresh_reports_with_primary_map(flight, result: dict) -> None:
         _record_map_refresh_warning(result.get("analysis_path"), error_type)
 
 
-def _execute_analysis(flight_id: int, flight) -> None:
+def _execute_analysis(
+    flight_id: int,
+    flight,
+    weather_window_preference: dict | None = None,
+) -> None:
     tenant_id = str(flight["tenant_id"]) if flight["tenant_id"] else None
     previous_analysis = load_analysis(flight["analysis_path"])
     previous_surface_overlays = (
         (previous_analysis or {}).get("flight", {}).get("surface_overlays") or []
+    )
+    previous_weather_window = (
+        (previous_analysis or {})
+        .get("flight", {})
+        .get("weather_window_preference")
     )
     previous_artifacts = (
         (flight["analysis_path"], RESULT_DIR),
@@ -509,6 +518,9 @@ def _execute_analysis(flight_id: int, flight) -> None:
             timing_reference=_timing_reference_from_row(flight),
             personal_notes=[dict(note) for note in list_personal_notes(flight_id)],
             surface_overlays=previous_surface_overlays,
+            weather_window_preference=(
+                weather_window_preference or previous_weather_window
+            ),
         )
         if flight["tenant_id"] and flight["user_id"]:
             result.update(
@@ -886,6 +898,8 @@ class ServiceTimingRequest(BaseModel):
     reference_type: str = Field(pattern="^(takeoff|waypoint_ata)$")
     reference_utc: str
     reference_waypoint: str | None = None
+    weather_before_minutes: int | None = Field(default=None, ge=0, le=720)
+    weather_after_minutes: int | None = Field(default=None, ge=0, le=720)
 
 
 class ServiceLevel3AnswerRequest(BaseModel):
@@ -1088,6 +1102,8 @@ async def create_service_analysis(
     destination: str = Form(""),
     aircraft: str = Form(""),
     registration: str = Form(""),
+    weather_before_minutes: int | None = Form(default=None, ge=0, le=720),
+    weather_after_minutes: int | None = Form(default=None, ge=0, le=720),
 ):
     identity = request_service_identity(request)
     tenant_id = identity.tenant_id
@@ -1123,7 +1139,22 @@ async def create_service_analysis(
     flight = get_flight_for_tenant(flight_id, tenant_id)
     if not flight:
         raise HTTPException(status_code=500, detail="Analysis record was not created")
-    await asyncio.to_thread(_execute_analysis, flight_id, flight)
+    weather_window_preference = None
+    if weather_before_minutes is not None or weather_after_minutes is not None:
+        weather_window_preference = {
+            key: value
+            for key, value in (
+                ("before_minutes", weather_before_minutes),
+                ("after_minutes", weather_after_minutes),
+            )
+            if value is not None
+        }
+    await asyncio.to_thread(
+        _execute_analysis,
+        flight_id,
+        flight,
+        weather_window_preference,
+    )
     completed = get_flight_for_tenant(flight_id, tenant_id)
     if not completed:
         raise HTTPException(status_code=500, detail="Analysis record was lost")
@@ -1186,7 +1217,31 @@ def update_service_timing(
     updated = get_flight_for_tenant(int(flight["id"]), identity.tenant_id)
     if not updated:
         raise HTTPException(status_code=404, detail="Analysis not found")
-    _execute_analysis(int(flight["id"]), updated)
+    stored_weather_window = (
+        (analysis.get("flight") or {}).get("weather_window_preference") or {}
+    )
+    weather_window_preference = None
+    if (
+        payload.weather_before_minutes is not None
+        or payload.weather_after_minutes is not None
+    ):
+        weather_window_preference = {
+            "before_minutes": (
+                payload.weather_before_minutes
+                if payload.weather_before_minutes is not None
+                else int(stored_weather_window.get("before_minutes", 60))
+            ),
+            "after_minutes": (
+                payload.weather_after_minutes
+                if payload.weather_after_minutes is not None
+                else int(stored_weather_window.get("after_minutes", 60))
+            ),
+        }
+    _execute_analysis(
+        int(flight["id"]),
+        updated,
+        weather_window_preference=weather_window_preference,
+    )
     refreshed = get_flight_for_tenant(int(flight["id"]), identity.tenant_id)
     if not refreshed:
         raise HTTPException(status_code=404, detail="Analysis not found")

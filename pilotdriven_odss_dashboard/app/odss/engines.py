@@ -510,20 +510,21 @@ def _weather_role_window(
     alternate_airports: set[str],
     edto_periods: dict[str, tuple[datetime, datetime]],
 ) -> tuple[str, datetime, datetime]:
-    role, starts_at, ends_at = _notam_role_window(
-        flight,
-        location,
-        alternate_airports,
-        edto_periods,
-    )
-    phase = {
-        "departure": "Departure",
-        "destination": "Destination",
-        "destination alternate": "Destination alternate",
-        "EDTO": "EDTO",
-        "informational": "Enroute",
-    }[role]
-    return phase, starts_at, ends_at
+    departure_utc = datetime.fromisoformat(flight["scheduled_departure_utc"])
+    arrival_utc = datetime.fromisoformat(flight["scheduled_arrival_utc"])
+    preference = _weather_window_preference(flight)
+    before = timedelta(minutes=preference["before_minutes"])
+    after = timedelta(minutes=preference["after_minutes"])
+    if location == flight["departure"]:
+        return "Departure", departure_utc - before, departure_utc + after
+    if location == flight["destination"]:
+        return "Destination", arrival_utc - before, arrival_utc + after
+    if location in alternate_airports:
+        return "Destination alternate", arrival_utc - before, arrival_utc + after
+    if location in edto_periods:
+        starts_at, ends_at = edto_periods[location]
+        return "EDTO", starts_at, ends_at
+    return "Enroute", departure_utc, arrival_utc
 
 
 def _notam_subject(text: str, kind: str) -> str:
@@ -614,6 +615,37 @@ def _configured_window_minutes(name: str, default: int) -> int:
     if not 0 <= minutes <= 720:
         raise ValueError(f"{name} must be between 0 and 720 minutes.")
     return minutes
+
+
+def _weather_window_preference(flight: dict[str, Any]) -> dict[str, Any]:
+    raw = flight.get("weather_window_preference")
+    supplied = raw if isinstance(raw, dict) else {}
+
+    def selected(key: str, environment_name: str) -> int:
+        value = supplied.get(key)
+        if value is None:
+            return _configured_window_minutes(environment_name, 60)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"weather_window_preference.{key} must be whole minutes.")
+        if not 0 <= value <= 720:
+            raise ValueError(
+                f"weather_window_preference.{key} must be between 0 and 720 minutes."
+            )
+        return value
+
+    normalized = {
+        "before_minutes": selected(
+            "before_minutes",
+            "ODSS_WEATHER_WINDOW_BEFORE_MINUTES",
+        ),
+        "after_minutes": selected(
+            "after_minutes",
+            "ODSS_WEATHER_WINDOW_AFTER_MINUTES",
+        ),
+        "basis": "scheduled_phase_reference",
+    }
+    flight["weather_window_preference"] = normalized
+    return normalized
 
 
 def _profile_applies_to_aircraft(
@@ -1078,6 +1110,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     fuel = flight["fuel"]
     masses = flight["masses"]
     performance = flight["performance"]
+    _weather_window_preference(flight)
 
     findings.append(finding(
         "page1",

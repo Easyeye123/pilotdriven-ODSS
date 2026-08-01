@@ -9,7 +9,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.odss import engines
-from app.odss.engines import _schedule_overlaps, analyse, detect_terrain_events, match_profiles
+from app.odss.engines import (
+    _notam_role_window,
+    _schedule_overlaps,
+    _weather_role_window,
+    analyse,
+    detect_terrain_events,
+    match_profiles,
+)
 from app.odss.enrichment import (
     _notice_score,
     _parse_airport_notams,
@@ -18,6 +25,7 @@ from app.odss.enrichment import (
 )
 from app.odss.briefing import _weather_summary
 from app.odss.parser import _parse_edto_sectors, parse_lido
+from app.odss.pilot_briefing import concise_weather_finding
 
 
 UTC = timezone.utc
@@ -572,9 +580,16 @@ def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audi
     assert len(weather) == 1
     item = weather[0]
     assert item["data"]["phase"] == "Destination"
-    assert item["data"]["utc_window"] == "16 JUL 1000Z-1400Z"
+    assert item["data"]["utc_window"] == "16 JUL 1100Z-1300Z"
     assert "convection / thunderstorms" in item["data"]["mechanism"]
-    assert "Arrival routing" in item["data"]["flight_effect"]
+    assert item["data"]["flight_effect"] == (
+        "Flight-specific operational effect is not stated by the source; "
+        "review required."
+    )
+    assert not any(
+        rejected in item["data"]["flight_effect"]
+        for rejected in ("routing", "runway", "delay", "holding", "windshear")
+    )
     assert raw_metar not in item["summary"]
     assert raw_taf not in item["summary"]
     assert {detail.split(":", 1)[0] for detail in item["details"]} == {
@@ -659,6 +674,67 @@ def test_destination_taf_excludes_significant_group_outside_arrival_window() -> 
     assert "Arrival routing" not in panel_weather["primary"]
 
 
+def test_weather_uses_sixty_minutes_without_changing_notam_arrival_window() -> None:
+    flight = _flight(weather=[{
+        "location": "RJBB",
+        "record_type": "TAF",
+        "text": (
+            "FT 160900 1610/1615 16009KT 9999 FEW015 "
+            "TEMPO 1613/1614 3000 TSRA BKN015CB="
+        ),
+    }])
+
+    findings, _ = analyse(flight)
+
+    item = next(row for row in findings if row["engine"] == "weather")
+    assert item["data"]["utc_window"] == "16 JUL 1100Z-1300Z"
+    assert item["data"]["window_status"] == "no_significant_overlap"
+    assert "13:00Z-14:00Z" in item["data"]["timing"]
+    assert flight["weather_window_preference"] == {
+        "before_minutes": 60,
+        "after_minutes": 60,
+        "basis": "scheduled_phase_reference",
+    }
+
+    _, weather_start, weather_end = _weather_role_window(
+        flight,
+        "RJBB",
+        {"WIII"},
+        {},
+    )
+    _, notam_start, notam_end = _notam_role_window(
+        flight,
+        "RJBB",
+        {"WIII"},
+        {},
+    )
+    assert weather_start.isoformat() == "2026-07-16T11:00:00+00:00"
+    assert weather_end.isoformat() == "2026-07-16T13:00:00+00:00"
+    assert notam_start.isoformat() == "2026-07-16T10:00:00+00:00"
+    assert notam_end.isoformat() == "2026-07-16T14:00:00+00:00"
+
+    flight["weather_window_preference"] = {
+        "before_minutes": 45,
+        "after_minutes": 75,
+    }
+    _, custom_start, custom_end = _weather_role_window(
+        flight,
+        "RJBB",
+        {"WIII"},
+        {},
+    )
+    _, unchanged_notam_start, unchanged_notam_end = _notam_role_window(
+        flight,
+        "RJBB",
+        {"WIII"},
+        {},
+    )
+    assert custom_start.isoformat() == "2026-07-16T11:15:00+00:00"
+    assert custom_end.isoformat() == "2026-07-16T13:15:00+00:00"
+    assert unchanged_notam_start == notam_start
+    assert unchanged_notam_end == notam_end
+
+
 def test_destination_taf_keeps_significant_group_overlapping_arrival_window() -> None:
     flight = _flight(weather=[{
         "location": "RJBB",
@@ -677,8 +753,51 @@ def test_destination_taf_keeps_significant_group_overlapping_arrival_window() ->
     assert item["severity"] == "warning"
     assert item["data"]["window_status"] == "pertinent"
     assert "convection / thunderstorms" in item["data"]["mechanism"]
-    assert "20:00Z-23:00Z" in item["data"]["timing"]
-    assert "Arrival routing" in item["data"]["flight_effect"]
+    assert "20:30Z-22:30Z" in item["data"]["timing"]
+    assert item["data"]["flight_effect"] == (
+        "Flight-specific operational effect is not stated by the source; "
+        "review required."
+    )
+
+
+@pytest.mark.parametrize(
+    "phase",
+    ("Departure", "Destination", "Destination alternate", "EDTO", "Enroute"),
+)
+def test_weather_fallback_never_invents_phase_specific_operational_effects(
+    phase: str,
+) -> None:
+    item = concise_weather_finding({
+        "engine": "weather",
+        "severity": "warning",
+        "title": f"{phase} weather",
+        "summary": "",
+        "details": [],
+        "data": {
+            "phase": phase,
+            "utc_window": "16 JUL 1000Z-1400Z",
+            "mechanism": "convection / thunderstorms",
+        },
+    })
+
+    effect = item["data"]["flight_effect"]
+    assert effect == (
+        "Flight-specific operational effect is not stated by the source; "
+        "review required."
+    )
+    assert not any(
+        rejected in effect
+        for rejected in (
+            "routing",
+            "runway",
+            "delay",
+            "holding",
+            "windshear",
+            "approach minima",
+            "alternate use",
+            "flight-level strategy",
+        )
+    )
 
 
 def test_destination_taf_incomplete_coverage_fails_closed() -> None:

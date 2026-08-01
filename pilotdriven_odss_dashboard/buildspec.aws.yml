@@ -3,10 +3,22 @@ version: 0.2
 phases:
   pre_build:
     commands:
+      - |
+        case "${IMAGE_TAG:-}" in
+          ""|[.-]*|*[!A-Za-z0-9_.-]*)
+            echo "IMAGE_TAG is required and must be a valid immutable Docker tag." >&2
+            exit 2
+            ;;
+        esac
+        if [ "${#IMAGE_TAG}" -gt 128 ]; then
+          echo "IMAGE_TAG exceeds Docker's 128-character tag limit." >&2
+          exit 2
+        fi
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REPOSITORY_URI"
   build:
     commands:
-      - docker build --pull --platform linux/amd64 -t "$ECR_REPOSITORY_URI:latest" .
+      - docker build --pull --platform linux/amd64 -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
+      - docker run --rm --platform linux/amd64 --entrypoint python "$ECR_REPOSITORY_URI:$IMAGE_TAG" tests/check_webgl_runtime.py
   post_build:
     commands:
-      - docker push "$ECR_REPOSITORY_URI:latest"
+      - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"

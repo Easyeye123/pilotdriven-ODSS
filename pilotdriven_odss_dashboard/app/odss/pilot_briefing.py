@@ -264,20 +264,16 @@ def _weather_mechanism_from_text(text: str) -> str:
 def _weather_effect(phase: str, mechanism: str) -> str:
     lower = mechanism.lower()
     if "no adverse mechanism" in lower:
-        return "No direct flight effect was identified from this record; confirm the latest operational weather."
-    if phase == "Departure":
-        if "convection" in lower or "wind shear" in lower:
-            return "Departure routing, runway use, delay and wind-shear exposure may be affected."
-        return "Runway selection and departure conditions require review."
-    if phase in {"Destination", "Destination alternate"}:
-        if "low ceiling" in lower or "visibility" in lower:
-            return "Approach minima, landing availability and alternate use require review."
-        if "convection" in lower or "wind shear" in lower:
-            return "Arrival routing, holding, runway use and wind-shear exposure may be affected."
-        return "Arrival runway and approach conditions require review."
-    if phase == "EDTO":
-        return "Diversion-airport suitability during the checked period requires review."
-    return "Route deviation, flight-level strategy or timing may be affected."
+        return "No adverse weather mechanism was identified in the parsed station record."
+    if "requires operational interpretation" in lower:
+        return (
+            "Flight-specific operational effect is not stated by the source; "
+            "review required."
+        )
+    return (
+        "Flight-specific operational effect is not stated by the source; "
+        "review required."
+    )
 
 
 def concise_weather_finding(item: dict[str, Any]) -> dict[str, Any]:

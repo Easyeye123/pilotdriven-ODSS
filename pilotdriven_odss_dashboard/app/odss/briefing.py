@@ -831,6 +831,42 @@ def _enroute_weather_cards(findings: list[dict[str, Any]]) -> list[dict[str, str
     return cards
 
 
+def _edto_assessment_view(edto: dict[str, Any]) -> dict[str, Any]:
+    """Return only an internally consistent, evidence-bearing assessment.
+
+    Legacy or malformed records fail closed. In particular, an empty EDTO
+    object is not converted into a verified NIL assessment.
+    """
+    raw = edto.get("assessment")
+    assessment = raw if isinstance(raw, dict) else {}
+    raw_evidence = assessment.get("evidence")
+    evidence = [
+        dict(item)
+        for item in (raw_evidence if isinstance(raw_evidence, list) else [])
+        if isinstance(item, dict)
+        and str(item.get("source") or "").strip()
+        and str(item.get("reason_code") or "").strip()
+    ]
+    status = str(assessment.get("status") or "").strip()
+    has_operational_data = bool(edto_sectors(edto) or edto.get("airports"))
+    consistent = (
+        (status == "affected" and has_operational_data)
+        or (status == "verified_not_applicable" and not has_operational_data)
+        or status == "review_required"
+    )
+    if not evidence or not consistent:
+        status = "review_required"
+        evidence.append({
+            "source": "stored_odss_analysis",
+            "reason_code": (
+                "edto_assessment_evidence_missing"
+                if not evidence
+                else "edto_assessment_contract_conflict"
+            ),
+        })
+    return {"status": status, "evidence": evidence}
+
+
 def build_briefing_view(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -895,23 +931,35 @@ def build_briefing_view(
         for item in grouped.get(engine, [])
         if item.get("severity") in {"warning", "critical", "unknown"}
     ]
+    edto = flight.get("edto") or {}
+    edto_assessment = _edto_assessment_view(edto)
     needs_review = bool(
         warnings
+        or edto_assessment["status"] == "review_required"
         or any(
             item.get("severity") in {"warning", "critical", "unknown"}
             for item in findings
         )
     )
 
+    edto_needs_review = bool(
+        edto_issues or edto_assessment["status"] == "review_required"
+    )
+    edto_detail = (
+        "Applicability review required"
+        if edto_needs_review
+        else "Verified not applicable"
+        if edto_assessment["status"] == "verified_not_applicable"
+        else "Checked-period summary available"
+    )
     exception_cards = [
         {"label": "Airport restrictions", "count": len(critical_airport_notams), "detail": "Critical departure/destination items", "severity": "critical" if critical_airport_notams else "information"},
         {"label": "Significant weather", "count": len(weather_warnings), "detail": "Operational weather findings", "severity": "warning" if weather_warnings else "information"},
-        {"label": "EDTO", "count": len(edto_issues), "detail": "Issues requiring review" if edto_issues else "Checked-period summary available", "severity": "warning" if edto_issues else "information"},
+        {"label": "EDTO", "count": len(edto_issues), "detail": edto_detail, "severity": "warning" if edto_needs_review else "information"},
         {"label": "FIR communication", "count": len(communication_items), "detail": "Early contact requirements", "severity": "warning" if communication_items else "information"},
         {"label": "Other reviews", "count": len(other_issues), "detail": "MEL/performance/terrain/profile", "severity": "warning" if other_issues else "information"},
     ]
 
-    edto = flight.get("edto") or {}
     edto_airports = [
         {
             "airport": item.get("airport") or "----",
@@ -987,6 +1035,7 @@ def build_briefing_view(
         "exception_cards": exception_cards,
         "communications": _communication_timeline(findings, timing_view),
         "edto": {
+            "assessment": edto_assessment,
             "entry": (
                 edto_sector_view[0]["entry"]
                 if edto_sector_view

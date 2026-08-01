@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
+
+from .controlled_library import DEPRESS_LIBRARY_METADATA
 
 
 class DepressurisationProfileChartPublicationError(RuntimeError):
@@ -28,6 +31,38 @@ def _matched_profile_numbers(findings: list[dict[str, Any]]) -> list[str]:
         if chart_number and chart_number not in numbers:
             numbers.append(chart_number)
     return numbers
+
+
+def build_profile_chart_artifact_contracts(
+    chart_images: list[dict[str, Any]],
+    *,
+    level1_report_page: int,
+    level2_report_pages: Mapping[str, int] | None = None,
+) -> list[dict[str, Any]]:
+    """Build report targets for each governed profile chart actually validated."""
+    artifacts: list[dict[str, Any]] = []
+    for image in chart_images:
+        chart_number = str(image["chart_number"])
+        profile = image["profile"]
+        artifact = {
+            "chart_number": chart_number,
+            "source_document": DEPRESS_LIBRARY_METADATA.get("title"),
+            "source_revision": DEPRESS_LIBRARY_METADATA.get("issue_date"),
+            "source_page": profile.get("chart_page"),
+            "source_link": profile.get("chart_artifact_key"),
+            "route_airway_match_verified": True,
+            "aircraft_effectivity_verified": True,
+            "chart_image_validated": True,
+            "level1_analysis_chart_embedded": True,
+            "level1_report_page": level1_report_page,
+        }
+        if level2_report_pages is not None:
+            artifact.update({
+                "level2_full_source_chart_embedded": True,
+                "level2_report_page": level2_report_pages[chart_number],
+            })
+        artifacts.append(artifact)
+    return artifacts
 
 
 def validate_depressurisation_profile_charts(
@@ -111,6 +146,21 @@ def validate_depressurisation_profile_charts(
                 ),
             })
 
+        report_page_field = f"level{level}_report_page"
+        report_page = artifact.get(report_page_field)
+        if (
+            not isinstance(report_page, int)
+            or isinstance(report_page, bool)
+            or report_page < 1
+        ):
+            violations.append({
+                "code": "DEPRESSURISATION_PROFILE_REPORT_TARGET_MISSING",
+                "location": f"{location}.{report_page_field}",
+                "message": (
+                    f"Profile {chart_number} requires its actual Level {level} "
+                    "report page."
+                ),
+            })
     if violations:
         raise DepressurisationProfileChartPublicationError(violations)
     return []

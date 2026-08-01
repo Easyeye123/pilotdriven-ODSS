@@ -531,7 +531,18 @@ def _draw_route_detail(canvas, flight: dict[str, Any], findings: list[dict[str, 
         route_status_lines = _finding_lines(bobcat_findings, 7, 3)
     else:
         route_status_title = "ROUTE STATUS"
-        route_status_lines = ["No EDTO or route-allocation item selected."]
+        edto_status = str(
+            ((briefing.get("edto") or {}).get("assessment") or {}).get("status")
+            or "review_required"
+        )
+        route_status_lines = [
+            (
+                "NIL EDTO - explicitly verified not applicable in the uploaded CFP."
+                if edto_status == "verified_not_applicable"
+                else "EDTO applicability is not explicitly verified - review required."
+            ),
+            "No route-allocation item selected.",
+        ]
     map_h = available_h * 0.42
     _draw_panel(canvas, x3, top - map_h, right_w, map_h, route_status_title, route_status_lines, _GREEN, False, _STYLES["detail_small"])
     draw_route_map_pdf(canvas, briefing["route_map"], x3, bottom, right_w, available_h - map_h - gap)

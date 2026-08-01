@@ -492,6 +492,143 @@ def _utc_nearest(reference: datetime, hhmm: str) -> datetime:
     return min(candidates, key=lambda value: abs((value - reference).total_seconds()))
 
 
+_EXPLICIT_NIL_EDTO = re.compile(
+    r"\b(?:EDTO|ETOPS)(?:\s+(?:STATUS|APPLICABILITY))?\s*[:=-]?\s*"
+    r"(?:NIL|N/?A|NOT\s+APPLICABLE)\b|"
+    r"\b(?:NIL|NOT\s+APPLICABLE)\s+(?:EDTO|ETOPS)\b",
+    re.IGNORECASE,
+)
+
+
+def _complete_standard_lido_cfp_page_span(
+    cfp_pages: list[str],
+) -> tuple[int, int] | None:
+    """Return the declared CFP page span only for a complete standard Lido CFP.
+
+    Lido prints ``PAGE n OF total`` on every CFP page. Requiring the standard
+    (non-EDTO) title plus a contiguous 1..total sequence prevents a truncated
+    upload or an arbitrary text blob from turning absence of EDTO rows into
+    verified NIL evidence.
+    """
+    if not cfp_pages:
+        return None
+    first_page_header = "\n".join(cfp_pages[0].splitlines()[:12])
+    if not re.search(
+        r"\bSUMMARY(?:\s+STANDARD)?\s+CFP\b",
+        first_page_header,
+        re.IGNORECASE,
+    ):
+        return None
+
+    page_headers: list[tuple[int, int]] = []
+    for page in cfp_pages:
+        header = re.search(
+            r"^\s*PAGE\s+(\d+)\s+OF\s+(\d+)\b",
+            page,
+            re.MULTILINE | re.IGNORECASE,
+        )
+        if not header:
+            return None
+        page_headers.append((int(header.group(1)), int(header.group(2))))
+
+    declared_total = page_headers[0][1]
+    if (
+        declared_total != len(cfp_pages)
+        or any(total != declared_total for _, total in page_headers)
+        or [number for number, _ in page_headers]
+        != list(range(1, declared_total + 1))
+    ):
+        return None
+    return 1, declared_total
+
+
+def _build_edto_assessment(
+    *,
+    cfp_pages: list[str],
+    cfp_start: int,
+    source_name: str,
+    edto_page_index: int | None,
+    sectors: list[dict[str, Any]],
+    airports: list[dict[str, Any]],
+    has_timing_data: bool,
+) -> dict[str, Any]:
+    """Build a fail-closed, evidence-bearing EDTO applicability result.
+
+    Empty parsed collections alone are not proof that EDTO is inapplicable.
+    NIL is accepted only for an explicit EDTO/ETOPS declaration, or when the
+    complete standard Lido CFP page sequence is proven and contains no EDTO
+    section. Parsed sector, airport or timing data is positive applicability
+    evidence. Everything else requires review.
+    """
+    operational_data_present = bool(sectors or airports or has_timing_data)
+    edto_page = (
+        cfp_start + edto_page_index + 1
+        if edto_page_index is not None
+        else None
+    )
+    nil_declaration = next(
+        (
+            (cfp_start + index + 1, match)
+            for index, page in enumerate(cfp_pages)
+            if (match := _EXPLICIT_NIL_EDTO.search(page))
+        ),
+        None,
+    )
+    complete_standard_span = (
+        _complete_standard_lido_cfp_page_span(cfp_pages)
+        if edto_page_index is None and not operational_data_present
+        else None
+    )
+
+    evidence: list[dict[str, Any]] = []
+    if operational_data_present:
+        evidence.append({
+            "source": "uploaded_company_cfp",
+            "document_id": source_name,
+            "source_page": edto_page,
+            "reason_code": "parsed_edto_operational_data",
+            "sector_count": len(sectors),
+            "airport_count": len(airports),
+        })
+    if nil_declaration:
+        evidence.append({
+            "source": "uploaded_company_cfp",
+            "document_id": source_name,
+            "source_page": nil_declaration[0],
+            "reason_code": "explicit_edto_not_applicable_declaration",
+        })
+    if complete_standard_span:
+        first_page, last_page = complete_standard_span
+        evidence.append({
+            "source": "uploaded_company_cfp",
+            "document_id": source_name,
+            "source_page": cfp_start + first_page,
+            "source_page_start": cfp_start + first_page,
+            "source_page_end": cfp_start + last_page,
+            "source_page_count": last_page - first_page + 1,
+            "reason_code": "complete_lido_cfp_no_edto_section",
+        })
+
+    if operational_data_present and not nil_declaration:
+        status = "affected"
+    elif (nil_declaration or complete_standard_span) and not operational_data_present:
+        status = "verified_not_applicable"
+    else:
+        status = "review_required"
+        evidence.append({
+            "source": "uploaded_company_cfp",
+            "document_id": source_name,
+            "source_page": edto_page or cfp_start + 1,
+            "reason_code": (
+                "conflicting_edto_applicability_evidence"
+                if operational_data_present and nil_declaration
+                else "explicit_edto_assessment_missing"
+            ),
+        })
+
+    return {"status": status, "evidence": evidence}
+
+
 def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     sections = _detect_sections(pages)
     if "cfp" not in sections:
@@ -629,6 +766,18 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
             "approach": approach,
             "minima": minima.strip(),
         })
+    edto_assessment = _build_edto_assessment(
+        cfp_pages=cfp_pages,
+        cfp_start=cfp_start,
+        source_name=source_name,
+        edto_page_index=edto_page_index,
+        sectors=edto_sectors,
+        airports=edto_airports,
+        # A loose ETP token elsewhere in a CFP is not enough to prove EDTO.
+        # Require the paired EDTO entry/exit declaration when no structured
+        # sector or checked-period airport was parsed.
+        has_timing_data=bool(entry_match and exit_match),
+    )
     level_match = re.search(r"^[A-Z]{3}/\d{3}(?:/.*)$", page1, re.MULTILINE)
     aircraft_match = re.search(r"RTE NO\s+\S+\s+(?P<aircraft>[A-Z0-9-]+)", page1)
     flight = {
@@ -679,6 +828,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "fuel": fuel,
         "masses": masses,
         "edto": {
+            "assessment": edto_assessment,
             "entry_actm_minutes": (
                 primary_edto_sector["entry_actm_minutes"]
                 if primary_edto_sector

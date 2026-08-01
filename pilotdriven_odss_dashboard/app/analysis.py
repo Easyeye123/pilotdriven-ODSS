@@ -54,6 +54,7 @@ def run_odss_analysis(
     timing_reference: dict[str, Any] | None = None,
     personal_notes: list[dict[str, Any]] | None = None,
     surface_overlays: list[dict[str, Any]] | None = None,
+    weather_window_preference: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     pages = extract_pages(file_path)
     flight = parse_lido(pages, file_path.name)
@@ -66,6 +67,8 @@ def run_odss_analysis(
         dict(overlay)
         for overlay in (surface_overlays or [])
     ]
+    if weather_window_preference is not None:
+        flight["weather_window_preference"] = dict(weather_window_preference)
     if actual_takeoff_utc:
         flight["actual_takeoff_utc"] = actual_takeoff_utc
         flight["timing_reference"] = timing_reference or {
@@ -148,9 +151,13 @@ def run_odss_analysis(
     level2_temp = level2_path.with_suffix(".tmp")
     published = False
     try:
-        result_temp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         render_pdf(flight, findings, warnings, 1, level1_temp)
         render_pdf(flight, findings, warnings, 2, level2_temp)
+        # Level 2 rendering registers the exact governed source-chart page on
+        # the flight artifact contract. Serialise only after both reports
+        # complete so the API never loses that target and the client never has
+        # to reconstruct page numbers.
+        result_temp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         result_temp.replace(result_path)
         level1_temp.replace(level1_path)
         level2_temp.replace(level2_path)

@@ -23,6 +23,7 @@ from . import brief_theme as theme
 from .constants import edto_sectors, format_actm
 from .controlled_library import DEPRESS_LIBRARY_METADATA
 from .depress_analysis_page import draw_depressurisation_analysis
+from .depress_matrix_page import load_matched_chart_images
 from .engines import detect_terrain_events
 from .pilot_briefing import (
     normalize_notam_references,
@@ -39,9 +40,14 @@ from .report_facts import (
     select_route_gate_rows,
 )
 from .surface_overlays import surface_mark_presentation
+from .profile_chart_gate import (
+    build_profile_chart_artifact_contracts,
+    validate_depressurisation_profile_charts,
+)
 
 
 PAGE_SIZE = landscape(A4)
+LEVEL1_DEPRESSURISATION_REPORT_PAGE = 3
 
 # Information-category colours. Urgency is communicated separately.
 CATEGORY_COLOURS = {
@@ -1658,6 +1664,22 @@ def _draw_cover_airport_panel(
     canvas.setFont(theme.SANS_BOLD, 6.6)
     canvas.drawRightString(x + width - 3 * mm, y + height - 20 * mm, schedule)
 
+    # The active three-page renderer uses this cover panel, so the governed
+    # surface artifact must be drawn here rather than only in the retired
+    # `_draw_airport_panel`. Missing or incomplete overlays remain visibly
+    # unavailable through `_draw_surface_map`; they are never replaced with an
+    # invented airport diagram.
+    map_h = min(34 * mm, max(27 * mm, height * 0.32))
+    map_y = y + height - 23 * mm - map_h
+    _draw_surface_map(
+        canvas,
+        overlay,
+        x + 2 * mm,
+        map_y,
+        width - 4 * mm,
+        map_h,
+    )
+
     overlay_lines = [
         "Surface overlay: no validated surface overlay attached; chart review required."
     ]
@@ -1737,7 +1759,7 @@ def _draw_cover_airport_panel(
     body_x = x + 3 * mm
     body_y = y + 3 * mm
     body_w = width - 6 * mm
-    body_h = height - 26 * mm
+    body_h = max(1.0, map_y - body_y - 2 * mm)
     fitted = _fit_lines(lines, _STYLES["dark_small"], body_w, body_h)
     paragraph = _paragraph(fitted, _STYLES["dark_small"])
     _, required = paragraph.wrap(body_w, body_h)
@@ -1975,6 +1997,22 @@ def _draw_cover(
         for item in ((flight.get("edto") or {}).get("airports") or [])
         if isinstance(item, dict) and item.get("airport")
     )
+    edto_assessment_status = str(
+        ((briefing.get("edto") or {}).get("assessment") or {}).get("status")
+        or "review_required"
+    )
+    if edto_assessment_status == "verified_not_applicable":
+        edto_metric_value = "VERIFIED"
+        edto_metric_note = "Not applicable by complete CFP evidence"
+    elif edto_assessment_status == "affected":
+        edto_metric_value = f"{len(sectors)} sector{'s' if len(sectors) != 1 else ''}"
+        edto_metric_note = (
+            " / ".join(dict.fromkeys(sector_airports))
+            or "EDTO applies; airport detail requires review"
+        )
+    else:
+        edto_metric_value = "REVIEW"
+        edto_metric_note = "Applicability is not explicitly verified"
     oceanic = next(
         (
             row
@@ -2019,8 +2057,8 @@ def _draw_cover(
             ),
             (
                 "EDTO",
-                f"{len(sectors)} sector{'s' if len(sectors) != 1 else ''}",
-                " / ".join(dict.fromkeys(sector_airports)) or "No sector airports identified",
+                edto_metric_value,
+                edto_metric_note,
                 _EDTO,
             ),
             (
@@ -2124,6 +2162,26 @@ def _draw_operational_detail(
     right_x = margin + left_width + gap
     right_width = width - margin - right_x
     edto_view = briefing.get("edto") or {}
+    edto_assessment_status = str(
+        (edto_view.get("assessment") or {}).get("status") or "review_required"
+    )
+    if edto_assessment_status == "verified_not_applicable":
+        edto_sector_empty_text = (
+            "Complete company CFP checked - no EDTO section was published."
+        )
+        edto_airport_empty_text = "No EDTO airport period required."
+    elif edto_assessment_status == "affected":
+        edto_sector_empty_text = (
+            "EDTO applies, but no sector timeline was published - review required."
+        )
+        edto_airport_empty_text = (
+            "EDTO applies, but no airport checked-period row was published - review required."
+        )
+    else:
+        edto_sector_empty_text = (
+            "EDTO applicability is not explicitly verified - review required."
+        )
+        edto_airport_empty_text = edto_sector_empty_text
 
     chart_height = 52 * mm
     chart_y = content_top - chart_height
@@ -2163,8 +2221,7 @@ def _draw_operational_detail(
             left_width,
             chart_height,
             "EDTO ROUTE EVIDENCE",
-            # Boss vocabulary: an evaluated-clean domain says NIL, once.
-            ["NIL - no EDTO sector in the uploaded flight data."],
+            [edto_sector_empty_text],
             _EDTO,
             dark=True,
             style=_STYLES["dark"],
@@ -2211,7 +2268,7 @@ def _draw_operational_detail(
         ],
         rows=airport_rows,
         accent=_EDTO,
-        empty_text="No EDTO airport suitability period available.",
+        empty_text=edto_airport_empty_text,
     )
 
     route_gate_rows = [
@@ -2290,21 +2347,30 @@ def _draw_operational_detail(
     # Boss rule (01 Aug 2026): domains that were EVALUATED AND CLEAN compile
     # into one NIL line — "NIL EDTO / VAA / SIGMET… provided it is really NIL".
     # Could-not-evaluate NEVER compiles: absent coverage stays a loud line.
-    def _advisory_state(engine: str, label: str) -> tuple[str, str]:
-        items = grouped.get(engine, [])
-        statuses = [(item.get("data") or {}).get("status") for item in items]
-        if any(status == "review_required" for status in statuses):
-            return label, "review"
-        if any(status == "affected" for status in statuses):
+    def _advisory_state(review_key: str, label: str) -> tuple[str, str]:
+        review = flight.get(review_key)
+        if not isinstance(review, dict) or not review:
+            return label, "unavailable"
+        status = str(review.get("status") or "review_required")
+        if status == "affected":
             return label, "affected"
-        if items:
+        # An empty findings group does not prove a clean assessment: the
+        # engine deliberately emits no finding for both verified no-match and
+        # several unavailable paths. Only the producer's explicit governed
+        # result may join the compiled NIL line.
+        if status == "not_applicable":
             return label, "nil"
-        return label, "unavailable"
+        return label, "review"
 
+    edto_state = {
+        "verified_not_applicable": "nil",
+        "affected": "affected",
+    }.get(edto_assessment_status, "review")
     advisory_states = [
-        _advisory_state("sigmet", "SIGMET"),
-        _advisory_state("vaa", "VAA"),
-        _advisory_state("tropical_cyclone", "TROPICAL CYCLONE"),
+        ("EDTO", edto_state),
+        _advisory_state("sigmet_review", "SIGMET"),
+        _advisory_state("vaa_review", "VAA"),
+        _advisory_state("tropical_cyclone_review", "TROPICAL CYCLONE"),
     ]
     nil_labels = [label for label, state in advisory_states if state == "nil"]
     review_labels = [label for label, state in advisory_states if state == "review"]
@@ -2320,7 +2386,7 @@ def _draw_operational_detail(
         ),
     ]
     if nil_labels:
-        coverage_lines.append("NIL: " + " | ".join(nil_labels) + ".")
+        coverage_lines.append("NIL " + " / ".join(nil_labels) + ".")
     if affected_labels:
         coverage_lines.append(
             " and ".join(affected_labels)
@@ -2642,6 +2708,14 @@ def render_level1_visual(
     map_label: str | None = None,
 ) -> None:
     findings = prepare_pilot_findings(findings, notam_limit=16)
+    chart_images = load_matched_chart_images(findings)
+    flight["depressurisation_profile_charts"] = (
+        build_profile_chart_artifact_contracts(
+            chart_images,
+            level1_report_page=LEVEL1_DEPRESSURISATION_REPORT_PAGE,
+        )
+    )
+    validate_depressurisation_profile_charts(flight, findings, 1)
     briefing = build_briefing_view(
         flight,
         findings,

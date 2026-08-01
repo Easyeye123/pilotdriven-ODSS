@@ -12,6 +12,7 @@ from pypdf import PdfReader
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import analysis
+from app.odss import pertinent_brief
 from app.odss.briefing import (
     _display_registration,
     _pilot_route_map_label,
@@ -453,6 +454,7 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "HIGH TERRAIN" in first
     assert "DEPARTURE - WSSS" in first
     assert "DESTINATION - EBBR" in first
+    assert first.count("Surface overlay unavailable") >= 2
     assert "DECISION GATES" in first
     assert "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS" in first
     assert "Filed route from CFP coordinates" in first
@@ -489,6 +491,145 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
         "Filed route from CFP coordinates" in (page.extract_text() or "")
         for page in reader.pages
     ) == 1
+
+
+def test_active_level1_cover_draws_governed_surface_vector_overlays(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def overlay(role: str, icao: str, offset: float) -> dict[str, Any]:
+        feature_id = f"way/{role}"
+        return {
+            "role": role,
+            "icao": icao,
+            "bounds": {
+                "west": 103.90 + offset,
+                "south": 1.30,
+                "east": 103.92 + offset,
+                "north": 1.32,
+            },
+            "featureCollection": {
+                "type": "FeatureCollection",
+                "features": [{
+                    "type": "Feature",
+                    "id": feature_id,
+                    "properties": {
+                        "featureId": feature_id,
+                        "aeroway": "runway",
+                        "ref": "02C/20C",
+                    },
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [
+                            [103.905 + offset, 1.305],
+                            [103.915 + offset, 1.315],
+                        ],
+                    },
+                }],
+            },
+            "mapped": [{
+                "notamNumber": f"{icao}-SURFACE",
+                "entityType": "runway",
+                "entityRef": "02C/20C",
+                "featureIds": [feature_id],
+                "markClass": "closure",
+                "stateAtReference": "active_at_reference",
+            }],
+            "reviewRequired": [],
+        }
+
+    flight = _flight()
+    flight["surface_overlays"] = [
+        overlay("departure", "WSSS", 0.0),
+        overlay("destination", "EBBR", -100.0),
+    ]
+    vector_draws: list[str] = []
+    original = pertinent_brief._draw_surface_schematic
+
+    def traced_surface_schematic(
+        canvas: Any,
+        surface_overlay: dict[str, Any],
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+    ) -> None:
+        vector_draws.append(str(surface_overlay["icao"]))
+        original(canvas, surface_overlay, x, y, width, height)
+
+    monkeypatch.setattr(
+        pertinent_brief,
+        "_draw_surface_schematic",
+        traced_surface_schematic,
+    )
+    path = tmp_path / "level-1-with-surface-vectors.pdf"
+    render_pdf(flight, [], [], 1, path)
+
+    assert vector_draws == ["WSSS", "EBBR"]
+    assert path.read_bytes().startswith(b"%PDF")
+
+
+def test_level1_edto_summary_distinguishes_verified_nil_from_unverified_empty(
+    tmp_path: Path,
+) -> None:
+    unverified = _flight()
+    unverified["edto"] = {
+        "assessment": {
+            "status": "review_required",
+            "evidence": [{
+                "source": "uploaded_company_cfp",
+                "reason_code": "explicit_edto_assessment_missing",
+            }],
+        },
+    }
+    unverified_path = tmp_path / "unverified-edto.pdf"
+    render_pdf(unverified, [], [], 1, unverified_path)
+    unverified_text = " ".join(
+        (page.extract_text() or "")
+        for page in PdfReader(unverified_path).pages
+    )
+    assert "Applicability is not explicitly verified" in unverified_text
+    assert "NIL EDTO" not in unverified_text
+
+    verified = _flight()
+    verified["edto"] = {
+        "assessment": {
+            "status": "verified_not_applicable",
+            "evidence": [{
+                "source": "uploaded_company_cfp",
+                "reason_code": "complete_lido_cfp_no_edto_section",
+            }],
+        },
+    }
+    verified["sigmet_review"] = {"status": "not_applicable"}
+    verified["vaa_review"] = {"status": "not_applicable"}
+    verified["tropical_cyclone_review"] = {"status": "not_applicable"}
+    verified_path = tmp_path / "verified-nil-edto.pdf"
+    render_pdf(verified, [], [], 1, verified_path)
+    verified_text = " ".join(
+        (page.extract_text() or "")
+        for page in PdfReader(verified_path).pages
+    )
+    assert "Not applicable by complete CFP evidence" in verified_text
+    assert "Complete company CFP checked - no EDTO section was published" in verified_text
+    assert "No EDTO" in verified_text
+    assert verified_text.count("NIL EDTO / SIGMET / VAA / TROPICAL CYCLONE") == 1
+
+    incomplete = _flight()
+    incomplete["edto"] = verified["edto"]
+    incomplete["sigmet_review"] = {
+        "status": "review_required",
+        "clean_current_feed_no_match": True,
+    }
+    incomplete_path = tmp_path / "incomplete-hazard-coverage.pdf"
+    render_pdf(incomplete, [], [], 1, incomplete_path)
+    incomplete_text = " ".join(
+        (page.extract_text() or "")
+        for page in PdfReader(incomplete_path).pages
+    )
+    assert "NIL EDTO / SIGMET" not in incomplete_text
+    assert "NIL EDTO" in incomplete_text
+    assert "SIGMET: review required" in incomplete_text
 
 
 def test_confirmed_profile_is_prominent_in_l1_and_complete_in_l2(
@@ -562,6 +703,9 @@ def test_confirmed_profile_is_prominent_in_l1_and_complete_in_l2(
             assert "POINT" in page
             if level == 1:
                 assert "PROFILE GEN-1" in page
+                assert flight["depressurisation_profile_charts"][0][
+                    "level1_report_page"
+                ] == 3
             if level == 2:
                 assert "MATCH" in page
                 last = " ".join(
@@ -796,7 +940,10 @@ def test_level1_groups_repeated_incomplete_weather_without_hiding_review(
         },
     ]
 
-    render_pdf(_flight(), findings, [], 1, path)
+    flight = _flight()
+    flight["vaa_review"] = {"status": "review_required"}
+    flight["tropical_cyclone_review"] = {"status": "review_required"}
+    render_pdf(flight, findings, [], 1, path)
 
     reader = PdfReader(path)
     page1 = " ".join((reader.pages[0].extract_text() or "").split())
@@ -1261,9 +1408,12 @@ def test_level2_weather_is_concise_deduplicated_and_does_not_repeat_raw_opmet(
     assert "UTC window: UTC window not resolved." not in text
     assert "Operational mechanism:" not in text
     assert (
-        "Route deviation, flight-level strategy or timing may be affected."
+        "Flight-specific operational effect is not stated by the source; "
+        "review required."
         in normalized
     )
+    assert "Route deviation" not in normalized
+    assert "flight-level strategy" not in normalized
 
 
 def test_level2_groups_repeated_no_overlap_weather_into_one_checked_summary(
@@ -1496,6 +1646,66 @@ def test_run_analysis_normalizes_identity_before_json_and_reports(
     assert payload["flight"]["flight_number"] == "SQ304"
     assert payload["view"]["briefing"]["route_label"] == "WSSS → EBBR"
     assert rendered_identities == ["SQ304", "SQ304"]
+
+
+def test_run_analysis_serializes_report_artifact_targets_after_level2_render(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    flight = {
+        "flight_number": "SQ23",
+        "flight_date": "25JUL26",
+        "departure": "KJFK",
+        "destination": "WSSS",
+        "aircraft_type": "A350-941",
+        "registration": "9V-SMQ",
+        "route_waypoints": [],
+        "edto": {
+            "assessment": {
+                "status": "review_required",
+                "evidence": [{
+                    "source": "uploaded_company_cfp",
+                    "reason_code": "explicit_edto_assessment_missing",
+                }],
+            },
+        },
+        "weather": [],
+        "notams": [],
+    }
+
+    monkeypatch.setattr(analysis, "extract_pages", lambda path: ["CFP"])
+    monkeypatch.setattr(analysis, "parse_lido", lambda pages, name: dict(flight))
+    monkeypatch.setattr(analysis, "analyse", lambda parsed: ([], []))
+
+    def capture_render(
+        parsed: dict[str, Any],
+        findings: list[dict[str, Any]],
+        warnings: list[str],
+        level: int,
+        path: Path,
+    ) -> None:
+        if level == 1:
+            parsed["depressurisation_profile_charts"] = [{
+                "chart_number": "8-7",
+                "level1_report_page": 3,
+            }]
+        else:
+            parsed["depressurisation_profile_charts"][0]["level2_report_page"] = 8
+        path.write_bytes(b"pdf")
+
+    monkeypatch.setattr(analysis, "render_pdf", capture_render)
+
+    result = analysis.run_odss_analysis(
+        tmp_path / "source.pdf",
+        tmp_path / "results",
+        tmp_path / "reports",
+        8,
+    )
+    payload = json.loads(Path(result["analysis_path"]).read_text(encoding="utf-8"))
+    artifact = payload["flight"]["depressurisation_profile_charts"][0]
+
+    assert artifact["level1_report_page"] == 3
+    assert artifact["level2_report_page"] == 8
 
 
 def test_pilot_brief_category_colours_are_distinct_and_stable() -> None:
