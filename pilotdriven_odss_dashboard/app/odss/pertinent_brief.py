@@ -904,6 +904,44 @@ def _surface_entity_label(item: dict[str, Any]) -> str:
     ) or str(item.get("notamNumber") or "surface item")
 
 
+def _surface_clock(value: Any, reference: Any = None) -> str | None:
+    text = str(value or "")
+    if len(text) < 16 or text[4] != "-":
+        return None
+    clock = text[11:16].replace(":", "") + "Z"
+    reference_text = str(reference or "")
+    if len(reference_text) >= 10 and text[:10] != reference_text[:10]:
+        # A bare clock lies about multi-day windows ("0900Z-0900Z" reading as
+        # zero-length); endpoints outside the reference day carry their day.
+        return f"{text[8:10]} {clock}"
+    return clock
+
+
+def _surface_period(item: dict[str, Any]) -> str | None:
+    reference = item.get("referenceAt")
+    interval = item.get("referenceInterval") or item.get("validityInterval") or {}
+    start = _surface_clock(interval.get("startsAt"), reference)
+    end = _surface_clock(interval.get("endsAt"), reference)
+    if start and end:
+        return f"{start}-{end}"
+    if start:
+        return f"from {start}"
+    if end:
+        return f"until {end}"
+    return None
+
+
+def _surface_detail_line(prefix: str, item: dict[str, Any]) -> str:
+    # "There has to be a period": every stated restriction carries its NOTAM id
+    # and window; a missing window states itself instead of hiding.
+    parts = [f"{prefix}: {_surface_entity_label(item)}"]
+    notam = str(item.get("notamNumber") or "").strip()
+    if notam:
+        parts.append(notam)
+    parts.append(_surface_period(item) or "period unresolved - review")
+    return " | ".join(parts)
+
+
 def _surface_overlay_lines(
     overlay: dict[str, Any],
     *,
@@ -931,7 +969,7 @@ def _surface_overlay_lines(
     if counts:
         lines = ["Surface overlay: " + "; ".join(counts) + "."]
         details = [
-            f"{prefix}: {_surface_entity_label(item)}"
+            _surface_detail_line(prefix, item)
             for key, _, prefix in ordered
             for item in grouped[key]
         ]
@@ -946,13 +984,22 @@ def _surface_overlay_lines(
         lines = [
             "Surface overlay: no applicable surface mark at the selected time."
         ]
-    if review_required:
-        lines.append(
-            "Review required: "
-            + str(
-                review_required[0].get("plainEnglish")
-                or "surface location unresolved"
+    # Review lines name their subject — "doesn't say what" is not a state a
+    # pilot can act on. Each row leads with the NOTAM id.
+    for row in review_required[:2]:
+        notam = str(row.get("notamNumber") or "").strip()
+        entity = " ".join(
+            value
+            for value in (
+                str(row.get("entityType") or "").upper(),
+                str(row.get("entityRef") or ""),
             )
+            if value
+        )
+        subject = " ".join(part for part in (notam, entity) if part)
+        plain = str(row.get("plainEnglish") or "surface location unresolved")
+        lines.append(
+            f"Review required: {subject + ' - ' if subject else ''}{plain}"
         )
     return lines
 
@@ -2116,7 +2163,8 @@ def _draw_operational_detail(
             left_width,
             chart_height,
             "EDTO ROUTE EVIDENCE",
-            ["No EDTO sector identified for this flight."],
+            # Boss vocabulary: an evaluated-clean domain says NIL, once.
+            ["NIL - no EDTO sector in the uploaded flight data."],
             _EDTO,
             dark=True,
             style=_STYLES["dark"],
@@ -2239,19 +2287,30 @@ def _draw_operational_detail(
         + grouped.get("vaa", [])
         + grouped.get("tropical_cyclone", [])
     )
-    advisory_labels = [
-        (
-            "SIGMET"
-            if item.get("engine") == "sigmet"
-            else "VAA" if item.get("engine") == "vaa" else "tropical-cyclone"
-        )
-        for item in advisory_items
-        if (item.get("data") or {}).get("status") == "review_required"
+    # Boss rule (01 Aug 2026): domains that were EVALUATED AND CLEAN compile
+    # into one NIL line — "NIL EDTO / VAA / SIGMET… provided it is really NIL".
+    # Could-not-evaluate NEVER compiles: absent coverage stays a loud line.
+    def _advisory_state(engine: str, label: str) -> tuple[str, str]:
+        items = grouped.get(engine, [])
+        statuses = [(item.get("data") or {}).get("status") for item in items]
+        if any(status == "review_required" for status in statuses):
+            return label, "review"
+        if any(status == "affected" for status in statuses):
+            return label, "affected"
+        if items:
+            return label, "nil"
+        return label, "unavailable"
+
+    advisory_states = [
+        _advisory_state("sigmet", "SIGMET"),
+        _advisory_state("vaa", "VAA"),
+        _advisory_state("tropical_cyclone", "TROPICAL CYCLONE"),
     ]
-    affected_advisories = [
-        item
-        for item in advisory_items
-        if (item.get("data") or {}).get("status") == "affected"
+    nil_labels = [label for label, state in advisory_states if state == "nil"]
+    review_labels = [label for label, state in advisory_states if state == "review"]
+    affected_labels = [label for label, state in advisory_states if state == "affected"]
+    unavailable_labels = [
+        label for label, state in advisory_states if state == "unavailable"
     ]
     coverage_lines = [
         (
@@ -2259,25 +2318,21 @@ def _draw_operational_detail(
             if incomplete_weather
             else "Weather: checked flight windows complete."
         ),
-        (
-            "VAAC / TC: "
-            + (
-                " and ".join(dict.fromkeys(advisory_labels))
-                + " review required"
-                if advisory_labels
-                else (
-                    "route impact identified - review Level 2"
-                    if affected_advisories
-                    else (
-                        "current coverage recorded"
-                        if advisory_items
-                        else "coverage unavailable - review required"
-                    )
-                )
-            )
-            + "."
-        ),
     ]
+    if nil_labels:
+        coverage_lines.append("NIL: " + " | ".join(nil_labels) + ".")
+    if affected_labels:
+        coverage_lines.append(
+            " and ".join(affected_labels)
+            + ": route impact identified - review Level 2."
+        )
+    if review_labels:
+        coverage_lines.append(" and ".join(review_labels) + ": review required.")
+    if unavailable_labels:
+        coverage_lines.append(
+            " and ".join(unavailable_labels)
+            + ": coverage unavailable - review required."
+        )
     _draw_panel(
         canvas,
         right_x,

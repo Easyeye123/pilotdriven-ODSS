@@ -420,9 +420,9 @@ def test_level1_integrates_conditional_vaa_on_route_page(
     assert "DATA COVERAGE" in page2
     assert "DATA COVERAGE" not in page3
     assert (
-        "VAAC / TC: route impact identified - review Level 2."
+        "VAA: route impact identified - review Level 2."
         if status == "affected"
-        else "VAAC / TC: VAA review required."
+        else "VAA: review required."
     ) in page2
     assert "VOLCANIC ASH ADVISORY REVIEW" not in text
     assert "SOURCE / PROVENANCE" not in text

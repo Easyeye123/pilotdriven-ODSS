@@ -804,7 +804,7 @@ def test_level1_groups_repeated_incomplete_weather_without_hiding_review(
     assert page1.count("Weather coverage incomplete") == 1
     assert "EDTO / CYQX / 25 JUL 0526Z-0917Z" in page1
     assert "EDTO / EINN / 25 JUL 0649Z-0917Z" in page1
-    assert "VAA and tropical-cyclone review required" in page2
+    assert "VAA and TROPICAL CYCLONE: review required." in page2
     assert "Forecast coverage is incomplete." not in f"{page1} {page2}"
 
 
