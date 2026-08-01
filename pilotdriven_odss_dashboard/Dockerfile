@@ -1,10 +1,25 @@
-FROM python:3.12.13-slim-trixie AS dependencies
+FROM ubuntu:24.04 AS dependencies
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PATH=/opt/venv/bin:$PATH
 
 WORKDIR /app
+
+# Ubuntu 24.04 LTS is an officially supported Playwright 1.62 platform and
+# supplies Python 3.12. Build inside a dedicated virtual environment so the
+# runtime remains isolated from distro Python packages while retaining the
+# vendor security feed used by the image scanner.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        python3 \
+        python3-venv \
+    && python3 -m venv /opt/venv \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     && DEBIAN_FRONTEND=noninteractive python -m playwright install --with-deps --only-shell chromium \
