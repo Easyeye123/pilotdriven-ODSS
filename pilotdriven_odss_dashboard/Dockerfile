@@ -23,15 +23,15 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     && DEBIAN_FRONTEND=noninteractive python -m playwright install --with-deps --only-shell chromium \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 1000 odss \
-    && useradd --uid 1000 --gid 1000 --no-create-home --home-dir /app --shell /usr/sbin/nologin odss
+    && rm -rf /var/lib/apt/lists/*
 # ODSS only launches Chromium's headless shell, so it does not need the
 # Xvfb/Xorg server. The binary is not linked to the CUPS client library either.
 # Keep those generic Playwright dependencies out of the runtime surface.
 RUN apt-get purge --yes xvfb xserver-common libcups2t64
-RUN usermod --home /home/odss odss \
-    && install -d --owner=odss --group=odss --mode=0750 /home/odss
+# The official Ubuntu base already reserves numeric UID/GID 1000. Use that
+# non-root identity directly and give it a private application home instead of
+# mutating or duplicating the distro account.
+RUN install -d --owner=1000 --group=1000 --mode=0750 /home/odss
 ENV HOME=/home/odss
 
 FROM dependencies AS source

@@ -14,4 +14,5 @@ def test_runtime_uses_supported_lts_python_and_playwright_contract() -> None:
     )
     assert "FROM dependencies AS runtime" in DOCKERFILE
     assert "COPY --from=test /tmp/odss-tests-passed /app/.tests-passed" in DOCKERFILE
+    assert "groupadd --gid 1000" not in DOCKERFILE
     assert "USER 1000:1000" in DOCKERFILE
