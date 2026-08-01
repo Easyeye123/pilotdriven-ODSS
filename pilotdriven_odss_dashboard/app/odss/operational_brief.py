@@ -42,7 +42,8 @@ from .pertinent_brief import (
     _sector_etp_markers,
 )
 from .report_facts import (
-    actm_utc_label,
+    actm_utc_clock,
+    actual_timing_anchor,
     build_route_gate_rows,
     deferred_item_report_rows,
     is_confirmed_profile_finding,
@@ -1340,12 +1341,11 @@ def _terrain_rows(
             if is_confirmed_profile_finding(item)
         ]
         profile = profile_coverage_label(event_profiles)
-        start_clock = actm_utc_label(flight, start)
-        end_clock = actm_utc_label(flight, end)
-        utc_range = " - ".join(
-            item.split("/", 1)[-1].strip()
-            for item in (start_clock, end_clock)
-        )
+        utc_values = [
+            actm_utc_clock(flight, start),
+            actm_utc_clock(flight, end),
+        ]
+        utc_range = " - ".join(item for item in utc_values if item) or "—"
         duration = (
             f"{max(0, int(end) - int(start))} min"
             if start is not None and end is not None
@@ -1975,10 +1975,14 @@ def _page_four(
         [
             str(index),
             f"{format_actm(item.get('entry_actm_minutes'))}-{format_actm(item.get('exit_actm_minutes'))}",
-            (
-                f"{actm_utc_label(flight, item.get('entry_actm_minutes')).split('/', 1)[-1].strip()}-"
-                f"{actm_utc_label(flight, item.get('exit_actm_minutes')).split('/', 1)[-1].strip()}"
-            ),
+            "-".join(
+                clock
+                for clock in (
+                    actm_utc_clock(flight, item.get("entry_actm_minutes")),
+                    actm_utc_clock(flight, item.get("exit_actm_minutes")),
+                )
+                if clock
+            ) or "—",
             _edto_sector_airports(item),
             ", ".join(format_actm(value) for value in item.get("etp_actm_minutes") or []) or "No separate ETP printed",
         ]
@@ -2099,7 +2103,7 @@ def _page_four(
         columns=(
             ("SEG", 0.06),
             ("ACTM", 0.15),
-            ("UTC", 0.20),
+            ("UTC" if actual_timing_anchor(flight) else "UTC — NO ANCHOR", 0.20),
             ("AIRPORTS", 0.28),
             ("ETP", 0.31),
         ),
@@ -2196,13 +2200,14 @@ def _page_five(
     left_w = (PAGE_SIZE[0] - 2 * margin - gap) / 2
     table_y = 31 * mm
     table_h = top - table_y
+    timing_column = "ACTM / UTC" if actual_timing_anchor(flight) else "ACTM"
     _draw_table(
         canvas,
         x=margin,
         y=table_y,
         width=left_w,
         height=table_h,
-        columns=(("GATE", 0.21), ("BASIS", 0.23), ("ACTM / UTC", 0.24), ("RESULT", 0.32)),
+        columns=(("GATE", 0.21), ("BASIS", 0.23), (timing_column, 0.24), ("RESULT", 0.32)),
         rows=left_rows,
         accent=_CYAN,
         max_rows=10,
@@ -2216,7 +2221,7 @@ def _page_five(
         y=table_y,
         width=left_w,
         height=table_h,
-        columns=(("GATE", 0.21), ("BASIS", 0.23), ("ACTM / UTC", 0.24), ("RESULT", 0.32)),
+        columns=(("GATE", 0.21), ("BASIS", 0.23), (timing_column, 0.24), ("RESULT", 0.32)),
         rows=right_rows,
         accent=_CYAN,
         max_rows=10,
@@ -2344,7 +2349,7 @@ def _page_six(
         columns=(
             ("REF", 0.05),
             ("ACTM", 0.12),
-            ("UTC", 0.18),
+            ("UTC" if actual_timing_anchor(flight) else "UTC — NO ANCHOR", 0.18),
             ("ACTUAL EXPOSURE", 0.18),
             ("DUR", 0.08),
             ("MAX", 0.13),

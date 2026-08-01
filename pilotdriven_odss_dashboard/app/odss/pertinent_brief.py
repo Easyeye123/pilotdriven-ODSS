@@ -31,7 +31,8 @@ from .pilot_briefing import (
     prepare_pilot_findings,
 )
 from .report_facts import (
-    actm_utc_label,
+    actm_utc_clock,
+    actual_timing_anchor,
     build_route_gate_rows,
     deferred_item_report_rows,
     is_confirmed_profile_finding,
@@ -1607,7 +1608,7 @@ def _page_source_chips(flight: dict[str, Any], page_number: int) -> list[str]:
     if page_number == 2:
         chips = ["CFP EDTO"]
         if flight.get("deferred_items"):
-            chips.append("MEL / CDL")
+            chips.append("DEFERRED DECLARATIONS")
         chips.append("CFP WX")
         return chips
     return []
@@ -2147,7 +2148,7 @@ def _draw_operational_detail(
             f"{briefing['metrics']['clock_basis']} · "
             f"ATOT {briefing['metrics']['atot']}"
             if briefing["metrics"].get("atot")
-            else "ACTM from scheduled-departure anchor"
+            else "CFP ACTM only · ATOT/ATA required for UTC clocks"
         ),
         final_actm=final_actm,
         x=margin,
@@ -2291,7 +2292,7 @@ def _draw_operational_detail(
         width=right_width,
         height=content_top - content_bottom,
         columns=[
-            ("ACTM / UTC", 0.29),
+            ("ACTM / UTC" if actual_timing_anchor(flight) else "ACTM", 0.29),
             ("ROUTE GATE", 0.24),
             ("PERTINENT RESULT", 0.47),
         ],
@@ -2354,7 +2355,7 @@ def _draw_operational_detail(
             cards_y,
             deferred_width,
             cards_h,
-            "MEL / CDL / CDDL",
+            "DEFERRED DECLARATIONS",
             deferred_lines,
             _CRITICAL,
             dark=True,
@@ -2636,12 +2637,11 @@ def _draw_route_detail(
         maximum_point = event.get("maximum") or {}
         start_actm = first.get("actm_minutes")
         end_actm = last.get("actm_minutes")
-        start_clock = actm_utc_label(flight, start_actm)
-        end_clock = actm_utc_label(flight, end_actm)
-        utc_range = " - ".join(
-            item.split("/", 1)[-1].strip()
-            for item in (start_clock, end_clock)
-        )
+        utc_values = [
+            actm_utc_clock(flight, start_actm),
+            actm_utc_clock(flight, end_actm),
+        ]
+        utc_range = " - ".join(item for item in utc_values if item) or "—"
         max_msa = maximum_point.get("msa_hundreds_ft")
         maximum_label = (
             f"{int(max_msa):03d}{'*' if maximum_point.get('msa_asterisk') else ''} "
@@ -2677,7 +2677,7 @@ def _draw_route_detail(
         columns=[
             ("REF", 0.06),
             ("ACTM", 0.12),
-            ("UTC", 0.20),
+            ("UTC" if actual_timing_anchor(flight) else "UTC — NO ANCHOR", 0.20),
             ("ACTUAL EXPOSURE", 0.20),
             ("MAX MSA", 0.14),
             ("PROFILE / COVERAGE", 0.28),

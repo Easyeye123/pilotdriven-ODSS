@@ -9,6 +9,7 @@ footer.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -112,11 +113,19 @@ def local_time_segment(icao: Any, utc_value: Any) -> str | None:
 
 
 def block_time_label(flight: dict[str, Any]) -> str | None:
-    """Scheduled ``BLOCK 13:05`` from the CFP departure/arrival times."""
+    """Apply only the registered SQ/SIA STA-minus-STD block rule."""
     dep = _parse_utc(flight.get("scheduled_departure_utc"))
     arr = _parse_utc(flight.get("scheduled_arrival_utc"))
     if dep is None or arr is None or arr <= dep:
         return None
+    identity = str(
+        flight.get("operating_flight_number")
+        or flight.get("flight_number")
+        or ""
+    ).strip().upper()
+    match = re.match(r"^([A-Z]{2,3})\d", identity)
+    if not match or match.group(1) not in {"SQ", "SIA"}:
+        return "BLOCK REVIEW"
     minutes = int((arr - dep).total_seconds() // 60)
     return f"BLOCK {minutes // 60}:{minutes % 60:02d}"
 

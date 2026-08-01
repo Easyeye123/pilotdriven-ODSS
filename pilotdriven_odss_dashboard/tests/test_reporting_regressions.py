@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import analysis
 from app.odss import pertinent_brief
 from app.odss.brief_theme import block_time_label, local_time_segment
+from app.odss.depress_analysis_page import _actm_utc
 from app.odss.briefing import (
     _display_registration,
     _pilot_route_map_label,
@@ -23,6 +24,8 @@ from app.odss.briefing import (
 )
 from app.odss.pertinent_brief import CATEGORY_COLOURS
 from app.odss.report_facts import (
+    actm_utc_clock,
+    actm_utc_label,
     build_route_gate_rows,
     deferred_item_report_rows,
     is_confirmed_profile_finding,
@@ -58,6 +61,14 @@ def test_sq338_header_uses_offline_airport_zones_and_prominent_block_time(
     )
 
     assert block_time_label(flight) == "BLOCK 13:40"
+    sia_alias = {**flight, "flight_number": "SIA338"}
+    assert block_time_label(sia_alias) == "BLOCK 13:40"
+    other_carrier = {
+        **flight,
+        "flight_number": "BAW338",
+        "operating_flight_number": None,
+    }
+    assert block_time_label(other_carrier) == "BLOCK REVIEW"
     assert (
         local_time_segment("WSSS", flight["scheduled_departure_utc"])
         == "SIN 01 AUG 1335 UTC+8"
@@ -313,7 +324,10 @@ def test_route_gates_are_derived_from_generic_cfp_route_and_fail_closed() -> Non
 
     assert rows[0]["gate"] == "NAT B"
     assert rows[0]["basis"] == "ALPHA - BRAVO"
-    assert "11 JUL 1230Z" in rows[0]["time"]
+    assert rows[0]["time"] == "ACTM 02.00 - ACTM 04.00"
+    assert all("Z" not in item["time"] for item in rows)
+    assert actm_utc_clock(flight, 180) is None
+    assert actm_utc_label(flight, 180) == "ACTM 03.00"
     assert any(item["gate"] == "TEST" for item in selected)
     assert selected[-1]["gate"] == "EBBR"
     assert all(
@@ -325,6 +339,41 @@ def test_route_gates_are_derived_from_generic_cfp_route_and_fail_closed() -> Non
         "review required" not in item["result"].lower()
         for item in selected
     )
+
+    flight["actual_takeoff_utc"] = "2026-07-11T10:45:00+00:00"
+    anchored_rows = build_route_gate_rows(flight)
+    assert "11 JUL 1245Z" in anchored_rows[0]["time"]
+    assert actm_utc_label(flight, 180) == "ACTM 03.00 / 11 JUL 1345Z"
+
+
+@pytest.mark.parametrize("level", [1, 2])
+def test_reports_keep_actm_only_until_an_actual_timing_anchor_exists(
+    tmp_path: Path,
+    level: int,
+) -> None:
+    flight = _flight()
+    path = tmp_path / f"level-{level}-actm-only.pdf"
+    render_pdf(flight, [], [], level, path)
+
+    document = fitz.open(path)
+    try:
+        text = "\n".join(page.get_text() for page in document)
+    finally:
+        document.close()
+
+    assert "ACTM from scheduled-departure anchor" not in text
+    assert "ACTM 02.00 / 11 JUL 1230Z" not in text
+    assert "ACTM 02.00" in text
+    assert "ACTM / CALCULATED UTC TIMELINE" not in text
+
+
+def test_depressurisation_profile_clocks_require_actual_timing_anchor() -> None:
+    flight = _flight()
+    assert flight.get("scheduled_departure_utc")
+    assert _actm_utc(flight, 331) is None
+
+    flight["actual_takeoff_utc"] = "2026-07-11T10:45:00+00:00"
+    assert _actm_utc(flight, 331) == "1616Z"
 
 
 def test_profile_findings_join_by_terrain_event_not_list_position() -> None:
@@ -613,6 +662,55 @@ def test_level1_and_level2_publish_exact_cfp_mel_with_review_status(
             in normalized
         )
         assert "Approved MEL source review required" in normalized
+
+
+def test_level1_and_level2_publish_sia722_ifeddl_as_unclassified_source_text(
+    tmp_path: Path,
+) -> None:
+    flight = _flight()
+    flight["deferred_items"] = [
+        {
+            "item_type": "UNCLASSIFIED",
+            "source_declaration": "AA IFEDDL",
+            "reference": None,
+            "description": "CONNECTIVITY, WIFI INTERNET",
+            "company_remark": (
+                "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT"
+            ),
+        }
+    ]
+
+    rows = deferred_item_report_rows(flight, [])
+    assert rows == [
+        {
+            "label": "AA IFEDDL",
+            "description": "CONNECTIVITY, WIFI INTERNET",
+            "restriction": (
+                "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT"
+            ),
+            "source_status": (
+                "Unclassified CFP deferred declaration; acronym meaning is not inferred "
+                "and it is not classified as MEL, CDL or CDDL."
+            ),
+        }
+    ]
+
+    for level in (1, 2):
+        path = tmp_path / f"ifeddl-level-{level}.pdf"
+        render_pdf(flight, [], [], level, path)
+        document = fitz.open(path)
+        try:
+            normalized = " ".join(
+                page.get_text() for page in document
+            ).replace("\n", " ")
+            normalized = " ".join(normalized.split())
+        finally:
+            document.close()
+        assert "AA IFEDDL" in normalized
+        assert "CONNECTIVITY, WIFI INTERNET" in normalized
+        assert "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT" in normalized
+        assert "acronym meaning is not inferred" in normalized
+        assert "MEL AA IFEDDL" not in normalized
 
 
 def test_active_level1_cover_draws_governed_surface_vector_overlays(

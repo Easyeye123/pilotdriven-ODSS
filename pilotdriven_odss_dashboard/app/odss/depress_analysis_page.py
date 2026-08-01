@@ -15,7 +15,6 @@ controlled index; nothing is invented at render time.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from reportlab.pdfbase import pdfmetrics
@@ -25,21 +24,16 @@ from .constants import format_actm
 from .controlled_library import aircraft_effectivity_tokens, normalized_registration
 from . import engines
 from .engines import detect_terrain_events
+from .report_facts import actm_utc_clock
 
 
-def _actm_utc(flight: dict[str, Any], actm_minutes: Any) -> str:
-    try:
-        departure = datetime.fromisoformat(
-            str(flight.get("scheduled_departure_utc"))
-        )
-    except ValueError:
-        return "-"
-    if departure.tzinfo is None:
-        departure = departure.replace(tzinfo=timezone.utc)
-    if actm_minutes is None:
-        return "-"
-    moment = departure + timedelta(minutes=int(actm_minutes))
-    return moment.astimezone(timezone.utc).strftime("%H%M") + "Z"
+def _actm_utc(flight: dict[str, Any], actm_minutes: Any) -> str | None:
+    """Return UTC only from an actual ATOT/ATA-derived timing anchor."""
+    clock = actm_utc_clock(flight, actm_minutes)
+    if not clock:
+        return None
+    # Dense profile panels already identify the flight date elsewhere.
+    return clock.rsplit(" ", 1)[-1]
 
 
 def _profile_by_chart(chart_number: str) -> dict[str, Any] | None:
@@ -181,11 +175,10 @@ def _max_cp_line(
         f"{maximum.get('name')} {format_actm(maximum.get('actm_minutes'))}"
     )
     if critical_wp:
-        line += (
-            f" | CP {critical_name} "
-            f"{format_actm(critical_wp.get('actm_minutes'))} / "
-            f"{_actm_utc(flight, critical_wp.get('actm_minutes'))}"
-        )
+        line += f" | CP {critical_name} {format_actm(critical_wp.get('actm_minutes'))}"
+        utc_clock = _actm_utc(flight, critical_wp.get("actm_minutes"))
+        if utc_clock:
+            line += f" / {utc_clock}"
     else:
         line += f" | CP {critical_name}"
     return line
@@ -578,12 +571,15 @@ def draw_depressurisation_analysis(
         if event is not None:
             first = event["first_high"]
             end = event.get("drop") or event["last_high"]
-            lines.append(
+            exposure = (
                 f"{format_actm(first.get('actm_minutes'))}-"
-                f"{format_actm(end.get('actm_minutes'))} / "
-                f"{_actm_utc(flight, first.get('actm_minutes'))}-"
-                f"{_actm_utc(flight, end.get('actm_minutes'))}"
+                f"{format_actm(end.get('actm_minutes'))}"
             )
+            start_utc = _actm_utc(flight, first.get("actm_minutes"))
+            end_utc = _actm_utc(flight, end.get("actm_minutes"))
+            if start_utc and end_utc:
+                exposure += f" / {start_utc}-{end_utc}"
+            lines.append(exposure)
             lines.append(
                 f"Filed leg: {_filed_segment(flight, event)}. "
                 "No exact chart match in mounted index."

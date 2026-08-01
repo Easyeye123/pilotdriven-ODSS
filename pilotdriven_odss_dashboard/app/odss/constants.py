@@ -63,7 +63,7 @@ COMMUNICATION_RULES = [
 ]
 
 ENGINE_ORDER = [
-    "page1", "bobcat", "mel", "cdl", "cddl", "performance", "weather", "sigmet", "vaa",
+    "page1", "bobcat", "deferred_declaration", "mel", "cdl", "cddl", "performance", "weather", "sigmet", "vaa",
     "tropical_cyclone", "notam",
     "communications", "actual_timing", "terrain", "vws", "depressurisation",
     "edto", "timeline", "qa",

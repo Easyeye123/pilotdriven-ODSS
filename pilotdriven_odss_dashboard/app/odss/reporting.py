@@ -36,6 +36,7 @@ from .visual_reporting import PAGE_SIZE, visual_cover_flowable
 _TITLES = {
     "page1": "CFP Page 1 organised summary",
     "bobcat": "BOBCAT / Kabul slot control",
+    "deferred_declaration": "Unclassified deferred declaration",
     "mel": "MEL review",
     "cddl": "CDDL / CDL review",
     "performance": "Performance and fuel",
@@ -64,6 +65,7 @@ _NOTE_TITLES = {
 _REPORT_ORDER = [
     "page1",
     "bobcat",
+    "deferred_declaration",
     "mel",
     "cddl",
     "performance",

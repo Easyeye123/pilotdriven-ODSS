@@ -58,6 +58,65 @@ def test_sq338_page_one_mel_continuations_are_preserved() -> None:
     ]
 
 
+def test_sia722_aa_ifeddl_is_preserved_without_mel_cdl_or_cddl_classification() -> None:
+    page_one = "\n".join(
+        (
+            "SINGAPORE AIRLINES - SUMMARY STANDARD CFP",
+            "REMARKS:",
+            "AA IFEDDL",
+            "CONNECTIVITY, WIFI INTERNET",
+            "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK",
+            "WHOLE AIRCRAFT",
+            "PLAN 2",
+            "RTE NO SINBKK03 A350-941",
+        )
+    )
+
+    assert _parse_deferred_items(page_one) == [
+        {
+            "reference": None,
+            "description": "CONNECTIVITY, WIFI INTERNET",
+            "item_type": "UNCLASSIFIED",
+            "source_declaration": "AA IFEDDL",
+            "company_remark": (
+                "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT"
+            ),
+        }
+    ]
+
+
+def test_sia722_aa_ifeddl_never_enters_the_mel_cdl_or_cddl_engines() -> None:
+    flight = _flight()
+    flight["deferred_items"] = [
+        {
+            "reference": None,
+            "description": "CONNECTIVITY, WIFI INTERNET",
+            "item_type": "UNCLASSIFIED",
+            "source_declaration": "AA IFEDDL",
+            "company_remark": (
+                "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT"
+            ),
+        }
+    ]
+
+    findings, _ = analyse(flight)
+    declaration = next(
+        item for item in findings if item["engine"] == "deferred_declaration"
+    )
+    assert declaration["title"] == "AA IFEDDL"
+    assert declaration["summary"] == (
+        "Unclassified CFP deferred declaration; acronym meaning is not inferred "
+        "and it is not classified as MEL, CDL or CDDL."
+    )
+    assert declaration["details"] == [
+        "CONNECTIVITY, WIFI INTERNET",
+        "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT",
+    ]
+    assert not any(
+        item["engine"] in {"mel", "cdl", "cddl"} for item in findings
+    )
+
+
 def test_normalized_source_locator_finds_record_page_without_flight_specific_rules() -> None:
     pages = [
         "SUMMARY PAGE",

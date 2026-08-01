@@ -17,6 +17,7 @@ from reportlab.platypus import BaseDocTemplate, Flowable, Frame, PageBreak, Page
 
 from .briefing import build_briefing_view, draw_route_map_pdf
 from .constants import format_actm
+from .report_facts import actual_timing_anchor
 
 
 PAGE_SIZE = landscape(A4)
@@ -464,9 +465,15 @@ def _draw_operational_detail(canvas, flight: dict[str, Any], findings: list[dict
     x3 = margin + 2 * (column_w + gap)
     half = (body_height - gap) / 2
 
-    mel_lines = _finding_lines(grouped.get("mel", []) + grouped.get("cddl", []), 7, 2)
+    mel_lines = _finding_lines(
+        grouped.get("deferred_declaration", [])
+        + grouped.get("mel", [])
+        + grouped.get("cddl", []),
+        7,
+        2,
+    )
     mel_lines.extend(_note_lines(flight, {"separate"}, level)[:2])
-    _draw_panel(canvas, x1, body_bottom + half + gap, column_w, half, "MEL / CDL / CDDL", mel_lines, _AMBER, False, _STYLES["detail_small"])
+    _draw_panel(canvas, x1, body_bottom + half + gap, column_w, half, "DEFERRED DECLARATIONS", mel_lines, _AMBER, False, _STYLES["detail_small"])
     _draw_panel(canvas, x1, body_bottom, column_w, half, "PERFORMANCE / FUEL", _finding_lines(grouped.get("performance", []) + grouped.get("qa", []), 6, 3), _NAVY, False, _STYLES["detail_small"])
 
     dep_lines = _airport_lines(briefing["departure"])
@@ -511,7 +518,12 @@ def _draw_route_detail(canvas, flight: dict[str, Any], findings: list[dict[str, 
     comm_lines.extend(_note_lines(flight, {"communications"}, level))
     timing_lines = _finding_lines(grouped.get("actual_timing", []) + grouped.get("timeline", []), 7, 2)
     _draw_panel(canvas, x1, bottom + half + gap, left_w, half, "FIR / COMMUNICATIONS", comm_lines, _PURPLE, False, _STYLES["detail_small"])
-    _draw_panel(canvas, x1, bottom, left_w, half, "ACTM / CALCULATED UTC TIMELINE", timing_lines, _NAVY, False, _STYLES["detail_small"])
+    timing_title = (
+        "ACTM / ACTUAL-ANCHORED UTC TIMELINE"
+        if actual_timing_anchor(flight)
+        else "CFP ACTM TIMELINE — NO ACTUAL UTC ANCHOR"
+    )
+    _draw_panel(canvas, x1, bottom, left_w, half, timing_title, timing_lines, _NAVY, False, _STYLES["detail_small"])
 
     terrain_lines = _finding_lines(grouped.get("terrain", []) + grouped.get("vws", []), 8, 2)
     depress_lines = _finding_lines(grouped.get("depressurisation", []), 6, 3)

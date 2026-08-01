@@ -187,7 +187,9 @@ def _parse_deferred_items(page1: str) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     for line in page1.splitlines():
-        match = re.match(r"^(AA|BB|CC|DD|EE)\s+(CDDL|CDL|MEL)(?:\s+([0-9A-Z-]+))?", line.strip())
+        stripped = line.strip()
+        match = re.match(r"^(AA|BB|CC|DD|EE)\s+(CDDL|CDL|MEL)(?:\s+([0-9A-Z-]+))?", stripped)
+        unclassified = re.fullmatch(r"AA\s+IFEDDL", stripped)
         if match:
             if current:
                 items.append(current)
@@ -198,8 +200,18 @@ def _parse_deferred_items(page1: str) -> list[dict[str, Any]]:
                 "company_remark": None,
             }
             continue
+        if unclassified:
+            if current:
+                items.append(current)
+            current = {
+                "reference": None,
+                "description": "",
+                "item_type": "UNCLASSIFIED",
+                "source_declaration": stripped,
+                "company_remark": None,
+            }
+            continue
         if current:
-            stripped = line.strip()
             if stripped.startswith("PLAN ") or stripped.startswith("RTE NO"):
                 items.append(current)
                 current = None

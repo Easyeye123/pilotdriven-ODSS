@@ -1410,7 +1410,32 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         ))
 
     for item in flight["deferred_items"]:
-        if item["item_type"] == "MEL":
+        if item["item_type"] == "UNCLASSIFIED":
+            declaration = str(item.get("source_declaration") or "UNCLASSIFIED DEFERRED DECLARATION")
+            details = [item.get("description") or "No following CFP text parsed."]
+            if item.get("company_remark"):
+                details.append(item["company_remark"])
+            findings.append(finding(
+                "deferred_declaration",
+                "unknown",
+                declaration,
+                (
+                    "Unclassified CFP deferred declaration; acronym meaning is not inferred "
+                    "and it is not classified as MEL, CDL or CDDL."
+                ),
+                details,
+                {
+                    "classification": "unclassified",
+                    "source_references": [
+                        _cfp_source_reference(
+                            flight,
+                            [flight.get("source_evidence", {}).get("page1")],
+                            "Deferred declaration",
+                        )
+                    ],
+                },
+            ))
+        elif item["item_type"] == "MEL":
             reference = MEL_REFERENCES.get(item["reference"])
             if reference and _reference_library_is_approved():
                 details = [
