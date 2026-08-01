@@ -26,8 +26,17 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && rm -rf /var/lib/apt/lists/*
 # ODSS only launches Chromium's headless shell, so it does not need the
 # Xvfb/Xorg server. The binary is not linked to the CUPS client library either.
-# Keep those generic Playwright dependencies out of the runtime surface.
-RUN apt-get purge --yes xvfb xserver-common libcups2t64
+# The venv is already populated, so the distro venv bootstrap wheels are also
+# build-only inputs. Remove all of them from the shared runtime foundation.
+RUN apt-get purge --yes \
+        libcups2t64 \
+        python3-pip-whl \
+        python3-setuptools-whl \
+        python3-venv \
+        python3.12-venv \
+        xserver-common \
+        xvfb \
+    && rm -rf /var/lib/apt/lists/*
 # The official Ubuntu base already reserves numeric UID/GID 1000. Use that
 # non-root identity directly and give it a private application home instead of
 # mutating or duplicating the distro account.
