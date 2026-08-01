@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from app.odss.surface_overlays import (
     SurfaceOverlayRequest,
+    SurfaceReviewFinding,
     _styled_surface_overlay,
     surface_mark_presentation,
 )
@@ -119,6 +120,36 @@ def test_surface_overlay_clear_must_be_explicit() -> None:
     assert SurfaceOverlayRequest.model_validate({"overlays": []}).overlays == []
     with pytest.raises(ValidationError):
         SurfaceOverlayRequest.model_validate({})
+
+
+def test_review_required_surface_accepts_bounded_official_source_conflict() -> None:
+    finding = {
+        "notamNumber": "SX68/26",
+        "entityType": "taxiway",
+        "entityRef": "W9/W/R",
+        "scope": "ambiguous",
+        "plainEnglish": "The uploaded and reviewed publication times conflict.",
+        "evidence": "Uploaded 1430Z; reviewed source 1730Z.",
+        "sourceConflict": {
+            "publicationId": "SUP 068/2026",
+            "sourceUrl": "https://aim-sg.caas.gov.sg/example",
+            "checkedAt": "2026-08-01T00:00:00.000Z",
+            "conflictingFields": ["startsAt"],
+            "uploaded": {
+                "startsAt": "2026-05-14T14:30:00.000Z",
+                "endsAt": "2026-10-01T21:30:00.000Z",
+            },
+            "reviewed": {
+                "startsAt": "2026-05-14T17:30:00.000Z",
+                "endsAt": "2026-10-01T21:30:00.000Z",
+            },
+        },
+    }
+
+    conflict = SurfaceReviewFinding.model_validate(finding).sourceConflict
+    assert conflict is not None
+    assert conflict.publicationId == "SUP 068/2026"
+    assert conflict.conflictingFields == ["startsAt"]
 
 
 def test_report_summary_does_not_call_nonclosures_closed() -> None:

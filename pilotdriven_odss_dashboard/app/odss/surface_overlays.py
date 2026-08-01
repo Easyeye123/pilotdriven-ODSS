@@ -133,6 +133,23 @@ class SurfaceMappedFinding(_StrictModel):
     markers: list[SurfaceMarker] = Field(default_factory=list, max_length=64)
 
 
+class SurfaceSourceInterval(_StrictModel):
+    startsAt: str | None = Field(default=None, max_length=64)
+    endsAt: str | None = Field(default=None, max_length=64)
+
+
+class SurfaceSourceConflict(_StrictModel):
+    publicationId: str | None = Field(default=None, max_length=160)
+    sourceUrl: str | None = Field(default=None, max_length=1_000)
+    checkedAt: str | None = Field(default=None, max_length=64)
+    conflictingFields: list[Literal["startsAt", "endsAt"]] = Field(
+        default_factory=list,
+        max_length=2,
+    )
+    uploaded: SurfaceSourceInterval
+    reviewed: SurfaceSourceInterval
+
+
 class SurfaceReviewFinding(_StrictModel):
     notamNumber: str | None = Field(default=None, max_length=64)
     entityType: Literal["runway", "taxiway", "apron", "unknown"] | None = None
@@ -140,6 +157,7 @@ class SurfaceReviewFinding(_StrictModel):
     scope: str = Field(default="ambiguous", max_length=32)
     plainEnglish: str | None = Field(default=None, max_length=500)
     evidence: str | None = Field(default=None, max_length=2_000)
+    sourceConflict: SurfaceSourceConflict | None = None
 
 
 class SurfaceSource(_StrictModel):

@@ -1062,6 +1062,29 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         _surface_contract(flight["departure"], "departure"),
         _surface_contract(flight["destination"], "destination"),
     ]
+    overlays[0]["reviewRequired"] = [{
+        "notamNumber": "SX68/26",
+        "entityType": "taxiway",
+        "entityRef": "W9/W/R",
+        "scope": "ambiguous",
+        "plainEnglish": "The uploaded and reviewed publication times conflict.",
+        "evidence": "Uploaded 1430Z; reviewed source 1730Z.",
+        "sourceConflict": {
+            "publicationId": "SUP 068/2026",
+            "sourceUrl": "https://aim-sg.caas.gov.sg/example",
+            "checkedAt": "2026-08-01T00:00:00.000Z",
+            "conflictingFields": ["startsAt"],
+            "uploaded": {
+                "startsAt": "2026-05-14T14:30:00.000Z",
+                "endsAt": "2026-10-01T21:30:00.000Z",
+            },
+            "reviewed": {
+                "startsAt": "2026-05-14T17:30:00.000Z",
+                "endsAt": "2026-10-01T21:30:00.000Z",
+            },
+        },
+    }]
+    overlays[0]["counts"]["reviewRequired"] = 1
 
     cross_tenant = service_app.post(
         f"/v1/analyses/{analysis_id}/surface-overlays",
@@ -1099,6 +1122,11 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         headers=owner_headers,
     ).json()
     assert len(briefing["flight"]["surface_overlays"]) == 2
+    source_conflict = briefing["flight"]["surface_overlays"][0][
+        "reviewRequired"
+    ][0]["sourceConflict"]
+    assert source_conflict["publicationId"] == "SUP 068/2026"
+    assert source_conflict["conflictingFields"] == ["startsAt"]
 
     level1 = service_app.get(
         f"/v1/analyses/{analysis_id}/reports/level-1",
