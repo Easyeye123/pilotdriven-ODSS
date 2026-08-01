@@ -133,8 +133,14 @@ def test_report_summary_does_not_call_nonclosures_closed() -> None:
             {
                 "entityType": "taxiway",
                 "entityRef": "S2",
+                "notamNumber": "A1234/26",
                 "markClass": "equipment",
                 "stateAtReference": "active_at_reference",
+                "referenceAt": "2026-08-01T05:35:00+00:00",
+                "referenceInterval": {
+                    "startsAt": "2026-08-01T04:00:00+00:00",
+                    "endsAt": "2026-08-01T06:00:00+00:00",
+                },
             },
             {
                 "entityType": "taxiway",
@@ -159,6 +165,7 @@ def test_report_summary_does_not_call_nonclosures_closed() -> None:
     assert "locator/review mark" in text
     assert "Scheduled: RUNWAY 02C/20C" in text
     assert "Equipment: TAXIWAY S2" in text
+    assert "Equipment: TAXIWAY S2 | A1234/26 | 0400Z-0600Z" in text
     assert "Review locator: TAXIWAY W9" in text
     assert "Closed:" not in text
     assert "04L/22R" not in text

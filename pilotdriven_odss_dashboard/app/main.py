@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -16,13 +17,13 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from .analysis import infer_metadata, load_analysis, run_odss_analysis
 from .config import APP_VERSION, BASE_DIR, DATA_DIR
 from .database import (
     attach_report,
-    begin_analysis,
+    claim_analysis,
     complete_analysis,
     create_flight,
     create_personal_note,
@@ -34,6 +35,8 @@ from .database import (
     init_db,
     list_flights,
     record_audit_event,
+    restore_personal_note,
+    restore_analysis_state,
     save_level3_answer,
     list_personal_notes,
     save_timing_reference,
@@ -66,6 +69,7 @@ from .odss.timing import (
 )
 from .personal_notes import (
     PERSONAL_NOTE_PLACEMENT_LABELS,
+    serialise_personal_note,
     validate_personal_note,
 )
 from .service_identity import (
@@ -486,8 +490,19 @@ def _execute_analysis(
     flight_id: int,
     flight,
     weather_window_preference: dict | None = None,
-) -> None:
+    *,
+    claimed_flight=None,
+    locked_mutation: Callable[[object], object | None] | None = None,
+    rollback_locked_mutation: Callable[[], None] | None = None,
+    preserve_previous_on_failure: bool = False,
+    failure_label: str = "analysis refresh",
+) -> str | None:
     tenant_id = str(flight["tenant_id"]) if flight["tenant_id"] else None
+    if claimed_flight is None:
+        claimed_flight = claim_analysis(flight_id, tenant_id)
+    if claimed_flight is None:
+        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+    flight = claimed_flight
     previous_analysis = load_analysis(flight["analysis_path"])
     previous_surface_overlays = (
         (previous_analysis or {}).get("flight", {}).get("surface_overlays") or []
@@ -504,11 +519,12 @@ def _execute_analysis(
         (flight["level3_json"], RESULT_DIR),
         (flight["level3_report"], REPORT_DIR),
     )
-    if not begin_analysis(flight_id, tenant_id):
-        raise HTTPException(status_code=409, detail="Analysis is already in progress")
-
     result = None
     try:
+        if locked_mutation is not None:
+            mutated_flight = locked_mutation(flight)
+            if mutated_flight is not None:
+                flight = mutated_flight
         result = run_odss_analysis(
             Path(flight["source_path"]),
             result_dir=RESULT_DIR,
@@ -533,7 +549,15 @@ def _execute_analysis(
                     report_dir=REPORT_DIR,
                 )
             )
-        complete_analysis(flight_id, result, tenant_id)
+        # Publish the new artifact pointers while retaining Processing as the
+        # ownership claim. The optional primary-map refresh writes those same
+        # JSON/PDF artifacts and must finish before another mutation can start.
+        complete_analysis(
+            flight_id,
+            result,
+            tenant_id,
+            release_claim=False,
+        )
         new_artifacts = (
             (result.get("analysis_path"), RESULT_DIR),
             (result.get("level1_report"), REPORT_DIR),
@@ -541,6 +565,8 @@ def _execute_analysis(
             (result.get("level3_json"), RESULT_DIR),
             (result.get("level3_report"), REPORT_DIR),
         )
+        _refresh_reports_with_primary_map(flight, result)
+        update_status(flight_id, "Completed", tenant_id=tenant_id)
         for (previous_path, directory), (new_path, _) in zip(
             previous_artifacts,
             new_artifacts,
@@ -548,7 +574,7 @@ def _execute_analysis(
         ):
             if previous_path and previous_path != new_path:
                 _remove_stored_file(previous_path, directory)
-        _refresh_reports_with_primary_map(flight, result)
+        return None
     except Exception as exc:
         if result:
             _remove_stored_file(result.get("analysis_path"), RESULT_DIR)
@@ -557,24 +583,91 @@ def _execute_analysis(
             _remove_stored_file(result.get("level3_json"), RESULT_DIR)
             _remove_stored_file(result.get("level3_report"), REPORT_DIR)
         error = f"{type(exc).__name__}: {exc}"
-        update_status(
-            flight_id,
-            "Failed",
-            "Analysis failed. The detailed error is shown below.",
-            last_error=error,
-            tenant_id=tenant_id,
-        )
+        rollback_error = None
+        if rollback_locked_mutation is not None:
+            try:
+                rollback_locked_mutation()
+            except Exception as rollback_exc:
+                rollback_error = (
+                    f"{type(rollback_exc).__name__}: {rollback_exc}"
+                )
+                logger.exception(
+                    "Locked analysis mutation rollback failed flight_id=%s",
+                    flight_id,
+                )
+        if preserve_previous_on_failure and rollback_error is None:
+            restore_analysis_state(
+                flight_id,
+                str(claimed_flight["status"]),
+                claimed_flight["notes"],
+                f"Rejected {failure_label}: {error}",
+                tenant_id=tenant_id,
+            )
+        else:
+            if rollback_error:
+                error = f"{error}; rollback failed: {rollback_error}"
+            update_status(
+                flight_id,
+                "Failed",
+                "Analysis failed. The detailed error is shown below.",
+                last_error=error,
+                tenant_id=tenant_id,
+            )
         traceback.print_exc()
+        return error
 
 
-def _regenerate_after_note_change(flight_id: int) -> None:
-    flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
-    if not flight:
-        raise HTTPException(status_code=404, detail="Flight not found")
-    if flight["status"] == "Processing":
-        raise HTTPException(status_code=409, detail="Analysis is already in progress")
-    if flight["analysis_path"] or flight["status"] == "Completed":
-        _execute_analysis(flight_id, flight)
+def _regenerate_after_note_change(
+    flight,
+    locked_mutation: Callable[[object], object | None],
+    rollback_locked_mutation: Callable[[], None],
+) -> str | None:
+    """Apply one dashboard note mutation under the per-flight claim.
+
+    Notes may be authored before the first analysis. In that case this claims
+    the row only long enough to store the note, then restores the exact prior
+    flight state. Once reports exist, the same claim spans mutation, report
+    regeneration, and any rollback.
+    """
+    flight_id = int(flight["id"])
+    tenant_id = _dashboard_tenant_id()
+    claimed_flight = claim_analysis(flight_id, tenant_id)
+    if claimed_flight is None:
+        return "analysis-running"
+    if claimed_flight["analysis_path"] or claimed_flight["status"] == "Completed":
+        failure_detail = _execute_analysis(
+            flight_id,
+            claimed_flight,
+            claimed_flight=claimed_flight,
+            locked_mutation=locked_mutation,
+            rollback_locked_mutation=rollback_locked_mutation,
+            preserve_previous_on_failure=True,
+            failure_label="personal-note update",
+        )
+        return "refresh-failed" if failure_detail else None
+
+    try:
+        locked_mutation(claimed_flight)
+    except Exception:
+        try:
+            rollback_locked_mutation()
+        finally:
+            restore_analysis_state(
+                flight_id,
+                str(claimed_flight["status"]),
+                claimed_flight["notes"],
+                claimed_flight["last_error"],
+                tenant_id=tenant_id,
+            )
+        raise
+    restore_analysis_state(
+        flight_id,
+        str(claimed_flight["status"]),
+        claimed_flight["notes"],
+        claimed_flight["last_error"],
+        tenant_id=tenant_id,
+    )
+    return None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -732,7 +825,7 @@ def update_operational_clock(
         reference_datetime = combine_utc_date_time(reference_date, reference_time)
         analysis = load_analysis(flight["analysis_path"])
         parsed_flight = analysis.get("flight") if analysis else None
-        reference = derive_timing_reference(
+        derive_timing_reference(
             parsed_flight,
             reference_type,
             reference_datetime.isoformat(),
@@ -741,19 +834,74 @@ def update_operational_clock(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    save_timing_reference(
-        flight_id,
-        reference["actual_takeoff_utc"],
-        reference["reference_type"],
-        reference["reference_utc"],
-        reference.get("reference_waypoint"),
-        tenant_id=_dashboard_tenant_id(),
+    previous_timing: dict[str, object] | None = None
+    timing_changed = False
+
+    def apply_timing(claimed_flight):
+        nonlocal previous_timing, timing_changed
+        current_analysis = load_analysis(claimed_flight["analysis_path"])
+        try:
+            reference = derive_timing_reference(
+                current_analysis.get("flight") if current_analysis else None,
+                reference_type,
+                reference_datetime.isoformat(),
+                reference_waypoint,
+            )
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from exc
+        previous_timing = {
+            "actual_takeoff_utc": claimed_flight["actual_takeoff_utc"],
+            "reference_type": claimed_flight["timing_reference_type"],
+            "reference_utc": claimed_flight["timing_reference_utc"],
+            "reference_waypoint": claimed_flight["timing_reference_waypoint"],
+        }
+        save_timing_reference(
+            flight_id,
+            reference["actual_takeoff_utc"],
+            reference["reference_type"],
+            reference["reference_utc"],
+            reference.get("reference_waypoint"),
+            tenant_id=_dashboard_tenant_id(),
+        )
+        timing_changed = True
+        updated = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
+        if not updated:
+            raise RuntimeError("Flight was lost after timing update")
+        return updated
+
+    def rollback_timing() -> None:
+        if not timing_changed or previous_timing is None:
+            return
+        save_timing_reference(
+            flight_id,
+            previous_timing["actual_takeoff_utc"],
+            previous_timing["reference_type"],
+            previous_timing["reference_utc"],
+            previous_timing["reference_waypoint"],
+            tenant_id=_dashboard_tenant_id(),
+        )
+
+    try:
+        failure_detail = _execute_analysis(
+            flight_id,
+            flight,
+            locked_mutation=apply_timing,
+            rollback_locked_mutation=rollback_timing,
+            preserve_previous_on_failure=True,
+            failure_label="timing update",
+        )
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        return RedirectResponse(
+            url=f"/flights/{flight_id}?notice=analysis-running#actual-time",
+            status_code=303,
+        )
+    notice = "?notice=refresh-failed" if failure_detail else ""
+    return RedirectResponse(
+        url=f"/flights/{flight_id}{notice}#actual-time",
+        status_code=303,
     )
-    updated_flight = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
-    if not updated_flight:
-        raise HTTPException(status_code=404, detail="Flight not found")
-    _execute_analysis(flight_id, updated_flight)
-    return RedirectResponse(url=f"/flights/{flight_id}", status_code=303)
 
 
 @app.post("/flights/{flight_id}/notes")
@@ -778,9 +926,23 @@ def add_personal_note(
         include_level1,
         include_level2,
     )
-    create_personal_note(flight_id, *values)
-    _regenerate_after_note_change(flight_id)
-    return RedirectResponse(url=f"/flights/{flight_id}#personal-notes", status_code=303)
+    note_id: int | None = None
+
+    def add_note(claimed_flight):
+        nonlocal note_id
+        note_id = create_personal_note(flight_id, *values)
+        return claimed_flight
+
+    def rollback_added_note() -> None:
+        if note_id is not None and get_personal_note(flight_id, note_id):
+            delete_personal_note(flight_id, note_id)
+
+    notice = _regenerate_after_note_change(flight, add_note, rollback_added_note)
+    query = f"?notice={notice}" if notice else ""
+    return RedirectResponse(
+        url=f"/flights/{flight_id}{query}#personal-notes",
+        status_code=303,
+    )
 
 
 @app.post("/flights/{flight_id}/notes/{note_id}/update")
@@ -808,9 +970,32 @@ def edit_personal_note(
         include_level1,
         include_level2,
     )
-    update_personal_note(flight_id, note_id, *values)
-    _regenerate_after_note_change(flight_id)
-    return RedirectResponse(url=f"/flights/{flight_id}#personal-notes", status_code=303)
+    note_snapshot: dict | None = None
+    note_updated = False
+
+    def update_note(claimed_flight):
+        nonlocal note_snapshot, note_updated
+        current_note = get_personal_note(flight_id, note_id)
+        if not current_note:
+            raise RuntimeError("Personal note no longer exists")
+        note_snapshot = dict(current_note)
+        update_personal_note(flight_id, note_id, *values)
+        note_updated = True
+        return claimed_flight
+
+    def rollback_updated_note() -> None:
+        if not note_updated or note_snapshot is None:
+            return
+        if get_personal_note(flight_id, note_id):
+            delete_personal_note(flight_id, note_id)
+        restore_personal_note(flight_id, note_snapshot)
+
+    notice = _regenerate_after_note_change(flight, update_note, rollback_updated_note)
+    query = f"?notice={notice}" if notice else ""
+    return RedirectResponse(
+        url=f"/flights/{flight_id}{query}#personal-notes",
+        status_code=303,
+    )
 
 
 @app.post("/flights/{flight_id}/notes/{note_id}/delete")
@@ -825,9 +1010,29 @@ def remove_personal_note(flight_id: int, note_id: int):
         )
     if not get_personal_note(flight_id, note_id):
         raise HTTPException(status_code=404, detail="Personal note not found")
-    delete_personal_note(flight_id, note_id)
-    _regenerate_after_note_change(flight_id)
-    return RedirectResponse(url=f"/flights/{flight_id}#personal-notes", status_code=303)
+    note_snapshot: dict | None = None
+    note_deleted = False
+
+    def delete_note(claimed_flight):
+        nonlocal note_snapshot, note_deleted
+        current_note = get_personal_note(flight_id, note_id)
+        if not current_note:
+            raise RuntimeError("Personal note no longer exists")
+        note_snapshot = dict(current_note)
+        delete_personal_note(flight_id, note_id)
+        note_deleted = True
+        return claimed_flight
+
+    def rollback_deleted_note() -> None:
+        if note_deleted and note_snapshot is not None:
+            restore_personal_note(flight_id, note_snapshot)
+
+    notice = _regenerate_after_note_change(flight, delete_note, rollback_deleted_note)
+    query = f"?notice={notice}" if notice else ""
+    return RedirectResponse(
+        url=f"/flights/{flight_id}{query}#personal-notes",
+        status_code=303,
+    )
 
 
 @app.post("/flights/{flight_id}/reports/{level}")
@@ -900,6 +1105,20 @@ class ServiceTimingRequest(BaseModel):
     reference_waypoint: str | None = None
     weather_before_minutes: int | None = Field(default=None, ge=0, le=720)
     weather_after_minutes: int | None = Field(default=None, ge=0, le=720)
+
+
+class ServiceWeatherWindowRequest(BaseModel):
+    before_minutes: int = Field(ge=0, le=720)
+    after_minutes: int = Field(ge=0, le=720)
+
+
+class ServicePersonalNoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    placement: str = Field(min_length=1, max_length=32)
+    note_text: str = Field(min_length=1, max_length=2_000)
+    include_level1: StrictBool
+    include_level2: StrictBool
 
 
 class ServiceLevel3AnswerRequest(BaseModel):
@@ -1064,6 +1283,13 @@ def _service_summary(flight) -> dict:
     }
 
 
+def _service_personal_notes(flight_id: int) -> list[dict]:
+    return [
+        serialise_personal_note(dict(note))
+        for note in list_personal_notes(flight_id)
+    ]
+
+
 @app.get("/v1/health")
 def service_health():
     profile_source = {
@@ -1177,12 +1403,14 @@ def get_service_briefing(request: Request, analysis_id: str):
     identity = request_service_identity(request)
     flight, analysis = _service_analysis(analysis_id, identity)
     view = analysis.get("view") or {}
+    analysis_flight = analysis.get("flight") or {}
     return JSONResponse({
         "analysis_id": analysis_id,
         "schema_version": analysis.get("schema_version"),
-        "flight": analysis.get("flight"),
+        "flight": analysis_flight,
         "briefing": view.get("briefing"),
         "timing": view.get("timing"),
+        "personal_notes": analysis_flight.get("personal_notes") or [],
         "warnings": view.get("warnings") or [],
         "generated_at_utc": view.get("generated_at_utc"),
         "report_links": _service_summary(flight)["links"],
@@ -1198,54 +1426,269 @@ def update_service_timing(
     identity = request_service_identity(request)
     flight, analysis = _service_analysis(analysis_id, identity)
     try:
-        reference = derive_timing_reference(
+        parsed_reference_utc = parse_utc(payload.reference_utc).isoformat()
+        # Reject malformed request data before claiming the analysis. The same
+        # derivation is repeated from the authoritative post-claim analysis.
+        derive_timing_reference(
             analysis.get("flight"),
             payload.reference_type,
-            parse_utc(payload.reference_utc).isoformat(),
+            parsed_reference_utc,
             payload.reference_waypoint or "",
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    save_timing_reference(
-        int(flight["id"]),
-        reference["actual_takeoff_utc"],
-        reference["reference_type"],
-        reference["reference_utc"],
-        reference.get("reference_waypoint"),
-        tenant_id=identity.tenant_id,
+
+    flight_id = int(flight["id"])
+    previous_timing: dict[str, object] | None = None
+    timing_changed = False
+    requested_weather_window = (
+        {}
+        if (
+            payload.weather_before_minutes is not None
+            or payload.weather_after_minutes is not None
+        )
+        else None
     )
-    updated = get_flight_for_tenant(int(flight["id"]), identity.tenant_id)
-    if not updated:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-    stored_weather_window = (
-        (analysis.get("flight") or {}).get("weather_window_preference") or {}
-    )
-    weather_window_preference = None
-    if (
-        payload.weather_before_minutes is not None
-        or payload.weather_after_minutes is not None
-    ):
-        weather_window_preference = {
-            "before_minutes": (
-                payload.weather_before_minutes
-                if payload.weather_before_minutes is not None
-                else int(stored_weather_window.get("before_minutes", 60))
-            ),
-            "after_minutes": (
-                payload.weather_after_minutes
-                if payload.weather_after_minutes is not None
-                else int(stored_weather_window.get("after_minutes", 60))
-            ),
+
+    def apply_timing(claimed_flight):
+        nonlocal previous_timing, timing_changed
+        current_analysis = load_analysis(claimed_flight["analysis_path"])
+        if not current_analysis:
+            raise RuntimeError("Authoritative analysis is not available")
+        try:
+            reference = derive_timing_reference(
+                current_analysis.get("flight"),
+                payload.reference_type,
+                parsed_reference_utc,
+                payload.reference_waypoint or "",
+            )
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from exc
+        previous_timing = {
+            "actual_takeoff_utc": claimed_flight["actual_takeoff_utc"],
+            "reference_type": claimed_flight["timing_reference_type"],
+            "reference_utc": claimed_flight["timing_reference_utc"],
+            "reference_waypoint": claimed_flight["timing_reference_waypoint"],
         }
-    _execute_analysis(
-        int(flight["id"]),
-        updated,
-        weather_window_preference=weather_window_preference,
+        if requested_weather_window is not None:
+            stored_weather_window = (
+                (current_analysis.get("flight") or {}).get(
+                    "weather_window_preference"
+                )
+                or {}
+            )
+            requested_weather_window.update(
+                {
+                    "before_minutes": (
+                        payload.weather_before_minutes
+                        if payload.weather_before_minutes is not None
+                        else int(stored_weather_window.get("before_minutes", 60))
+                    ),
+                    "after_minutes": (
+                        payload.weather_after_minutes
+                        if payload.weather_after_minutes is not None
+                        else int(stored_weather_window.get("after_minutes", 60))
+                    ),
+                }
+            )
+        save_timing_reference(
+            flight_id,
+            reference["actual_takeoff_utc"],
+            reference["reference_type"],
+            reference["reference_utc"],
+            reference.get("reference_waypoint"),
+            tenant_id=identity.tenant_id,
+        )
+        timing_changed = True
+        updated = get_flight_for_tenant(flight_id, identity.tenant_id)
+        if not updated:
+            raise RuntimeError("Analysis record was lost after timing update")
+        return updated
+
+    def rollback_timing() -> None:
+        if not timing_changed or previous_timing is None:
+            return
+        save_timing_reference(
+            flight_id,
+            previous_timing["actual_takeoff_utc"],
+            previous_timing["reference_type"],
+            previous_timing["reference_utc"],
+            previous_timing["reference_waypoint"],
+            tenant_id=identity.tenant_id,
+        )
+
+    failure_detail = _execute_analysis(
+        flight_id,
+        flight,
+        weather_window_preference=requested_weather_window,
+        locked_mutation=apply_timing,
+        rollback_locked_mutation=rollback_timing,
+        preserve_previous_on_failure=True,
+        failure_label="timing update",
     )
+    if failure_detail:
+        raise HTTPException(status_code=422, detail=failure_detail)
+    refreshed = get_flight_for_tenant(flight_id, identity.tenant_id)
+    if not refreshed:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return JSONResponse(_service_summary(refreshed))
+
+
+@app.post("/v1/analyses/{analysis_id}/weather-window")
+def update_service_weather_window(
+    request: Request,
+    analysis_id: str,
+    payload: ServiceWeatherWindowRequest,
+):
+    """Re-run the active analysis with a new weather relevance window.
+
+    This deliberately does not create or alter an actual-takeoff reference.
+    Existing scheduled/actual timing and surface overlays are preserved by the
+    normal analysis executor while every stored view and PDF is regenerated.
+    """
+    identity = request_service_identity(request)
+    flight, _analysis = _service_analysis(analysis_id, identity)
+    failure_detail = _execute_analysis(
+        int(flight["id"]),
+        flight,
+        weather_window_preference={
+            "before_minutes": payload.before_minutes,
+            "after_minutes": payload.after_minutes,
+        },
+        preserve_previous_on_failure=True,
+        failure_label="weather-window update",
+    )
+    if failure_detail:
+        raise HTTPException(status_code=422, detail=failure_detail)
     refreshed = get_flight_for_tenant(int(flight["id"]), identity.tenant_id)
     if not refreshed:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return JSONResponse(_service_summary(refreshed))
+
+
+@app.post("/v1/analyses/{analysis_id}/notes", status_code=201)
+def add_service_personal_note(
+    request: Request,
+    analysis_id: str,
+    payload: ServicePersonalNoteRequest,
+):
+    identity = request_service_identity(request)
+    flight, _analysis = _service_analysis(analysis_id, identity)
+    if flight["status"] != "Completed":
+        raise HTTPException(
+            status_code=409,
+            detail="Personal notes can only change a completed analysis.",
+        )
+    try:
+        values = validate_personal_note(
+            payload.placement,
+            payload.note_text,
+            payload.include_level1,
+            payload.include_level2,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    flight_id = int(flight["id"])
+    note_id: int | None = None
+
+    def add_note(claimed_flight):
+        nonlocal note_id
+        if claimed_flight["status"] != "Completed":
+            raise RuntimeError("Personal notes require a completed analysis")
+        note_id = create_personal_note(flight_id, *values)
+        return claimed_flight
+
+    def rollback_added_note() -> None:
+        if note_id is not None and get_personal_note(flight_id, note_id):
+            delete_personal_note(flight_id, note_id)
+
+    failure_detail = _execute_analysis(
+        flight_id,
+        flight,
+        locked_mutation=add_note,
+        rollback_locked_mutation=rollback_added_note,
+        preserve_previous_on_failure=True,
+        failure_label="personal-note addition",
+    )
+    if failure_detail:
+        raise HTTPException(status_code=422, detail=failure_detail)
+
+    refreshed = get_flight_for_tenant(flight_id, identity.tenant_id)
+    if not refreshed:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    if note_id is None:
+        raise HTTPException(status_code=409, detail="Personal note was not retained")
+    note = get_personal_note(flight_id, note_id)
+    if not note:
+        raise HTTPException(status_code=409, detail="Personal note was not retained")
+    return JSONResponse(
+        {
+            "analysis_id": analysis_id,
+            "note": serialise_personal_note(dict(note)),
+            "notes": _service_personal_notes(flight_id),
+        },
+        status_code=201,
+    )
+
+
+@app.delete("/v1/analyses/{analysis_id}/notes/{note_id}")
+def delete_service_personal_note(
+    request: Request,
+    analysis_id: str,
+    note_id: int,
+):
+    identity = request_service_identity(request)
+    flight, _analysis = _service_analysis(analysis_id, identity)
+    if flight["status"] != "Completed":
+        raise HTTPException(
+            status_code=409,
+            detail="Personal notes can only change a completed analysis.",
+        )
+
+    flight_id = int(flight["id"])
+    if not get_personal_note(flight_id, note_id):
+        raise HTTPException(status_code=404, detail="Personal note not found")
+    note_snapshot: dict | None = None
+    note_deleted = False
+
+    def delete_note(claimed_flight):
+        nonlocal note_snapshot, note_deleted
+        if claimed_flight["status"] != "Completed":
+            raise RuntimeError("Personal notes require a completed analysis")
+        current_note = get_personal_note(flight_id, note_id)
+        if not current_note:
+            raise RuntimeError("Personal note no longer exists")
+        note_snapshot = dict(current_note)
+        delete_personal_note(flight_id, note_id)
+        note_deleted = True
+        return claimed_flight
+
+    def rollback_deleted_note() -> None:
+        if note_deleted and note_snapshot is not None:
+            restore_personal_note(flight_id, note_snapshot)
+
+    failure_detail = _execute_analysis(
+        flight_id,
+        flight,
+        locked_mutation=delete_note,
+        rollback_locked_mutation=rollback_deleted_note,
+        preserve_previous_on_failure=True,
+        failure_label="personal-note deletion",
+    )
+    if failure_detail:
+        raise HTTPException(status_code=422, detail=failure_detail)
+
+    refreshed = get_flight_for_tenant(flight_id, identity.tenant_id)
+    if not refreshed:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    return JSONResponse(
+        {
+            "analysis_id": analysis_id,
+            "notes": _service_personal_notes(flight_id),
+        }
+    )
 
 
 @app.post("/v1/analyses/{analysis_id}/surface-overlays")
@@ -1255,8 +1698,14 @@ async def update_service_surface_overlays(
     payload: SurfaceOverlayRequest,
 ):
     identity = request_service_identity(request)
-    flight, analysis = _service_analysis(analysis_id, identity)
+    flight = _service_flight(analysis_id, identity)
+    claimed_flight = claim_analysis(int(flight["id"]), identity.tenant_id)
+    if claimed_flight is None:
+        raise HTTPException(status_code=409, detail="Analysis is already in progress")
     try:
+        analysis = load_analysis(claimed_flight["analysis_path"])
+        if not analysis:
+            raise ValueError("Analysis is not complete")
         overlays = validated_surface_overlays(
             payload,
             analysis.get("flight") or {},
@@ -1266,44 +1715,55 @@ async def update_service_surface_overlays(
             overlays,
             map_settings,
         )
-        _publish_surface_overlay_reports(flight, analysis, prepared)
+        _publish_surface_overlay_reports(claimed_flight, analysis, prepared)
+        record_audit_event(
+            tenant_id=identity.tenant_id,
+            actor_id=identity.user_id,
+            action=(
+                "analysis.surface_overlays_published"
+                if prepared
+                else "analysis.surface_overlays_cleared"
+            ),
+            resource_type="analysis",
+            resource_id=analysis_id,
+            details={
+                "cleared": not prepared,
+                "airports": [
+                    {
+                        "icao": overlay["icao"],
+                        "role": overlay["role"],
+                        "mapped": overlay["counts"]["mapped"],
+                        "review_required": overlay["counts"]["reviewRequired"],
+                        "map_mode": (overlay.get("report_map") or {}).get("mode"),
+                    }
+                    for overlay in prepared
+                ],
+            },
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    record_audit_event(
-        tenant_id=identity.tenant_id,
-        actor_id=identity.user_id,
-        action=(
-            "analysis.surface_overlays_published"
-            if prepared
-            else "analysis.surface_overlays_cleared"
-        ),
-        resource_type="analysis",
-        resource_id=analysis_id,
-        details={
-            "cleared": not prepared,
-            "airports": [
-                {
-                    "icao": overlay["icao"],
-                    "role": overlay["role"],
-                    "mapped": overlay["counts"]["mapped"],
-                    "review_required": overlay["counts"]["reviewRequired"],
-                    "map_mode": (overlay.get("report_map") or {}).get("mode"),
-                }
-                for overlay in prepared
-            ],
-        },
-    )
+    finally:
+        restore_analysis_state(
+            int(claimed_flight["id"]),
+            str(claimed_flight["status"]),
+            claimed_flight["notes"],
+            claimed_flight["last_error"],
+            tenant_id=identity.tenant_id,
+        )
     return JSONResponse({
         "analysis_id": analysis_id,
         "surface_overlays": _surface_overlay_summary(prepared),
-        "report_links": _service_summary(flight)["links"],
+        "report_links": _service_summary(claimed_flight)["links"],
     })
 
 
 @app.post("/v1/analyses/{analysis_id}/reports/render")
 async def render_service_reports(request: Request, analysis_id: str):
     identity = request_service_identity(request)
-    _service_analysis(analysis_id, identity)
+    flight = _service_flight(analysis_id, identity)
+    claimed_flight = claim_analysis(int(flight["id"]), identity.tenant_id)
+    if claimed_flight is None:
+        raise HTTPException(status_code=409, detail="Analysis is already in progress")
     try:
         result = await render_reports_for_analysis(
             analysis_id,
@@ -1313,10 +1773,18 @@ async def render_service_reports(request: Request, analysis_id: str):
         )
     except (LookupError, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        restore_analysis_state(
+            int(claimed_flight["id"]),
+            str(claimed_flight["status"]),
+            claimed_flight["notes"],
+            claimed_flight["last_error"],
+            tenant_id=identity.tenant_id,
+        )
     return JSONResponse({
         "analysis_id": analysis_id,
         "map_render": result,
-        "links": _service_summary(_service_flight(analysis_id, identity))["links"],
+        "links": _service_summary(claimed_flight)["links"],
     })
 
 

@@ -200,7 +200,7 @@ def pilot_notam_key(item: dict[str, Any]) -> tuple[str, ...] | None:
     )
 
 
-def notam_sort_key(item: dict[str, Any]) -> tuple[int, int, int, int, str]:
+def notam_sort_key(item: dict[str, Any]) -> tuple[int, int, int, int, int, str]:
     data = item.get("data") or {}
     rank = data.get("pertinence_rank")
     if rank is None:
@@ -208,9 +208,16 @@ def notam_sort_key(item: dict[str, Any]) -> tuple[int, int, int, int, str]:
             f"{item.get('title', '')} {item.get('summary', '')}",
             str(data.get("category") or ""),
         )
+    role = str(data.get("role") or "informational")
+    # Departure and destination records must not compete on equal terms with
+    # alternates, EDTO stations and informational locations.  The previous
+    # global rank-first order could fill the 24-item pilot view with alternate
+    # runway records before a departure taxiway closure was reached.
+    primary_airport_band = 0 if role in {"departure", "destination"} else 1
     return (
+        primary_airport_band,
         int(rank),
-        _ROLE_RANK.get(str(data.get("role") or "informational"), 5),
+        _ROLE_RANK.get(role, 5),
         -_SEVERITY_RANK.get(str(item.get("severity") or "information"), 0),
         -int(data.get("priority_score") or 0),
         str(item.get("title") or ""),

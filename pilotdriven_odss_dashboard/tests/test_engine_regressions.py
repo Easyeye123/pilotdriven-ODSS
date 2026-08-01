@@ -24,11 +24,38 @@ from app.odss.enrichment import (
     _record_source_page,
 )
 from app.odss.briefing import _weather_summary
-from app.odss.parser import _parse_edto_sectors, parse_lido
+from app.odss.parser import _parse_deferred_items, _parse_edto_sectors, parse_lido
 from app.odss.pilot_briefing import concise_weather_finding
 
 
 UTC = timezone.utc
+
+
+def test_sq338_page_one_mel_continuations_are_preserved() -> None:
+    page_one = "\n".join(
+        (
+            "SINGAPORE AIRLINES - SUMMARY EDTO CFP",
+            "ATTN ALL CONCERN FR MAINTROL",
+            "AA MEL 21-60-08A",
+            "ECAM COND BULK CARGO HEATER FAULT X PERFORMANCE [P]",
+            "CARRIAGE OF TEMP SENSITIVE CARGO IN BULK CGO COMPT",
+            "IS NOT ALLOWED",
+            "PLAN 89/0/1",
+            "RTE NO SINCDG60YL A350-941",
+        )
+    )
+
+    assert _parse_deferred_items(page_one) == [
+        {
+            "reference": "21-60-08A",
+            "description": "ECAM COND BULK CARGO HEATER FAULT X PERFORMANCE [P]",
+            "item_type": "MEL",
+            "company_remark": (
+                "CARRIAGE OF TEMP SENSITIVE CARGO IN BULK CGO COMPT "
+                "IS NOT ALLOWED"
+            ),
+        }
+    ]
 
 
 def test_normalized_source_locator_finds_record_page_without_flight_specific_rules() -> None:
@@ -274,7 +301,8 @@ def test_destination_and_alternate_notams_use_two_hour_arrival_window() -> None:
         _record("ALTNOLD/26", "WIII", "2026-07-16T09:30:00+00:00", "2026-07-16T10:30:00+00:00"),
         _record("ALTNNOW/26", "WIII", "2026-07-16T11:30:00+00:00", "2026-07-16T12:30:00+00:00"),
     ]
-    findings, _ = analyse(_flight(notams=notams))
+    flight = _flight(notams=notams)
+    findings, _ = analyse(flight)
     notam_findings = [item for item in findings if item["engine"] == "notam"]
     ids = {item["data"]["notam_id"] for item in notam_findings}
     roles = {item["data"]["notam_id"]: item["data"]["role"] for item in notam_findings}
@@ -525,7 +553,7 @@ def test_unresolved_notam_schedule_is_review_required_not_declared_active() -> N
     assert "closed or unavailable during" not in item["summary"]
 
 
-def test_notam_pilot_view_is_bounded_but_audit_retains_every_applicable_record() -> None:
+def test_notam_priority_view_is_bounded_but_level2_retains_every_applicable_record() -> None:
     notams = [
         _record(
             f"OBS{index:02d}/26",
@@ -553,14 +581,178 @@ def test_notam_pilot_view_is_bounded_but_audit_retains_every_applicable_record()
 
     findings, _ = analyse(flight)
 
-    selected = [item for item in findings if item["engine"] == "notam"]
-    assert len(selected) == 24
-    assert selected[0]["data"]["notam_id"] == "RWYTOP/26"
+    applicable = [item for item in findings if item["engine"] == "notam"]
+    assert len(applicable) == 31
+    assert applicable[0]["data"]["notam_id"] == "RWYTOP/26"
     audit = flight["audit_evidence"]["notam"]
     assert audit["source_record_count"] == 31
     assert audit["time_applicable_count"] == 31
-    assert audit["pilot_facing_count"] == 24
-    assert audit["audit_only_count"] == 7
+    assert audit["pilot_facing_count"] == 31
+    assert audit["priority_view_count"] == 24
+    assert audit["level2_only_count"] == 7
+    assert audit["audit_only_count"] == 0
+
+
+def test_departure_surface_closures_survive_saturated_alternate_notam_list() -> None:
+    notams = [
+        _record(
+            f"ALT{index:02d}/26",
+            "WIII",
+            "2026-07-16T10:00:00+00:00",
+            "2026-07-16T14:00:00+00:00",
+            text=f"RWY {index:02d} CLSD",
+            category="RWY",
+            priority_score=100 - index,
+        )
+        for index in range(24)
+    ]
+    notams.extend(
+        [
+            _record(
+                "SX68/26",
+                "WSSS",
+                "2026-05-14T14:30:00+00:00",
+                "2026-10-01T21:30:00+00:00",
+                text="TWY W9 AND JUNCTION OF TWY W9 TWY W AND TWY R CLSD",
+                category="TWY",
+            ),
+            _record(
+                "SX174/24",
+                "WSSS",
+                "2024-11-28T00:00:00+00:00",
+                "2027-12-22T23:59:00+00:00",
+                text="TWY ASSOCIATED WITH RWY 02R/20L CLSD",
+                category="TWY",
+            ),
+        ]
+    )
+
+    flight = _flight(notams=notams)
+    findings, _ = analyse(flight)
+
+    selected_ids = {
+        item["data"]["notam_id"]
+        for item in findings
+        if item["engine"] == "notam"
+    }
+    assert {"SX68/26", "SX174/24"} <= selected_ids
+    audit_status = {
+        item["notam_id"]: item["pilot_status"]
+        for item in flight["audit_evidence"]["notam"]["records"]
+    }
+    # All unique applicable records remain in analysis truth; the separate
+    # priority-view count remains bounded for Level 1.
+    assert len([item for item in findings if item["engine"] == "notam"]) == 26
+    assert audit_status["SX68/26"] == "selected"
+    assert audit_status["SX174/24"] == "selected"
+    assert flight["audit_evidence"]["notam"]["source_record_count"] == 26
+    assert flight["audit_evidence"]["notam"]["priority_view_count"] == 24
+    assert flight["audit_evidence"]["notam"]["level2_only_count"] == 2
+
+
+def test_compound_and_tabulated_taxiway_closures_keep_the_operational_extent() -> None:
+    sx68 = (
+        "SINGAPORE CHANGI AIRPORT - TEMPORARY CLOSURE AT TAXIWAY W9 AND "
+        "JUNCTION OF TAXIWAY W9, TAXIWAY W AND TAXIWAY R. TAXIWAY W9 AND "
+        "THE JUNCTION OF TAXIWAY W9, TAXIWAY W AND TAXIWAY R WILL BE CLOSED."
+    )
+    sx174 = (
+        "CLOSURE OF TWY ASSOCIATED WITH RWY02R/20L. TWY CLOSURE PERIOD: "
+        "28 NOV 2024, 0000UTC TO 22 DEC 2027, 2359UTC "
+        "TWY A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12 "
+        "TWY A TWY B1, B2, B3, B4, B5, B6, F, E, B7, B8, B9, B10, B11, B12, B13, B14 "
+        "TWY B TWY G TWY G2, G3 TWY H TWY J8, J9, J10, J12 "
+        "TWY L BTN TWY U13 C14 ALL MARKINGS LEADING INTO THE CLSD TWY WILL BE REMOVED."
+    )
+    flight = _flight(notams=[
+        _record(
+            "SX68/26",
+            "WSSS",
+            "2026-05-14T14:30:00+00:00",
+            "2026-10-01T21:30:00+00:00",
+            text=sx68,
+            category="TWY",
+        ),
+        _record(
+            "SX174/24",
+            "WSSS",
+            "2024-11-28T00:00:00+00:00",
+            "2027-12-22T23:59:00+00:00",
+            text=sx174,
+            category="TWY",
+        ),
+    ])
+
+    findings, _ = analyse(flight)
+    summaries = {
+        item["data"]["notam_id"]: item["summary"]
+        for item in findings
+        if item["engine"] == "notam"
+    }
+
+    assert summaries["SX68/26"] == (
+        "TWY W9 AND W9/W/R JUNCTION closed during the applicable departure window."
+    )
+    assert "TWY ASSOCIATED" not in summaries["SX174/24"]
+    assert "A1-A12" in summaries["SX174/24"]
+    assert "B1-B14" in summaries["SX174/24"]
+    assert "J8-J10" in summaries["SX174/24"]
+    assert "L BETWEEN U13 AND C14" in summaries["SX174/24"]
+
+
+def test_taxiway_summaries_never_promote_grammar_or_pavement_words_as_ids() -> None:
+    flight = _flight(notams=[
+        _record(
+            "SX124/26",
+            "WSSS",
+            "2026-07-09T00:00:00+00:00",
+            "2026-08-26T23:59:00+00:00",
+            text=(
+                "REHABILITATION WORKS OF PART OF THE TANGO TWY WITH CLOSURE OF A PART OF "
+                "THE TWY AND W4 AND W5 HIGH-SPEED TURN-OFFS. CLOSURE OF HIGH-SPEED "
+                "TURN-OFFS W4 AND W5. RAPID EXIT TWY INDICATOR LIGHTS ARE OFF."
+            ),
+            category="TWY",
+        ),
+        _record(
+            "A4644/26",
+            "WSSS",
+            "2026-07-09T00:00:00+00:00",
+            "2026-08-04T23:59:00+00:00",
+            text=(
+                "PART OF MIKE TWY CLSD TO ACFT WITH ENGINE ON. ACFT WITH ENGINES ON "
+                "PROHIBITED FROM TAXIING ON TWY M BTN TWY BM3 AND BM5 EXCLUDED."
+            ),
+            category="TWY",
+        ),
+        _record(
+            "SX176/24",
+            "WSSS",
+            "2024-10-28T05:00:00+00:00",
+            "2026-10-05T15:59:00+00:00",
+            text=(
+                "CONSTRUCTION SURVEY LASERS WILL BE USED TO MEASURE TAXIWAY PAVEMENT "
+                "ELEVATION ON TAXILANE R1, R2 AND R3."
+            ),
+            category="TWY",
+        ),
+    ])
+
+    findings, _ = analyse(flight)
+    summaries = {
+        item["data"]["notam_id"]: item["summary"]
+        for item in findings
+        if item["engine"] == "notam"
+    }
+
+    assert "TANGO TWY SEGMENT" in summaries["SX124/26"]
+    assert "W4/W5 HIGH-SPEED TURN-OFFS" in summaries["SX124/26"]
+    assert "TWY M BETWEEN BM3 AND BM5" in summaries["A4644/26"]
+    assert "taxilanes R1/R2/R3" in summaries["SX176/24"]
+    assert all(
+        bad not in " ".join(summaries.values())
+        for bad in ("TWY WITH", "TWY CLSD", "TWY PAVEMENT")
+    )
 
 
 def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audit() -> None:
@@ -613,6 +805,35 @@ def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audi
         False,
         True,
     ]
+
+
+def test_official_weather_source_gap_is_pilot_facing_and_fails_closed() -> None:
+    flight = _flight()
+    flight["official_weather_review"] = {
+        "status": "review_required",
+        "provider": "noaa-awc-data-api",
+        "reason_codes": ["source_stale"],
+        "products": {
+            "TAF": {
+                "source_url": "https://aviationweather.gov/api/data/taf",
+                "retrieved_at_utc": "2026-07-16T09:00:00+00:00",
+                "effective_start_utc": "2026-07-16T06:00:00+00:00",
+                "effective_end_utc": "2026-07-17T06:00:00+00:00",
+            },
+        },
+    }
+
+    findings, warnings = analyse(flight)
+
+    weather = [item for item in findings if item["engine"] == "weather"]
+    assert len(weather) == 1
+    assert weather[0]["title"] == "Official weather source review required"
+    assert weather[0]["severity"] == "unknown"
+    assert weather[0]["data"]["window_status"] == "review_required"
+    assert weather[0]["data"]["source_references"][0]["source_url"] == (
+        "https://aviationweather.gov/api/data/taf"
+    )
+    assert any("Official public METAR/TAF coverage is incomplete" in warning for warning in warnings)
 
 
 def test_tcu_alone_does_not_create_a_bad_weather_warning() -> None:

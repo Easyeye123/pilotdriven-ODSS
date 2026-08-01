@@ -13,29 +13,68 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import analysis
 from app.odss import pertinent_brief
+from app.odss.brief_theme import block_time_label, local_time_segment
 from app.odss.briefing import (
     _display_registration,
     _pilot_route_map_label,
+    build_briefing_view,
     build_route_map,
     render_route_svg,
 )
 from app.odss.pertinent_brief import CATEGORY_COLOURS
 from app.odss.report_facts import (
     build_route_gate_rows,
+    deferred_item_report_rows,
     is_confirmed_profile_finding,
     profile_coverage_label,
     profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
 from app.odss.engines import detect_terrain_events
-from app.odss.operational_brief import _source_label
+from app.odss.operational_brief import _notam_rows, _source_label
 from app.odss.reporting import render_pdf, report_sections
+from app.odss.report_sections import LEVEL2_SECTIONS
 
 
 def test_display_registration_formats_singapore_mark_without_changing_other_marks() -> None:
     assert _display_registration("9VSMQ") == "9V-SMQ"
     assert _display_registration("9V-SMQ") == "9V-SMQ"
     assert _display_registration("D-ABCD") == "D-ABCD"
+
+
+def test_sq338_header_uses_offline_airport_zones_and_prominent_block_time(
+    tmp_path: Path,
+) -> None:
+    flight = _flight()
+    flight.update(
+        {
+            "flight_number": "SQ338",
+            "departure": "WSSS",
+            "destination": "LFPG",
+            "destination_runway": "27R",
+            "scheduled_departure_utc": "2026-08-01T05:35:00+00:00",
+            "scheduled_arrival_utc": "2026-08-01T19:15:00+00:00",
+        }
+    )
+
+    assert block_time_label(flight) == "BLOCK 13:40"
+    assert (
+        local_time_segment("WSSS", flight["scheduled_departure_utc"])
+        == "SIN 01 AUG 1335 UTC+8"
+    )
+    assert (
+        local_time_segment("LFPG", flight["scheduled_arrival_utc"])
+        == "CDG 01 AUG 2115 UTC+2"
+    )
+    assert local_time_segment("ZZZZ", flight["scheduled_arrival_utc"]) is None
+
+    output = tmp_path / "SQ338-level-1.pdf"
+    render_pdf(flight, [], [], 1, output)
+    first_page = PdfReader(output).pages[0].extract_text() or ""
+    normalized = " ".join(first_page.split())
+
+    assert "01 AUG 2026 BLOCK 13:40" in normalized
+    assert "LOCAL SIN 01 AUG 1335 UTC+8 -> CDG 01 AUG 2115 UTC+2" in normalized
 
 
 def _notam(
@@ -118,6 +157,31 @@ def _pertinent_weather() -> dict[str, Any]:
             "window_status_text": "Forecast weather overlaps this window.",
         },
     }
+
+
+def _official_source_weather() -> dict[str, Any]:
+    item = _pertinent_weather()
+    item["data"]["source_references"] = [
+        {
+            "source_type": "official_weather",
+            "provider": "noaa-awc-data-api",
+            "display_title": "NOAA Aviation Weather Center",
+            "source_url": "https://aviationweather.gov/api/data/metar",
+            "retrieved_at_utc": "2026-07-25T16:35:00+00:00",
+            "observed_at_utc": "2026-07-25T16:30:00+00:00",
+        },
+        {
+            "source_type": "official_weather",
+            "provider": "noaa-awc-data-api",
+            "display_title": "NOAA Aviation Weather Center",
+            "source_url": "https://aviationweather.gov/api/data/taf",
+            "retrieved_at_utc": "2026-07-25T16:35:00+00:00",
+            "issued_at_utc": "2026-07-25T11:00:00+00:00",
+            "valid_from_utc": "2026-07-25T12:00:00+00:00",
+            "valid_to_utc": "2026-07-26T18:00:00+00:00",
+        },
+    ]
+    return item
 
 
 def _no_overlap_weather(
@@ -390,7 +454,7 @@ def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> 
     assert "Destination Alternate NOTAM A2000/26" in text
     assert "Edto NOTAM A3000/26" in text
     assert (
-        "9 duplicate or lower-priority applicable NOTAM record(s) retained in audit evidence."
+        "9 additional grouped applicable NOTAM row(s) continue in expanded Level 2 and analysis evidence."
         in text
     )
 
@@ -491,6 +555,64 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
         "Filed route from CFP coordinates" in (page.extract_text() or "")
         for page in reader.pages
     ) == 1
+
+
+def test_level1_and_level2_publish_exact_cfp_mel_with_review_status(
+    tmp_path: Path,
+) -> None:
+    flight = _flight()
+    flight["deferred_items"] = [
+        {
+            "item_type": "MEL",
+            "reference": "21-60-08A",
+            "description": "ECAM COND BULK CARGO HEATER FAULT X PERFORMANCE [P]",
+            "company_remark": (
+                "CARRIAGE OF TEMP SENSITIVE CARGO IN BULK CGO COMPT IS NOT ALLOWED"
+            ),
+        }
+    ]
+    findings = [
+        {
+            "engine": "mel",
+            "severity": "unknown",
+            "title": "MEL 21-60-08A requires approved source review",
+            "summary": "Current approved MEL evidence is unavailable.",
+            "details": [],
+            "data": {"reference_status": "controlled-source-not-mounted"},
+        }
+    ]
+
+    rows = deferred_item_report_rows(flight, findings)
+    assert rows == [
+        {
+            "label": "MEL 21-60-08A",
+            "description": "ECAM COND BULK CARGO HEATER FAULT X PERFORMANCE [P]",
+            "restriction": (
+                "CARRIAGE OF TEMP SENSITIVE CARGO IN BULK CGO COMPT IS NOT ALLOWED"
+            ),
+            "source_status": (
+                "Approved MEL source review required. "
+                "Current approved MEL evidence is unavailable."
+            ),
+        }
+    ]
+
+    level1 = tmp_path / "mel-level-1.pdf"
+    level2 = tmp_path / "mel-level-2.pdf"
+    render_pdf(flight, findings, [], 1, level1)
+    render_pdf(flight, findings, [], 2, level2)
+
+    level1_page2 = PdfReader(level1).pages[1].extract_text() or ""
+    level2_page2 = PdfReader(level2).pages[1].extract_text() or ""
+    for text in (level1_page2, level2_page2):
+        normalized = " ".join(text.split())
+        assert "MEL 21-60-08A" in normalized
+        assert "ECAM COND BULK CARGO HEATER FAULT X PERFORMANCE [P]" in normalized
+        assert (
+            "CARRIAGE OF TEMP SENSITIVE CARGO IN BULK CGO COMPT IS NOT ALLOWED"
+            in normalized
+        )
+        assert "Approved MEL source review required" in normalized
 
 
 def test_active_level1_cover_draws_governed_surface_vector_overlays(
@@ -980,6 +1102,65 @@ def test_level2_matches_seven_page_operational_contract(tmp_path: Path) -> None:
     assert all(f"Page {index} of 7" in text for index, text in enumerate(pages, 1))
 
 
+def test_level2_quick_links_land_on_the_rendered_section_heading(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_link_contract.pdf"
+    flight = _flight()
+    findings = [_weather(1), _notam("A1000/26", "destination")]
+
+    render_pdf(flight, findings, [], 2, path)
+    briefing = build_briefing_view(flight, findings, [])
+    links = {
+        item["target"]: item["page"]
+        for item in briefing["quick_links"]
+        if item["target"] in LEVEL2_SECTIONS
+    }
+    pages = [page.extract_text() or "" for page in PdfReader(path).pages]
+
+    assert set(links) == set(LEVEL2_SECTIONS)
+    for target, section in LEVEL2_SECTIONS.items():
+        page_number = int(section["page"])
+        assert links[target] == page_number
+        assert str(section["heading"]) in pages[page_number - 1]
+
+
+def test_level2_paginates_every_grouped_applicable_notam_row(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_notam_continuations.pdf"
+    flight = _flight()
+    findings: list[dict[str, Any]] = []
+    for index in range(35):
+        item = _notam(f"A{1000 + index}/26", "departure")
+        item["summary"] = f"TWY TEST-{index:02d} closed during the flight window."
+        item["data"].update(
+            {
+                "location": "WSSS",
+                "notam_id": f"A{1000 + index}/26",
+                "category": "TWY",
+                "pertinence_rank": 4,
+                "pertinence_kind": "taxiway_restriction",
+                "applicability": "active",
+                "valid_from_utc": "2026-07-01T00:00:00+00:00",
+                "valid_to_utc": "2026-07-31T23:59:00+00:00",
+                "raw_text": f"TWY TEST-{index:02d} CLSD",
+            }
+        )
+        findings.append(item)
+
+    assert len(_notam_rows(findings)) == 35
+    render_pdf(flight, findings, [], 2, path)
+
+    pages = [page.extract_text() or "" for page in PdfReader(path).pages]
+    assert len(pages) == 9
+    assert "A1000/26" in pages[2]
+    assert "ROWS 15-28 OF 35" in pages[7]
+    assert "ROWS 29-35 OF 35" in pages[8]
+    assert "A1034/26" in pages[8]
+    assert "35 grouped applicable row(s)" in pages[8]
+
+
 def test_level2_preserves_page_contract_when_sections_are_sparse(tmp_path: Path) -> None:
     path = tmp_path / "level_2_compact.pdf"
     findings = [
@@ -1414,6 +1595,29 @@ def test_level2_weather_is_concise_deduplicated_and_does_not_repeat_raw_opmet(
     )
     assert "Route deviation" not in normalized
     assert "flight-level strategy" not in normalized
+
+
+def test_level2_weather_names_public_source_and_time_validity(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_public_weather_source.pdf"
+
+    render_pdf(_flight(), [_official_source_weather()], [], 2, path)
+
+    normalized = " ".join(
+        "\n".join((page.extract_text() or "") for page in PdfReader(path).pages).split()
+    )
+    assert "NOAA Aviation Weather Center" in normalized
+    assert "OBS 25 JUL 1630Z" in normalized
+    assert "TAF valid 25 JUL 1200Z-26 JUL 1800Z" in normalized
+    # The compact table carries the governing authority and validity; the
+    # full immutable reference also retains the public API URL and retrieval,
+    # issue and observation timestamps.
+    source_references = _official_source_weather()["data"]["source_references"]
+    assert source_references[0]["source_url"] == "https://aviationweather.gov/api/data/metar"
+    assert source_references[0]["observed_at_utc"] == "2026-07-25T16:30:00+00:00"
+    assert source_references[1]["source_url"] == "https://aviationweather.gov/api/data/taf"
+    assert source_references[1]["issued_at_utc"] == "2026-07-25T11:00:00+00:00"
 
 
 def test_level2_groups_repeated_no_overlap_weather_into_one_checked_summary(

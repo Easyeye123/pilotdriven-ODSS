@@ -35,6 +35,7 @@ from .depress_analysis_page import (
     _unresolved_findings,
 )
 from .engines import detect_terrain_events
+from .report_sections import level2_heading
 
 
 def matched_profile_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -106,7 +107,7 @@ def draw_match_matrix_page(
     )
     canvas.setFillColor(theme.TEXT)
     canvas.setFont(theme.SANS_BOLD, 16)
-    canvas.drawString(margin, top - 14, "DEPRESSURISATION PROFILE MATCH MATRIX")
+    canvas.drawString(margin, top - 14, level2_heading("terrain_detail"))
     canvas.setFillColor(theme.MUTED)
     canvas.setFont(theme.SANS, 5.8)
     canvas.drawRightString(

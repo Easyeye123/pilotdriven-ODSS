@@ -25,7 +25,11 @@ from typing import Any
 
 import httpx
 
-from .snapshot_governance import govern_snapshot, mark_snapshot_reused
+from .snapshot_governance import (
+    govern_snapshot,
+    mark_snapshot_reused,
+    reusable_snapshot,
+)
 
 
 AWC_API_ORIGIN = "https://aviationweather.gov"
@@ -138,6 +142,165 @@ def _product_effective_window(
     )
 
 
+def _govern_product_snapshot(
+    path: str,
+    snapshot: dict[str, Any],
+    *,
+    now: datetime,
+) -> dict[str, Any]:
+    """Normalize and re-check a fetched or injected source receipt.
+
+    Tests and replay tooling may inject a source receipt instead of calling the
+    public endpoint.  Those receipts must pass the same expiry gate as a live
+    response; otherwise an old ``status=available`` fixture could silently be
+    used as current operational evidence.
+    """
+    records = list(snapshot.get("records") or [])
+    effective_start, effective_end = _product_effective_window(path, records)
+    result = govern_snapshot(
+        snapshot,
+        now=now,
+        refresh_after_seconds=_cache_seconds(),
+        expires_after_seconds=max(300.0, _cache_seconds() * 3),
+        scope=(
+            "requested_noaa_awc_metar_records"
+            if path == AWC_METAR_PATH
+            else "requested_noaa_awc_taf_records"
+        ),
+        effective_start_utc=effective_start,
+        effective_end_utc=effective_end,
+    )
+    reusable, reason = reusable_snapshot(result, now=now)
+    result["reuse_status"] = "reusable" if reusable else "not_reusable"
+    result["reuse_reason"] = reason
+    return result
+
+
+def _snapshot_is_usable(snapshot: dict[str, Any], *, now: datetime) -> bool:
+    reusable, _ = reusable_snapshot(snapshot, now=now)
+    return str(snapshot.get("status") or "").lower() == "available" and reusable
+
+
+def _weather_window_minutes(flight: dict[str, Any]) -> tuple[int, int]:
+    preference = flight.get("weather_window_preference") or {}
+
+    def bounded(name: str) -> int:
+        try:
+            return max(0, min(720, int(preference.get(name, 60))))
+        except (TypeError, ValueError):
+            return 60
+
+    return bounded("before_minutes"), bounded("after_minutes")
+
+
+def _station_forecast_window(
+    flight: dict[str, Any],
+    station: str,
+) -> tuple[datetime, datetime] | None:
+    departure = str(flight.get("departure") or "").upper()
+    destination = str(flight.get("destination") or "").upper()
+    destination_alternates = {
+        str(item.get("airport") or "").upper()
+        for item in (flight.get("alternates") or [])
+        if isinstance(item, dict)
+    }
+    before_minutes, after_minutes = _weather_window_minutes(flight)
+    anchor = (
+        _utc(flight.get("scheduled_departure_utc"))
+        if station == departure
+        else _utc(flight.get("scheduled_arrival_utc"))
+        if station == destination or station in destination_alternates
+        else None
+    )
+    if anchor is not None:
+        return (
+            anchor - timedelta(minutes=before_minutes),
+            anchor + timedelta(minutes=after_minutes),
+        )
+    for airport in ((flight.get("edto") or {}).get("airports") or []):
+        if str(airport.get("airport") or "").upper() != station:
+            continue
+        start = _utc(airport.get("period_start_utc"))
+        end = _utc(airport.get("period_end_utc"))
+        if start and end and start < end:
+            return start, end
+    return None
+
+
+def _forecast_coverage_gaps(
+    flight: dict[str, Any],
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    taf_by_station: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        if record.get("record_type") != "TAF":
+            continue
+        taf_by_station.setdefault(str(record.get("location") or ""), []).append(record)
+    gaps: list[dict[str, Any]] = []
+    for station in _station_ids(flight):
+        window = _station_forecast_window(flight, station)
+        if window is None:
+            continue
+        window_start, window_end = window
+        covers_window = any(
+            (valid_from := _utc(record.get("valid_from_utc"))) is not None
+            and (valid_to := _utc(record.get("valid_to_utc"))) is not None
+            and valid_from <= window_start
+            and window_end <= valid_to
+            for record in taf_by_station.get(station, [])
+        )
+        if not covers_window:
+            gaps.append({
+                "station": station,
+                "product": "TAF",
+                "window_start_utc": _iso(window_start),
+                "window_end_utc": _iso(window_end),
+                "reason": "forecast_does_not_cover_operating_window",
+            })
+    return gaps
+
+
+def _product_review(
+    snapshots: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+    *,
+    record_type: str,
+    now: datetime,
+) -> dict[str, Any]:
+    relevant = [record for record in records if record.get("record_type") == record_type]
+    source = snapshots[0] if snapshots else {}
+    statuses = [
+        (
+            "available"
+            if _snapshot_is_usable(snapshot, now=now)
+            else "stale"
+            if snapshot.get("reuse_reason") == "snapshot_expired"
+            else "unavailable"
+        )
+        for snapshot in snapshots
+    ]
+    effective_starts = [_utc(item.get("effective_start_utc")) for item in snapshots]
+    effective_ends = [_utc(item.get("effective_end_utc")) for item in snapshots]
+    retrieved = [_utc(item.get("retrieved_at_utc")) for item in snapshots]
+    return {
+        "status": (
+            "available"
+            if statuses and all(status == "available" for status in statuses)
+            else "stale"
+            if "stale" in statuses
+            else "unavailable"
+        ),
+        "record_count": len({str(item.get("location") or "") for item in relevant}),
+        "source_url": source.get("source_url"),
+        "retrieved_at_utc": _iso(max((value for value in retrieved if value), default=None)),
+        "effective_start_utc": _iso(min((value for value in effective_starts if value), default=None)),
+        "effective_end_utc": _iso(max((value for value in effective_ends if value), default=None)),
+        "refresh_after_utc": source.get("refresh_after_utc"),
+        "expires_at_utc": source.get("expires_at_utc"),
+        "completeness_status": source.get("completeness_status"),
+    }
+
+
 def fetch_awc_product(
     path: str,
     params: dict[str, str],
@@ -220,7 +383,11 @@ def fetch_awc_product(
     return deepcopy(result)
 
 
-def _normalize_metar(record: dict[str, Any], retrieved_at: str | None) -> dict[str, Any] | None:
+def _normalize_metar(
+    record: dict[str, Any],
+    retrieved_at: str | None,
+    source_url: str | None,
+) -> dict[str, Any] | None:
     station = str(record.get("icaoId") or "").strip().upper()
     raw = " ".join(str(record.get("rawOb") or "").split())
     if not _ICAO.fullmatch(station) or not raw:
@@ -232,13 +399,18 @@ def _normalize_metar(record: dict[str, Any], retrieved_at: str | None) -> dict[s
         "text": raw,
         "source": "noaa_awc_live",
         "provider": "noaa-awc-data-api",
+        "source_url": source_url,
         "observed_at_utc": _iso(observed_at),
         "retrieved_at_utc": retrieved_at,
         "raw_sha256": sha256(raw.encode("utf-8")).hexdigest(),
     }
 
 
-def _normalize_taf(record: dict[str, Any], retrieved_at: str | None) -> dict[str, Any] | None:
+def _normalize_taf(
+    record: dict[str, Any],
+    retrieved_at: str | None,
+    source_url: str | None,
+) -> dict[str, Any] | None:
     station = str(record.get("icaoId") or "").strip().upper()
     raw = " ".join(str(record.get("rawTAF") or "").split())
     if not _ICAO.fullmatch(station) or not raw:
@@ -249,6 +421,7 @@ def _normalize_taf(record: dict[str, Any], retrieved_at: str | None) -> dict[str
         "text": raw,
         "source": "noaa_awc_live",
         "provider": "noaa-awc-data-api",
+        "source_url": source_url,
         "issue_time_utc": _iso(_utc(record.get("issueTime"))),
         "valid_from_utc": _iso(_utc(record.get("validTimeFrom"))),
         "valid_to_utc": _iso(_utc(record.get("validTimeTo"))),
@@ -339,15 +512,20 @@ def enrich_official_opmet(
     departure = _utc(flight.get("scheduled_departure_utc"))
     arrival = _utc(flight.get("scheduled_arrival_utc"))
     supplied = snapshots or {}
-    metar_snapshot = supplied.get("metar") or fetch_awc_product(
+    raw_metar_snapshot = supplied.get("metar") or fetch_awc_product(
         AWC_METAR_PATH,
         _historical_metar_params(stations, departure, arrival, retrieved_at),
         client=client,
         now=retrieved_at,
     )
-    taf_snapshots = supplied.get("taf")
-    if taf_snapshots is None:
-        taf_snapshots = [
+    metar_snapshot = _govern_product_snapshot(
+        AWC_METAR_PATH,
+        raw_metar_snapshot if isinstance(raw_metar_snapshot, dict) else {},
+        now=retrieved_at,
+    )
+    raw_taf_snapshots = supplied.get("taf")
+    if raw_taf_snapshots is None:
+        raw_taf_snapshots = [
             fetch_awc_product(
                 AWC_TAF_PATH,
                 {
@@ -360,19 +538,39 @@ def enrich_official_opmet(
             )
             for target in _taf_dates(departure, arrival, retrieved_at)
         ]
-    elif isinstance(taf_snapshots, dict):
-        taf_snapshots = [taf_snapshots]
+    elif isinstance(raw_taf_snapshots, dict):
+        raw_taf_snapshots = [raw_taf_snapshots]
+    taf_snapshots = [
+        _govern_product_snapshot(
+            AWC_TAF_PATH,
+            snapshot if isinstance(snapshot, dict) else {},
+            now=retrieved_at,
+        )
+        for snapshot in (raw_taf_snapshots or [])
+    ]
 
     normalized: list[dict[str, Any]] = []
-    for record in metar_snapshot.get("records") or []:
-        if isinstance(record, dict):
-            item = _normalize_metar(record, metar_snapshot.get("retrieved_at_utc"))
+    if _snapshot_is_usable(metar_snapshot, now=retrieved_at):
+        for record in metar_snapshot.get("records") or []:
+            if not isinstance(record, dict):
+                continue
+            item = _normalize_metar(
+                record,
+                metar_snapshot.get("retrieved_at_utc"),
+                metar_snapshot.get("source_url"),
+            )
             if item:
                 normalized.append(item)
     for snapshot in taf_snapshots:
+        if not _snapshot_is_usable(snapshot, now=retrieved_at):
+            continue
         for record in snapshot.get("records") or []:
             if isinstance(record, dict):
-                item = _normalize_taf(record, snapshot.get("retrieved_at_utc"))
+                item = _normalize_taf(
+                    record,
+                    snapshot.get("retrieved_at_utc"),
+                    snapshot.get("source_url"),
+                )
                 if item:
                     normalized.append(item)
 
@@ -410,20 +608,47 @@ def enrich_official_opmet(
         for product, available in (("METAR", available_metar), ("TAF", available_taf))
         if station not in available
     ]
-    source_unavailable = (
-        metar_snapshot.get("status") != "available"
-        or any(snapshot.get("status") != "available" for snapshot in taf_snapshots)
+    source_stale = any(
+        snapshot.get("reuse_reason") == "snapshot_expired"
+        for snapshot in [metar_snapshot, *taf_snapshots]
+    )
+    source_unavailable = any(
+        str(snapshot.get("status") or "").lower() != "available"
+        or snapshot.get("reuse_reason") not in {None, ""}
+        for snapshot in [metar_snapshot, *taf_snapshots]
     )
     essential_missing = any(
         item["station"] in essential and item["product"] == "TAF" for item in missing
     )
+    coverage_gaps = _forecast_coverage_gaps(flight, normalized)
+    essential_coverage_gap = any(
+        item["station"] in essential for item in coverage_gaps
+    )
     reason_codes = []
-    if source_unavailable:
+    if source_stale:
+        reason_codes.append("source_stale")
+    elif source_unavailable:
         reason_codes.append("source_unavailable")
     if essential_missing:
         reason_codes.append("essential_forecast_missing")
     if missing:
         reason_codes.append("station_product_missing")
+    if essential_coverage_gap:
+        reason_codes.append("essential_forecast_window_not_covered")
+    elif coverage_gaps:
+        reason_codes.append("forecast_window_not_covered")
+    metar_product = _product_review(
+        [metar_snapshot],
+        normalized,
+        record_type="METAR",
+        now=retrieved_at,
+    )
+    taf_product = _product_review(
+        taf_snapshots,
+        normalized,
+        record_type="TAF",
+        now=retrieved_at,
+    )
     review = {
         "schema_version": "1.0",
         "status": "complete" if not reason_codes else "review_required",
@@ -432,25 +657,11 @@ def enrich_official_opmet(
         "stations_requested": stations,
         "records_appended": len(appended),
         "products": {
-            "METAR": {
-                "status": metar_snapshot.get("status"),
-                "record_count": len(available_metar),
-                "source_url": metar_snapshot.get("source_url"),
-            },
-            "TAF": {
-                "status": (
-                    "available"
-                    if taf_snapshots
-                    and all(item.get("status") == "available" for item in taf_snapshots)
-                    else "unavailable"
-                ),
-                "record_count": len(available_taf),
-                "source_url": (
-                    taf_snapshots[0].get("source_url") if taf_snapshots else None
-                ),
-            },
+            "METAR": metar_product,
+            "TAF": taf_product,
         },
         "missing": missing,
+        "coverage_gaps": coverage_gaps,
         "reason_codes": reason_codes,
         "source_note": (
             "Official NOAA Aviation Weather Center OPMET records. "

@@ -64,6 +64,7 @@ _LEVEL_2_PAGE_TITLES = (
     "WEATHER, VAAC AND PROMOTION RESULT",
 )
 _LEVEL_2_SOURCE_CHART_MARKER = "LEVEL 2 SOURCE CHART - PROFILE"
+_LEVEL_2_NOTAM_CONTINUATION_MARKER = "LEVEL 2 - NOTAM CONTINUATION"
 
 
 def validate_report_pdf(
@@ -183,15 +184,24 @@ def validate_report_pdf(
                         f"{required_title}."
                     ),
                 ))
+        source_chart_seen = False
         for page_index in range(7, page_count):
-            if (
-                _LEVEL_2_SOURCE_CHART_MARKER.lower()
-                not in extracted_pages[page_index].lower()
-            ):
+            appended_text = extracted_pages[page_index].lower()
+            is_source_chart = _LEVEL_2_SOURCE_CHART_MARKER.lower() in appended_text
+            is_notam_continuation = (
+                _LEVEL_2_NOTAM_CONTINUATION_MARKER.lower() in appended_text
+            )
+            if is_source_chart:
+                source_chart_seen = True
+                continue
+            if is_notam_continuation and not source_chart_seen:
+                continue
+            if not is_source_chart:
                 violations.append(ReportQualityViolation(
-                    "LEVEL_2_SOURCE_CHART_STRUCTURE",
+                    "LEVEL_2_APPENDIX_STRUCTURE",
                     (
-                        f"Level 2 page {page_index + 1} must be an embedded "
+                        f"Level 2 page {page_index + 1} must be a NOTAM "
+                        "continuation before the source charts, or an embedded "
                         "depressurisation source-chart page."
                     ),
                 ))

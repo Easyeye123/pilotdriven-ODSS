@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import sys
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
+import threading
 
 import fitz
 from PIL import Image
@@ -104,7 +107,11 @@ def _surface_contract(
         "window": {
             "startsAt": "2026-07-11T08:30:00Z",
             "endsAt": "2026-07-11T12:30:00Z",
-            "basis": "filed-std-sta",
+            "basis": (
+                "scheduled_departure"
+                if role == "departure"
+                else "scheduled_arrival"
+            ),
         },
         "source": {
             "provider": "openstreetmap",
@@ -464,6 +471,580 @@ def test_service_timing_accepts_atot_and_rejects_unknown_reference(
     }
 
 
+def test_weather_window_regenerates_current_analysis_without_inventing_atot(
+    service_app: TestClient,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    before = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=_authorization(),
+    ).json()
+
+    updated = service_app.post(
+        f"/v1/analyses/{analysis_id}/weather-window",
+        headers=_authorization(),
+        json={"before_minutes": 120, "after_minutes": 90},
+    )
+    invalid = service_app.post(
+        f"/v1/analyses/{analysis_id}/weather-window",
+        headers=_authorization(),
+        json={"before_minutes": 721, "after_minutes": 90},
+    )
+    after = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=_authorization(),
+    ).json()
+
+    assert updated.status_code == 200
+    assert invalid.status_code == 422
+    assert before["timing"] is None
+    assert after["timing"] is None
+    assert after["flight"]["weather_window_preference"] == {
+        "before_minutes": 120,
+        "after_minutes": 90,
+        "basis": "scheduled_phase_reference",
+    }
+
+
+def test_failed_timing_update_returns_non_200_and_restores_previous_reference(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    prior_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert prior_flight is not None
+    timing_fields = (
+        "actual_takeoff_utc",
+        "timing_reference_type",
+        "timing_reference_utc",
+        "timing_reference_waypoint",
+    )
+    prior_timing = {field: prior_flight[field] for field in timing_fields}
+    artifact_fields = (
+        "analysis_path",
+        "level1_report",
+        "level2_report",
+        "level3_json",
+        "level3_report",
+    )
+    prior_artifacts = {}
+    for field in artifact_fields:
+        path_value = prior_flight[field]
+        if not path_value:
+            continue
+        artifact_path = Path(path_value)
+        assert artifact_path.is_file(), field
+        prior_artifacts[field] = (
+            str(artifact_path),
+            hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+        )
+    assert {"analysis_path", "level1_report", "level2_report"} <= prior_artifacts.keys()
+
+    def fail_analysis(*args, **kwargs):
+        raise RuntimeError("Synthetic timing regeneration failure")
+
+    monkeypatch.setattr(main, "run_odss_analysis", fail_analysis)
+    rejected = service_app.post(
+        f"/v1/analyses/{analysis_id}/timing",
+        headers=_authorization(),
+        json={
+            "reference_type": "takeoff",
+            "reference_utc": "2026-07-11T10:42:00+00:00",
+        },
+    )
+    restored = service_app.get(
+        f"/v1/analyses/{analysis_id}",
+        headers=_authorization(),
+    ).json()
+    briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=_authorization(),
+    ).json()
+    restored_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+
+    assert rejected.status_code == 422
+    assert "Synthetic timing regeneration failure" in rejected.json()["detail"]
+    assert restored["status"] == "Completed"
+    assert briefing["timing"] is None
+    assert restored_flight is not None
+    assert restored_flight["status"] == "Completed"
+    assert {field: restored_flight[field] for field in timing_fields} == prior_timing
+    for field, (prior_path, prior_sha256) in prior_artifacts.items():
+        assert restored_flight[field] == prior_path
+        assert hashlib.sha256(Path(prior_path).read_bytes()).hexdigest() == prior_sha256
+
+
+def test_concurrent_timing_update_returns_409_without_splitting_stored_state(
+    service_app: TestClient,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    prior_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert prior_flight is not None
+    timing_fields = (
+        "actual_takeoff_utc",
+        "timing_reference_type",
+        "timing_reference_utc",
+        "timing_reference_waypoint",
+    )
+    artifact_fields = (
+        "analysis_path",
+        "level1_report",
+        "level2_report",
+        "level3_json",
+        "level3_report",
+    )
+    prior_timing = {field: prior_flight[field] for field in timing_fields}
+    prior_artifacts = {
+        field: (
+            str(prior_flight[field]),
+            hashlib.sha256(Path(str(prior_flight[field])).read_bytes()).hexdigest(),
+        )
+        for field in artifact_fields
+        if prior_flight[field]
+    }
+    database.update_status(
+        int(prior_flight["id"]),
+        "Processing",
+        tenant_id="tenant-1",
+    )
+
+    rejected = service_app.post(
+        f"/v1/analyses/{analysis_id}/timing",
+        headers=_authorization(),
+        json={
+            "reference_type": "takeoff",
+            "reference_utc": "2026-07-11T10:42:00+00:00",
+        },
+    )
+    restored_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == "Analysis is already in progress"
+    assert restored_flight is not None
+    assert restored_flight["status"] == "Processing"
+    assert {field: restored_flight[field] for field in timing_fields} == prior_timing
+    for field, (prior_path, prior_sha256) in prior_artifacts.items():
+        assert restored_flight[field] == prior_path
+        assert hashlib.sha256(Path(prior_path).read_bytes()).hexdigest() == prior_sha256
+
+
+def test_stale_simultaneous_timing_loser_cannot_clobber_winner(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    stale_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert stale_flight is not None
+    stale_analysis = main.load_analysis(stale_flight["analysis_path"])
+    assert stale_analysis is not None
+
+    original_run = main.run_odss_analysis
+    original_service_analysis = main._service_analysis
+    winner_running = threading.Event()
+    release_winner = threading.Event()
+
+    def blocked_run(*args, **kwargs):
+        winner_running.set()
+        if not release_winner.wait(timeout=10):
+            raise TimeoutError("Concurrent timing test did not release winner")
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(main, "run_odss_analysis", blocked_run)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        winner_future = pool.submit(
+            service_app.post,
+            f"/v1/analyses/{analysis_id}/timing",
+            headers=_authorization(),
+            json={
+                "reference_type": "takeoff",
+                "reference_utc": "2026-07-11T10:42:00+00:00",
+            },
+        )
+        try:
+            assert winner_running.wait(timeout=10)
+            # Model a second request that read Completed just before the first
+            # request acquired ownership. Its stale snapshot must not permit a
+            # timing write after the row has transitioned to Processing.
+            monkeypatch.setattr(
+                main,
+                "_service_analysis",
+                lambda analysis_id, identity: (stale_flight, stale_analysis),
+            )
+            loser = service_app.post(
+                f"/v1/analyses/{analysis_id}/timing",
+                headers=_authorization(),
+                json={
+                    "reference_type": "takeoff",
+                    "reference_utc": "2026-07-11T11:17:00+00:00",
+                },
+            )
+        finally:
+            release_winner.set()
+        winner = winner_future.result(timeout=20)
+
+    monkeypatch.setattr(main, "_service_analysis", original_service_analysis)
+    final_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=_authorization(),
+    ).json()
+
+    assert winner.status_code == 200
+    assert loser.status_code == 409
+    assert final_flight is not None
+    assert final_flight["status"] == "Completed"
+    assert final_flight["timing_reference_utc"] == "2026-07-11T10:42:00+00:00"
+    assert briefing["timing"]["actual_takeoff_utc"] == "2026-07-11T10:42:00+00:00"
+
+
+def test_failed_weather_window_update_retains_completed_artifacts(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    prior_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert prior_flight is not None
+    assert all(prior_flight[field] for field in ("analysis_path", "level1_report", "level2_report"))
+    prior_paths = {
+        field: str(prior_flight[field])
+        for field in ("analysis_path", "level1_report", "level2_report")
+    }
+    prior_hashes = {
+        field: hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        for field, path in prior_paths.items()
+    }
+
+    def fail_analysis(*args, **kwargs):
+        raise RuntimeError("Synthetic weather-window regeneration failure")
+
+    monkeypatch.setattr(main, "run_odss_analysis", fail_analysis)
+    rejected = service_app.post(
+        f"/v1/analyses/{analysis_id}/weather-window",
+        headers=_authorization(),
+        json={"before_minutes": 120, "after_minutes": 90},
+    )
+    restored_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+
+    assert rejected.status_code == 422
+    assert "Synthetic weather-window regeneration failure" in rejected.json()["detail"]
+    assert restored_flight is not None
+    assert restored_flight["status"] == "Completed"
+    for field, path in prior_paths.items():
+        assert restored_flight[field] == path
+        assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == prior_hashes[field]
+
+
+def test_analysis_claim_stays_owned_through_primary_map_refresh(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    observed_statuses: list[str] = []
+
+    def inspect_refresh_lock(flight, result):
+        current = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+        assert current is not None
+        observed_statuses.append(str(current["status"]))
+        assert database.claim_analysis(int(current["id"]), "tenant-1") is None
+
+    monkeypatch.setattr(main, "_refresh_reports_with_primary_map", inspect_refresh_lock)
+    updated = service_app.post(
+        f"/v1/analyses/{analysis_id}/weather-window",
+        headers=_authorization(),
+        json={"before_minutes": 120, "after_minutes": 90},
+    )
+    final_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+
+    assert updated.status_code == 200
+    assert observed_statuses == ["Processing"]
+    assert final_flight is not None
+    assert final_flight["status"] == "Completed"
+
+
+def test_service_personal_notes_are_validated_tenant_scoped_and_regenerated(
+    service_app: TestClient,
+) -> None:
+    owner_headers = _authorization("tenant-owner", "pilot-owner")
+    other_headers = _authorization("tenant-other", "pilot-other")
+    created = service_app.post(
+        "/v1/analyses",
+        headers=owner_headers,
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    note_payload = {
+        "placement": "destination",
+        "note_text": "Confirm destination stand and taxi routing before descent.",
+        "include_level1": True,
+        "include_level2": True,
+    }
+
+    cross_tenant = service_app.post(
+        f"/v1/analyses/{analysis_id}/notes",
+        headers=other_headers,
+        json=note_payload,
+    )
+    no_report_selected = service_app.post(
+        f"/v1/analyses/{analysis_id}/notes",
+        headers=owner_headers,
+        json={
+            **note_payload,
+            "include_level1": False,
+            "include_level2": False,
+        },
+    )
+    unexpected_field = service_app.post(
+        f"/v1/analyses/{analysis_id}/notes",
+        headers=owner_headers,
+        json={**note_payload, "tenant_id": "tenant-other"},
+    )
+    added = service_app.post(
+        f"/v1/analyses/{analysis_id}/notes",
+        headers=owner_headers,
+        json=note_payload,
+    )
+
+    assert cross_tenant.status_code == 404
+    assert no_report_selected.status_code == 400
+    assert unexpected_field.status_code == 422
+    assert added.status_code == 201
+    added_note = added.json()["note"]
+    assert added_note["placement"] == "destination"
+    assert added_note["placement_label"] == "Destination airport section"
+    assert added_note["source"] == "pilot_personal_note"
+    assert added.json()["notes"] == [added_note]
+
+    briefing_with_note = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=owner_headers,
+    ).json()
+    assert briefing_with_note["personal_notes"] == [added_note]
+    level_1 = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-1",
+        headers=owner_headers,
+    )
+    with fitz.open(stream=level_1.content, filetype="pdf") as report:
+        report_text = "\n".join(page.get_text() for page in report)
+    assert note_payload["note_text"] in " ".join(report_text.split())
+
+    cross_tenant_delete = service_app.delete(
+        f"/v1/analyses/{analysis_id}/notes/{added_note['id']}",
+        headers=other_headers,
+    )
+    deleted = service_app.delete(
+        f"/v1/analyses/{analysis_id}/notes/{added_note['id']}",
+        headers=owner_headers,
+    )
+    briefing_without_note = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=owner_headers,
+    ).json()
+
+    assert cross_tenant_delete.status_code == 404
+    assert deleted.status_code == 200
+    assert deleted.json()["notes"] == []
+    assert briefing_without_note["personal_notes"] == []
+
+
+def test_stale_simultaneous_note_loser_never_stages_a_note(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    stale_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert stale_flight is not None
+    stale_analysis = main.load_analysis(stale_flight["analysis_path"])
+    assert stale_analysis is not None
+
+    original_run = main.run_odss_analysis
+    original_create_note = main.create_personal_note
+    original_service_analysis = main._service_analysis
+    winner_running = threading.Event()
+    release_winner = threading.Event()
+    create_count = 0
+    create_count_lock = threading.Lock()
+
+    def counted_create_note(*args, **kwargs):
+        nonlocal create_count
+        with create_count_lock:
+            create_count += 1
+        return original_create_note(*args, **kwargs)
+
+    def blocked_run(*args, **kwargs):
+        winner_running.set()
+        if not release_winner.wait(timeout=10):
+            raise TimeoutError("Concurrent note test did not release winner")
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(main, "create_personal_note", counted_create_note)
+    monkeypatch.setattr(main, "run_odss_analysis", blocked_run)
+    winner_payload = {
+        "placement": "destination",
+        "note_text": "Winner note must be the only staged note.",
+        "include_level1": True,
+        "include_level2": True,
+    }
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        winner_future = pool.submit(
+            service_app.post,
+            f"/v1/analyses/{analysis_id}/notes",
+            headers=_authorization(),
+            json=winner_payload,
+        )
+        try:
+            assert winner_running.wait(timeout=10)
+            monkeypatch.setattr(
+                main,
+                "_service_analysis",
+                lambda analysis_id, identity: (stale_flight, stale_analysis),
+            )
+            loser = service_app.post(
+                f"/v1/analyses/{analysis_id}/notes",
+                headers=_authorization(),
+                json={
+                    **winner_payload,
+                    "note_text": "This stale losing note must never be staged.",
+                },
+            )
+        finally:
+            release_winner.set()
+        winner = winner_future.result(timeout=20)
+
+    monkeypatch.setattr(main, "_service_analysis", original_service_analysis)
+    final_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert final_flight is not None
+    notes = [dict(note) for note in database.list_personal_notes(int(final_flight["id"]))]
+    briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=_authorization(),
+    ).json()
+
+    assert winner.status_code == 201
+    assert loser.status_code == 409
+    assert create_count == 1
+    assert [note["note_text"] for note in notes] == [winner_payload["note_text"]]
+    assert [note["note_text"] for note in briefing["personal_notes"]] == [
+        winner_payload["note_text"]
+    ]
+
+
+def test_service_personal_note_failures_restore_database_and_prior_reports(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = _authorization()
+    created = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    initial_note = service_app.post(
+        f"/v1/analyses/{analysis_id}/notes",
+        headers=headers,
+        json={
+            "placement": "separate",
+            "note_text": "Retain this note if regeneration fails.",
+            "include_level1": True,
+            "include_level2": False,
+        },
+    ).json()["note"]
+    prior_level_1 = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-1",
+        headers=headers,
+    ).content
+
+    def fail_analysis(*args, **kwargs):
+        raise RuntimeError("Synthetic personal-note regeneration failure")
+
+    monkeypatch.setattr(main, "run_odss_analysis", fail_analysis)
+    rejected_delete = service_app.delete(
+        f"/v1/analyses/{analysis_id}/notes/{initial_note['id']}",
+        headers=headers,
+    )
+    rejected_add = service_app.post(
+        f"/v1/analyses/{analysis_id}/notes",
+        headers=headers,
+        json={
+            "placement": "communications",
+            "note_text": "This rejected note must not survive.",
+            "include_level1": False,
+            "include_level2": True,
+        },
+    )
+    restored_summary = service_app.get(
+        f"/v1/analyses/{analysis_id}",
+        headers=headers,
+    ).json()
+    restored_briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=headers,
+    ).json()
+    restored_level_1 = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-1",
+        headers=headers,
+    ).content
+
+    assert rejected_delete.status_code == 422
+    assert rejected_add.status_code == 422
+    assert "Synthetic personal-note regeneration failure" in rejected_delete.json()["detail"]
+    assert restored_summary["status"] == "Completed"
+    assert restored_briefing["personal_notes"] == [initial_note]
+    restored_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert restored_flight is not None
+    assert [
+        dict(note)["id"]
+        for note in database.list_personal_notes(int(restored_flight["id"]))
+    ] == [
+        initial_note["id"]
+    ]
+    assert restored_level_1 == prior_level_1
+
+
 def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
     service_app: TestClient,
 ) -> None:
@@ -553,6 +1134,23 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         },
     )
     assert timing.status_code == 200
+    overlays[0]["window"]["basis"] = "actual_takeoff"
+    overlays[1]["window"]["basis"] = (
+        "calculated_destination_from_atot_and_cfp_actm"
+    )
+    republished = service_app.post(
+        f"/v1/analyses/{analysis_id}/surface-overlays",
+        headers=owner_headers,
+        json={"overlays": overlays},
+    )
+    assert republished.status_code == 200
+    assert [
+        item["window"]["basis"]
+        for item in republished.json()["surface_overlays"]
+    ] == [
+        "actual_takeoff",
+        "calculated_destination_from_atot_and_cfp_actm",
+    ]
     refreshed = service_app.get(
         f"/v1/analyses/{analysis_id}/briefing",
         headers=owner_headers,
@@ -616,6 +1214,75 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
     finally:
         cleared_level2_document.close()
     assert "active closures" not in cleared_level2_text
+
+
+def test_processing_claim_blocks_weather_surface_and_map_report_writers(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    artifact_paths = {
+        field: Path(str(flight[field]))
+        for field in ("analysis_path", "level1_report", "level2_report")
+    }
+    artifact_bytes = {field: path.read_bytes() for field, path in artifact_paths.items()}
+    publish_calls = 0
+    original_publish = main._publish_surface_overlay_reports
+
+    def counted_publish(*args, **kwargs):
+        nonlocal publish_calls
+        publish_calls += 1
+        return original_publish(*args, **kwargs)
+
+    monkeypatch.setattr(main, "_publish_surface_overlay_reports", counted_publish)
+    claimed = database.claim_analysis(int(flight["id"]), "tenant-1")
+    assert claimed is not None
+    try:
+        weather = service_app.post(
+            f"/v1/analyses/{analysis_id}/weather-window",
+            headers=_authorization(),
+            json={"before_minutes": 120, "after_minutes": 90},
+        )
+        surface = service_app.post(
+            f"/v1/analyses/{analysis_id}/surface-overlays",
+            headers=_authorization(),
+            json={
+                "overlays": [
+                    _surface_contract(created.json()["flight"]["departure"], "departure"),
+                    _surface_contract(
+                        created.json()["flight"]["destination"],
+                        "destination",
+                    ),
+                ]
+            },
+        )
+        rendered = service_app.post(
+            f"/v1/analyses/{analysis_id}/reports/render",
+            headers=_authorization(),
+        )
+    finally:
+        database.restore_analysis_state(
+            int(flight["id"]),
+            str(claimed["status"]),
+            claimed["notes"],
+            claimed["last_error"],
+            tenant_id="tenant-1",
+        )
+
+    assert weather.status_code == 409
+    assert surface.status_code == 409
+    assert rendered.status_code == 409
+    assert publish_calls == 0
+    for field, path in artifact_paths.items():
+        assert path.read_bytes() == artifact_bytes[field]
 
 
 def test_report_worker_endpoint_preserves_labelled_schematic_fallback(

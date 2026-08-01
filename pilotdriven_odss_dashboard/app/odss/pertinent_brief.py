@@ -33,6 +33,7 @@ from .pilot_briefing import (
 from .report_facts import (
     actm_utc_label,
     build_route_gate_rows,
+    deferred_item_report_rows,
     is_confirmed_profile_finding,
     profile_coverage_label,
     profile_finding_label,
@@ -2155,7 +2156,8 @@ def _draw_operational_detail(
         height=timeline_h,
     )
     content_top = timeline_y - gap
-    cards_h = 26 * mm
+    deferred_rows = deferred_item_report_rows(flight, findings, limit=1)
+    cards_h = (34 if deferred_rows else 26) * mm
     cards_y = bottom
     content_bottom = cards_y + cards_h + gap
     left_width = 167 * mm
@@ -2321,18 +2323,56 @@ def _draw_operational_detail(
             masses["planned_takeoff_weight_kg"]
         )
         takeoff_lines.append(f"Structural margin: {margin_kg:+,} kg.")
-    _draw_panel(
-        canvas,
-        margin,
-        cards_y,
-        left_width,
-        cards_h,
-        "TAKEOFF WEIGHT",
-        takeoff_lines,
-        _DEPARTURE,
-        dark=True,
-        style=_STYLES["dark_small"],
-    )
+    if deferred_rows:
+        card_gap = 2.5 * mm
+        takeoff_width = (left_width - card_gap) * 0.45
+        deferred_width = left_width - card_gap - takeoff_width
+        _draw_panel(
+            canvas,
+            margin,
+            cards_y,
+            takeoff_width,
+            cards_h,
+            "TAKEOFF WEIGHT",
+            takeoff_lines,
+            _DEPARTURE,
+            dark=True,
+            style=_STYLES["dark_small"],
+        )
+        deferred = deferred_rows[0]
+        deferred_lines = [
+            f"{deferred['label']}: {deferred['description']}",
+            f"CFP restriction: {deferred['restriction']}",
+            deferred["source_status"],
+        ]
+        remaining = len(flight.get("deferred_items") or []) - 1
+        if remaining > 0:
+            deferred_lines.append(f"+{remaining} further deferred item(s) in Level 2.")
+        _draw_panel(
+            canvas,
+            margin + takeoff_width + card_gap,
+            cards_y,
+            deferred_width,
+            cards_h,
+            "MEL / CDL / CDDL",
+            deferred_lines,
+            _CRITICAL,
+            dark=True,
+            style=_STYLES["dark_small"],
+        )
+    else:
+        _draw_panel(
+            canvas,
+            margin,
+            cards_y,
+            left_width,
+            cards_h,
+            "TAKEOFF WEIGHT",
+            takeoff_lines,
+            _DEPARTURE,
+            dark=True,
+            style=_STYLES["dark_small"],
+        )
 
     weather_items = grouped.get("weather", [])
     incomplete_weather = sum(

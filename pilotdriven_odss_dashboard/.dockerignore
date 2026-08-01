@@ -9,5 +9,3 @@ __pycache__
 *.log
 data
 tmp
-tests/*
-!tests/check_webgl_runtime.py

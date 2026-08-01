@@ -196,3 +196,83 @@ def test_note_without_selected_report_level_is_rejected(web_app: TestClient) -> 
     assert response.status_code == 400
     assert response.json()["detail"].startswith("Select Level 1")
     assert database.list_personal_notes(flight_id) == []
+
+
+def test_stale_dashboard_note_update_and_delete_losers_do_not_mutate(
+    web_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = web_app
+    flight_id = _upload_and_analyse(client)
+    added = client.post(
+        f"/flights/{flight_id}/notes",
+        data={
+            "placement": "departure",
+            "note_text": "Keep this exact note while another refresh owns the flight.",
+            "include_level1": "on",
+            "include_level2": "on",
+        },
+    )
+    assert added.status_code == 303
+    note = database.list_personal_notes(flight_id)[0]
+    note_snapshot = dict(note)
+    stale_flight = database.get_flight_for_tenant(
+        flight_id,
+        main._dashboard_tenant_id(),
+    )
+    assert stale_flight is not None
+    artifact_paths = {
+        field: Path(str(stale_flight[field]))
+        for field in ("analysis_path", "level1_report", "level2_report")
+    }
+    artifact_bytes = {field: path.read_bytes() for field, path in artifact_paths.items()}
+
+    claimed = database.claim_analysis(flight_id, main._dashboard_tenant_id())
+    assert claimed is not None
+    original_update = main.update_personal_note
+    original_delete = main.delete_personal_note
+    mutation_calls = {"update": 0, "delete": 0}
+
+    def counted_update(*args, **kwargs):
+        mutation_calls["update"] += 1
+        return original_update(*args, **kwargs)
+
+    def counted_delete(*args, **kwargs):
+        mutation_calls["delete"] += 1
+        return original_delete(*args, **kwargs)
+
+    monkeypatch.setattr(main, "get_flight_for_tenant", lambda *args: stale_flight)
+    monkeypatch.setattr(main, "update_personal_note", counted_update)
+    monkeypatch.setattr(main, "delete_personal_note", counted_delete)
+    try:
+        rejected_update = client.post(
+            f"/flights/{flight_id}/notes/{note['id']}/update",
+            data={
+                "placement": "destination",
+                "note_text": "This stale update must never be stored.",
+                "include_level1": "on",
+                "include_level2": "on",
+            },
+        )
+        rejected_delete = client.post(
+            f"/flights/{flight_id}/notes/{note['id']}/delete",
+        )
+    finally:
+        database.restore_analysis_state(
+            flight_id,
+            str(claimed["status"]),
+            claimed["notes"],
+            claimed["last_error"],
+            tenant_id=main._dashboard_tenant_id(),
+        )
+
+    stored_note = database.get_personal_note(flight_id, int(note["id"]))
+    assert rejected_update.status_code == 303
+    assert rejected_delete.status_code == 303
+    assert "notice=analysis-running" in rejected_update.headers["location"]
+    assert "notice=analysis-running" in rejected_delete.headers["location"]
+    assert mutation_calls == {"update": 0, "delete": 0}
+    assert stored_note is not None
+    assert dict(stored_note) == note_snapshot
+    for field, path in artifact_paths.items():
+        assert path.read_bytes() == artifact_bytes[field]

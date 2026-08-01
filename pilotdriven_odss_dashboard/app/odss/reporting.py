@@ -180,6 +180,10 @@ def _source_reference_line(reference: dict[str, Any]) -> str | None:
         parts.append(pages)
     if reference.get("retrieved_at_utc"):
         parts.append(f"retrieved {_utc_display(reference['retrieved_at_utc'])}")
+    if reference.get("observed_at_utc"):
+        parts.append(f"observed {_utc_display(reference['observed_at_utc'])}")
+    if reference.get("issued_at_utc"):
+        parts.append(f"issued {_utc_display(reference['issued_at_utc'])}")
     validity = [
         value
         for value in (
@@ -196,6 +200,8 @@ def _source_reference_line(reference: dict[str, Any]) -> str | None:
         parts.append("approved source unavailable - review required")
     elif reference.get("availability_status") == "source-incomplete":
         parts.append("coverage incomplete - review required")
+    if reference.get("source_url"):
+        parts.append(str(reference["source_url"]))
     return "Evidence: " + "; ".join(parts) + "."
 
 
@@ -217,9 +223,12 @@ def _section_source_lines(
                 reference.get("revision"),
                 reference.get("section"),
                 reference.get("retrieved_at_utc"),
+                reference.get("observed_at_utc"),
+                reference.get("issued_at_utc"),
                 reference.get("valid_from_utc"),
                 reference.get("valid_to_utc"),
                 reference.get("availability_status"),
+                reference.get("source_url"),
             )
             target = consolidated.setdefault(key, dict(reference))
             target["pages"] = sorted(
@@ -348,8 +357,8 @@ def _automatic_section(
         )
     if engine == "notam" and len(selected_findings) < len(engine_findings):
         lines.append(
-            f"{len(engine_findings) - len(selected_findings)} duplicate or lower-priority "
-            "applicable NOTAM record(s) retained in audit evidence."
+            f"{len(engine_findings) - len(selected_findings)} additional grouped "
+            "applicable NOTAM row(s) continue in expanded Level 2 and analysis evidence."
         )
     return {
         "engine": engine,

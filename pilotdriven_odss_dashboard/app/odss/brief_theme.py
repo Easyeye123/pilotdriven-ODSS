@@ -1,7 +1,7 @@
 """Shared PilotDriven v1.3 brief theme: fonts, palette, header and footer.
 
 The visual contract is the approved v1.3 reference brief set: condensed
-sans typography, deep-navy pages, a three-line flight header (date + BLK,
+sans typography, deep-navy pages, a three-line flight header (date + BLOCK,
 UTC schedule, local times), per-page SOURCE chips and the
 ``PILOTDRIVEN ODSS | <flight> | CFP OFP <id> | <type> <reg> | <date>``
 footer.
@@ -10,10 +10,12 @@ footer.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import airportsdata
 from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -63,24 +65,10 @@ GREEN = colors.HexColor("#38C18C")
 AMBER = colors.HexColor("#F4A91D")
 TEAL = colors.HexColor("#35C0BC")
 
-# City label and canonical zone for local-time header lines. Airports not
-# listed simply omit their local-time segment; UTC is always shown.
-_AIRPORT_LOCAL = {
-    "WSSS": ("SIN", "Asia/Singapore"),
-    "WMKK": ("KUL", "Asia/Kuala_Lumpur"),
-    "VOMM": ("MAA", "Asia/Kolkata"),
-    "EKCH": ("CPH", "Europe/Copenhagen"),
-    "ESMS": ("MMX", "Europe/Stockholm"),
-    "EKBI": ("BLL", "Europe/Copenhagen"),
-    "EDDF": ("FRA", "Europe/Berlin"),
-    "KJFK": ("JFK", "America/New_York"),
-    "LTFM": ("IST", "Europe/Istanbul"),
-    "LTAC": ("ANK", "Europe/Istanbul"),
-    "UBBB": ("BAK", "Asia/Baku"),
-    "UTAA": ("ASB", "Asia/Ashgabat"),
-    "VIDP": ("DEL", "Asia/Kolkata"),
-    "OPLR": ("LHE", "Asia/Karachi"),
-}
+@lru_cache(maxsize=1)
+def _airport_local_registry() -> dict[str, airportsdata.Airport]:
+    """Load the pinned offline ICAO-to-IANA registry once per process."""
+    return airportsdata.load("ICAO")
 
 
 def _parse_utc(value: Any) -> datetime | None:
@@ -96,13 +84,25 @@ def _parse_utc(value: Any) -> datetime | None:
 
 
 def local_time_segment(icao: Any, utc_value: Any) -> str | None:
-    """``SIN 30 JUL 0005 UTC+8`` for a known airport, else None."""
-    entry = _AIRPORT_LOCAL.get(str(icao or "").upper())
+    """``SIN 30 JUL 0005 UTC+8`` for a known airport, else None.
+
+    The airport-to-zone relationship comes from a pinned offline dataset; the
+    offset itself always comes from IANA rules for the flight instant. No GPT,
+    browser lookup, fixed UTC offset, or longitude guess participates.
+    """
+    code = str(icao or "").upper()
+    entry = _airport_local_registry().get(code)
     moment = _parse_utc(utc_value)
     if not entry or moment is None:
         return None
-    label, zone = entry
-    local = moment.astimezone(ZoneInfo(zone))
+    label = str(entry.get("iata") or code)
+    zone = str(entry.get("tz") or "")
+    if not zone:
+        return None
+    try:
+        local = moment.astimezone(ZoneInfo(zone))
+    except ZoneInfoNotFoundError:
+        return None
     offset = local.utcoffset()
     total_minutes = int(offset.total_seconds() // 60) if offset else 0
     hours, minutes = divmod(abs(total_minutes), 60)
@@ -112,13 +112,13 @@ def local_time_segment(icao: Any, utc_value: Any) -> str | None:
 
 
 def block_time_label(flight: dict[str, Any]) -> str | None:
-    """Scheduled block ``BLK 13:05`` from the CFP departure/arrival times."""
+    """Scheduled ``BLOCK 13:05`` from the CFP departure/arrival times."""
     dep = _parse_utc(flight.get("scheduled_departure_utc"))
     arr = _parse_utc(flight.get("scheduled_arrival_utc"))
     if dep is None or arr is None or arr <= dep:
         return None
     minutes = int((arr - dep).total_seconds() // 60)
-    return f"BLK {minutes // 60}:{minutes % 60:02d}"
+    return f"BLOCK {minutes // 60}:{minutes % 60:02d}"
 
 
 def utc_hhmm(value: Any) -> str:
@@ -201,18 +201,19 @@ def draw_header(
     )
 
     # Right-hand schedule block.
-    schedule_x = width * 0.54
+    schedule_x = width * 0.50
     date_label = header_date_label(flight)
     block_label = block_time_label(flight)
-    canvas.setFillColor(TEXT)
-    canvas.setFont(SANS_BOLD, 8.6)
-    canvas.drawString(
-        schedule_x,
-        top - 6,
-        date_label + (f"    {block_label}" if block_label else ""),
-    )
     canvas.setFillColor(MUTED)
-    canvas.setFont(SANS, 6.8)
+    canvas.setFont(SANS_BOLD, 8.2)
+    canvas.drawString(schedule_x, top - 6, date_label)
+    if block_label:
+        date_width = pdfmetrics.stringWidth(date_label, SANS_BOLD, 8.2)
+        canvas.setFillColor(TEXT)
+        canvas.setFont(SANS_BOLD, 10.8)
+        canvas.drawString(schedule_x + date_width + 12, top - 6, block_label)
+    canvas.setFillColor(MUTED)
+    canvas.setFont(SANS, 7.2)
     utc_line = (
         "UTC  DEP "
         + utc_hhmm(flight.get("scheduled_departure_utc"))
@@ -228,11 +229,19 @@ def draw_header(
     arrival_segment = local_time_segment(
         flight.get("destination"), flight.get("scheduled_arrival_utc")
     )
-    if departure_segment and arrival_segment:
+    if departure_segment or arrival_segment:
+        departure_local = departure_segment or (
+            f"{str(flight.get('departure') or '').upper()} LOCAL UNAVAILABLE"
+        )
+        arrival_local = arrival_segment or (
+            f"{str(flight.get('destination') or '').upper()} LOCAL UNAVAILABLE"
+        )
+        canvas.setFillColor(TEXT)
+        canvas.setFont(SANS_BOLD, 7.2)
         canvas.drawString(
             schedule_x,
             top - 27,
-            f"LT   {departure_segment}  ->  {arrival_segment}",
+            f"LOCAL  {departure_local}  ->  {arrival_local}",
         )
 
     # Level pill.

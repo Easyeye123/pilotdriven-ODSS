@@ -189,6 +189,68 @@ def select_route_gate_rows(
     return [rows[index] for index in selected]
 
 
+def deferred_item_report_rows(
+    flight: dict[str, Any],
+    findings: Iterable[dict[str, Any]],
+    *,
+    limit: int | None = None,
+) -> list[dict[str, str]]:
+    """Return CFP-declared deferred items with an honest source status.
+
+    The declaration itself comes from CFP Page 1.  A model must never infer a
+    missing MEL/CDL condition, so the row stays review-required unless the
+    analysis already carries a governed-source result.
+    """
+
+    finding_list = [item for item in findings if isinstance(item, dict)]
+    rows: list[dict[str, str]] = []
+    for source_item in flight.get("deferred_items") or []:
+        if not isinstance(source_item, dict):
+            continue
+        item_type = _clean(source_item.get("item_type"), "DEFERRED").upper()
+        reference = _clean(source_item.get("reference"), "UNSPECIFIED").upper()
+        expected_engine = {
+            "MEL": "mel",
+            "CDL": "cdl",
+            "CDDL": "cddl",
+        }.get(item_type)
+        matching = next(
+            (
+                item
+                for item in finding_list
+                if item.get("engine") == expected_engine
+                and reference in _clean(item.get("title")).upper()
+            ),
+            None,
+        )
+        summary = _clean(
+            (matching or {}).get("summary"),
+            "Approved deferred-item source is unavailable.",
+        )
+        severity = _clean((matching or {}).get("severity"), "unknown").lower()
+        if severity == "unknown":
+            source_status = f"Approved {item_type} source review required. {summary}"
+        else:
+            source_status = summary
+        rows.append(
+            {
+                "label": f"{item_type} {reference}",
+                "description": _clean(
+                    source_item.get("description"),
+                    "Description was not parsed from CFP Page 1.",
+                ),
+                "restriction": _clean(
+                    source_item.get("company_remark"),
+                    "No company restriction was parsed from CFP Page 1.",
+                ),
+                "source_status": source_status,
+            }
+        )
+        if limit is not None and len(rows) >= limit:
+            break
+    return rows
+
+
 def profile_findings_for_terrain_event(
     event: dict[str, Any],
     findings: Iterable[dict[str, Any]],
@@ -292,6 +354,7 @@ def profile_coverage_label(findings: Iterable[dict[str, Any]]) -> str:
 __all__ = [
     "actm_utc_label",
     "build_route_gate_rows",
+    "deferred_item_report_rows",
     "is_confirmed_profile_finding",
     "profile_coverage_label",
     "profile_finding_label",

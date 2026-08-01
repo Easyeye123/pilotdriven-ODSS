@@ -169,7 +169,13 @@ class SurfaceBounds(_StrictModel):
 class SurfaceWindow(_StrictModel):
     startsAt: str | None = Field(default=None, max_length=64)
     endsAt: str | None = Field(default=None, max_length=64)
-    basis: Literal["filed-std-sta"]
+    basis: Literal[
+        "filed-std-sta",
+        "scheduled_departure",
+        "scheduled_arrival",
+        "actual_takeoff",
+        "calculated_destination_from_atot_and_cfp_actm",
+    ]
 
 
 class SurfaceCounts(_StrictModel):

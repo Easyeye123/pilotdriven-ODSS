@@ -44,12 +44,14 @@ from .pertinent_brief import (
 from .report_facts import (
     actm_utc_label,
     build_route_gate_rows,
+    deferred_item_report_rows,
     is_confirmed_profile_finding,
     profile_coverage_label,
     profile_finding_label,
     profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
+from .report_sections import level2_heading, level2_page
 from .surface_overlays import surface_mark_presentation
 
 
@@ -130,6 +132,8 @@ def _pilot_text(value: Any, fallback: str = "Not available") -> str:
 
 
 def _pilot_source_name(reference: dict[str, Any]) -> str:
+    if str(reference.get("provider") or "").lower() == "noaa-awc-data-api":
+        return "NOAA Aviation Weather Center"
     raw = " ".join(
         str(reference.get(key) or "")
         for key in ("provider", "display_title", "document_title")
@@ -224,6 +228,10 @@ def _source_label(finding: dict[str, Any]) -> str:
         parts.append(pages)
     if reference.get("retrieved_at_utc"):
         parts.append(f"retrieved {_utc(reference['retrieved_at_utc'])}")
+    if reference.get("observed_at_utc"):
+        parts.append(f"observed {_utc(reference['observed_at_utc'])}")
+    if reference.get("issued_at_utc"):
+        parts.append(f"issued {_utc(reference['issued_at_utc'])}")
     validity = [
         value
         for value in (
@@ -238,6 +246,8 @@ def _source_label(finding: dict[str, Any]) -> str:
         parts.append("coverage incomplete - review required")
     elif reference.get("availability_status") == "controlled-source-not-mounted":
         parts.append("approved source unavailable - review required")
+    if reference.get("source_url"):
+        parts.append(_pilot_text(reference["source_url"]))
     return f"Evidence: {'; '.join(part for part in parts if part)}."
 
 
@@ -248,6 +258,50 @@ def _compact_source_label(finding: dict[str, Any]) -> str:
         for item in (data.get("source_references") or [])
         if isinstance(item, dict)
     ]
+    official_opmet = [
+        item
+        for item in references
+        if str(item.get("provider") or "").lower() == "noaa-awc-data-api"
+    ]
+    if official_opmet:
+        def short_time(value: Any) -> str:
+            text = _text(value, "")
+            try:
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                return _pilot_text(text)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc).strftime("%d %b %H%MZ").upper()
+
+        observation = next(
+            (
+                short_time(item["observed_at_utc"])
+                for item in official_opmet
+                if item.get("observed_at_utc")
+            ),
+            "",
+        )
+        forecast = next(
+            (
+                (
+                    short_time(item["valid_from_utc"]),
+                    short_time(item["valid_to_utc"]),
+                )
+                for item in official_opmet
+                if item.get("valid_from_utc") and item.get("valid_to_utc")
+            ),
+            None,
+        )
+        return " / ".join(
+            part
+            for part in (
+                "NOAA Aviation Weather Center",
+                f"OBS {observation}" if observation else "",
+                f"TAF valid {forecast[0]}-{forecast[1]}" if forecast else "",
+            )
+            if part
+        )
     labels: list[str] = []
     for reference in references:
         source_type = str(reference.get("source_type") or "")
@@ -267,6 +321,8 @@ def _compact_source_label(finding: dict[str, Any]) -> str:
                 label += " / valid " + " to ".join(
                     _utc(value) for value in validity
                 )
+            elif reference.get("observed_at_utc"):
+                label += " / observed " + _utc(reference["observed_at_utc"])
         if label not in labels:
             labels.append(label)
         if len(labels) == 2:
@@ -754,7 +810,10 @@ def _notam_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
         tuple[str, str, str, str],
         dict[str, Any],
     ] = {}
-    for item in select_pertinent_notams(findings, limit=24):
+    for item in select_pertinent_notams(
+        findings,
+        limit=max(1, len(findings)),
+    ):
         data = item.get("data") or {}
         role = _text(data.get("role"), "Flight")
         station = _text(
@@ -1428,8 +1487,8 @@ def _page_one(
     findings: list[dict[str, Any]],
     briefing: dict[str, Any],
 ) -> None:
-    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - OPERATIONAL BRIEF", page_number=1)
-    top = _draw_title(canvas, "ANALYSIS OVERVIEW", top)
+    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - OPERATIONAL BRIEF", page_number=level2_page("analysis_overview"))
+    top = _draw_title(canvas, level2_heading("analysis_overview"), top)
     margin = 7 * mm
     gap = 3 * mm
     left_w = 185 * mm
@@ -1518,8 +1577,8 @@ def _page_two(
     findings: list[dict[str, Any]],
     briefing: dict[str, Any],
 ) -> None:
-    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - PERFORMANCE / AIRPORTS", page_number=2)
-    top = _draw_title(canvas, "PERFORMANCE, FUEL AND AIRPORT BASIS", top)
+    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - PERFORMANCE / AIRPORTS", page_number=level2_page("airport_basis"))
+    top = _draw_title(canvas, level2_heading("airport_basis"), top)
     margin = 7 * mm
     gap = 3 * mm
     cards_h = 20 * mm
@@ -1704,6 +1763,15 @@ def _page_two(
         ["PERTINENT NOTAMS", dep_notam, dep_notam_effect],
         ["SURFACE OVERLAY", dep_surface, dep_surface_effect],
     ]
+    deferred_rows = deferred_item_report_rows(flight, findings)
+    for item in deferred_rows:
+        left_rows.append(
+            [
+                item["label"],
+                f"{item['description']} / CFP restriction: {item['restriction']}",
+                item["source_status"],
+            ]
+        )
     right_rows = [
         ["RUNWAY / ARRIVAL", f"{flight.get('destination_runway') or '--'} / {destination}", "Planned CFP basis"],
         ["WEATHER", dest_weather, dest_weather_effect],
@@ -1750,7 +1818,7 @@ def _page_two(
             columns=(("ITEM", 0.23), ("EVIDENCE", 0.47), ("EFFECT", 0.30)),
             rows=rows,
             accent=accent,
-            max_rows=6,
+            max_rows=7,
             fill_height=True,
         )
 
@@ -1760,9 +1828,12 @@ def _page_three(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
     briefing: dict[str, Any],
+    rows: list[list[str]] | None = None,
+    *,
+    total_rows: int | None = None,
 ) -> None:
-    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - NOTAM APPLICABILITY", page_number=3)
-    top = _draw_title(canvas, "FLIGHT-WINDOW NOTAM APPLICABILITY", top)
+    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - NOTAM APPLICABILITY", page_number=level2_page("notam_detail"))
+    top = _draw_title(canvas, level2_heading("notam_detail"), top)
     margin = 7 * mm
     table_y = 35 * mm
     _draw_table(
@@ -1778,7 +1849,7 @@ def _page_three(
             ("WINDOW", 0.22),
             ("FLIGHT EFFECT", 0.23),
         ),
-        rows=_notam_rows(_grouped(findings).get("notam", [])),
+        rows=(rows if rows is not None else _notam_rows(_grouped(findings).get("notam", []))),
         accent=_HEADER,
         max_rows=14,
         empty_text="No pertinent time-applicable NOTAM was extracted; source coverage must still be checked.",
@@ -1793,7 +1864,76 @@ def _page_three(
         accent=_HEADER,
         body=(
             "Runway, airport, approach and navigation closures are shown first. "
-            "Lower-priority applicable records remain available in audit evidence."
+            + (
+                f"Rows 1-{len(rows or [])} of {total_rows} are shown; remaining applicable rows continue after the seven core pages."
+                if total_rows is not None and total_rows > len(rows or [])
+                else "Every grouped applicable row is shown."
+            )
+        ),
+    )
+
+
+def _page_notam_continuation(
+    canvas: pdf_canvas.Canvas,
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    rows: list[list[str]],
+    *,
+    page_number: int,
+    first_row_number: int,
+    total_rows: int,
+) -> None:
+    top = _draw_header(
+        canvas,
+        flight,
+        briefing,
+        label="LEVEL 2 - NOTAM CONTINUATION",
+        page_number=page_number,
+    )
+    last_row_number = first_row_number + len(rows) - 1
+    top = _draw_title(
+        canvas,
+        (
+            "FLIGHT-WINDOW NOTAM APPLICABILITY - "
+            f"ROWS {first_row_number}-{last_row_number} OF {total_rows}"
+        ),
+        top,
+    )
+    margin = 7 * mm
+    table_y = 35 * mm
+    _draw_table(
+        canvas,
+        x=margin,
+        y=table_y,
+        width=PAGE_SIZE[0] - 2 * margin,
+        height=top - table_y,
+        columns=(
+            ("STN / ROLE", 0.10),
+            ("REF", 0.14),
+            ("CONDITION", 0.31),
+            ("WINDOW", 0.22),
+            ("FLIGHT EFFECT", 0.23),
+        ),
+        rows=rows,
+        accent=_HEADER,
+        max_rows=14,
+    )
+    audit = (flight.get("audit_evidence") or {}).get("notam") or {}
+    source_count = int(audit.get("source_record_count") or total_rows)
+    time_applicable = int(audit.get("time_applicable_count") or total_rows)
+    duplicate_count = int(audit.get("semantic_duplicate_count") or 0)
+    _strip(
+        canvas,
+        x=margin,
+        y=18 * mm,
+        width=PAGE_SIZE[0] - 2 * margin,
+        height=13 * mm,
+        title="COVERAGE",
+        accent=_HEADER,
+        body=(
+            f"{total_rows} grouped applicable row(s) from {time_applicable} "
+            f"time-applicable / {source_count} source record(s); "
+            f"{duplicate_count} semantic duplicate(s) grouped."
         ),
     )
 
@@ -1804,8 +1944,8 @@ def _page_four(
     findings: list[dict[str, Any]],
     briefing: dict[str, Any],
 ) -> None:
-    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - EDTO / WEATHER", page_number=4)
-    top = _draw_title(canvas, "EDTO SECTORS AND SUITABILITY INPUTS", top)
+    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - EDTO / WEATHER", page_number=level2_page("edto_detail"))
+    top = _draw_title(canvas, level2_heading("edto_detail"), top)
     margin = 7 * mm
     gap = 3 * mm
     sectors = edto_sectors(flight.get("edto") or {})
@@ -2009,8 +2149,8 @@ def _page_five(
     findings: list[dict[str, Any]],
     briefing: dict[str, Any],
 ) -> None:
-    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - OCEANIC / FIR COMMUNICATIONS", page_number=5)
-    top = _draw_title(canvas, "OCEANIC AND FIR COMMUNICATIONS", top)
+    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - OCEANIC / FIR COMMUNICATIONS", page_number=level2_page("communications_detail"))
+    top = _draw_title(canvas, level2_heading("communications_detail"), top)
     margin = 7 * mm
     gap = 3 * mm
     group = _grouped(findings)
@@ -2105,8 +2245,8 @@ def _page_six(
     findings: list[dict[str, Any]],
     briefing: dict[str, Any],
 ) -> None:
-    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - TERRAIN / DEPRESSURISATION", page_number=6)
-    top = _draw_title(canvas, "HIGH-TERRAIN EXPOSURE AND PROFILE COVERAGE", top)
+    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - TERRAIN / DEPRESSURISATION", page_number=level2_page("terrain_detail"))
+    top = _draw_title(canvas, level2_heading("terrain_detail"), top)
     margin = 7 * mm
     gap = 3 * mm
     chart_h = 98 * mm
@@ -2238,8 +2378,8 @@ def _page_seven(
     briefing: dict[str, Any],
     warnings: list[str],
 ) -> None:
-    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - WEATHER / VAAC / PROMOTION", page_number=7)
-    top = _draw_title(canvas, "WEATHER, VAAC AND PROMOTION RESULT", top)
+    top = _draw_header(canvas, flight, briefing, label="LEVEL 2 - WEATHER / VAAC / PROMOTION", page_number=level2_page("weather_detail"))
+    top = _draw_title(canvas, level2_heading("weather_detail"), top)
     margin = 7 * mm
     gap = 3 * mm
     group = _grouped(findings)
@@ -2289,11 +2429,11 @@ def _page_seven(
         width=weather_w,
         height=panel_h,
         columns=(
-            ("LOCATION", 0.17),
-            ("UTC", 0.18),
-            ("WEATHER", 0.20),
-            ("FLIGHT EFFECT", 0.29),
-            ("SOURCE", 0.16),
+            ("LOCATION", 0.14),
+            ("UTC", 0.16),
+            ("WEATHER", 0.18),
+            ("FLIGHT EFFECT", 0.28),
+            ("SOURCE / VALIDITY", 0.24),
         ),
         rows=weather_rows,
         accent=_AMBER,
@@ -2378,7 +2518,7 @@ def render_level2_visual(
     map_image_path: Path | None = None,
     map_label: str | None = None,
 ) -> None:
-    """Render the fixed seven-page operational brief.
+    """Render seven core pages plus complete NOTAM/chart appendices.
 
     Page purposes are fixed publication structure. Flight-specific values,
     findings, map points, evidence and applicability remain deterministic
@@ -2386,7 +2526,11 @@ def render_level2_visual(
     """
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    pilot_findings = prepare_pilot_findings(findings, notam_limit=24)
+    notam_count = sum(item.get("engine") == "notam" for item in findings)
+    pilot_findings = prepare_pilot_findings(
+        findings,
+        notam_limit=max(1, notam_count),
+    )
     briefing = build_briefing_view(
         flight,
         pilot_findings,
@@ -2401,10 +2545,18 @@ def render_level2_visual(
     # hash-verified chart artifact, because the publication gate forbids a
     # release that names a profile without embedding its complete chart.
     chart_images = load_matched_chart_images(pilot_findings)
-    page_count = 7 + len(chart_images)
+    notam_rows = _notam_rows(_grouped(pilot_findings).get("notam", []))
+    first_notam_rows = notam_rows[:14]
+    continuation_chunks = [
+        notam_rows[index:index + 14]
+        for index in range(14, len(notam_rows), 14)
+    ]
+    continuation_count = len(continuation_chunks)
+    page_count = 7 + continuation_count + len(chart_images)
     flight["_l2_page_count"] = page_count
+    chart_first_page = 8 + continuation_count
     chart_page_numbers = {
-        image["chart_number"]: 8 + index
+        image["chart_number"]: chart_first_page + index
         for index, image in enumerate(chart_images)
     }
 
@@ -2413,7 +2565,14 @@ def render_level2_visual(
     pages = [
         lambda: _page_one(document, flight, pilot_findings, briefing),
         lambda: _page_two(document, flight, pilot_findings, briefing),
-        lambda: _page_three(document, flight, pilot_findings, briefing),
+        lambda: _page_three(
+            document,
+            flight,
+            pilot_findings,
+            briefing,
+            first_notam_rows,
+            total_rows=len(notam_rows),
+        ),
         lambda: _page_four(document, flight, pilot_findings, briefing),
         lambda: _page_five(document, flight, pilot_findings, briefing),
         lambda: draw_match_matrix_page(
@@ -2422,7 +2581,7 @@ def render_level2_visual(
             pilot_findings,
             width,
             height,
-            page_number=6,
+            page_number=level2_page("terrain_detail"),
             page_count=page_count,
             chart_page_numbers=chart_page_numbers,
         ),
@@ -2434,6 +2593,20 @@ def render_level2_visual(
             warnings,
         ),
     ]
+    for continuation_index, chunk in enumerate(continuation_chunks):
+        page_number = 8 + continuation_index
+        first_row_number = 15 + continuation_index * 14
+        pages.append(
+            lambda chunk=chunk, page_number=page_number, first_row_number=first_row_number: _page_notam_continuation(
+                document,
+                flight,
+                briefing,
+                chunk,
+                page_number=page_number,
+                first_row_number=first_row_number,
+                total_rows=len(notam_rows),
+            )
+        )
     for index, image in enumerate(chart_images):
         pages.append(
             lambda image=image, index=index: draw_source_chart_page(
@@ -2442,7 +2615,7 @@ def render_level2_visual(
                 image,
                 width,
                 height,
-                page_number=8 + index,
+                page_number=chart_first_page + index,
                 page_count=page_count,
             )
         )

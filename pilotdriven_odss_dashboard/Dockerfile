@@ -1,4 +1,4 @@
-FROM python:3.12.13-slim-trixie
+FROM python:3.12.13-slim-trixie AS dependencies
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,7 +18,28 @@ RUN apt-get purge --yes xvfb xserver-common libcups2t64
 RUN usermod --home /home/odss odss \
     && install -d --owner=odss --group=odss --mode=0750 /home/odss
 ENV HOME=/home/odss
+
+FROM dependencies AS source
+
 COPY --chown=odss:odss . .
+
+FROM source AS test
+
+USER root
+RUN pip install --no-cache-dir -r requirements-dev.txt
+USER 1000:1000
+RUN python -m pytest -q && touch /tmp/odss-tests-passed
+
+FROM dependencies AS runtime
+
+# Runtime receives only the service tree plus the one post-build browser probe;
+# the full test suite never ships in the production image. Both copies come
+# from the same source stage whose complete suite produced this marker.
+COPY --from=source --chown=1000:1000 /app/app ./app
+COPY --from=source --chown=1000:1000 /app/VERSION ./VERSION
+COPY --from=source --chown=1000:1000 /app/tests/check_webgl_runtime.py ./tests/check_webgl_runtime.py
+COPY --from=test /tmp/odss-tests-passed /app/.tests-passed
+
 USER 1000:1000
 EXPOSE 8000
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

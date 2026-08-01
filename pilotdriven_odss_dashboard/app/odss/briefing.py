@@ -19,6 +19,7 @@ from reportlab.pdfbase import pdfmetrics
 from .constants import edto_sectors, format_actm, format_kg
 from .engines import detect_terrain_events
 from .pilot_briefing import prepare_pilot_findings
+from .report_sections import level2_page
 
 
 _SEVERITY_RANK = {"information": 0, "unknown": 1, "warning": 2, "critical": 3}
@@ -1061,7 +1062,7 @@ def build_briefing_view(
         "sigmet": {
             "status": (flight.get("sigmet_review") or {}).get("status"),
             "page": (
-                4
+                level2_page("weather_detail")
                 if (flight.get("sigmet_review") or {}).get("status")
                 in {"affected", "review_required"}
                 else None
@@ -1070,7 +1071,7 @@ def build_briefing_view(
         "vaa": {
             "status": (flight.get("vaa_review") or {}).get("status"),
             "page": (
-                4
+                level2_page("weather_detail")
                 if (flight.get("vaa_review") or {}).get("status")
                 in {"affected", "review_required"}
                 else None
@@ -1079,7 +1080,7 @@ def build_briefing_view(
         "tropical_cyclone": {
             "status": (flight.get("tropical_cyclone_review") or {}).get("status"),
             "page": (
-                4
+                level2_page("weather_detail")
                 if (flight.get("tropical_cyclone_review") or {}).get("status")
                 in {"affected", "review_required"}
                 else None
@@ -1091,14 +1092,15 @@ def build_briefing_view(
             "warnings": len(warnings),
         },
         "quick_links": [
-            {"label": "Operational detail", "target": "operational_detail", "page": 2},
-            {"label": "Departure detail", "target": "departure_detail", "page": 2},
-            {"label": "Destination detail", "target": "destination_detail", "page": 2},
-            {"label": "Route / contingency", "target": "route_contingency", "page": 3},
-            {"label": "Communication plan", "target": "communications_detail", "page": 3},
-            {"label": "EDTO analysis", "target": "edto_detail", "page": 3},
+            {"label": "Analysis overview", "target": "analysis_overview", "page": level2_page("analysis_overview")},
+            {"label": "Airport / performance basis", "target": "airport_basis", "page": level2_page("airport_basis")},
+            {"label": "Airport / NOTAM detail", "target": "notam_detail", "page": level2_page("notam_detail")},
+            {"label": "EDTO analysis", "target": "edto_detail", "page": level2_page("edto_detail")},
+            {"label": "Communication plan", "target": "communications_detail", "page": level2_page("communications_detail")},
+            {"label": "Terrain / profile matrix", "target": "terrain_detail", "page": level2_page("terrain_detail")},
+            {"label": "Weather / VAAC review", "target": "weather_detail", "page": level2_page("weather_detail")},
             *(
-                [{"label": "SIGMET review", "target": "sigmet_detail", "page": 4}]
+                [{"label": "SIGMET review", "target": "sigmet_detail", "page": level2_page("weather_detail")}]
                 if (flight.get("sigmet_review") or {}).get("status")
                 in {"affected", "review_required"}
                 and not (flight.get("sigmet_review") or {}).get(
@@ -1107,13 +1109,13 @@ def build_briefing_view(
                 else []
             ),
             *(
-                [{"label": "Volcanic ash review", "target": "vaa_detail", "page": 4}]
+                [{"label": "Volcanic ash review", "target": "vaa_detail", "page": level2_page("weather_detail")}]
                 if (flight.get("vaa_review") or {}).get("status")
                 in {"affected", "review_required"}
                 else []
             ),
             *(
-                [{"label": "Tropical cyclone review", "target": "tropical_cyclone_detail", "page": 4}]
+                [{"label": "Tropical cyclone review", "target": "tropical_cyclone_detail", "page": level2_page("weather_detail")}]
                 if (flight.get("tropical_cyclone_review") or {}).get("status")
                 in {"affected", "review_required"}
                 else []

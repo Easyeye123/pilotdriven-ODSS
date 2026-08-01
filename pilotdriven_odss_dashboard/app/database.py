@@ -301,6 +301,37 @@ def create_personal_note(
         return int(cursor.lastrowid)
 
 
+def restore_personal_note(flight_id: int, note: dict[str, Any]) -> None:
+    """Restore an exact note row after a failed report regeneration.
+
+    Service note deletion is only complete when the matching analysis and PDFs
+    regenerate successfully.  Keeping the original id and timestamps lets the
+    API roll back a rejected deletion without leaving an already-open client
+    with a stale note identifier.
+    """
+    with connect() as conn:
+        if conn.execute("SELECT 1 FROM flights WHERE id=?", (flight_id,)).fetchone() is None:
+            raise LookupError(f"Flight {flight_id} not found")
+        conn.execute(
+            '''
+            INSERT INTO personal_notes (
+                id, flight_id, placement, note_text,
+                include_level1, include_level2, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                int(note["id"]),
+                flight_id,
+                str(note["placement"]),
+                str(note["note_text"]),
+                int(bool(note["include_level1"])),
+                int(bool(note["include_level2"])),
+                str(note["created_at"]),
+                str(note["updated_at"]),
+            ),
+        )
+
+
 def list_personal_notes(flight_id: int) -> list[sqlite3.Row]:
     with connect() as conn:
         return list(
@@ -385,11 +416,32 @@ def update_status(
             raise LookupError(f"Flight {flight_id} not found")
 
 
+def restore_analysis_state(
+    flight_id: int,
+    status: str,
+    notes: str | None,
+    last_error: str | None,
+    tenant_id: str | None = None,
+) -> None:
+    """Release an analysis claim back to an exact prior observable state."""
+    with connect() as conn:
+        cursor = conn.execute(
+            '''
+            UPDATE flights SET
+                status=?, notes=?, last_error=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND (? IS NULL OR tenant_id=?)
+            ''',
+            (status, notes, last_error, flight_id, tenant_id, tenant_id),
+        )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Flight {flight_id} not found")
+
+
 def save_timing_reference(
     flight_id: int,
-    actual_takeoff_utc: str,
-    reference_type: str,
-    reference_utc: str,
+    actual_takeoff_utc: str | None,
+    reference_type: str | None,
+    reference_utc: str | None,
     reference_waypoint: str | None = None,
     tenant_id: str | None = None,
 ) -> None:
@@ -418,33 +470,54 @@ def save_timing_reference(
             raise LookupError(f"Flight {flight_id} not found")
 
 
-def begin_analysis(flight_id: int, tenant_id: str | None = None) -> bool:
+def claim_analysis(
+    flight_id: int,
+    tenant_id: str | None = None,
+) -> sqlite3.Row | None:
+    """Atomically claim a flight and return its authoritative prior row.
+
+    ``BEGIN IMMEDIATE`` makes the read-and-transition one ownership decision.
+    A caller that acquired a stale HTTP snapshot therefore still receives the
+    latest completed row before applying any timing or personal-note mutation.
+    """
     with connect() as conn:
-        cursor = conn.execute(
+        conn.execute("BEGIN IMMEDIATE")
+        flight = conn.execute(
+            '''
+            SELECT * FROM flights
+            WHERE id=? AND (? IS NULL OR tenant_id=?)
+            ''',
+            (flight_id, tenant_id, tenant_id),
+        ).fetchone()
+        if flight is None:
+            raise LookupError(f"Flight {flight_id} not found")
+        if flight["status"] == "Processing":
+            return None
+        conn.execute(
             '''
             UPDATE flights SET
                 status='Processing',
                 notes='Parsing Lido CFP and running ODSS engines.',
                 last_error=NULL,
                 updated_at=CURRENT_TIMESTAMP
-            WHERE id=? AND (? IS NULL OR tenant_id=?) AND status != 'Processing'
+            WHERE id=? AND (? IS NULL OR tenant_id=?)
             ''',
             (flight_id, tenant_id, tenant_id),
         )
-        if cursor.rowcount == 1:
-            return True
-        if conn.execute(
-            "SELECT 1 FROM flights WHERE id=? AND (? IS NULL OR tenant_id=?)",
-            (flight_id, tenant_id, tenant_id),
-        ).fetchone() is None:
-            raise LookupError(f"Flight {flight_id} not found")
-        return False
+        return flight
+
+
+def begin_analysis(flight_id: int, tenant_id: str | None = None) -> bool:
+    """Backward-compatible boolean wrapper around :func:`claim_analysis`."""
+    return claim_analysis(flight_id, tenant_id) is not None
 
 
 def complete_analysis(
     flight_id: int,
     result: dict[str, Any],
     tenant_id: str | None = None,
+    *,
+    release_claim: bool = True,
 ) -> None:
     with connect() as conn:
         cursor = conn.execute(
@@ -459,7 +532,8 @@ def complete_analysis(
                 analysis_path=?, level1_report=?, level2_report=?,
                 level3_json=?, level3_report=?,
                 analysis_version=COALESCE(NULLIF(?, ''), analysis_version),
-                status='Completed', notes=?, last_error=NULL,
+                status=CASE WHEN ? THEN 'Completed' ELSE 'Processing' END,
+                notes=?, last_error=NULL,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND (? IS NULL OR tenant_id=?)
             ''',
@@ -476,6 +550,7 @@ def complete_analysis(
                 result.get("level3_json"),
                 result.get("level3_report"),
                 result.get("analysis_version", "0.6.0"),
+                int(release_claim),
                 (
                     f"Analysed {result.get('page_count', 0)} pages; "
                     f"{result.get('finding_count', 0)} findings; "

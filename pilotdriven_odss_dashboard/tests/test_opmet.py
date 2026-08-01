@@ -9,6 +9,7 @@ from app.odss.opmet import (
     enrich_official_opmet,
     fetch_awc_product,
 )
+from app.odss.engines import _official_weather_review_finding
 
 
 def _flight() -> dict:
@@ -80,10 +81,80 @@ def test_deduplicates_the_same_official_record(monkeypatch):
     flight = _flight()
     snapshots = _snapshots()
 
-    enrich_official_opmet(flight, snapshots=snapshots)
-    enrich_official_opmet(flight, snapshots=snapshots)
+    now = datetime(2026, 7, 25, 21, 35, tzinfo=timezone.utc)
+    enrich_official_opmet(flight, snapshots=snapshots, now=now)
+    enrich_official_opmet(flight, snapshots=snapshots, now=now)
 
     assert len(flight["weather"]) == 2
+
+
+def test_public_source_receipt_exposes_url_observation_and_forecast_validity(monkeypatch):
+    monkeypatch.setenv("ODSS_OPMET_SOURCE", "awc")
+    flight = _flight()
+
+    review = enrich_official_opmet(
+        flight,
+        snapshots=_snapshots(),
+        now=datetime(2026, 7, 25, 21, 35, tzinfo=timezone.utc),
+    )
+
+    metar, taf = flight["weather"]
+    assert metar["source_url"] == "https://aviationweather.gov/api/data/metar"
+    assert metar["observed_at_utc"] == "2026-07-25T21:30:00+00:00"
+    assert taf["source_url"] == "https://aviationweather.gov/api/data/taf"
+    assert taf["issue_time_utc"] == "2026-07-25T11:00:00+00:00"
+    assert taf["valid_from_utc"] == "2026-07-25T12:00:00+00:00"
+    assert taf["valid_to_utc"] == "2026-07-26T18:00:00+00:00"
+    assert review["products"]["METAR"]["retrieved_at_utc"] == "2026-07-25T21:35:00+00:00"
+    assert review["products"]["TAF"]["effective_end_utc"] == "2026-07-26T18:00:00+00:00"
+
+
+def test_expired_public_source_is_not_used_and_surfaces_review_required(monkeypatch):
+    monkeypatch.setenv("ODSS_OPMET_SOURCE", "awc")
+    flight = _flight()
+
+    review = enrich_official_opmet(
+        flight,
+        snapshots=_snapshots(),
+        now=datetime(2026, 7, 25, 22, 0, 1, tzinfo=timezone.utc),
+    )
+
+    assert flight["weather"] == []
+    assert review["status"] == "review_required"
+    assert "source_stale" in review["reason_codes"]
+    assert review["products"]["METAR"]["status"] == "stale"
+
+    # The analysis hook uses this exact deterministic finding, so the source
+    # failure cannot remain an invisible audit-only ledger entry.
+    gap = _official_weather_review_finding(review)
+    assert gap is not None
+    assert gap["severity"] == "unknown"
+    assert gap["data"]["window_status"] == "review_required"
+    assert gap["data"]["source_references"][0]["source_url"].startswith(
+        "https://aviationweather.gov/api/data/"
+    )
+
+
+def test_destination_taf_that_does_not_cover_arrival_fails_closed(monkeypatch):
+    monkeypatch.setenv("ODSS_OPMET_SOURCE", "awc")
+    snapshots = _snapshots()
+    snapshots["taf"][0]["records"][0]["validTimeTo"] = 1785009600  # 25 Jul 2000Z
+    flight = _flight()
+
+    review = enrich_official_opmet(
+        flight,
+        snapshots=snapshots,
+        now=datetime(2026, 7, 25, 19, 59, tzinfo=timezone.utc),
+    )
+
+    assert review["status"] == "review_required"
+    assert "essential_forecast_window_not_covered" in review["reason_codes"]
+    assert any(
+        gap["station"] == "WSSS"
+        and gap["window_start_utc"] == "2026-07-25T20:30:00+00:00"
+        and gap["window_end_utc"] == "2026-07-25T22:30:00+00:00"
+        for gap in review["coverage_gaps"]
+    )
 
 
 def test_204_is_valid_available_no_data():

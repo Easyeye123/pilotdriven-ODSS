@@ -88,10 +88,78 @@ def _weather_source_reference(
     return {
         "source_type": record.get("source") or "official_weather",
         "provider": record.get("provider"),
+        "display_title": (
+            "NOAA Aviation Weather Center"
+            if record.get("provider") == "noaa-awc-data-api"
+            else None
+        ),
+        "source_url": record.get("source_url"),
         "retrieved_at_utc": record.get("retrieved_at_utc"),
+        "observed_at_utc": record.get("observed_at_utc"),
+        "issued_at_utc": record.get("issue_time_utc"),
         "valid_from_utc": record.get("valid_from_utc"),
         "valid_to_utc": record.get("valid_to_utc"),
     }
+
+
+def _official_weather_review_finding(
+    review: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Surface official-source gaps as weather, never as an invisible ledger."""
+    if review.get("status") == "complete":
+        return None
+    reason_codes = list(review.get("reason_codes") or ["coverage_not_confirmed"])
+    human_reasons = {
+        "source_disabled": "The official public METAR/TAF connector is disabled.",
+        "unsupported_source": "The configured weather source is not approved by this connector.",
+        "airport_identifiers_unavailable": "The airport identifiers needed for the public weather lookup are unavailable.",
+        "source_unavailable": "The official public METAR/TAF source was unavailable.",
+        "source_stale": "The official public METAR/TAF receipt expired and was not used.",
+        "essential_forecast_missing": "A departure or destination TAF is missing.",
+        "station_product_missing": "One or more requested station products are missing.",
+        "essential_forecast_window_not_covered": "A departure or destination TAF does not cover the operating window.",
+        "forecast_window_not_covered": "A requested station TAF does not cover its operating window.",
+        "coverage_not_confirmed": "Official public weather coverage was not confirmed.",
+    }
+    products = review.get("products") or {}
+    references: list[dict[str, Any]] = []
+    for product_name in ("METAR", "TAF"):
+        product = products.get(product_name) or {}
+        if not product:
+            continue
+        references.append({
+            "source_type": "official_weather",
+            "provider": review.get("provider"),
+            "display_title": "NOAA Aviation Weather Center",
+            "section": product_name,
+            "source_url": product.get("source_url"),
+            "retrieved_at_utc": product.get("retrieved_at_utc"),
+            "valid_from_utc": product.get("effective_start_utc"),
+            "valid_to_utc": product.get("effective_end_utc"),
+            "availability_status": "source-incomplete",
+        })
+    return finding(
+        "weather",
+        "unknown",
+        "Official weather source review required",
+        "Official public METAR/TAF coverage is incomplete.",
+        [
+            *(human_reasons.get(code, code.replace("_", " ").capitalize() + ".") for code in reason_codes),
+            "Missing, expired or non-covering weather is not a no-significant-weather result.",
+        ],
+        {
+            "phase": "Flight",
+            "location": "",
+            "utc_window": "Official source coverage check",
+            "mechanism": "; ".join(human_reasons.get(code, code.replace("_", " ")) for code in reason_codes),
+            "flight_effect": "Review current official operational weather before use.",
+            "window_status": "review_required",
+            "window_status_text": "Official public weather coverage is incomplete — review required.",
+            "provider": review.get("provider"),
+            "reason_codes": reason_codes,
+            "source_references": references,
+        },
+    )
 
 
 # Hazard reviews share one deterministic route x time x flight-level evaluator,
@@ -527,6 +595,91 @@ def _weather_role_window(
     return "Enroute", departure_utc, arrival_utc
 
 
+def _compact_taxiway_identifiers(identifiers: list[str]) -> list[str]:
+    """Compress a published taxiway list without inventing missing members."""
+
+    ordered_prefixes: list[str] = []
+    bare: set[str] = set()
+    numbers: dict[str, set[int]] = {}
+    for identifier in identifiers:
+        match = re.fullmatch(r"([A-Z])(\d{1,2})?", identifier)
+        if not match:
+            continue
+        prefix, number = match.groups()
+        if prefix not in ordered_prefixes:
+            ordered_prefixes.append(prefix)
+        if number is None:
+            bare.add(prefix)
+        else:
+            numbers.setdefault(prefix, set()).add(int(number))
+
+    compact: list[str] = []
+    for prefix in ordered_prefixes:
+        if prefix in bare:
+            compact.append(prefix)
+        values = sorted(numbers.get(prefix, set()))
+        start = end = None
+        for value in [*values, None]:
+            if value is not None and start is None:
+                start = end = value
+                continue
+            if value is not None and end is not None and value == end + 1:
+                end = value
+                continue
+            if start is not None and end is not None:
+                compact.append(
+                    f"{prefix}{start}-{prefix}{end}"
+                    if end > start
+                    else f"{prefix}{start}"
+                )
+            start = end = value
+    return compact
+
+
+def _associated_taxiway_subject(upper: str) -> str | None:
+    """Summarise a tabulated associated-taxiway closure from its actual list."""
+
+    if not re.search(
+        r"\bCLOSURE\s+OF\s+(?:TWY|TAXIWAY)\s+ASSOCIATED\s+WITH\s+(?:RWY|RUNWAY)\s*\d{1,2}[LCR]?/\d{1,2}[LCR]?\b",
+        upper,
+    ):
+        return None
+    listed = re.search(
+        r"\bTWY\s+CLOSURE\s+PERIOD:.*?\b\d{4}UTC\s+"
+        r"(?P<list>TWY\s+.+?)(?:\s+ALL\s+MARKINGS|\Z)",
+        upper,
+    )
+    if not listed:
+        runway = re.search(r"\b(?:RWY|RUNWAY)\s*(\d{1,2}[LCR]?/\d{1,2}[LCR]?)", upper)
+        return f"listed TWYs associated with RWY {runway.group(1)}" if runway else None
+
+    list_text = listed.group("list")
+    between = re.search(
+        r"\bTWY\s+([A-Z]\d{0,2})\s+BTN\s+TWY\s+([A-Z]\d{0,2})\s+([A-Z]\d{0,2})\b",
+        list_text,
+    )
+    between_label = None
+    if between:
+        between_label = (
+            f"{between.group(1)} between {between.group(2)} and {between.group(3)}"
+        )
+        list_text = f"{list_text[:between.start()]} {list_text[between.end():]}"
+
+    identifiers: list[str] = []
+    for group in re.findall(r"\bTWY\s+(.+?)(?=\s+TWY\s+|\Z)", list_text):
+        identifiers.extend(re.findall(r"\b[A-Z](?:\d{1,2})?\b", group))
+    compact = _compact_taxiway_identifiers(identifiers)
+    if between_label:
+        compact.append(between_label)
+    if not compact:
+        return None
+    if len(compact) == 1:
+        joined = compact[0]
+    else:
+        joined = f"{', '.join(compact[:-1])}, and {compact[-1]}"
+    return f"TWYs {joined}"
+
+
 def _notam_subject(text: str, kind: str) -> str:
     upper = " ".join(text.upper().split())
     runway_pattern = r"(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
@@ -558,8 +711,69 @@ def _notam_subject(text: str, kind: str) -> str:
         ]
         return " ".join(part for part in parts if part)
     if kind in {"taxiway_closure", "taxiway_restriction"}:
-        match = re.search(rf"\b{taxiway_pattern}\b", upper)
-        return match.group(0).replace("TAXIWAY", "TWY") if match else "taxiway"
+        compound = re.search(
+            r"\b(?:TWY|TAXIWAY)\s+(?P<closed>[A-Z0-9][A-Z0-9/-]*)\s+AND\s+"
+            r"(?:THE\s+)?JUNCTION\s+OF\s+(?:TWY|TAXIWAY)\s+(?P=closed)[,\s]+"
+            r"(?:TWY|TAXIWAY)\s+(?P<left>[A-Z0-9][A-Z0-9/-]*)\s+AND\s+"
+            r"(?:TWY|TAXIWAY)\s+(?P<right>[A-Z0-9][A-Z0-9/-]*)\b",
+            upper,
+        )
+        if compound:
+            return (
+                f"TWY {compound.group('closed')} and "
+                f"{compound.group('closed')}/{compound.group('left')}/{compound.group('right')} junction"
+            )
+        associated = _associated_taxiway_subject(upper)
+        if associated:
+            return associated
+        bounded = re.search(
+            r"\b(?:TWY|TAXIWAY)\s+(?P<name>[A-Z][A-Z0-9/-]*)\s+BTN\s+"
+            r"(?:TWY|TAXIWAY)\s+(?P<start>[A-Z][A-Z0-9/-]*)\s+AND\s+"
+            r"(?:(?:TWY|TAXIWAY)\s+)?(?P<end>[A-Z][A-Z0-9/-]*)\b",
+            upper,
+        )
+        if bounded:
+            return (
+                f"TWY {bounded.group('name')} between "
+                f"{bounded.group('start')} and {bounded.group('end')}"
+            )
+        invalid_identifiers = {
+            "AND",
+            "ASSOCIATED",
+            "CLSD",
+            "CLOSED",
+            "CLOSURE",
+            "INDICATOR",
+            "IS",
+            "LIGHT",
+            "LIGHTS",
+            "MARKINGS",
+            "PAVEMENT",
+            "WILL",
+            "WITH",
+        }
+        for match in re.finditer(
+            r"\b(?:TWY|TAXIWAY)\s+(?P<identifier>[A-Z][A-Z0-9/-]*)\b",
+            upper,
+        ):
+            identifier = match.group("identifier")
+            if identifier not in invalid_identifiers:
+                return f"TWY {identifier}"
+        phonetic = re.search(r"\b([A-Z]{2,})\s+TWY\b", upper)
+        turnoffs = re.search(
+            r"\bHIGH-SPEED\s+TURN-OFFS?\s+([A-Z]\d{1,2})\s+AND\s+([A-Z]\d{1,2})\b",
+            upper,
+        )
+        if phonetic and turnoffs:
+            return (
+                f"{phonetic.group(1).title()} TWY segment and "
+                f"{turnoffs.group(1)}/{turnoffs.group(2)} high-speed turn-offs"
+            )
+        if phonetic:
+            return f"{phonetic.group(1).title()} TWY segment"
+        if turnoffs:
+            return f"{turnoffs.group(1)}/{turnoffs.group(2)} high-speed turn-offs"
+        return "taxiway operational area"
     if kind == "apron_stand_closure":
         match = re.search(
             r"\b(?:ACFT\s+STAND|STAND|APRON|APN|RAMP|GATE)\s+[A-Z0-9][A-Z0-9/-]*\b",
@@ -575,6 +789,19 @@ def _notam_operational_summary(
     role: str,
     applicability: str = "active",
 ) -> str:
+    upper = " ".join(text.upper().split())
+    if kind == "taxiway_restriction" and "CONSTRUCTION SURVEY LASER" in upper:
+        taxilanes: list[str] = []
+        for group in re.findall(r"\bTAXILANE\s+((?:[A-Z]\d+(?:,\s*|\s+AND\s+)?)+)", upper):
+            for identifier in re.findall(r"\b[A-Z]\d+\b", group):
+                if identifier not in taxilanes:
+                    taxilanes.append(identifier)
+        locations = "/".join(taxilanes) if taxilanes else "the published taxilanes"
+        phase = role.replace("destination alternate", "alternate").replace("informational", "flight")
+        return (
+            f"Construction survey lasers near taxilanes {locations} require "
+            f"operational review during the applicable {phase} window."
+        )
     subject = _notam_subject(text, kind)
     phase = role.replace("destination alternate", "alternate").replace("informational", "flight")
     if applicability == "review":
@@ -1414,6 +1641,17 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         findings.extend(hazard_findings)
         warnings.extend(hazard_warnings)
 
+    official_weather_gap = (
+        _official_weather_review_finding(flight["official_weather_review"])
+        if isinstance(flight.get("official_weather_review"), dict)
+        else None
+    )
+    if official_weather_gap is not None:
+        findings.append(official_weather_gap)
+        warnings.append(
+            "Official public METAR/TAF coverage is incomplete; review current operational weather."
+        )
+
     alternate_airports = {a["airport"] for a in flight["alternates"]}
     edto_airports = {a["airport"] for a in flight["edto"]["airports"]}
     edto_periods: dict[str, tuple[datetime, datetime]] = {}
@@ -1815,7 +2053,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             },
         ))
 
-    selected_notams: list[dict[str, Any]] = []
+    unique_applicable_notams: list[dict[str, Any]] = []
+    priority_view_notams: list[dict[str, Any]] = []
     seen_notams: dict[tuple[str, ...], dict[str, Any]] = {}
     for item in sorted(applicable_notams, key=notam_sort_key):
         data = item.get("data") or {}
@@ -1829,16 +2068,25 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             continue
         if semantic_key is not None:
             seen_notams[semantic_key] = item
-        if len(selected_notams) >= 24:
-            audit_record["pilot_status"] = "lower_priority_audit_only"
-            continue
-        audit_record["pilot_status"] = "selected"
-        selected_notams.append(item)
-    findings.extend(selected_notams)
+        unique_applicable_notams.append(item)
+        if len(priority_view_notams) < 24:
+            audit_record["pilot_status"] = "selected"
+            priority_view_notams.append(item)
+        else:
+            # Keep the complete deterministic result available to Level 2 and
+            # the API.  Level 1 remains deliberately bounded through
+            # prepare_pilot_findings(); "level2_only" is not hidden audit data.
+            audit_record["pilot_status"] = "level2_only"
+    findings.extend(unique_applicable_notams)
     audit_evidence["notam"] = {
         "source_record_count": len(flight["notams"]),
         "time_applicable_count": len(applicable_notams),
-        "pilot_facing_count": len(selected_notams),
+        "pilot_facing_count": len(unique_applicable_notams),
+        "priority_view_count": len(priority_view_notams),
+        "level2_only_count": sum(
+            item["pilot_status"] == "level2_only"
+            for item in notam_audit_records
+        ),
         "semantic_duplicate_count": sum(
             item["pilot_status"] == "semantic_duplicate"
             for item in notam_audit_records
@@ -1848,7 +2096,6 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "outside_time_window",
                 "outside_schedule",
                 "semantic_duplicate",
-                "lower_priority_audit_only",
             }
             for item in notam_audit_records
         ),
