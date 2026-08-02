@@ -61,6 +61,7 @@ from .odss_map_v06.api import (
 from .odss_map_v06.config import MapSettings
 from .odss_map_v06.report_worker import render_reports_for_analysis
 from .odss.parser import validate_pdf
+from .odss.pilot_briefing import select_pertinent_notams
 from .odss.timing import (
     combine_utc_date_time,
     derive_timing_reference,
@@ -1283,6 +1284,65 @@ def _service_summary(flight) -> dict:
     }
 
 
+SERVICE_NOTAM_FINDING_LIMIT = 64
+
+
+def _service_notam_snapshot(analysis: dict) -> dict:
+    """Rank, deduplicate and bound evaluated NOTAMs with omission provenance."""
+
+    source_findings = [
+        item
+        for item in (analysis.get("findings") or [])
+        if item.get("engine") == "notam"
+    ]
+    ranked_findings = (
+        select_pertinent_notams(source_findings, limit=len(source_findings))
+        if source_findings
+        else []
+    )
+    selected_findings = ranked_findings[:SERVICE_NOTAM_FINDING_LIMIT]
+    result: list[dict] = []
+    for item in selected_findings:
+        data = item.get("data") or {}
+        source_references = data.get("source_references") or []
+        source_pages = [
+            page
+            for source in source_references
+            for page in (source.get("pages") or [])
+            if isinstance(page, int) and page > 0
+        ]
+        result.append({
+            "notam_id": data.get("notam_id"),
+            "location": data.get("location"),
+            "category": data.get("category"),
+            "text": data.get("raw_text"),
+            "summary": item.get("summary"),
+            "role": data.get("role"),
+            "applicability": data.get("applicability"),
+            "validity_status": data.get("validity_status"),
+            "schedule_status": data.get("schedule_status"),
+            "valid_from_utc": data.get("valid_from_utc"),
+            "valid_to_utc": data.get("valid_to_utc"),
+            "window_start_utc": data.get("window_start_utc"),
+            "window_end_utc": data.get("window_end_utc"),
+            "schedule": data.get("schedule"),
+            "state_at_reference": data.get("stateAtReference"),
+            "reference_at": data.get("referenceAt"),
+            "source_page": source_pages[0] if source_pages else None,
+        })
+    return {
+        "items": result,
+        "summary": {
+            "source_count": len(source_findings),
+            "ranked_count": len(ranked_findings),
+            "returned_count": len(result),
+            "omitted_count": max(0, len(ranked_findings) - len(result)),
+            "duplicate_count": max(0, len(source_findings) - len(ranked_findings)),
+            "limit": SERVICE_NOTAM_FINDING_LIMIT,
+        },
+    }
+
+
 def _service_personal_notes(flight_id: int) -> list[dict]:
     return [
         serialise_personal_note(dict(note))
@@ -1404,6 +1464,7 @@ def get_service_briefing(request: Request, analysis_id: str):
     flight, analysis = _service_analysis(analysis_id, identity)
     view = analysis.get("view") or {}
     analysis_flight = analysis.get("flight") or {}
+    notam_snapshot = _service_notam_snapshot(analysis)
     return JSONResponse({
         "analysis_id": analysis_id,
         "schema_version": analysis.get("schema_version"),
@@ -1412,6 +1473,8 @@ def get_service_briefing(request: Request, analysis_id: str):
         "timing": view.get("timing"),
         "personal_notes": analysis_flight.get("personal_notes") or [],
         "warnings": view.get("warnings") or [],
+        "notam_findings": notam_snapshot["items"],
+        "notam_findings_summary": notam_snapshot["summary"],
         "generated_at_utc": view.get("generated_at_utc"),
         "report_links": _service_summary(flight)["links"],
     })

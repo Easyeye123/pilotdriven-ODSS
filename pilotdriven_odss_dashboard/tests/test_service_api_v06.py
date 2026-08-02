@@ -65,6 +65,40 @@ N03 10.0 E105 40.0 090
         document.close()
 
 
+def _build_lido_pdf_with_notam_windows() -> bytes:
+    document = fitz.open(stream=_build_lido_pdf(), filetype="pdf")
+    try:
+        page = document.new_page()
+        page.insert_textbox(
+            (36, 36, 560, 806),
+            """NOTAM
+WSSS/SIN SINGAPORE CHANGI
+------------------------
++RUNWAY+
+ACTIVE1/26 VALID: 11-JUL-26 0900 - 11-JUL-26 1200
+DAILY 1000-1100
+RWY 02L CLSD
+EXPIRED1/26 VALID: 11-JUL-26 0800 - 11-JUL-26 0929
+RWY 02C CLSD
+FUTURE1/26 VALID: 11-JUL-26 1131 - 11-JUL-26 1300
+RWY 20R CLSD
+OFFSCH1/26 VALID: 11-JUL-26 0900 - 11-JUL-26 1200
+DAILY 1300-1400
+RWY 20C CLSD
+BADC1/26 VALID: 32-JUL-26 1000 - 11-ABC-26 1200
+RWY 02R CLSD
+BADD1/26 VALID: 11-JUL-26 0900 - 11-JUL-26 1200
+MON-FRI EXC HOL 1000-1100
+RWY 20L CLSD
+""",
+            fontname="courier",
+            fontsize=9,
+        )
+        return document.tobytes()
+    finally:
+        document.close()
+
+
 @pytest.fixture
 def service_app(
     tmp_path: Path,
@@ -386,6 +420,126 @@ def test_service_analysis_exposes_stable_contract_and_explicit_fallback(
     )
     assert level3_report.status_code == 200
     assert level3_report.content.startswith(b"%PDF")
+
+
+def test_service_briefing_exposes_only_flight_evaluated_notam_findings(
+    service_app: TestClient,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={
+            "file": (
+                "SQ304-notam-windows.pdf",
+                _build_lido_pdf_with_notam_windows(),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    response = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=_authorization(),
+    )
+
+    assert response.status_code == 200
+    findings = {
+        item["notam_id"]: item for item in response.json()["notam_findings"]
+    }
+    assert response.json()["notam_findings_summary"] == {
+        "source_count": 3,
+        "ranked_count": 3,
+        "returned_count": 3,
+        "omitted_count": 0,
+        "duplicate_count": 0,
+        "limit": main.SERVICE_NOTAM_FINDING_LIMIT,
+    }
+    assert set(findings) == {"ACTIVE1/26", "BADC1/26", "BADD1/26"}
+
+    active = findings["ACTIVE1/26"]
+    assert active == {
+        "notam_id": "ACTIVE1/26",
+        "location": "WSSS",
+        "category": "RUNWAY",
+        "text": "DAILY 1000-1100 RWY 02L CLSD",
+        "summary": (
+            "Rwy 02L closed or unavailable during the applicable departure "
+            "window."
+        ),
+        "role": "departure",
+        "applicability": "active",
+        "validity_status": "overlaps_flight_window",
+        "schedule_status": "overlaps_flight_window",
+        "valid_from_utc": "2026-07-11T09:00:00+00:00",
+        "valid_to_utc": "2026-07-11T12:00:00+00:00",
+        "window_start_utc": "2026-07-11T09:30:00+00:00",
+        "window_end_utc": "2026-07-11T11:30:00+00:00",
+        "schedule": "DAILY 1000-1100",
+        "state_at_reference": "active_at_reference",
+        "reference_at": "2026-07-11T10:30:00+00:00",
+        "source_page": 8,
+    }
+
+    malformed_validity = findings["BADC1/26"]
+    assert malformed_validity["applicability"] == "review"
+    assert malformed_validity["validity_status"] == "review_required"
+    assert malformed_validity["schedule_status"] == "not_applicable"
+    assert malformed_validity["state_at_reference"] == "unknown_at_reference"
+
+    unsupported_schedule = findings["BADD1/26"]
+    assert unsupported_schedule["applicability"] == "review"
+    assert unsupported_schedule["validity_status"] == "overlaps_flight_window"
+    assert unsupported_schedule["schedule_status"] == "review_required"
+    assert unsupported_schedule["state_at_reference"] == "unknown_at_reference"
+
+    # These records are valid source text, but ODSS evaluated them as outside
+    # the active flight window or outside their item-D schedule. They must not
+    # be promoted into the bounded service briefing.
+    assert "EXPIRED1/26" not in findings
+    assert "FUTURE1/26" not in findings
+    assert "OFFSCH1/26" not in findings
+
+
+def test_service_notam_boundary_ranks_before_bounding_and_discloses_omissions() -> None:
+    def notam(index: int, *, active: bool = False) -> dict:
+        return {
+            "engine": "notam",
+            "severity": "critical" if active else "information",
+            "title": f"Synthetic finding {index}",
+            "summary": f"Synthetic finding {index}",
+            "data": {
+                "notam_id": f"N{index:03d}/26",
+                "location": "ZZZZ",
+                "category": "TEST",
+                "raw_text": f"Synthetic source text {index}",
+                "role": "destination",
+                "applicability": "active" if active else "review",
+                "validity_status": "overlaps_flight_window",
+                "schedule_status": "not_applicable",
+                "pertinence_rank": 0 if active else 9,
+                "priority_score": 999 if active else 0,
+                "source_references": [{"pages": [1]}],
+            },
+        }
+
+    source = [notam(index) for index in range(main.SERVICE_NOTAM_FINDING_LIMIT)]
+    source.append(notam(main.SERVICE_NOTAM_FINDING_LIMIT, active=True))
+    snapshot = main._service_notam_snapshot({"findings": source})
+
+    assert len(snapshot["items"]) == main.SERVICE_NOTAM_FINDING_LIMIT
+    assert snapshot["items"][0]["notam_id"] == (
+        f"N{main.SERVICE_NOTAM_FINDING_LIMIT:03d}/26"
+    )
+    assert snapshot["summary"] == {
+        "source_count": main.SERVICE_NOTAM_FINDING_LIMIT + 1,
+        "ranked_count": main.SERVICE_NOTAM_FINDING_LIMIT + 1,
+        "returned_count": main.SERVICE_NOTAM_FINDING_LIMIT,
+        "omitted_count": 1,
+        "duplicate_count": 0,
+        "limit": main.SERVICE_NOTAM_FINDING_LIMIT,
+    }
 
 
 def test_service_analysis_request_id_is_idempotent(

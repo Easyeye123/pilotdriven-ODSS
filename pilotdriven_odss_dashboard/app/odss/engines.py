@@ -2065,13 +2065,16 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         }
         notam_audit_records.append(audit_record)
         applicability = "active"
+        validity_status = "overlaps_flight_window"
         if record.get("validity_review"):
             applicability = "review"
+            validity_status = "review_required"
             warnings.append(f"{record['notam_id']}: B/C validity could not be parsed; manual review required.")
         elif not _intervals_overlap(valid_from, valid_to, window_start, window_end):
             audit_record["pilot_status"] = "outside_time_window"
             continue
         schedule = record.get("schedule")
+        schedule_status = "not_applicable"
         if schedule:
             schedule_active = _schedule_overlaps(schedule, window_start, window_end)
             if schedule_active is False:
@@ -2079,10 +2082,16 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 continue
             if schedule_active is None:
                 applicability = "review"
+                schedule_status = "review_required"
                 warnings.append(f"{record['notam_id']}: D schedule could not be evaluated; manual review required.")
+            else:
+                schedule_status = "overlaps_flight_window"
         elif record.get("schedule_review"):
             applicability = "review"
+            schedule_status = "review_required"
             warnings.append(f"{record['notam_id']}: schedule language could not be structured; manual review required.")
+        audit_record["validity_status"] = validity_status
+        audit_record["schedule_status"] = schedule_status
         pertinence_rank, pertinence_kind = notam_pertinence(
             str(record["text"]),
             str(record["category"]),
@@ -2126,6 +2135,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "pertinence_rank": pertinence_rank,
                 "pertinence_kind": pertinence_kind,
                 "applicability": applicability,
+                "validity_status": validity_status,
+                "schedule_status": schedule_status,
                 "schedule": schedule,
                 "valid_from_utc": record["valid_from_utc"],
                 "valid_to_utc": record.get("valid_to_utc"),
