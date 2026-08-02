@@ -29,6 +29,7 @@ from .pilot_briefing import (
     notam_sort_key,
     pilot_notam_key,
 )
+from .reviewed_publications import reviewed_publication_for_notam
 from .weather_timing import summarize_metar_for_window, summarize_taf_for_window
 
 _WEEKDAYS = {name: index for index, name in enumerate(("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"))}
@@ -831,6 +832,64 @@ def _notam_operational_summary(
             "assess against expected runway and approach use."
         )
     return f"Operational airport restriction requires review during the applicable {phase} window."
+
+
+def taxiway_operational_details(text: str, kind: str) -> list[str]:
+    """Structure bounded visual-aid facts explicitly present in taxiway text."""
+
+    if kind not in {"taxiway_closure", "taxiway_restriction"}:
+        return []
+    raw = " ".join(str(text or "").upper().split())
+    clauses = [
+        clause.strip()
+        for clause in re.split(r"(?<=[.!?])\s+", raw)
+        if clause.strip()
+    ]
+
+    def clause_matches(*patterns: str) -> bool:
+        closed_taxiway = (
+            r"(?:\b(?:CLSD|CLOSED)\s+(?:TWY|TAXIWAY)\b|"
+            r"\b(?:TWY|TAXIWAY)(?:\s+[A-Z0-9/-]+)?\s+"
+            r"(?:CLSD|CLOSED)\b)"
+        )
+        return any(
+            re.search(closed_taxiway, clause)
+            and all(re.search(pattern, clause) for pattern in patterns)
+            for clause in clauses
+        )
+
+    details: list[str] = []
+    if clause_matches(
+        r"\bMARKINGS?\b",
+        r"\bLEAD(?:ING)?\b",
+        r"\bINTO\b",
+        r"\bREMOV(?:E|ED|AL)?\b",
+    ):
+        details.append("lead_in_markings_removed")
+    if clause_matches(
+        r"\bMARKERBOARDS?\b",
+        r"\b(?:CLSD|CLOSED)\s+MARKINGS?\b",
+        r"\bYELLOW\s+CROSS(?:ES)?\b",
+        r"\bDEMARCATE\b",
+    ):
+        details.append("markerboards_yellow_cross")
+    if clause_matches(
+        r"\bUNSERVICEABILITY\s+MARKERS?\b",
+        r"\bFIXED\s+RED\s+(?:LGT|LGTS|LIGHT|LIGHTS)\b",
+        r"\b(?:LGTD|LIT|LIGHTED)\b",
+        r"\b(?:NGT|NIGHT)\b",
+        r"\bLOW\s+VIS(?:IBILITY|\s+COND(?:ITIONS?)?)?\b",
+    ):
+        details.append("marker_red_lights")
+    if clause_matches(
+        r"\b(?:TWY\s+CL\s+LGT|TAXIWAY\s+(?:CENTRELINE|CENTERLINE)\s+LIGHTS?)\b",
+        r"\bLEAD(?:ING)?\b",
+        r"\bINTO\b",
+        r"\b(?:WI|WITHIN)\b",
+        r"\bNOT\s+(?:BE\s+)?IN\s+USE\b",
+    ):
+        details.append("centreline_lights_out")
+    return details
 
 
 def _configured_window_minutes(name: str, default: int) -> int:
@@ -2033,6 +2092,15 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             if role in {"departure", "destination"} and pertinence_rank <= 2
             else "warning"
         )
+        operational_details = taxiway_operational_details(
+            str(record["text"]),
+            pertinence_kind,
+        )
+        reviewed_publication = (
+            reviewed_publication_for_notam(location, record["notam_id"])
+            if operational_details
+            else None
+        )
         details = [
             *([f"Schedule: {schedule}."] if schedule else []),
             f"Applicable {role} UTC window: {_utc_window_label(window_start, window_end)}.",
@@ -2067,6 +2135,12 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "referenceAt": reference_at.isoformat(),
                 "minutesDelta": minutes_delta,
                 "raw_text": record["text"],
+                "operational_details": operational_details,
+                **(
+                    {"reviewed_publication": reviewed_publication}
+                    if reviewed_publication
+                    else {}
+                ),
                 "audit_evidence_ref": evidence_ref,
                 "source_references": [
                     _cfp_source_reference(

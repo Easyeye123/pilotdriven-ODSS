@@ -42,7 +42,10 @@ from .report_facts import (
     profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
-from .surface_overlays import surface_mark_presentation
+from .surface_overlays import (
+    surface_conflict_publication_label,
+    surface_mark_presentation,
+)
 from .profile_chart_gate import (
     build_profile_chart_artifact_contracts,
     validate_depressurisation_profile_charts,
@@ -955,13 +958,7 @@ def _surface_source_conflict_line(item: dict[str, Any]) -> str | None:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed.astimezone(timezone.utc).strftime("%d %b %y %H%MZ").upper()
 
-    source_url = str(conflict.get("sourceUrl") or "")
-    authority = (
-        "CAAS"
-        if "aim-sg.caas.gov.sg" in source_url.lower()
-        else "reviewed source"
-    )
-    publication = str(conflict.get("publicationId") or "publication").strip()
+    publication = surface_conflict_publication_label(conflict)
     uploaded = conflict.get("uploaded") or {}
     reviewed = conflict.get("reviewed") or {}
     field_labels = {"startsAt": "start", "endsAt": "end"}
@@ -975,7 +972,7 @@ def _surface_source_conflict_line(item: dict[str, Any]) -> str | None:
     ]
     detail = "; ".join(comparisons) or str(item.get("evidence") or "").strip()
     return (
-        f"Source conflict: {authority} {publication}"
+        f"Source conflict: {publication}"
         + (f"; {detail}" if detail else "")
         + "; pilot review required."
     )
@@ -1244,14 +1241,8 @@ def _draw_surface_map(
             {},
         )
         if conflict:
-            publication = str(
-                conflict.get("publicationId") or "source"
-            ).strip()
-            source_url = str(conflict.get("sourceUrl") or "").lower()
-            authority = (
-                "CAAS" if "aim-sg.caas.gov.sg" in source_url else "SOURCE"
-            )
-            label = f"{authority} {publication} TIMING CONFLICT - REVIEW"
+            publication = surface_conflict_publication_label(conflict)
+            label = f"{publication} TIMING CONFLICT - REVIEW"
         canvas.setFillColor(colors.Color(0, 0, 0, alpha=0.72))
         canvas.rect(x, y, width, 5 * mm, fill=1, stroke=0)
         canvas.setFillColor(colors.white)

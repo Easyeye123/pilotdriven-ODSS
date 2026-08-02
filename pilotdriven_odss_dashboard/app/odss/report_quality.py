@@ -65,6 +65,7 @@ _LEVEL_2_PAGE_TITLES = (
 )
 _LEVEL_2_SOURCE_CHART_MARKER = "LEVEL 2 SOURCE CHART - PROFILE"
 _LEVEL_2_NOTAM_CONTINUATION_MARKER = "LEVEL 2 - NOTAM CONTINUATION"
+_LEVEL_2_AIP_SUPPLEMENT_MARKER = "LEVEL 2 - AIP SUPPLEMENT DETAILS"
 _LEVEL_2_FAIL_CLOSED_ADVISORY_RESULTS = (
     (
         "SIGMET review required",
@@ -222,18 +223,24 @@ def validate_report_pdf(
             is_notam_continuation = (
                 _LEVEL_2_NOTAM_CONTINUATION_MARKER.lower() in appended_text
             )
+            is_aip_supplement = (
+                _LEVEL_2_AIP_SUPPLEMENT_MARKER.lower() in appended_text
+            )
             if is_source_chart:
                 source_chart_seen = True
                 continue
             if is_notam_continuation and not source_chart_seen:
+                continue
+            if is_aip_supplement and not source_chart_seen:
                 continue
             if not is_source_chart:
                 violations.append(ReportQualityViolation(
                     "LEVEL_2_APPENDIX_STRUCTURE",
                     (
                         f"Level 2 page {page_index + 1} must be a NOTAM "
-                        "continuation before the source charts, or an embedded "
-                        "depressurisation source-chart page."
+                        "continuation or AIP supplement detail page before the "
+                        "source charts, or an embedded depressurisation "
+                        "source-chart page."
                     ),
                 ))
 

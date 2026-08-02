@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -16,6 +16,31 @@ SURFACE_MAP_DIR = DATA_DIR / "maps"
 MAX_SURFACE_FEATURES = 256
 MAX_SURFACE_MATCHES = 128
 MAX_COORDINATE_POINTS = 20_000
+
+
+def surface_conflict_publication_label(conflict: dict[str, Any]) -> str:
+    """Return one authority/publication label without repeating authority."""
+
+    publication = " ".join(
+        str(conflict.get("publicationId") or "publication").split()
+    )
+    source_url = str(conflict.get("sourceUrl") or "").strip()
+    try:
+        hostname = (urlsplit(source_url).hostname or "").lower().rstrip(".")
+    except ValueError:
+        hostname = ""
+    caas_hostname = "aim-sg.caas.gov.sg"
+    authority = (
+        "CAAS"
+        if hostname == caas_hostname or hostname.endswith(f".{caas_hostname}")
+        else "SOURCE"
+    )
+    publication_upper = publication.upper()
+    if publication_upper == authority:
+        return authority
+    if publication_upper.startswith(f"{authority} "):
+        return f"{authority} {publication.split(' ', 1)[1]}"
+    return f"{authority} {publication}"
 
 
 class _StrictModel(BaseModel):

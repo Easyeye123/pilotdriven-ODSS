@@ -7,6 +7,7 @@ from app.odss.surface_overlays import (
     SurfaceOverlayRequest,
     SurfaceReviewFinding,
     _styled_surface_overlay,
+    surface_conflict_publication_label,
     surface_mark_presentation,
 )
 from app.odss.pertinent_brief import _surface_overlay_lines
@@ -33,6 +34,47 @@ def test_surface_mark_presentation_fails_safe(
     assert surface_mark_presentation({
         "markClass": mark_class,
         "stateAtReference": state,
+    }) == expected
+
+
+@pytest.mark.parametrize(
+    ("publication_id", "source_url", "expected"),
+    (
+        (
+            "SUP 068/2026",
+            "https://aim-sg.caas.gov.sg/example",
+            "CAAS SUP 068/2026",
+        ),
+        (
+            "CAAS AIRAC AIP SUP 068/2026",
+            "https://aim-sg.caas.gov.sg/example",
+            "CAAS AIRAC AIP SUP 068/2026",
+        ),
+        (
+            "  caas   AIRAC AIP SUP 068/2026  ",
+            "https://aim-sg.caas.gov.sg/example",
+            "CAAS AIRAC AIP SUP 068/2026",
+        ),
+        (
+            "SUP 068/2026",
+            "https://example.com/?next=aim-sg.caas.gov.sg",
+            "SOURCE SUP 068/2026",
+        ),
+        (
+            "SUP 068/2026",
+            "https://not-caas.example/publication",
+            "SOURCE SUP 068/2026",
+        ),
+    ),
+)
+def test_surface_conflict_publication_label_uses_verified_hostname(
+    publication_id: str,
+    source_url: str,
+    expected: str,
+) -> None:
+    assert surface_conflict_publication_label({
+        "publicationId": publication_id,
+        "sourceUrl": source_url,
     }) == expected
 
 

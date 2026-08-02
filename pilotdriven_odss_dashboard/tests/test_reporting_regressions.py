@@ -33,11 +33,18 @@ from app.odss.report_facts import (
     profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
-from app.odss.engines import detect_terrain_events
-from app.odss.operational_brief import _brief_utc_window, _notam_rows, _source_label
+from app.odss.engines import detect_terrain_events, taxiway_operational_details
+from app.odss.operational_brief import (
+    _brief_utc_window,
+    _notam_operational_detail_rows,
+    _notam_rows,
+    _source_label,
+)
 from app.odss.reporting import render_pdf, report_sections
 from app.odss.report_quality import validate_report_pdf
 from app.odss.report_sections import LEVEL2_SECTIONS
+from app.odss.reviewed_publications import reviewed_publication_for_notam
+from app.odss.timing import build_timing_view
 
 
 def test_display_registration_formats_singapore_mark_without_changing_other_marks() -> None:
@@ -297,6 +304,210 @@ def _flight() -> dict[str, Any]:
     }
 
 
+def test_level2_adds_governed_caas_174_evidence_without_replacing_cfp(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level-2-caas-174.pdf"
+    raw_text = (
+        "ALL MARKINGS LEADING INTO THE CLSD TWY WILL BE REMOVED. "
+        "UNSERVICEABILITY MARKERS (MARKERBOARD) AND CLSD MARKINGS "
+        "(YELLOW CROSS) WILL BE IN PLACE TO DEMARCATE THE CLSD TWY. "
+        "THE UNSERVICEABILITY MARKERS ON CLSD TWY WILL HAVE "
+        "OMNI-DIRECTIONAL FIXED RED LGT THAT WILL BE LGTD AT NGT AND "
+        "IN LOW VIS COND. TWY CL LGT LEADING INTO AND WI THE CLSD TWY "
+        "WILL NOT BE IN USE."
+    )
+    item = _notam("SX174/24", "departure", priority_score=40)
+    item["summary"] = (
+        "TWYS A, A1-A12, B, B1-B14, F, E, G, G2-G3, H, J8-J10, "
+        "J12, AND L BETWEEN U13 AND C14 closed."
+    )
+    item["data"].update({
+        "location": "WSSS",
+        "notam_id": "SX174/24",
+        "applicability": "active",
+        "pertinence_kind": "taxiway_restriction",
+        "valid_from_utc": "2024-11-28T00:00:00+00:00",
+        "valid_to_utc": "2027-12-22T23:59:00+00:00",
+        "stateAtReference": "active_at_reference",
+        "source_references": [{"source_type": "uploaded_cfp"}],
+        "raw_text": raw_text,
+        "operational_details": taxiway_operational_details(
+            raw_text,
+            "taxiway_restriction",
+        ),
+        "reviewed_publication": reviewed_publication_for_notam(
+            "WSSS",
+            "SX174/24",
+        ),
+    })
+
+    render_pdf(_flight(), [item], [], 2, path)
+
+    pages = [
+        " ".join((page.extract_text() or "").split())
+        for page in PdfReader(path).pages
+    ]
+    page_three = pages[2]
+    appendix = next(
+        page
+        for page in pages
+        if "AIP SUPPLEMENT OPERATIONAL DETAILS" in page
+    )
+    assert "SX174/24" in page_three
+    assert "Uploaded CFP" in page_three
+    assert "CAAS AIRAC AIP SUP 174/2024" in appendix
+    assert "28 NOV 24 0000Z-22 DEC 27 2359Z" in appendix
+    assert appendix.count("section 2.2") == 2
+    assert appendix.count("section 2.3") == 1
+    assert appendix.count("section 2.4") == 1
+    assert "Leading markings into closed taxiways removed." in appendix
+    assert (
+        "Unserviceability markerboards and closed markings (yellow crosses) "
+        "demarcate closed taxiways."
+    ) in appendix
+    assert (
+        "Fixed red lights on unserviceability markers lit at night and in low "
+        "visibility."
+    ) in appendix
+    assert (
+        "Taxiway centreline lights leading into and within closed taxiways not "
+        "in use."
+    ) in appendix
+
+    document = fitz.open(path)
+    try:
+        appendix_page = next(
+            page
+            for page in document
+            if "AIP SUPPLEMENT OPERATIONAL DETAILS" in page.get_text()
+        )
+        pixmap = appendix_page.get_pixmap(alpha=False)
+        assert pixmap.width > 0 and pixmap.height > 0
+        lines: list[tuple[fitz.Rect, int, str]] = []
+        for block_index, block in enumerate(
+            appendix_page.get_text("dict")["blocks"]
+        ):
+            for line in block.get("lines", []):
+                bounds = fitz.Rect(line["bbox"])
+                assert appendix_page.rect.contains(bounds)
+                text = "".join(
+                    span["text"] for span in line.get("spans", [])
+                ).strip()
+                if text:
+                    lines.append((bounds, block_index, text))
+        for index, (left, left_block, left_text) in enumerate(lines):
+            for right, right_block, right_text in lines[index + 1:]:
+                if left_block == right_block:
+                    continue
+                intersection = left & right
+                assert not (
+                    intersection.width > 0.5
+                    and intersection.height > 0.5
+                ), f"{left_text!r} overlaps {right_text!r}"
+    finally:
+        document.close()
+
+
+def test_governed_caas_174_evidence_does_not_change_unrelated_notam_rows() -> None:
+    item = _notam("A9999/26", "departure")
+    item["summary"] = "TWY TEST closed."
+    item["data"].update({
+        "location": "WSSS",
+        "notam_id": "A9999/26",
+        "applicability": "active",
+        "pertinence_kind": "taxiway_restriction",
+        "valid_from_utc": "2026-08-01T00:00:00+00:00",
+        "valid_to_utc": "2026-08-01T23:59:00+00:00",
+        "stateAtReference": "active_at_reference",
+        "source_references": [{"source_type": "uploaded_cfp"}],
+        "raw_text": "TWY TEST CLSD DUE WORKS.",
+    })
+
+    rows = _notam_rows([item])
+
+    assert len(rows) == 1
+    assert rows[0][1] == "A9999/26 / Uploaded CFP"
+    assert rows[0][2] == "TWY TEST closed."
+    assert "CAAS" not in " ".join(rows[0])
+
+
+def test_level2_preserves_generic_taxiway_marker_and_light_details() -> None:
+    item = _notam("Z4321/26", "departure")
+    item["summary"] = "TWY Z closed."
+    raw_text = (
+        "All markings leading into the closed taxiway will be removed. "
+        "Unserviceability markerboards and closed markings (yellow crosses) "
+        "will demarcate the closed taxiway. Fixed red lights on "
+        "unserviceability markers on the closed taxiway will be lit at night "
+        "and in low visibility. "
+        "Taxiway centreline lights leading into and within the closed taxiway "
+        "will not be in use."
+    )
+    item["data"].update({
+        "location": "VTBS",
+        "notam_id": "Z4321/26",
+        "applicability": "active",
+        "pertinence_kind": "taxiway_restriction",
+        "valid_from_utc": "2026-09-01T00:00:00+00:00",
+        "valid_to_utc": "2026-09-30T23:59:00+00:00",
+        "stateAtReference": "active_at_reference",
+        "source_references": [{"source_type": "uploaded_cfp"}],
+        "raw_text": raw_text,
+        "operational_details": taxiway_operational_details(
+            raw_text,
+            "taxiway_restriction",
+        ),
+    })
+
+    base_rows = _notam_rows([item])
+    detail_rows = _notam_operational_detail_rows([item])
+    text = " ".join(" ".join(row) for row in detail_rows)
+
+    assert len(base_rows) == 1
+    assert len(detail_rows) == 4
+    assert "Leading markings into closed taxiways removed." in text
+    assert "markerboards and closed markings (yellow crosses)" in text
+    assert "Fixed red lights" in text
+    assert "Taxiway centreline lights" in text
+    assert "CAAS" not in text
+
+
+def test_reviewed_publication_scope_rejects_same_notam_id_at_other_airport() -> None:
+    assert reviewed_publication_for_notam("VTBS", "SX174/24") is None
+    assert reviewed_publication_for_notam("WSSS", "SX174/24") is not None
+
+
+def test_level2_never_dumps_arbitrary_long_raw_notam_text(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level-2-no-raw-dump.pdf"
+    sentinel = "SENTINEL-RAW-NOT-FOR-REPORT " * 2_000
+    item = _notam("A9998/26", "departure")
+    item["summary"] = "TWY TEST closed."
+    item["data"].update({
+        "location": "WSSS",
+        "notam_id": "A9998/26",
+        "applicability": "active",
+        "pertinence_kind": "taxiway_restriction",
+        "valid_from_utc": "2026-08-01T00:00:00+00:00",
+        "valid_to_utc": "2026-08-01T23:59:00+00:00",
+        "stateAtReference": "active_at_reference",
+        "source_references": [{"source_type": "uploaded_cfp"}],
+        "raw_text": f"TWY TEST CLSD DUE WORKS. {sentinel}",
+        "operational_details": ["unknown_detail_SENTINEL-RAW-NOT-FOR-REPORT"],
+    })
+
+    render_pdf(_flight(), [item], [], 2, path)
+
+    text = "\n".join(
+        (page.extract_text() or "")
+        for page in PdfReader(path).pages
+    )
+    assert "SENTINEL-RAW-NOT-FOR-REPORT" not in text
+    assert "AIP SUPPLEMENT OPERATIONAL DETAILS" not in text
+
+
 def test_route_gates_are_derived_from_generic_cfp_route_and_fail_closed() -> None:
     flight = _flight()
     flight["route_text"] = "WSSS DCT ALPHA NATB BRAVO DCT EBBR"
@@ -379,6 +590,11 @@ def test_reports_keep_actm_only_until_an_actual_timing_anchor_exists(
     assert "ACTM 02.00 / 11 JUL 1230Z" not in text
     assert "ACTM 02.00" in text
     assert "ACTM / CALCULATED UTC TIMELINE" not in text
+    if level == 2:
+        assert (
+            "CFP ACTM is accumulated/planned, not actual; "
+            "ATOT/ATA required for UTC clocks"
+        ) in " ".join(text.split())
 
 
 def test_depressurisation_profile_clocks_require_actual_timing_anchor() -> None:
@@ -388,6 +604,72 @@ def test_depressurisation_profile_clocks_require_actual_timing_anchor() -> None:
 
     flight["actual_takeoff_utc"] = "2026-07-11T10:45:00+00:00"
     assert _actm_utc(flight, 331) == "1616Z"
+
+
+def test_level2_labels_atot_anchored_utc_as_calculated_not_observed(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level-2-atot-calculated.pdf"
+    flight = _flight()
+    flight["actual_takeoff_utc"] = "2026-07-11T10:45:00+00:00"
+    flight["timing_view"] = build_timing_view(
+        flight,
+        [],
+        flight["actual_takeoff_utc"],
+    )
+
+    render_pdf(flight, [], [], 2, path)
+
+    normalized = " ".join(
+        "\n".join(
+            (page.extract_text() or "")
+            for page in PdfReader(path).pages
+        ).split()
+    )
+    assert "ATOT 11 JUL 1045Z | CALC UTC" in normalized
+    assert (
+        "waypoint UTCs are calculated, not observed actuals" in normalized
+    )
+
+
+@pytest.mark.parametrize(
+    ("actual_takeoff_utc", "header_note"),
+    [
+        (None, "CFP ACTM: NOT ACTUAL"),
+        (
+            "2026-07-11T10:45:00+00:00",
+            "ATOT 11 JUL 1045Z | CALC UTC",
+        ),
+    ],
+)
+def test_level2_timing_header_note_clears_section_pill(
+    tmp_path: Path,
+    actual_takeoff_utc: str | None,
+    header_note: str,
+) -> None:
+    path = tmp_path / "level-2-bounded-timing-header.pdf"
+    flight = _flight()
+    if actual_takeoff_utc:
+        flight["actual_takeoff_utc"] = actual_takeoff_utc
+        flight["timing_view"] = build_timing_view(
+            flight,
+            [],
+            actual_takeoff_utc,
+        )
+
+    render_pdf(flight, [], [], 2, path)
+
+    with fitz.open(path) as document:
+        page = document[0]
+        note_matches = page.search_for(header_note)
+        pill_matches = page.search_for("LEVEL 2 - OPERATIONAL BRIEF")
+        assert len(note_matches) == 1
+        assert len(pill_matches) == 1
+        note_bounds = note_matches[0]
+        pill_bounds = pill_matches[0]
+        assert page.rect.contains(note_bounds)
+        assert page.rect.contains(pill_bounds)
+        assert note_bounds.x1 + 2 <= pill_bounds.x0
 
 
 def test_zero_terrain_level1_reports_one_truthful_no_exposure_status(
@@ -896,6 +1178,45 @@ def test_active_level1_cover_draws_governed_surface_vector_overlays(
 
     assert vector_draws == ["WSSS", "EBBR"]
     assert path.read_bytes().startswith(b"%PDF")
+
+
+def test_reports_do_not_duplicate_caas_authority_in_reviewed_publication(
+    tmp_path: Path,
+) -> None:
+    flight = _flight()
+    flight["surface_overlays"] = [{
+        "role": "departure",
+        "icao": "WSSS",
+        "mapped": [],
+        "reviewRequired": [{
+            "notamNumber": "SX68/26",
+            "entityType": "taxiway",
+            "entityRef": "W9/W/R",
+            "plainEnglish": "Uploaded and reviewed publication times conflict.",
+            "sourceConflict": {
+                "publicationId": "CAAS AIRAC AIP SUP 068/2026",
+                "sourceUrl": "https://aim-sg.caas.gov.sg/example",
+                "conflictingFields": ["startsAt"],
+                "uploaded": {"startsAt": "2026-05-14T14:30:00Z"},
+                "reviewed": {"startsAt": "2026-05-14T17:30:00Z"},
+            },
+        }],
+        "report_map": {"label": "Validated OSM surface schematic"},
+    }]
+    paths = {
+        level: tmp_path / f"level-{level}-deduped-caas.pdf"
+        for level in (1, 2)
+    }
+
+    for level, path in paths.items():
+        render_pdf(flight, [], [], level, path)
+        text = " ".join(
+            (page.extract_text() or "")
+            for page in PdfReader(path).pages
+        )
+        normalized = " ".join(text.split())
+        assert "CAAS AIRAC AIP SUP 068/2026" in normalized
+        assert "CAAS CAAS" not in normalized
 
 
 def test_level1_edto_summary_distinguishes_verified_nil_from_unverified_empty(
@@ -2084,10 +2405,104 @@ def test_level2_deduplicates_advisory_status_and_source_boilerplate(
     page_seven = " ".join(
         (PdfReader(path).pages[6].extract_text() or "").split()
     )
-    assert page_seven.count("Official SIGMET source") == 1
-    assert page_seven.count("Same source") == 2
+    assert page_seven.count("Official SIGMET source") == 3
+    assert "Same source" not in page_seven
     assert "/ REVIEW REQUIRED" not in page_seven
     assert "coverage not complete for flight" not in page_seven
+
+
+def test_level2_names_unconfirmed_official_volcanic_ash_source(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_volcanic_ash_source.pdf"
+    finding = {
+        "engine": "vaa",
+        "severity": "unknown",
+        "title": "Volcanic ash review required",
+        "summary": "Official coverage is incomplete for this flight.",
+        "details": [],
+        "data": {
+            "status": "review_required",
+            "reason_codes": ["coverage_not_complete_for_flight"],
+            "source_references": [],
+        },
+    }
+
+    render_pdf(_flight(), [finding], [], 2, path)
+
+    page_seven = " ".join(
+        (PdfReader(path).pages[6].extract_text() or "").split()
+    )
+    assert "Uploaded CFP only" in page_seven
+    assert (
+        "Applicability unresolved - review official volcanic-ash source."
+        in page_seven
+    )
+    assert "Same source" not in page_seven
+
+
+def test_level2_keeps_direct_vaac_gap_with_official_sigmet_source(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_direct_vaac_gap.pdf"
+    finding = {
+        "engine": "vaa",
+        "severity": "unknown",
+        "title": "Volcanic ash review required",
+        "summary": "Official coverage is incomplete for this flight.",
+        "details": [],
+        "data": {
+            "status": "review_required",
+            "reason_codes": ["direct_vaac_advisory_source_not_mounted"],
+            "source_references": [{
+                "source_type": "official_advisory",
+                "provider": "noaa-awc-international-sigmet",
+            }],
+        },
+    }
+
+    render_pdf(_flight(), [finding], [], 2, path)
+
+    page_seven = " ".join(
+        (PdfReader(path).pages[6].extract_text() or "").split()
+    )
+    assert (
+        "Applicability unresolved - review official volcanic-ash source. "
+        "Direct VAAC source unavailable."
+    ) in page_seven
+    assert "Official SIGMET source" in page_seven
+
+
+def test_level2_keeps_direct_tca_gap_with_official_sigmet_source(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_direct_tca_gap.pdf"
+    finding = {
+        "engine": "tropical_cyclone",
+        "severity": "unknown",
+        "title": "Tropical cyclone review required",
+        "summary": "Official coverage is incomplete for this flight.",
+        "details": [],
+        "data": {
+            "status": "review_required",
+            "reason_codes": ["direct_tca_advisory_source_not_mounted"],
+            "source_references": [{
+                "source_type": "official_advisory",
+                "provider": "noaa-awc-international-sigmet",
+            }],
+        },
+    }
+
+    render_pdf(_flight(), [finding], [], 2, path)
+
+    page_seven = " ".join(
+        (PdfReader(path).pages[6].extract_text() or "").split()
+    )
+    assert (
+        "Applicability unresolved - review official cyclone source. "
+        "Direct TCA source unavailable."
+    ) in page_seven
+    assert "Official SIGMET source" in page_seven
 
 
 def test_level2_consolidates_unavailable_profile_wording_on_page_six(

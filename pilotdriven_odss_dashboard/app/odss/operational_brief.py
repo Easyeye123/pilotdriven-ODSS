@@ -53,7 +53,11 @@ from .report_facts import (
     select_route_gate_rows,
 )
 from .report_sections import level2_heading, level2_page
-from .surface_overlays import surface_mark_presentation
+from .reviewed_publications import operational_detail_presentation
+from .surface_overlays import (
+    surface_conflict_publication_label,
+    surface_mark_presentation,
+)
 
 
 PAGE_SIZE = landscape(A4)
@@ -445,12 +449,14 @@ def _draw_header(
     page_count = int(flight.get("_l2_page_count") or 7)
     metrics = briefing.get("metrics") or {}
     atot = metrics.get("atot")
-    clock_basis = metrics.get("clock_basis")
     atot_note = None
     if atot:
-        atot_note = f"ATOT {atot}"
-        if clock_basis:
-            atot_note += f" | {clock_basis}"
+        # Keep the shared header bounded: the full clock-basis explanation is
+        # rendered in the timing panel, where it can wrap without entering the
+        # right-hand section pill.
+        atot_note = f"ATOT {atot} | CALC UTC"
+    else:
+        atot_note = "CFP ACTM: NOT ACTUAL"
     top = theme.draw_header(
         canvas,
         flight,
@@ -812,6 +818,14 @@ def _top_findings(
     )[:limit]
 
 
+def _reviewed_publication_label(publication: dict[str, Any]) -> str:
+    authority = _text(publication.get("authority"), "Reviewed source")
+    identifier = _text(publication.get("publication_id"), "publication")
+    if identifier.upper().startswith(f"{authority.upper()} "):
+        return identifier
+    return f"{authority} {identifier}"
+
+
 def _notam_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
     grouped_rows: dict[
         tuple[str, str, str, str],
@@ -892,6 +906,65 @@ def _notam_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
             row["window"],
             row["effect"],
         ])
+    return rows
+
+
+def _notam_operational_detail_rows(
+    findings: list[dict[str, Any]],
+) -> list[list[str]]:
+    """Present structured CFP detail without re-reading or dumping raw text."""
+
+    rows: list[list[str]] = []
+    for item in select_pertinent_notams(
+        findings,
+        limit=max(1, len(findings)),
+    ):
+        data = item.get("data") or {}
+        operational_details = [
+            presentation
+            for value in (data.get("operational_details") or [])
+            if (presentation := operational_detail_presentation(value))
+        ]
+        if not operational_details:
+            continue
+        station = _text(
+            data.get("location") or data.get("icao") or data.get("station"),
+            _text(data.get("role"), "Flight"),
+        )
+        notam_id = normalize_notam_references(
+            data.get("notam_id")
+            or data.get("reference")
+            or data.get("id")
+            or item.get("title")
+        ).upper()
+        publication = data.get("reviewed_publication")
+        if isinstance(publication, dict):
+            validity = _brief_utc_window(
+                publication.get("valid_from_utc"),
+                publication.get("valid_to_utc"),
+            )
+            reviewed_source = _reviewed_publication_label(publication)
+            reviewed_sections = set(publication.get("reviewed_sections") or [])
+            validity_label = f"{publication.get('authority')}: {validity}"
+        else:
+            validity_label = "CFP: " + _brief_utc_window(
+                data.get("valid_from_utc") or data.get("window_start_utc"),
+                data.get("valid_to_utc") or data.get("window_end_utc"),
+            )
+            reviewed_source = "No reviewed publication attached"
+            reviewed_sections = set()
+        for detail in operational_details:
+            detail_source = reviewed_source
+            section = detail.get("reviewed_section")
+            if publication and section in reviewed_sections:
+                detail_source += f" / section {section}"
+            rows.append([
+                f"{station} / {notam_id}",
+                "Uploaded CFP raw text",
+                detail["label"],
+                validity_label,
+                detail_source,
+            ])
     return rows
 
 
@@ -1111,6 +1184,24 @@ _COMPACT_FAIL_CLOSED_ADVISORY_RESULTS = {
 def _compact_advisory_result(item: dict[str, Any]) -> str:
     data = item.get("data") or {}
     if str(data.get("status") or "").lower() == "review_required":
+        reason_codes = {
+            str(value).strip().lower()
+            for value in (data.get("reason_codes") or [])
+        }
+        direct_gap_result = {
+            "vaa": (
+                "direct_vaac_advisory_source_not_mounted",
+                "Applicability unresolved - review official volcanic-ash "
+                "source. Direct VAAC source unavailable.",
+            ),
+            "tropical_cyclone": (
+                "direct_tca_advisory_source_not_mounted",
+                "Applicability unresolved - review official cyclone source. "
+                "Direct TCA source unavailable.",
+            ),
+        }.get(str(item.get("engine") or "").lower())
+        if direct_gap_result and direct_gap_result[0] in reason_codes:
+            return direct_gap_result[1]
         result = _COMPACT_FAIL_CLOSED_ADVISORY_RESULTS.get(
             str(item.get("engine") or "").lower()
         )
@@ -1120,10 +1211,18 @@ def _compact_advisory_result(item: dict[str, Any]) -> str:
 
 
 def _compact_advisory_source(item: dict[str, Any]) -> str:
-    # Validity detail remains in the full source/evidence rows below. Return a
-    # stable concise label so repeated sources can be deduplicated explicitly.
+    # Validity detail remains in the full source/evidence rows below.  Keep the
+    # source explicit on every row; "Same source" is ambiguous when rows are
+    # read independently or extracted from the PDF.
     source = _compact_source_label(item)
-    return source.split(" / valid ", 1)[0]
+    source = source.split(" / valid ", 1)[0]
+    data = item.get("data") or {}
+    if (
+        str(data.get("status") or "").lower() == "review_required"
+        and source == "Uploaded CFP"
+    ):
+        return "Uploaded CFP only"
+    return source
 
 
 def _promotion_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
@@ -1781,16 +1880,9 @@ def _page_two(
                     else "unavailable"
                 )
 
-            source_url = str(conflict.get("sourceUrl") or "").lower()
-            authority = (
-                "CAAS" if "aim-sg.caas.gov.sg" in source_url else "SOURCE"
-            )
-            publication = _text(
-                conflict.get("publicationId"),
-                "publication",
-            )
+            publication = surface_conflict_publication_label(conflict)
             source_conflict = (
-                f"{authority} {publication}: uploaded "
+                f"{publication}: uploaded "
                 f"{short_clock(uploaded.get('startsAt'))} vs reviewed "
                 f"{short_clock(reviewed.get('startsAt'))} - review required"
             )
@@ -2008,6 +2100,70 @@ def _page_notam_continuation(
             f"{total_rows} grouped applicable row(s) from {time_applicable} "
             f"time-applicable / {source_count} source record(s); "
             f"{duplicate_count} semantic duplicate(s) grouped."
+        ),
+    )
+
+
+def _page_aip_supplement_details(
+    canvas: pdf_canvas.Canvas,
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    rows: list[list[str]],
+    *,
+    page_number: int,
+    first_row_number: int,
+    total_rows: int,
+) -> None:
+    top = _draw_header(
+        canvas,
+        flight,
+        briefing,
+        label="LEVEL 2 - AIP SUPPLEMENT DETAILS",
+        page_number=page_number,
+    )
+    last_row_number = first_row_number + len(rows) - 1
+    top = _draw_title(
+        canvas,
+        (
+            "AIP SUPPLEMENT OPERATIONAL DETAILS - "
+            f"ROWS {first_row_number}-{last_row_number} OF {total_rows}"
+        ),
+        top,
+    )
+    margin = 7 * mm
+    table_y = 35 * mm
+    _draw_table(
+        canvas,
+        x=margin,
+        y=table_y,
+        width=PAGE_SIZE[0] - 2 * margin,
+        height=top - table_y,
+        columns=(
+            ("STN / REF", 0.14),
+            ("ORIGIN", 0.13),
+            ("OPERATIONAL DETAIL", 0.35),
+            ("VALIDITY", 0.19),
+            ("REVIEWED SOURCE", 0.19),
+        ),
+        rows=rows,
+        accent=_HEADER,
+        max_rows=8,
+        body_font_size=8.0,
+        header_font_size=7.0,
+        require_complete_text=True,
+    )
+    _strip(
+        canvas,
+        x=margin,
+        y=18 * mm,
+        width=PAGE_SIZE[0] - 2 * margin,
+        height=13 * mm,
+        title="EVIDENCE BOUNDARY",
+        accent=_HEADER,
+        body=(
+            "Operational details are structured from the current uploaded CFP. "
+            "Reviewed-publication metadata labels verified authority, validity "
+            "and sections; missing raw detail is never invented."
         ),
     )
 
@@ -2307,7 +2463,9 @@ def _page_five(
             ]
         ]
     left_w = (PAGE_SIZE[0] - 2 * margin - gap) / 2
-    table_y = 31 * mm
+    status_y = 18 * mm
+    status_h = 18 * mm
+    table_y = status_y + status_h + 3 * mm
     table_h = top - table_y
     timing_column = "ACTM / UTC" if actual_timing_anchor(flight) else "ACTM"
     _draw_table(
@@ -2338,18 +2496,30 @@ def _page_five(
         fill_height=False,
         header_font_size=7.0,
     )
-    _strip(
+    timing_status = (
+        (
+            "ATOT + CFP ACTM anchors calculated UTC clocks; waypoint UTCs "
+            "are calculated, not observed actuals."
+        )
+        if actual_timing_anchor(flight)
+        else (
+            "CFP ACTM is accumulated/planned, not actual; ATOT/ATA required "
+            "for UTC clocks."
+        )
+    )
+    _panel(
         canvas,
         x=margin,
-        y=18 * mm,
+        y=status_y,
         width=PAGE_SIZE[0] - 2 * margin,
-        height=10 * mm,
-        title="PROCEDURE STATUS",
+        height=status_h,
+        title="TIMING / PROCEDURE STATUS",
         accent=_AMBER,
         body=(
-            "CFP route and crossing times are shown. Current approved contact "
-            "procedures are unavailable - review required."
+            f"{timing_status} Current approved contact procedures are "
+            "unavailable - review required."
         ),
+        body_size=6.8,
     )
 
 
@@ -2530,17 +2700,15 @@ def _page_seven(
         ]
     )
     compact_advisory_rows: list[list[str]] = []
-    seen_advisory_sources: set[str] = set()
     for item in advisories:
         source = _compact_advisory_source(item)
         compact_advisory_rows.append(
             [
                 _pilot_text(item.get("title"), "Advisory review"),
                 _compact_advisory_result(item),
-                "Same source" if source in seen_advisory_sources else source,
+                source,
             ]
         )
-        seen_advisory_sources.add(source)
 
     visible_panel_rows = max(
         1,
@@ -2690,16 +2858,28 @@ def render_level2_visual(
     # hash-verified chart artifact, because the publication gate forbids a
     # release that names a profile without embedding its complete chart.
     chart_images = load_matched_chart_images(pilot_findings)
-    notam_rows = _notam_rows(_grouped(pilot_findings).get("notam", []))
+    level2_notams = _grouped(pilot_findings).get("notam", [])
+    notam_rows = _notam_rows(level2_notams)
+    operational_detail_rows = _notam_operational_detail_rows(level2_notams)
     first_notam_rows = notam_rows[:14]
     continuation_chunks = [
         notam_rows[index:index + 14]
         for index in range(14, len(notam_rows), 14)
     ]
     continuation_count = len(continuation_chunks)
-    page_count = 7 + continuation_count + len(chart_images)
+    operational_detail_chunks = [
+        operational_detail_rows[index:index + 8]
+        for index in range(0, len(operational_detail_rows), 8)
+    ]
+    operational_detail_page_count = len(operational_detail_chunks)
+    page_count = (
+        7
+        + continuation_count
+        + operational_detail_page_count
+        + len(chart_images)
+    )
     flight["_l2_page_count"] = page_count
-    chart_first_page = 8 + continuation_count
+    chart_first_page = 8 + continuation_count + operational_detail_page_count
     chart_page_numbers = {
         image["chart_number"]: chart_first_page + index
         for index, image in enumerate(chart_images)
@@ -2750,6 +2930,20 @@ def render_level2_visual(
                 page_number=page_number,
                 first_row_number=first_row_number,
                 total_rows=len(notam_rows),
+            )
+        )
+    for detail_index, chunk in enumerate(operational_detail_chunks):
+        page_number = 8 + continuation_count + detail_index
+        first_row_number = 1 + detail_index * 8
+        pages.append(
+            lambda chunk=chunk, page_number=page_number, first_row_number=first_row_number: _page_aip_supplement_details(
+                document,
+                flight,
+                briefing,
+                chunk,
+                page_number=page_number,
+                first_row_number=first_row_number,
+                total_rows=len(operational_detail_rows),
             )
         )
     for index, image in enumerate(chart_images):

@@ -764,6 +764,101 @@ def test_compound_and_tabulated_taxiway_closures_keep_the_operational_extent() -
     assert "L BETWEEN U13 AND C14" in summaries["SX174/24"]
 
 
+def test_analyse_structures_caas_174_operational_details_and_review_metadata() -> None:
+    raw_text = (
+        "CLOSURE OF TWY ASSOCIATED WITH RWY02R/20L. "
+        "ALL MARKINGS LEADING INTO THE CLSD TWY WILL BE REMOVED. "
+        "UNSERVICEABILITY MARKERS (MARKERBOARD) AND CLSD MARKINGS "
+        "(YELLOW CROSS) WILL BE IN PLACE TO DEMARCATE THE CLSD TWY. "
+        "THE UNSERVICEABILITY MARKERS ON CLSD TWY WILL HAVE "
+        "OMNI-DIRECTIONAL FIXED RED LGT THAT WILL BE LGTD AT NGT AND IN "
+        "LOW VIS COND. TWY CL LGT LEADING INTO AND WI THE CLSD TWY WILL "
+        "NOT BE IN USE."
+    )
+    flight = _flight(notams=[
+        _record(
+            "SX174/24",
+            "WSSS",
+            "2024-11-28T00:00:00+00:00",
+            "2027-12-22T23:59:00+00:00",
+            text=raw_text,
+            category="TWY",
+        )
+    ])
+
+    findings, _ = analyse(flight)
+
+    item = next(item for item in findings if item["engine"] == "notam")
+    assert item["data"]["operational_details"] == [
+        "lead_in_markings_removed",
+        "markerboards_yellow_cross",
+        "marker_red_lights",
+        "centreline_lights_out",
+    ]
+    publication = item["data"]["reviewed_publication"]
+    assert publication["authority"] == "CAAS"
+    assert publication["publication_id"] == "AIRAC AIP SUP 174/2024"
+    assert publication["reviewed_sections"] == ("2.2", "2.3", "2.4")
+    assert publication["source_url"].startswith("https://aim-sg.caas.gov.sg/")
+
+
+def test_taxiway_operational_detail_extraction_is_bounded_and_non_inferential() -> None:
+    complete = (
+        "All markings leading into the closed taxiway will be removed. "
+        "Unserviceability markerboards and closed markings (yellow crosses) "
+        "will demarcate the closed taxiway. Fixed red lights on "
+        "unserviceability markers on the closed taxiway will be lit at night "
+        "and in low visibility. "
+        "Taxiway centreline lights leading into and within the closed taxiway "
+        "will not be in use."
+    )
+    expected = engines.taxiway_operational_details(
+        complete,
+        "taxiway_restriction",
+    )
+    assert len(expected) == 4
+    assert engines.taxiway_operational_details(
+        complete + " " + complete,
+        "taxiway_restriction",
+    ) == expected
+    assert engines.taxiway_operational_details(
+        "TWY Z CLSD DUE WORKS.",
+        "taxiway_restriction",
+    ) == []
+    assert not any(
+        "markerboard" in detail.lower()
+        for detail in engines.taxiway_operational_details(
+            "Markerboards demarcate the closed taxiway.",
+            "taxiway_restriction",
+        )
+    )
+    assert not any(
+        "fixed red" in detail.lower()
+        for detail in engines.taxiway_operational_details(
+            "Fixed red lights on unserviceability markers will be lit at night "
+            "on the closed taxiway.",
+            "taxiway_restriction",
+        )
+    )
+    assert not any(
+        "not in use" in detail.lower()
+        for detail in engines.taxiway_operational_details(
+            "Taxiway centreline lights leading into and within the closed "
+            "taxiway remain in use.",
+            "taxiway_restriction",
+        )
+    )
+    assert engines.taxiway_operational_details(
+        complete,
+        "runway_closure",
+    ) == []
+    sentinel = "SENTINEL-RAW-NOT-FOR-REPORT " * 2_000
+    assert engines.taxiway_operational_details(
+        f"TWY Z CLSD DUE WORKS. {sentinel}",
+        "taxiway_restriction",
+    ) == []
+
+
 def test_taxiway_summaries_never_promote_grammar_or_pavement_words_as_ids() -> None:
     flight = _flight(notams=[
         _record(
