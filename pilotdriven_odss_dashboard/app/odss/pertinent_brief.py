@@ -1633,12 +1633,12 @@ def _draw_header(
     flight = briefing.get("_flight") or {}
     metrics = briefing.get("metrics") or {}
     atot = metrics.get("atot")
-    clock_basis = metrics.get("clock_basis")
     atot_note = None
     if atot:
-        atot_note = f"ATOT {atot}"
-        if clock_basis:
-            atot_note += f" | {clock_basis}"
+        # The full ATOT + CFP ACTM explanation remains in the timing panel.
+        # Keep the repeated page header concise enough to clear its section
+        # pill, matching the Level 2 header contract.
+        atot_note = f"ATOT {atot} | CALC UTC"
     top = theme.draw_header(
         canvas,
         flight,

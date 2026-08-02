@@ -8,11 +8,12 @@ from typing import Any
 import fitz
 import pytest
 from pypdf import PdfReader
+from reportlab.pdfbase import pdfmetrics
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import analysis
-from app.odss import pertinent_brief
+from app.odss import brief_theme, pertinent_brief
 from app.odss.brief_theme import block_time_label, local_time_segment
 from app.odss.depress_analysis_page import _actm_utc
 from app.odss.briefing import (
@@ -670,6 +671,119 @@ def test_level2_timing_header_note_clears_section_pill(
         assert page.rect.contains(note_bounds)
         assert page.rect.contains(pill_bounds)
         assert note_bounds.x1 + 2 <= pill_bounds.x0
+
+
+@pytest.mark.parametrize("level", [1, 2])
+def test_current_sq338_atot_headers_stay_complete_and_clear_every_page_pill(
+    tmp_path: Path,
+    level: int,
+) -> None:
+    flight = _flight()
+    flight.update(
+        {
+            "flight_number": "SQ338",
+            "departure": "WSSS",
+            "destination": "LFPG",
+            "flight_date": "01AUG26",
+            "scheduled_departure_utc": "2026-08-01T05:35:00+00:00",
+            "scheduled_arrival_utc": "2026-08-01T19:15:00+00:00",
+            "actual_takeoff_utc": "2026-08-01T05:45:00+00:00",
+        }
+    )
+    flight["timing_view"] = build_timing_view(
+        flight,
+        [],
+        flight["actual_takeoff_utc"],
+    )
+    findings: list[dict[str, Any]] = []
+    for index in range(47):
+        item = _notam(f"A{1000 + index}/26", "departure")
+        item["summary"] = f"TWY TEST-{index:02d} closed during the flight window."
+        item["data"].update(
+            {
+                "location": "WSSS",
+                "notam_id": f"A{1000 + index}/26",
+                "category": "TWY",
+                "pertinence_rank": 4,
+                "pertinence_kind": "taxiway_restriction",
+                "applicability": "active",
+                "valid_from_utc": "2026-07-01T00:00:00+00:00",
+                "valid_to_utc": "2026-08-31T23:59:00+00:00",
+                "raw_text": f"TWY TEST-{index:02d} CLSD",
+            }
+        )
+        findings.append(item)
+
+    path = tmp_path / f"sq338-level-{level}-atot.pdf"
+    render_pdf(flight, findings, [], level, path)
+
+    with fitz.open(path) as document:
+        for page in document:
+            assert all(
+                0 <= word[0] < word[2] <= page.rect.width
+                and 0 <= word[1] < word[3] <= page.rect.height
+                for word in page.get_text("words")
+            )
+        shared_header_pages = [
+            page for page in document
+            if page.search_for("UTC STD 0535Z -> STA 1915Z")
+        ]
+        assert len(shared_header_pages) >= (3 if level == 1 else 7)
+        atot_header_pages = 0
+        for page in shared_header_pages:
+            header_text = " ".join(
+                word[4]
+                for word in page.get_text("words")
+                if word[1] < 100
+            )
+            assert "SQ338" in header_text
+            assert "WSSS -> LFPG" in header_text
+            assert "LOCAL SIN 01 AUG 1335 UTC+8 -> CDG 01 AUG 2115 UTC+2" in header_text
+
+            header_words = [
+                word for word in page.get_text("words")
+                if word[1] < 100
+            ]
+            assert all(
+                0 <= word[0] < word[2] <= page.rect.width
+                and 0 <= word[1] < word[3] <= page.rect.height
+                for word in header_words
+            )
+
+            note_bounds = page.search_for("ATOT 01 AUG 0545Z | CALC UTC")
+            if not note_bounds:
+                continue
+            assert len(note_bounds) == 1
+            atot_header_pages += 1
+            pill_label = next(
+                label
+                for label in (
+                    "LEVEL 1 - PERTINENT BRIEF",
+                    "SQ338 - OPERATIONAL TIMING",
+                    "LEVEL 1 - DEPRESSURISATION",
+                    "LEVEL 2 - OPERATIONAL BRIEF",
+                    "LEVEL 2 - PERFORMANCE / AIRPORTS",
+                    "LEVEL 2 - NOTAM APPLICABILITY",
+                    "LEVEL 2 - EDTO / WEATHER",
+                    "LEVEL 2 - OCEANIC / FIR COMMUNICATIONS",
+                    "LEVEL 2 - PROFILE MATCH",
+                    "LEVEL 2 - WEATHER / PROMOTION",
+                    "LEVEL 2 - NOTAM CONTINUATION",
+                    "LEVEL 2 - AIP SUPPLEMENT DETAILS",
+                )
+                if page.search_for(label)
+            )
+            pill_width = max(
+                150.0,
+                pdfmetrics.stringWidth(
+                    pill_label,
+                    brief_theme.SANS_BOLD,
+                    6.6,
+                ) + 34,
+            )
+            pill_x = page.rect.width - 24.0 - pill_width
+            assert note_bounds[0].x1 + 6.0 <= pill_x
+        assert atot_header_pages >= (2 if level == 1 else 6)
 
 
 def test_zero_terrain_level1_reports_one_truthful_no_exposure_status(
@@ -1772,6 +1886,59 @@ def test_level2_keeps_fail_closed_advisory_results_complete(
     assert validate_report_pdf(path, level=2)["valid"] is True
 
 
+def test_level2_weather_table_keeps_long_cells_complete(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_complete_weather_cells.pdf"
+    findings: list[dict[str, Any]] = []
+    for phase, location, window in (
+        ("Departure", "WSSS", "25 JUL 1821Z-2039Z"),
+        ("Enroute", "EDDM", "25 JUL 1921Z-2139Z"),
+        ("Enroute", "WIIF", "25 JUL 2021Z-2239Z"),
+        ("Arrival", "EBBR", "25 JUL 2121Z-2339Z"),
+        ("Alternate", "EDDL", "25 JUL 2221Z-2339Z"),
+    ):
+        finding = _official_source_weather()
+        finding["data"].update(
+            {
+                "phase": phase,
+                "location": location,
+                "utc_window": window,
+                "mechanism": (
+                    "convection / thunderstorms; rain / freezing rain; "
+                    "severe turbulence"
+                ),
+                "flight_effect": (
+                    "Forecast coverage is incomplete; review the latest "
+                    "operational weather for this flight."
+                ),
+                "window_status": "review_required",
+            }
+        )
+        findings.append(finding)
+    findings.append(
+        {
+            "engine": "sigmet",
+            "severity": "unknown",
+            "title": "SIGMET review required",
+            "summary": "Official coverage is incomplete for this flight.",
+            "details": [],
+            "data": {"status": "review_required"},
+        }
+    )
+
+    render_pdf(_flight(), findings, [], 2, path)
+
+    page_seven = " ".join(
+        (PdfReader(path).pages[6].extract_text() or "").split()
+    )
+    assert (
+        "convection / thunderstorms; rain / freezing rain; severe turbulence"
+        in page_seven
+    )
+    assert "TAF valid 25 JUL 1200Z-26 JUL 1800Z" in page_seven
+
+
 def test_level2_quick_links_land_on_the_rendered_section_heading(
     tmp_path: Path,
 ) -> None:
@@ -2454,6 +2621,38 @@ def test_level2_keeps_direct_vaac_gap_with_official_sigmet_source(
         "data": {
             "status": "review_required",
             "reason_codes": ["direct_vaac_advisory_source_not_mounted"],
+            "source_references": [{
+                "source_type": "official_advisory",
+                "provider": "noaa-awc-international-sigmet",
+            }],
+        },
+    }
+
+    render_pdf(_flight(), [finding], [], 2, path)
+
+    page_seven = " ".join(
+        (PdfReader(path).pages[6].extract_text() or "").split()
+    )
+    assert (
+        "Applicability unresolved - review official volcanic-ash source. "
+        "Direct VAAC source unavailable."
+    ) in page_seven
+    assert "Official SIGMET source" in page_seven
+
+
+def test_level2_keeps_unavailable_direct_vaac_gap_with_official_sigmet_source(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_unavailable_direct_vaac_gap.pdf"
+    finding = {
+        "engine": "vaa",
+        "severity": "unknown",
+        "title": "Volcanic ash review required",
+        "summary": "Official coverage is incomplete for this flight.",
+        "details": [],
+        "data": {
+            "status": "review_required",
+            "reason_codes": ["direct_vaac_advisory_source_unavailable"],
             "source_references": [{
                 "source_type": "official_advisory",
                 "provider": "noaa-awc-international-sigmet",

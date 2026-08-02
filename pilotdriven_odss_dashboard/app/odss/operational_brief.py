@@ -1190,17 +1190,23 @@ def _compact_advisory_result(item: dict[str, Any]) -> str:
         }
         direct_gap_result = {
             "vaa": (
-                "direct_vaac_advisory_source_not_mounted",
+                {
+                    "direct_vaac_advisory_source_not_mounted",
+                    "direct_vaac_advisory_source_unavailable",
+                },
                 "Applicability unresolved - review official volcanic-ash "
                 "source. Direct VAAC source unavailable.",
             ),
             "tropical_cyclone": (
-                "direct_tca_advisory_source_not_mounted",
+                {
+                    "direct_tca_advisory_source_not_mounted",
+                    "direct_tca_advisory_source_unavailable",
+                },
                 "Applicability unresolved - review official cyclone source. "
                 "Direct TCA source unavailable.",
             ),
         }.get(str(item.get("engine") or "").lower())
-        if direct_gap_result and direct_gap_result[0] in reason_codes:
+        if direct_gap_result and direct_gap_result[0].intersection(reason_codes):
             return direct_gap_result[1]
         result = _COMPACT_FAIL_CLOSED_ADVISORY_RESULTS.get(
             str(item.get("engine") or "").lower()
@@ -2710,21 +2716,14 @@ def _page_seven(
             ]
         )
 
-    visible_panel_rows = max(
-        1,
-        min(6, len(weather_rows)),
-        min(4, len(compact_advisory_rows)),
-    )
-    panel_h = max(
-        48 * mm,
-        min(
-            78 * mm,
-            (
-                9
-                + visible_panel_rows
-                * (18 if compact_advisory_rows else 13)
-            )
-            * mm,
+    weather_panel_h = 9 + min(6, len(weather_rows)) * 15
+    advisory_panel_h = 9 + min(4, len(compact_advisory_rows)) * 18
+    panel_h = min(
+        92 * mm,
+        max(
+            48 * mm,
+            weather_panel_h * mm,
+            advisory_panel_h * mm,
         ),
     )
     panel_y = top - panel_h
@@ -2747,9 +2746,10 @@ def _page_seven(
         accent=_AMBER,
         max_rows=8,
         empty_text="No complete current weather result is available - review required.",
-        fill_height=False,
+        fill_height=True,
         body_font_size=8.0,
         header_font_size=7.0,
+        require_complete_text=True,
     )
     _draw_table(
         canvas,

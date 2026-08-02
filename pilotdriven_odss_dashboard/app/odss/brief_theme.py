@@ -158,6 +158,19 @@ def display_flight_number(flight: dict[str, Any]) -> str:
     return operating or str(flight.get("flight_number") or "")
 
 
+def _font_size_for_width(
+    text: str,
+    font_name: str,
+    preferred_size: float,
+    max_width: float,
+) -> float:
+    """Return a font size that keeps one controlled header line in bounds."""
+    text_width = pdfmetrics.stringWidth(text, font_name, preferred_size)
+    if text_width <= max_width or text_width <= 0:
+        return preferred_size
+    return preferred_size * max_width / text_width
+
+
 def draw_header(
     canvas: Any,
     flight: dict[str, Any],
@@ -172,6 +185,15 @@ def draw_header(
     register_fonts()
     margin = 24.0
     top = height - 22.0
+
+    # Reserve the complete pill rectangle before drawing the schedule.  The
+    # pill is painted last, so merely checking the text bounds is insufficient:
+    # a long ATOT note can still sit underneath its opaque background.
+    pill_width = max(
+        150.0,
+        pdfmetrics.stringWidth(pill_text, SANS_BOLD, 6.6) + 34,
+    )
+    pill_x = width - margin - pill_width
 
     # Wordmark: PILOT in white, DRIVEN in blue.
     canvas.setFillColor(TEXT)
@@ -231,6 +253,13 @@ def draw_header(
     )
     if extra_utc_note:
         utc_line += f"  |  {extra_utc_note}"
+    utc_font_size = _font_size_for_width(
+        utc_line,
+        SANS,
+        7.2,
+        max(1.0, pill_x - schedule_x - 8.0),
+    )
+    canvas.setFont(SANS, utc_font_size)
     canvas.drawString(schedule_x, top - 17, utc_line)
     departure_segment = local_time_segment(
         flight.get("departure"), flight.get("scheduled_departure_utc")
@@ -254,11 +283,6 @@ def draw_header(
         )
 
     # Level pill.
-    pill_width = max(
-        150.0,
-        pdfmetrics.stringWidth(pill_text, SANS_BOLD, 6.6) + 34,
-    )
-    pill_x = width - margin - pill_width
     canvas.setStrokeColor(pill_color)
     canvas.setLineWidth(1.1)
     canvas.setFillColor(PAGE_BG)
