@@ -1188,26 +1188,36 @@ def _compact_advisory_result(item: dict[str, Any]) -> str:
             str(value).strip().lower()
             for value in (data.get("reason_codes") or [])
         }
-        direct_gap_result = {
+        direct_gap_results = {
             "vaa": (
-                {
-                    "direct_vaac_advisory_source_not_mounted",
-                    "direct_vaac_advisory_source_unavailable",
-                },
-                "Applicability unresolved - review official volcanic-ash "
-                "source. Direct VAAC source unavailable.",
+                (
+                    {
+                        "direct_vaac_advisory_source_not_mounted",
+                        "direct_vaac_advisory_source_unavailable",
+                    },
+                    "Applicability unresolved - review official volcanic-ash "
+                    "source. Direct VAAC source unavailable.",
+                ),
+                (
+                    {"direct_vaac_coverage_partial"},
+                    "Applicability unresolved - review official volcanic-ash "
+                    "source. Direct VAAC coverage is incomplete for this route.",
+                ),
             ),
             "tropical_cyclone": (
-                {
-                    "direct_tca_advisory_source_not_mounted",
-                    "direct_tca_advisory_source_unavailable",
-                },
-                "Applicability unresolved - review official cyclone source. "
-                "Direct TCA source unavailable.",
+                (
+                    {
+                        "direct_tca_advisory_source_not_mounted",
+                        "direct_tca_advisory_source_unavailable",
+                    },
+                    "Applicability unresolved - review official cyclone source. "
+                    "Direct TCA source unavailable.",
+                ),
             ),
         }.get(str(item.get("engine") or "").lower())
-        if direct_gap_result and direct_gap_result[0].intersection(reason_codes):
-            return direct_gap_result[1]
+        for gap_codes, gap_result in direct_gap_results or ():
+            if gap_codes.intersection(reason_codes):
+                return gap_result
         result = _COMPACT_FAIL_CLOSED_ADVISORY_RESULTS.get(
             str(item.get("engine") or "").lower()
         )

@@ -34,7 +34,12 @@ from app.odss.report_facts import (
     profile_findings_for_terrain_event,
     select_route_gate_rows,
 )
-from app.odss.engines import detect_terrain_events, taxiway_operational_details
+from app.odss.engines import (
+    _HAZARD_REVIEWS,
+    _hazard_review_findings,
+    detect_terrain_events,
+    taxiway_operational_details,
+)
 from app.odss.operational_brief import (
     _brief_utc_window,
     _notam_operational_detail_rows,
@@ -46,6 +51,7 @@ from app.odss.report_quality import validate_report_pdf
 from app.odss.report_sections import LEVEL2_SECTIONS
 from app.odss.reviewed_publications import reviewed_publication_for_notam
 from app.odss.timing import build_timing_view
+from app.odss.vaa import assess_volcanic_ash
 
 
 def test_display_registration_formats_singapore_mark_without_changing_other_marks() -> None:
@@ -2669,6 +2675,66 @@ def test_level2_keeps_unavailable_direct_vaac_gap_with_official_sigmet_source(
         "Applicability unresolved - review official volcanic-ash source. "
         "Direct VAAC source unavailable."
     ) in page_seven
+    assert "Official SIGMET source" in page_seven
+
+
+def test_level2_keeps_partial_live_vaac_gap_for_sia338(
+    tmp_path: Path,
+) -> None:
+    """Keep the live Tokyo-only coverage gap through assessment to PDF."""
+
+    flight = _flight()
+    flight.update({
+        "flight_number": "SIA338",
+        "departure": "WSSS",
+        "destination": "LFPG",
+        "flight_date": "01AUG26",
+        "scheduled_departure_utc": "2026-08-01T05:35:00+00:00",
+        "scheduled_arrival_utc": "2026-08-01T19:15:00+00:00",
+    })
+    review = assess_volcanic_ash(
+        flight,
+        ["VOLCANIC ASH SIGMETS:\nNO WX DATA AVAILABLE"],
+        snapshot={
+            "schema_version": "1.0",
+            "provider": "noaa-awc-international-sigmet",
+            "source_url": "https://aviationweather.gov/data/api/",
+            "status": "unavailable",
+            "coverage_status": "unavailable",
+            "freshness_status": "unknown",
+            "advisories": [],
+        },
+        direct_snapshot={
+            "schema_version": "1.0",
+            "provider": "jma-tokyo-vaac",
+            "status": "partial",
+            "coverage_status": "tokyo_vaac_area_direct_advisories",
+            "advisories": [],
+        },
+    )
+    vaa_hazard = next(
+        item for item in _HAZARD_REVIEWS if item["engine"] == "vaa"
+    )
+    findings, warnings = _hazard_review_findings(review, vaa_hazard)
+
+    assert "direct_vaac_coverage_partial" in review["reason_codes"]
+    assert (
+        "direct_vaac_advisory_source_unavailable"
+        not in review["reason_codes"]
+    )
+    assert findings[0]["data"]["reason_codes"] == review["reason_codes"]
+
+    path = tmp_path / "sia338-partial-live-vaac-gap.pdf"
+    render_pdf(flight, findings, warnings, 2, path)
+    page_seven = " ".join(
+        (PdfReader(path).pages[6].extract_text() or "").split()
+    )
+
+    assert (
+        "Applicability unresolved - review official volcanic-ash source. "
+        "Direct VAAC coverage is incomplete for this route."
+    ) in page_seven
+    assert "Direct VAAC source unavailable." not in page_seven
     assert "Official SIGMET source" in page_seven
 
 
