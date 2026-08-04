@@ -1,6 +1,6 @@
 # Helpyou Policy Reference
 
-This directory contains a deterministic reference policy for the first Helpyou integration boundary.
+This directory contains deterministic policy and guided-decision reference code for the Helpyou integration boundary.
 
 It does **not** answer aviation questions and does **not** duplicate ODSS. It establishes:
 
@@ -13,12 +13,26 @@ It does **not** answer aviation questions and does **not** duplicate ODSS. It es
 - the PilotDriven citation format;
 - mandatory separation of the pilot's raw wording and the AI interpretation.
 
-## Run
+## Baseline policy tests
 
 ```bash
 cd integration/helpyou
 python3 -m unittest -v test_helpyou_policy.py
 ```
+
+## Helpyou Core v0.2 tests
+
+```bash
+cd integration/helpyou
+PYTHONPATH=. python3 -m unittest discover -s tests -v
+```
+
+Core v0.2 adds a deterministic CFP-grounded decision orchestrator, Endsley and Rasmussen facilitation, Axiomatic Design option structure, developmental CBTA mapping, governed memory candidates and the SQ23 OEI golden fixture.
+
+See:
+
+- [`README_CORE_V0_2.md`](README_CORE_V0_2.md)
+- [`../../docs/helpyou/HELPYOU_CORE_V0_2_VERTICAL_SLICE.md`](../../docs/helpyou/HELPYOU_CORE_V0_2_VERTICAL_SLICE.md)
 
 The implementation is standard-library only.
 
@@ -32,3 +46,5 @@ The implementation is standard-library only.
 6. Citation dates use `DD.MM.YY`; document dates use `eff`.
 7. Helpyou returns the minimum sufficient detail for the routed task.
 8. Every pilot turn passes through memory classification, while durable memory remains governed and user-controllable.
+9. Code 4E classification is not a substitute for approved aircraft landing-performance verification.
+10. Flight-specific scenario options are initially presented without AI ranking.
