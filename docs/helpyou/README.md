@@ -18,7 +18,9 @@ ODSS remains the sole owner of deterministic Lido CFP analysis. Helpyou consumes
 - [`HELPYOU_SYSTEM_REQUIREMENTS_V1.md`](HELPYOU_SYSTEM_REQUIREMENTS_V1.md) — Customer Needs, constraints, functional requirements, design parameters, process variables and interface.
 - [`HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md`](HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md) — CFP-grounded LOFT-style discussion, option generation, Endsley, Rasmussen, CBTA and Flight Discipline.
 - [`HELPYOU_DATA_CONTRACTS_V1.md`](HELPYOU_DATA_CONTRACTS_V1.md) — source, claim, routing, memory and scenario data contracts.
+- [`HELPYOU_CORE_V0_2_VERTICAL_SLICE.md`](HELPYOU_CORE_V0_2_VERTICAL_SLICE.md) — deterministic guided-decision orchestrator and SQ23 golden test case.
 - [`../../integration/helpyou/README.md`](../../integration/helpyou/README.md) — deterministic reference policy and tests.
+- [`../../integration/helpyou/README_CORE_V0_2.md`](../../integration/helpyou/README_CORE_V0_2.md) — Core v0.2 package and test instructions.
 
 ## Governing doctrine
 
