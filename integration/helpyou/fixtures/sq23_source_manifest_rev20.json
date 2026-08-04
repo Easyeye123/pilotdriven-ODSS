@@ -1,5 +1,5 @@
 {
-  "bundle_id": "HELPYOU-SQ23-A350-REV20-04AUG26",
+  "bundle_id": "HELPYOU-SQ23-A350-REV20-OM32-04AUG26",
   "bundle_date": "04.08.26",
   "private_library_folders": [
     "/PilotDriven/Helpyou/Source Library/SQ23 A350 Rev20 Test Bundle",
@@ -15,11 +15,30 @@
       "revision": "OFP 108/0/1",
       "issue_date": "25.07.26",
       "currency_status": "current_for_bundle",
-      "authority_scope": ["flight identity", "route", "ACTM and ETP", "planned fuel", "planning weather", "EDTO pair"],
-      "permitted_uses": ["ODSS baseline", "scenario timing", "flight-specific option inputs"],
-      "prohibited_uses": ["substitution for current operational weather", "substitution for approved aircraft procedures"],
+      "authority_scope": ["flight identity", "route", "ACTM and ETP", "planned fuel", "scenario weather", "EDTO pair", "CFP NOTAM and MEL snapshot"],
+      "permitted_uses": ["ODSS baseline", "scenario timing", "flight-specific option inputs", "golden-test NOTAM and MEL assumptions"],
+      "prohibited_uses": ["substitution for live operational data outside the frozen SQ23 test", "substitution for approved aircraft procedures"],
       "private_storage_required": true,
       "raw_content_in_repository": false
+    },
+    {
+      "source_id": "SIA-OM-REV32",
+      "title": "SIA Operations Manual Volumes A and B General",
+      "role": "controlled_operational",
+      "controlling": true,
+      "revision": "Rev 32 / Vol B Rev 29",
+      "issue_date": "01.04.26",
+      "currency_status": "current_for_bundle",
+      "authority_scope": ["operational policy", "document priority", "EDTO", "diversion after engine failure", "nearest suitable airport", "fuel policy", "commander authority"],
+      "permitted_uses": ["authoritative operator-policy claims", "source precedence", "SQ23 OEI decision requirements", "EDTO suitability and inflight policy"],
+      "prohibited_uses": ["fabrication of aircraft technical procedures", "fabrication of airport-specific landing distance"],
+      "private_storage_required": true,
+      "raw_content_in_repository": false,
+      "notes": [
+        "OM 12.1.1.1 supplies the descending operational document priority sequence.",
+        "Lower-authority documents may impose more restrictive requirements, which must then be complied with.",
+        "Installed-EFB AFM, MEL and CDL copies are primary operational references when version discrepancies exist."
+      ]
     },
     {
       "source_id": "SIA-A350-FCOM-REV20",
@@ -29,12 +48,11 @@
       "revision": "Rev 20",
       "issue_date": "06.05.26",
       "currency_status": "current_for_bundle",
-      "authority_scope": ["aircraft systems", "limitations", "abnormal procedures", "in-flight performance", "landing performance"],
-      "permitted_uses": ["authoritative technical claims", "OEI capability model", "RLD LD FLD framework", "ECAM-linked landing-performance logic"],
-      "prohibited_uses": ["public reproduction", "uncited paraphrase presented as authority"],
+      "authority_scope": ["aircraft systems", "limitations", "abnormal procedures", "in-flight performance", "landing-performance method"],
+      "permitted_uses": ["authoritative technical claims", "OEI capability model", "RLD LD FLD framework", "ECAM-linked EFB method"],
+      "prohibited_uses": ["public reproduction", "inventing airport-specific LDA or landing-distance results"],
       "private_storage_required": true,
-      "raw_content_in_repository": false,
-      "notes": ["Supersedes the Rev 18A citation used in the first SQ23 vertical-slice fixture."]
+      "raw_content_in_repository": false
     },
     {
       "source_id": "SIA-A350-QRH-REV18",
@@ -45,11 +63,10 @@
       "issue_date": "03.04.25",
       "currency_status": "currency_check_required",
       "authority_scope": ["quick-reference abnormal and emergency procedures"],
-      "permitted_uses": ["procedure indexing", "QRH action verification after currency and effectivity check"],
-      "prohibited_uses": ["assuming currency solely because the file is present"],
+      "permitted_uses": ["procedure indexing", "action verification after currency and effectivity check"],
+      "prohibited_uses": ["assuming currency solely because the file is present", "assigning an OM priority rank not stated in OM 12.1.1.1"],
       "private_storage_required": true,
-      "raw_content_in_repository": false,
-      "notes": ["The QRH issue predates the Rev 20 FCOM/SQ documents and requires explicit currentness reconciliation before operational use."]
+      "raw_content_in_repository": false
     },
     {
       "source_id": "SIA-A350-FCTM-V2-REV1",
@@ -59,11 +76,12 @@
       "revision": "Rev 1.0",
       "issue_date": "30.04.26",
       "currency_status": "current_for_bundle",
-      "authority_scope": ["operator technique", "OEI landing", "engine fire", "EDTO", "CRM", "LOFT and EBT context"],
-      "permitted_uses": ["teaching technique", "scenario design", "operator training context", "task-sharing context"],
-      "prohibited_uses": ["overriding FCOM QRH OM or MEL", "formal CBTA grading in Helpyou"],
+      "authority_scope": ["operator technique", "OEI landing", "engine fire", "EDTO teaching", "CRM", "LOFT and EBT context"],
+      "permitted_uses": ["teaching technique", "scenario design", "task-sharing context", "facilitation design"],
+      "prohibited_uses": ["overriding INTAM FSI MEL OM FCOM SQNP SQSP", "formal CBTA grading in Helpyou"],
       "private_storage_required": true,
-      "raw_content_in_repository": false
+      "raw_content_in_repository": false,
+      "notes": ["OM places FCTM in priority group 6, below the OM/FCOM/SQNP/SQSP group 4."]
     },
     {
       "source_id": "SIA-A350-SQNP-REV20",
@@ -89,7 +107,7 @@
       "currency_status": "current_for_bundle",
       "authority_scope": ["destinations and alternates", "communications", "fuel", "navigation", "oxygen and depressurisation", "performance", "special operations", "PBN", "CDL"],
       "permitted_uses": ["operator supplementary procedure claims", "alternate and special-operation context"],
-      "prohibited_uses": ["automatic promotion of general alternate lists to current suitability"],
+      "prohibited_uses": ["automatic promotion of a general airport list to current suitability"],
       "private_storage_required": true,
       "raw_content_in_repository": false
     },
@@ -103,7 +121,7 @@
       "currency_status": "current_for_bundle",
       "authority_scope": ["crew support information", "cruise briefing aid", "operational announcements"],
       "permitted_uses": ["supporting crew communication and briefing outputs"],
-      "prohibited_uses": ["overriding procedure or performance sources"],
+      "prohibited_uses": ["overriding procedure or performance sources", "assigning an OM priority rank not stated in OM 12.1.1.1"],
       "private_storage_required": true,
       "raw_content_in_repository": false
     },
@@ -116,11 +134,10 @@
       "issue_date": "01.01.23",
       "currency_status": "currency_check_required",
       "authority_scope": ["fatigue risk management", "flight duty and rest context"],
-      "permitted_uses": ["fatigue-context constraints when the scenario makes fatigue material"],
+      "permitted_uses": ["fatigue constraints when fatigue is material to the scenario"],
       "prohibited_uses": ["automatic fatigue diagnosis", "irrelevant insertion into every scenario"],
       "private_storage_required": false,
-      "raw_content_in_repository": false,
-      "notes": ["Current legal status must be verified before production legal or compliance use."]
+      "raw_content_in_repository": false
     },
     {
       "source_id": "A350-FLS-FAPP-TRAINING-REF",
@@ -134,8 +151,7 @@
       "permitted_uses": ["topic navigation", "training explanation after source verification"],
       "prohibited_uses": ["operational authority", "replacement of FCOM FCTM SQNP SQSP OM or MEL"],
       "private_storage_required": true,
-      "raw_content_in_repository": false,
-      "notes": ["Document-control page states 13.07.26 while cover and footer state 14.07.26; treat as a metadata discrepancy requiring reconciliation."]
+      "raw_content_in_repository": false
     },
     {
       "source_id": "A350-FCOM20-LIMITATIONS-STUDY-GUIDE",
@@ -160,7 +176,7 @@
       "issue_date": "03.10.25",
       "currency_status": "historical_context_only",
       "authority_scope": ["change awareness"],
-      "permitted_uses": ["identify review targets such as engine-damage assessment changes"],
+      "permitted_uses": ["identify current-manual review targets"],
       "prohibited_uses": ["replace the current operator FCOM or FCTM"],
       "private_storage_required": true,
       "raw_content_in_repository": false
@@ -175,7 +191,7 @@
       "currency_status": "historical_context_only",
       "authority_scope": ["CBTA concepts", "observable behaviour", "facilitation", "LOFT definition"],
       "permitted_uses": ["developmental evidence mapping", "facilitator design"],
-      "prohibited_uses": ["formal operator grading", "claiming PilotDriven Flight Discipline is an ICAO core competency"],
+      "prohibited_uses": ["formal operator grading", "aircraft procedure generation"],
       "private_storage_required": false,
       "raw_content_in_repository": false
     },
@@ -188,20 +204,7 @@
       "currency_status": "historical_context_only",
       "authority_scope": ["perception", "comprehension", "projection", "attention and workload"],
       "permitted_uses": ["situational-awareness teaching model"],
-      "prohibited_uses": ["psychological diagnosis of the pilot", "formal SA grading from a chat response"],
-      "private_storage_required": false,
-      "raw_content_in_repository": false
-    },
-    {
-      "source_id": "SA-REVIEW-2025",
-      "title": "A Comprehensive Review of Situational Awareness",
-      "role": "supporting_synthesis",
-      "controlling": false,
-      "issue_date": "28.04.25",
-      "currency_status": "historical_context_only",
-      "authority_scope": ["secondary review of SA theory and applications"],
-      "permitted_uses": ["research orientation", "identify primary-source review questions"],
-      "prohibited_uses": ["replace Endsley primary source", "operational aviation authority"],
+      "prohibited_uses": ["psychological diagnosis", "aircraft procedure generation"],
       "private_storage_required": false,
       "raw_content_in_repository": false
     },
@@ -243,18 +246,6 @@
       "raw_content_in_repository": false
     },
     {
-      "source_id": "AXIOMATIC-DESIGN-SUMMARY",
-      "title": "Axiomatic Design Summary",
-      "role": "supporting_synthesis",
-      "controlling": false,
-      "currency_status": "historical_context_only",
-      "authority_scope": ["introductory Axiomatic Design summary"],
-      "permitted_uses": ["orientation only"],
-      "prohibited_uses": ["override the fuller Axiomatic Design source", "aircraft operational authority"],
-      "private_storage_required": false,
-      "raw_content_in_repository": false
-    },
-    {
       "source_id": "PILOTDRIVEN-DECISION-PROCESS-ADVERSARIAL",
       "title": "PilotDriven Decision Process - Adversarial Input",
       "role": "adversarial_input",
@@ -268,19 +259,18 @@
     }
   ],
   "required_missing_sources": [
-    "Current SIA OM-A and OM-B sections governing diversion, commander authority, fuel and nearest-suitable considerations",
-    "Current SIA A350 MEL and CDL effectivity for 9V-SGE",
-    "Current FCTM Volume 1 where referenced by operator training material",
-    "Current EDTO operational-control and diversion policy source if separate from the supplied FCTM and OM",
-    "Approved EFB landing-performance outputs for CYQX and EINN under the scenario aircraft condition",
-    "Current aerodrome charts, AIP data, NOTAMs and operational weather at projected diversion arrival",
-    "Current OEB, TAB and temporary documentary-unit applicability for 9V-SGE"
+    "Current SIA A350 MEL and CDL source text and 9V-SGE effectivity for production use; the golden test only accepts CFP-declared MEL validity as a scenario assumption",
+    "Current FCTM Volume 1 where directly referenced",
+    "Airport-specific approved EFB landing-performance output and actual runway/LDA inputs for operational use; the golden test assumes a pass without generating numerical values",
+    "Current charts, AIP and live operational weather for operational use; the golden test uses the frozen CFP scenario snapshot and accepts its NOTAMs as current and valid",
+    "Current OEB, TAB and temporary documentary-unit applicability for 9V-SGE",
+    "Confirmation that QRH Rev 18 remains the current controlled QRH for the scenario date"
   ],
   "review_notes": [
-    "FCOM Rev 20 replaces the earlier Rev 18A citation in the initial golden fixture.",
-    "QRH Rev 18 is retained but cannot be assumed current without reconciliation against the operator's controlled library.",
-    "Training references and study guides are navigation and teaching aids only.",
-    "Fatigue material activates only when fatigue is a material scenario condition; it is not boilerplate for every Helpyou reply.",
+    "SIA OM Rev 32 is now the controlling operator-policy and document-priority source for the golden case.",
+    "FCTM is part of OM Volume D and remains below OM/FCOM/SQNP/SQSP in the OM priority sequence.",
+    "FCOM Rev 20 supplies the approved landing-performance method, but no airport-specific distance result is fabricated.",
+    "For the frozen SQ23 test only, Lido CFP NOTAMs and CFP-declared current MEL items are accepted as current and valid scenario inputs.",
     "The raw manuals and CFP remain in private storage and are not committed to GitHub."
   ]
 }
