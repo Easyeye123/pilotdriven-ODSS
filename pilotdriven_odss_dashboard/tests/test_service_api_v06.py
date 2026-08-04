@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
+import sqlite3
 import sys
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
+from threading import Barrier
 import threading
+from types import SimpleNamespace
 
 import fitz
 from PIL import Image
@@ -16,6 +21,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app.database as database
+import app.analysis as analysis_module
 import app.main as main
 import app.odss.surface_overlays as surface_overlays
 import app.odss_map_v06.report_worker as report_worker
@@ -127,6 +133,87 @@ def _authorization(
         "X-PilotDriven-Tenant-Id": tenant_id,
         "X-PilotDriven-User-Id": user_id,
     }
+
+
+def test_report_refresh_migration_backfills_once_without_promoting_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "legacy-odss.db"
+    monkeypatch.setattr(database, "DB_PATH", database_path)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE flights (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                flight_number TEXT,
+                flight_date TEXT,
+                departure TEXT,
+                destination TEXT,
+                aircraft TEXT,
+                registration TEXT,
+                source_filename TEXT NOT NULL,
+                source_path TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Uploaded',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                analysis_path TEXT,
+                level1_report TEXT,
+                level2_report TEXT,
+                level3_json TEXT,
+                level3_report TEXT,
+                notes TEXT,
+                last_error TEXT,
+                actual_takeoff_utc TEXT,
+                timing_reference_type TEXT,
+                timing_reference_waypoint TEXT,
+                timing_reference_utc TEXT,
+                analysis_id TEXT UNIQUE,
+                tenant_id TEXT,
+                user_id TEXT,
+                workspace_id TEXT,
+                external_flight_id TEXT,
+                analysis_version TEXT,
+                service_request_id TEXT
+            )
+            """
+        )
+        connection.executemany(
+            """
+            INSERT INTO flights (
+                source_filename, source_path, status,
+                level1_report, level2_report
+            ) VALUES (?, ?, 'Completed', ?, ?)
+            """,
+            (
+                ("current.pdf", "/tmp/current.pdf", "/tmp/l1.pdf", "/tmp/l2.pdf"),
+                ("pending.pdf", "/tmp/pending.pdf", "/tmp/l1-only.pdf", None),
+            ),
+        )
+
+    database.init_db()
+    with database.connect() as connection:
+        migrated = connection.execute(
+            "SELECT id, report_refresh_state FROM flights ORDER BY id"
+        ).fetchall()
+        assert [row["report_refresh_state"] for row in migrated] == [
+            "current",
+            "pending",
+        ]
+        connection.execute(
+            "UPDATE flights SET report_refresh_state='failed' WHERE id=?",
+            (migrated[0]["id"],),
+        )
+
+    database.init_db()
+    with database.connect() as connection:
+        preserved = connection.execute(
+            "SELECT report_refresh_state FROM flights ORDER BY id"
+        ).fetchall()
+    assert [row["report_refresh_state"] for row in preserved] == [
+        "failed",
+        "pending",
+    ]
 
 
 def _surface_contract(
@@ -347,7 +434,6 @@ def test_service_analysis_exposes_stable_contract_and_explicit_fallback(
         "workspace_id": "workspace-3",
         "external_flight_id": "flight-external-304",
     }
-
     contract = service_app.get(
         f"/v1/analyses/{analysis_id}/map-contract",
         headers=_authorization(),
@@ -567,6 +653,297 @@ def test_service_analysis_request_id_is_idempotent(
     assert len(database.list_flights("tenant-1")) == 1
 
 
+def test_failed_service_analysis_replay_returns_the_same_safe_422(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = {
+        **_authorization(),
+        "X-PilotDriven-Request-Id": "unsupported-upload-request",
+    }
+
+    def fail_analysis(*args, **kwargs):
+        raise analysis_module.CfpParseRejectedError(
+            "Synthetic carrier-specific parser detail"
+        )
+
+    monkeypatch.setattr(main, "run_odss_analysis", fail_analysis)
+    first = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={"file": ("unsupported.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    second = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={"file": ("unsupported-retry.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+
+    assert first.status_code == 422
+    assert second.status_code == 422
+    assert first.json() == second.json()
+    assert first.json()["detail"]["code"] == "CFP_FORMAT_UNSUPPORTED_OR_INVALID"
+    assert first.json()["detail"]["message"] == (
+        "This PDF could not be processed as a supported Lido CFP. "
+        "Check the file and upload it again."
+    )
+    assert "Synthetic" not in str(first.json())
+    summary = service_app.get(
+        f"/v1/analyses/{first.json()['detail']['analysis_id']}",
+        headers=_authorization(),
+    )
+    assert summary.status_code == 200
+    assert "Synthetic" not in str(summary.json())
+    assert summary.json()["warnings"] == [first.json()["detail"]["message"]]
+    assert len(database.list_flights("tenant-1")) == 1
+
+
+def test_transient_service_analysis_failure_retries_the_existing_request(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = {
+        **_authorization(),
+        "X-PilotDriven-Request-Id": "transient-upload-request",
+    }
+    original_analysis = main.run_odss_analysis
+    calls = 0
+
+    def fail_once(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("Synthetic report infrastructure outage")
+        return original_analysis(*args, **kwargs)
+
+    monkeypatch.setattr(main, "run_odss_analysis", fail_once)
+    first = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+
+    assert first.status_code == 503
+    assert first.json()["detail"]["code"] == "ANALYSIS_TEMPORARILY_UNAVAILABLE"
+    assert "Synthetic" not in str(first.json())
+    failed_summary = service_app.get(
+        f"/v1/analyses/{first.json()['detail']['analysis_id']}",
+        headers=_authorization(),
+    )
+    assert failed_summary.status_code == 200
+    assert "Synthetic" not in str(failed_summary.json())
+    assert failed_summary.json()["warnings"] == [
+        first.json()["detail"]["message"]
+    ]
+    second = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={"file": ("SQ304-retry.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert second.status_code == 200
+    assert calls == 2
+    assert len(database.list_flights("tenant-1")) == 1
+
+
+def test_concurrent_failed_idempotency_retry_replays_completed_winner(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers={
+            **_authorization(),
+            "X-PilotDriven-Request-Id": "failed-retry-race",
+        },
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    flight = database.get_flight_by_service_request(
+        "tenant-1",
+        "failed-retry-race",
+    )
+    assert flight is not None
+    database.update_status(
+        int(flight["id"]),
+        "Failed",
+        last_error="Synthetic retryable infrastructure failure",
+        tenant_id="tenant-1",
+        analysis_failure_category="infrastructure",
+    )
+    stale_failed = database.get_flight_for_tenant(
+        int(flight["id"]),
+        "tenant-1",
+    )
+    assert stale_failed is not None
+
+    original_run = main.run_odss_analysis
+    analysis_calls = 0
+    analysis_lock = threading.Lock()
+
+    def reject_stale_loser(*args, **kwargs):
+        nonlocal analysis_calls
+        with analysis_lock:
+            analysis_calls += 1
+            call_number = analysis_calls
+        if call_number > 1:
+            raise RuntimeError("Synthetic stale retry reran after completion")
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(main, "run_odss_analysis", reject_stale_loser)
+    original_claim = main.claim_analysis
+    claim_lock = threading.Lock()
+    claim_count = 0
+    winner_completed = threading.Event()
+
+    def order_retry_claims(*args, **kwargs):
+        nonlocal claim_count
+        with claim_lock:
+            claim_count += 1
+            claim_number = claim_count
+        if claim_number == 2:
+            assert winner_completed.wait(timeout=30)
+        return original_claim(*args, **kwargs)
+
+    monkeypatch.setattr(main, "claim_analysis", order_retry_claims)
+    original_update_status = main.update_status
+
+    def observe_completion(flight_id, status, *args, **kwargs):
+        result = original_update_status(flight_id, status, *args, **kwargs)
+        if status == "Completed":
+            winner_completed.set()
+        return result
+
+    monkeypatch.setattr(main, "update_status", observe_completion)
+
+    def retry_stale_snapshot() -> int:
+        try:
+            response = asyncio.run(
+                main._run_service_analysis_record(
+                    stale_failed,
+                    None,
+                    success_status_code=200,
+                )
+            )
+            return response.status_code
+        except main.HTTPException as exc:
+            return exc.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        statuses = list(executor.map(lambda _index: retry_stale_snapshot(), range(2)))
+
+    final = database.get_flight_for_tenant(int(flight["id"]), "tenant-1")
+    assert statuses == [200, 200]
+    assert analysis_calls == 1
+    assert final is not None
+    assert final["status"] == "Completed"
+    assert final["analysis_failure_category"] is None
+
+
+def test_concurrent_duplicate_request_id_never_returns_internal_error(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = {
+        **_authorization(),
+        "X-PilotDriven-Request-Id": "concurrent-upload-request",
+    }
+    original_create = main.create_flight
+    simultaneous_create = Barrier(2)
+
+    def synchronized_create(data):
+        simultaneous_create.wait(timeout=10)
+        return original_create(data)
+
+    monkeypatch.setattr(main, "create_flight", synchronized_create)
+
+    def upload_copy(request: tuple[TestClient, int]):
+        client, index = request
+        return client.post(
+            "/v1/analyses",
+            headers=headers,
+            files={
+                "file": (
+                    f"SQ304-concurrent-{index}.pdf",
+                    _build_lido_pdf(),
+                    "application/pdf",
+                )
+            },
+        )
+
+    with (
+        TestClient(main.app, follow_redirects=False) as first_client,
+        TestClient(main.app, follow_redirects=False) as second_client,
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        responses = list(
+            executor.map(upload_copy, ((first_client, 1), (second_client, 2)))
+        )
+
+    assert all(response.status_code != 500 for response in responses)
+    assert any(response.status_code in {200, 201} for response in responses)
+    assert {response.status_code for response in responses} <= {200, 201, 409}
+    assert len(database.list_flights("tenant-1")) == 1
+
+
+def test_initial_report_render_failure_rolls_back_all_generated_artifacts(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_report_render(*args, **kwargs):
+        raise ValueError("Synthetic report layout failure")
+
+    monkeypatch.setattr(analysis_module, "render_pdf", fail_report_render)
+    rejected = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+
+    assert rejected.status_code == 503
+    assert (
+        rejected.json()["detail"]["code"]
+        == "ANALYSIS_TEMPORARILY_UNAVAILABLE"
+    )
+    assert "Synthetic" not in str(rejected.json())
+    stored = database.list_flights("tenant-1")
+    assert len(stored) == 1
+    assert stored[0]["status"] == "Failed"
+    assert stored[0]["analysis_path"] is None
+    assert list(main.RESULT_DIR.glob("*")) == []
+    assert list(main.REPORT_DIR.glob("*")) == []
+
+
+def test_processing_service_analysis_replay_is_never_reported_as_success(
+    service_app: TestClient,
+) -> None:
+    headers = {
+        **_authorization(),
+        "X-PilotDriven-Request-Id": "processing-upload-request",
+    }
+    created = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    stored = database.get_flight_by_analysis_id(
+        created.json()["analysis_id"],
+        "tenant-1",
+    )
+    assert stored is not None
+    database.update_status(int(stored["id"]), "Processing", tenant_id="tenant-1")
+
+    replay = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={"file": ("SQ304-retry.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+
+    assert replay.status_code == 409
+    assert replay.json()["detail"] == "Analysis is already in progress"
+    assert len(database.list_flights("tenant-1")) == 1
+
+
 def test_service_timing_accepts_atot_and_rejects_unknown_reference(
     service_app: TestClient,
 ) -> None:
@@ -740,6 +1117,128 @@ def test_failed_timing_update_returns_non_200_and_restores_previous_reference(
         assert hashlib.sha256(Path(prior_path).read_bytes()).hexdigest() == prior_sha256
 
 
+def test_report_render_failure_keeps_valid_timing_and_exposes_retryable_state(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    prior_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert prior_flight is not None
+    prior_reports = {
+        field: (
+            str(prior_flight[field]),
+            hashlib.sha256(Path(str(prior_flight[field])).read_bytes()).hexdigest(),
+        )
+        for field in ("level1_report", "level2_report")
+    }
+
+    original_render_pdf = analysis_module.render_pdf
+
+    def fail_level_two_report(*args, **kwargs):
+        level = args[3] if len(args) > 3 else kwargs["level"]
+        if level == 2:
+            raise ValueError(
+                "Pilot-facing table cell cannot be rendered completely "
+                "at row 1, column 3."
+            )
+        return original_render_pdf(*args, **kwargs)
+
+    monkeypatch.setattr(analysis_module, "render_pdf", fail_level_two_report)
+    accepted = service_app.post(
+        f"/v1/analyses/{analysis_id}/timing",
+        headers=_authorization(),
+        json={
+            "reference_type": "takeoff",
+            "reference_utc": "2026-07-11T10:42:00+00:00",
+        },
+    )
+    stored = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=_authorization(),
+    )
+
+    assert accepted.status_code == 200
+    accepted_payload = accepted.json()
+    assert accepted_payload["status"] == "Completed"
+    assert accepted_payload["report_refresh"] == {
+        "state": "failed",
+        "reports_current": False,
+        "warning": (
+            "The timing update is active, but the Level 1 and Level 2 reports "
+            "could not be refreshed. Retry report generation before use."
+        ),
+    }
+    assert accepted_payload["report_refresh"]["warning"] in accepted_payload["warnings"]
+    assert stored is not None
+    assert stored["status"] == "Completed"
+    assert stored["timing_reference_utc"] == "2026-07-11T10:42:00+00:00"
+    assert stored["report_refresh_state"] == "failed"
+    assert stored["report_refresh_error_type"] == "ValueError"
+    assert briefing.status_code == 200
+    assert briefing.json()["timing"]["actual_takeoff_utc"] == "2026-07-11T10:42:00+00:00"
+    assert briefing.json()["report_refresh"] == accepted_payload["report_refresh"]
+    for field, (prior_path, prior_sha256) in prior_reports.items():
+        assert stored[field] == prior_path
+        assert hashlib.sha256(Path(prior_path).read_bytes()).hexdigest() == prior_sha256
+
+    for level in (1, 2):
+        stale = service_app.get(
+            f"/v1/analyses/{analysis_id}/reports/level-{level}",
+            headers=_authorization(),
+        )
+        assert stale.status_code == 409
+        assert stale.json()["detail"] == (
+            "Reports are not current for the active analysis. Retry report generation."
+        )
+
+    async def successful_report_retry(*args, **kwargs):
+        return {"mode": "primary", "reports_refreshed": True}
+
+    monkeypatch.setattr(
+        report_worker,
+        "render_reports_for_analysis",
+        successful_report_retry,
+    )
+    retried = service_app.post(
+        f"/v1/analyses/{analysis_id}/reports/render",
+        headers=_authorization(),
+    )
+    refreshed = service_app.get(
+        f"/v1/analyses/{analysis_id}",
+        headers=_authorization(),
+    )
+    refreshed_briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=_authorization(),
+    )
+
+    assert retried.status_code == 200
+    assert refreshed.status_code == 200
+    assert refreshed.json()["report_refresh"] == {
+        "state": "current",
+        "reports_current": True,
+        "warning": None,
+    }
+    assert refreshed_briefing.json()["report_refresh"] == refreshed.json()["report_refresh"]
+    assert accepted_payload["report_refresh"]["warning"] not in refreshed_briefing.json()["warnings"]
+    refreshed_row = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert refreshed_row is not None
+    refreshed_analysis = main.load_analysis(refreshed_row["analysis_path"])
+    assert refreshed_analysis is not None
+    assert refreshed_analysis["view"]["report_refresh"] == refreshed.json()["report_refresh"]
+    assert service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-1",
+        headers=_authorization(),
+    ).status_code == 200
+
+
 def test_concurrent_timing_update_returns_409_without_splitting_stored_state(
     service_app: TestClient,
 ) -> None:
@@ -798,6 +1297,95 @@ def test_concurrent_timing_update_returns_409_without_splitting_stored_state(
     for field, (prior_path, prior_sha256) in prior_artifacts.items():
         assert restored_flight[field] == prior_path
         assert hashlib.sha256(Path(prior_path).read_bytes()).hexdigest() == prior_sha256
+
+
+def test_final_status_write_failure_restores_prior_db_artifact_snapshot(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    prior = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert prior is not None
+    snapshot_fields = (
+        "status",
+        "actual_takeoff_utc",
+        "timing_reference_type",
+        "timing_reference_utc",
+        "timing_reference_waypoint",
+        "analysis_path",
+        "level1_report",
+        "level2_report",
+        "level3_json",
+        "level3_report",
+        "report_refresh_state",
+        "report_refresh_error_type",
+        "analysis_failure_category",
+    )
+    prior_snapshot = {field: prior[field] for field in snapshot_fields}
+    artifact_fields = (
+        "analysis_path",
+        "level1_report",
+        "level2_report",
+        "level3_json",
+        "level3_report",
+    )
+    prior_artifacts = {
+        field: (
+            Path(str(prior[field])),
+            hashlib.sha256(Path(str(prior[field])).read_bytes()).hexdigest(),
+        )
+        for field in artifact_fields
+        if prior[field]
+    }
+    prior_result_files = {path.name for path in main.RESULT_DIR.iterdir()}
+    prior_report_files = {path.name for path in main.REPORT_DIR.iterdir()}
+
+    original_update_status = main.update_status
+    injected = False
+
+    def fail_completed_status(flight_id, status, *args, **kwargs):
+        nonlocal injected
+        if status == "Completed" and not injected:
+            injected = True
+            raise OSError("Synthetic final status write failure")
+        return original_update_status(flight_id, status, *args, **kwargs)
+
+    monkeypatch.setattr(main, "update_status", fail_completed_status)
+    rejected = service_app.post(
+        f"/v1/analyses/{analysis_id}/timing",
+        headers=_authorization(),
+        json={
+            "reference_type": "takeoff",
+            "reference_utc": "2026-07-11T10:42:00+00:00",
+        },
+    )
+
+    restored = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert rejected.status_code == 422
+    assert injected is True
+    assert restored is not None
+    assert {field: restored[field] for field in snapshot_fields} == prior_snapshot
+    for field, (path, digest) in prior_artifacts.items():
+        assert restored[field] == str(path)
+        assert path.is_file()
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+    assert {path.name for path in main.RESULT_DIR.iterdir()} == prior_result_files
+    assert {path.name for path in main.REPORT_DIR.iterdir()} == prior_report_files
+    assert service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=_authorization(),
+    ).status_code == 200
+    for level in (1, 2):
+        assert service_app.get(
+            f"/v1/analyses/{analysis_id}/reports/level-{level}",
+            headers=_authorization(),
+        ).status_code == 200
 
 
 def test_stale_simultaneous_timing_loser_cannot_clobber_winner(
@@ -1472,6 +2060,66 @@ def test_processing_claim_blocks_weather_surface_and_map_report_writers(
         assert path.read_bytes() == artifact_bytes[field]
 
 
+def test_surface_overlay_publication_rolls_back_all_artifacts_on_rename_failure(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    flight = database.get_flight_by_analysis_id(
+        created.json()["analysis_id"],
+        "tenant-1",
+    )
+    assert flight is not None
+    analysis = main.load_analysis(flight["analysis_path"])
+    assert analysis is not None
+    destinations = {
+        "analysis": Path(str(flight["analysis_path"])),
+        "level1": Path(str(flight["level1_report"])),
+        "level2": Path(str(flight["level2_report"])),
+    }
+    prior_bytes = {
+        name: path.read_bytes()
+        for name, path in destinations.items()
+    }
+
+    def render_replacement(
+        _flight, _findings, _warnings, level, destination, **_kwargs
+    ):
+        destination.write_bytes(f"replacement-level-{level}".encode())
+
+    monkeypatch.setattr(main, "render_pdf", render_replacement)
+    original_replace = Path.replace
+    injected = False
+
+    def fail_analysis_publication(self: Path, target):
+        nonlocal injected
+        if Path(target) == destinations["analysis"] and not injected:
+            injected = True
+            raise OSError("Synthetic surface analysis publication failure")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_analysis_publication)
+
+    with pytest.raises(
+        OSError,
+        match="Synthetic surface analysis publication failure",
+    ):
+        main._publish_surface_overlay_reports(flight, analysis, [])
+
+    assert injected is True
+    for name, path in destinations.items():
+        assert path.read_bytes() == prior_bytes[name]
+    assert list(main.RESULT_DIR.glob("*.surface.tmp")) == []
+    assert list(main.REPORT_DIR.glob("*.surface.tmp")) == []
+    assert list(main.RESULT_DIR.glob("*.publication-backup-*")) == []
+    assert list(main.REPORT_DIR.glob("*.publication-backup-*")) == []
+
+
 def test_report_worker_endpoint_preserves_labelled_schematic_fallback(
     service_app: TestClient,
 ) -> None:
@@ -1493,6 +2141,256 @@ def test_report_worker_endpoint_preserves_labelled_schematic_fallback(
     assert map_render["reports_refreshed"] is False
     assert "Schematic route display" in map_render["label"]
     assert Path(map_render["artifact_path"]).is_file()
+    assert rendered.json()["report_refresh"] == {
+        "state": "current",
+        "reports_current": True,
+        "warning": None,
+    }
+
+
+def test_schematic_report_worker_does_not_promote_stale_reports(
+    service_app: TestClient,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    ).json()
+    analysis_id = created["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    database.set_report_refresh_state(
+        int(flight["id"]),
+        "failed",
+        error_type="SyntheticStaleReports",
+        tenant_id="tenant-1",
+    )
+
+    rendered = service_app.post(
+        f"/v1/analyses/{analysis_id}/reports/render",
+        headers=_authorization(),
+    )
+
+    assert rendered.status_code == 200
+    assert rendered.json()["map_render"]["reports_refreshed"] is False
+    assert rendered.json()["report_refresh"]["state"] == "failed"
+    assert service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-1",
+        headers=_authorization(),
+    ).status_code == 409
+
+
+def test_report_retry_does_not_embed_the_resolved_failure_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.odss_map_v06.renderers import MapRenderResult
+
+    retry_warning = "Stored reports are stale; retry report generation."
+    analysis = {
+        "flight": {},
+        "findings": [],
+        "view": {
+            "warnings": ["Operational warning", retry_warning],
+            "report_refresh": {"state": "failed", "warning": retry_warning},
+        },
+    }
+    rendered_warnings: list[list[str]] = []
+
+    def capture_render(_flight, _findings, warnings, level, destination, **_kwargs):
+        rendered_warnings.append(list(warnings))
+        destination.write_bytes(f"level-{level}".encode())
+
+    monkeypatch.setattr(report_worker, "render_pdf", capture_render)
+    level1 = tmp_path / "level-1.pdf"
+    level2 = tmp_path / "level-2.pdf"
+    level1.write_bytes(b"old-level-1")
+    level2.write_bytes(b"old-level-2")
+
+    refreshed = report_worker._regenerate_reports(
+        analysis=analysis,
+        level1_path=level1,
+        level2_path=level2,
+        map_result=MapRenderResult(
+            provider="test",
+            mode="primary",
+            content=b"png",
+            media_type="image/png",
+            label="Test map",
+        ),
+        map_path=tmp_path / "map.png",
+    )
+
+    assert refreshed is True
+    assert rendered_warnings == [["Operational warning"], ["Operational warning"]]
+    assert level1.read_bytes() == b"level-1"
+    assert level2.read_bytes() == b"level-2"
+
+
+def test_report_retry_publishes_neither_pdf_when_level_two_render_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.odss_map_v06.renderers import MapRenderResult
+
+    def fail_second_render(_flight, _findings, _warnings, level, destination, **_kwargs):
+        destination.write_bytes(f"new-level-{level}".encode())
+        if level == 2:
+            raise ValueError("Synthetic level 2 report failure")
+
+    monkeypatch.setattr(report_worker, "render_pdf", fail_second_render)
+    level1 = tmp_path / "level-1.pdf"
+    level2 = tmp_path / "level-2.pdf"
+    level1.write_bytes(b"old-level-1")
+    level2.write_bytes(b"old-level-2")
+
+    with pytest.raises(ValueError, match="Synthetic level 2 report failure"):
+        report_worker._regenerate_reports(
+            analysis={"flight": {}, "findings": [], "view": {}},
+            level1_path=level1,
+            level2_path=level2,
+            map_result=MapRenderResult(
+                provider="test",
+                mode="primary",
+                content=b"png",
+                media_type="image/png",
+                label="Test map",
+            ),
+            map_path=tmp_path / "map.png",
+        )
+
+    assert level1.read_bytes() == b"old-level-1"
+    assert level2.read_bytes() == b"old-level-2"
+    assert list(tmp_path.glob("*.map.tmp")) == []
+
+
+def test_report_publication_rolls_back_the_complete_artifact_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.odss_map_v06.renderers import MapRenderResult
+
+    def render_new_reports(
+        _flight, _findings, _warnings, level, destination, **_kwargs
+    ):
+        destination.write_bytes(f"new-level-{level}".encode())
+
+    monkeypatch.setattr(report_worker, "render_pdf", render_new_reports)
+    level1 = tmp_path / "level-1.pdf"
+    level2 = tmp_path / "level-2.pdf"
+    map_destination = tmp_path / "route-map.png"
+    map_staged = tmp_path / ".route-map.stage.png"
+    analysis_destination = tmp_path / "analysis.json"
+    level1.write_bytes(b"old-level-1")
+    level2.write_bytes(b"old-level-2")
+    map_destination.write_bytes(b"old-map")
+    map_staged.write_bytes(b"new-map")
+    analysis_destination.write_bytes(b'{"version":"old"}')
+
+    original_replace = Path.replace
+    injected = False
+
+    def fail_analysis_publication(self: Path, target):
+        nonlocal injected
+        if Path(target) == analysis_destination and not injected:
+            injected = True
+            raise OSError("Synthetic analysis JSON publication failure")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_analysis_publication)
+
+    with pytest.raises(
+        OSError,
+        match="Synthetic analysis JSON publication failure",
+    ):
+        report_worker._regenerate_reports(
+            analysis={"flight": {}, "findings": [], "view": {}},
+            level1_path=level1,
+            level2_path=level2,
+            map_result=MapRenderResult(
+                provider="test",
+                mode="primary",
+                content=b"png",
+                media_type="image/png",
+                label="Test map",
+            ),
+            map_path=map_staged,
+            additional_staged_artifacts=[(map_staged, map_destination)],
+            additional_json_artifacts=[
+                ({"version": "new"}, analysis_destination)
+            ],
+        )
+
+    assert level1.read_bytes() == b"old-level-1"
+    assert level2.read_bytes() == b"old-level-2"
+    assert map_destination.read_bytes() == b"old-map"
+    assert analysis_destination.read_bytes() == b'{"version":"old"}'
+    assert not map_staged.exists()
+    assert list(tmp_path.glob("*.publication-stage-*")) == []
+    assert list(tmp_path.glob("*.publication-backup-*")) == []
+
+
+def test_report_publication_stages_analysis_before_replacing_any_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.odss_map_v06.renderers import MapRenderResult
+
+    def render_new_reports(
+        _flight, _findings, _warnings, level, destination, **_kwargs
+    ):
+        destination.write_bytes(f"new-level-{level}".encode())
+
+    monkeypatch.setattr(report_worker, "render_pdf", render_new_reports)
+    level1 = tmp_path / "level-1.pdf"
+    level2 = tmp_path / "level-2.pdf"
+    map_destination = tmp_path / "route-map.png"
+    map_staged = tmp_path / ".route-map.stage.png"
+    analysis_destination = tmp_path / "analysis.json"
+    level1.write_bytes(b"old-level-1")
+    level2.write_bytes(b"old-level-2")
+    map_destination.write_bytes(b"old-map")
+    map_staged.write_bytes(b"new-map")
+    analysis_destination.write_bytes(b'{"version":"old"}')
+
+    original_write_text = Path.write_text
+
+    def fail_analysis_staging(self: Path, data: str, *args, **kwargs):
+        if self.name.startswith(
+            f".{analysis_destination.name}.publication-stage-"
+        ):
+            raise OSError("Synthetic analysis JSON staging failure")
+        return original_write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_analysis_staging)
+
+    with pytest.raises(OSError, match="Synthetic analysis JSON staging failure"):
+        report_worker._regenerate_reports(
+            analysis={"flight": {}, "findings": [], "view": {}},
+            level1_path=level1,
+            level2_path=level2,
+            map_result=MapRenderResult(
+                provider="test",
+                mode="primary",
+                content=b"png",
+                media_type="image/png",
+                label="Test map",
+            ),
+            map_path=map_staged,
+            additional_staged_artifacts=[(map_staged, map_destination)],
+            additional_json_artifacts=[
+                ({"version": "new"}, analysis_destination)
+            ],
+        )
+
+    assert level1.read_bytes() == b"old-level-1"
+    assert level2.read_bytes() == b"old-level-2"
+    assert map_destination.read_bytes() == b"old-map"
+    assert analysis_destination.read_bytes() == b'{"version":"old"}'
+    assert not map_staged.exists()
+    assert list(tmp_path.glob("*.map.tmp")) == []
+    assert list(tmp_path.glob("*.publication-stage-*")) == []
+    assert list(tmp_path.glob("*.publication-backup-*")) == []
 
 
 def test_report_worker_embeds_primary_png_and_refreshes_reports(
@@ -1552,6 +2450,93 @@ def test_report_worker_embeds_primary_png_and_refreshes_reports(
     )
     assert level1.content.startswith(b"%PDF")
     assert level2.content.startswith(b"%PDF")
+
+
+def test_report_worker_cli_claims_and_finalizes_stale_report_retry(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.odss_map_v06.renderers import MapRenderResult
+
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    database.set_report_refresh_state(
+        int(flight["id"]),
+        "failed",
+        error_type="SyntheticStaleReports",
+        tenant_id="tenant-1",
+    )
+    analysis_path = Path(str(flight["analysis_path"]))
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    analysis.setdefault("view", {}).setdefault("warnings", []).append(
+        main.REPORT_REFRESH_WARNING
+    )
+    analysis["view"]["report_refresh"] = {
+        "state": "failed",
+        "reports_current": False,
+        "warning": main.REPORT_REFRESH_WARNING,
+    }
+    analysis_path.write_text(json.dumps(analysis), encoding="utf-8")
+
+    png_buffer = BytesIO()
+    Image.new("RGB", (8, 8), "navy").save(png_buffer, format="PNG")
+    png = png_buffer.getvalue()
+
+    class FakeRenderer:
+        name = "test-cli-primary"
+
+        async def render_snapshot(self, contract, *, width, height):
+            return MapRenderResult(
+                provider=self.name,
+                mode="primary",
+                content=png,
+                media_type="image/png",
+                label="Test CLI map",
+                metadata={"route_hash": contract.route_hash},
+            )
+
+    monkeypatch.setattr(
+        report_worker,
+        "_renderers",
+        lambda settings, **_identity: [FakeRenderer()],
+    )
+    monkeypatch.setattr(
+        report_worker,
+        "_parse_args",
+        lambda: SimpleNamespace(
+            analysis_id=analysis_id,
+            tenant_id="tenant-1",
+            user_id="pilot-7",
+            width=1600,
+            height=900,
+        ),
+    )
+
+    assert report_worker.main() == 0
+
+    refreshed = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert refreshed is not None
+    assert refreshed["status"] == "Completed"
+    assert refreshed["report_refresh_state"] == "current"
+    assert refreshed["report_refresh_error_type"] is None
+    refreshed_analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    assert refreshed_analysis["view"]["report_refresh"] == {
+        "state": "current",
+        "reports_current": True,
+        "warning": None,
+    }
+    assert main.REPORT_REFRESH_WARNING not in refreshed_analysis["view"]["warnings"]
+    assert service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/level-1",
+        headers=_authorization(),
+    ).status_code == 200
 
 
 def test_service_analysis_is_hidden_from_another_tenant_on_every_surface(
@@ -1629,3 +2614,104 @@ def test_service_analysis_is_hidden_from_another_tenant_on_every_surface(
     assert unchanged is not None
     assert unchanged["actual_takeoff_utc"] == original_timing
     assert database.get_flight_by_analysis_id(analysis_id, "tenant-other") is None
+
+
+def test_governed_profile_chart_route_serves_only_held_validated_report_page(
+    service_app: TestClient,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    assert "profile_charts" in created.json()["links"]
+
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    analysis_path = Path(str(flight["analysis_path"]))
+    payload = json.loads(analysis_path.read_text(encoding="utf-8"))
+    artifact = {
+        "chart_number": "8-7",
+        "source_document": "Controlled depressurisation profiles",
+        "source_revision": "2026-07-01",
+        "source_page": 19,
+        "source_link": "controlled-library/profile/8-7",
+        "route_airway_match_verified": True,
+        "aircraft_effectivity_verified": True,
+        "chart_image_validated": True,
+        "level1_analysis_chart_embedded": True,
+        "level1_report_page": 3,
+        "level2_full_source_chart_embedded": True,
+        "level2_report_page": 1,
+    }
+    payload.setdefault("flight", {})["depressurisation_profile_charts"] = [artifact]
+    analysis_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    chart = service_app.get(
+        f"/v1/analyses/{analysis_id}/profile-charts/8-7",
+        headers=_authorization(),
+    )
+    assert chart.status_code == 200
+    assert chart.headers["content-type"] == "image/png"
+    assert chart.headers["cache-control"] == "no-store"
+    assert chart.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+    claimed = database.claim_analysis(int(flight["id"]), "tenant-1")
+    assert claimed is not None
+    try:
+        assert service_app.get(
+            f"/v1/analyses/{analysis_id}/profile-charts/8-7",
+            headers=_authorization(),
+        ).status_code == 409
+        assert service_app.get(
+            f"/v1/analyses/{analysis_id}/reports/level-2",
+            headers=_authorization(),
+        ).status_code == 409
+    finally:
+        database.restore_analysis_state(
+            int(flight["id"]),
+            str(claimed["status"]),
+            claimed["notes"],
+            claimed["last_error"],
+            tenant_id="tenant-1",
+            analysis_failure_category=claimed["analysis_failure_category"],
+        )
+
+    database.set_report_refresh_state(
+        int(flight["id"]),
+        "failed",
+        error_type="SyntheticStaleReports",
+        tenant_id="tenant-1",
+    )
+    assert service_app.get(
+        f"/v1/analyses/{analysis_id}/profile-charts/8-7",
+        headers=_authorization(),
+    ).status_code == 409
+    database.set_report_refresh_state(
+        int(flight["id"]),
+        "current",
+        tenant_id="tenant-1",
+    )
+
+    unknown = service_app.get(
+        f"/v1/analyses/{analysis_id}/profile-charts/10-4",
+        headers=_authorization(),
+    )
+    assert unknown.status_code == 404
+    other_tenant = service_app.get(
+        f"/v1/analyses/{analysis_id}/profile-charts/8-7",
+        headers=_authorization(tenant_id="tenant-2"),
+    )
+    assert other_tenant.status_code == 404
+
+    payload["flight"]["depressurisation_profile_charts"][0][
+        "aircraft_effectivity_verified"
+    ] = False
+    analysis_path.write_text(json.dumps(payload), encoding="utf-8")
+    unverified = service_app.get(
+        f"/v1/analyses/{analysis_id}/profile-charts/8-7",
+        headers=_authorization(),
+    )
+    assert unverified.status_code == 404

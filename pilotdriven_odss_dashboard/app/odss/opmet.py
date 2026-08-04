@@ -22,6 +22,7 @@ import re
 from threading import Lock
 import time
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -107,8 +108,9 @@ def _cache_seconds() -> float:
     return _setting_float("ODSS_OPMET_CACHE_SECONDS", 60.0, 60.0, 900.0)
 
 
-def _request_key(path: str, params: dict[str, str]) -> str:
-    return f"{path}?{'&'.join(f'{key}={params[key]}' for key in sorted(params))}"
+def _source_url(path: str, params: dict[str, str]) -> str:
+    """Build the exact approved request URL retained in the source receipt."""
+    return f"{AWC_API_ORIGIN}{path}?{urlencode(sorted(params.items()))}"
 
 
 def _product_effective_window(
@@ -282,6 +284,19 @@ def _product_review(
     effective_starts = [_utc(item.get("effective_start_utc")) for item in snapshots]
     effective_ends = [_utc(item.get("effective_end_utc")) for item in snapshots]
     retrieved = [_utc(item.get("retrieved_at_utc")) for item in snapshots]
+    source_receipts = [
+        {
+            "status": status,
+            "source_url": snapshot.get("source_url"),
+            "retrieved_at_utc": snapshot.get("retrieved_at_utc"),
+            "effective_start_utc": snapshot.get("effective_start_utc"),
+            "effective_end_utc": snapshot.get("effective_end_utc"),
+            "refresh_after_utc": snapshot.get("refresh_after_utc"),
+            "expires_at_utc": snapshot.get("expires_at_utc"),
+            "completeness_status": snapshot.get("completeness_status"),
+        }
+        for snapshot, status in zip(snapshots, statuses, strict=True)
+    ]
     return {
         "status": (
             "available"
@@ -298,6 +313,7 @@ def _product_review(
         "refresh_after_utc": source.get("refresh_after_utc"),
         "expires_at_utc": source.get("expires_at_utc"),
         "completeness_status": source.get("completeness_status"),
+        "source_receipts": source_receipts,
     }
 
 
@@ -313,7 +329,8 @@ def fetch_awc_product(
         raise ValueError("Unsupported AWC OPMET path")
     retrieved_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     request_params = {**params, "format": "json"}
-    key = _request_key(path, request_params)
+    source_url = _source_url(path, request_params)
+    key = source_url
     now_monotonic = time.monotonic()
     cache_seconds = _cache_seconds()
     with _CACHE_LOCK:
@@ -329,7 +346,7 @@ def fetch_awc_product(
     )
     payload: list[Any] = []
     try:
-        response = active_client.get(f"{AWC_API_ORIGIN}{path}", params=request_params)
+        response = active_client.get(source_url)
         if response.status_code == 204:
             payload = []
         else:
@@ -344,7 +361,7 @@ def fetch_awc_product(
         result = {
             "status": "available",
             "provider": "noaa-awc-data-api",
-            "source_url": f"{AWC_API_ORIGIN}{path}",
+            "source_url": source_url,
             "retrieved_at_utc": _iso(retrieved_at),
             "record_count": len(payload),
             "records": payload,
@@ -354,7 +371,7 @@ def fetch_awc_product(
         result = {
             "status": "unavailable",
             "provider": "noaa-awc-data-api",
-            "source_url": f"{AWC_API_ORIGIN}{path}",
+            "source_url": source_url,
             "retrieved_at_utc": _iso(retrieved_at),
             "record_count": 0,
             "records": [],

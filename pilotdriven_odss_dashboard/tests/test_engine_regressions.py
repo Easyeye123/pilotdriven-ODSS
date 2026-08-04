@@ -974,7 +974,10 @@ def test_official_weather_source_gap_is_pilot_facing_and_fails_closed() -> None:
         "reason_codes": ["source_stale"],
         "products": {
             "TAF": {
-                "source_url": "https://aviationweather.gov/api/data/taf",
+                "source_url": (
+                    "https://aviationweather.gov/api/data/taf?"
+                    "format=json&ids=WSSS%2CRJBB%2CWIII"
+                ),
                 "retrieved_at_utc": "2026-07-16T09:00:00+00:00",
                 "effective_start_utc": "2026-07-16T06:00:00+00:00",
                 "effective_end_utc": "2026-07-17T06:00:00+00:00",
@@ -990,7 +993,8 @@ def test_official_weather_source_gap_is_pilot_facing_and_fails_closed() -> None:
     assert weather[0]["severity"] == "unknown"
     assert weather[0]["data"]["window_status"] == "review_required"
     assert weather[0]["data"]["source_references"][0]["source_url"] == (
-        "https://aviationweather.gov/api/data/taf"
+        "https://aviationweather.gov/api/data/taf?"
+        "format=json&ids=WSSS%2CRJBB%2CWIII"
     )
     assert any("Official public METAR/TAF coverage is incomplete" in warning for warning in warnings)
 

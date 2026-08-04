@@ -66,6 +66,10 @@ _LEVEL_2_PAGE_TITLES = (
 _LEVEL_2_SOURCE_CHART_MARKER = "LEVEL 2 SOURCE CHART - PROFILE"
 _LEVEL_2_NOTAM_CONTINUATION_MARKER = "LEVEL 2 - NOTAM CONTINUATION"
 _LEVEL_2_AIP_SUPPLEMENT_MARKER = "LEVEL 2 - AIP SUPPLEMENT DETAILS"
+_LEVEL_2_GOVERNED_TABLE_CONTINUATION_MARKERS = (
+    "LEVEL 2 - WEATHER CONTINUED",
+    "LEVEL 2 - ADVISORIES CONTINUED",
+)
 _LEVEL_2_FAIL_CLOSED_ADVISORY_RESULTS = (
     (
         "SIGMET review required",
@@ -226,6 +230,10 @@ def validate_report_pdf(
             is_aip_supplement = (
                 _LEVEL_2_AIP_SUPPLEMENT_MARKER.lower() in appended_text
             )
+            is_governed_table_continuation = any(
+                marker.lower() in appended_text
+                for marker in _LEVEL_2_GOVERNED_TABLE_CONTINUATION_MARKERS
+            )
             if is_source_chart:
                 source_chart_seen = True
                 continue
@@ -233,14 +241,17 @@ def validate_report_pdf(
                 continue
             if is_aip_supplement and not source_chart_seen:
                 continue
+            if is_governed_table_continuation and not source_chart_seen:
+                continue
             if not is_source_chart:
                 violations.append(ReportQualityViolation(
                     "LEVEL_2_APPENDIX_STRUCTURE",
                     (
                         f"Level 2 page {page_index + 1} must be a NOTAM "
-                        "continuation or AIP supplement detail page before the "
-                        "source charts, or an embedded depressurisation "
-                        "source-chart page."
+                        "continuation, AIP supplement detail, or governed "
+                        "weather/advisory continuation page before the source "
+                        "charts, or an embedded depressurisation source-chart "
+                        "page."
                     ),
                 ))
 

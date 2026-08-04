@@ -372,16 +372,47 @@ def _wrap(value: Any, width: float, *, font: str = theme.SANS, size: float = 5.6
     words = _pilot_text(value).split()
     if not words:
         return ["Not available"]
+
+    def split_token(token: str) -> list[str]:
+        if pdfmetrics.stringWidth(token, font, size) <= width:
+            return [token]
+        chunks: list[str] = []
+        remaining = token
+        while remaining:
+            low = 1
+            high = len(remaining)
+            fitted = 1
+            while low <= high:
+                middle = (low + high) // 2
+                if pdfmetrics.stringWidth(remaining[:middle], font, size) <= width:
+                    fitted = middle
+                    low = middle + 1
+                else:
+                    high = middle - 1
+            chunks.append(remaining[:fitted])
+            remaining = remaining[fitted:]
+        return chunks
+
     lines: list[str] = []
-    current = words[0]
-    for word in words[1:]:
+    current = ""
+    for word in words:
+        chunks = split_token(word)
+        if len(chunks) > 1:
+            if current:
+                lines.append(current)
+            lines.extend(chunks[:-1])
+            current = chunks[-1]
+            continue
         candidate = f"{current} {word}"
-        if pdfmetrics.stringWidth(candidate, font, size) <= width:
+        if not current:
+            current = word
+        elif pdfmetrics.stringWidth(candidate, font, size) <= width:
             current = candidate
         else:
             lines.append(current)
             current = word
-    lines.append(current)
+    if current:
+        lines.append(current)
     return lines
 
 
@@ -582,6 +613,124 @@ def _strip(
     )
 
 
+_TABLE_HEADER_HEIGHT = 9 * mm
+_TABLE_CELL_PADDING = 2.4 * mm
+# ReportLab converts millimetres to repeating-point values. Keep a small
+# layout tolerance so a row planned for exactly N lines does not lose the
+# final line when floor division lands a fraction below N at draw time.
+_TABLE_LAYOUT_TOLERANCE = 0.25
+
+
+def _minimum_table_row_height(
+    row: Sequence[Any],
+    widths: Sequence[float],
+) -> float:
+    required_height = 6.5 * mm
+    for column_index, column_width in enumerate(widths):
+        value = row[column_index] if column_index < len(row) else ""
+        font_name = theme.SANS_BOLD if column_index == 0 else theme.SANS
+        lines = _wrap(
+            value,
+            column_width - 4 * mm,
+            font=font_name,
+            size=_MIN_TABLE_FONT_SIZE,
+        )
+        required_height = max(
+            required_height,
+            len(lines) * (_MIN_TABLE_FONT_SIZE + 1.5)
+            + _TABLE_CELL_PADDING
+            + _TABLE_LAYOUT_TOLERANCE,
+        )
+    return required_height
+
+
+def _split_table_row_for_page(
+    row: Sequence[Any],
+    widths: Sequence[float],
+    available_height: float,
+) -> list[list[str]]:
+    leading = _MIN_TABLE_FONT_SIZE + 1.5
+    lines_per_fragment = max(
+        1,
+        int((available_height - _TABLE_CELL_PADDING) // leading),
+    )
+    cell_lines: list[list[str]] = []
+    for column_index, column_width in enumerate(widths):
+        value = row[column_index] if column_index < len(row) else ""
+        font_name = theme.SANS_BOLD if column_index == 0 else theme.SANS
+        cell_lines.append(
+            _wrap(
+                value,
+                column_width - 4 * mm,
+                font=font_name,
+                size=_MIN_TABLE_FONT_SIZE,
+            )
+        )
+    fragment_count = max(
+        1,
+        max(
+            (len(lines) + lines_per_fragment - 1) // lines_per_fragment
+            for lines in cell_lines
+        ),
+    )
+    fragments: list[list[str]] = []
+    for fragment_index in range(fragment_count):
+        start = fragment_index * lines_per_fragment
+        end = start + lines_per_fragment
+        fragment: list[str] = []
+        for column_index, lines in enumerate(cell_lines):
+            selected = lines[start:end]
+            if selected:
+                fragment.append(" ".join(selected))
+            else:
+                # Repeat short context cells (location, time and source) so a
+                # continuation row remains independently understandable.
+                value = row[column_index] if column_index < len(row) else ""
+                fragment.append(_pilot_text(value))
+        fragments.append(fragment)
+    return fragments
+
+
+def _paginate_complete_table_rows(
+    rows: Sequence[Sequence[Any]],
+    *,
+    width: float,
+    height: float,
+    columns: Sequence[tuple[str, float]],
+    max_rows: int | None = None,
+) -> list[list[list[str]]]:
+    """Return page-sized row groups without dropping governed cell text."""
+    available = height - _TABLE_HEADER_HEIGHT
+    if available <= _TABLE_CELL_PADDING + _MIN_TABLE_FONT_SIZE + 1.5:
+        raise ValueError("Pilot-facing table has no usable body area")
+    widths = [width * fraction for _, fraction in columns]
+    expanded: list[list[str]] = []
+    for source_row in rows:
+        row = [_pilot_text(value) for value in source_row]
+        if _minimum_table_row_height(row, widths) <= available + 0.01:
+            expanded.append(row)
+        else:
+            expanded.extend(_split_table_row_for_page(row, widths, available))
+
+    if not expanded:
+        return [[]]
+    pages: list[list[list[str]]] = []
+    current: list[list[str]] = []
+    used_height = 0.0
+    for row in expanded:
+        row_height = _minimum_table_row_height(row, widths)
+        row_limit_reached = max_rows is not None and len(current) >= max_rows
+        if current and (row_limit_reached or used_height + row_height > available + 0.01):
+            pages.append(current)
+            current = []
+            used_height = 0.0
+        current.append(row)
+        used_height += row_height
+    if current:
+        pages.append(current)
+    return pages
+
+
 def _draw_table(
     canvas: pdf_canvas.Canvas,
     *,
@@ -605,14 +754,53 @@ def _draw_table(
     if not data:
         data = [[empty_text] + [""] * (len(columns) - 1)]
 
-    header_h = 9 * mm
+    header_h = _TABLE_HEADER_HEIGHT
     available = height - header_h
-    natural_row_h = available / max(1, len(data))
-    row_h = natural_row_h if fill_height else min(10 * mm, natural_row_h)
-    if row_h < 6.5 * mm:
-        visible_count = max(1, int(available // (6.5 * mm)))
-        data = data[:visible_count]
-        row_h = available / max(1, len(data))
+    widths = [width * fraction for _, fraction in columns]
+    cell_padding = _TABLE_CELL_PADDING
+
+    def font_sizes() -> list[float]:
+        sizes: list[float] = []
+        candidate = body_font_size
+        while candidate > _MIN_TABLE_FONT_SIZE:
+            sizes.append(round(candidate, 1))
+            candidate = round(candidate - 0.5, 1)
+        if not sizes or sizes[-1] != _MIN_TABLE_FONT_SIZE:
+            sizes.append(_MIN_TABLE_FONT_SIZE)
+        return sizes
+
+    candidate_sizes = font_sizes()
+    if require_complete_text:
+        minimum_row_heights: list[float] = []
+        for row in data:
+            minimum_row_heights.append(_minimum_table_row_height(row, widths))
+
+        required_total = sum(minimum_row_heights)
+        if required_total > available + 0.01:
+            raise ValueError(
+                "Pilot-facing table requires a continuation page to render "
+                "all governed text."
+            )
+        row_heights = list(minimum_row_heights)
+        spare = available - required_total
+        if fill_height and row_heights:
+            growth = spare / len(row_heights)
+            row_heights = [row_height + growth for row_height in row_heights]
+        elif spare > 0:
+            for index, row_height in enumerate(row_heights):
+                growth = min(spare, max(0.0, 10 * mm - row_height))
+                row_heights[index] += growth
+                spare -= growth
+                if spare <= 0:
+                    break
+    else:
+        natural_row_h = available / max(1, len(data))
+        row_h = natural_row_h if fill_height else min(10 * mm, natural_row_h)
+        if row_h < 6.5 * mm:
+            visible_count = max(1, int(available // (6.5 * mm)))
+            data = data[:visible_count]
+            row_h = available / max(1, len(data))
+        row_heights = [row_h] * len(data)
 
     canvas.setFillColor(_PANEL)
     canvas.setStrokeColor(_LINE)
@@ -621,7 +809,6 @@ def _draw_table(
     canvas.rect(x, y + height - header_h, width, header_h, fill=1, stroke=0)
 
     column_x = x
-    widths = [width * fraction for _, fraction in columns]
     for index, ((label, _), column_width) in enumerate(zip(columns, widths)):
         canvas.setFillColor(_BACKGROUND)
         canvas.setFont(theme.SANS_BOLD, header_font_size)
@@ -641,9 +828,12 @@ def _draw_table(
         column_x += column_width
 
     top = y + height - header_h
+    consumed_height = 0.0
     for row_index, row in enumerate(data):
-        row_top = top - row_index * row_h
+        row_h = row_heights[row_index]
+        row_top = top - consumed_height
         row_bottom = row_top - row_h
+        consumed_height += row_h
         if row_index % 2:
             canvas.setFillColor(_PANEL_ALT)
             canvas.rect(x, row_bottom, width, row_h, fill=1, stroke=0)
@@ -654,8 +844,17 @@ def _draw_table(
             value = row[column_index] if column_index < len(row) else ""
             inner_w = column_width - 4 * mm
             font_name = theme.SANS_BOLD if column_index == 0 else theme.SANS
-            fitted_size = body_font_size
-            while fitted_size >= _MIN_TABLE_FONT_SIZE:
+            fitted_size = candidate_sizes[-1]
+            lines = _wrap(
+                value,
+                inner_w,
+                font=font_name,
+                size=fitted_size,
+            )
+            leading = fitted_size + 1.5
+            max_lines = max(1, int((row_h - cell_padding) // leading))
+            for candidate_size in candidate_sizes:
+                fitted_size = candidate_size
                 leading = fitted_size + 1.5
                 lines = _wrap(
                     value,
@@ -665,28 +864,13 @@ def _draw_table(
                 )
                 max_lines = max(
                     1,
-                    int((row_h - 2.4 * mm) // leading),
+                    int((row_h - cell_padding) // leading),
                 )
                 if len(lines) <= max_lines:
                     break
-                fitted_size = round(fitted_size - 0.5, 1)
-            else:
-                fitted_size = _MIN_TABLE_FONT_SIZE
-                leading = fitted_size + 1.5
-                lines = _wrap(
-                    value,
-                    inner_w,
-                    font=font_name,
-                    size=fitted_size,
-                )
-                max_lines = max(
-                    1,
-                    int((row_h - 2.4 * mm) // leading),
-                )
             if require_complete_text and len(lines) > max_lines:
                 raise ValueError(
-                    "Pilot-facing table cell cannot be rendered completely "
-                    f"at row {row_index + 1}, column {column_index + 1}."
+                    "Pilot-facing table layout did not preserve complete text."
                 )
             lines = lines[:max_lines]
             if len(_pilot_text(value)) and len(lines) == max_lines:
@@ -2120,6 +2304,15 @@ def _page_notam_continuation(
     )
 
 
+_AIP_DETAIL_COLUMNS = (
+    ("STN / REF", 0.14),
+    ("ORIGIN", 0.13),
+    ("OPERATIONAL DETAIL", 0.35),
+    ("VALIDITY", 0.19),
+    ("REVIEWED SOURCE", 0.19),
+)
+
+
 def _page_aip_supplement_details(
     canvas: pdf_canvas.Canvas,
     flight: dict[str, Any],
@@ -2154,13 +2347,7 @@ def _page_aip_supplement_details(
         y=table_y,
         width=PAGE_SIZE[0] - 2 * margin,
         height=top - table_y,
-        columns=(
-            ("STN / REF", 0.14),
-            ("ORIGIN", 0.13),
-            ("OPERATIONAL DETAIL", 0.35),
-            ("VALIDITY", 0.19),
-            ("REVIEWED SOURCE", 0.19),
-        ),
+        columns=_AIP_DETAIL_COLUMNS,
         rows=rows,
         accent=_HEADER,
         max_rows=8,
@@ -2671,12 +2858,57 @@ def _page_six(
     )
 
 
+_WEATHER_TABLE_COLUMNS = (
+    ("LOCATION", 0.14),
+    ("UTC", 0.16),
+    ("WEATHER", 0.18),
+    ("FLIGHT EFFECT", 0.28),
+    ("SOURCE / VALIDITY", 0.24),
+)
+_ADVISORY_TABLE_COLUMNS = (
+    ("PRODUCT", 0.32),
+    ("RESULT", 0.50),
+    ("SOURCE", 0.18),
+)
+
+
+def _weather_and_advisory_rows(
+    findings: list[dict[str, Any]],
+) -> tuple[list[list[str]], list[list[str]]]:
+    group = _grouped(findings)
+    weather_rows = _weather_rows(
+        [
+            item
+            for item in group.get("weather", [])
+            if _text((item.get("data") or {}).get("phase"), "").lower()
+            != "edto"
+        ]
+    )
+    advisories = (
+        group.get("sigmet", [])
+        + group.get("vaa", [])
+        + group.get("tropical_cyclone", [])
+    )
+    advisory_rows = [
+        [
+            _pilot_text(item.get("title"), "Advisory review"),
+            _compact_advisory_result(item),
+            _compact_advisory_source(item),
+        ]
+        for item in advisories
+    ]
+    return weather_rows, advisory_rows
+
+
 def _page_seven(
     canvas: pdf_canvas.Canvas,
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
     briefing: dict[str, Any],
     warnings: list[str],
+    weather_rows: list[list[str]],
+    compact_advisory_rows: list[list[str]],
+    panel_height: float,
 ) -> None:
     group = _grouped(findings)
     vaa_affected = (
@@ -2702,40 +2934,7 @@ def _page_seven(
     top = _draw_title(canvas, level2_heading("weather_detail"), top)
     margin = 7 * mm
     gap = 3 * mm
-    advisories = (
-        group.get("sigmet", [])
-        + group.get("vaa", [])
-        + group.get("tropical_cyclone", [])
-    )
-    weather_rows = _weather_rows(
-        [
-            item
-            for item in group.get("weather", [])
-            if _text((item.get("data") or {}).get("phase"), "").lower()
-            != "edto"
-        ]
-    )
-    compact_advisory_rows: list[list[str]] = []
-    for item in advisories:
-        source = _compact_advisory_source(item)
-        compact_advisory_rows.append(
-            [
-                _pilot_text(item.get("title"), "Advisory review"),
-                _compact_advisory_result(item),
-                source,
-            ]
-        )
-
-    weather_panel_h = 9 + min(6, len(weather_rows)) * 15
-    advisory_panel_h = 9 + min(4, len(compact_advisory_rows)) * 18
-    panel_h = min(
-        92 * mm,
-        max(
-            48 * mm,
-            weather_panel_h * mm,
-            advisory_panel_h * mm,
-        ),
-    )
+    panel_h = panel_height
     panel_y = top - panel_h
     weather_w = 184 * mm
     advisory_w = PAGE_SIZE[0] - 2 * margin - gap - weather_w
@@ -2745,13 +2944,7 @@ def _page_seven(
         y=panel_y,
         width=weather_w,
         height=panel_h,
-        columns=(
-            ("LOCATION", 0.14),
-            ("UTC", 0.16),
-            ("WEATHER", 0.18),
-            ("FLIGHT EFFECT", 0.28),
-            ("SOURCE / VALIDITY", 0.24),
-        ),
+        columns=_WEATHER_TABLE_COLUMNS,
         rows=weather_rows,
         accent=_AMBER,
         max_rows=8,
@@ -2767,7 +2960,7 @@ def _page_seven(
         y=panel_y,
         width=advisory_w,
         height=panel_h,
-        columns=(("PRODUCT", 0.32), ("RESULT", 0.50), ("SOURCE", 0.18)),
+        columns=_ADVISORY_TABLE_COLUMNS,
         rows=compact_advisory_rows,
         accent=_TEAL,
         max_rows=4,
@@ -2820,6 +3013,43 @@ def _page_seven(
     )
 
 
+def _page_governed_table_continuation(
+    canvas: pdf_canvas.Canvas,
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    rows: list[list[str]],
+    *,
+    page_number: int,
+    label: str,
+    title: str,
+    columns: Sequence[tuple[str, float]],
+    accent: colors.Color,
+) -> None:
+    top = _draw_header(
+        canvas,
+        flight,
+        briefing,
+        label=label,
+        page_number=page_number,
+    )
+    top = _draw_title(canvas, title, top)
+    margin = 7 * mm
+    table_y = 18 * mm
+    _draw_table(
+        canvas,
+        x=margin,
+        y=table_y,
+        width=PAGE_SIZE[0] - 2 * margin,
+        height=top - table_y,
+        columns=columns,
+        rows=rows,
+        accent=accent,
+        body_font_size=8.0,
+        header_font_size=7.0,
+        require_complete_text=True,
+    )
+
+
 def build_profile_chart_artifacts(
     chart_images: list[dict[str, Any]],
     chart_page_numbers: dict[str, int],
@@ -2848,6 +3078,10 @@ def render_level2_visual(
     inputs from the uploaded CFP and approved source adapters.
     """
 
+    # Continuation planning measures text before the first page is drawn.
+    # Register the report fonts up front instead of relying on the header draw
+    # to register them later.
+    theme.register_fonts()
     path.parent.mkdir(parents=True, exist_ok=True)
     notam_count = sum(item.get("engine") == "notam" for item in findings)
     pilot_findings = prepare_pilot_findings(
@@ -2877,19 +3111,70 @@ def render_level2_visual(
         for index in range(14, len(notam_rows), 14)
     ]
     continuation_count = len(continuation_chunks)
-    operational_detail_chunks = [
-        operational_detail_rows[index:index + 8]
-        for index in range(0, len(operational_detail_rows), 8)
-    ]
+    # Header and title geometry is fixed by brief_theme.draw_header and
+    # _draw_title. Plan continuation pages before chart page targets are set.
+    planned_table_top = PAGE_SIZE[1] - 22.0 - 48.0 - 5.5 * mm
+    margin = 7 * mm
+    operational_detail_chunks = (
+        _paginate_complete_table_rows(
+            operational_detail_rows,
+            width=PAGE_SIZE[0] - 2 * margin,
+            height=planned_table_top - 35 * mm,
+            columns=_AIP_DETAIL_COLUMNS,
+            max_rows=8,
+        )
+        if operational_detail_rows
+        else []
+    )
     operational_detail_page_count = len(operational_detail_chunks)
+    weather_rows, advisory_rows = _weather_and_advisory_rows(pilot_findings)
+    weather_panel_h = 9 + min(6, len(weather_rows)) * 15
+    advisory_panel_h = 9 + min(4, len(advisory_rows)) * 18
+    panel_h = min(
+        92 * mm,
+        max(48 * mm, weather_panel_h * mm, advisory_panel_h * mm),
+    )
+    gap = 3 * mm
+    weather_width = 184 * mm
+    advisory_width = PAGE_SIZE[0] - 2 * margin - gap - weather_width
+    weather_pages = _paginate_complete_table_rows(
+        weather_rows,
+        width=weather_width,
+        height=panel_h,
+        columns=_WEATHER_TABLE_COLUMNS,
+        max_rows=8,
+    )
+    advisory_pages = _paginate_complete_table_rows(
+        advisory_rows,
+        width=advisory_width,
+        height=panel_h,
+        columns=_ADVISORY_TABLE_COLUMNS,
+        max_rows=4,
+    )
+    first_weather_rows = weather_pages[0]
+    first_advisory_rows = advisory_pages[0]
+    governed_table_continuations = [
+        (chunk, "LEVEL 2 - WEATHER CONTINUED", "WEATHER - CONTINUED", _WEATHER_TABLE_COLUMNS, _AMBER)
+        for chunk in weather_pages[1:]
+    ] + [
+        (chunk, "LEVEL 2 - ADVISORIES CONTINUED", "ADVISORIES - CONTINUED", _ADVISORY_TABLE_COLUMNS, _TEAL)
+        for chunk in advisory_pages[1:]
+    ]
+    governed_continuation_count = len(governed_table_continuations)
     page_count = (
         7
         + continuation_count
         + operational_detail_page_count
+        + governed_continuation_count
         + len(chart_images)
     )
     flight["_l2_page_count"] = page_count
-    chart_first_page = 8 + continuation_count + operational_detail_page_count
+    chart_first_page = (
+        8
+        + continuation_count
+        + operational_detail_page_count
+        + governed_continuation_count
+    )
     chart_page_numbers = {
         image["chart_number"]: chart_first_page + index
         for index, image in enumerate(chart_images)
@@ -2926,6 +3211,9 @@ def render_level2_visual(
             pilot_findings,
             briefing,
             warnings,
+            first_weather_rows,
+            first_advisory_rows,
+            panel_h,
         ),
     ]
     for continuation_index, chunk in enumerate(continuation_chunks):
@@ -2953,7 +3241,24 @@ def render_level2_visual(
                 chunk,
                 page_number=page_number,
                 first_row_number=first_row_number,
-                total_rows=len(operational_detail_rows),
+                total_rows=sum(len(page) for page in operational_detail_chunks),
+            )
+        )
+    governed_page_start = 8 + continuation_count + operational_detail_page_count
+    for continuation_index, continuation in enumerate(governed_table_continuations):
+        rows, label, title, columns, accent = continuation
+        page_number = governed_page_start + continuation_index
+        pages.append(
+            lambda rows=rows, label=label, title=title, columns=columns, accent=accent, page_number=page_number: _page_governed_table_continuation(
+                document,
+                flight,
+                briefing,
+                rows,
+                page_number=page_number,
+                label=label,
+                title=title,
+                columns=columns,
+                accent=accent,
             )
         )
     for index, image in enumerate(chart_images):

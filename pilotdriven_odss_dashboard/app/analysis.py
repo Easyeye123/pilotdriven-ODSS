@@ -30,6 +30,30 @@ from .odss.timing import build_timing_view, timing_finding
 from .personal_notes import serialise_personal_note
 
 
+REPORT_REFRESH_WARNING = (
+    "The timing update is active, but the Level 1 and Level 2 reports could "
+    "not be refreshed. Retry report generation before use."
+)
+
+
+class CfpParseRejectedError(ValueError):
+    """The uploaded PDF is readable but not a supported, complete Lido CFP."""
+
+
+class ReportRenderingFailure(RuntimeError):
+    """A completed deterministic analysis whose PDF publication failed.
+
+    The typed boundary lets timing mutations remain durable without treating a
+    parser, engine, grounding, or JSON-publication failure as a recoverable PDF
+    problem. Partial PDFs are never exposed.
+    """
+
+    def __init__(self, result: dict[str, Any], error_type: str):
+        self.result = result
+        self.error_type = error_type
+        super().__init__(REPORT_REFRESH_WARNING)
+
+
 def infer_metadata(filename: str) -> dict[str, str]:
     stem = Path(filename).stem.upper()
     result = {
@@ -56,8 +80,14 @@ def run_odss_analysis(
     surface_overlays: list[dict[str, Any]] | None = None,
     weather_window_preference: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    pages = extract_pages(file_path)
-    flight = parse_lido(pages, file_path.name)
+    try:
+        pages = extract_pages(file_path)
+        flight = parse_lido(pages, file_path.name)
+    except ValueError as exc:
+        # Keep parser rejection distinct from rendering, storage and governed
+        # source failures so an idempotent retry is never permanently poisoned
+        # by a transient infrastructure problem.
+        raise CfpParseRejectedError(str(exc)) from exc
     flight["flight_number"] = flight["flight_number"].replace("SIA", "SQ", 1)
     flight["personal_notes"] = [
         serialise_personal_note(dict(note))
@@ -146,31 +176,7 @@ def run_odss_analysis(
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         },
     }
-    result_temp = result_path.with_suffix(".tmp")
-    level1_temp = level1_path.with_suffix(".tmp")
-    level2_temp = level2_path.with_suffix(".tmp")
-    published = False
-    try:
-        render_pdf(flight, findings, warnings, 1, level1_temp)
-        render_pdf(flight, findings, warnings, 2, level2_temp)
-        # Level 2 rendering registers the exact governed source-chart page on
-        # the flight artifact contract. Serialise only after both reports
-        # complete so the API never loses that target and the client never has
-        # to reconstruct page numbers.
-        result_temp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        result_temp.replace(result_path)
-        level1_temp.replace(level1_path)
-        level2_temp.replace(level2_path)
-        published = True
-    finally:
-        result_temp.unlink(missing_ok=True)
-        level1_temp.unlink(missing_ok=True)
-        level2_temp.unlink(missing_ok=True)
-        if not published:
-            result_path.unlink(missing_ok=True)
-            level1_path.unlink(missing_ok=True)
-            level2_path.unlink(missing_ok=True)
-    return {
+    result = {
         "status": "Completed",
         "analysis_path": str(result_path),
         "level1_report": str(level1_path),
@@ -192,7 +198,62 @@ def run_odss_analysis(
         "tropical_cyclone_status": (flight.get("tropical_cyclone_review") or {}).get("status"),
         "warnings": warnings,
         "analysis_version": "0.6.1",
+        "report_refresh_state": "current",
+        "report_refresh_error_type": None,
     }
+    result_temp = result_path.with_suffix(".tmp")
+    level1_temp = level1_path.with_suffix(".tmp")
+    level2_temp = level2_path.with_suffix(".tmp")
+    analysis_published = False
+    reports_published = False
+    try:
+        try:
+            render_pdf(flight, findings, warnings, 1, level1_temp)
+            render_pdf(flight, findings, warnings, 2, level2_temp)
+        except Exception as exc:
+            # A renderer may have registered report-only page targets on the
+            # in-memory flight. They are not valid unless both PDFs publish.
+            flight.pop("depressurisation_profile_charts", None)
+            if REPORT_REFRESH_WARNING not in warnings:
+                warnings.append(REPORT_REFRESH_WARNING)
+            error_type = type(exc).__name__
+            payload["view"]["report_refresh"] = {
+                "state": "failed",
+                "reports_current": False,
+                "warning": REPORT_REFRESH_WARNING,
+            }
+            result["report_refresh_state"] = "failed"
+            result["report_refresh_error_type"] = error_type
+            result_temp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            result_temp.replace(result_path)
+            analysis_published = True
+            raise ReportRenderingFailure(result, error_type) from exc
+
+        payload["view"]["report_refresh"] = {
+            "state": "current",
+            "reports_current": True,
+            "warning": None,
+        }
+        # Level 2 rendering registers the exact governed source-chart page on
+        # the flight artifact contract. Serialise only after both reports
+        # complete so the API never loses that target and the client never has
+        # to reconstruct page numbers.
+        result_temp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        result_temp.replace(result_path)
+        analysis_published = True
+        level1_temp.replace(level1_path)
+        level2_temp.replace(level2_path)
+        reports_published = True
+    finally:
+        result_temp.unlink(missing_ok=True)
+        level1_temp.unlink(missing_ok=True)
+        level2_temp.unlink(missing_ok=True)
+        if not analysis_published:
+            result_path.unlink(missing_ok=True)
+        if not reports_published:
+            level1_path.unlink(missing_ok=True)
+            level2_path.unlink(missing_ok=True)
+    return result
 
 
 def load_analysis(path: str | None) -> dict[str, Any] | None:
@@ -217,6 +278,9 @@ def run_placeholder_analysis(file_path: Path) -> dict[str, Any]:
 
 
 __all__ = [
+    "CfpParseRejectedError",
+    "REPORT_REFRESH_WARNING",
+    "ReportRenderingFailure",
     "actm_minutes",
     "format_actm",
     "infer_metadata",

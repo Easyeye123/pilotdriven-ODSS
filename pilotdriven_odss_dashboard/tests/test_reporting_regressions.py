@@ -45,6 +45,7 @@ from app.odss.operational_brief import (
     _notam_operational_detail_rows,
     _notam_rows,
     _source_label,
+    _wrap,
 )
 from app.odss.reporting import render_pdf, report_sections
 from app.odss.report_quality import validate_report_pdf
@@ -205,7 +206,10 @@ def _official_source_weather() -> dict[str, Any]:
             "source_type": "official_weather",
             "provider": "noaa-awc-data-api",
             "display_title": "NOAA Aviation Weather Center",
-            "source_url": "https://aviationweather.gov/api/data/metar",
+            "source_url": (
+                "https://aviationweather.gov/api/data/metar?"
+                "format=json&ids=VTSP"
+            ),
             "retrieved_at_utc": "2026-07-25T16:35:00+00:00",
             "observed_at_utc": "2026-07-25T16:30:00+00:00",
         },
@@ -213,7 +217,10 @@ def _official_source_weather() -> dict[str, Any]:
             "source_type": "official_weather",
             "provider": "noaa-awc-data-api",
             "display_title": "NOAA Aviation Weather Center",
-            "source_url": "https://aviationweather.gov/api/data/taf",
+            "source_url": (
+                "https://aviationweather.gov/api/data/taf?"
+                "format=json&ids=VTSP"
+            ),
             "retrieved_at_utc": "2026-07-25T16:35:00+00:00",
             "issued_at_utc": "2026-07-25T11:00:00+00:00",
             "valid_from_utc": "2026-07-25T12:00:00+00:00",
@@ -1945,6 +1952,85 @@ def test_level2_weather_table_keeps_long_cells_complete(
     assert "TAF valid 25 JUL 1200Z-26 JUL 1800Z" in page_seven
 
 
+def test_level2_weather_table_reallocates_height_for_row_one_column_three(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_row_one_column_three_overflow.pdf"
+    overflow_text = (
+        "Embedded thunderstorms with severe turbulence, freezing rain, hail, "
+        "mountain wave activity, and repeated convective cells along the route"
+    )
+    findings: list[dict[str, Any]] = []
+    for index in range(8):
+        finding = _review_required_weather(
+            location=f"WX{index + 1:02d}",
+            phase="Enroute",
+            window=f"25 JUL {18 + index:02d}00Z-{19 + index:02d}00Z",
+        )
+        finding["data"].update(
+            {
+                "mechanism": overflow_text if index == 0 else "Rain showers",
+                "flight_effect": "Review current operational weather.",
+            }
+        )
+        findings.append(finding)
+
+    render_pdf(_flight(), findings, [], 2, path)
+
+    page = PdfReader(path).pages[6].extract_text() or ""
+    assert overflow_text in " ".join(page.split())
+    document = fitz.open(path)
+    try:
+        weather_page = document[6]
+        for block in weather_page.get_text("dict")["blocks"]:
+            for line in block.get("lines", []):
+                assert weather_page.rect.contains(fitz.Rect(line["bbox"]))
+    finally:
+        document.close()
+
+
+def test_table_wrap_splits_a_single_overwidth_token_without_losing_text() -> None:
+    token = "WX" + "0123456789" * 20
+    width = 42.0
+
+    lines = _wrap(token, width, size=6.6)
+
+    assert "".join(lines) == token
+    assert len(lines) > 1
+    assert all(
+        pdfmetrics.stringWidth(line, brief_theme.SANS, 6.6) <= width
+        for line in lines
+    )
+
+
+def test_level2_continues_oversized_governed_weather_text_on_an_extra_page(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "level_2_weather_continuation.pdf"
+    governed_text = " ".join(["embedded convection"] * 220 + ["ENDMARKER"])
+    finding = _review_required_weather(
+        location="WSSS",
+        phase="Destination",
+        window="25 JUL 2100Z-2300Z",
+    )
+    finding["data"].update(
+        {
+            "mechanism": governed_text,
+            "flight_effect": "Review current operational weather.",
+        }
+    )
+
+    render_pdf(_flight(), [finding], [], 2, path)
+
+    reader = PdfReader(path)
+    assert len(reader.pages) > 7
+    extracted = " ".join(
+        " ".join((page.extract_text() or "").split())
+        for page in reader.pages
+    )
+    assert "ENDMARKER" in extracted
+
+
 def test_level2_quick_links_land_on_the_rendered_section_heading(
     tmp_path: Path,
 ) -> None:
@@ -2457,9 +2543,15 @@ def test_level2_weather_names_public_source_and_time_validity(
     # full immutable reference also retains the public API URL and retrieval,
     # issue and observation timestamps.
     source_references = _official_source_weather()["data"]["source_references"]
-    assert source_references[0]["source_url"] == "https://aviationweather.gov/api/data/metar"
+    assert source_references[0]["source_url"] == (
+        "https://aviationweather.gov/api/data/metar?"
+        "format=json&ids=VTSP"
+    )
     assert source_references[0]["observed_at_utc"] == "2026-07-25T16:30:00+00:00"
-    assert source_references[1]["source_url"] == "https://aviationweather.gov/api/data/taf"
+    assert source_references[1]["source_url"] == (
+        "https://aviationweather.gov/api/data/taf?"
+        "format=json&ids=VTSP"
+    )
     assert source_references[1]["issued_at_utc"] == "2026-07-25T11:00:00+00:00"
 
 

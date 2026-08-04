@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app.database as database
+import app.analysis as analysis_module
 import app.main as main
 from app.odss_map_v06.config import MapSettings
 
@@ -515,6 +516,50 @@ def test_failed_rerun_preserves_last_completed_artifacts_and_links(
     assert client.get(f"/files/report/{flight_id}/1").status_code == 200
     assert client.get(f"/files/report/{flight_id}/2").status_code == 200
     assert client.get(f"/files/analysis/{flight_id}").status_code == 200
+
+
+def test_dashboard_timing_report_failure_warns_and_blocks_stale_downloads(
+    web_app: tuple[TestClient, dict[str, Path]],
+    lido_pdf: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = web_app
+    flight_id = _upload(client, lido_pdf)
+    assert client.post(f"/flights/{flight_id}/analyse").status_code == 303
+
+    original_render_pdf = analysis_module.render_pdf
+
+    def fail_level_two_report(*args, **kwargs):
+        level = args[3] if len(args) > 3 else kwargs["level"]
+        if level == 2:
+            raise ValueError("Synthetic governed table overflow")
+        return original_render_pdf(*args, **kwargs)
+
+    monkeypatch.setattr(analysis_module, "render_pdf", fail_level_two_report)
+    updated = client.post(
+        f"/flights/{flight_id}/timing",
+        data={
+            "reference_type": "takeoff",
+            "reference_date": "2026-07-11",
+            "reference_time": "10:42",
+            "reference_waypoint": "",
+        },
+    )
+
+    assert updated.status_code == 303
+    assert updated.headers["location"] == (
+        f"/flights/{flight_id}?notice=reports-not-current#actual-time"
+    )
+    workspace = client.get(updated.headers["location"])
+    assert "Timing saved" in workspace.text
+    assert "reports are not current" in workspace.text
+    for level in (1, 2):
+        stale = client.get(f"/files/report/{flight_id}/{level}")
+        assert stale.status_code == 409
+        assert stale.json()["detail"] == (
+            "Reports are not current for the active analysis. "
+            "Retry report generation."
+        )
 
 
 def test_duplicate_dashboard_analysis_request_redirects_to_friendly_status(

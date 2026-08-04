@@ -8,18 +8,26 @@ import json
 import logging
 import os
 import secrets
+import sqlite3
 from pathlib import Path
 import traceback
 from urllib.parse import urlsplit
 import uuid
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
-from .analysis import infer_metadata, load_analysis, run_odss_analysis
+from .analysis import (
+    CfpParseRejectedError,
+    REPORT_REFRESH_WARNING,
+    ReportRenderingFailure,
+    infer_metadata,
+    load_analysis,
+    run_odss_analysis,
+)
 from .config import APP_VERSION, BASE_DIR, DATA_DIR
 from .database import (
     attach_report,
@@ -35,6 +43,7 @@ from .database import (
     init_db,
     list_flights,
     record_audit_event,
+    restore_analysis_snapshot,
     restore_personal_note,
     restore_analysis_state,
     save_level3_answer,
@@ -46,6 +55,10 @@ from .database import (
 from .odss.constants import format_actm
 from .odss.controlled_library import DEPRESS_LIBRARY_METADATA
 from .odss.level3 import generate_level3_artifacts
+from .odss.profile_chart_delivery import (
+    held_profile_chart,
+    render_held_profile_chart_page,
+)
 from .odss.reporting import render_pdf
 from .odss.surface_overlays import (
     SurfaceOverlayRequest,
@@ -59,7 +72,12 @@ from .odss_map_v06.api import (
     map_contract_from_analysis,
 )
 from .odss_map_v06.config import MapSettings
-from .odss_map_v06.report_worker import render_reports_for_analysis
+from .odss_map_v06.report_worker import (
+    ReportRefreshClaimConflict,
+    publish_staged_artifacts,
+    refresh_reports_for_analysis,
+    render_reports_for_analysis,
+)
 from .odss.parser import validate_pdf
 from .odss.pilot_briefing import select_pertinent_notams
 from .odss.timing import (
@@ -496,6 +514,7 @@ def _execute_analysis(
     locked_mutation: Callable[[object], object | None] | None = None,
     rollback_locked_mutation: Callable[[], None] | None = None,
     preserve_previous_on_failure: bool = False,
+    commit_locked_mutation_on_report_failure: bool = False,
     failure_label: str = "analysis refresh",
 ) -> str | None:
     tenant_id = str(flight["tenant_id"]) if flight["tenant_id"] else None
@@ -521,24 +540,43 @@ def _execute_analysis(
         (flight["level3_report"], REPORT_DIR),
     )
     result = None
+    analysis_snapshot_replaced = False
     try:
         if locked_mutation is not None:
             mutated_flight = locked_mutation(flight)
             if mutated_flight is not None:
                 flight = mutated_flight
-        result = run_odss_analysis(
-            Path(flight["source_path"]),
-            result_dir=RESULT_DIR,
-            report_dir=REPORT_DIR,
-            flight_id=flight_id,
-            actual_takeoff_utc=flight["actual_takeoff_utc"],
-            timing_reference=_timing_reference_from_row(flight),
-            personal_notes=[dict(note) for note in list_personal_notes(flight_id)],
-            surface_overlays=previous_surface_overlays,
-            weather_window_preference=(
-                weather_window_preference or previous_weather_window
-            ),
-        )
+        report_failure: ReportRenderingFailure | None = None
+        try:
+            result = run_odss_analysis(
+                Path(flight["source_path"]),
+                result_dir=RESULT_DIR,
+                report_dir=REPORT_DIR,
+                flight_id=flight_id,
+                actual_takeoff_utc=flight["actual_takeoff_utc"],
+                timing_reference=_timing_reference_from_row(flight),
+                personal_notes=[dict(note) for note in list_personal_notes(flight_id)],
+                surface_overlays=previous_surface_overlays,
+                weather_window_preference=(
+                    weather_window_preference or previous_weather_window
+                ),
+            )
+        except ReportRenderingFailure as exc:
+            result = dict(exc.result)
+            if not commit_locked_mutation_on_report_failure:
+                raise
+            report_failure = exc
+            # Keep the last complete PDFs as recoverable files, but mark them
+            # stale so no report endpoint can serve them as current.
+            result["level1_report"] = flight["level1_report"]
+            result["level2_report"] = flight["level2_report"]
+            logger.warning(
+                "Report refresh failed after valid mutation flight_id=%s "
+                "error_type=%s; timing and core analysis retained",
+                flight_id,
+                exc.error_type,
+                exc_info=True,
+            )
         if flight["tenant_id"] and flight["user_id"]:
             result.update(
                 generate_level3_artifacts(
@@ -559,6 +597,7 @@ def _execute_analysis(
             tenant_id,
             release_claim=False,
         )
+        analysis_snapshot_replaced = True
         new_artifacts = (
             (result.get("analysis_path"), RESULT_DIR),
             (result.get("level1_report"), REPORT_DIR),
@@ -566,7 +605,8 @@ def _execute_analysis(
             (result.get("level3_json"), RESULT_DIR),
             (result.get("level3_report"), REPORT_DIR),
         )
-        _refresh_reports_with_primary_map(flight, result)
+        if report_failure is None:
+            _refresh_reports_with_primary_map(flight, result)
         update_status(flight_id, "Completed", tenant_id=tenant_id)
         for (previous_path, directory), (new_path, _) in zip(
             previous_artifacts,
@@ -577,12 +617,40 @@ def _execute_analysis(
                 _remove_stored_file(previous_path, directory)
         return None
     except Exception as exc:
-        if result:
-            _remove_stored_file(result.get("analysis_path"), RESULT_DIR)
-            _remove_stored_file(result.get("level1_report"), REPORT_DIR)
-            _remove_stored_file(result.get("level2_report"), REPORT_DIR)
-            _remove_stored_file(result.get("level3_json"), RESULT_DIR)
-            _remove_stored_file(result.get("level3_report"), REPORT_DIR)
+        snapshot_restore_error = None
+        if analysis_snapshot_replaced:
+            try:
+                # Restore the authoritative row before removing any newly
+                # generated files. If this compensation fails, retain those
+                # files so the database never points at paths we deleted.
+                restore_analysis_snapshot(
+                    flight_id,
+                    claimed_flight,
+                    tenant_id=tenant_id,
+                )
+            except Exception as restore_exc:
+                snapshot_restore_error = (
+                    f"{type(restore_exc).__name__}: {restore_exc}"
+                )
+                logger.exception(
+                    "Analysis snapshot restore failed flight_id=%s",
+                    flight_id,
+                )
+        if result and snapshot_restore_error is None:
+            previous_paths = {
+                str(path)
+                for path, _directory in previous_artifacts
+                if path
+            }
+            for candidate, directory in (
+                (result.get("analysis_path"), RESULT_DIR),
+                (result.get("level1_report"), REPORT_DIR),
+                (result.get("level2_report"), REPORT_DIR),
+                (result.get("level3_json"), RESULT_DIR),
+                (result.get("level3_report"), REPORT_DIR),
+            ):
+                if candidate and str(candidate) not in previous_paths:
+                    _remove_stored_file(candidate, directory)
         error = f"{type(exc).__name__}: {exc}"
         rollback_error = None
         if rollback_locked_mutation is not None:
@@ -596,6 +664,12 @@ def _execute_analysis(
                     "Locked analysis mutation rollback failed flight_id=%s",
                     flight_id,
                 )
+        if snapshot_restore_error:
+            rollback_error = (
+                f"{rollback_error}; {snapshot_restore_error}"
+                if rollback_error
+                else snapshot_restore_error
+            )
         if preserve_previous_on_failure and rollback_error is None:
             restore_analysis_state(
                 flight_id,
@@ -603,6 +677,9 @@ def _execute_analysis(
                 claimed_flight["notes"],
                 f"Rejected {failure_label}: {error}",
                 tenant_id=tenant_id,
+                analysis_failure_category=claimed_flight[
+                    "analysis_failure_category"
+                ],
             )
         else:
             if rollback_error:
@@ -613,6 +690,11 @@ def _execute_analysis(
                 "Analysis failed. The detailed error is shown below.",
                 last_error=error,
                 tenant_id=tenant_id,
+                analysis_failure_category=(
+                    "cfp_parse_rejected"
+                    if isinstance(exc, CfpParseRejectedError)
+                    else "infrastructure"
+                ),
             )
         traceback.print_exc()
         return error
@@ -659,6 +741,9 @@ def _regenerate_after_note_change(
                 claimed_flight["notes"],
                 claimed_flight["last_error"],
                 tenant_id=tenant_id,
+                analysis_failure_category=claimed_flight[
+                    "analysis_failure_category"
+                ],
             )
         raise
     restore_analysis_state(
@@ -667,6 +752,7 @@ def _regenerate_after_note_change(
         claimed_flight["notes"],
         claimed_flight["last_error"],
         tenant_id=tenant_id,
+        analysis_failure_category=claimed_flight["analysis_failure_category"],
     )
     return None
 
@@ -728,6 +814,10 @@ def flight_workspace(request: Request, flight_id: int):
     notices = {
         "analysis-running": "Analysis is already running. This page still shows the last completed result.",
         "refresh-failed": "The refresh failed. The last completed reports remain available below.",
+        "reports-not-current": (
+            "Timing saved, but the Level 1 and Level 2 reports are not current. "
+            "Retry report generation before use."
+        ),
     }
     return templates.TemplateResponse(
         request=request,
@@ -889,6 +979,7 @@ def update_operational_clock(
             locked_mutation=apply_timing,
             rollback_locked_mutation=rollback_timing,
             preserve_previous_on_failure=True,
+            commit_locked_mutation_on_report_failure=True,
             failure_label="timing update",
         )
     except HTTPException as exc:
@@ -898,7 +989,17 @@ def update_operational_clock(
             url=f"/flights/{flight_id}?notice=analysis-running#actual-time",
             status_code=303,
         )
-    notice = "?notice=refresh-failed" if failure_detail else ""
+    refreshed = get_flight_for_tenant(flight_id, _dashboard_tenant_id())
+    reports_not_current = bool(
+        refreshed and refreshed["report_refresh_state"] != "current"
+    )
+    notice = (
+        "?notice=reports-not-current"
+        if reports_not_current
+        else "?notice=refresh-failed"
+        if failure_detail
+        else ""
+    )
     return RedirectResponse(
         url=f"/flights/{flight_id}{notice}#actual-time",
         status_code=303,
@@ -1085,6 +1186,7 @@ def download_report(flight_id: int, level: int):
         raise HTTPException(status_code=404, detail="Flight not found")
     if level not in (1, 2):
         raise HTTPException(status_code=400, detail="Report level must be 1 or 2")
+    _require_current_reports(flight)
     stored_path = flight["level1_report"] if level == 1 else flight["level2_report"]
     path = _stored_file(stored_path, REPORT_DIR, "Report not generated")
     filename = f"{flight['flight_number'] or f'flight-{flight_id}'}_level_{level}.pdf"
@@ -1214,7 +1316,6 @@ def _publish_surface_overlay_reports(
     level1_temp = level1_path.with_suffix(level1_path.suffix + ".surface.tmp")
     level2_temp = level2_path.with_suffix(level2_path.suffix + ".surface.tmp")
     try:
-        analysis_temp.write_text(json.dumps(updated, indent=2), encoding="utf-8")
         render_pdf(
             updated_flight,
             findings,
@@ -1233,17 +1334,58 @@ def _publish_surface_overlay_reports(
             map_image_path=route_map_path,
             map_label=route_map_label,
         )
-        level1_temp.replace(level1_path)
-        level2_temp.replace(level2_path)
-        analysis_temp.replace(analysis_path)
+        # Level 2 may register governed source-chart page targets on the
+        # updated flight. Serialize after both reports render, then publish the
+        # report pair and analysis JSON as one rollback-capable artifact set.
+        analysis_temp.write_text(json.dumps(updated, indent=2), encoding="utf-8")
+        publish_staged_artifacts([
+            (level1_temp, level1_path),
+            (level2_temp, level2_path),
+            (analysis_temp, analysis_path),
+        ])
     finally:
         analysis_temp.unlink(missing_ok=True)
         level1_temp.unlink(missing_ok=True)
         level2_temp.unlink(missing_ok=True)
 
 
+REPORTS_NOT_CURRENT_DETAIL = (
+    "Reports are not current for the active analysis. Retry report generation."
+)
+
+
+def _report_refresh_summary(flight) -> dict:
+    state = str(flight["report_refresh_state"] or "pending")
+    return {
+        "state": state,
+        "reports_current": state == "current",
+        "warning": REPORT_REFRESH_WARNING if state == "failed" else None,
+    }
+
+
+def _require_current_reports(flight) -> None:
+    if (
+        str(flight["status"] or "") != "Processing"
+        and _report_refresh_summary(flight)["reports_current"]
+    ):
+        return
+    raise HTTPException(status_code=409, detail=REPORTS_NOT_CURRENT_DETAIL)
+
+
 def _service_summary(flight) -> dict:
     analysis_id = _public_analysis_id(flight)
+    report_refresh = _report_refresh_summary(flight)
+    if str(flight["status"] or "") == "Failed":
+        safe_failure = (
+            _supported_cfp_failure_detail(flight)
+            if flight["analysis_failure_category"] == "cfp_parse_rejected"
+            else _temporary_analysis_failure_detail(flight)
+        )
+        warnings = [safe_failure["message"]]
+    else:
+        warnings = [flight["last_error"]] if flight["last_error"] else []
+    if report_refresh["warning"] and report_refresh["warning"] not in warnings:
+        warnings.append(report_refresh["warning"])
     return {
         "analysis_id": analysis_id,
         "analysis_version": flight["analysis_version"] or APP_VERSION,
@@ -1264,7 +1406,8 @@ def _service_summary(flight) -> dict:
             "workspace_id": flight["workspace_id"],
             "external_flight_id": flight["external_flight_id"],
         },
-        "warnings": [flight["last_error"]] if flight["last_error"] else [],
+        "warnings": warnings,
+        "report_refresh": report_refresh,
         "links": {
             "self": f"/v1/analyses/{analysis_id}",
             "briefing": f"/v1/analyses/{analysis_id}/briefing",
@@ -1273,6 +1416,7 @@ def _service_summary(flight) -> dict:
             "markers_geojson": f"/v1/analyses/{analysis_id}/markers.geojson",
             "hazards_geojson": f"/v1/analyses/{analysis_id}/hazards.geojson",
             "map_config": f"/v1/analyses/{analysis_id}/map-config",
+            "profile_charts": f"/v1/analyses/{analysis_id}/profile-charts/{{chart_number}}",
             "level_1_report": f"/v1/analyses/{analysis_id}/reports/level-1",
             "level_2_report": f"/v1/analyses/{analysis_id}/reports/level-2",
             "level_3": f"/v1/analyses/{analysis_id}/level-3",
@@ -1378,6 +1522,111 @@ def service_health():
     })
 
 
+def _supported_cfp_failure_detail(flight) -> dict[str, str]:
+    return {
+        "code": "CFP_FORMAT_UNSUPPORTED_OR_INVALID",
+        "message": (
+            "This PDF could not be processed as a supported Lido CFP. "
+            "Check the file and upload it again."
+        ),
+        "analysis_id": _public_analysis_id(flight),
+    }
+
+
+def _temporary_analysis_failure_detail(flight) -> dict[str, str]:
+    return {
+        "code": "ANALYSIS_TEMPORARILY_UNAVAILABLE",
+        "message": (
+            "PilotDriven could not complete this analysis. Retry the same "
+            "upload; the original request remains safe to replay."
+        ),
+        "analysis_id": _public_analysis_id(flight),
+    }
+
+
+def _raise_stored_analysis_failure(flight) -> None:
+    if flight["analysis_failure_category"] == "cfp_parse_rejected":
+        raise HTTPException(
+            status_code=422,
+            detail=_supported_cfp_failure_detail(flight),
+        )
+    raise HTTPException(
+        status_code=503,
+        detail=_temporary_analysis_failure_detail(flight),
+    )
+
+
+def _replay_service_analysis(flight) -> JSONResponse | None:
+    status = str(flight["status"] or "")
+    if status == "Completed":
+        return JSONResponse(_service_summary(flight), status_code=200)
+    if status in {"Processing", "Uploaded"}:
+        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+    if flight["analysis_failure_category"] == "cfp_parse_rejected":
+        _raise_stored_analysis_failure(flight)
+    # A failed infrastructure attempt remains replayable under the same
+    # idempotency key. The caller reruns the retained, validated upload.
+    return None
+
+
+def _service_weather_window_preference(
+    before_minutes: int | None,
+    after_minutes: int | None,
+) -> dict[str, int] | None:
+    if before_minutes is None and after_minutes is None:
+        return None
+    return {
+        key: value
+        for key, value in (
+            ("before_minutes", before_minutes),
+            ("after_minutes", after_minutes),
+        )
+        if value is not None
+    }
+
+
+async def _run_service_analysis_record(
+    flight,
+    weather_window_preference: dict[str, int] | None,
+    *,
+    success_status_code: int,
+) -> JSONResponse:
+    flight_id = int(flight["id"])
+    tenant_id = str(flight["tenant_id"])
+    claimed_flight = await asyncio.to_thread(
+        claim_analysis,
+        flight_id,
+        tenant_id,
+        expected_status=str(flight["status"] or ""),
+    )
+    if claimed_flight is None:
+        current = get_flight_for_tenant(flight_id, tenant_id)
+        if not current:
+            raise HTTPException(status_code=500, detail="Analysis record was lost")
+        replay = _replay_service_analysis(current)
+        if replay is not None:
+            return replay
+        # Another retry may itself have failed after this caller read the old
+        # Failed row. Do not start an unbounded third attempt in this request.
+        _raise_stored_analysis_failure(current)
+    await asyncio.to_thread(
+        _execute_analysis,
+        flight_id,
+        claimed_flight,
+        weather_window_preference,
+        claimed_flight=claimed_flight,
+    )
+    completed = get_flight_for_tenant(flight_id, tenant_id)
+    if not completed:
+        raise HTTPException(status_code=500, detail="Analysis record was lost")
+    if completed["status"] != "Completed":
+        _raise_stored_analysis_failure(completed)
+    return JSONResponse(
+        _service_summary(completed),
+        status_code=success_status_code,
+    )
+
+
 @app.post("/v1/analyses", status_code=201)
 async def create_service_analysis(
     request: Request,
@@ -1394,10 +1643,21 @@ async def create_service_analysis(
     identity = request_service_identity(request)
     tenant_id = identity.tenant_id
     service_request_id = identity.request_id
+    weather_window_preference = _service_weather_window_preference(
+        weather_before_minutes,
+        weather_after_minutes,
+    )
     if service_request_id:
         existing = get_flight_by_service_request(tenant_id, service_request_id)
         if existing:
-            return JSONResponse(_service_summary(existing), status_code=200)
+            replay = _replay_service_analysis(existing)
+            if replay is not None:
+                return replay
+            return await _run_service_analysis_record(
+                existing,
+                weather_window_preference,
+                success_status_code=200,
+            )
     filename, dest = await _store_pdf(file, UPLOAD_DIR, "cfp", "uploaded.pdf")
     inferred = infer_metadata(filename)
     record = {
@@ -1419,37 +1679,34 @@ async def create_service_analysis(
     }
     try:
         flight_id = create_flight(record)
+    except sqlite3.IntegrityError:
+        dest.unlink(missing_ok=True)
+        existing = (
+            get_flight_by_service_request(tenant_id, service_request_id)
+            if service_request_id
+            else None
+        )
+        if existing is None:
+            raise
+        replay = _replay_service_analysis(existing)
+        if replay is not None:
+            return replay
+        return await _run_service_analysis_record(
+            existing,
+            weather_window_preference,
+            success_status_code=200,
+        )
     except Exception:
         dest.unlink(missing_ok=True)
         raise
     flight = get_flight_for_tenant(flight_id, tenant_id)
     if not flight:
         raise HTTPException(status_code=500, detail="Analysis record was not created")
-    weather_window_preference = None
-    if weather_before_minutes is not None or weather_after_minutes is not None:
-        weather_window_preference = {
-            key: value
-            for key, value in (
-                ("before_minutes", weather_before_minutes),
-                ("after_minutes", weather_after_minutes),
-            )
-            if value is not None
-        }
-    await asyncio.to_thread(
-        _execute_analysis,
-        flight_id,
+    return await _run_service_analysis_record(
         flight,
         weather_window_preference,
+        success_status_code=201,
     )
-    completed = get_flight_for_tenant(flight_id, tenant_id)
-    if not completed:
-        raise HTTPException(status_code=500, detail="Analysis record was lost")
-    if completed["status"] != "Completed":
-        raise HTTPException(
-            status_code=422,
-            detail=completed["last_error"] or "ODSS analysis failed",
-        )
-    return JSONResponse(_service_summary(completed), status_code=201)
 
 
 @app.get("/v1/analyses/{analysis_id}")
@@ -1465,6 +1722,10 @@ def get_service_briefing(request: Request, analysis_id: str):
     view = analysis.get("view") or {}
     analysis_flight = analysis.get("flight") or {}
     notam_snapshot = _service_notam_snapshot(analysis)
+    report_refresh = _report_refresh_summary(flight)
+    warnings = list(view.get("warnings") or [])
+    if report_refresh["warning"] and report_refresh["warning"] not in warnings:
+        warnings.append(report_refresh["warning"])
     return JSONResponse({
         "analysis_id": analysis_id,
         "schema_version": analysis.get("schema_version"),
@@ -1472,12 +1733,50 @@ def get_service_briefing(request: Request, analysis_id: str):
         "briefing": view.get("briefing"),
         "timing": view.get("timing"),
         "personal_notes": analysis_flight.get("personal_notes") or [],
-        "warnings": view.get("warnings") or [],
+        "warnings": warnings,
+        "report_refresh": report_refresh,
         "notam_findings": notam_snapshot["items"],
         "notam_findings_summary": notam_snapshot["summary"],
         "generated_at_utc": view.get("generated_at_utc"),
         "report_links": _service_summary(flight)["links"],
     })
+
+
+@app.get("/v1/analyses/{analysis_id}/profile-charts/{chart_number}")
+def get_service_profile_chart(
+    request: Request,
+    analysis_id: str,
+    chart_number: str,
+):
+    identity = request_service_identity(request)
+    flight, analysis = _service_analysis(analysis_id, identity)
+    _require_current_reports(flight)
+    artifact = held_profile_chart(analysis, chart_number)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Profile chart not found")
+    level2_path = _stored_file(
+        flight["level2_report"],
+        REPORT_DIR,
+        "Validated profile chart artifact is unavailable",
+    )
+    try:
+        image = render_held_profile_chart_page(level2_path, artifact)
+    except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        logger.warning(
+            "Held profile chart delivery failed analysis_id=%s chart=%s",
+            analysis_id,
+            chart_number,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="Validated profile chart artifact is unavailable",
+        ) from exc
+    return Response(
+        content=image,
+        media_type="image/png",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.post("/v1/analyses/{analysis_id}/timing")
@@ -1587,6 +1886,7 @@ def update_service_timing(
         locked_mutation=apply_timing,
         rollback_locked_mutation=rollback_timing,
         preserve_previous_on_failure=True,
+        commit_locked_mutation_on_report_failure=True,
         failure_label="timing update",
     )
     if failure_detail:
@@ -1812,6 +2112,9 @@ async def update_service_surface_overlays(
             claimed_flight["notes"],
             claimed_flight["last_error"],
             tenant_id=identity.tenant_id,
+            analysis_failure_category=claimed_flight[
+                "analysis_failure_category"
+            ],
         )
     return JSONResponse({
         "analysis_id": analysis_id,
@@ -1823,31 +2126,27 @@ async def update_service_surface_overlays(
 @app.post("/v1/analyses/{analysis_id}/reports/render")
 async def render_service_reports(request: Request, analysis_id: str):
     identity = request_service_identity(request)
-    flight = _service_flight(analysis_id, identity)
-    claimed_flight = claim_analysis(int(flight["id"]), identity.tenant_id)
-    if claimed_flight is None:
-        raise HTTPException(status_code=409, detail="Analysis is already in progress")
+    _service_flight(analysis_id, identity)
     try:
-        result = await render_reports_for_analysis(
+        result = await refresh_reports_for_analysis(
             analysis_id,
             tenant_id=identity.tenant_id,
             user_id=identity.user_id,
             settings=map_settings,
         )
-    except (LookupError, RuntimeError, ValueError) as exc:
+    except ReportRefreshClaimConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Analysis is already in progress",
+        ) from exc
+    except (LookupError, OSError, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    finally:
-        restore_analysis_state(
-            int(claimed_flight["id"]),
-            str(claimed_flight["status"]),
-            claimed_flight["notes"],
-            claimed_flight["last_error"],
-            tenant_id=identity.tenant_id,
-        )
+    refreshed_flight = _service_flight(analysis_id, identity)
     return JSONResponse({
         "analysis_id": analysis_id,
         "map_render": result,
-        "links": _service_summary(claimed_flight)["links"],
+        "report_refresh": _report_refresh_summary(refreshed_flight),
+        "links": _service_summary(refreshed_flight)["links"],
     })
 
 
@@ -1855,6 +2154,7 @@ async def render_service_reports(request: Request, analysis_id: str):
 def get_service_level_1_report(request: Request, analysis_id: str):
     identity = request_service_identity(request)
     flight = _service_flight(analysis_id, identity)
+    _require_current_reports(flight)
     path = _stored_file(flight["level1_report"], REPORT_DIR, "Level 1 report not generated")
     return FileResponse(
         path,
@@ -1867,6 +2167,7 @@ def get_service_level_1_report(request: Request, analysis_id: str):
 def get_service_level_2_report(request: Request, analysis_id: str):
     identity = request_service_identity(request)
     flight = _service_flight(analysis_id, identity)
+    _require_current_reports(flight)
     path = _stored_file(flight["level2_report"], REPORT_DIR, "Level 2 report not generated")
     return FileResponse(
         path,

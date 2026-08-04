@@ -41,7 +41,11 @@ CREATE TABLE IF NOT EXISTS flights (
     workspace_id TEXT,
     external_flight_id TEXT,
     analysis_version TEXT,
-    service_request_id TEXT
+    service_request_id TEXT,
+    report_refresh_state TEXT NOT NULL DEFAULT 'pending',
+    report_refresh_error_type TEXT,
+    report_refresh_updated_at TEXT,
+    analysis_failure_category TEXT
 );
 
 CREATE TABLE IF NOT EXISTS personal_notes (
@@ -129,6 +133,7 @@ def connect() -> sqlite3.Connection:
 
 def _ensure_columns(conn: sqlite3.Connection) -> None:
     existing = {row[1] for row in conn.execute("PRAGMA table_info(flights)")}
+    adding_report_refresh_state = "report_refresh_state" not in existing
     additions = {
         "analysis_path": "TEXT",
         "last_error": "TEXT",
@@ -145,10 +150,29 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         "service_request_id": "TEXT",
         "level3_json": "TEXT",
         "level3_report": "TEXT",
+        "report_refresh_state": "TEXT NOT NULL DEFAULT 'pending'",
+        "report_refresh_error_type": "TEXT",
+        "report_refresh_updated_at": "TEXT",
+        "analysis_failure_category": "TEXT",
     }
     for column, sql_type in additions.items():
         if column not in existing:
             conn.execute(f"ALTER TABLE flights ADD COLUMN {column} {sql_type}")
+    if adding_report_refresh_state:
+        # Existing completed report pairs pre-date explicit freshness state.
+        # Backfill only during the one-time column migration so a later failed
+        # refresh can never be silently promoted on application restart.
+        conn.execute(
+            """
+            UPDATE flights SET
+                report_refresh_state=CASE
+                    WHEN level1_report IS NOT NULL AND level2_report IS NOT NULL
+                    THEN 'current'
+                    ELSE 'pending'
+                END,
+                report_refresh_updated_at=CURRENT_TIMESTAMP
+            """
+        )
     conn.execute(
         "UPDATE flights SET analysis_id = COALESCE(analysis_id, 'legacy-' || id)"
     )
@@ -180,6 +204,14 @@ def init_db() -> None:
                 status='Failed',
                 notes='Previous analysis was interrupted. Run the analysis again.',
                 last_error='Analysis interrupted by application shutdown or restart.',
+                analysis_failure_category='infrastructure',
+                report_refresh_state=CASE
+                    WHEN level1_report IS NOT NULL OR level2_report IS NOT NULL
+                    THEN 'failed'
+                    ELSE report_refresh_state
+                END,
+                report_refresh_error_type='InterruptedAnalysis',
+                report_refresh_updated_at=CURRENT_TIMESTAMP,
                 updated_at=CURRENT_TIMESTAMP
             WHERE status='Processing'
             ''',
@@ -402,15 +434,25 @@ def update_status(
     notes: str | None = None,
     last_error: str | None = None,
     tenant_id: str | None = None,
+    analysis_failure_category: str | None = None,
 ) -> None:
     with connect() as conn:
         cursor = conn.execute(
             '''
             UPDATE flights
-            SET status=?, notes=COALESCE(?, notes), last_error=?, updated_at=CURRENT_TIMESTAMP
+            SET status=?, notes=COALESCE(?, notes), last_error=?,
+                analysis_failure_category=?, updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND (? IS NULL OR tenant_id=?)
             ''',
-            (status, notes, last_error, flight_id, tenant_id, tenant_id),
+            (
+                status,
+                notes,
+                last_error,
+                analysis_failure_category,
+                flight_id,
+                tenant_id,
+                tenant_id,
+            ),
         )
         if cursor.rowcount != 1:
             raise LookupError(f"Flight {flight_id} not found")
@@ -422,16 +464,78 @@ def restore_analysis_state(
     notes: str | None,
     last_error: str | None,
     tenant_id: str | None = None,
+    analysis_failure_category: str | None = None,
 ) -> None:
     """Release an analysis claim back to an exact prior observable state."""
     with connect() as conn:
         cursor = conn.execute(
             '''
             UPDATE flights SET
-                status=?, notes=?, last_error=?, updated_at=CURRENT_TIMESTAMP
+                status=?, notes=?, last_error=?, analysis_failure_category=?,
+                updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND (? IS NULL OR tenant_id=?)
             ''',
-            (status, notes, last_error, flight_id, tenant_id, tenant_id),
+            (
+                status,
+                notes,
+                last_error,
+                analysis_failure_category,
+                flight_id,
+                tenant_id,
+                tenant_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Flight {flight_id} not found")
+
+
+_ANALYSIS_SNAPSHOT_COLUMNS = (
+    "flight_number",
+    "flight_date",
+    "departure",
+    "destination",
+    "aircraft",
+    "registration",
+    "status",
+    "analysis_path",
+    "level1_report",
+    "level2_report",
+    "level3_json",
+    "level3_report",
+    "notes",
+    "last_error",
+    "actual_takeoff_utc",
+    "timing_reference_type",
+    "timing_reference_waypoint",
+    "timing_reference_utc",
+    "analysis_version",
+    "report_refresh_state",
+    "report_refresh_error_type",
+    "report_refresh_updated_at",
+    "analysis_failure_category",
+)
+
+
+def restore_analysis_snapshot(
+    flight_id: int,
+    snapshot: sqlite3.Row | dict[str, Any],
+    tenant_id: str | None = None,
+) -> None:
+    """Restore every flight field mutated by an analysis publication.
+
+    This is the compensating transaction for a failure after
+    :func:`complete_analysis` has installed new artifact pointers but before
+    the Processing claim is finalized.
+    """
+    assignments = ", ".join(f"{column}=?" for column in _ANALYSIS_SNAPSHOT_COLUMNS)
+    values = [snapshot[column] for column in _ANALYSIS_SNAPSHOT_COLUMNS]
+    with connect() as conn:
+        cursor = conn.execute(
+            f"""
+            UPDATE flights SET {assignments}, updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND (? IS NULL OR tenant_id=?)
+            """,
+            (*values, flight_id, tenant_id, tenant_id),
         )
         if cursor.rowcount != 1:
             raise LookupError(f"Flight {flight_id} not found")
@@ -473,12 +577,16 @@ def save_timing_reference(
 def claim_analysis(
     flight_id: int,
     tenant_id: str | None = None,
+    *,
+    expected_status: str | None = None,
 ) -> sqlite3.Row | None:
     """Atomically claim a flight and return its authoritative prior row.
 
     ``BEGIN IMMEDIATE`` makes the read-and-transition one ownership decision.
     A caller that acquired a stale HTTP snapshot therefore still receives the
     latest completed row before applying any timing or personal-note mutation.
+    When ``expected_status`` is supplied, the same write transaction also acts
+    as a compare-and-set guard for callers holding a potentially stale row.
     """
     with connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -493,12 +601,15 @@ def claim_analysis(
             raise LookupError(f"Flight {flight_id} not found")
         if flight["status"] == "Processing":
             return None
+        if expected_status is not None and flight["status"] != expected_status:
+            return None
         conn.execute(
             '''
             UPDATE flights SET
                 status='Processing',
                 notes='Parsing Lido CFP and running ODSS engines.',
                 last_error=NULL,
+                analysis_failure_category=NULL,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND (? IS NULL OR tenant_id=?)
             ''',
@@ -532,8 +643,11 @@ def complete_analysis(
                 analysis_path=?, level1_report=?, level2_report=?,
                 level3_json=?, level3_report=?,
                 analysis_version=COALESCE(NULLIF(?, ''), analysis_version),
+                report_refresh_state=?,
+                report_refresh_error_type=?,
+                report_refresh_updated_at=CURRENT_TIMESTAMP,
                 status=CASE WHEN ? THEN 'Completed' ELSE 'Processing' END,
-                notes=?, last_error=NULL,
+                notes=?, last_error=NULL, analysis_failure_category=NULL,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND (? IS NULL OR tenant_id=?)
             ''',
@@ -550,6 +664,8 @@ def complete_analysis(
                 result.get("level3_json"),
                 result.get("level3_report"),
                 result.get("analysis_version", "0.6.0"),
+                result.get("report_refresh_state", "current"),
+                result.get("report_refresh_error_type"),
                 int(release_claim),
                 (
                     f"Analysed {result.get('page_count', 0)} pages; "
@@ -571,6 +687,30 @@ def complete_analysis(
                 tenant_id,
                 tenant_id,
             ),
+        )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Flight {flight_id} not found")
+
+
+def set_report_refresh_state(
+    flight_id: int,
+    state: str,
+    error_type: str | None = None,
+    tenant_id: str | None = None,
+) -> None:
+    if state not in {"pending", "current", "failed"}:
+        raise ValueError(f"Unsupported report refresh state: {state}")
+    with connect() as conn:
+        cursor = conn.execute(
+            '''
+            UPDATE flights SET
+                report_refresh_state=?,
+                report_refresh_error_type=?,
+                report_refresh_updated_at=CURRENT_TIMESTAMP,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND (? IS NULL OR tenant_id=?)
+            ''',
+            (state, error_type, flight_id, tenant_id, tenant_id),
         )
         if cursor.rowcount != 1:
             raise LookupError(f"Flight {flight_id} not found")
