@@ -14,6 +14,7 @@ It does **not** independently answer aviation questions and does **not** duplica
 - mandatory separation of the pilot's raw wording and the AI interpretation;
 - metadata-only registration of private controlled sources;
 - OM-grounded document priority and version rules;
+- official live-weather source governance;
 - the SQ23 A350 Rev20/OM32 golden scenario.
 
 ## Baseline policy tests
@@ -35,13 +36,16 @@ Core v0.2 adds a deterministic CFP-grounded decision orchestrator, Endsley and R
 ## Core v0.2 files
 
 ```text
-helpyou_core/                       deterministic orchestration modules
-helpyou_core/source_registry.py    authority, currency and source-use guard
-helpyou_core/document_priority.py  SIA OM document priority and scope policy
-fixtures/sq23_oei_etp1_1d.json     SQ23 OEI golden scenario
+helpyou_core/                         deterministic orchestration modules
+helpyou_core/source_registry.py      authority, currency and source-use guard
+helpyou_core/document_priority.py    SIA OM document priority and scope policy
+helpyou_core/live_weather_policy.py  NOAA/JMA/BoM/HKO authority and evidence guard
+fixtures/sq23_oei_etp1_1d.json       SQ23 OEI golden scenario
 fixtures/sq23_source_manifest_rev20.json
-                                   private-source metadata only
-tests/                              regression suite
+                                      private-source metadata only
+fixtures/live_weather_source_registry.json
+                                      official public weather-source metadata
+tests/                                regression suite
 ```
 
 See:
@@ -50,7 +54,9 @@ See:
 - [`../../docs/helpyou/HELPYOU_CORE_V0_2_VERTICAL_SLICE.md`](../../docs/helpyou/HELPYOU_CORE_V0_2_VERTICAL_SLICE.md)
 - [`../../docs/helpyou/HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md`](../../docs/helpyou/HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md)
 - [`../../docs/helpyou/HELPYOU_OM_FCTM_AUTHORITY_AND_SQ23_TEST_BASIS.md`](../../docs/helpyou/HELPYOU_OM_FCTM_AUTHORITY_AND_SQ23_TEST_BASIS.md)
+- [`../../docs/helpyou/HELPYOU_LIVE_WEATHER_SOURCE_PROTOCOL.md`](../../docs/helpyou/HELPYOU_LIVE_WEATHER_SOURCE_PROTOCOL.md)
 - [`../../docs/helpyou/CLAUDE_ADVERSARIAL_REVIEW_REQUEST_V0_2_REV20.md`](../../docs/helpyou/CLAUDE_ADVERSARIAL_REVIEW_REQUEST_V0_2_REV20.md)
+- [`../../docs/helpyou/CLAUDE_LIVE_WEATHER_ADVERSARIAL_ADDENDUM.md`](../../docs/helpyou/CLAUDE_LIVE_WEATHER_ADVERSARIAL_ADDENDUM.md)
 
 The implementation is standard-library only. The raw FCOM, OM, QRH, FCTM, SQNP, SQSP, SQI, CFP and other proprietary sources are not committed and remain in private controlled storage.
 
@@ -73,3 +79,7 @@ The implementation is standard-library only. The raw FCOM, OM, QRH, FCTM, SQNP, 
 15. A valid lower-authority requirement that is more restrictive remains applicable.
 16. The FCOM landing-performance method is authoritative, while the airport result in the golden case remains an explicit scenario assumption without fabricated numerical values.
 17. SQ23 CFP NOTAM and MEL validity assumptions apply only to the frozen golden test and cannot leak to another case.
+18. ODSS, not Helpyou Chat, acquires live METAR, TAF, SIGMET and satellite products.
+19. The issuing aerodrome authority or MWO is primary; NOAA AWC is the global machine-readable copy/fallback.
+20. Satellite imagery is supporting evidence only and cannot independently establish an operational weather conclusion.
+21. Historical replay weather cannot be labelled live, and source conflicts cannot be silently merged.
