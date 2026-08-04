@@ -1,133 +1,116 @@
-# Helpyou SQ23 A350 Rev20 Source Bundle
+# Helpyou SQ23 A350 Rev20 / OM32 Source Bundle
 
 **Status:** Private source registration for controlled prototype testing  
-**Bundle ID:** `HELPYOU-SQ23-A350-REV20-04AUG26`  
+**Bundle ID:** `HELPYOU-SQ23-A350-REV20-OM32-04AUG26`  
 **Registered:** 04.08.26  
-**GitHub content rule:** Metadata, schemas and synthetic/derived fixtures only. No proprietary manual or CFP bytes.
+**GitHub content rule:** Metadata, schemas and derived/synthetic fixtures only. No proprietary manual or CFP bytes.
 
-## 1. Purpose
-
-This bundle refreshes the Helpyou Core v0.2 golden test case with the supplied A350 Rev20 and operator documents while preserving the ODSS, evidence and confidentiality boundaries.
-
-Golden case:
+## 1. Golden case
 
 - SQ23 KJFK-WSSS, 25.07.26;
 - A350-941, 9V-SGE;
 - Lido CFP OFP 108/0/1;
-- stable one-engine-inoperative discussion at ETP1-1D, ACTM 03:18;
+- stable OEI discussion at ETP1-1D, ACTM 03:18;
 - candidate EDTO aerodromes CYQX and EINN.
 
-The source registry is in:
+The complete OM/FCTM review and test basis is recorded in:
+
+```text
+docs/helpyou/HELPYOU_OM_FCTM_AUTHORITY_AND_SQ23_TEST_BASIS.md
+```
+
+Machine-readable registration:
 
 ```text
 integration/helpyou/fixtures/sq23_source_manifest_rev20.json
+integration/helpyou/helpyou_core/source_registry.py
+integration/helpyou/helpyou_core/document_priority.py
 ```
 
 ## 2. Private source storage
-
-The files are registered in the private PilotDriven/Helpyou source library under:
 
 ```text
 /PilotDriven/Helpyou/Source Library/SQ23 A350 Rev20 Test Bundle
 /PilotDriven/Helpyou/Source Library/Cognitive and Design Foundations
 ```
 
-The GitHub repository records source identity, revision, authority, currency status, permitted use and prohibited use. It does not contain the source PDFs.
+The repository records source identity, revision, authority scope, currency, permitted use and prohibited use. It does not contain the PDFs.
 
-## 3. Operational source precedence
+## 3. OM-grounded document authority
 
-For the SQ23 scenario, Helpyou applies the following precedence within each source's stated scope:
+The source resolver now implements the exact descending operational sequence in SIA OM Rev 32, 12.1.1.1:
 
-1. Current approved operator and aircraft controlled material: FCOM, QRH, OM, MEL/CDL, SQNP, SQSP, SQI and applicable FCTM.
-2. ODSS-validated flight-specific facts from the Lido CFP, current weather, NOTAM, AIP/chart and approved performance data.
-3. Applicable regulations and approvals.
-4. Controlled operator training and technique material, within its scope and without overriding the sources above.
-5. Training syntheses, study guides and change summaries as navigation aids only.
-6. Endsley, Rasmussen, CBTA and Axiomatic Design as teaching and cognitive-engineering models only. They do not generate aircraft procedures.
-7. Pilot experience and adversarial AI material as separately labelled, non-authoritative inputs.
+1. INTAMs;
+2. Flight Staff Instructions;
+3. MEL;
+4. OM Vol A / FCOM / Jeppesen Reference Texts / SQNP / SQSP;
+5. SEP;
+6. FCTM / Technical Bulletins / Airport Briefings / Circulars;
+7. Crew Administration / Flight Security Procedures.
 
-## 4. Registered operational documents
+Additional rules:
 
-| Source | Revision/date | Registry role | Permitted use | Required safeguard |
-|---|---|---|---|---|
-| SQ23 Lido CFP | OFP 108/0/1, 25.07.26 | Controlled flight source | Route, ACTM, ETP, planned fuel, planning weather and EDTO pair through ODSS | Planning data is not current operational data |
-| SIA A350 FCOM | Rev 20, 06.05.26 | Controlled operational | Systems, limitations, abnormal procedures and performance | Primary technical source; private and claim-cited |
-| SIA A350 QRH | Rev 18, 03.04.25 | Controlled operational | Quick-reference procedure verification | Currency and aircraft effectivity must be reconciled because it predates the Rev20 bundle |
-| A350 SIA FCTM Vol 2 | Rev 1.0, 30.04.26 | Controlled operator guidance | OEI landing, engine fire, EDTO, CRM, LOFT and EBT teaching context | Must not override FCOM, QRH, OM or MEL |
-| SIA A350 SQNP | Rev 20, 06.05.26 | Controlled operator guidance | SOP, task sharing, briefing and phase preparation | Apply aircraft and operator effectivity |
-| SIA A350 SQSP | Rev 20, 06.05.26 | Controlled operator guidance | Alternates, communications, navigation, performance, special operations and CDL context | Do not promote an airport list to current suitability |
-| SIA A350 SQI | Rev 20, 06.05.26 | Controlled operator guidance | Cruise briefing aid and communication support | Cannot override procedure or performance sources |
-| ANR 121 Fifth Schedule | Informal consolidation in force 01.01.23 | Regulatory context | Fatigue constraints when fatigue is material to the scenario | Verify current legal status; no automatic fatigue diagnosis |
+- Certificate of Airworthiness, ANO/ANR, AFM and OM provisions remain mandatory;
+- a valid lower-authority document may impose a more restrictive requirement;
+- same-level documents are not given an invented sub-priority;
+- QRH, CDL, SQI, weight-and-balance and fuelling material are linked Volume B components whose scope must be reconciled explicitly;
+- use the latest revision where iPad and installed-EFB copies differ;
+- installed-EFB AFM, MEL and CDL copies are the primary operational references.
 
-## 5. Supporting material
+## 4. Registered controlled sources
 
-The following sources may help navigation, teaching or change identification but do not independently support an operational conclusion:
+| Source | Revision/date | Role in the golden case |
+|---|---|---|
+| SIA OM | Rev 32, eff 01.04.26 | Operational policy, document priority, EDTO, OEI diversion, nearest-suitable criteria, fuel and Commander authority |
+| SIA A350 FCOM | Rev 20, eff 06.05.26 | Aircraft systems, procedures, limitations and approved landing-performance method |
+| SIA A350 QRH | Rev 18, 03.04.25 | Quick-reference procedures, subject to currentness/effectivity reconciliation |
+| A350 SIA FCTM Vol 2 | Rev 1.0, eff 30.04.26 | Technique, EDTO teaching, LOFT context, task sharing and Flight Discipline prompts; priority group 6 |
+| SIA A350 SQNP | Rev 20, eff 06.05.26 | Normal SOP and task sharing |
+| SIA A350 SQSP | Rev 20, eff 06.05.26 | Supplementary operations and alternate context |
+| SIA A350 SQI | Rev 20, eff 06.05.26 | Crew-support and communication information |
+| SQ23 Lido CFP | OFP 108/0/1, 25.07.26 | ODSS flight baseline, route, timing, fuel, scenario weather, NOTAM/MEL snapshot and EDTO pair |
 
-- A350 FLS/F-APP Training Reference, Issue 1 Rev 6;
-- A350 FCOM Rev20 Limitations Study Guide;
-- A350 Main FCOM/FCTM Changes, Oct 2025;
-- secondary situational-awareness review;
-- human-information-processing lecture material;
-- introductory Axiomatic Design summary;
-- prior PilotDriven decision-process proposal used as adversarial input.
+Training references, study guides, change summaries and cognitive sources remain non-operational or supporting within their registered scopes.
 
-A supporting source may point Helpyou to a controlling section. The controlling section must then be retrieved and verified before the claim is promoted.
+## 5. Landing-performance boundary
 
-## 6. Cognitive and teaching foundations
+The FCOM Performance section supplies the authoritative method:
 
-The private source library also contains:
+- RLD/LD/FLD definitions;
+- approved EFB inflight computation;
+- ECAM/MEL/CDL selection;
+- LD-versus-LDA safeguard where the factor is disregarded in an emergency.
 
-- Endsley, *Toward a Theory of Situation Awareness in Dynamic Systems*;
-- Leveson, *Rasmussen's Legacy*;
-- QCAA Competency Based Training and Assessment;
-- fuller Axiomatic Design lecture material;
-- human-information-processing material.
+The FCOM does not supply a precomputed CYQX or EINN runway result for this case. The golden fixture therefore keeps the result as an explicit test assumption and contains no fabricated LDA, LD, FLD, RLD or runway-required value.
 
-Their permitted functions are deliberately separate:
+Code 4E is not used as proof of landing-distance suitability.
 
-- Endsley: present picture, operational meaning and projection ahead;
-- Rasmussen: indication-to-capability-to-safety-purpose structure and part-to-whole scope;
-- CBTA: developmental evidence from what the pilot actually states;
-- Axiomatic Design: request decomposition, independent decision requirements, option comparison, teaching structure and minimum sufficient detail.
+## 6. Frozen-test assumptions
 
-## 7. Rev20 changes to the golden fixture
+For this SQ23 desktop case only:
 
-The previous fixture cited A350 FCOM Rev18A. It is replaced by:
+- CFP NOTAMs are accepted as current and valid;
+- CFP-declared current MEL items and their operational conditions are accepted as valid;
+- landing performance is accepted as suitable under the FCOM method;
+- CFP weather is used as scenario weather within its validity and projected arrival time;
+- the event remains stable OEI without fire, severe damage or additional degradation.
 
-```text
-[SIA | A350 FCOM | Rev 20 | eff 06.05.26 | PER-LDG-20 / PER-LDG-50]
-```
+These are labelled `scenario_assumption`. They remove repetitive test prompts but cannot be promoted to an operational claim or reused for another case.
 
-The landing-performance boundary remains unchanged:
+## 7. Remaining production gaps
 
-- diversion or an in-flight failure requires an approved in-flight landing-performance computation;
-- the test instruction to assume landing performance suitable is retained as a visible `scenario_assumption`;
-- Code 4E is not treated as proof of A350 landing performance;
-- the teaching result remains conditional until approved EFB output is supplied.
+- actual A350 MEL/CDL source text and 9V-SGE effectivity;
+- FCTM Volume 1 where referenced;
+- airport-specific approved EFB inputs/output for a live operation;
+- live weather, charts and AIP;
+- current OEB/TAB/temporary-document applicability;
+- confirmation that QRH Rev 18 remains current for the intended operational date.
 
-The FCTM EDTO material is added to the teaching basis so that option generation does not reduce suitability to distance alone. Estimated-time-of-use weather, diversion procedures and operational-control considerations remain visible.
+## 8. Acceptance rules
 
-## 8. Open source gaps
-
-The bundle is not a production-complete operator library. The following remain required:
-
-1. current SIA OM-A and OM-B diversion, commander-authority and fuel-policy sections;
-2. current SIA A350 MEL/CDL and effectivity for 9V-SGE;
-3. current FCTM Volume 1 where cited;
-4. any separate controlled EDTO operational-control/diversion policy;
-5. approved EFB landing-performance outputs for CYQX and EINN;
-6. current charts/AIP, NOTAMs and operational weather at projected arrival;
-7. current OEB, TAB and temporary documentary-unit applicability.
-
-Helpyou must fail closed or state a conditional result where one of these gaps affects the decision.
-
-## 9. Acceptance requirements added by this refresh
-
-- Rev18A FCOM citations must not remain in the SQ23 Rev20 fixture.
-- Training aids cannot be marked controlling.
-- Cognitive models cannot support aircraft-technical claims.
-- QRH Rev18 must carry a currency-review flag.
-- Raw proprietary files must never appear in the GitHub tree or release bundle.
-- Source precedence and authority scope must be machine-testable.
-- Fatigue prompts activate only when fatigue is a material scenario input.
-- The current source-bundle ID must be recorded in every reproducible SQ23 test result.
+- OM priority groups are machine-testable.
+- FCTM cannot override OM, FCOM or MEL.
+- FCOM method and assumed airport result remain separate.
+- NOTAM and MEL validity remain test assumptions.
+- No proprietary bytes enter GitHub or CI artifacts.
+- CYQX and EINN are initially unranked; the pilot must explain the selection before Helpyou teaches the comparison.
