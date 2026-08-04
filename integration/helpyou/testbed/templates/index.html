@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/static/testbed.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">PilotDriven</p>
+      <h1>Helpyou Flight Discussion Test Bed</h1>
+      <p class="subtitle">Facilitate first. Teach second. Learn visibly from the pilot.</p>
+    </div>
+    <div class="topbar-status">
+      <span class="status-dot"></span>
+      <strong>Deterministic prototype</strong>
+      <small>{{ flight_briefing_name }} owns the flight baseline</small>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <aside class="left-rail">
+      <section class="panel new-session-panel">
+        <h2>Start a test</h2>
+        <div class="mode-tabs" role="tablist">
+          <button class="mode-tab active" data-mode="flight_scenario">Flight scenario</button>
+          <button class="mode-tab" data-mode="teach_helpyou">Teach Helpyou</button>
+        </div>
+        <form id="new-session-form">
+          <input type="hidden" id="mode" name="mode" value="flight_scenario">
+          <label id="case-label">Flight Briefing case
+            <select id="case-id" name="case_id">
+              <option value="SQ23-25JUL26-OEI-ETP1-1D">SQ23 — stable OEI at ETP1-1D</option>
+            </select>
+          </label>
+          <label>Discussion or contribution
+            <textarea id="scenario" name="scenario" rows="5">{{ default_scenario }}</textarea>
+          </label>
+          <button class="primary" type="submit">Start session</button>
+        </form>
+      </section>
+
+      <section class="panel session-list-panel">
+        <div class="panel-heading">
+          <h2>Sessions</h2>
+          <button id="refresh-sessions" class="quiet" type="button">Refresh</button>
+        </div>
+        <div id="session-list" class="session-list">
+          {% for item in sessions %}
+          <button class="session-item" data-session-id="{{ item.id }}">
+            <strong>{{ item.case_id or "Pilot contribution" }}</strong>
+            <span>{{ item.scenario[:82] }}</span>
+            <small>{{ item.status }} · {{ item.updated_at }}</small>
+          </button>
+          {% endfor %}
+        </div>
+      </section>
+    </aside>
+
+    <section class="conversation-column">
+      <div id="empty-state" class="empty-state panel">
+        <span class="empty-icon">✦</span>
+        <h2>Start with the pilot’s own reasoning</h2>
+        <p>The test bed loads a controlled Flight Briefing snapshot, presents viable options without ranking, and asks one material question at a time.</p>
+        <div class="principles">
+          <span>Answer first</span><span>No academic chatter</span><span>Raw wording preserved</span><span>Memory is private</span>
+        </div>
+      </div>
+
+      <div id="session-workspace" class="session-workspace hidden">
+        <section class="session-header panel">
+          <div>
+            <p class="eyebrow" id="session-mode-label">Flight scenario</p>
+            <h2 id="session-title">—</h2>
+            <p id="session-scenario" class="muted"></p>
+          </div>
+          <div class="session-actions">
+            <button id="reset-session" class="quiet" type="button">Reset</button>
+            <a id="export-session" class="quiet link-button" href="#">Export JSON</a>
+          </div>
+        </section>
+
+        <section id="messages" class="messages panel" aria-live="polite"></section>
+
+        <section id="question-card" class="question-card panel hidden">
+          <div class="question-meta">
+            <span id="question-model" class="model-badge">Facilitator</span>
+            <span id="question-progress" class="muted"></span>
+          </div>
+          <h2 id="question-title">Question</h2>
+          <p id="question-prompt" class="question-prompt"></p>
+          <p id="question-why" class="why-it-matters hidden"></p>
+          <form id="answer-form">
+            <input type="hidden" id="question-key">
+            <div id="question-fields"></div>
+            <button class="primary" type="submit">Submit answer</button>
+          </form>
+        </section>
+
+        <section id="teach-card" class="panel hidden">
+          <div class="question-meta"><span class="model-badge">Pilot knowledge</span></div>
+          <h2>What should Helpyou learn from you?</h2>
+          <form id="teach-form">
+            <label>Contribution type
+              <select id="teach-record-type">
+                <option value="pilot_experience">Direct pilot experience</option>
+                <option value="pilot_observation">Pilot observation</option>
+                <option value="pilot_technique">Pilot technique</option>
+                <option value="pilot_correction">Correction to Helpyou</option>
+                <option value="pilot_hypothesis">Pilot hypothesis</option>
+                <option value="source_reference">Source reference</option>
+                <option value="interaction_preference">Reply preference</option>
+              </select>
+            </label>
+            <label>Your exact wording
+              <textarea id="teach-raw" rows="6" placeholder="State the experience, correction or technique in your own words."></textarea>
+            </label>
+            <label>Aircraft, route, phase or other context
+              <textarea id="teach-context" rows="3" placeholder="Context prevents a useful observation from being applied too broadly."></textarea>
+            </label>
+            <label>Storage scope
+              <select id="teach-privacy">
+                <option value="private">Private</option>
+                <option value="shared_candidate">Candidate for later anonymised sharing</option>
+              </select>
+            </label>
+            <button class="primary" type="submit">Store pilot contribution</button>
+          </form>
+        </section>
+
+        <section id="teaching-card" class="teaching-card panel hidden">
+          <div class="question-meta"><span id="teaching-status" class="status-badge">Conditional</span></div>
+          <h2 id="teaching-headline"></h2>
+          <p id="teaching-answer" class="teaching-answer"></p>
+          <div id="teaching-decision-gate" class="decision-gate hidden"></div>
+          <div class="teaching-grid">
+            <div>
+              <h3>Key situational-awareness point</h3>
+              <p id="teaching-sa"></p>
+            </div>
+            <div>
+              <h3>Key cognitive point</h3>
+              <p id="teaching-cognitive"></p>
+            </div>
+          </div>
+          <div id="developmental-points"></div>
+          <details>
+            <summary>Conditions and source traceability</summary>
+            <div id="teaching-conditions"></div>
+            <div id="teaching-citations"></div>
+          </details>
+        </section>
+      </div>
+    </section>
+
+    <aside id="inspector" class="right-inspector">
+      <section class="panel">
+        <div class="panel-heading"><h2>Flight Briefing baseline</h2><span id="snapshot-badge" class="status-badge neutral">Not loaded</span></div>
+        <div id="baseline-summary" class="baseline-summary muted">Start a flight scenario to load the immutable case snapshot.</div>
+      </section>
+
+      <section class="panel">
+        <h2>Options</h2>
+        <p class="muted small">Viable options are deliberately unranked before the pilot reasons.</p>
+        <div id="option-cards" class="option-cards"></div>
+      </section>
+
+      <section class="panel">
+        <h2>What Helpyou learned</h2>
+        <p class="muted small">Your exact wording stays separate from Helpyou’s interpretation.</p>
+        <div id="memory-cards" class="memory-cards"></div>
+      </section>
+
+      <section class="panel compact-policy">
+        <h2>Evidence boundary</h2>
+        <p><strong>Authoritative:</strong> controlled manuals and Flight Briefing data.</p>
+        <p><strong>Pilot-reported:</strong> experience and reasoning stored with context.</p>
+        <p><strong>Never:</strong> pilot memory promoted into Flight Briefing evidence.</p>
+      </section>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="/static/testbed.js" defer></script>
+</body>
+</html>

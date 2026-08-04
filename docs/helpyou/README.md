@@ -19,6 +19,7 @@ Flight Briefing remains the sole owner of deterministic Lido CFP analysis and li
 - [`HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md`](HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md) — CFP-grounded LOFT-style discussion, option generation, Endsley, Rasmussen, CBTA and Flight Discipline.
 - [`HELPYOU_DATA_CONTRACTS_V1.md`](HELPYOU_DATA_CONTRACTS_V1.md) — source, claim, routing, memory and scenario data contracts.
 - [`HELPYOU_CORE_V0_2_VERTICAL_SLICE.md`](HELPYOU_CORE_V0_2_VERTICAL_SLICE.md) — deterministic guided-decision orchestrator and SQ23 golden test case.
+- [`HELPYOU_FLIGHT_DISCUSSION_TESTBED_V0_1.md`](HELPYOU_FLIGHT_DISCUSSION_TESTBED_V0_1.md) — separate browser test bed for pilot discussion, guided teaching and visible memory.
 - [`HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md`](HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md) — private Rev20/OM32 source registration, authority controls and test assumptions.
 - [`HELPYOU_OM_FCTM_AUTHORITY_AND_SQ23_TEST_BASIS.md`](HELPYOU_OM_FCTM_AUTHORITY_AND_SQ23_TEST_BASIS.md) — detailed OM/FCTM review, exact document-priority sequence, FCOM landing-performance boundary and frozen SQ23 assumptions.
 - [`HELPYOU_LIVE_WEATHER_SOURCE_PROTOCOL.md`](HELPYOU_LIVE_WEATHER_SOURCE_PROTOCOL.md) — NOAA, JMA, BoM and HKO live METAR/TAF/SIGMET/satellite source policy and Flight Briefing boundary.
