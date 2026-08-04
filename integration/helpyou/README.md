@@ -2,13 +2,13 @@
 
 This directory contains deterministic policy and the first guided-decision orchestration slice for Helpyou.
 
-It does **not** independently answer aviation questions and does **not** duplicate ODSS. It establishes:
+It does **not** independently answer aviation questions and does **not** duplicate Flight Briefing. It establishes:
 
 - request segregation;
 - specialist-engine ownership;
 - cognitive-layer activation gates;
 - authoritative evidence requirements;
-- the ODSS/pilot-memory boundary;
+- the Flight Briefing/pilot-memory boundary;
 - minimum-sufficient response sections;
 - the PilotDriven citation format;
 - mandatory separation of the pilot's raw wording and the AI interpretation;
@@ -62,11 +62,11 @@ The implementation is standard-library only. The raw FCOM, OM, QRH, FCTM, SQNP, 
 
 ## Core invariants
 
-1. Lido CFP analysis is owned by ODSS.
+1. Lido CFP analysis is owned by Flight Briefing.
 2. Rasmussen, Endsley and CBTA do not run on ordinary CFP, lookup, compilation or calculation requests.
-3. A CFP-grounded scenario cannot generate flight-specific options until the Lido CFP has been processed by ODSS.
+3. A CFP-grounded scenario cannot generate flight-specific options until the Lido CFP has been processed by Flight Briefing.
 4. Authoritative claims require current, applicable and claim-supporting citations.
-5. Pilot experience and AI possibilities never become ODSS evidence.
+5. Pilot experience and AI possibilities never become Flight Briefing evidence.
 6. Citation dates use `DD.MM.YY`; document dates use `eff`.
 7. Helpyou returns the minimum sufficient detail for the routed task.
 8. Every pilot turn passes through memory classification, while durable memory remains governed and user-controllable.
@@ -79,7 +79,7 @@ The implementation is standard-library only. The raw FCOM, OM, QRH, FCTM, SQNP, 
 15. A valid lower-authority requirement that is more restrictive remains applicable.
 16. The FCOM landing-performance method is authoritative, while the airport result in the golden case remains an explicit scenario assumption without fabricated numerical values.
 17. SQ23 CFP NOTAM and MEL validity assumptions apply only to the frozen golden test and cannot leak to another case.
-18. ODSS, not Helpyou Chat, acquires live METAR, TAF, SIGMET and satellite products.
+18. Flight Briefing, not Helpyou Chat, acquires live METAR, TAF, SIGMET and satellite products.
 19. The issuing aerodrome authority or MWO is primary; NOAA AWC is the global machine-readable copy/fallback.
 20. Satellite imagery is supporting evidence only and cannot independently establish an operational weather conclusion.
 21. Historical replay weather cannot be labelled live, and source conflicts cannot be silently merged.
