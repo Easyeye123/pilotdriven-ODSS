@@ -100,6 +100,7 @@ class SourceManifest:
             raise SourceRegistryError("Source IDs must be unique within a bundle.")
         for source in self.sources:
             source.validate()
+
         primary_fcom = [
             item
             for item in self.sources
@@ -110,6 +111,33 @@ class SourceManifest:
         if len(primary_fcom) != 1:
             raise SourceRegistryError(
                 "The SQ23 Rev20 bundle requires one current primary FCOM record."
+            )
+
+        primary_om = [
+            item
+            for item in self.sources
+            if item.source_id == "SIA-OM-REV32"
+            and item.role is SourceRole.CONTROLLED_OPERATIONAL
+            and item.currency_status is CurrencyStatus.CURRENT_FOR_BUNDLE
+        ]
+        if len(primary_om) != 1:
+            raise SourceRegistryError(
+                "The refreshed SQ23 bundle requires one current SIA OM Rev 32 policy record."
+            )
+
+        fctm = [
+            item
+            for item in self.sources
+            if item.source_id == "SIA-A350-FCTM-V2-REV1"
+        ]
+        if len(fctm) != 1:
+            raise SourceRegistryError(
+                "The refreshed SQ23 bundle requires one A350 FCTM Volume 2 record."
+            )
+        fctm_prohibited = " ".join(fctm[0].prohibited_uses).lower()
+        if not all(token in fctm_prohibited for token in ("om", "fcom", "mel")):
+            raise SourceRegistryError(
+                "FCTM authority boundary must state that it cannot override OM, FCOM or MEL."
             )
 
     @property
