@@ -1,0 +1,218 @@
+{
+  "registry_id": "HELPYOU-LIVE-WEATHER-SOURCES-V1",
+  "registry_date": "04.08.26",
+  "owner": "ODSS",
+  "helpyou_direct_network_fetch_permitted": false,
+  "purpose": "Official live-weather source governance for CFP-grounded Helpyou scenarios.",
+  "policy": {
+    "issuing_authority_first": true,
+    "noaa_global_aggregator_fallback": true,
+    "preserve_raw_and_decoded_payloads": true,
+    "preserve_issue_validity_and_retrieval_times": true,
+    "do_not_silently_merge_conflicts": true,
+    "satellite_is_supporting_evidence_only": true,
+    "taf_must_cover_projected_arrival": true,
+    "sigmet_must_intersect_route_and_valid_time": true,
+    "historical_replay_must_not_be_labelled_live": true
+  },
+  "regional_authority": {
+    "RJJJ": "JMA",
+    "YBBB": "BOM",
+    "YMMM": "BOM",
+    "VHHK": "HKO"
+  },
+  "providers": [
+    {
+      "provider_id": "NOAA_AWC",
+      "name": "NOAA/NWS Aviation Weather Center",
+      "official_domains": ["aviationweather.gov", "weather.gov"],
+      "provider_role": "global_aggregator_and_us_issuer",
+      "products": [
+        {
+          "product": "METAR",
+          "access_mode": "API",
+          "source": "https://aviationweather.gov/api/data/metar",
+          "coverage": "worldwide",
+          "issuing_authority": false,
+          "supporting_only": false,
+          "allowed_claims": ["raw_observation", "decoded_observation", "observation_time"]
+        },
+        {
+          "product": "TAF",
+          "access_mode": "API",
+          "source": "https://aviationweather.gov/api/data/taf",
+          "coverage": "worldwide",
+          "issuing_authority": false,
+          "supporting_only": false,
+          "allowed_claims": ["raw_forecast", "decoded_forecast", "forecast_validity"]
+        },
+        {
+          "product": "SIGMET",
+          "access_mode": "API",
+          "source": "https://aviationweather.gov/api/data/isigmet",
+          "coverage": "worldwide",
+          "issuing_authority": false,
+          "supporting_only": false,
+          "allowed_claims": ["published_sigmet_copy", "sigmet_validity", "sigmet_geometry"]
+        },
+        {
+          "product": "SATELLITE",
+          "access_mode": "OFFICIAL_WEB_LAYER",
+          "source": "https://aviationweather.gov/gfa/",
+          "coverage": "AWC observation-map coverage",
+          "issuing_authority": false,
+          "supporting_only": true,
+          "allowed_claims": ["cloud_pattern", "convective_trend_support", "image_capture_time"]
+        }
+      ],
+      "notes": [
+        "Use the AWC API with bounded queries, a custom user-agent and provider rate limits.",
+        "For non-US products, the originating meteorological authority remains primary when available."
+      ]
+    },
+    {
+      "provider_id": "JMA",
+      "name": "Japan Meteorological Agency",
+      "official_domains": ["jma.go.jp", "data.jma.go.jp"],
+      "provider_role": "issuing_authority",
+      "products": [
+        {
+          "product": "METAR",
+          "access_mode": "OFFICIAL_WEB_ADAPTER",
+          "source": "https://www.jma.go.jp/jma/en/Activities/aws.html",
+          "coverage": "Japanese aerodromes",
+          "issuing_authority": true,
+          "supporting_only": false,
+          "allowed_claims": ["raw_observation", "observation_time", "japan_aerodrome_weather"]
+        },
+        {
+          "product": "TAF",
+          "access_mode": "OFFICIAL_WEB_ADAPTER",
+          "source": "https://www.jma.go.jp/jma/kishou/know/kouku/3_yohou/31_hikoujou/31_hikoujou.html",
+          "coverage": "Japanese aerodromes",
+          "issuing_authority": true,
+          "supporting_only": false,
+          "allowed_claims": ["raw_forecast", "forecast_validity", "japan_aerodrome_forecast"]
+        },
+        {
+          "product": "SIGMET",
+          "access_mode": "OFFICIAL_WEB_ADAPTER",
+          "source": "https://www.jma.go.jp/jma/kishou/know/kouku/3_yohou/32_kuuiki/32_kuuiki.html",
+          "coverage": "Fukuoka FIR (RJJJ)",
+          "issuing_authority": true,
+          "supporting_only": false,
+          "allowed_claims": ["official_sigmet", "sigmet_validity", "sigmet_geometry"]
+        },
+        {
+          "product": "SATELLITE",
+          "access_mode": "OFFICIAL_IMAGE",
+          "source": "https://www.data.jma.go.jp/mscweb/data/himawari/sat_img.php",
+          "coverage": "Himawari full-disk and regional sectors",
+          "issuing_authority": true,
+          "supporting_only": true,
+          "allowed_claims": ["cloud_pattern", "convective_trend_support", "image_capture_time"]
+        }
+      ],
+      "notes": [
+        "JMA is primary for Japan-issued aerodrome products and Fukuoka FIR SIGMET.",
+        "Himawari imagery supports interpretation and projection but does not replace OPMET or SIGMET."
+      ]
+    },
+    {
+      "provider_id": "BOM",
+      "name": "Australian Bureau of Meteorology",
+      "official_domains": ["bom.gov.au"],
+      "provider_role": "issuing_authority",
+      "products": [
+        {
+          "product": "METAR",
+          "access_mode": "OFFICIAL_WEB_ADAPTER",
+          "source": "https://www.bom.gov.au/aviation/observations/metar-speci/",
+          "coverage": "Australian aerodromes",
+          "issuing_authority": true,
+          "supporting_only": false,
+          "allowed_claims": ["raw_observation", "observation_time", "australian_aerodrome_weather"]
+        },
+        {
+          "product": "TAF",
+          "access_mode": "OFFICIAL_WEB_ADAPTER",
+          "source": "https://www.bom.gov.au/aviation/forecasts/taf/",
+          "coverage": "Australian aerodromes",
+          "issuing_authority": true,
+          "supporting_only": false,
+          "allowed_claims": ["raw_forecast", "forecast_validity", "australian_aerodrome_forecast"]
+        },
+        {
+          "product": "SIGMET",
+          "access_mode": "OFFICIAL_WEB_ADAPTER",
+          "source": "https://www.bom.gov.au/aviation/warnings/",
+          "coverage": "Australian FIRs and applicable international products",
+          "issuing_authority": true,
+          "supporting_only": false,
+          "allowed_claims": ["official_sigmet", "sigmet_validity", "sigmet_geometry"]
+        },
+        {
+          "product": "SATELLITE",
+          "access_mode": "OFFICIAL_IMAGE",
+          "source": "https://www.bom.gov.au/aviation/weather-packages/",
+          "coverage": "Australia and regional package imagery",
+          "issuing_authority": true,
+          "supporting_only": true,
+          "allowed_claims": ["cloud_pattern", "convective_trend_support", "image_capture_time"]
+        }
+      ],
+      "notes": [
+        "BoM pages state that flight-planning information should be obtained through Airservices Australia; preserve this access warning in production.",
+        "The public website is an official weather source but is not a substitute for the operator's approved briefing channel."
+      ]
+    },
+    {
+      "provider_id": "HKO",
+      "name": "Hong Kong Observatory",
+      "official_domains": ["hko.gov.hk", "weather.gov.hk"],
+      "provider_role": "issuing_authority_and_regional_monitor",
+      "products": [
+        {
+          "product": "METAR",
+          "access_mode": "OFFICIAL_WEB_ADAPTER",
+          "source": "https://www.hko.gov.hk/en/aviation/index.htm",
+          "coverage": "Hong Kong International Airport and displayed regional OPMET",
+          "issuing_authority": true,
+          "supporting_only": false,
+          "allowed_claims": ["raw_observation", "observation_time", "vhhh_weather"]
+        },
+        {
+          "product": "TAF",
+          "access_mode": "OFFICIAL_WEB_ADAPTER",
+          "source": "https://www.hko.gov.hk/en/aviation/index.htm",
+          "coverage": "Hong Kong International Airport and displayed regional OPMET",
+          "issuing_authority": true,
+          "supporting_only": false,
+          "allowed_claims": ["raw_forecast", "forecast_validity", "vhhh_forecast"]
+        },
+        {
+          "product": "SIGMET",
+          "access_mode": "OFFICIAL_WEB_ADAPTER",
+          "source": "https://www.hko.gov.hk/en/aviat/map_sigmet.htm",
+          "coverage": "Hong Kong FIR (VHHK)",
+          "issuing_authority": true,
+          "supporting_only": false,
+          "allowed_claims": ["official_sigmet", "sigmet_validity", "sigmet_geometry"]
+        },
+        {
+          "product": "SATELLITE",
+          "access_mode": "OFFICIAL_WEB_LAYER",
+          "source": "https://www.hko.gov.hk/en/aviation/index.htm",
+          "coverage": "Hong Kong and regional aviation-weather display",
+          "issuing_authority": true,
+          "supporting_only": true,
+          "allowed_claims": ["cloud_pattern", "convective_trend_support", "image_capture_time"]
+        }
+      ],
+      "notes": [
+        "HKO is primary for VHHH products and Hong Kong FIR SIGMET.",
+        "HKO global SIGMET monitoring may be used as a regional availability cross-check, not to replace the issuing MWO."
+      ]
+    }
+  ]
+}
