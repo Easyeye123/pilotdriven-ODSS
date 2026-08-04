@@ -15,12 +15,14 @@ from helpyou_core.source_registry import (
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "fixtures" / "sq23_source_manifest_rev20.json"
+SQ23_FIXTURE = ROOT / "fixtures" / "sq23_oei_etp1_1d.json"
 
 
 class SourceRegistryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.manifest = load_manifest(MANIFEST)
+        cls.fixture = json.loads(SQ23_FIXTURE.read_text(encoding="utf-8"))
 
     def test_bundle_is_metadata_only(self) -> None:
         self.assertFalse(self.manifest.raw_files_committed)
@@ -81,6 +83,31 @@ class SourceRegistryTests(unittest.TestCase):
         data["sources"][1]["raw_content_in_repository"] = True
         with self.assertRaises(SourceRegistryError):
             manifest_from_mapping(data)
+
+    def test_sq23_fixture_uses_registered_bundle(self) -> None:
+        self.assertEqual(self.fixture["source_bundle_id"], self.manifest.bundle_id)
+        self.assertEqual(
+            self.fixture["source_manifest"],
+            "sq23_source_manifest_rev20.json",
+        )
+
+    def test_sq23_fixture_has_no_rev18a_fcom_citation(self) -> None:
+        revisions = {
+            citation.get("revision")
+            for item in self.fixture["evidence"]
+            for citation in item.get("citations", [])
+            if citation.get("document") == "A350 FCOM"
+        }
+        self.assertEqual(revisions, {"Rev 20"})
+        self.assertNotIn("Rev 18A", SQ23_FIXTURE.read_text(encoding="utf-8"))
+
+    def test_landing_performance_remains_a_scenario_assumption(self) -> None:
+        item = next(
+            evidence for evidence in self.fixture["evidence"]
+            if evidence["claim_id"] == "TEST-LDG-PERF-ASSUMPTION"
+        )
+        self.assertEqual(item["status"], "scenario_assumption")
+        self.assertFalse(item["support_verified"])
 
 
 if __name__ == "__main__":
