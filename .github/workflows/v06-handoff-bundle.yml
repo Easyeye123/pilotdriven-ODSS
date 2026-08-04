@@ -1,4 +1,4 @@
-name: ODSS v0.6 handoff bundle
+name: Flight Briefing v0.6 handoff bundle
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - feature/v0.6-pilotdriven-handoff
       - feature/helpyou-framework-v1
       - feature/helpyou-core-v0.2
+      - feature/helpyou-discussion-testbed-v0.1
     paths:
       - "integration/v0.6/**"
       - "integration/helpyou/**"
@@ -76,6 +77,11 @@ jobs:
           PYTHONPATH: .
         run: python -m unittest discover -s tests -v
 
+      - name: Test Helpyou Flight Discussion Test Bed
+        env:
+          PYTHONPATH: integration/helpyou
+        run: pytest -q integration/helpyou/testbed/tests
+
       - name: Build complete handoff archive
         run: |
           mkdir -p dist/pilotdriven-odss-v0.6-handoff
@@ -87,6 +93,7 @@ jobs:
             --exclude '.pytest_cache' \
             --exclude 'pilotdriven_odss_dashboard/data' \
             --exclude 'pilotdriven_odss_dashboard/visual-samples' \
+            --exclude 'integration/helpyou/testbed/data/*.db*' \
             ./ dist/pilotdriven-odss-v0.6-handoff/
           cd dist
           zip -qr pilotdriven-odss-v0.6-handoff.zip pilotdriven-odss-v0.6-handoff

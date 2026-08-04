@@ -33,6 +33,15 @@ PYTHONPATH=. python3 -m unittest discover -s tests -v
 
 Core v0.2 adds a deterministic CFP-grounded decision orchestrator, Endsley and Rasmussen facilitation, Axiomatic Design option structure, developmental CBTA mapping, governed memory candidates and the SQ23 OEI golden fixture.
 
+## Flight Discussion Test Bed v0.1
+
+```bash
+python -m pip install -r pilotdriven_odss_dashboard/requirements.txt
+PYTHONPATH=integration/helpyou python -m testbed
+```
+
+Open `http://127.0.0.1:8010`. The test bed provides a separate pilot discussion page, one-question-at-a-time facilitation, a concise teaching result, visible private memory and JSON export. See [`testbed/README.md`](testbed/README.md) and [`../../docs/helpyou/HELPYOU_FLIGHT_DISCUSSION_TESTBED_V0_1.md`](../../docs/helpyou/HELPYOU_FLIGHT_DISCUSSION_TESTBED_V0_1.md).
+
 ## Core v0.2 files
 
 ```text
@@ -45,12 +54,15 @@ fixtures/sq23_source_manifest_rev20.json
                                       private-source metadata only
 fixtures/live_weather_source_registry.json
                                       official public weather-source metadata
-tests/                                regression suite
+tests/                                Core regression suite
+testbed/                              browser discussion and learning prototype
 ```
 
 See:
 
 - [`README_CORE_V0_2.md`](README_CORE_V0_2.md)
+- [`testbed/README.md`](testbed/README.md)
+- [`../../docs/helpyou/HELPYOU_FLIGHT_DISCUSSION_TESTBED_V0_1.md`](../../docs/helpyou/HELPYOU_FLIGHT_DISCUSSION_TESTBED_V0_1.md)
 - [`../../docs/helpyou/HELPYOU_CORE_V0_2_VERTICAL_SLICE.md`](../../docs/helpyou/HELPYOU_CORE_V0_2_VERTICAL_SLICE.md)
 - [`../../docs/helpyou/HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md`](../../docs/helpyou/HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md)
 - [`../../docs/helpyou/HELPYOU_OM_FCTM_AUTHORITY_AND_SQ23_TEST_BASIS.md`](../../docs/helpyou/HELPYOU_OM_FCTM_AUTHORITY_AND_SQ23_TEST_BASIS.md)
@@ -58,7 +70,7 @@ See:
 - [`../../docs/helpyou/CLAUDE_ADVERSARIAL_REVIEW_REQUEST_V0_2_REV20.md`](../../docs/helpyou/CLAUDE_ADVERSARIAL_REVIEW_REQUEST_V0_2_REV20.md)
 - [`../../docs/helpyou/CLAUDE_LIVE_WEATHER_ADVERSARIAL_ADDENDUM.md`](../../docs/helpyou/CLAUDE_LIVE_WEATHER_ADVERSARIAL_ADDENDUM.md)
 
-The implementation is standard-library only. The raw FCOM, OM, QRH, FCTM, SQNP, SQSP, SQI, CFP and other proprietary sources are not committed and remain in private controlled storage.
+The deterministic Core implementation is standard-library only. The browser test bed uses the FastAPI/Jinja runtime already used by the PilotDriven dashboard. The raw FCOM, OM, QRH, FCTM, SQNP, SQSP, SQI, CFP and other proprietary sources are not committed and remain in private controlled storage.
 
 ## Core invariants
 
