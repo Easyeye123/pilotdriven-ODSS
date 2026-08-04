@@ -5,6 +5,7 @@ on:
     branches:
       - feature/v0.6-pilotdriven-handoff
       - feature/helpyou-framework-v1
+      - feature/helpyou-core-v0.2
     paths:
       - "integration/v0.6/**"
       - "integration/helpyou/**"
@@ -68,6 +69,12 @@ jobs:
       - name: Test Helpyou policy
         working-directory: integration/helpyou
         run: python -m unittest -v test_helpyou_policy.py
+
+      - name: Test Helpyou Core v0.2
+        working-directory: integration/helpyou
+        env:
+          PYTHONPATH: .
+        run: python -m unittest discover -s tests -v
 
       - name: Build complete handoff archive
         run: |

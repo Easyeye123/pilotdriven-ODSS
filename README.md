@@ -1,6 +1,8 @@
-# PilotDriven ODSS
+# PilotDriven Flight Briefing
 
-PilotDriven Operational Decision Support System development repository.
+> **Naming:** Flight Briefing is the permanent product-facing name. The repository and selected internal identifiers retain the legacy ODSS token for compatibility.
+
+PilotDriven aviation decision-support development repository.
 
 The working personal dashboard is in [`pilotdriven_odss_dashboard/`](pilotdriven_odss_dashboard/README.md).
 
@@ -18,11 +20,11 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000`, upload a Lido CFP PDF, create the flight workspace, and select **Run ODSS analysis**.
+Open `http://127.0.0.1:8000`, upload a Lido CFP PDF, create the flight workspace, and select **Run Flight Briefing analysis**.
 
-## ODSS v0.6 PilotDriven handoff
+## Flight Briefing v0.6 PilotDriven handoff
 
-ODSS v0.6 is the integration handoff for the final realistic-map standard and future combination with `pilotdriven.com`.
+Flight Briefing v0.6 is the integration handoff for the final realistic-map standard and future combination with `pilotdriven.com`.
 
 The v0.5 schematic baseline is preserved at:
 
@@ -34,7 +36,7 @@ archive/odss-v0.5-schematic-baseline
 
 ```text
 pilotdriven_odss_dashboard/
-  Working personal ODSS application
+  Working personal Flight Briefing application
 
 integration/v0.6/
   Reference map contracts, render adapters, print capture,
@@ -58,13 +60,13 @@ The first source-governed Helpyou product and integration baseline is documented
 4. [`docs/helpyou/HELPYOU_DATA_CONTRACTS_V1.md`](docs/helpyou/HELPYOU_DATA_CONTRACTS_V1.md)
 5. [`integration/helpyou/README.md`](integration/helpyou/README.md)
 
-Helpyou routes Lido CFPs to ODSS, keeps pilot memory outside the ODSS evidence boundary, uses Axiomatic Design to structure teaching replies, and activates Endsley, Rasmussen and developmental CBTA review only when pilot reasoning is available.
+Helpyou routes Lido CFPs to Flight Briefing, keeps pilot memory outside the Flight Briefing evidence boundary, uses Axiomatic Design to structure teaching replies, and activates Endsley, Rasmussen and developmental CBTA review only when pilot reasoning is available.
 
 ### v0.6 architecture
 
 ```text
 Lido CFP
-  -> ODSS parser and deterministic engines
+  -> Flight Briefing parser and deterministic engines
   -> canonical analysis JSON
   -> map contract / route GeoJSON / marker and verified-hazard GeoJSON
   -> Amazon Location Hybrid + MapLibre
@@ -109,4 +111,4 @@ python -m uvicorn app.main:app \
 
 ## Important
 
-ODSS is operational decision support only. Approved operator documents, current dispatch information, ATC instructions and commander judgement remain controlling.
+Flight Briefing is operational decision support only. Approved operator documents, current dispatch information, ATC instructions and commander judgement remain controlling.

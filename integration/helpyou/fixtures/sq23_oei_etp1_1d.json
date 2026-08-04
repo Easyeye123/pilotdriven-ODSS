@@ -1,0 +1,318 @@
+{
+  "case_id": "SQ23-25JUL26-OEI-ETP1-1D",
+  "flight_number": "SQ23",
+  "flight_date": "25.07.26",
+  "aircraft_type": "A350-941",
+  "registration": "9V-SGE",
+  "departure": "KJFK",
+  "destination": "WSSS",
+  "scheduled_departure_utc": "0215Z",
+  "scheduled_arrival_utc": "2130Z",
+  "source_bundle_id": "HELPYOU-SQ23-A350-REV20-OM32-04AUG26",
+  "source_manifest": "sq23_source_manifest_rev20.json",
+  "source_snapshot_id": "SQ23-OFP108-0-1-25JUL26-REV20-OM32-TEST-SNAPSHOT",
+  "source_document": "SQ02325072026JFK.pdf",
+  "odss_complete": true,
+  "anchor": {
+    "waypoint": "ETP1-1D",
+    "actm": "03:18",
+    "utc": "0533Z",
+    "flight_phase": "NAT EDTO cruise",
+    "latitude": 56.4367,
+    "longitude": -36.595
+  },
+  "assumptions": [
+    "Golden-test assumption: landing performance and landing distance are suitable for the stated A350 test options.",
+    "Golden-test method boundary: the FCOM Performance section supplies the approved RLD/LD/FLD and EFB method, but this fixture does not create airport-specific runway, LDA or landing-distance values.",
+    "A Code 4E aerodrome is not itself treated as proof of landing performance.",
+    "Golden-test assumption: the NOTAMs contained in the SQ23 Lido CFP are current and valid for the frozen scenario snapshot.",
+    "Golden-test assumption: the current MEL items declared in the SQ23 CFP, including their operational conditions, are valid for the frozen scenario snapshot.",
+    "Scenario condition: stable one-engine-inoperative diversion case; no continuing fire, severe damage or additional system degradation is introduced.",
+    "The CFP weather package is used as the desktop-scenario weather within its stated validity and projected arrival times; it is not represented as live operational weather outside this test.",
+    "QRH Rev 18 currency and aircraft effectivity must be reconciled against the operator's current controlled library before production use."
+  ],
+  "evidence": [
+    {
+      "claim_id": "SQ23-FLIGHT-BASELINE",
+      "claim": "SQ23 is planned KJFK-WSSS on 25.07.26 using A350-941 registration 9V-SGE.",
+      "status": "authoritative",
+      "citations": [
+        {
+          "owner": "SIA",
+          "document": "SQ23 Lido CFP",
+          "revision": "OFP 108/0/1",
+          "section": "Page 1 master summary",
+          "page": 1,
+          "applicability": "SQ23 | 25.07.26 | 9V-SGE",
+          "source_id": "SQ23-CFP-P1"
+        }
+      ],
+      "applicable": true,
+      "current": true,
+      "support_verified": true
+    },
+    {
+      "claim_id": "SQ23-ETP1-1D",
+      "claim": "ETP1-1D occurs at ACTM 03:18 near N56 26.2 W036 35.7, with CYQX and EINN shown as the EDTO diversion pair.",
+      "status": "authoritative",
+      "citations": [
+        {
+          "owner": "SIA",
+          "document": "SQ23 Lido CFP",
+          "revision": "OFP 108/0/1",
+          "section": "Navlog and EDTO Information",
+          "page": "pp.7,18",
+          "applicability": "ETP1-1D",
+          "source_id": "SQ23-CFP-P7-P18"
+        }
+      ],
+      "applicable": true,
+      "current": true,
+      "support_verified": true
+    },
+    {
+      "claim_id": "SIA-OM-DOCUMENT-PRIORITY",
+      "claim": "Helpyou applies the SIA OM descending operational-document priority sequence, preserves same-level documents without inventing sub-priority, uses the latest revision where copies differ, and retains any valid lower-authority requirement that is more restrictive.",
+      "status": "authoritative",
+      "citations": [
+        {
+          "owner": "SIA",
+          "document": "Operations Manual Volume A",
+          "revision": "Rev 32",
+          "eff": "01.04.26",
+          "section": "12.1.1.1 General",
+          "page": "12.1.3",
+          "applicability": "All SIA operations",
+          "source_id": "OM32-DOC-PRIORITY"
+        }
+      ],
+      "applicable": true,
+      "current": true,
+      "support_verified": true
+    },
+    {
+      "claim_id": "SIA-OM-OEI-DIVERSION",
+      "claim": "Following an engine failure, the commander protects terrain during drift-down, selects an appropriate engine-out strategy, and may choose an adequate EDTO alternate or another airport considered suitable under the prevailing circumstances; nearest is not automatically most suitable.",
+      "status": "authoritative",
+      "citations": [
+        {
+          "owner": "SIA",
+          "document": "Operations Manual Volume A",
+          "revision": "Rev 32",
+          "eff": "01.04.26",
+          "section": "12.3.11-12.3.12",
+          "page": "pp.12.3.22-12.3.24",
+          "applicability": "A350 OEI diversion",
+          "source_id": "OM32-EDTO-OEI"
+        }
+      ],
+      "applicable": true,
+      "current": true,
+      "support_verified": true
+    },
+    {
+      "claim_id": "A350-LDG-PERF-FRAMEWORK",
+      "claim": "A350 in-flight landing performance following a diversion or failure is assessed with the approved EFB using factored in-flight landing distance; in an emergency, if the factor is disregarded, the in-flight landing distance must remain shorter than LDA.",
+      "status": "authoritative",
+      "citations": [
+        {
+          "owner": "SIA",
+          "document": "A350 FCOM",
+          "revision": "Rev 20",
+          "eff": "06.05.26",
+          "section": "PER-LDG-20 / PER-LDG-50",
+          "page": "PER-LDG-20 P 2-3/4; PER-LDG-50 P 1-3/4",
+          "applicability": "A350 fleet",
+          "source_id": "FCOM20-PER-LDG"
+        }
+      ],
+      "applicable": true,
+      "current": true,
+      "support_verified": true
+    },
+    {
+      "claim_id": "A350-EDTO-TEACHING-BASIS",
+      "claim": "FCTM teaching material supports discussion of EDTO weather at estimated time of use, diversion procedures, operational control, task priority and crew coordination, but remains below OM, FCOM and MEL in the OM authority sequence.",
+      "status": "supported_synthesis",
+      "citations": [
+        {
+          "owner": "SIA",
+          "document": "A350 FCTM Vol 2",
+          "revision": "Rev 1.0",
+          "eff": "30.04.26",
+          "section": "5.5 and 6.3.3",
+          "page": "pp.5.29-5.34; 6.10-6.13",
+          "applicability": "A350 EDTO and LOFT teaching context",
+          "source_id": "FCTM2-EDTO-LOFT"
+        }
+      ],
+      "applicable": true,
+      "current": true,
+      "support_verified": true
+    },
+    {
+      "claim_id": "TEST-LDG-PERF-ASSUMPTION",
+      "claim": "Landing performance is treated as suitable for both test aerodromes in this vertical-slice fixture without generating airport-specific runway or distance values.",
+      "status": "scenario_assumption",
+      "citations": [],
+      "applicable": true,
+      "current": true,
+      "support_verified": false,
+      "assumptions": [
+        "Product-owner test direction; not an approved airport-specific operational computation."
+      ]
+    },
+    {
+      "claim_id": "TEST-NOTAM-ASSUMPTION",
+      "claim": "The NOTAMs included in the SQ23 Lido CFP are treated as current and valid for the frozen golden test.",
+      "status": "scenario_assumption",
+      "citations": [],
+      "applicable": true,
+      "current": true,
+      "support_verified": false,
+      "assumptions": [
+        "Product-owner test direction; applies only to this frozen SQ23 scenario snapshot."
+      ]
+    },
+    {
+      "claim_id": "TEST-MEL-ASSUMPTION",
+      "claim": "The current MEL items declared in the SQ23 CFP and their stated operational conditions are treated as valid for the frozen golden test.",
+      "status": "scenario_assumption",
+      "citations": [],
+      "applicable": true,
+      "current": true,
+      "support_verified": false,
+      "assumptions": [
+        "Product-owner test direction; does not waive or alter any MEL operational restriction."
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "icao": "CYQX",
+      "role": "EDTO diversion candidate",
+      "diversion_time": "02:23",
+      "distance_nm": 791,
+      "planned_level": 100,
+      "odss_suitability": "conditional",
+      "conditions": [
+        "Apply the CFP weather at the projected arrival time under the frozen desktop-scenario snapshot.",
+        "Apply the OM adequate/suitable-airport criteria for facilities, runway condition, instrument approach and RFFS.",
+        "Treat A350 landing performance as passed only under the explicit golden-test assumption and FCOM method; no numerical airport result is generated.",
+        "Apply all CFP-declared MEL operational conditions even though their validity is accepted for the test.",
+        "Confirm the actual aircraft condition remains within the stable OEI scenario."
+      ],
+      "residual_risks": [
+        "The frozen CFP weather and NOTAM assumptions are not transferable to live operations.",
+        "No airport-specific LDA, runway-performance input or numerical landing-distance result is contained in the fixture.",
+        "QRH Rev 18 currentness remains outside the evidence used for the golden-case conclusion."
+      ],
+      "citations": [
+        {
+          "owner": "SIA",
+          "document": "SQ23 Lido CFP",
+          "revision": "OFP 108/0/1",
+          "section": "EDTO Information",
+          "page": 18,
+          "applicability": "ETP1-1D to CYQX",
+          "source_id": "SQ23-CFP-EDTO-CYQX"
+        },
+        {
+          "owner": "SIA",
+          "document": "Operations Manual Volume A",
+          "revision": "Rev 32",
+          "eff": "01.04.26",
+          "section": "12.3.5 / 12.3.11 / 12.3.12",
+          "page": "pp.12.3.13, 12.3.22-12.3.24",
+          "applicability": "A350 EDTO diversion suitability",
+          "source_id": "OM32-EDTO-SUITABILITY"
+        }
+      ],
+      "weather": {
+        "airport": "CYQX",
+        "projected_arrival_utc": "0756Z",
+        "source_period": "0526-0917Z",
+        "summary": "Forecast segment used by the test baseline: FM250400 25005KT P6SM SKC.",
+        "assessment": "conditional",
+        "limitations": [
+          "Accepted as scenario weather for the frozen desktop test; not live operational weather."
+        ],
+        "citations": [
+          {
+            "owner": "SIA",
+            "document": "SQ23 Lido CFP",
+            "revision": "OFP 108/0/1",
+            "section": "Critical EDTO Airport Weather",
+            "page": "pp.25-26",
+            "applicability": "CYQX projected arrival",
+            "source_id": "SQ23-CFP-WX-CYQX"
+          }
+        ]
+      }
+    },
+    {
+      "icao": "EINN",
+      "role": "EDTO diversion candidate",
+      "diversion_time": "02:23",
+      "distance_nm": 982,
+      "planned_level": 100,
+      "odss_suitability": "conditional",
+      "conditions": [
+        "Apply the CFP weather at the projected arrival time, including the BECMG and later PROB40/TEMPO trend, under the frozen desktop-scenario snapshot.",
+        "Apply the OM adequate/suitable-airport criteria for facilities, runway condition, instrument approach and RFFS.",
+        "Treat A350 landing performance as passed only under the explicit golden-test assumption and FCOM method; no numerical airport result is generated.",
+        "Apply all CFP-declared MEL operational conditions even though their validity is accepted for the test.",
+        "Confirm the actual aircraft condition remains within the stable OEI scenario."
+      ],
+      "residual_risks": [
+        "Forecast deterioration is developing during the checked period.",
+        "The frozen CFP weather and NOTAM assumptions are not transferable to live operations.",
+        "No airport-specific LDA, runway-performance input or numerical landing-distance result is contained in the fixture.",
+        "QRH Rev 18 currentness remains outside the evidence used for the golden-case conclusion."
+      ],
+      "citations": [
+        {
+          "owner": "SIA",
+          "document": "SQ23 Lido CFP",
+          "revision": "OFP 108/0/1",
+          "section": "EDTO Information",
+          "page": 18,
+          "applicability": "ETP1-1D to EINN",
+          "source_id": "SQ23-CFP-EDTO-EINN"
+        },
+        {
+          "owner": "SIA",
+          "document": "Operations Manual Volume A",
+          "revision": "Rev 32",
+          "eff": "01.04.26",
+          "section": "12.3.5 / 12.3.11 / 12.3.12",
+          "page": "pp.12.3.13, 12.3.22-12.3.24",
+          "applicability": "A350 EDTO diversion suitability",
+          "source_id": "OM32-EDTO-SUITABILITY"
+        }
+      ],
+      "weather": {
+        "airport": "EINN",
+        "projected_arrival_utc": "0756Z",
+        "source_period": "0649-0917Z",
+        "summary": "Forecast trend used by the test baseline: BECMG 2507/2509 -RA BKN012, then BECMG 2509/2511 BKN008 with later PROB40 TEMPO 4000 -DZ BR.",
+        "assessment": "conditional",
+        "limitations": [
+          "Projected arrival falls within a forecast transition period.",
+          "Accepted as scenario weather for the frozen desktop test; not live operational weather."
+        ],
+        "citations": [
+          {
+            "owner": "SIA",
+            "document": "SQ23 Lido CFP",
+            "revision": "OFP 108/0/1",
+            "section": "Critical EDTO Airport Weather",
+            "page": 26,
+            "applicability": "EINN projected arrival",
+            "source_id": "SQ23-CFP-WX-EINN"
+          }
+        ]
+      }
+    }
+  ]
+}
