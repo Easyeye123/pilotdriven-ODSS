@@ -19,8 +19,9 @@ ODSS remains the sole owner of deterministic Lido CFP analysis. Helpyou consumes
 - [`HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md`](HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md) — CFP-grounded LOFT-style discussion, option generation, Endsley, Rasmussen, CBTA and Flight Discipline.
 - [`HELPYOU_DATA_CONTRACTS_V1.md`](HELPYOU_DATA_CONTRACTS_V1.md) — source, claim, routing, memory and scenario data contracts.
 - [`HELPYOU_CORE_V0_2_VERTICAL_SLICE.md`](HELPYOU_CORE_V0_2_VERTICAL_SLICE.md) — deterministic guided-decision orchestrator and SQ23 golden test case.
-- [`HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md`](HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md) — private Rev20 source registration, authority precedence and open gaps.
-- [`CLAUDE_ADVERSARIAL_REVIEW_REQUEST_V0_2_REV20.md`](CLAUDE_ADVERSARIAL_REVIEW_REQUEST_V0_2_REV20.md) — refreshed independent review request for the Rev20 source-bound prototype.
+- [`HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md`](HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md) — private Rev20/OM32 source registration, authority controls and test assumptions.
+- [`HELPYOU_OM_FCTM_AUTHORITY_AND_SQ23_TEST_BASIS.md`](HELPYOU_OM_FCTM_AUTHORITY_AND_SQ23_TEST_BASIS.md) — detailed OM/FCTM review, exact document-priority sequence, FCOM landing-performance boundary and frozen SQ23 assumptions.
+- [`CLAUDE_ADVERSARIAL_REVIEW_REQUEST_V0_2_REV20.md`](CLAUDE_ADVERSARIAL_REVIEW_REQUEST_V0_2_REV20.md) — independent review request for the OM32/Rev20 source-bound prototype.
 - [`../../integration/helpyou/README.md`](../../integration/helpyou/README.md) — deterministic reference policy and tests.
 - [`../../integration/helpyou/README_CORE_V0_2.md`](../../integration/helpyou/README_CORE_V0_2.md) — Core v0.2 package and test instructions.
 
@@ -38,3 +39,4 @@ ODSS remains the sole owner of deterministic Lido CFP analysis. Helpyou consumes
 - A CFP-grounded scenario must use the same ODSS weather-selection and validity protocol as the CFP analysis.
 - The default reply is the smallest complete answer at the correct operational level.
 - Proprietary manuals and CFP bytes remain in private storage; GitHub contains metadata and synthetic or derived fixtures only.
+- OM document priority, same-level source treatment and the more-restrictive rule are deterministic policy, not model judgement.
