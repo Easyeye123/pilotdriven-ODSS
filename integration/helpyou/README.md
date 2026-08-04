@@ -1,8 +1,8 @@
-# Helpyou Policy Reference
+# Helpyou Core and Policy Reference
 
-This directory contains deterministic policy and guided-decision reference code for the Helpyou integration boundary.
+This directory contains deterministic policy and the first guided-decision orchestration slice for Helpyou.
 
-It does **not** answer aviation questions and does **not** duplicate ODSS. It establishes:
+It does **not** independently answer aviation questions and does **not** duplicate ODSS. It establishes:
 
 - request segregation;
 - specialist-engine ownership;
@@ -11,7 +11,9 @@ It does **not** answer aviation questions and does **not** duplicate ODSS. It es
 - the ODSS/pilot-memory boundary;
 - minimum-sufficient response sections;
 - the PilotDriven citation format;
-- mandatory separation of the pilot's raw wording and the AI interpretation.
+- mandatory separation of the pilot's raw wording and the AI interpretation;
+- metadata-only registration of private controlled sources;
+- the SQ23 A350 Rev20 golden scenario.
 
 ## Baseline policy tests
 
@@ -29,12 +31,25 @@ PYTHONPATH=. python3 -m unittest discover -s tests -v
 
 Core v0.2 adds a deterministic CFP-grounded decision orchestrator, Endsley and Rasmussen facilitation, Axiomatic Design option structure, developmental CBTA mapping, governed memory candidates and the SQ23 OEI golden fixture.
 
+## Core v0.2 files
+
+```text
+helpyou_core/                       deterministic orchestration modules
+helpyou_core/source_registry.py    authority, currency and source-use guard
+fixtures/sq23_oei_etp1_1d.json     SQ23 OEI golden scenario
+fixtures/sq23_source_manifest_rev20.json
+                                   private-source metadata only
+tests/                              regression suite
+```
+
 See:
 
 - [`README_CORE_V0_2.md`](README_CORE_V0_2.md)
 - [`../../docs/helpyou/HELPYOU_CORE_V0_2_VERTICAL_SLICE.md`](../../docs/helpyou/HELPYOU_CORE_V0_2_VERTICAL_SLICE.md)
+- [`../../docs/helpyou/HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md`](../../docs/helpyou/HELPYOU_SOURCE_BUNDLE_SQ23_A350_REV20.md)
+- [`../../docs/helpyou/CLAUDE_ADVERSARIAL_REVIEW_REQUEST_V0_2_REV20.md`](../../docs/helpyou/CLAUDE_ADVERSARIAL_REVIEW_REQUEST_V0_2_REV20.md)
 
-The implementation is standard-library only.
+The implementation is standard-library only. The raw FCOM, QRH, FCTM, SQNP, SQSP, SQI, CFP and other proprietary sources are not committed and remain in private controlled storage.
 
 ## Core invariants
 
@@ -48,3 +63,6 @@ The implementation is standard-library only.
 8. Every pilot turn passes through memory classification, while durable memory remains governed and user-controllable.
 9. Code 4E classification is not a substitute for approved aircraft landing-performance verification.
 10. Flight-specific scenario options are initially presented without AI ranking.
+11. Training aids, cognitive models and adversarial inputs cannot become aircraft-operational authority.
+12. Private source bytes must not appear in GitHub, CI artifacts or handoff archives.
+13. FCOM Rev20 is the primary FCOM for the refreshed SQ23 bundle; QRH Rev18 requires explicit currency reconciliation.
