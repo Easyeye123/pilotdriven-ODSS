@@ -1498,3 +1498,53 @@ def test_unapproved_mel_sample_does_not_publish_sample_conditions() -> None:
     assert mel["summary"] == "Current approved MEL evidence is unavailable."
     assert "Repair interval" not in str(mel)
     assert "anti-ice operational procedure" not in str(mel)
+
+
+def test_bobcat_summary_states_the_allocation_not_only_the_delta() -> None:
+    """
+    The printed reports render a finding's summary line and not its evidence
+    list, so a summary carrying only "predicted CTO difference -1 min" left the
+    crossing level, the CTOT and the allocated CTO out of the brief the boss
+    opens offline. The allocation is held in the CFP and belongs on that line.
+    """
+    pages = [
+        """SUMMARY EDTO CFP
+BOBCAT ALLOCATION: WPT BOBI1 FL 380 CTO 2215 CTOT 2205
+9VAAA SQ123 SIN/KIX ETD 2200 16JUL26
+SCHED DEP 2200 UTC SCHED ARR 0400 UTC
+RTE NO 001 A350-941
+WSSS/20C
+DCT BOBI1 DCT BOBI2
+RJBB/24L
+BURNOFF 11.30 050000
+TAXI FUEL 001000
+FLT PLAN REQMT 13.00 060000
+FUEL IN TANKS 14.00 065000
+PZFW 180000
+PTOW 245000
+PLWT 195000
+""",
+        "",
+        "",
+        "",
+        "",
+        "",
+        """BOBI1 00.15
+N01 20.0 E103 50.0 105*
+BOBI2 00.25
+N03 10.0 E105 40.0 090
+""",
+    ]
+
+    flight = parse_lido(pages, "bobcat.pdf")
+    findings, _ = engines.analyse(flight)
+    bobcat = next(item for item in findings if item["engine"] == "bobcat")
+
+    summary = bobcat["summary"]
+    assert "BOBI1" in summary
+    assert "FL380" in summary
+    assert "2205Z" in summary, "the allocated CTOT must be printed"
+    assert "2215Z" in summary, "the allocated CTO must be printed"
+    # ACTM 00.15 after CTOT 2205Z is 2220Z, five minutes after the allocated CTO.
+    assert "2220Z" in summary, "the computed crossing time must be printed"
+    assert "+5 min" in summary

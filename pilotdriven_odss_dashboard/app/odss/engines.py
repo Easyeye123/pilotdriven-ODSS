@@ -1439,14 +1439,25 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             cto += timedelta(days=1)
         predicted = ctot + timedelta(minutes=waypoint["actm_minutes"]) if waypoint else None
         difference = round((predicted - cto).total_seconds() / 60) if predicted else None
+        # The allocation itself belongs in the summary, not only in the evidence
+        # list: the reports render a finding's summary line, so a bare delta left
+        # the crossing time, level and CTOT out of the printed brief entirely.
+        # Every value here is read from the CFP or computed from it.
         findings.append(finding(
             "bobcat",
             "critical" if difference not in (None, 0) else "warning" if difference is None else "information",
             "BOBCAT timing reconciliation",
             (
-                f"{allocation['waypoint']}: predicted CTO difference {difference:+d} min."
+                f"{allocation['waypoint']} FL{allocation['flight_level']}: "
+                f"CTOT {ctot:%H%MZ} + ACTM {format_actm(waypoint['actm_minutes'])} "
+                f"= {predicted:%H%MZ} against allocated CTO {cto:%H%MZ} "
+                f"({difference:+d} min)."
                 if difference is not None
-                else "BOBCAT waypoint ACTM not found."
+                else (
+                    f"{allocation['waypoint']} FL{allocation['flight_level']}: "
+                    f"allocated CTOT {ctot:%H%MZ}, CTO {cto:%H%MZ}; "
+                    "CFP waypoint ACTM not found, so no crossing time is computed."
+                )
             ),
             [
                 f"Allocation CTOT {ctot:%H%MZ}; CTO {cto:%H%MZ}; FL{allocation['flight_level']}.",
