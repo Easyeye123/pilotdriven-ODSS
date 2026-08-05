@@ -795,6 +795,126 @@ def evaluate_vaa(
     return result
 
 
+# Each VAAC is mounted by its own token, so a deployment can run one centre or
+# several without the code knowing anything about a particular route. Tokens are
+# comma-separated in ODSS_VAAC_ADVISORY_SOURCE, e.g. "jma-tokyo,anchorage".
+_VAAC_CENTRES: dict[str, dict[str, str]] = {
+    "jma-tokyo": {"centre": "TOKYO", "provider": "jma-tokyo-vaac"},
+    "anchorage": {"centre": "ANCHORAGE", "provider": "nws-anchorage-vaac"},
+}
+# Spellings accepted for the same centre, kept so existing deployments that set
+# a single legacy value keep working unchanged.
+_VAAC_ALIASES: dict[str, str] = {
+    "jma": "jma-tokyo",
+    "jma-tokyo": "jma-tokyo",
+    "tokyo": "jma-tokyo",
+    "anchorage": "anchorage",
+    "nws-anchorage": "anchorage",
+    "pawu": "anchorage",
+}
+_VAAC_DISABLED = {"", "disabled", "off", "none"}
+
+
+def mounted_vaac_centres() -> list[dict[str, str]]:
+    """The VAAC centres this deployment has mounted, in the order configured."""
+    raw = os.environ.get("ODSS_VAAC_ADVISORY_SOURCE", "").strip().lower()
+    if raw in _VAAC_DISABLED:
+        return []
+    mounted: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for piece in raw.split(","):
+        token = _VAAC_ALIASES.get(piece.strip())
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        mounted.append({"token": token, **_VAAC_CENTRES[token]})
+    return mounted
+
+
+def fetch_mounted_vaac_snapshots(
+    flight: dict[str, Any],
+    mounted: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """One snapshot per mounted centre, each tagged with the centre it came from."""
+    snapshots: list[dict[str, Any]] = []
+    for entry in mounted:
+        if entry["token"] == "jma-tokyo":
+            from .direct_vaac import live_tokyo_vaac_snapshot
+
+            snapshot = live_tokyo_vaac_snapshot(flight)
+        elif entry["token"] == "anchorage":
+            from .direct_vaac_anchorage import live_anchorage_vaac_snapshot
+
+            snapshot = live_anchorage_vaac_snapshot(flight)
+        else:  # pragma: no cover - guarded by mounted_vaac_centres
+            continue
+        snapshots.append({**snapshot, "centre": entry["centre"]})
+    return snapshots
+
+
+def merge_vaac_snapshots(
+    snapshots: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """
+    Combine mounted centres into one direct-advisory snapshot.
+
+    Advisories from every centre are carried together, each still naming its own
+    centre and provider. The combined status is the weakest of the parts: if any
+    mounted centre could not be reached the result is partial at best, because a
+    centre that did not answer is a gap in coverage and not an absence of ash.
+    """
+    if not snapshots:
+        return None
+    if len(snapshots) == 1:
+        return snapshots[0]
+    advisories: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    for snapshot in snapshots:
+        centre = snapshot.get("centre")
+        for advisory in snapshot.get("advisories") or []:
+            advisories.append({**advisory, "centre": centre})
+        for error in snapshot.get("errors") or []:
+            errors.append({**error, "centre": centre})
+    statuses = {snapshot.get("status") for snapshot in snapshots}
+    if statuses == {"available"}:
+        status = "available"
+    elif statuses & {"available", "partial"}:
+        status = "partial"
+    else:
+        status = "unavailable"
+    return {
+        "schema_version": "1.0",
+        "status": status,
+        "provider": ",".join(
+            str(snapshot.get("provider")) for snapshot in snapshots if snapshot.get("provider")
+        ),
+        "centres": [snapshot.get("centre") for snapshot in snapshots],
+        "coverage_status": "multi_vaac_area_direct_advisories",
+        "retrieved_at_utc": max(
+            (str(snapshot.get("retrieved_at_utc") or "") for snapshot in snapshots),
+            default=None,
+        ) or None,
+        "advisory_count": len(advisories),
+        "advisories": advisories,
+        "errors": errors,
+        "sources": [
+            {
+                "centre": snapshot.get("centre"),
+                "provider": snapshot.get("provider"),
+                "status": snapshot.get("status"),
+                "source_url": snapshot.get("source_url"),
+                "coverage_status": snapshot.get("coverage_status"),
+            }
+            for snapshot in snapshots
+        ],
+        "source_note": (
+            "Official direct VAAC advisories from every mounted centre. Each "
+            "advisory names the centre that issued it. Coverage is the mounted "
+            "centres only and is not presented as global VAAC coverage."
+        ),
+    }
+
+
 def assess_volcanic_ash(
     flight: dict[str, Any],
     pages: list[str],
@@ -829,16 +949,32 @@ def assess_volcanic_ash(
                 "error": "Unsupported ODSS_VA_SIGMET_SOURCE setting",
             }
     review = evaluate_vaa(flight, snapshot, embedded)
-    direct_source = os.environ.get("ODSS_VAAC_ADVISORY_SOURCE", "").strip().lower()
-    if direct_snapshot is None and direct_source in {"jma", "jma-tokyo", "tokyo"}:
-        from .direct_vaac import live_tokyo_vaac_snapshot
-
-        direct_snapshot = live_tokyo_vaac_snapshot(flight)
+    mounted = mounted_vaac_centres()
+    direct_snapshots = (
+        [direct_snapshot]
+        if direct_snapshot is not None
+        else fetch_mounted_vaac_snapshots(flight, mounted)
+    )
+    direct_snapshots = [item for item in direct_snapshots if item]
+    direct_snapshot = merge_vaac_snapshots(direct_snapshots)
     direct_vaac_available = bool(
         direct_snapshot
         and direct_snapshot.get("status") in {"available", "partial"}
     )
     review["direct_vaac_snapshot"] = direct_snapshot
+    # One entry per mounted centre, so a pilot receipt can name which VAAC was
+    # reached and which was not. A centre that failed is visible as a gap.
+    review["vaac_centre_ledger"] = [
+        {
+            "centre": item.get("centre"),
+            "provider": item.get("provider"),
+            "status": item.get("status"),
+            "coverage_status": item.get("coverage_status"),
+            "advisory_count": item.get("advisory_count") or 0,
+            "source_url": item.get("source_url"),
+        }
+        for item in direct_snapshots
+    ]
     review["coverage_ledger"] = {
         "active_international_sigmet": {
             "available": snapshot.get("provider") == "noaa-awc-international-sigmet",
@@ -848,13 +984,21 @@ def assess_volcanic_ash(
             "available": direct_vaac_available,
             "provider": (direct_snapshot or {}).get("provider"),
             "coverage_status": (direct_snapshot or {}).get("coverage_status"),
+            "mounted_centres": [item["token"] for item in mounted],
+            "reached_centres": [
+                item.get("centre")
+                for item in direct_snapshots
+                if item.get("status") in {"available", "partial"}
+            ],
             "review_required_when_missing": True,
         },
     }
     if snapshot.get("provider") == "noaa-awc-international-sigmet" and not direct_vaac_available:
+        # A centre that is mounted but did not answer is a different gap from no
+        # centre being mounted at all, and the pilot receipt says which it was.
         reason = (
             "direct_vaac_advisory_source_unavailable"
-            if direct_source not in {"", "disabled", "off", "none"}
+            if mounted
             else "direct_vaac_advisory_source_not_mounted"
         )
         review["reason_codes"] = sorted(set(
@@ -881,7 +1025,10 @@ __all__ = [
     "evaluate_vaa",
     "extract_embedded_vaa",
     "fetch_awc_snapshot",
+    "fetch_mounted_vaac_snapshots",
     "filter_awc_snapshot",
     "live_awc_snapshot",
     "live_vaa_snapshot",
+    "merge_vaac_snapshots",
+    "mounted_vaac_centres",
 ]

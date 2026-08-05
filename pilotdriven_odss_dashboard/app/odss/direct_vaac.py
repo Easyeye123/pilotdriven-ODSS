@@ -424,9 +424,27 @@ def live_tokyo_vaac_snapshot(flight: dict[str, Any]) -> dict[str, Any]:
         return deepcopy(snapshot)
 
 
+# The VA ADVISORY text grammar, the flight window and the snapshot cache policy
+# are ICAO-standard rather than JMA-specific, so every VAAC connector shares
+# them instead of restating them. Exported under public names; the Tokyo
+# behaviour behind them is unchanged.
+advisory_fields = _fields
+advisory_phase = _phase
+advisory_flight_window = _flight_window
+advisory_iso = _iso
+advisory_utc = _utc
+advisory_cache_seconds = _snapshot_cache_seconds
+
+
 __all__ = [
     "JMA_VAAC_LIST_PATH",
     "JMA_VAAC_ORIGIN",
+    "advisory_cache_seconds",
+    "advisory_fields",
+    "advisory_flight_window",
+    "advisory_iso",
+    "advisory_phase",
+    "advisory_utc",
     "fetch_tokyo_vaac_snapshot",
     "live_tokyo_vaac_snapshot",
     "parse_tokyo_vaac_advisory",
