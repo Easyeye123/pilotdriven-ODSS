@@ -20,6 +20,8 @@ from .controlled_library import (
     CDL_REFERENCES,
     DEPRESS_LIBRARY_METADATA,
     DEPRESS_PROFILES,
+    normalized_registration,
+    resolve_aircraft_effectivity,
     aircraft_effectivity_tokens,
     select_cdl_variants,
 )
@@ -1237,6 +1239,50 @@ def _corridor_spans(
             "match_class": "corridor-subsegment",
         }
     ]
+
+
+def effectivity_conflict(flight: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Report an unresolved airframe variant that is withholding approved charts.
+
+    A registration series the fleet register does not describe resolves to no
+    variant token, and every variant-scoped profile in the index is then
+    excluded. That is not an empty index and must not be reported as one: the
+    reference protocol requires an effectivity conflict to be shown instead of a
+    generic entry being selected. The variant is never guessed to fill the gap.
+    """
+    registration = flight.get("registration")
+    tokens, resolved = resolve_aircraft_effectivity(
+        registration,
+        flight.get("aircraft_type"),
+    )
+    if resolved:
+        return None
+    withheld = [
+        profile
+        for profile in DEPRESS_PROFILES
+        if not _profile_applies_to_aircraft(
+            profile,
+            registration,
+            flight.get("aircraft_type"),
+        )
+    ]
+    if not withheld:
+        return None
+    variants = sorted({
+        str(value).upper()
+        for profile in withheld
+        for value in profile.get("effectivity", [])
+        if value
+    })
+    return {
+        "registration": normalized_registration(registration),
+        "aircraft_type": flight.get("aircraft_type"),
+        "resolved_tokens": sorted(tokens),
+        "withheld_profile_count": len(withheld),
+        "index_profile_count": len(DEPRESS_PROFILES),
+        "withheld_variants": variants,
+    }
 
 
 def match_profiles(

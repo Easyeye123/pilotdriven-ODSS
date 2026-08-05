@@ -23,7 +23,7 @@ from . import brief_theme as theme
 from .constants import format_actm
 from .controlled_library import aircraft_effectivity_tokens, normalized_registration
 from . import engines
-from .engines import detect_terrain_events
+from .engines import detect_terrain_events, effectivity_conflict
 from .report_facts import actm_utc_clock
 
 
@@ -513,17 +513,32 @@ def draw_depressurisation_analysis(
         canvas.roundRect(
             margin, card_y, width - 2 * margin, card_height, 5, stroke=0, fill=1
         )
-        canvas.setFillColor(theme.MUTED)
-        canvas.setFont(theme.SANS_BOLD, 8)
-        canvas.drawCentredString(
-            width / 2,
-            card_y + card_height / 2,
-            (
+        # An unresolved airframe variant withholds every variant-scoped chart in
+        # the index. Saying "no approved profile match" there would blame the
+        # index for a gap that is really an effectivity conflict, and would send
+        # a crew looking for a chart that is mounted and approved.
+        conflict = effectivity_conflict(flight) if events else None
+        if conflict:
+            lines = [
+                f"AIRCRAFT EFFECTIVITY UNRESOLVED FOR {conflict['registration'] or 'THIS REGISTRATION'}",
+                (
+                    f"{conflict['withheld_profile_count']} of "
+                    f"{conflict['index_profile_count']} approved profiles are held for "
+                    f"{'/'.join(conflict['withheld_variants']) or 'other variants'} and were not evaluated."
+                ),
+                "Mount this registration series in the fleet effectivity register; no variant is assumed.",
+            ]
+        else:
+            lines = [
                 "NO CFP ROUTE HIGH-TERRAIN EXPOSURE DETECTED"
                 if not events
                 else "No approved profile match in the mounted controlled index."
-            ),
-        )
+            ]
+        line_y = card_y + card_height / 2 + (len(lines) - 1) * 5
+        for offset, line in enumerate(lines):
+            canvas.setFillColor(theme.RED if conflict and offset == 0 else theme.MUTED)
+            canvas.setFont(theme.SANS_BOLD if offset == 0 else theme.SANS, 8 if offset == 0 else 7.2)
+            canvas.drawCentredString(width / 2, line_y - offset * 10, line)
 
     # Unmatched exposures panel, sized to its content.
     panel_top = card_y - 10

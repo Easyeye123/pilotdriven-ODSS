@@ -12,6 +12,7 @@ CDL_INDEX_ENV = "ODSS_CDL_INDEX_PATH"
 DEPRESS_INDEX_ENV = "ODSS_DEPRESS_PROFILE_INDEX_PATH"
 DEPRESS_INDEX_S3_ENV = "ODSS_DEPRESS_PROFILE_INDEX_S3_URI"
 DEPRESS_CHART_DIR_ENV = "ODSS_DEPRESS_CHART_DIR"
+FLEET_EFFECTIVITY_ENV = "ODSS_FLEET_EFFECTIVITY_PATH"
 TENANT_ID_ENV = "ODSS_TENANT_ID"
 MAX_DEPRESS_INDEX_BYTES = 5 * 1024 * 1024
 MAX_DEPRESS_CHART_BYTES = 8 * 1024 * 1024
@@ -159,19 +160,76 @@ def normalized_registration(value: str | None) -> str:
     return raw
 
 
+# Registration series to airframe variant. A series absent from this map is not
+# guessed: an unknown series resolves to no variant, which the caller reports as
+# an effectivity conflict. The map is extended by mounting a fleet register
+# rather than by editing code, because which variant a tail belongs to is an
+# operator fact and not a developer one.
+_BUILT_IN_FLEET_SERIES: dict[str, str] = {
+    "9V-SG": "ULR",
+    "9V-SM": "LH",
+    "9V-SH": "MH",
+}
+
+
+def _mounted_fleet_series() -> dict[str, str]:
+    """Operator-supplied registration-series map, if one is mounted."""
+    path_value = os.environ.get(FLEET_EFFECTIVITY_ENV)
+    if not path_value:
+        return {}
+    path = Path(path_value).expanduser()
+    if not path.is_file():
+        raise ValueError(f"Configured fleet effectivity register is missing: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    series = payload.get("registration_series") if isinstance(payload, dict) else None
+    if not isinstance(series, dict):
+        raise ValueError(
+            f"{FLEET_EFFECTIVITY_ENV} must hold a registration_series object"
+        )
+    return {
+        str(prefix).upper(): str(variant).upper()
+        for prefix, variant in series.items()
+        if prefix and variant
+    }
+
+
+def resolve_aircraft_effectivity(
+    registration: str | None,
+    aircraft_type: str | None,
+) -> tuple[set[str], bool]:
+    """
+    Effectivity tokens for a tail, and whether its variant was resolved.
+
+    The second value is what separates "this aircraft is not covered by the
+    chart" from "we do not know which variant this aircraft is". Only the first
+    is a real absence of coverage; the second is an effectivity conflict and the
+    reference protocol requires it to be shown as one rather than reported as an
+    empty index.
+    """
+    reg = normalized_registration(registration)
+    tokens = {re.sub(r"[^A-Z0-9]", "", (aircraft_type or "").upper())}
+    tokens.discard("")
+    series = {**_BUILT_IN_FLEET_SERIES, **_mounted_fleet_series()}
+    # Longest prefix wins, so a mounted register can describe a sub-series
+    # more precisely than the built-in entry it sits inside.
+    variant = next(
+        (
+            series[prefix]
+            for prefix in sorted(series, key=len, reverse=True)
+            if reg.startswith(prefix)
+        ),
+        None,
+    )
+    if variant:
+        tokens.add(variant)
+    return tokens, variant is not None
+
+
 def aircraft_effectivity_tokens(
     registration: str | None,
     aircraft_type: str | None,
 ) -> set[str]:
-    reg = normalized_registration(registration)
-    tokens = {re.sub(r"[^A-Z0-9]", "", (aircraft_type or "").upper())}
-    if reg.startswith("9V-SG"):
-        tokens.add("ULR")
-    elif reg.startswith("9V-SM"):
-        tokens.add("LH")
-    elif reg.startswith("9V-SH"):
-        tokens.add("MH")
-    tokens.discard("")
+    tokens, _ = resolve_aircraft_effectivity(registration, aircraft_type)
     return tokens
 
 
