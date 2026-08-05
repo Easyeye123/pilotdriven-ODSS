@@ -46,7 +46,9 @@ def test_a_known_series_resolves_its_variant() -> None:
 
 
 def test_an_unknown_series_resolves_no_variant_and_is_not_guessed() -> None:
-    tokens, resolved = resolve_aircraft_effectivity("9V-SJB", "A350-941")
+    # 9V-SJ is now described by the shipped register, so an unlisted series is
+    # used here: the rule is about absence from the register, not about a tail.
+    tokens, resolved = resolve_aircraft_effectivity("XX-YYY", "A350-941")
 
     assert resolved is False
     assert tokens == {"A350941"}, "no variant may be assumed for an unlisted series"
@@ -56,11 +58,12 @@ def test_an_unknown_series_is_reported_as_an_effectivity_conflict() -> None:
     """
     This is the defect the boss saw: every variant-scoped chart was withheld and
     the page reported an empty index instead of an unresolved airframe variant.
+    The tail that triggered it is now mapped, so an unlisted one stands in.
     """
-    conflict = engines.effectivity_conflict(_flight("9V-SJB"))
+    conflict = engines.effectivity_conflict(_flight("XX-YYY"))
 
     assert conflict is not None
-    assert conflict["registration"] == "9V-SJB"
+    assert conflict["registration"] == "XX-YYY"
     assert conflict["withheld_profile_count"] == 2
     assert conflict["index_profile_count"] == 3
     assert conflict["withheld_variants"] == ["LH", "ULR"]
@@ -76,16 +79,16 @@ def test_a_mounted_fleet_register_resolves_a_new_series(
 ) -> None:
     register = tmp_path / "fleet.json"
     register.write_text(
-        json.dumps({"registration_series": {"9V-SJ": "LH"}}),
+        json.dumps({"registration_series": {"XX-YY": "LH"}}),
         encoding="utf-8",
     )
     monkeypatch.setenv(controlled_library.FLEET_EFFECTIVITY_ENV, str(register))
 
-    tokens, resolved = resolve_aircraft_effectivity("9V-SJB", "A350-941")
+    tokens, resolved = resolve_aircraft_effectivity("XX-YYY", "A350-941")
 
     assert resolved is True
     assert "LH" in tokens
-    assert engines.effectivity_conflict(_flight("9V-SJB")) is None
+    assert engines.effectivity_conflict(_flight("XX-YYY")) is None
 
 
 def test_a_mounted_register_may_refine_a_built_in_series(
@@ -115,7 +118,7 @@ def test_no_conflict_is_raised_when_the_index_holds_no_variant_scoped_chart(
         [item for item in _profiles() if item["effectivity"] == ["ALL"]],
     )
 
-    assert engines.effectivity_conflict(_flight("9V-SJB")) is None
+    assert engines.effectivity_conflict(_flight("XX-YYY")) is None
 
 
 def test_a_missing_fleet_register_is_refused_rather_than_ignored(
@@ -127,4 +130,4 @@ def test_a_missing_fleet_register_is_refused_rather_than_ignored(
     )
 
     with pytest.raises(ValueError):
-        resolve_aircraft_effectivity("9V-SJB", "A350-941")
+        resolve_aircraft_effectivity("XX-YYY", "A350-941")

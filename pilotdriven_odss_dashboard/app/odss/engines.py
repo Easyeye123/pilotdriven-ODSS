@@ -1275,8 +1275,12 @@ def effectivity_conflict(flight: dict[str, Any]) -> dict[str, Any] | None:
         for value in profile.get("effectivity", [])
         if value
     })
+    # Shown to a human, so the tail is displayed as the CFP wrote it when that
+    # already carries a separator. normalized_registration only knows how to
+    # punctuate one national format and would flatten the others.
+    stated = str(registration or "").strip().upper()
     return {
-        "registration": normalized_registration(registration),
+        "registration": stated if "-" in stated else (normalized_registration(registration) or stated),
         "aircraft_type": flight.get("aircraft_type"),
         "resolved_tokens": sorted(tokens),
         "withheld_profile_count": len(withheld),

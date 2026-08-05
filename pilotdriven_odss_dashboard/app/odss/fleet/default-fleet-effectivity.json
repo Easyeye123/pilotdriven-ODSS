@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "note": "Registration series to airframe variant tags used by that operator's controlled chart index. Process is airline-agnostic; this file is data. Add another airline by mounting its own register at ODSS_FLEET_EFFECTIVITY_PATH alongside its own depressurisation index.",
+  "operator": "Singapore Airlines A350 fleet",
+  "registration_series": {
+    "9V-SG": "ULR",
+    "9V-SM": "LH",
+    "9V-SH": "MH",
+    "9V-SJ": ["LH", "ULR"]
+  }
+}

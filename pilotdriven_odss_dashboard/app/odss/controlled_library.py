@@ -160,37 +160,64 @@ def normalized_registration(value: str | None) -> str:
     return raw
 
 
-# Registration series to airframe variant. A series absent from this map is not
-# guessed: an unknown series resolves to no variant, which the caller reports as
-# an effectivity conflict. The map is extended by mounting a fleet register
-# rather than by editing code, because which variant a tail belongs to is an
-# operator fact and not a developer one.
-_BUILT_IN_FLEET_SERIES: dict[str, str] = {
-    "9V-SG": "ULR",
-    "9V-SM": "LH",
-    "9V-SH": "MH",
-}
+# Which airframe variant a registration series belongs to is operator data, not
+# engine logic, so it lives in a fleet register file rather than in Python. The
+# shipped default describes the fleets this deployment already carries charts
+# for; another airline is added by pointing FLEET_EFFECTIVITY_ENV at its own
+# register alongside its own chart index, with no code change.
+#
+# A series may hold more than one variant. Aircraft in one registration series
+# are commonly certified for several configurations, and a chart tagged for any
+# one of them applies. A series absent from the register is never guessed: it
+# resolves to no variant, and the caller reports an effectivity conflict.
+DEFAULT_FLEET_REGISTER = Path(__file__).resolve().parent / "fleet" / "default-fleet-effectivity.json"
 
 
-def _mounted_fleet_series() -> dict[str, str]:
-    """Operator-supplied registration-series map, if one is mounted."""
-    path_value = os.environ.get(FLEET_EFFECTIVITY_ENV)
-    if not path_value:
-        return {}
-    path = Path(path_value).expanduser()
-    if not path.is_file():
-        raise ValueError(f"Configured fleet effectivity register is missing: {path}")
+def _variant_tokens(value: Any) -> list[str]:
+    """Accept a single variant or a list of them, as the register schema allows."""
+    values = value if isinstance(value, list) else [value]
+    return [
+        token
+        for token in (
+            re.sub(r"[^A-Z0-9]", "", str(item).upper())
+            for item in values
+            if item
+        )
+        if token
+    ]
+
+
+def _read_fleet_register(path: Path) -> dict[str, list[str]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     series = payload.get("registration_series") if isinstance(payload, dict) else None
     if not isinstance(series, dict):
         raise ValueError(
-            f"{FLEET_EFFECTIVITY_ENV} must hold a registration_series object"
+            f"A fleet effectivity register must hold a registration_series object: {path}"
         )
-    return {
-        str(prefix).upper(): str(variant).upper()
-        for prefix, variant in series.items()
-        if prefix and variant
-    }
+    resolved: dict[str, list[str]] = {}
+    for prefix, variants in series.items():
+        tokens = _variant_tokens(variants)
+        # Prefixes are compacted the same way registrations are, so a register
+        # may write them with or without the national hyphen and any country's
+        # registration format works without the engine knowing the format.
+        key = re.sub(r"[^A-Z0-9]", "", str(prefix).upper())
+        if key and tokens:
+            resolved[key] = tokens
+    return resolved
+
+
+def _fleet_series() -> dict[str, list[str]]:
+    """The shipped register, overlaid by a mounted one when configured."""
+    series: dict[str, list[str]] = {}
+    if DEFAULT_FLEET_REGISTER.is_file():
+        series.update(_read_fleet_register(DEFAULT_FLEET_REGISTER))
+    path_value = os.environ.get(FLEET_EFFECTIVITY_ENV)
+    if path_value:
+        path = Path(path_value).expanduser()
+        if not path.is_file():
+            raise ValueError(f"Configured fleet effectivity register is missing: {path}")
+        series.update(_read_fleet_register(path))
+    return series
 
 
 def resolve_aircraft_effectivity(
@@ -206,13 +233,13 @@ def resolve_aircraft_effectivity(
     reference protocol requires it to be shown as one rather than reported as an
     empty index.
     """
-    reg = normalized_registration(registration)
+    reg = re.sub(r"[^A-Z0-9]", "", str(registration or "").upper())
     tokens = {re.sub(r"[^A-Z0-9]", "", (aircraft_type or "").upper())}
     tokens.discard("")
-    series = {**_BUILT_IN_FLEET_SERIES, **_mounted_fleet_series()}
-    # Longest prefix wins, so a mounted register can describe a sub-series
-    # more precisely than the built-in entry it sits inside.
-    variant = next(
+    series = _fleet_series()
+    # Longest prefix wins, so a register can describe a sub-series more
+    # precisely than the broader entry it sits inside.
+    variants = next(
         (
             series[prefix]
             for prefix in sorted(series, key=len, reverse=True)
@@ -220,9 +247,9 @@ def resolve_aircraft_effectivity(
         ),
         None,
     )
-    if variant:
-        tokens.add(variant)
-    return tokens, variant is not None
+    if variants:
+        tokens.update(variants)
+    return tokens, variants is not None
 
 
 def aircraft_effectivity_tokens(
