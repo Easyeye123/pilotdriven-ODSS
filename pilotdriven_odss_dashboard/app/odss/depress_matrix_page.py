@@ -108,7 +108,7 @@ def draw_match_matrix_page(
     canvas.setFont(theme.SANS_BOLD, 16)
     canvas.drawString(margin, top - 14, level2_heading("terrain_detail"))
     canvas.setFillColor(theme.MUTED)
-    canvas.setFont(theme.SANS, 5.8)
+    canvas.setFont(theme.SANS, theme.readable(5.8))
     canvas.drawRightString(
         width - margin,
         top - 12,
@@ -121,10 +121,10 @@ def draw_match_matrix_page(
     canvas.setFillColor(theme.PANEL)
     canvas.roundRect(margin, strip_y, width - 2 * margin, 20, 4, stroke=0, fill=1)
     canvas.setFillColor(theme.BLUE)
-    canvas.setFont(theme.SANS_BOLD, 6.0)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.0))
     canvas.drawString(margin + 10, strip_y + 7, "METHOD")
     canvas.setFillColor(theme.MUTED)
-    canvas.setFont(theme.SANS, 6.0)
+    canvas.setFont(theme.SANS, theme.readable(6.0))
     canvas.drawString(
         margin + 58,
         strip_y + 7,
@@ -132,7 +132,7 @@ def draw_match_matrix_page(
         "verify airway(s) and aircraft effectivity.",
     )
     canvas.setFillColor(theme.GREEN)
-    canvas.setFont(theme.SANS_BOLD, 6.0)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.0))
     canvas.drawRightString(
         width - margin - 10,
         strip_y + 7,
@@ -163,7 +163,7 @@ def draw_match_matrix_page(
     canvas.setFillColor(theme.AMBER)
     canvas.rect(table_x, header_y, table_width, 15, stroke=0, fill=1)
     canvas.setFillColor(theme.PANEL_DARK)
-    canvas.setFont(theme.SANS_BOLD, 6.2)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.2))
     x = table_x
     for label, fraction in columns:
         canvas.drawString(x + 6, header_y + 4.5, label)
@@ -266,13 +266,13 @@ def draw_match_matrix_page(
             if column_index == 5:
                 colour = theme.GREEN if lines[0] == "MATCH" else theme.RED
                 canvas.setFillColor(colour)
-                canvas.setFont(theme.SANS_BOLD, 6.4)
+                canvas.setFont(theme.SANS_BOLD, theme.readable(6.4))
             elif column_index == 0:
                 canvas.setFillColor(theme.TEXT)
-                canvas.setFont(theme.SANS_BOLD, 6.4)
+                canvas.setFont(theme.SANS_BOLD, theme.readable(6.4))
             else:
                 canvas.setFillColor(theme.TEXT)
-                canvas.setFont(theme.SANS, 6.0)
+                canvas.setFont(theme.SANS, theme.readable(6.0))
             line_y = row_y + row_height - 14
             for line in lines[:3]:
                 canvas.drawString(x + 6, line_y, str(line)[:46])
@@ -308,7 +308,7 @@ def draw_match_matrix_page(
         "is substituted.",
     ]
     canvas.setFillColor(theme.MUTED)
-    canvas.setFont(theme.SANS, 5.8)
+    canvas.setFont(theme.SANS, theme.readable(5.8))
     line_y = panel_top - 32
     for rule in rules:
         canvas.drawString(margin + 12, line_y, rule)
@@ -325,7 +325,7 @@ def draw_match_matrix_page(
         canvas.setFillColor(theme.PAGE_BG)
         canvas.roundRect(button_x, button_y, button_width, 16, 8, stroke=1, fill=1)
         canvas.setFillColor(theme.TEXT)
-        canvas.setFont(theme.SANS_BOLD, 6.2)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(6.2))
         canvas.drawCentredString(
             button_x + button_width / 2, button_y + 5.5, label
         )
@@ -405,7 +405,7 @@ def draw_source_chart_page(
             )
         ),
     )
-    canvas.setFont(theme.SANS, 6.4)
+    canvas.setFont(theme.SANS, theme.readable(6.4))
     canvas.drawRightString(
         width - 16,
         height - bar_height + 6,

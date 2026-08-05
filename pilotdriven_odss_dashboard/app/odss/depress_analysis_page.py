@@ -233,7 +233,7 @@ def _draw_card(
     canvas.setFont(theme.SANS_BOLD, 11)
     canvas.drawString(x + pad, top, f"PROFILE {chart}")
     canvas.setFillColor(theme.MUTED)
-    canvas.setFont(theme.SANS, 5.6)
+    canvas.setFont(theme.SANS, theme.readable(5.6))
     canvas.drawRightString(
         x + width - pad,
         top + 2,
@@ -241,7 +241,7 @@ def _draw_card(
         + "/".join(profile.get("effectivity") or []) ,
     )
     canvas.setFillColor(theme.TEXT)
-    canvas.setFont(theme.SANS_BOLD, 6.2)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.2))
     canvas.drawString(x + pad, top - 11, _corridor_line(profile))
 
     # Schematic: plateau - CP peak - plateau with the flight direction arrow.
@@ -270,10 +270,10 @@ def _draw_card(
     canvas.setFillColor(theme.TEXT)
     for point_x, name in ((diagram_left, from_name), (diagram_right, to_name)):
         canvas.circle(point_x, plateau_y, 1.6, stroke=0, fill=1)
-        canvas.setFont(theme.SANS_BOLD, 6.0)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(6.0))
         canvas.drawCentredString(point_x, plateau_y - 12, name)
     canvas.setFillColor(theme.GREEN)
-    canvas.setFont(theme.SANS_BOLD, 6.4)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.4))
     canvas.drawCentredString(center_x, peak_y + 12, f"CP {critical_name}")
     _draw_star(canvas, center_x, peak_y + 3.5, 4.0)
     canvas.setStrokeColor(theme.MUTED)
@@ -288,7 +288,7 @@ def _draw_card(
         if value != "10,000 ft"
     ]
     canvas.setFillColor(theme.MUTED)
-    canvas.setFont(theme.SANS, 5.6)
+    canvas.setFont(theme.SANS, theme.readable(5.6))
     if altitudes:
         canvas.drawCentredString(
             (diagram_left + center_x) / 2,
@@ -309,7 +309,7 @@ def _draw_card(
             f"{event['first_high'].get('name')} -> {event['last_high'].get('name')}"
         )
         canvas.setFillColor(theme.BLUE)
-        canvas.setFont(theme.SANS, 5.4)
+        canvas.setFont(theme.SANS, theme.readable(5.4))
         canvas.drawCentredString(
             (diagram_left + center_x) / 2, diagram_top + 4, direction
         )
@@ -378,10 +378,10 @@ def _draw_card(
     row_y = y + 44
     for label, value, colour in rows:
         canvas.setFillColor(theme.MUTED)
-        canvas.setFont(theme.SANS, 5.4)
+        canvas.setFont(theme.SANS, theme.readable(5.4))
         canvas.drawString(x + pad, row_y, label)
         canvas.setFillColor(colour)
-        canvas.setFont(theme.SANS_BOLD if colour is theme.GREEN else theme.SANS, 5.8)
+        canvas.setFont(theme.SANS_BOLD if colour is theme.GREEN else theme.SANS, theme.readable(5.8))
         canvas.drawString(x + pad + 72, row_y, value[:110])
         row_y -= 12
 
@@ -431,7 +431,7 @@ def draw_depressurisation_analysis(
     canvas.setFont(theme.SANS_BOLD, 16)
     canvas.drawString(margin, top - 14, "DEPRESSURISATION PROFILE ANALYSIS")
     canvas.setFillColor(theme.MUTED)
-    canvas.setFont(theme.SANS, 5.8)
+    canvas.setFont(theme.SANS, theme.readable(5.8))
     canvas.drawRightString(
         width - margin,
         top - 12,
@@ -468,7 +468,7 @@ def draw_depressurisation_analysis(
         canvas.setFont(theme.SANS_BOLD, 12.5)
         canvas.drawString(cx + 14, strip_y + 9, value)
         canvas.setFillColor(theme.MUTED)
-        canvas.setFont(theme.SANS, 5.6)
+        canvas.setFont(theme.SANS, theme.readable(5.6))
         canvas.drawString(
             cx + 14 + pdfmetrics.stringWidth(value, theme.SANS_BOLD, 12.5) + 10,
             strip_y + 11,
@@ -588,7 +588,7 @@ def draw_depressurisation_analysis(
         if maximum:
             title += f" {int(maximum.get('msa_hundreds_ft') or 0)}*"
         canvas.setFillColor(theme.AMBER)
-        canvas.setFont(theme.SANS_BOLD, 6.6)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(6.6))
         canvas.drawString(column_x, entry_y, title)
         lines = []
         if event is not None:
@@ -612,7 +612,7 @@ def draw_depressurisation_analysis(
             "no generic terrain chart inserted."
         )
         canvas.setFillColor(theme.MUTED)
-        canvas.setFont(theme.SANS, 5.4)
+        canvas.setFont(theme.SANS, theme.readable(5.4))
         line_y = entry_y - 9
         for line in lines:
             canvas.drawString(column_x, line_y, line[:118])
@@ -633,7 +633,7 @@ def draw_depressurisation_analysis(
             for finding in matched_events
         )
         canvas.setFillColor(theme.MUTED)
-        canvas.setFont(theme.SANS, 5.8)
+        canvas.setFont(theme.SANS, theme.readable(5.8))
         canvas.drawString(
             margin + pad,
             text_y,
@@ -653,10 +653,10 @@ def draw_depressurisation_analysis(
 
     # Method + source pointer.
     canvas.setFillColor(theme.BLUE)
-    canvas.setFont(theme.SANS_BOLD, 5.8)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(5.8))
     canvas.drawString(margin + pad, panel_bottom + 22, "METHOD")
     canvas.setFillColor(theme.MUTED)
-    canvas.setFont(theme.SANS, 5.6)
+    canvas.setFont(theme.SANS, theme.readable(5.6))
     canvas.drawString(
         margin + pad + 44,
         panel_bottom + 22,
@@ -667,7 +667,7 @@ def draw_depressurisation_analysis(
     )
     if matched:
         canvas.setFillColor(theme.GREEN)
-        canvas.setFont(theme.SANS_BOLD, 6.0)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(6.0))
         canvas.drawString(
             margin + pad,
             panel_bottom + 10,
@@ -684,7 +684,7 @@ def draw_depressurisation_analysis(
         canvas.setFillColor(theme.PAGE_BG)
         canvas.roundRect(button_x, panel_bottom + 8, button_width, 16, 8, stroke=1, fill=1)
         canvas.setFillColor(theme.TEXT)
-        canvas.setFont(theme.SANS_BOLD, 6.2)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(6.2))
         canvas.drawCentredString(
             button_x + button_width / 2, panel_bottom + 13.5, label
         )

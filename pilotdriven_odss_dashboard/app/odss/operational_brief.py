@@ -572,13 +572,13 @@ def _metric_cards(
         canvas.setFillColor(_GREEN if index % 3 == 0 else _CYAN if index % 3 == 1 else _AMBER)
         canvas.rect(cx, y + height - 1.2 * mm, cell_w, 1.2 * mm, fill=1, stroke=0)
         canvas.setFillColor(_MUTED)
-        canvas.setFont(theme.SANS_BOLD, 6.5)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(6.5))
         canvas.drawString(cx + 3 * mm, y + height - 5.3 * mm, _clip(label, cell_w - 6 * mm, font=theme.SANS_BOLD, size=6.5))
         canvas.setFillColor(_TEXT)
         canvas.setFont(theme.SANS_BOLD, 13)
         canvas.drawString(cx + 3 * mm, y + height - 11.8 * mm, _clip(value, cell_w - 6 * mm, font=theme.SANS_BOLD, size=13))
         canvas.setFillColor(_MUTED)
-        canvas.setFont(theme.SANS, 5.8)
+        canvas.setFont(theme.SANS, theme.readable(5.8))
         canvas.drawString(cx + 3 * mm, y + 3 * mm, _clip(note, cell_w - 6 * mm, size=5.8))
 
 
@@ -598,14 +598,14 @@ def _strip(
     canvas.roundRect(x, y, width, height, 7, fill=1, stroke=1)
     title_w = 38 * mm
     canvas.setFillColor(accent)
-    canvas.setFont(theme.SANS_BOLD, 6.3)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.3))
     canvas.drawString(
         x + 3 * mm,
         y + height / 2 - 1.8,
         _clip(title, title_w - 5 * mm, font=theme.SANS_BOLD, size=6.3),
     )
     canvas.setFillColor(_TEXT)
-    canvas.setFont(theme.SANS, 6.2)
+    canvas.setFont(theme.SANS, theme.readable(6.2))
     canvas.drawString(
         x + title_w,
         y + height / 2 - 1.8,
@@ -1741,7 +1741,7 @@ def _draw_route_panel(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 7, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
-    canvas.setFont(theme.SANS_BOLD, 6.5)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.5))
     canvas.drawString(x + 3 * mm, y + height - 5 * mm, _clip(title, width - 6 * mm, font=theme.SANS_BOLD, size=6.5))
     draw_route_map_pdf(
         canvas,
@@ -1771,7 +1771,7 @@ def _draw_terrain_profile(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 7, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
-    canvas.setFont(theme.SANS_BOLD, 6.5)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.5))
     canvas.drawString(x + 3 * mm, y + height - 5 * mm, "CFP MSA PROFILE")
     chart_x = x + 7 * mm
     chart_y = y + 7 * mm
@@ -1782,7 +1782,7 @@ def _draw_terrain_profile(
     canvas.line(chart_x, chart_y, chart_x + chart_w, chart_y)
     if not points:
         canvas.setFillColor(_MUTED)
-        canvas.setFont(theme.SANS, 6)
+        canvas.setFont(theme.SANS, theme.readable(6))
         canvas.drawCentredString(x + width / 2, y + height / 2, "No CFP MSA points available.")
         return
     min_t = min(int(item["actm_minutes"]) for item in points)
@@ -1803,7 +1803,7 @@ def _draw_terrain_profile(
         canvas.circle(px, py, 1.7, fill=1, stroke=0)
         if point.get("msa_asterisk") or int(point["msa_hundreds_ft"]) > 100:
             canvas.setFillColor(_TEXT)
-            canvas.setFont(theme.SANS_BOLD, 4.5)
+            canvas.setFont(theme.SANS_BOLD, theme.readable(4.5))
             canvas.drawCentredString(
                 px,
                 py + 2.3 * mm,

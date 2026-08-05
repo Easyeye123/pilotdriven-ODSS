@@ -396,10 +396,10 @@ def _draw_centered_metric_cell(
     canvas.rect(x, y, width, height, fill=1, stroke=1)
     centre_y = y + height / 2
     canvas.setFillColor(_MUTED)
-    canvas.setFont(theme.SANS_BOLD, 4.8)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(4.8))
     canvas.drawCentredString(x + width / 2, centre_y + 1.6 * mm, str(label))
     canvas.setFillColor(_TEXT)
-    canvas.setFont(theme.SANS_BOLD, 6.5)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.5))
     canvas.drawCentredString(x + width / 2, centre_y - 2.6 * mm, str(value))
 
 
@@ -690,7 +690,7 @@ def _draw_route_evidence_chart(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 3.5, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
-    canvas.setFont(theme.SANS_BOLD, 6.2)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.2))
     canvas.drawString(x + 3 * mm, y + height - 5.3 * mm, title[:58])
     note = (
         "Geographic route strip - validated CFP MSA points only"
@@ -698,7 +698,7 @@ def _draw_route_evidence_chart(
         else "CFP route coordinates and EDTO times"
     )
     canvas.setFillColor(_MUTED)
-    canvas.setFont(theme.SANS, 4.5)
+    canvas.setFont(theme.SANS, theme.readable(4.5))
     canvas.drawRightString(x + width - 3 * mm, y + height - 5.2 * mm, note)
 
     plot_x = x + 3 * mm
@@ -804,7 +804,7 @@ def _draw_route_evidence_chart(
         if mode == "terrain" and msa is not None:
             label += f" {int(msa):03d}{'*' if point.get('msa_asterisk') else ''}"
         canvas.setFillColor(colour)
-        canvas.setFont(theme.SANS_BOLD, 4.4)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(4.4))
         label_width = pdfmetrics.stringWidth(label[:22], theme.SANS_BOLD, 4.4)
         dx = (
             -label_width - 3
@@ -818,6 +818,21 @@ def _draw_route_evidence_chart(
         )
 
 
+def _slot_allocation_line(flight: dict[str, Any]) -> str:
+    """One-line slot allocation from the CFP, or empty when none is held."""
+    allocation = flight.get("bobcat") or {}
+    waypoint = str(allocation.get("waypoint") or "")
+    if not waypoint:
+        return ""
+    ctot = theme.utc_hhmm(allocation.get("ctot_utc"))
+    cto = theme.utc_hhmm(allocation.get("cto_utc"))
+    level = allocation.get("flight_level")
+    parts = [f"SLOT {waypoint}"]
+    if level:
+        parts.append(f"FL{level}")
+    return f"{' '.join(parts)} · CTOT {ctot} · CTO {cto}"
+
+
 def _draw_phase_timeline(
     canvas,
     *,
@@ -829,12 +844,13 @@ def _draw_phase_timeline(
     y: float,
     width: float,
     height: float,
+    slot_line: str = "",
 ) -> None:
     canvas.setFillColor(_PANEL_2)
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 3.5, fill=1, stroke=1)
     canvas.setFillColor(_MUTED)
-    canvas.setFont(theme.SANS_BOLD, 5.2)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(5.2))
     canvas.drawString(x + 3 * mm, y + height - 4.8 * mm, "FLIGHT PHASE WINDOWS")
     canvas.drawRightString(
         x + width - 3 * mm,
@@ -858,14 +874,14 @@ def _draw_phase_timeline(
         canvas.setLineWidth(3.2)
         canvas.line(sx, line_y, max(sx + 2, ex), line_y)
         canvas.setFillColor(_EDTO)
-        canvas.setFont(theme.SANS_BOLD, 4.6)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(4.6))
         canvas.drawCentredString(
             (sx + ex) / 2,
             line_y + 3.3 * mm,
             f"EDTO {index}",
         )
         canvas.setFillColor(_MUTED)
-        canvas.setFont(theme.SANS, 4.2)
+        canvas.setFont(theme.SANS, theme.readable(4.2))
         canvas.drawCentredString(
             (sx + ex) / 2,
             line_y - 4.4 * mm,
@@ -880,13 +896,21 @@ def _draw_phase_timeline(
         canvas.setFillColor(_WEATHER)
         canvas.circle(px, line_y, 2.0, fill=1, stroke=0)
         canvas.setFillColor(_WEATHER)
-        canvas.setFont(theme.SANS_BOLD, 4.1)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(4.1))
         label = str(item.get("title") or "ATC").rsplit(" ", 1)[-1]
         canvas.drawCentredString(
             px,
             line_y + (6.8 if int(actm) % 2 else 9.3) * mm,
             label[:15],
         )
+
+    # The slot allocation is a timing constraint and belongs on the timing page.
+    # It reached Level 2 only, so the pertinent brief a captain carries showed a
+    # BOBCAT waypoint on the route map with none of its clocks.
+    if slot_line:
+        canvas.setFillColor(_WEATHER)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(5.2))
+        canvas.drawRightString(x + width - 3 * mm, y + 2.6 * mm, slot_line)
 
 
 def _surface_overlay(
@@ -1136,7 +1160,7 @@ def _draw_surface_schematic(
     north = bounds.get("north")
     if not all(isinstance(value, (int, float)) for value in (west, south, east, north)):
         canvas.setFillColor(_MUTED)
-        canvas.setFont(theme.SANS, 5.2)
+        canvas.setFont(theme.SANS, theme.readable(5.2))
         canvas.drawCentredString(
             x + width / 2,
             y + height / 2,
@@ -1182,10 +1206,10 @@ def _draw_surface_schematic(
             label = str(properties.get("ref") or "")
             if label:
                 canvas.setFillColor(_CRITICAL if is_closed else _MUTED)
-                canvas.setFont(theme.SANS_BOLD, 4.1)
+                canvas.setFont(theme.SANS_BOLD, theme.readable(4.1))
                 canvas.drawCentredString(midpoint_x, midpoint_y + 1.5 * mm, label[:12])
     canvas.setFillColor(_MUTED)
-    canvas.setFont(theme.SANS, 4.0)
+    canvas.setFont(theme.SANS, theme.readable(4.0))
     canvas.drawString(x + 1.5 * mm, y + 1.2 * mm, "Validated OSM surface schematic")
 
 
@@ -1220,7 +1244,7 @@ def _draw_surface_map(
         _draw_surface_schematic(canvas, overlay, x, y, width, height)
     else:
         canvas.setFillColor(_MUTED)
-        canvas.setFont(theme.SANS, 5.1)
+        canvas.setFont(theme.SANS, theme.readable(5.1))
         canvas.drawCentredString(
             x + width / 2,
             y + height / 2,
@@ -1246,7 +1270,7 @@ def _draw_surface_map(
         canvas.setFillColor(colors.Color(0, 0, 0, alpha=0.72))
         canvas.rect(x, y, width, 5 * mm, fill=1, stroke=0)
         canvas.setFillColor(colors.white)
-        canvas.setFont(theme.SANS, 4.0)
+        canvas.setFont(theme.SANS, theme.readable(4.0))
         canvas.drawString(x + 1.5 * mm, y + 1.7 * mm, label[:58])
     canvas.restoreState()
 
@@ -1285,7 +1309,7 @@ def _draw_airport_panel(
         stroke=0,
     )
     canvas.setFillColor(colors.white)
-    canvas.setFont(theme.SANS_BOLD, 6.4)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.4))
     canvas.drawString(x + 3 * mm, y + height - 4.9 * mm, title)
 
     map_height = min(49 * mm, max(34 * mm, height * 0.47))
@@ -1566,7 +1590,7 @@ def _draw_action_strip(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 4, fill=1, stroke=1)
     canvas.setFillColor(_MUTED)
-    canvas.setFont(theme.SANS_BOLD, 6.0)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.0))
     canvas.drawString(x + 3 * mm, y + height - 5 * mm, "DECISION GATES")
 
     body_y = y + 2.5 * mm
@@ -1726,10 +1750,10 @@ def _draw_cover_airport_panel(
         f"RWY {panel['runway']}",
     )
     canvas.setFillColor(_MUTED)
-    canvas.setFont(theme.SANS_BOLD, 5.6)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(5.6))
     canvas.drawString(x + 3 * mm, y + height - 20 * mm, "SCHEDULE")
     canvas.setFillColor(_TEXT)
-    canvas.setFont(theme.SANS_BOLD, 6.6)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.6))
     canvas.drawRightString(x + width - 3 * mm, y + height - 20 * mm, schedule)
 
     # The active three-page renderer uses this cover panel, so the governed
@@ -1851,7 +1875,7 @@ def _draw_cover_route_panel(
     canvas.setStrokeColor(_LINE)
     canvas.roundRect(x, y, width, height, 4, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
-    canvas.setFont(theme.SANS_BOLD, 6.6)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.6))
     canvas.drawString(
         x + 2.5 * mm,
         y + height - 5.5 * mm,
@@ -1886,7 +1910,7 @@ def _draw_cover_metric_cards(
         canvas.setFillColor(accent)
         canvas.rect(card_x, y + height - 1.2 * mm, card_w, 1.2 * mm, fill=1, stroke=0)
         canvas.setFillColor(_MUTED)
-        canvas.setFont(theme.SANS_BOLD, 5.5)
+        canvas.setFont(theme.SANS_BOLD, theme.readable(5.5))
         canvas.drawString(card_x + 2.5 * mm, y + height - 5.5 * mm, label)
         canvas.setFillColor(_TEXT)
         canvas.setFont(theme.SANS_BOLD, REPORT_TYPOGRAPHY["metric"])
@@ -1981,7 +2005,7 @@ def _draw_cover(
     centre_w = width - 2 * margin - left_w - right_w - 2 * gap
 
     canvas.setFillColor(_MUTED)
-    canvas.setFont(theme.SANS_BOLD, 6.1)
+    canvas.setFont(theme.SANS_BOLD, theme.readable(6.1))
     canvas.drawCentredString(
         width / 2,
         top - 3.5 * mm,
@@ -2221,6 +2245,7 @@ def _draw_operational_detail(
         y=timeline_y,
         width=width - 2 * margin,
         height=timeline_h,
+        slot_line=_slot_allocation_line(flight),
     )
     content_top = timeline_y - gap
     deferred_rows = deferred_item_report_rows(flight, findings, limit=1)
@@ -2504,18 +2529,20 @@ def _draw_operational_detail(
         elif "EDTO" in nil_labels:
             nil_result += " - each explicitly verified from its governed source"
         coverage_lines.append(nil_result + ".")
-    if affected_labels:
-        coverage_lines.append(
-            " and ".join(affected_labels)
-            + ": route impact identified - review Level 2."
-        )
-    if review_labels:
-        coverage_lines.append(" and ".join(review_labels) + ": review required.")
-    if unavailable_labels:
-        coverage_lines.append(
-            " and ".join(unavailable_labels)
-            + ": coverage unavailable - review required."
-        )
+    # SIGMET is the hazard product a captain acts on and is stated on its own
+    # line rather than folded into "SIGMET and VAA and TROPICAL CYCLONE", which
+    # gave three distinct products one shared verdict. VAA and tropical cyclone
+    # keep their own grouping; none of the three is ever relabelled as another.
+    def _coverage_line(labels: list[str], verdict: str) -> None:
+        rest = [label for label in labels if label != "SIGMET"]
+        if "SIGMET" in labels:
+            coverage_lines.append(f"SIGMET: {verdict}")
+        if rest:
+            coverage_lines.append(" and ".join(rest) + f": {verdict}")
+
+    _coverage_line(affected_labels, "route impact identified - review Level 2.")
+    _coverage_line(review_labels, "review required.")
+    _coverage_line(unavailable_labels, "coverage unavailable - review required.")
     _draw_panel(
         canvas,
         right_x,

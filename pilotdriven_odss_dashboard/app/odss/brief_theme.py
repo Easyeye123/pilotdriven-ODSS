@@ -28,6 +28,22 @@ SANS_BOLD = "BriefSans-Bold"
 
 _FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
+# The briefs are fixed-layout canvas pages whose sizes were hand-tuned to their
+# boxes, and several panels measure text with stringWidth before drawing it, so
+# a blanket uplift would overflow cells and collide safety text. What was
+# genuinely unreadable was the small end of the scale — labels down to 4pt. This
+# raises only that end towards a floor, leaving the body and headings where the
+# layout expects them, so relative order is untouched.
+READABLE_FLOOR_PT = 7.0
+_READABLE_MAX_GROWTH = 1.25
+
+
+def readable(size: float) -> float:
+    """Lift a small label towards the readable floor without redesigning the page."""
+    if size >= READABLE_FLOOR_PT:
+        return size
+    return round(min(READABLE_FLOOR_PT, size * _READABLE_MAX_GROWTH), 2)
+
 
 def register_fonts() -> None:
     """Register the condensed brief faces once per process.
@@ -288,7 +304,7 @@ def draw_header(
     canvas.setFillColor(PAGE_BG)
     canvas.roundRect(pill_x, top - 16, pill_width, 15, 7.5, stroke=1, fill=1)
     canvas.setFillColor(TEXT)
-    canvas.setFont(SANS_BOLD, 6.6)
+    canvas.setFont(SANS_BOLD, readable(6.6))
     canvas.drawCentredString(pill_x + pill_width / 2, top - 11, pill_text)
 
     # Divider under the header.
@@ -311,7 +327,7 @@ def draw_footer(
     canvas.setFillColor(PANEL_DARK)
     canvas.rect(0, 0, width, 16, stroke=0, fill=1)
     canvas.setFillColor(MUTED)
-    canvas.setFont(SANS, 6.0)
+    canvas.setFont(SANS, readable(6.0))
     canvas.drawString(
         margin,
         5.4,
@@ -348,7 +364,7 @@ def draw_source_chips(
     register_fonts()
     margin = 24.0
     canvas.setFillColor(MUTED)
-    canvas.setFont(SANS_BOLD, 6.0)
+    canvas.setFont(SANS_BOLD, readable(6.0))
     canvas.drawString(margin, y + 4.5, "SOURCE")
     x = margin + 40
     for chip in chips[:8]:
@@ -359,11 +375,11 @@ def draw_source_chips(
         canvas.setFillColor(PAGE_BG)
         canvas.rect(x, y, chip_width, 13, stroke=1, fill=1)
         canvas.setFillColor(TEXT)
-        canvas.setFont(SANS_BOLD, 5.8)
+        canvas.setFont(SANS_BOLD, readable(5.8))
         canvas.drawCentredString(x + chip_width / 2, y + 4.2, label)
         x += chip_width + 8
     canvas.setFillColor(MUTED)
-    canvas.setFont(SANS, 5.6)
+    canvas.setFont(SANS, readable(5.6))
     canvas.drawRightString(
         canvas._pagesize[0] - margin if hasattr(canvas, "_pagesize") else width - margin,
         y + 4.5,
