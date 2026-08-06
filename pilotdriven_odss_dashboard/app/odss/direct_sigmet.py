@@ -8,13 +8,13 @@ website"). NOAA AWC is already the aggregate international-SIGMET feed in
 governed-snapshot pattern as ``direct_vaac.py``:
 
 - **BOM** (Australian FIRs YBBB/YMMM): the official public page publishes full
-  ICAO raw-text SIGMETs — implemented below.
-- **JMA** (RJJJ general SIGMET): the public product is chart imagery only
-  (QGMA98 series) with no machine-readable text, so the connector records
-  ``no_public_machine_readable_product`` and stays fail-closed. JMA is already
-  the direct authority for volcanic ash through the Tokyo VAAC connector.
-- **HKO** (VHHK): no public machine-readable SIGMET product was found on
-  hko.gov.hk or data.gov.hk (verified 07.08.26); same fail-closed status.
+  ICAO raw-text SIGMETs — fetched from bom.gov.au directly.
+- **JMA** (RJJJ) and **HKO** (VHHK): their own public pages carry chart imagery
+  or prose only (verified 07.08.26 — JMA's QGMA98 series; nothing on hko.gov.hk
+  or data.gov.hk). The authorities' ISSUED bulletins are public as raw text on
+  NOAA's GTS mirror (tgftp.nws.noaa.gov, headings WSJP31 RJTD and WSSS20 VHHH),
+  so those connectors fetch the authority's own words from the NOAA host and
+  say so in their provenance.
 
 Direct records strengthen coverage and the map overlay. Their absence never
 adds reason codes: the AWC aggregate — which carries RJJJ, YBBB/YMMM and VHHK
@@ -44,14 +44,36 @@ BOM_ALLOWED_HOSTS = frozenset({"www.bom.gov.au", "bom.gov.au"})
 BOM_PROVIDER = "bom-australia-sigmet-direct"
 BOM_FIR_IDS = frozenset({"YBBB", "YMMM"})
 
-# Generous bounding box around the Brisbane and Melbourne FIRs. Too large is
-# safe — it only means the direct source is consulted more often; the route ×
-# geometry evaluation stays exact.
+GTS_MIRROR_ORIGIN = "https://tgftp.nws.noaa.gov"
+GTS_ALLOWED_HOSTS = frozenset({"tgftp.nws.noaa.gov"})
+
+# Generous bounding boxes. Too large is safe — it only means the direct source
+# is consulted more often; the route × geometry evaluation stays exact.
 AUSTRALIAN_FIR_BBOX = {
     "lat_min": -60.0,
     "lat_max": -5.0,
     "lon_min": 75.0,
     "lon_max": 170.0,
+}
+
+# The authority's own issued bulletin, served as raw text from NOAA's GTS
+# mirror. The heading identifies the issuing centre: WSJP31 RJTD is JMA Tokyo
+# for the Fukuoka FIR, WSSS20 VHHH is the Hong Kong Observatory for VHHK.
+GTS_CENTRES: dict[str, dict[str, Any]] = {
+    "jma": {
+        "provider": "jma-rjtd-sigmet-via-noaa-gts",
+        "path": "/data/raw/ws/wsjp31.rjtd..txt",
+        "env_url": "ODSS_JMA_SIGMET_URL",
+        "fir_ids": ("RJJJ",),
+        "bbox": {"lat_min": 15.0, "lat_max": 55.0, "lon_min": 115.0, "lon_max": 170.0},
+    },
+    "hko": {
+        "provider": "hko-vhhh-sigmet-via-noaa-gts",
+        "path": "/data/raw/ws/wsss20.vhhh..txt",
+        "env_url": "ODSS_HKO_SIGMET_URL",
+        "fir_ids": ("VHHK",),
+        "bbox": {"lat_min": 12.0, "lat_max": 27.0, "lon_min": 105.0, "lon_max": 122.0},
+    },
 }
 
 _MAX_HTML_BYTES = 2 * 1024 * 1024
@@ -64,10 +86,13 @@ _BREAK = re.compile(r"<br\s*/?>", re.I)
 _TAG = re.compile(r"<[^>]+>")
 _ISSUED = re.compile(r"(\d{2}):(\d{2})\s*UTC,\s*(\d{2})/(\d{2})/(\d{4})")
 _HEADER = re.compile(
-    r"^(?P<fir>Y[A-Z]{3})\s+SIGMET\s+(?P<series>[A-Z]\d{2})\s+"
+    r"^(?P<fir>[A-Z]{4})\s+SIGMET\s+(?P<series>[A-Z0-9]{1,3})\s+"
     r"VALID\s+(?P<from>\d{6})/(?P<to>\d{6})\s+[A-Z]{4}-"
 )
-_COORDINATE = re.compile(r"\b([NS])(\d{2})(\d{2})?\s+([EW])(\d{3})(\d{2})?\b")
+_WMO_HEADING = re.compile(r"^WS[A-Z]{2}\d{2}\s+(?P<centre>[A-Z]{4})\s+(?P<issued>\d{6})")
+# The separator is optional: BOM prints "S5000 E12600" while JMA compacts the
+# pair to "N3000E13714".
+_COORDINATE = re.compile(r"\b([NS])(\d{2})(\d{2})?\s*([EW])(\d{3})(\d{2})?\b")
 _LEVEL_BAND = re.compile(r"\bFL(\d{3})/(\d{3})\b")
 _LEVEL_SFC_TOP = re.compile(r"\bSFC/FL(\d{3})\b")
 _LEVEL_TOP_ONLY = re.compile(r"\bTOPS?\s+(?:ABV\s+|TO\s+)?FL(\d{3})\b")
@@ -192,8 +217,21 @@ def _parse_levels(body: str, hazard: str) -> tuple[int | None, int | None]:
     return None, None
 
 
-def _parse_bom_product(block_text: str, anchor: datetime) -> tuple[dict[str, Any] | None, str | None]:
-    """Parse one BOM product block into the shared advisory schema."""
+_FIR_NAME = re.compile(r"^[A-Z]{4}\s+((?:[A-Z][A-Z/-]*\s+)*?FIR)\b")
+
+
+def parse_icao_sigmet_text(
+    block_text: str,
+    anchor: datetime,
+    provider: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Parse one raw ICAO SIGMET into the shared advisory schema.
+
+    The grammar covers what BOM, JMA (RJTD) and HKO (VHHH) actually publish:
+    ``<FIR> SIGMET <series> VALID <DDHHMM>/<DDHHMM> <issuer>-`` followed by the
+    body. Cancellations, non-polygon scopes and unrecognised phenomena come
+    back as warnings — never as guessed advisories.
+    """
     lines = [" ".join(line.split()) for line in block_text.splitlines()]
     text = " ".join(line for line in lines if line).strip()
     if not text or "SIGMET" not in text:
@@ -209,6 +247,8 @@ def _parse_bom_product(block_text: str, anchor: datetime) -> tuple[dict[str, Any
         return None, "missing_time_or_geometry"
 
     body = text[header.end():]
+    if "CNL SIGMET" in body:
+        return None, "cancellation"
     hazard = next(
         (code for code, pattern in _HAZARD_PATTERNS if pattern.search(body)),
         None,
@@ -216,9 +256,9 @@ def _parse_bom_product(block_text: str, anchor: datetime) -> tuple[dict[str, Any
     if hazard is None:
         return None, "unrecognized_hazard"
 
-    # Only "WI <polygon>" geometry is drawn. Line, radius and whole-FIR scopes
-    # are real SIGMETs but have no exact polygon on this page; inventing one
-    # would claim precision the source did not publish.
+    # Only "WI <polygon>" geometry is drawn. Line, radius, point-observation
+    # and whole-FIR scopes are real SIGMETs but publish no exact polygon;
+    # inventing one would claim precision the source did not state.
     if " WI " not in f" {body} ":
         return None, "unsupported_geometry"
     ring = _parse_coordinates(body)
@@ -229,12 +269,13 @@ def _parse_bom_product(block_text: str, anchor: datetime) -> tuple[dict[str, Any
     if lower_level is None or upper_level is None or upper_level < lower_level:
         return None, "invalid_vertical_limits"
 
+    fir_name_match = _FIR_NAME.match(body.strip())
     raw_text = text if text.endswith("=") else f"{text}="
     return {
         "advisory_id": f"{fir}-{series}-{int(valid_from.timestamp())}",
         "hazard": hazard,
         "fir_id": fir,
-        "fir_name": "BRISBANE FIR" if fir == "YBBB" else "MELBOURNE FIR",
+        "fir_name": fir_name_match.group(1) if fir_name_match else None,
         "series_id": series,
         "valid_from_utc": _iso(valid_from),
         "valid_to_utc": _iso(valid_to),
@@ -244,7 +285,7 @@ def _parse_bom_product(block_text: str, anchor: datetime) -> tuple[dict[str, Any
         "raw_text": raw_text,
         "raw_sha256": sha256(raw_text.encode("utf-8")).hexdigest(),
         "receipt_time_utc": None,
-        "source_provider": BOM_PROVIDER,
+        "source_provider": provider,
     }, None
 
 
@@ -266,7 +307,47 @@ def parse_bom_sigmet_page(html: str, retrieved_at: datetime) -> dict[str, Any]:
                     issued_at = None
                 if "SIGMET" not in block_text.split("VALID")[0].replace("AUSTRALIAN SIGMETS", ""):
                     continue
-        advisory, warning = _parse_bom_product(block_text, issued_at or retrieved_at)
+        advisory, warning = parse_icao_sigmet_text(
+            block_text, issued_at or retrieved_at, BOM_PROVIDER
+        )
+        if advisory:
+            advisories.append(advisory)
+        elif warning:
+            parse_warnings.append(f"record_{index}:{warning}")
+    return {
+        "issued_at_utc": _iso(issued_at),
+        "advisories": advisories,
+        "parse_warnings": parse_warnings,
+    }
+
+
+def parse_gts_sigmet_bulletin(
+    bulletin: str,
+    retrieved_at: datetime,
+    provider: str,
+) -> dict[str, Any]:
+    """Parse one GTS raw SIGMET bulletin (WMO heading + one or more SIGMETs)."""
+    advisories: list[dict[str, Any]] = []
+    parse_warnings: list[str] = []
+    issued_at: datetime | None = None
+    lines = [line.rstrip() for line in bulletin.splitlines()]
+    body_start = 0
+    for index, line in enumerate(lines):
+        heading = _WMO_HEADING.match(line.strip())
+        if heading:
+            issued_at = _resolve_ddhhmm(heading.group("issued"), retrieved_at)
+            body_start = index + 1
+            break
+    # One bulletin can carry several SIGMETs, each terminated by "=".
+    segments = [
+        segment.strip()
+        for segment in "\n".join(lines[body_start:]).split("=")
+        if segment.strip()
+    ]
+    for index, segment in enumerate(segments[:_MAX_ADVISORIES]):
+        advisory, warning = parse_icao_sigmet_text(
+            f"{segment}=", issued_at or retrieved_at, provider
+        )
         if advisory:
             advisories.append(advisory)
         elif warning:
@@ -371,8 +452,106 @@ def live_bom_sigmet_snapshot() -> dict[str, Any]:
     return snapshot
 
 
-def route_intersects_australian_firs(flight: dict[str, Any]) -> bool:
-    """Coarse bbox check deciding whether the BOM source is route-relevant."""
+def fetch_gts_sigmet_snapshot(
+    centre_key: str,
+    *,
+    client: httpx.Client | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Fetch one authority's issued SIGMET bulletin from the NOAA GTS mirror."""
+    centre = GTS_CENTRES[centre_key]
+    retrieved_at = (now or _utc_now()).astimezone(timezone.utc)
+    default_url = f"{GTS_MIRROR_ORIGIN}{centre['path']}"
+    url = os.environ.get(centre["env_url"], default_url).strip() or default_url
+    parsed_url = urlsplit(url)
+
+    def _unavailable(error: str) -> dict[str, Any]:
+        return _govern_bom_snapshot({
+            "schema_version": "1.0",
+            "provider": centre["provider"],
+            "source_url": url,
+            "status": "unavailable",
+            "retrieved_at_utc": _iso(retrieved_at),
+            "coverage_status": "unavailable",
+            "declared_fir_ids": list(centre["fir_ids"]),
+            "freshness_status": "unknown",
+            "advisories": [],
+            "parse_warnings": [],
+            "error": error,
+        }, retrieved_at)
+
+    if parsed_url.scheme != "https" or parsed_url.hostname not in GTS_ALLOWED_HOSTS:
+        return _unavailable(
+            f"{centre['env_url']} must use the approved tgftp.nws.noaa.gov HTTPS host"
+        )
+    try:
+        timeout = _float_setting("ODSS_DIRECT_SIGMET_TIMEOUT_SECONDS", 8.0, 1.0, 30.0)
+        freshness_limit = _float_setting("ODSS_DIRECT_SIGMET_FRESHNESS_MINUTES", 60.0, 5.0, 360.0)
+    except ValueError as exc:
+        return _unavailable(str(exc))
+
+    user_agent = os.environ.get("ODSS_VA_SIGMET_USER_AGENT", "").strip() or (
+        "PilotDriven-ODSS/0.6.1 (operational-briefing service)"
+    )
+    own_client = client is None
+    active_client = client or httpx.Client(timeout=timeout, follow_redirects=True)
+    try:
+        response = active_client.get(url, headers={"User-Agent": user_agent, "Accept": "text/plain"})
+        response.raise_for_status()
+        if len(response.content) > _MAX_HTML_BYTES:
+            raise ValueError("GTS SIGMET bulletin exceeded the safety limit")
+        bulletin = response.text
+    except (httpx.HTTPError, ValueError) as exc:
+        return _unavailable(f"{type(exc).__name__}: {str(exc)[:180]}")
+    finally:
+        if own_client:
+            active_client.close()
+
+    parsed = parse_gts_sigmet_bulletin(bulletin, retrieved_at, centre["provider"])
+    issued_at = parsed.get("issued_at_utc")
+    freshness_minutes: float | None = None
+    freshness_status = "unknown"
+    if issued_at:
+        issued = datetime.fromisoformat(issued_at)
+        freshness_minutes = abs((retrieved_at - issued).total_seconds()) / 60
+        freshness_status = "fresh" if freshness_minutes <= freshness_limit else "stale"
+    advisories = parsed["advisories"]
+    valid_starts = [item["valid_from_utc"] for item in advisories]
+    valid_ends = [item["valid_to_utc"] for item in advisories]
+    return _govern_bom_snapshot({
+        "schema_version": "1.0",
+        "provider": centre["provider"],
+        "source_url": url,
+        "status": "available",
+        "retrieved_at_utc": _iso(retrieved_at),
+        "issued_at_utc": issued_at,
+        "coverage_status": "issuing_centre_bulletin_only",
+        "declared_fir_ids": list(centre["fir_ids"]),
+        "coverage_start_utc": min(valid_starts) if valid_starts else None,
+        "coverage_end_utc": max(valid_ends) if valid_ends else None,
+        "freshness_status": freshness_status,
+        "freshness_minutes": freshness_minutes,
+        "advisory_count": len(advisories),
+        "advisories": advisories,
+        "parse_warnings": parsed["parse_warnings"],
+    }, retrieved_at)
+
+
+def live_gts_sigmet_snapshot(centre_key: str) -> dict[str, Any]:
+    """Serve one governed GTS-centre receipt from the bounded shared cache."""
+    cache_seconds = _cache_seconds()
+    with _CACHE_LOCK:
+        cached = _CACHE.get(centre_key)
+        if cached and time.monotonic() - cached[0] < cache_seconds:
+            return mark_snapshot_reused(cached[1])
+    snapshot = fetch_gts_sigmet_snapshot(centre_key)
+    with _CACHE_LOCK:
+        _CACHE[centre_key] = (time.monotonic(), snapshot)
+    return snapshot
+
+
+def route_intersects_bbox(flight: dict[str, Any], bbox: dict[str, float]) -> bool:
+    """Coarse bbox check deciding whether a direct source is route-relevant."""
     for waypoint in flight.get("route_waypoints") or []:
         try:
             latitude = float(waypoint["latitude"])
@@ -380,11 +559,16 @@ def route_intersects_australian_firs(flight: dict[str, Any]) -> bool:
         except (KeyError, TypeError, ValueError):
             continue
         if (
-            AUSTRALIAN_FIR_BBOX["lat_min"] <= latitude <= AUSTRALIAN_FIR_BBOX["lat_max"]
-            and AUSTRALIAN_FIR_BBOX["lon_min"] <= longitude <= AUSTRALIAN_FIR_BBOX["lon_max"]
+            bbox["lat_min"] <= latitude <= bbox["lat_max"]
+            and bbox["lon_min"] <= longitude <= bbox["lon_max"]
         ):
             return True
     return False
+
+
+def route_intersects_australian_firs(flight: dict[str, Any]) -> bool:
+    """Coarse bbox check deciding whether the BOM source is route-relevant."""
+    return route_intersects_bbox(flight, AUSTRALIAN_FIR_BBOX)
 
 
 def merge_direct_sigmet_snapshot(
@@ -437,9 +621,15 @@ __all__ = [
     "AUSTRALIAN_FIR_BBOX",
     "BOM_PROVIDER",
     "BOM_SIGMET_URL",
+    "GTS_CENTRES",
     "fetch_bom_sigmet_snapshot",
+    "fetch_gts_sigmet_snapshot",
     "live_bom_sigmet_snapshot",
+    "live_gts_sigmet_snapshot",
     "merge_direct_sigmet_snapshot",
     "parse_bom_sigmet_page",
+    "parse_gts_sigmet_bulletin",
+    "parse_icao_sigmet_text",
     "route_intersects_australian_firs",
+    "route_intersects_bbox",
 ]

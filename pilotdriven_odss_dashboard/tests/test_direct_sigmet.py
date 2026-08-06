@@ -14,9 +14,12 @@ import httpx
 
 from app.odss.direct_sigmet import (
     BOM_PROVIDER,
+    GTS_CENTRES,
     fetch_bom_sigmet_snapshot,
+    fetch_gts_sigmet_snapshot,
     merge_direct_sigmet_snapshot,
     parse_bom_sigmet_page,
+    parse_gts_sigmet_bulletin,
     route_intersects_australian_firs,
 )
 from app.odss.sigmet import GENERAL_SIGMET_HAZARDS, assess_significant_weather
@@ -29,6 +32,21 @@ BOM_PAGE_EXCERPT = """
 """
 
 RETRIEVED_AT = datetime(2026, 8, 6, 23, 30, tzinfo=timezone.utc)
+
+# Captured live from https://tgftp.nws.noaa.gov/data/raw/ws/ on 06.08.26 — the
+# authorities' own issued bulletins on NOAA's GTS mirror, verbatim.
+JMA_BULLETIN = """WSJP31 RJTD 061904
+RJJJ SIGMET G01 VALID 061904/062104 RJTD-
+RJJJ FUKUOKA FIR SEV TURB OBS AT 1806Z N3000E13714 FL360 MOV W 10KT
+NC=
+"""
+
+HKO_BULLETIN = """WSSS20 VHHH 061225
+VHHK SIGMET 3 VALID 061230/061630 VHHH-
+VHHK HONG KONG FIR
+EMBD TS FCST WI N1826 E11525 - N1642 E11400 - N1846 E11210 -
+N1826 E11525 TOP FL530 STNR NC=
+"""
 
 
 def _parsed():
@@ -131,6 +149,140 @@ def test_unavailable_direct_source_changes_nothing():
     assert report["available"] is False
 
 
+def test_hko_bulletin_parses_the_authoritys_own_words():
+    parsed = parse_gts_sigmet_bulletin(
+        HKO_BULLETIN, RETRIEVED_AT, GTS_CENTRES["hko"]["provider"]
+    )
+    assert parsed["issued_at_utc"] == "2026-08-06T12:25:00+00:00"
+    assert len(parsed["advisories"]) == 1
+    advisory = parsed["advisories"][0]
+    assert advisory["fir_id"] == "VHHK"
+    assert advisory["fir_name"] == "HONG KONG FIR"
+    assert advisory["series_id"] == "3"
+    assert advisory["hazard"] == "TS"
+    assert advisory["valid_from_utc"] == "2026-08-06T12:30:00+00:00"
+    assert advisory["valid_to_utc"] == "2026-08-06T16:30:00+00:00"
+    # EMBD TS with TOP only is surface-based, per the shared AWC convention.
+    assert advisory["lower_flight_level"] == 0
+    assert advisory["upper_flight_level"] == 530
+    ring = advisory["geometry"]["coordinates"][0]
+    assert ring[0] == ring[-1]
+    assert len(ring) == 4
+    assert advisory["source_provider"] == "hko-vhhh-sigmet-via-noaa-gts"
+
+
+def test_jma_point_observation_is_a_warning_not_a_polygon():
+    parsed = parse_gts_sigmet_bulletin(
+        JMA_BULLETIN, RETRIEVED_AT, GTS_CENTRES["jma"]["provider"]
+    )
+    # SEV TURB OBS at a single compact position (N3000E13714) publishes no
+    # polygon extent; the fail-closed answer is a warning, not invented area.
+    assert parsed["advisories"] == []
+    assert any(w.endswith("unsupported_geometry") for w in parsed["parse_warnings"])
+
+
+def test_jma_polygon_sigmet_with_compact_coordinates_parses():
+    bulletin = (
+        "WSJP31 RJTD 062000\n"
+        "RJJJ SIGMET G02 VALID 062000/070000 RJTD-\n"
+        "RJJJ FUKUOKA FIR EMBD TS FCST WI N3000E13000 - N3200E13500 -\n"
+        "N2900E13700 - N3000E13000 TOP FL450 MOV NE 20KT NC=\n"
+    )
+    parsed = parse_gts_sigmet_bulletin(bulletin, RETRIEVED_AT, GTS_CENTRES["jma"]["provider"])
+    assert len(parsed["advisories"]) == 1
+    advisory = parsed["advisories"][0]
+    assert advisory["hazard"] == "TS"
+    assert advisory["geometry"]["coordinates"][0][0] == [130.0, 30.0]
+    assert advisory["upper_flight_level"] == 450
+
+
+def test_cancellation_sigmets_are_skipped_with_a_warning():
+    bulletin = (
+        "WSSS20 VHHH 061700\n"
+        "VHHK SIGMET 4 VALID 061700/061800 VHHH-\n"
+        "VHHK HONG KONG FIR CNL SIGMET 3 061230/061630=\n"
+    )
+    parsed = parse_gts_sigmet_bulletin(bulletin, RETRIEVED_AT, GTS_CENTRES["hko"]["provider"])
+    assert parsed["advisories"] == []
+    assert any(w.endswith("cancellation") for w in parsed["parse_warnings"])
+
+
+def test_gts_fetch_is_governed_and_fail_closed():
+    def _refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(_refuse))
+    snapshot = fetch_gts_sigmet_snapshot("jma", client=client, now=RETRIEVED_AT)
+    assert snapshot["status"] == "unavailable"
+    assert snapshot["provider"] == "jma-rjtd-sigmet-via-noaa-gts"
+    assert snapshot["declared_fir_ids"] == ["RJJJ"]
+
+    def _serve(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=HKO_BULLETIN)
+
+    client = httpx.Client(transport=httpx.MockTransport(_serve))
+    snapshot = fetch_gts_sigmet_snapshot("hko", client=client, now=RETRIEVED_AT)
+    assert snapshot["status"] == "available"
+    assert snapshot["advisory_count"] == 1
+    assert snapshot["coverage_status"] == "issuing_centre_bulletin_only"
+
+
+def test_hong_kong_route_consults_hko_and_merges_its_record(monkeypatch):
+    parsed = parse_gts_sigmet_bulletin(
+        HKO_BULLETIN, RETRIEVED_AT, GTS_CENTRES["hko"]["provider"]
+    )
+    consulted: list[str] = []
+
+    def _fake_gts(centre_key: str):
+        consulted.append(centre_key)
+        return {
+            "provider": GTS_CENTRES[centre_key]["provider"],
+            "status": "available",
+            "retrieved_at_utc": "2026-08-06T13:00:00+00:00",
+            "freshness_status": "fresh",
+            "declared_fir_ids": list(GTS_CENTRES[centre_key]["fir_ids"]),
+            "parse_warnings": [],
+            "advisories": parsed["advisories"] if centre_key == "hko" else [],
+        }
+
+    monkeypatch.setenv("ODSS_DIRECT_SIGMET_SOURCES", "bom,jma,hko")
+    monkeypatch.setattr("app.odss.sigmet.live_gts_sigmet_snapshot", _fake_gts)
+    monkeypatch.setattr(
+        "app.odss.sigmet.live_bom_sigmet_snapshot",
+        lambda: (_ for _ in ()).throw(AssertionError("BOM must not be consulted")),
+    )
+    flight = {
+        "flight_number": "TEST4",
+        "scheduled_departure_utc": "2026-08-06T12:00:00+00:00",
+        "scheduled_arrival_utc": "2026-08-06T16:00:00+00:00",
+        "planned_level_profile": "START/350",
+        "route_waypoints": [
+            {"name": "START", "actm_minutes": 0, "latitude": 22.3, "longitude": 113.9},
+            {"name": "MID", "actm_minutes": 90, "latitude": 17.5, "longitude": 113.5},
+            {"name": "END", "actm_minutes": 200, "latitude": 14.0, "longitude": 113.0},
+        ],
+    }
+    review = assess_significant_weather(flight, snapshot={
+        "provider": "noaa-awc-international-sigmet",
+        "status": "available",
+        "retrieved_at_utc": "2026-08-06T13:00:00+00:00",
+        "freshness_status": "fresh",
+        "advisories": [],
+        "parse_warnings": [],
+    })
+    assert consulted == ["hko"]
+    ledger = review["coverage_ledger"]
+    assert ledger["direct_hko_hong_kong_sigmet"]["available"] is True
+    assert ledger["direct_hko_hong_kong_sigmet"]["advisories_merged"] == 1
+    assert ledger["direct_jma_fukuoka_sigmet"]["configuration_status"] == "not_route_relevant"
+    assert ledger["direct_bom_australia_sigmet"]["configuration_status"] == "not_route_relevant"
+    assert review["status"] == "affected"
+    assert any(
+        str(match.get("advisory_id", "")).startswith("VHHK-3-")
+        for match in review["matches"]
+    )
+
+
 def test_route_relevance_gate_uses_route_waypoints():
     australian = {"route_waypoints": [{"latitude": -33.9, "longitude": 151.2}]}
     european = {"route_waypoints": [
@@ -188,10 +340,10 @@ def test_assessment_merges_direct_records_and_writes_the_ledger(monkeypatch):
     assert ledger["direct_bom_australia_sigmet"]["available"] is True
     assert ledger["direct_bom_australia_sigmet"]["advisories_merged"] == 3
     assert ledger["direct_bom_australia_sigmet"]["review_required_when_missing"] is False
-    assert ledger["direct_jma_fukuoka_sigmet"]["configuration_status"] == (
-        "no_public_machine_readable_product"
-    )
-    assert ledger["direct_hko_hong_kong_sigmet"]["aggregate_carries_fir"] == "VHHK"
+    # Only "bom" is configured in this test, so the GTS centres record that
+    # they were switched off rather than silently vanishing from the ledger.
+    assert ledger["direct_jma_fukuoka_sigmet"]["configuration_status"] == "disabled"
+    assert ledger["direct_hko_hong_kong_sigmet"]["configuration_status"] == "disabled"
     # The route crosses the merged U11 polygon inside its validity, so the
     # direct record is the evidence that flips this review to affected.
     assert review["status"] == "affected"
