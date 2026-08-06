@@ -11,6 +11,11 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from .direct_sigmet import (
+    live_bom_sigmet_snapshot,
+    merge_direct_sigmet_snapshot,
+    route_intersects_australian_firs,
+)
 from .vaa import evaluate_vaa, filter_awc_snapshot, live_awc_snapshot
 
 
@@ -70,6 +75,27 @@ def assess_significant_weather(
             snapshot = _unsupported_snapshot(configured_source)
 
     projected = filter_awc_snapshot(snapshot, GENERAL_SIGMET_HAZARDS)
+
+    # Direct authority-of-record sources on top of the AWC aggregate (boss
+    # instruction 04.08.26: NOAA, JMA, BOM, HKO). BOM publishes machine-readable
+    # raw text and is merged when the route touches the Australian FIRs; JMA and
+    # HKO publish no machine-readable general-SIGMET product, which the ledger
+    # records without inventing an adapter. A direct source can only ADD held
+    # records — its unavailability never ambers a review the aggregate covers.
+    configured_direct = {
+        token.strip().lower()
+        for token in os.environ.get("ODSS_DIRECT_SIGMET_SOURCES", "bom").split(",")
+        if token.strip()
+    }
+    bom_report: dict[str, Any] | None = None
+    bom_route_relevant = route_intersects_australian_firs(flight)
+    if "bom" in configured_direct and bom_route_relevant and snapshot.get("status") != "disabled":
+        projected, bom_report = merge_direct_sigmet_snapshot(
+            projected,
+            live_bom_sigmet_snapshot(),
+            GENERAL_SIGMET_HAZARDS,
+        )
+
     review = evaluate_vaa(
         flight,
         projected,
@@ -85,6 +111,45 @@ def assess_significant_weather(
             "freshness_status": projected.get("freshness_status"),
             "declared_scope": projected.get("coverage_status"),
             "future_flight_archive": False,
+        },
+        "direct_bom_australia_sigmet": (
+            {
+                **(bom_report or {}),
+                "configuration_status": "enabled",
+                "route_relevant": True,
+                "review_required_when_missing": False,
+            }
+            if bom_report is not None
+            else {
+                "available": False,
+                "provider": None,
+                "configuration_status": (
+                    "disabled"
+                    if "bom" not in configured_direct
+                    else "not_route_relevant"
+                ),
+                "route_relevant": bom_route_relevant,
+                "review_required_when_missing": False,
+            }
+        ),
+        # No public machine-readable general-SIGMET text product exists for
+        # these authorities (verified 07.08.26): JMA publishes chart imagery
+        # (QGMA98 series) and HKO an informational page. Their FIRs (RJJJ,
+        # VHHK) are carried by the AWC aggregate above; JMA remains the direct
+        # VA authority through the Tokyo VAAC connector.
+        "direct_jma_fukuoka_sigmet": {
+            "available": False,
+            "provider": None,
+            "configuration_status": "no_public_machine_readable_product",
+            "aggregate_carries_fir": "RJJJ",
+            "review_required_when_missing": False,
+        },
+        "direct_hko_hong_kong_sigmet": {
+            "available": False,
+            "provider": None,
+            "configuration_status": "no_public_machine_readable_product",
+            "aggregate_carries_fir": "VHHK",
+            "review_required_when_missing": False,
         },
     }
     review["clean_current_feed_no_match"] = bool(
