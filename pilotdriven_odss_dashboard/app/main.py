@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import Callable
+from hashlib import sha256
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -54,6 +55,7 @@ from .database import (
 )
 from .odss.constants import format_actm
 from .odss.controlled_library import DEPRESS_LIBRARY_METADATA
+from .odss.weather_charts import extract_chart_image
 from .odss.level3 import generate_level3_artifacts
 from .odss.profile_chart_delivery import (
     held_profile_chart,
@@ -1423,6 +1425,7 @@ def _service_summary(flight) -> dict:
             "level_3_report": f"/v1/analyses/{analysis_id}/reports/level-3",
             "timing": f"/v1/analyses/{analysis_id}/timing",
             "surface_overlays": f"/v1/analyses/{analysis_id}/surface-overlays",
+            "weather_charts": f"/v1/analyses/{analysis_id}/weather-charts/{{chart_number}}",
             "render_reports": f"/v1/analyses/{analysis_id}/reports/render",
         },
     }
@@ -1737,6 +1740,7 @@ def get_service_briefing(request: Request, analysis_id: str):
         "report_refresh": report_refresh,
         "notam_findings": notam_snapshot["items"],
         "notam_findings_summary": notam_snapshot["summary"],
+        "weather_charts": analysis.get("weather_charts") or {"status": "unavailable", "charts": []},
         "generated_at_utc": view.get("generated_at_utc"),
         "report_links": _service_summary(flight)["links"],
     })
@@ -1775,6 +1779,51 @@ def get_service_profile_chart(
     return Response(
         content=image,
         media_type="image/png",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/v1/analyses/{analysis_id}/weather-charts/{chart_number}")
+def get_service_weather_chart(
+    request: Request,
+    analysis_id: str,
+    chart_number: str,
+):
+    """Serve one held briefing chart — the page of the uploaded package itself.
+
+    The image is re-extracted from the stored source PDF and checked against
+    the sha256 pinned at analysis time, so what is served is provably the page
+    the pilot uploaded and nothing regenerated.
+    """
+    identity = request_service_identity(request)
+    flight, analysis = _service_analysis(analysis_id, identity)
+    manifest = analysis.get("weather_charts") or {}
+    try:
+        wanted = int(chart_number)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=404, detail="Weather chart not found")
+    entry = next(
+        (item for item in manifest.get("charts") or [] if item.get("chart_number") == wanted),
+        None,
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Weather chart not found")
+    source_path = _stored_file(flight["source_path"], UPLOAD_DIR, "Source PDF not found")
+    try:
+        image = extract_chart_image(source_path, int(entry["page_number"]))
+    except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        logger.warning(
+            "Held weather chart delivery failed analysis_id=%s chart=%s",
+            analysis_id,
+            chart_number,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=404, detail="Held weather chart is unavailable") from exc
+    if image is None or sha256(image).hexdigest() != entry.get("image_sha256"):
+        raise HTTPException(status_code=404, detail="Held weather chart failed integrity verification")
+    return Response(
+        content=image,
+        media_type=entry.get("media_type") or "application/octet-stream",
         headers={"Cache-Control": "no-store"},
     )
 

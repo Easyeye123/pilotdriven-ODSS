@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .odss.weather_charts import build_weather_chart_manifest
 from .odss.briefing import build_briefing_view
 from .odss.constants import (
     ENGINE_ORDER,
@@ -158,9 +159,15 @@ def run_odss_analysis(
     except ValueError as exc:
         warnings.append(f"Map contract unavailable: {exc}")
 
+    # The package's own weather charts (SIGWX, wind/temp) are raster pages the
+    # text pipeline cannot see. They are detected, AI-classified and pinned
+    # here so the briefing can hold what the pilot actually uploaded.
+    weather_charts = build_weather_chart_manifest(file_path)
+
     payload = {
         "schema_version": "0.6.1",
         "flight": flight,
+        "weather_charts": weather_charts,
         "findings": findings,
         "reference_library": REFERENCE_LIBRARY_METADATA,
         "map_contract": map_contract.public_dict() if map_contract else None,
