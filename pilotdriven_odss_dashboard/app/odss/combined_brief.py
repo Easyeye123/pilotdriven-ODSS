@@ -60,20 +60,32 @@ T_SMALL = 7.2
 T_MICRO = 6.5
 
 
+_FIT_FLOOR = 5.2
+
+
 def _fit(text: str, font: str, size: float, max_width: float) -> float:
     """Largest size <= requested that keeps text inside max_width (rule 8:
     nothing may overlap or overrun its box)."""
     width = pdfmetrics.stringWidth(text, font, size)
     if width <= max_width or width <= 0:
         return size
-    return max(4.5, size * max_width / width)
+    return max(_FIT_FLOOR, size * max_width / width)
 
 
 def _draw_string_fitted(canvas, x, y, text, font, size, max_width, colour):
-    fitted = _fit(text, font, size, max_width)
+    """Draw text inside max_width, shrinking to the floor and then
+    TRUNCATING — a string may lose its tail but may never run under a
+    neighbouring element (08 Aug audit: floor-clamped copy crossed columns)."""
+    value = str(text)
+    fitted = _fit(value, font, size, max_width)
+    if pdfmetrics.stringWidth(value, font, fitted) > max_width:
+        ellipsis = "…"
+        while value and pdfmetrics.stringWidth(value + ellipsis, font, fitted) > max_width:
+            value = value[:-1]
+        value = (value + ellipsis) if value else ""
     canvas.setFillColor(colour)
     canvas.setFont(font, fitted)
-    canvas.drawString(x, y, text)
+    canvas.drawString(x, y, value)
     return fitted
 
 
@@ -165,19 +177,19 @@ def draw_page_chrome(
     identity_x = width * 0.19
     flight_number = theme.display_flight_number(flight)
     canvas.setFillColor(TEXT)
-    canvas.setFont(SANS_BOLD, T_FLIGHT)
-    canvas.drawString(identity_x, top - 18, flight_number)
+    canvas.setFont(SANS_BOLD, 23)
+    canvas.drawString(identity_x, top - 17, flight_number)
     canvas.setFont(SANS_BOLD, 10.5)
     canvas.drawString(
         identity_x,
-        top - 31,
+        top - 33,
         f"{flight.get('departure') or '----'} -> {flight.get('destination') or '----'}",
     )
     canvas.setFillColor(TEXT_SECONDARY)
     canvas.setFont(SANS, 7.4)
     canvas.drawString(
         identity_x,
-        top - 41,
+        top - 44,
         f"{flight.get('aircraft_type') or ''} | "
         f"{theme.normalized_registration(flight.get('registration'))}",
     )
@@ -388,24 +400,19 @@ def _airport_card(canvas, x, y, w, h, *, title, accent, headline, body, tag):
     ix, iy, iw, ih = inner
     canvas.setFillColor(TEXT)
     canvas.setFont(SANS_BOLD, 10.6)
-    canvas.drawString(ix, y + h - 32, str(headline)[:52])
+    _draw_string_fitted(canvas, ix, y + h - 32, str(headline)[:64], SANS_BOLD, 10.6, iw, TEXT)
+    # The tag band at the card foot is RESERVED: the body may take only as
+    # many wrapped lines as fit above it, however long the airport copy runs
+    # (08 Aug audit: four fixed lines could reach the DEP/DEST tag).
+    leading = 9.4
+    tag_band = 14.0
+    body_top = y + h - 45
+    max_lines = max(1, int((body_top - (y + tag_band)) // leading))
     canvas.setFillColor(TEXT_SECONDARY)
     canvas.setFont(SANS, T_SMALL)
-    text = canvas.beginText(ix, y + h - 45)
-    text.setLeading(9.4)
-    line = ""
-    words = str(body).split()
-    lines = []
-    for word in words:
-        candidate = f"{line} {word}".strip()
-        if pdfmetrics.stringWidth(candidate, SANS, T_SMALL) > iw:
-            lines.append(line)
-            line = word
-        else:
-            line = candidate
-    if line:
-        lines.append(line)
-    for out_line in lines[:4]:
+    text = canvas.beginText(ix, body_top)
+    text.setLeading(leading)
+    for out_line in _wrap(str(body), SANS, T_SMALL, iw)[:max_lines]:
         text.textLine(out_line)
     canvas.drawText(text)
     canvas.setFillColor(TEXT_MUTED)
@@ -465,7 +472,7 @@ def draw_overview_page(
     # Left column: three EQUAL airport cards + decision gates (instruction 1:
     # same size, same dimensions, aligned text).
     left_w = (width - 2 * MARGIN) * 0.385
-    card_h = 64.0
+    card_h = 82.0
     gap = 8.0
     departure_panel = briefing.get("departure") or {}
     destination_panel = briefing.get("destination") or {}
@@ -553,7 +560,6 @@ def draw_overview_page(
             canvas, ix + chip_w + 6, row_y, lines.get(key) or "",
             SANS, T_MICRO, iw - chip_w - 6 - 44, TEXT_SECONDARY,
         )
-        open_link(canvas, ix + iw, row_y - 3.4, label="OPEN >", accent=colors.transparent if False else ELEVATED, destination=bookmark)
         canvas.setFillColor(ACCENT)
         canvas.setFont(SANS_BOLD, 6.8)
         canvas.drawRightString(ix + iw - 6, row_y, "OPEN >")

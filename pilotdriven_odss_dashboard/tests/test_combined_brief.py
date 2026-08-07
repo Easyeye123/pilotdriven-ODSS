@@ -74,3 +74,48 @@ def test_governance_chrome_is_on_every_page(rendered):
         text = page.get_text()
         assert "DIRECT SOURCES + DETERMINISTIC DERIVATION | AI AUTHORITY: NONE" in text
         assert "SOURCE" in text
+
+
+def test_long_airport_copy_never_reaches_the_card_tag(tmp_path):
+    # 08 Aug audit: realistic long airport wording could collide with the
+    # DEP/DEST tag. The card reserves its tag band now; prove it with copy far
+    # longer than any real weather line, then scan page 1 for text overlaps.
+    long_copy = (
+        "Friday RWY 02C/20C closure 1730-2130Z ends 30 minutes before ETA with "
+        "TAF 16008KT 9999 FEW015 SCT020 BECMG 0810/0812 26012KT and current "
+        "ATIS controlling; follow the greens active for night LVP taxi guidance "
+        "with verbal clearance limit controls in force throughout the window."
+    )
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    for finding in findings:
+        if finding["engine"] in {"notam", "weather"}:
+            finding["summary"] = long_copy
+    out = tmp_path / "long-copy.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    page = fitz.open(out)[0]
+
+    def ink(box):
+        # Word boxes carry ascender/descender slack; stacked lines with tight
+        # leading share box space without sharing ink. Measure the cap core.
+        rect = fitz.Rect(box[:4])
+        inset = rect.height * 0.22
+        return fitz.Rect(rect.x0, rect.y0 + inset, rect.x1, rect.y1 - inset)
+
+    words = [ink(w) for w in page.get_text("words")]
+    overlaps = []
+    for i, a in enumerate(words):
+        for b in words[i + 1:]:
+            inter = a & b
+            if inter.is_empty:
+                continue
+            if inter.width > 1.0 and inter.height > 1.5:
+                overlaps.append((a, b))
+    assert not overlaps, f"{len(overlaps)} overlapping text pairs on page 1"
+
+
+def test_the_open_control_appears_once_per_gate(rendered):
+    first = rendered[0].get_text()
+    # Six gates, six OPEN controls — a doubled draw would double the count.
+    assert first.count("OPEN >") == 6
