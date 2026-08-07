@@ -1056,6 +1056,11 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "route_waypoints": waypoints,
         "planned_level_profile": level_match.group(0).strip() if level_match else None,
         "cost_index": _int_group(page1, r"CRUISE CI\s+(\d+)"),
+        # "ZFW CHANGE / M1000KG BURN LESS 454 KG" — the printed planning
+        # sensitivity, carried for the report's sensitivities table.
+        "zfw_change_burn_kg_per_1000": _int_group(
+            page1, r"ZFW\s+CHANGE\s+/\s*[PM]?1000KG\s+BURN\s+(?:LESS|MORE)\s+0*(\d+)\s*KG"
+        ),
         "edto_rvsm": "EDTO/RVSM" if "EDTO/RVSM" in page1 else None,
         "bobcat": bobcat,
         "deferred_items": _parse_deferred_items(page1),
