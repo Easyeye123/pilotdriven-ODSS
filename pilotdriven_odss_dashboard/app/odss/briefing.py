@@ -1031,6 +1031,10 @@ def build_briefing_view(
             "trip": format_kg(fuel.get("trip_fuel_kg")),
             "destination": format_kg(fuel.get("planned_destination_fuel_kg")),
         },
+        # Page-1 fuel/weight summary, arithmetic-verified at parse time. The
+        # report's "CFP PAGE 1 - FLIGHT PLAN" panel reads this and must render
+        # a review flag whenever state is not "verified".
+        "fuel_summary": flight.get("fuel_summary"),
         "departure": departure_panel,
         "destination": destination_panel,
         "route_map": route_map,

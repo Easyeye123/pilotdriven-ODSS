@@ -707,6 +707,154 @@ def _build_edto_assessment(
     return {"status": status, "evidence": evidence}
 
 
+# The page-1 summary block, one named line each. Lido prints label columns
+# with variable interior spacing, so every literal space in these patterns is
+# \s+ and values may be zero-padded. The dest-hold line's "TOP UP TO 60 MINS"
+# prefix is part of the printed label and anchors the match.
+_PAGE1_TIMED_ROWS: tuple[tuple[str, str], ...] = (
+    ("burnoff", r"BURNOFF"),
+    ("stat_cont", r"STAT\s+CONT"),
+    ("altn_fuel", r"ALTN\s+FUEL"),
+    ("altn_hold", r"ALTN\s+HOLD"),
+    ("dest_hold_top_up", r"TOP\s+UP\s+TO\s+60\s+MINS\s+DEST\s+HOLD\s+FUEL"),
+    ("edto_top_up", r"EDTO\s+TOP\s+UP"),
+    ("flt_plan_reqmt", r"FLT\s+PLAN\s+REQMT"),
+    ("excess_fuel", r"EXCESS\s+FUEL"),
+    ("fuel_in_tanks", r"FUEL\s+IN\s+TANKS"),
+)
+
+
+def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
+    """Read the whole page-1 fuel/weight summary and prove its arithmetic.
+
+    Boss, 07 Aug: "this part has to be in. Page 1 of the CFP has to be given
+    more attention." The block is machine-printed with exact internal
+    arithmetic — requirement is the sum of its lines, tanks is requirement
+    plus excess, landing weight is take-off weight minus burnoff — so those
+    identities are the verification: state "verified" only when every check
+    passes on both the fuel and the time column. Anything else is
+    "review_required", which display layers must render as a review flag,
+    never as figures. A page without the block returns None.
+    """
+    text = str(page1 or "")
+    if not re.search(r"BURNOFF", text) or not re.search(r"FUEL\s+IN\s+TANKS", text):
+        return None
+
+    rows: dict[str, dict[str, int] | None] = {}
+    for name, label in _PAGE1_TIMED_ROWS:
+        match = re.search(rf"{label}\s+(\d{{1,2}}\.\d{{2}})\s+0*(\d+)", text)
+        rows[name] = (
+            {"time_minutes": actm_minutes(match.group(1)), "fuel_kg": int(match.group(2))}
+            if match
+            else None
+        )
+
+    taxi_match = re.search(r"TAXI\s+FUEL\s+0*(\d+)", text)
+    masses = {
+        "pzfw": _int_group(text, r"PZFW\s+(\d+)"),
+        "ptow": _int_group(text, r"PTOW\s+(\d+)"),
+        "plwt": _int_group(text, r"PLWT\s+(\d+)"),
+    }
+
+    classification_match = re.search(r"SUMMARY\s+(NON\s+EDTO|EDTO)\s+CFP", text)
+    wind_match = re.search(r"CRZ\s+COMP\s+([PM])\s*0*(\d+)", text)
+    alternate_match = re.search(r"ALTN\s+([A-Z]{3})\s+\(([A-Z]{4})\)", text)
+
+    breakdown: list[dict[str, Any]] = []
+    for item in re.finditer(r"^\s*\d\.\s*([A-Z]+)\s+0*(\d+)KG", text, re.MULTILINE):
+        breakdown.append({"label": item.group(1), "fuel_kg": int(item.group(2))})
+
+    discrepancies: list[str] = []
+    missing = [name for name, value in rows.items() if value is None]
+    if taxi_match is None:
+        missing.append("taxi_fuel")
+    missing.extend(name for name, value in masses.items() if value is None)
+    for name in missing:
+        discrepancies.append(f"missing line: {name}")
+
+    checks: list[dict[str, Any]] = []
+
+    def check(name: str, lhs: int | None, rhs: int | None, tolerance: int = 0) -> None:
+        # Fuel figures are exact integers and must match exactly. TIME figures
+        # are printed to the whole minute per line, each rounded from its own
+        # fuel-derived value, so a sum of n printed addends may drift from the
+        # printed total by up to half a minute per addend — observed live on
+        # SIA365, whose FUEL IN TANKS prints 14.17 against a 13.13 + 01.05 sum
+        # of 14.18. The tolerance is that printing precision and nothing more.
+        if lhs is None or rhs is None:
+            return
+        passed = abs(lhs - rhs) <= tolerance
+        checks.append({"name": name, "passed": passed, "lhs": lhs, "rhs": rhs})
+        if not passed:
+            discrepancies.append(f"{name}: {lhs} != {rhs}")
+
+    def kg(name: str) -> int | None:
+        row = rows.get(name)
+        return None if row is None else row["fuel_kg"]
+
+    def minutes(name: str) -> int | None:
+        row = rows.get(name)
+        return None if row is None else row["time_minutes"]
+
+    taxi_kg = int(taxi_match.group(1)) if taxi_match else None
+    requirement_parts_kg = [
+        kg("burnoff"), kg("stat_cont"), kg("altn_fuel"), kg("altn_hold"),
+        kg("dest_hold_top_up"), kg("edto_top_up"), taxi_kg,
+    ]
+    if all(part is not None for part in requirement_parts_kg):
+        check("fuel_requirement_sum", sum(requirement_parts_kg), kg("flt_plan_reqmt"))
+    if kg("flt_plan_reqmt") is not None and kg("excess_fuel") is not None:
+        check("fuel_tanks_sum", kg("flt_plan_reqmt") + kg("excess_fuel"), kg("fuel_in_tanks"))
+    if masses["ptow"] is not None and kg("burnoff") is not None:
+        check("mass_landing_identity", masses["ptow"] - kg("burnoff"), masses["plwt"])
+    # Fuel at brake release is tanks minus taxi: PZFW + (tanks - taxi) = PTOW.
+    if masses["pzfw"] is not None and kg("fuel_in_tanks") is not None and taxi_kg is not None:
+        check("mass_takeoff_identity", masses["pzfw"] + kg("fuel_in_tanks") - taxi_kg, masses["ptow"])
+    requirement_parts_min = [
+        minutes("burnoff"), minutes("stat_cont"), minutes("altn_fuel"), minutes("altn_hold"),
+        minutes("dest_hold_top_up"), minutes("edto_top_up"),
+    ]
+    if all(part is not None for part in requirement_parts_min):
+        check(
+            "time_requirement_sum",
+            sum(requirement_parts_min),
+            minutes("flt_plan_reqmt"),
+            tolerance=(len(requirement_parts_min) + 1) // 2,
+        )
+    if minutes("flt_plan_reqmt") is not None and minutes("excess_fuel") is not None:
+        check(
+            "time_tanks_sum",
+            minutes("flt_plan_reqmt") + minutes("excess_fuel"),
+            minutes("fuel_in_tanks"),
+            tolerance=1,
+        )
+
+    return {
+        "state": "verified" if not discrepancies else "review_required",
+        "classification": (
+            classification_match.group(1).replace("  ", " ") if classification_match else None
+        ),
+        "ground_miles_nm": _int_group(text, r"GND\s+MILES\s+(\d+)"),
+        "air_miles_nm": _int_group(text, r"AIR\s+MILES\s+(\d+)"),
+        "cruise_wind_component_kt": (
+            (1 if wind_match.group(1) == "P" else -1) * int(wind_match.group(2))
+            if wind_match
+            else None
+        ),
+        "alternate": (
+            {"designator": alternate_match.group(1), "icao": alternate_match.group(2)}
+            if alternate_match
+            else None
+        ),
+        "rows": rows,
+        "taxi_fuel_kg": taxi_kg,
+        "masses_kg": masses,
+        "excess_breakdown": breakdown,
+        "checks": checks,
+        "discrepancies": discrepancies,
+    }
+
+
 def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     sections = _detect_sections(pages)
     if "cfp" not in sections:
@@ -914,6 +1062,10 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "alternates": _parse_alternates(cfp_pages),
         "performance": performance,
         "fuel": fuel,
+        # The complete page-1 summary with its arithmetic proved; display
+        # layers key off its state and must show a review flag, not figures,
+        # when it is anything but "verified".
+        "fuel_summary": parse_page1_fuel_summary(page1),
         "masses": masses,
         "edto": {
             "assessment": edto_assessment,
