@@ -608,3 +608,416 @@ def draw_overview_page(
             _draw_string_fitted(
                 canvas, cx + 6, cy + 6, value, MONO_BOLD, 8.8, cell_w - 12, TEXT,
             )
+
+
+# ---------------------------------------------------------------------------
+# Shared timeline strip.
+# ---------------------------------------------------------------------------
+
+
+def _timeline(canvas, x, y, w, entries, *, accent_default=COMMS_TEAL) -> None:
+    """Horizontal dot timeline: entries are dicts with time, label, sub,
+    accent. Times sit above the rail, labels below — the spec's strip."""
+    if not entries:
+        review_line(canvas, x, y + 10, "No timeline events derived from the CFP - review required.")
+        return
+    step = w / max(1, len(entries) - 1) if len(entries) > 1 else 0
+    rail_y = y + 13
+    canvas.setStrokeColor(BORDER)
+    canvas.setLineWidth(1.2)
+    canvas.line(x, rail_y, x + w, rail_y)
+    for index, entry in enumerate(entries):
+        cx = x + (index * step if len(entries) > 1 else w / 2)
+        accent = entry.get("accent") or accent_default
+        canvas.setFillColor(accent)
+        canvas.circle(cx, rail_y, 3.4, stroke=0, fill=1)
+        canvas.setFont(MONO_BOLD, 7.4)
+        time_text = str(entry.get("time") or "--")
+        tw = pdfmetrics.stringWidth(time_text, MONO_BOLD, 7.4)
+        canvas.drawString(min(max(x, cx - tw / 2), x + w - tw), rail_y + 8, time_text)
+        canvas.setFillColor(TEXT)
+        canvas.setFont(SANS_BOLD, 6.8)
+        label = str(entry.get("label") or "")[:14]
+        lw = pdfmetrics.stringWidth(label, SANS_BOLD, 6.8)
+        canvas.drawString(min(max(x, cx - lw / 2), x + w - lw), rail_y - 15, label)
+        sub = str(entry.get("sub") or "")[:20]
+        if sub:
+            canvas.setFillColor(TEXT_MUTED)
+            canvas.setFont(SANS, 5.8)
+            sw = pdfmetrics.stringWidth(sub, SANS, 5.8)
+            canvas.drawString(min(max(x, cx - sw / 2), x + w - sw), rail_y - 24, sub)
+
+
+def _clock_at(flight: dict[str, Any], actm_minutes_value: int | None) -> str:
+    from datetime import datetime, timedelta, timezone
+
+    if actm_minutes_value is None:
+        return "--"
+    raw = flight.get("actual_takeoff_utc") or flight.get("scheduled_departure_utc")
+    if not raw:
+        return "--"
+    try:
+        moment = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return "--"
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return (moment + timedelta(minutes=int(actm_minutes_value))).strftime("%H%MZ")
+
+
+def _route_anchor_entries(flight: dict[str, Any], briefing: dict[str, Any]) -> list[dict[str, Any]]:
+    """Six-anchor plan timeline: departure, notable events, arrival."""
+    waypoints = [w for w in (flight.get("route_waypoints") or []) if w.get("actm_minutes") is not None]
+    if not waypoints:
+        return []
+    first = waypoints[0]
+    last = waypoints[-1]
+    # Interesting anchors: FIR boundaries and high-MSA points, spread by time.
+    interesting = [
+        w for w in waypoints[1:-1]
+        if w.get("fir_boundary") or (w.get("msa_hundreds_ft") or 0) > 100
+    ] or waypoints[1:-1]
+    picks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for candidate in sorted(interesting, key=lambda w: w.get("actm_minutes") or 0):
+        name = str(candidate.get("name") or "").lstrip("-")
+        if name and name not in seen:
+            picks.append(candidate)
+            seen.add(name)
+    if len(picks) > 4:
+        stride = len(picks) / 4
+        picks = [picks[int(i * stride)] for i in range(4)]
+    entries = []
+    for w, sub in ((first, "DEP"), *((p, p.get("fir_boundary") or (f"MSA {p.get('msa_hundreds_ft')}*" if (p.get("msa_hundreds_ft") or 0) > 100 else "")) for p in picks), (last, "ARR")):
+        entries.append({
+            "time": _clock_at(flight, w.get("actm_minutes")),
+            "label": str(w.get("name") or "").lstrip("-"),
+            "sub": str(sub or ""),
+            "accent": TERRAIN_ORANGE if (w.get("msa_hundreds_ft") or 0) > 100 else COMMS_TEAL if w.get("fir_boundary") else ACCENT,
+        })
+    return entries
+
+
+def _hazard_gate_entries(flight: dict[str, Any], briefing: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = []
+    for item in (briefing.get("communications") or [])[:5]:
+        entries.append({
+            "time": str(item.get("time") or "--").split(" ")[-1],
+            "label": str(item.get("event") or "")[:16],
+            "sub": str(item.get("detail") or "")[:22],
+            "accent": WEATHER_AMBER,
+        })
+    return entries
+
+
+def _kv_card(canvas, x, y, w, h, *, title, accent, rows, open_target=None):
+    """Spec card: label column + value text rows, optional OPEN link."""
+    panel(canvas, x, y, w, h, title=title, accent=accent, title_colour=BG if accent in (COMMS_TEAL, WEATHER_AMBER, EDTO_GREEN) else colors.white)
+    row_y = y + h - 30
+    for label, value in rows:
+        canvas.setFillColor(TEXT_MUTED)
+        canvas.setFont(SANS, T_MICRO)
+        canvas.drawString(x + 10, row_y, str(label).upper())
+        lines = _wrap(str(value), SANS, T_SMALL, w - 84)
+        canvas.setFillColor(TEXT)
+        canvas.setFont(SANS, T_SMALL)
+        for line in lines[:2]:
+            canvas.drawString(x + 72, row_y, line)
+            row_y -= 9.6
+        if len(lines) < 2:
+            row_y -= 9.6
+        row_y -= 4
+    if open_target:
+        open_link(canvas, x + w - 10, y + 8, label="OPEN", accent=accent, destination=open_target)
+
+
+def _wrap(text: str, font: str, size: float, max_width: float) -> list[str]:
+    words = str(text).split()
+    lines: list[str] = []
+    line = ""
+    for word in words:
+        candidate = f"{line} {word}".strip()
+        if pdfmetrics.stringWidth(candidate, font, size) > max_width and line:
+            lines.append(line)
+            line = word
+        else:
+            line = candidate
+    if line:
+        lines.append(line)
+    return lines
+
+
+# ---------------------------------------------------------------------------
+# Page 2 — TIME, EDTO STATUS, FIR AND OPERATING GATES.
+# ---------------------------------------------------------------------------
+
+
+def _edto_gate_sentence(edto_view: dict[str, Any]) -> str:
+    assessment = edto_view.get("assessment")
+    status = str((assessment or {}).get("status") if isinstance(assessment, dict) else assessment or "").strip()
+    if status == "review_required":
+        return "Checked-period suitability requires review - see the alternates page."
+    if status in {"ok", "complete", "verified"}:
+        return "Checked-period suitability verified against the governed window."
+    return "Destination alternate and enroute suitability remain independent checks."
+
+
+def draw_time_gates_page(
+    canvas,
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    findings: list[dict[str, Any]],
+    *,
+    page_number: int,
+    page_count: int,
+) -> None:
+    width, height = PAGE_SIZE
+    content_top = draw_page_chrome(
+        canvas, flight,
+        page_number=page_number, page_count=page_count,
+        source_line="CFP route log and timing anchors | FIR procedure extracts held in governed sources",
+    )
+    canvas.bookmarkPage("sec_time")
+    classification = ((flight.get("fuel_summary") or {}).get("classification")) or "EDTO"
+    y = draw_section_title(canvas, content_top, f"Time, {classification}, FIR and Operating Gates")
+
+    full_w = width - 2 * MARGIN
+    anchor_label = "FLIGHT-PLAN ANCHOR - ACTUAL TAKE-OFF" if flight.get("actual_takeoff_utc") else "FLIGHT-PLAN ANCHOR - SCHEDULED DEPARTURE"
+    strip_h = 64.0
+    inner = panel(canvas, MARGIN, y - strip_h, full_w, strip_h, title=anchor_label, accent=DEPARTURE)
+    _timeline(canvas, inner[0] + 14, y - strip_h + 12, full_w - 44, _route_anchor_entries(flight, briefing))
+
+    hazard_y = y - strip_h - 10
+    hazard_entries = _hazard_gate_entries(flight, briefing)
+    inner = panel(canvas, MARGIN, hazard_y - strip_h, full_w, strip_h, title="HAZARD AND COMMUNICATION GATES", accent=WEATHER_AMBER, title_colour=BG)
+    _timeline(canvas, inner[0] + 14, hazard_y - strip_h + 12, full_w - 44, hazard_entries, accent_default=WEATHER_AMBER)
+
+    # Three cards.
+    cards_top = hazard_y - strip_h - 10
+    card_h = cards_top - 30
+    card_w = (full_w - 2 * 10) / 3
+    edto_view = briefing.get("edto") or {}
+    fuel_summary = flight.get("fuel_summary") or {}
+    edto_rows = [
+        ("CLASSIFICATION", f"CFP page 1: SUMMARY {classification} CFP." if fuel_summary else "CFP classification requires review."),
+        ("FUEL", (
+            "No EDTO top-up or EDTO alternate sector."
+            if (((fuel_summary.get("rows") or {}).get("edto_top_up") or {}).get("fuel_kg") in (0, None)) and classification.startswith("NON")
+            else f"EDTO top-up {(((fuel_summary.get('rows') or {}).get('edto_top_up') or {}).get('fuel_kg') or 0):,} kg."
+        )),
+        ("GATE", _edto_gate_sentence(edto_view)),
+    ]
+    _kv_card(canvas, MARGIN, 30, card_w, card_h, title=f"{classification} STATUS", accent=EDTO_GREEN, rows=edto_rows, open_target="sec_alternates")
+
+    comm_rows = []
+    for item in (briefing.get("communications") or [])[:3]:
+        comm_rows.append((str(item.get("event") or "")[:12], f"{item.get('time')} - {item.get('detail')}"))
+    if not comm_rows:
+        comm_rows = [("FIR", "No early FIR contact requirement derived from this CFP.")]
+    _kv_card(canvas, MARGIN + card_w + 10, 30, card_w, card_h, title="FIR / NEXT CONTACT", accent=COMMS_TEAL, rows=comm_rows, open_target="sec_comms")
+
+    deferred = flight.get("deferred_items") or []
+    operating_rows = [
+        ("MEL/CDL", "; ".join(f"{i.get('item_type')} {i.get('reference')}" for i in deferred[:2]) or "No deferred item on CFP page 1."),
+        ("DEP", str((briefing.get("departure") or {}).get("runway") or "Runway review.")),
+        ("DEST", str((briefing.get("destination") or {}).get("runway") or "Runway review.")),
+    ]
+    _kv_card(canvas, MARGIN + 2 * (card_w + 10), 30, card_w, card_h, title="OPERATING GATES", accent=DEPARTURE, rows=operating_rows, open_target="sec_airports")
+
+
+# ---------------------------------------------------------------------------
+# Pages 3 + full-page profiles — HIGH TERRAIN AND DEPRESSURISATION.
+# ---------------------------------------------------------------------------
+
+
+def _terrain_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [f for f in findings if f.get("engine") == "terrain"]
+
+
+def _matched_profiles(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        f for f in findings
+        if f.get("engine") == "depressurisation" and (f.get("data") or {}).get("chart_number")
+    ]
+
+
+def draw_terrain_page(
+    canvas,
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    findings: list[dict[str, Any]],
+    chart_images: list[dict[str, Any]],
+    *,
+    page_number: int,
+    page_count: int,
+    profile_page_numbers: dict[str, int],
+) -> None:
+    from io import BytesIO
+
+    from reportlab.lib.utils import ImageReader
+
+    width, height = PAGE_SIZE
+    content_top = draw_page_chrome(
+        canvas, flight,
+        page_number=page_number, page_count=page_count,
+        source_line="CFP route log MSA windows | A350 Depressurisation Profiles controlled attachments | strict MSA >100*",
+    )
+    canvas.bookmarkPage("sec_terrain")
+    y = draw_section_title(canvas, content_top, "High Terrain Exposure and Depressurisation")
+
+    full_w = width - 2 * MARGIN
+    terrain = _terrain_findings(findings)
+    matched = _matched_profiles(findings)
+    unmatched = [f for f in terrain if not any(
+        (m.get("data") or {}).get("start_actm_minutes") == (f.get("data") or {}).get("start_actm_minutes")
+        for m in matched
+    )]
+
+    # Stat cards row.
+    card_w = (full_w - 3 * 10) / 4
+    card_h = 44.0
+    cards_y = y - card_h
+    stat_card(canvas, MARGIN, cards_y, card_w, card_h, label="STRICT >100*", value=str(len(terrain)), caption="MSA windows", accent=TERRAIN_ORANGE)
+    stat_card(canvas, MARGIN + card_w + 10, cards_y, card_w, card_h, label="PROFILE MATCH", value=str(len(matched)), caption="approved", accent=EDTO_GREEN)
+    stat_card(canvas, MARGIN + 2 * (card_w + 10), cards_y, card_w, card_h, label="UNRESOLVED", value=str(len(unmatched)), caption="manual review" if unmatched else "none", accent=CRITICAL if unmatched else EDTO_GREEN)
+    stat_card(canvas, MARGIN + 3 * (card_w + 10), cards_y, card_w, card_h, label="EFFECTIVITY", value=theme.normalized_registration(flight.get("registration")) or "--", caption=str(flight.get("aircraft_type") or ""), accent=DEPARTURE, mono=True)
+
+    # Profile cards with embedded cropped charts.
+    table_h = 74.0
+    profiles_top = cards_y - 10
+    profiles_h = profiles_top - 30 - table_h - 10
+    profile_w = (full_w - 10) / 2
+    accents = (EDTO_GREEN, WEATHER_AMBER)
+    for index, image in enumerate(chart_images[:2]):
+        px = MARGIN + index * (profile_w + 10)
+        chart_number = image.get("chart_number") or "--"
+        finding = next((m for m in matched if (m.get("data") or {}).get("chart_number") == chart_number), {})
+        data = finding.get("data") or {}
+        title = f"PROFILE {chart_number}" + (f" - CP {data.get('critical_point')}" if data.get("critical_point") else "")
+        inner = panel(canvas, px, profiles_top - profiles_h, profile_w, profiles_h, title=title, accent=accents[index % 2], title_colour=BG)
+        ix, iy, iw, ih = inner
+        # White sheet behind the chart raster, preserving aspect.
+        pad = 4
+        sheet_h = ih - 22
+        canvas.setFillColor(colors.white)
+        canvas.roundRect(ix, iy + 18, iw, sheet_h, 3, stroke=0, fill=1)
+        img = ImageReader(BytesIO(image["png"]))
+        aspect = image["width"] / max(1, image["height"])
+        draw_h = sheet_h - 2 * pad
+        draw_w = min(iw - 2 * pad, draw_h * aspect)
+        draw_h = draw_w / aspect
+        canvas.drawImage(
+            img,
+            ix + (iw - draw_w) / 2,
+            iy + 18 + (sheet_h - draw_h) / 2,
+            width=draw_w, height=draw_h,
+            preserveAspectRatio=True, mask="auto",
+        )
+        _draw_string_fitted(
+            canvas, ix, iy + 4,
+            str(finding.get("summary") or finding.get("title") or "Approved profile match."),
+            SANS, T_MICRO, iw - 52, TEXT_SECONDARY,
+        )
+        target = profile_page_numbers.get(chart_number)
+        if target:
+            canvas.setFillColor(accents[index % 2])
+            canvas.setFont(SANS_BOLD, 6.8)
+            canvas.drawRightString(ix + iw, iy + 4, "OPEN >")
+            canvas.linkRect("", f"sec_profile_{chart_number}", (ix + iw - 40, iy, ix + iw, iy + 12), relative=0, thickness=0)
+    if not chart_images:
+        inner = panel(canvas, MARGIN, profiles_top - profiles_h, full_w, profiles_h, title="APPROVED PROFILE SET", accent=EDTO_GREEN, title_colour=BG)
+        if matched:
+            review_line(canvas, inner[0], inner[1] + inner[3] / 2, "Matched profile charts could not be served from the controlled library - publication review required.")
+        else:
+            canvas.setFillColor(TEXT_SECONDARY)
+            canvas.setFont(SANS_BOLD, T_SMALL)
+            canvas.drawCentredString(MARGIN + full_w / 2, inner[1] + inner[3] / 2, "No approved profile match in the mounted controlled index.")
+
+    # Unmatched exposures table.
+    table_top = 30 + table_h
+    inner = panel(canvas, MARGIN, 30, full_w, table_h, title="UNMATCHED EXPOSURES - NO PROFILE SUBSTITUTED", accent=CRITICAL)
+    ix = inner[0]
+    row_y = table_top - 26
+    canvas.setFillColor(TEXT_MUTED)
+    canvas.setFont(SANS_BOLD, T_MICRO)
+    canvas.drawString(ix, row_y, "EVENT")
+    canvas.drawString(ix + 150, row_y, "ACTM")
+    canvas.drawString(ix + 260, row_y, "STATUS")
+    row_y -= 11
+    if unmatched:
+        for finding in unmatched[:3]:
+            data = finding.get("data") or {}
+            start = data.get("start_actm_minutes")
+            canvas.setFillColor(TEXT)
+            canvas.setFont(SANS, T_MICRO)
+            canvas.drawString(ix, row_y, str(finding.get("title") or "")[:34])
+            canvas.setFont(MONO, T_MICRO)
+            canvas.drawString(ix + 150, row_y, format_actm(start) if start is not None else "--")
+            canvas.setFont(SANS, T_MICRO)
+            _draw_string_fitted(canvas, ix + 260, row_y, str(finding.get("summary") or "Exact endpoint/airway profile unresolved."), SANS, T_MICRO, full_w - 290, TEXT_SECONDARY)
+            row_y -= 11
+    else:
+        canvas.setFillColor(EDTO_GREEN)
+        canvas.setFont(SANS_BOLD, T_SMALL)
+        canvas.drawString(ix, row_y, "All detected windows covered by the approved profile set; no nearby or generic chart substituted.")
+
+
+def draw_profile_page(
+    canvas,
+    flight: dict[str, Any],
+    image: dict[str, Any],
+    *,
+    page_number: int,
+    page_count: int,
+) -> None:
+    from io import BytesIO
+
+    from reportlab.lib.utils import ImageReader
+
+    width, height = PAGE_SIZE
+    chart_number = image.get("chart_number") or "--"
+    profile = image.get("profile") or {}
+    content_top = draw_page_chrome(
+        canvas, flight,
+        page_number=page_number, page_count=page_count,
+        source_line=f"A350 Depressurisation Profiles | Attachment {chart_number} | cropped authoritative chart; original content retained",
+    )
+    canvas.bookmarkPage(f"sec_profile_{chart_number}")
+    y = draw_section_title(canvas, content_top, f"Depressurisation Profile {chart_number}")
+
+    full_w = width - 2 * MARGIN
+    footer_h = 26.0
+    sheet_h = y - 30 - footer_h - 8
+    canvas.setFillColor(colors.white)
+    canvas.roundRect(MARGIN, 30 + footer_h + 8, full_w, sheet_h, 6, stroke=0, fill=1)
+    img = ImageReader(BytesIO(image["png"]))
+    aspect = image["width"] / max(1, image["height"])
+    pad = 8
+    draw_h = sheet_h - 2 * pad
+    draw_w = min(full_w - 2 * pad, draw_h * aspect)
+    draw_h = draw_w / aspect
+    canvas.drawImage(
+        img,
+        MARGIN + (full_w - draw_w) / 2,
+        30 + footer_h + 8 + (sheet_h - draw_h) / 2,
+        width=draw_w, height=draw_h,
+        preserveAspectRatio=True, mask="auto",
+    )
+    # Applicability footer + back link.
+    canvas.setFillColor(ELEVATED)
+    canvas.roundRect(MARGIN, 30, full_w, footer_h, 6, stroke=0, fill=1)
+    canvas.setFillColor(EDTO_GREEN)
+    canvas.setFont(SANS_BOLD, T_MICRO)
+    canvas.drawString(MARGIN + 10, 30 + 9, "APPLICABILITY")
+    applicability = str(profile.get("applicability") or profile.get("match_basis") or f"{theme.normalized_registration(flight.get('registration'))} effectivity confirmed.")
+    _draw_string_fitted(canvas, MARGIN + 78, 30 + 9, applicability, SANS, T_SMALL, full_w - 200, TEXT_SECONDARY)
+    back_w = pdfmetrics.stringWidth("BACK TO TERRAIN", SANS_BOLD, 7.0) + 24
+    bx = MARGIN + full_w - back_w - 8
+    canvas.setStrokeColor(ACCENT)
+    canvas.setLineWidth(1)
+    canvas.setFillColor(BG)
+    canvas.roundRect(bx, 30 + 5, back_w, 16, 8, stroke=1, fill=1)
+    canvas.setFillColor(TEXT)
+    canvas.setFont(SANS_BOLD, 7.0)
+    canvas.drawCentredString(bx + back_w / 2, 30 + 10.4, "BACK TO TERRAIN")
+    canvas.linkRect("", "sec_terrain", (bx, 30 + 5, bx + back_w, 30 + 21), relative=0, thickness=0)
