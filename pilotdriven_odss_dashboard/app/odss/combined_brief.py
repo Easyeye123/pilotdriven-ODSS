@@ -582,7 +582,12 @@ def draw_overview_page(
     )
     fx, fy, fw, fh = fuel_inner
     state = str(fuel_summary.get("state") or "")
-    if state != "verified":
+    if not fuel_summary:
+        review_line(
+            canvas, fx, fy + fh / 2,
+            "Page-1 fuel summary is not held for this analysis - review CFP page 1 directly.",
+        )
+    elif state != "verified":
         review_line(
             canvas, fx, fy + fh / 2,
             "Page-1 fuel summary did not verify against its own arithmetic - review the source CFP page.",

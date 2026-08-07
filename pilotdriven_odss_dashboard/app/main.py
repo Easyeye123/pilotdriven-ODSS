@@ -61,6 +61,7 @@ from .odss.profile_chart_delivery import (
     held_profile_chart,
     render_held_profile_chart_page,
 )
+from .odss.combined_brief import render_combined_briefing
 from .odss.reporting import render_pdf
 from .odss.surface_overlays import (
     SurfaceOverlayRequest,
@@ -1419,6 +1420,7 @@ def _service_summary(flight) -> dict:
             "hazards_geojson": f"/v1/analyses/{analysis_id}/hazards.geojson",
             "map_config": f"/v1/analyses/{analysis_id}/map-config",
             "profile_charts": f"/v1/analyses/{analysis_id}/profile-charts/{{chart_number}}",
+            "combined_report": f"/v1/analyses/{analysis_id}/reports/combined",
             "level_1_report": f"/v1/analyses/{analysis_id}/reports/level-1",
             "level_2_report": f"/v1/analyses/{analysis_id}/reports/level-2",
             "level_3": f"/v1/analyses/{analysis_id}/level-3",
@@ -2197,6 +2199,70 @@ async def render_service_reports(request: Request, analysis_id: str):
         "report_refresh": _report_refresh_summary(refreshed_flight),
         "links": _service_summary(refreshed_flight)["links"],
     })
+
+
+@app.get("/v1/analyses/{analysis_id}/reports/combined")
+def get_service_combined_report(request: Request, analysis_id: str):
+    """The one-PDF Flight Briefing (07 Aug spec), rendered on demand from the
+    stored analysis and cached against its exact artifact state. Serving on
+    demand means analyses stored before this release - including currently
+    open flights - get the combined briefing without re-analysis."""
+    identity = request_service_identity(request)
+    flight = _service_flight(analysis_id, identity)
+    _require_current_reports(flight)
+    analysis_path = _stored_file(
+        flight["analysis_path"], RESULT_DIR, "Analysis not generated"
+    )
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    analysis_flight = analysis.get("flight") or {}
+    findings = analysis.get("findings") or []
+    warnings = (analysis.get("view") or {}).get("warnings") or []
+    weather_charts = analysis.get("weather_charts")
+    source_path: str | None
+    try:
+        source_path = str(
+            _stored_file(flight["source_path"], UPLOAD_DIR, "Source PDF not found")
+        )
+    except HTTPException:
+        source_path = None
+    if not analysis_flight.get("fuel_summary") and source_path:
+        # Older stored analyses predate the page-1 summary parser. The source
+        # document is held, so derive it deterministically now rather than
+        # rendering a review flag over data we can prove.
+        from .odss.parser import extract_pages, parse_page1_fuel_summary
+
+        try:
+            analysis_flight["fuel_summary"] = parse_page1_fuel_summary(
+                extract_pages(Path(source_path))[0]
+            )
+        except (OSError, ValueError):
+            analysis_flight["fuel_summary"] = None
+    token = sha256(
+        f"{analysis_path.stat().st_mtime_ns}:{flight['id']}".encode("utf-8")
+    ).hexdigest()[:16]
+    cache_path = REPORT_DIR / f"flight_{flight['id']}_combined_{token}.pdf"
+    if not cache_path.exists():
+        staging = cache_path.with_suffix(".tmp")
+        try:
+            render_combined_briefing(
+                analysis_flight,
+                findings,
+                warnings,
+                staging,
+                source_pdf_path=source_path,
+                weather_charts=weather_charts,
+            )
+            staging.replace(cache_path)
+        finally:
+            staging.unlink(missing_ok=True)
+        for stale in REPORT_DIR.glob(f"flight_{flight['id']}_combined_*.pdf"):
+            if stale != cache_path:
+                stale.unlink(missing_ok=True)
+    return FileResponse(
+        cache_path,
+        filename=f"{flight['flight_number'] or analysis_id}_Flight_Briefing.pdf",
+        media_type="application/pdf",
+    )
 
 
 @app.get("/v1/analyses/{analysis_id}/reports/level-1")
