@@ -25,6 +25,10 @@ from .controlled_library import normalized_registration
 
 SANS = "BriefSans"
 SANS_BOLD = "BriefSans-Bold"
+# Data face for the combined briefing (07 Aug spec): numerics and identifiers
+# render in the mono the web already standardised on.
+MONO = "BriefMono"
+MONO_BOLD = "BriefMono-Bold"
 
 _FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
@@ -57,6 +61,16 @@ def register_fonts() -> None:
     """
     if SANS in pdfmetrics.getRegisteredFontNames():
         return
+    mono_regular = _FONT_DIR / "JetBrainsMono-Regular.ttf"
+    mono_bold = _FONT_DIR / "JetBrainsMono-Bold.ttf"
+    if not (mono_regular.is_file() and mono_bold.is_file()):
+        # pragma: no cover - vendored fonts are part of the tree. Degrade to
+        # the sans cuts rather than crash a report over a missing data face.
+        mono_regular = _FONT_DIR / "Inter-Regular.ttf"
+        mono_bold = _FONT_DIR / "Inter-Bold.ttf"
+    if mono_regular.is_file() and mono_bold.is_file():
+        pdfmetrics.registerFont(TTFont(MONO, str(mono_regular)))
+        pdfmetrics.registerFont(TTFont(MONO_BOLD, str(mono_bold)))
     for regular, bold in (
         (_FONT_DIR / "Inter-Regular.ttf", _FONT_DIR / "Inter-Bold.ttf"),
         (
