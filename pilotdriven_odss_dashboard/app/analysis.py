@@ -16,6 +16,7 @@ from .odss.constants import (
     format_actm,
 )
 from .odss.engines import analyse
+from .odss.flight_briefing_publication import build_combined_report_plan
 from .odss.parser import extract_pages, parse_lido
 from .odss.reporting import render_pdf
 from .odss.tropical_cyclone import assess_tropical_cyclone
@@ -50,6 +51,11 @@ def run_odss_analysis(
     timing_reference: dict[str, Any] | None = None,
     personal_notes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    """Run the deterministic Flight Briefing analysis.
+
+    The historical function name is retained for API compatibility. The current
+    product-facing module name is Flight Briefing.
+    """
     pages = extract_pages(file_path)
     flight = parse_lido(pages, file_path.name)
     flight["flight_number"] = flight["flight_number"].replace("SIA", "SQ", 1)
@@ -87,6 +93,7 @@ def run_odss_analysis(
         warnings,
         timing_view,
     )
+    flight_briefing_plan = build_combined_report_plan(flight, findings)
 
     grouped_raw: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
@@ -104,6 +111,8 @@ def run_odss_analysis(
     report_dir.mkdir(parents=True, exist_ok=True)
     run_id = uuid.uuid4().hex[:12]
     result_path = result_dir / f"flight_{flight_id}_{run_id}_analysis.json"
+    # Legacy files remain available while the combined renderer and service
+    # route are migrated. They are not the current-facing primary product.
     level1_path = report_dir / f"flight_{flight_id}_{run_id}_level_1.pdf"
     level2_path = report_dir / f"flight_{flight_id}_{run_id}_level_2.pdf"
     map_contract = None
@@ -114,6 +123,7 @@ def run_odss_analysis(
 
     payload = {
         "schema_version": "0.6.1",
+        "publication_contract_version": "1.3.0",
         "flight": flight,
         "findings": findings,
         "reference_library": REFERENCE_LIBRARY_METADATA,
@@ -127,6 +137,7 @@ def run_odss_analysis(
             "warnings": warnings,
             "timing": timing_view,
             "briefing": briefing_view,
+            "flight_briefing_plan": flight_briefing_plan,
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         },
     }
@@ -155,6 +166,8 @@ def run_odss_analysis(
         "analysis_path": str(result_path),
         "level1_report": str(level1_path),
         "level2_report": str(level2_path),
+        "flight_briefing_filename": flight_briefing_plan["filename"],
+        "publication_contract_version": "1.3.0",
         "flight_number": flight["flight_number"],
         "flight_date": flight["flight_date"],
         "departure": flight["departure"],
@@ -189,7 +202,7 @@ def load_analysis(path: str | None) -> dict[str, Any] | None:
 # Compatibility with the v0.1 dashboard while files are updated in stages.
 def run_placeholder_analysis(file_path: Path) -> dict[str, Any]:
     return {
-        "status": "ODSS core installed; update app.main to v0.6.1",
+        "status": "Flight Briefing core installed; update app.main to v0.6.1",
         "file_size_bytes": file_path.stat().st_size,
         "modules": ENGINE_ORDER,
     }
