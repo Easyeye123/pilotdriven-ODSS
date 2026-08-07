@@ -765,7 +765,15 @@ def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
         breakdown.append({"label": item.group(1), "fuel_kg": int(item.group(2))})
 
     discrepancies: list[str] = []
-    missing = [name for name, value in rows.items() if value is None]
+    # The two top-up lines are conditional print: a NON EDTO plan omits
+    # "EDTO TOP UP" entirely (SIA365's filed CFP does), and either top-up may
+    # be absent on other revisions. Absence means zero contribution - it is
+    # not a defect. Everything else is mandatory.
+    optional_rows = {"dest_hold_top_up", "edto_top_up"}
+    missing = [
+        name for name, value in rows.items()
+        if value is None and name not in optional_rows
+    ]
     if taxi_match is None:
         missing.append("taxi_fuel")
     missing.extend(name for name, value in masses.items() if value is None)
@@ -799,7 +807,7 @@ def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
     taxi_kg = int(taxi_match.group(1)) if taxi_match else None
     requirement_parts_kg = [
         kg("burnoff"), kg("stat_cont"), kg("altn_fuel"), kg("altn_hold"),
-        kg("dest_hold_top_up"), kg("edto_top_up"), taxi_kg,
+        kg("dest_hold_top_up") or 0, kg("edto_top_up") or 0, taxi_kg,
     ]
     if all(part is not None for part in requirement_parts_kg):
         check("fuel_requirement_sum", sum(requirement_parts_kg), kg("flt_plan_reqmt"))
@@ -812,7 +820,7 @@ def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
         check("mass_takeoff_identity", masses["pzfw"] + kg("fuel_in_tanks") - taxi_kg, masses["ptow"])
     requirement_parts_min = [
         minutes("burnoff"), minutes("stat_cont"), minutes("altn_fuel"), minutes("altn_hold"),
-        minutes("dest_hold_top_up"), minutes("edto_top_up"),
+        minutes("dest_hold_top_up") or 0, minutes("edto_top_up") or 0,
     ]
     if all(part is not None for part in requirement_parts_min):
         check(

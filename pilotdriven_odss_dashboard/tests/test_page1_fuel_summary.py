@@ -152,3 +152,35 @@ def test_a_missing_core_row_is_review_required():
 
 def test_a_page_without_the_block_returns_none():
     assert parse_page1_fuel_summary("ROUTE LOG ONLY\nNO SUMMARY HERE") is None
+
+
+SQ365_FILED_PAGE1 = """
+PAGE  1 OF 112 SIA365 FCO/SIN 07AUG26
+
+              SINGAPORE AIRLINES - SUMMARY NON EDTO CFP
+              -----------------------------------------
+GND  MILES    5721  CRZ COMP P011   BURNOFF  11.26  070667
+AIR  MILES    5601                STAT CONT  00.14  001425
+ALTN QPG (WSAP)                   ALTN FUEL  00.21  002008
+                                  ALTN HOLD  00.30  002347
+           TOP UP TO 60 MINS DEST HOLD FUEL  00.00  000000
+                                  TAXI FUEL         000600
+PZFW 179478                  FLT PLAN REQMT  12.30  077047
+
+PTOW 262125                     EXCESS FUEL  01.00  006200
+
+PLWT 191458                   FUEL IN TANKS  13.31  083247
+"""
+
+
+def test_an_absent_top_up_line_is_conditional_print_not_a_defect():
+    # SIA365's FILED CFP (verbatim): a NON EDTO plan omits the EDTO TOP UP
+    # line entirely. Absence contributes zero to the sums and must verify.
+    summary = parse_page1_fuel_summary(SQ365_FILED_PAGE1)
+
+    assert summary["state"] == "verified"
+    assert summary["rows"]["edto_top_up"] is None
+    assert summary["discrepancies"] == []
+    checks = {check["name"]: check["passed"] for check in summary["checks"]}
+    assert checks["fuel_requirement_sum"] is True
+    assert checks["time_requirement_sum"] is True
