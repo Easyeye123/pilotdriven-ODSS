@@ -16,6 +16,7 @@ from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 
+from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
 from .engines import detect_terrain_events
 from .pilot_briefing import prepare_pilot_findings
@@ -588,6 +589,7 @@ def _pilot_route_map_label(value: Any) -> str:
 
 
 def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, width: float, height: float) -> None:
+    register_fonts()
     snapshot_path = route_map.get("snapshot_path")
     if snapshot_path:
         candidate = Path(str(snapshot_path))
@@ -606,7 +608,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
                 mask="auto",
             )
             canvas.setFillColor(colors.HexColor("#E8F2FF"))
-            canvas.setFont("Helvetica", 4.8)
+            canvas.setFont(SANS, 4.8)
             label = _pilot_route_map_label(route_map.get("snapshot_label"))
             canvas.drawString(
                 x + 5,
@@ -623,7 +625,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
     canvas.roundRect(x, y, width, height, 6, fill=1, stroke=0)
     if len(points) < 2:
         canvas.setFillColor(colors.HexColor("#93A4B8"))
-        canvas.setFont("Helvetica-Bold", 10)
+        canvas.setFont(SANS_BOLD, 10)
         canvas.drawCentredString(x + width / 2, y + height / 2, "Route coordinates unavailable")
         canvas.restoreState()
         return
@@ -676,7 +678,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
         "edto": colors.HexColor("#55D6BE"),
         "route": colors.HexColor("#DCEEFF"),
     }
-    canvas.setFont("Helvetica-Bold", 5.8)
+    canvas.setFont(SANS_BOLD, 5.8)
     for point in points:
         px, py = x + point["x"], y + point["y"]
         canvas.setFillColor(role_colour.get(point.get("role"), colors.HexColor("#DCEEFF")))
@@ -705,7 +707,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
     for index, point in labelled:
         px, py = x + point["x"], y + point["y"]
         label = _shorten(point.get("display_name"), 16)
-        text_width = pdfmetrics.stringWidth(label, "Helvetica-Bold", 5.8)
+        text_width = pdfmetrics.stringWidth(label, SANS_BOLD, 5.8)
         right_side = px < x + width * 0.72
         anchors = (
             [(px + 3.5, py + 4.0, "left"), (px + 3.5, py - 8.0, "left")]
@@ -750,7 +752,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
             canvas.drawRightString(tx, ty, label)
         occupied.append(box)
     canvas.setFillColor(colors.HexColor("#8396AB"))
-    canvas.setFont("Helvetica", 4.8)
+    canvas.setFont(SANS, 4.8)
     canvas.drawString(x + 5, y + 4, str(route_map.get("note") or ""))
     canvas.restoreState()
 

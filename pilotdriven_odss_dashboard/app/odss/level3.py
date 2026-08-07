@@ -26,6 +26,7 @@ from ..database import (
     list_level3_answers,
     record_audit_event,
 )
+from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .finding_ids import assign_finding_ids
 from .policy_index import policy_snapshot_from_env
 from .report_quality import assert_report_quality
@@ -677,11 +678,12 @@ def build_level3_artifact(
 
 
 def _render_level3_pdf(artifact: dict[str, Any], destination: Path) -> None:
+    register_fonts()
     styles = getSampleStyleSheet()
     title = ParagraphStyle(
         "L3Title",
         parent=styles["Title"],
-        fontName="Helvetica-Bold",
+        fontName=SANS_BOLD,
         fontSize=17,
         leading=20,
         alignment=TA_CENTER,
@@ -691,7 +693,7 @@ def _render_level3_pdf(artifact: dict[str, Any], destination: Path) -> None:
     heading = ParagraphStyle(
         "L3Heading",
         parent=styles["Heading2"],
-        fontName="Helvetica-Bold",
+        fontName=SANS_BOLD,
         fontSize=10,
         leading=12,
         textColor=colors.HexColor("#0B4F6C"),
@@ -759,7 +761,7 @@ def _render_level3_pdf(artifact: dict[str, Any], destination: Path) -> None:
             style=[
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0B2742")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 0), (-1, 0), SANS_BOLD),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#A8BAC8")),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
@@ -794,8 +796,8 @@ def _render_level3_pdf(artifact: dict[str, Any], destination: Path) -> None:
         style=[
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0B2742")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTNAME", (0, 1), (-1, 1), "Helvetica"),
+            ("FONTNAME", (0, 0), (-1, 0), SANS_BOLD),
+            ("FONTNAME", (0, 1), (-1, 1), SANS),
             ("FONTSIZE", (0, 0), (-1, -1), 7),
             ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#A8BAC8")),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -879,7 +881,7 @@ def _render_level3_pdf(artifact: dict[str, Any], destination: Path) -> None:
             colWidths=[42 * mm, 51 * mm, 42 * mm, 76 * mm, 53 * mm],
             style=[
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#DCEAF2")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 0), (-1, 0), SANS_BOLD),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#A8BAC8")),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("FONTSIZE", (0, 0), (-1, -1), 6.5),

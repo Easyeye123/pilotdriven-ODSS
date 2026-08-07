@@ -2181,7 +2181,12 @@ def _page_two(
             y=body_y,
             width=body_w,
             height=body_h,
-            columns=(("ITEM", 0.23), ("EVIDENCE", 0.47), ("EFFECT", 0.30)),
+            # ITEM must hold its widest single word without a mid-word break.
+            # Measured for the Inter faces (07 Aug): "PERFORMANCE" is 77.1pt
+            # at table size + cell padding = a 0.239 fraction of this table;
+            # 0.23 was tuned for the condensed face and split it. The 0.02
+            # comes out of EVIDENCE, which is prose and rewraps freely.
+            columns=(("ITEM", 0.25), ("EVIDENCE", 0.45), ("EFFECT", 0.30)),
             rows=rows,
             accent=accent,
             max_rows=7,

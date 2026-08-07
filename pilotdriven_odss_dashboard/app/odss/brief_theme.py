@@ -46,23 +46,33 @@ def readable(size: float) -> float:
 
 
 def register_fonts() -> None:
-    """Register the condensed brief faces once per process.
+    """Register the brief faces once per process.
 
-    Falls back silently to Helvetica metrics only if the vendored files are
-    missing (development safety; the shipped image always contains them).
+    07 Aug 2026: the faces are Inter, the primary family on the boss's design
+    sheet, after his "standardise your font type.. it is NOT the same in PD" —
+    reports previously mixed DejaVuSansCondensed with raw Helvetica calls.
+    The vendored DejaVu files remain as the first fallback so a missing Inter
+    file degrades to the previous look, never to a crash (development safety;
+    the shipped image always contains them).
     """
     if SANS in pdfmetrics.getRegisteredFontNames():
         return
-    regular = _FONT_DIR / "DejaVuSansCondensed.ttf"
-    bold = _FONT_DIR / "DejaVuSansCondensed-Bold.ttf"
-    if regular.is_file() and bold.is_file():
-        pdfmetrics.registerFont(TTFont(SANS, str(regular)))
-        pdfmetrics.registerFont(TTFont(SANS_BOLD, str(bold)))
-    else:  # pragma: no cover - vendored fonts are part of the tree
-        from reportlab.pdfbase.pdfmetrics import registerFontFamily
+    for regular, bold in (
+        (_FONT_DIR / "Inter-Regular.ttf", _FONT_DIR / "Inter-Bold.ttf"),
+        (
+            _FONT_DIR / "DejaVuSansCondensed.ttf",
+            _FONT_DIR / "DejaVuSansCondensed-Bold.ttf",
+        ),
+    ):
+        if regular.is_file() and bold.is_file():
+            pdfmetrics.registerFont(TTFont(SANS, str(regular)))
+            pdfmetrics.registerFont(TTFont(SANS_BOLD, str(bold)))
+            return
+    # pragma: no cover - vendored fonts are part of the tree
+    from reportlab.pdfbase.pdfmetrics import registerFontFamily
 
-        pdfmetrics.registerFont(TTFont(SANS, "Helvetica"))
-        registerFontFamily(SANS, normal="Helvetica", bold="Helvetica-Bold")
+    pdfmetrics.registerFont(TTFont(SANS, "Helvetica"))
+    registerFontFamily(SANS, normal="Helvetica", bold="Helvetica-Bold")
 
 
 # Palette lifted from the approved v1.3 reference PDFs (vector fills).

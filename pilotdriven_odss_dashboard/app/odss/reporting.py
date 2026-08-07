@@ -21,6 +21,7 @@ from reportlab.platypus import (
 )
 
 from ..personal_notes import PERSONAL_NOTE_PLACEMENT_LABELS
+from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .briefing import build_briefing_view
 from .constants import ENGINE_ORDER
 from .pertinent_brief import render_level1_visual
@@ -484,6 +485,7 @@ def render_pdf(
     map_image_path: Path | None = None,
     map_label: str | None = None,
 ) -> None:
+    register_fonts()
     path.parent.mkdir(parents=True, exist_ok=True)
     if level == 1:
         render_level1_visual(
@@ -513,7 +515,7 @@ def render_pdf(
     heading = ParagraphStyle(
         "ODSS Heading",
         parent=styles["Heading2"],
-        fontName="Helvetica-Bold",
+        fontName=SANS_BOLD,
         fontSize=9.5,
         leading=11,
         textColor=colors.white,
@@ -523,7 +525,7 @@ def render_pdf(
     body = ParagraphStyle(
         "ODSS Body",
         parent=styles["BodyText"],
-        fontName="Helvetica",
+        fontName=SANS,
         fontSize=9.5,
         leading=12,
     )
@@ -569,14 +571,14 @@ def render_pdf(
         # header/footer so they cannot be clipped or shifted off-page.
         canvas.resetTransforms()
         canvas.setFillColor(colors.HexColor("#173B65"))
-        canvas.setFont("Helvetica-Bold", 13)
+        canvas.setFont(SANS_BOLD, 13)
         canvas.drawCentredString(width / 2, height - 10 * mm, report_title)
         canvas.setFillColor(colors.HexColor("#4B5563"))
-        canvas.setFont("Helvetica-Bold", 8)
+        canvas.setFont(SANS_BOLD, 8)
         canvas.drawCentredString(width / 2, height - 15 * mm, report_subtitle)
         canvas.setStrokeColor(colors.HexColor("#D9E1E8"))
         canvas.line(7 * mm, height - 17 * mm, width - 7 * mm, height - 17 * mm)
-        canvas.setFont("Helvetica", 6.2)
+        canvas.setFont(SANS, 6.2)
         canvas.drawString(
             7 * mm,
             6 * mm,

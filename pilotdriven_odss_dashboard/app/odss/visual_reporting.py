@@ -15,6 +15,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import BaseDocTemplate, Flowable, Frame, PageBreak, PageTemplate, Paragraph
 
+from .brief_theme import SANS, SANS_BOLD
 from .briefing import build_briefing_view, draw_route_map_pdf
 from .constants import format_actm
 from .report_facts import actual_timing_anchor
@@ -59,7 +60,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "panel": ParagraphStyle(
             "Visual panel",
             parent=base["BodyText"],
-            fontName="Helvetica",
+            fontName=SANS,
             fontSize=7.6,
             leading=9.2,
             textColor=_TEXT,
@@ -67,7 +68,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "panel_small": ParagraphStyle(
             "Visual panel small",
             parent=base["BodyText"],
-            fontName="Helvetica",
+            fontName=SANS,
             fontSize=6.8,
             leading=8.2,
             textColor=_TEXT,
@@ -75,7 +76,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "detail": ParagraphStyle(
             "Visual detail",
             parent=base["BodyText"],
-            fontName="Helvetica",
+            fontName=SANS,
             fontSize=8.0,
             leading=9.8,
             textColor=colors.HexColor("#1F2937"),
@@ -83,7 +84,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "detail_small": ParagraphStyle(
             "Visual detail small",
             parent=base["BodyText"],
-            fontName="Helvetica",
+            fontName=SANS,
             fontSize=7.2,
             leading=8.8,
             textColor=colors.HexColor("#1F2937"),
@@ -91,7 +92,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "metric": ParagraphStyle(
             "Visual metric",
             parent=base["BodyText"],
-            fontName="Helvetica",
+            fontName=SANS,
             fontSize=6.8,
             leading=8.2,
             alignment=TA_CENTER,
@@ -161,7 +162,7 @@ def _draw_panel(
     canvas.roundRect(x, y + height - 8 * mm, width, 8 * mm, 4, fill=1, stroke=0)
     canvas.rect(x, y + height - 8 * mm, width, 4 * mm, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 7.2)
+    canvas.setFont(SANS_BOLD, 7.2)
     canvas.drawString(x + 3 * mm, y + height - 5.3 * mm, title)
     _draw_text(
         canvas,
@@ -266,7 +267,7 @@ def _draw_airport_panel(
     canvas.setStrokeColor(_BLUE)
     canvas.roundRect(x + 3 * mm, button_y, width - 6 * mm, button_h, 3, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 5.8)
+    canvas.setFont(SANS_BOLD, 5.8)
     canvas.drawCentredString(x + width / 2, button_y + 2.4 * mm, "VIEW FULL AIRPORT BRIEFING")
     canvas.linkRect("", destination, (x + 3 * mm, button_y, x + width - 3 * mm, button_y + button_h), relative=1, thickness=0)
 
@@ -281,13 +282,13 @@ def _draw_exceptions(canvas, briefing: dict[str, Any], x: float, y: float, width
         canvas.setStrokeColor(colour)
         canvas.roundRect(cx + 1.5 * mm, y, cell - 3 * mm, height, 3, fill=1, stroke=1)
         canvas.setFillColor(colour)
-        canvas.setFont("Helvetica-Bold", 13)
+        canvas.setFont(SANS_BOLD, 13)
         canvas.drawString(cx + 4 * mm, y + height - 6.5 * mm, str(card.get("count", 0)))
         canvas.setFillColor(_TEXT)
-        canvas.setFont("Helvetica-Bold", 5.6)
+        canvas.setFont(SANS_BOLD, 5.6)
         canvas.drawString(cx + 12 * mm, y + height - 5.2 * mm, str(card.get("label") or ""))
         canvas.setFillColor(_MUTED)
-        canvas.setFont("Helvetica", 4.8)
+        canvas.setFont(SANS, 4.8)
         canvas.drawString(cx + 12 * mm, y + height - 9.2 * mm, str(card.get("detail") or "")[:42])
 
 
@@ -305,24 +306,24 @@ def _draw_cover(canvas, briefing: dict[str, Any], width: float, height: float) -
     canvas.setFillColor(colors.HexColor("#081522"))
     canvas.rect(0, height - top_h, width, top_h, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 12)
+    canvas.setFont(SANS_BOLD, 12)
     brand = "PILOTDRIVEN"
     brand_x = margin
     canvas.drawString(brand_x, height - 7.7 * mm, brand)
     canvas.setFillColor(_BLUE)
     canvas.drawString(
-        brand_x + pdfmetrics.stringWidth(brand, "Helvetica-Bold", 12) + 2 * mm,
+        brand_x + pdfmetrics.stringWidth(brand, SANS_BOLD, 12) + 2 * mm,
         height - 7.7 * mm,
         "ODSS",
     )
     canvas.setFillColor(_TEXT)
-    canvas.setFont("Helvetica-Bold", 8.8)
+    canvas.setFont(SANS_BOLD, 8.8)
     canvas.drawString(margin + 50 * mm, height - 7.6 * mm, f"{briefing['flight_number']}  {briefing['route_label']}  {briefing['flight_date']}")
     canvas.setFillColor(_severity_colour(briefing.get("status_severity", "information")))
-    canvas.setFont("Helvetica-Bold", 6.4)
+    canvas.setFont(SANS_BOLD, 6.4)
     canvas.drawRightString(width - margin, height - 5.4 * mm, briefing["status"])
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica", 5.2)
+    canvas.setFont(SANS, 5.2)
     canvas.drawRightString(width - margin, height - 9.3 * mm, f"Updated {briefing['generated_at_display']} | NOTAM {briefing['counts']['notams']} | WX {briefing['counts']['weather']}")
 
     metric_y = height - top_h - metric_h
@@ -388,7 +389,7 @@ def _draw_cover(canvas, briefing: dict[str, Any], width: float, height: float) -
     canvas.linkRect("", "route_contingency", (links_x, bottom_y, links_x + links_w, bottom_y + bottom_h / 2), relative=1, thickness=0)
 
     canvas.setFillColor(_MUTED)
-    canvas.setFont("Helvetica", 4.8)
+    canvas.setFont(SANS, 4.8)
     canvas.drawCentredString(width / 2, 1.4 * mm, "Decision support only - approved documents, dispatch authority, ATC instructions and PIC judgement remain controlling.")
 
 
@@ -425,12 +426,12 @@ def _draw_detail_header(canvas, width: float, height: float, title: str, page_nu
     canvas.setFillColor(_NAVY)
     canvas.rect(0, height - 13 * mm, width, 13 * mm, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 12)
+    canvas.setFont(SANS_BOLD, 12)
     canvas.drawString(6 * mm, height - 8.5 * mm, title)
-    canvas.setFont("Helvetica", 6)
+    canvas.setFont(SANS, 6)
     canvas.drawRightString(width - 6 * mm, height - 8.3 * mm, f"PilotDriven | Page {page_number}")
     canvas.setFillColor(_GREY)
-    canvas.setFont("Helvetica", 5)
+    canvas.setFont(SANS, 5)
     canvas.drawCentredString(width / 2, 2.2 * mm, "Decision support only - refer to current approved operational documents and live dispatch information.")
 
 
@@ -587,9 +588,9 @@ def _draw_vaa_detail(
     canvas.setFillColor(accent)
     canvas.roundRect(margin, top - status_h, width - 2 * margin, status_h, 5, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica-Bold", 13)
+    canvas.setFont(SANS_BOLD, 13)
     canvas.drawString(margin + 5 * mm, top - 10.2 * mm, status_label)
-    canvas.setFont("Helvetica", 7)
+    canvas.setFont(SANS, 7)
     canvas.drawRightString(
         width - margin - 5 * mm,
         top - 9.7 * mm,
