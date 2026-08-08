@@ -4,11 +4,44 @@ The historical repository/package path retains ``odss`` for compatibility.
 Current product-facing terminology is ``Flight Briefing``.
 """
 
+from datetime import datetime
 from xml.sax.saxutils import escape as _xml_escape
 
 from . import engines as _engines
+from . import flight_briefing_publication as _flight_briefing_publication
 from . import timing as _timing
-from .flight_briefing_publication import (
+
+
+def _parse_flight_date_compat(value):
+    """Accept both display dates and compact dates parsed from a Lido CFP.
+
+    The existing parser emits values such as ``11JUL26``. Current-facing
+    filenames expand the year and render ``11JUL2026`` without changing the
+    flight date stored in the deterministic analysis.
+    """
+    text = str(value or "").strip().upper().replace("/", " ").replace("-", " ")
+    text = " ".join(text.split())
+    for pattern in (
+        "%d %b %Y",
+        "%d%b%Y",
+        "%d %b %y",
+        "%d%b%y",
+        "%Y %m %d",
+        "%d %m %Y",
+        "%d %m %y",
+    ):
+        try:
+            return datetime.strptime(text, pattern)
+        except ValueError:
+            continue
+    raise ValueError(f"Unsupported flight date: {value!r}")
+
+
+# Keep the compact Lido date adapter at the package boundary so every caller,
+# including direct submodule imports, receives identical filename behaviour.
+_flight_briefing_publication._parse_flight_date = _parse_flight_date_compat
+
+from .flight_briefing_publication import (  # noqa: E402
     FlightBriefingPublicationError,
     build_combined_report_plan,
     build_flight_briefing_filename,
