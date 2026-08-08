@@ -119,3 +119,12 @@ def test_the_open_control_appears_once_per_gate(rendered):
     first = rendered[0].get_text()
     # Six gates, six OPEN controls — a doubled draw would double the count.
     assert first.count("OPEN >") == 6
+
+
+def test_publication_filename_carries_flight_and_expanded_date():
+    from app.odss.combined_brief import combined_briefing_filename
+
+    assert combined_briefing_filename("SIA365", "07AUG26") == "SIA365_07AUG2026_Flight_Briefing.pdf"
+    assert combined_briefing_filename("SQ366", "04AUG2026") == "SQ366_04AUG2026_Flight_Briefing.pdf"
+    # A date the pattern cannot vouch for is omitted, never guessed.
+    assert combined_briefing_filename("SIA23", "??") == "SIA23_Flight_Briefing.pdf"

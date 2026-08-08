@@ -61,7 +61,7 @@ from .odss.profile_chart_delivery import (
     held_profile_chart,
     render_held_profile_chart_page,
 )
-from .odss.combined_brief import render_combined_briefing
+from .odss.combined_brief import combined_briefing_filename, render_combined_briefing
 from .odss.reporting import render_pdf
 from .odss.surface_overlays import (
     SurfaceOverlayRequest,
@@ -2260,7 +2260,10 @@ def get_service_combined_report(request: Request, analysis_id: str):
                 stale.unlink(missing_ok=True)
     return FileResponse(
         cache_path,
-        filename=f"{flight['flight_number'] or analysis_id}_Flight_Briefing.pdf",
+        filename=combined_briefing_filename(
+            flight["flight_number"] or analysis_id,
+            analysis_flight.get("flight_date"),
+        ),
         media_type="application/pdf",
     )
 

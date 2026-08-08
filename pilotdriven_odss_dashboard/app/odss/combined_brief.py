@@ -14,6 +14,7 @@ review flag, never as a number. AI authority: none.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from reportlab.lib import colors
@@ -1800,3 +1801,18 @@ def render_combined_briefing(
         )
         canvas.showPage()
     canvas.save()
+
+
+def combined_briefing_filename(flight_number: Any, flight_date: Any) -> str:
+    """`<FLIGHT>_<DDMMMYYYY>_Flight_Briefing.pdf` — the boss's naming
+    instruction ('label the file as SQ366, date and Flight Briefing'), also
+    codified in publication protocol v1.3. Lido prints compact dates
+    (07AUG26); expand the century rather than echo it."""
+    flight = re.sub(r"[^A-Z0-9]", "", str(flight_number or "").upper()) or "FLIGHT"
+    raw_date = str(flight_date or "").strip().upper()
+    match = re.fullmatch(r"(\d{2})([A-Z]{3})(\d{2}|\d{4})", raw_date)
+    if match:
+        day, month, year = match.groups()
+        date_part = f"{day}{month}{year if len(year) == 4 else '20' + year}"
+        return f"{flight}_{date_part}_Flight_Briefing.pdf"
+    return f"{flight}_Flight_Briefing.pdf"
