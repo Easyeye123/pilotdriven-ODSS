@@ -19,6 +19,7 @@ from .odss.constants import (
 from .odss.engines import analyse
 from .odss.finding_ids import assign_finding_ids
 from .odss.parser import extract_pages, parse_lido
+from .odss.aerodrome_warnings import enrich_aerodrome_warnings
 from .odss.opmet import enrich_official_opmet
 from .odss.reporting import render_pdf
 from .odss.sigmet import assess_significant_weather
@@ -111,6 +112,7 @@ def run_odss_analysis(
         }
 
     enrich_official_opmet(flight)
+    enrich_aerodrome_warnings(flight)
     assess_significant_weather(flight)
     assess_volcanic_ash(flight, pages)
     tropical_cyclone_review = assess_tropical_cyclone(flight, pages)
