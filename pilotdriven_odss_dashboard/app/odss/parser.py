@@ -312,9 +312,10 @@ def _parse_alternates(cfp_pages: list[str]) -> list[dict[str, Any]]:
     # the NOTAM or weather sections, so unrelated rows cannot match.
     section_text = "\n".join(cfp_pages)
     pattern = re.compile(
-        r"^(?P<apt>[A-Z]{4})/(?P<rwy>[0-9A-Z]{2,3})\s+(?P<approach>[A-Z0-9]+)\s+"
-        r"(?P<minima>\S+)\s+(?P<dist>\d{4})\s+\d{3}\s+[MP]\d{3}\s+"
-        r"(?P<time>\d{4})\s+(?P<fuel>\d{5})$",
+        r"^(?P<apt>[A-Z]{4})/(?P<rwy>[0-9A-Z]{2,3})[ \t]+"
+        r"(?P<approach>[A-Z0-9][A-Z0-9+./-]*(?:[ \t]+[A-Z0-9][A-Z0-9+./-]*)*?)[ \t]+"
+        r"(?P<minima>\S+)[ \t]+(?P<dist>\d{4})[ \t]+\d{3}[ \t]+[MP]\d{3}[ \t]+"
+        r"(?P<time>\d{4})[ \t]+(?P<fuel>\d{5})$",
         re.MULTILINE,
     )
     alternates: list[dict[str, Any]] = []
@@ -328,7 +329,7 @@ def _parse_alternates(cfp_pages: list[str]) -> list[dict[str, Any]]:
         alternates.append({
             "airport": match.group("apt"),
             "runway": match.group("rwy"),
-            "approach": match.group("approach"),
+            "approach": " ".join(match.group("approach").split()),
             "minima": match.group("minima"),
             "distance_nm": int(match.group("dist")),
             "time_minutes": int(match.group("time")[:2]) * 60 + int(match.group("time")[2:]),
