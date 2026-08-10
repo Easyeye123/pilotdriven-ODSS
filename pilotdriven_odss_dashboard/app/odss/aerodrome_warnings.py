@@ -457,6 +457,20 @@ def enrich_aerodrome_warnings(
         }
         flight["aerodrome_warning_review"] = review
         return review
+    except Exception:
+        # This enrichment rides the CFP analysis chain. Known failure classes
+        # are handled above per source; whatever else breaks, the briefing
+        # must get an honest empty review — never an exception that takes the
+        # whole analysis down for a supplementary weather product.
+        review = {
+            "schema_version": "1.0",
+            "status": "review_required",
+            "stations_requested": stations,
+            "products": {},
+            "reason_codes": ["internal_error"],
+        }
+        flight["aerodrome_warning_review"] = review
+        return review
     finally:
         if owns_client:
             http.close()

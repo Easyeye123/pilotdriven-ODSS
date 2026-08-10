@@ -220,6 +220,22 @@ def test_hong_kong_active_warning_arrives_from_the_official_hko_api():
     assert hong_kong["warnings"][0]["provider"] == "hko-via-official-open-data"
 
 
+def test_an_unexpected_internal_error_never_fails_the_analysis(monkeypatch):
+    # The enrichment rides the CFP analysis chain. Whatever breaks inside it,
+    # the flight must still get an honest review — never an exception that
+    # takes the whole briefing down with it.
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("synthetic internal defect")
+
+    monkeypatch.setattr(adwx, "_warning_index", _boom)
+    flight = _flight()
+    review = adwx.enrich_aerodrome_warnings(flight, now=RETRIEVED_AT)
+    assert review["status"] == "review_required"
+    assert "internal_error" in review["reason_codes"]
+    assert review["products"] == {}
+    assert flight["aerodrome_warning_review"] is review
+
+
 def test_engine_stays_generic_no_phenomenon_or_country_branches():
     import inspect
 
