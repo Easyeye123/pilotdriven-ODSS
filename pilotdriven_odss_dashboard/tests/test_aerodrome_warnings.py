@@ -47,6 +47,8 @@ def _fresh_cache(monkeypatch):
     monkeypatch.setattr(adwx, "_CACHE", {})
     monkeypatch.delenv("ODSS_ADWX_SOURCE", raising=False)
     monkeypatch.delenv("ODSS_ADWX_SG_URL", raising=False)
+    monkeypatch.delenv("ODSS_ADWX_HK_URL", raising=False)
+    monkeypatch.delenv("ODSS_ADWX_MAX_BULLETIN_AGE_HOURS", raising=False)
 
 
 def _client(routes):
@@ -67,6 +69,30 @@ def _flight(departure="RJTT", destination="WSSS", alternates=()):
         "destination_icao": destination,
         "alternates": [{"icao": code} for code in alternates],
     }
+
+
+def test_real_cfp_parser_airport_shape_drives_every_warning_product():
+    """The production parser uses departure/destination and alternate.airport."""
+    flight = {
+        "departure": "WSSS",
+        "destination": "LIRF",
+        "alternates": [
+            {"airport": "LIRA"},
+            {"airport": "LIMC"},
+            {"airport": "EDDM"},
+        ],
+    }
+    client = _client([
+        ("/data/raw/ww/", httpx.Response(200, text=INDEX_HTML)),
+        ("/data/raw/wo/", httpx.Response(404, text="")),
+        ("wwsr20.wsss..txt", httpx.Response(200, text=NIL_BULLETIN)),
+        ("api-open.data.gov.sg", httpx.Response(200, json=SG_QUIET)),
+    ])
+
+    review = adwx.enrich_aerodrome_warnings(flight, client=client, now=RETRIEVED_AT)
+
+    assert review["stations_requested"] == ["WSSS", "LIRF", "LIRA", "LIMC", "EDDM"]
+    assert list(review["products"]) == ["WSSS", "LIRF", "LIRA", "LIMC", "EDDM"]
 
 
 def test_prefix_match_serves_the_authoritys_own_bulletin_verbatim():
@@ -111,12 +137,35 @@ def test_singapore_active_warning_arrives_from_the_official_api():
     review = adwx.enrich_aerodrome_warnings(_flight(), client=client, now=RETRIEVED_AT)
     singapore = review["products"]["WSSS"]
     assert singapore["status"] == "warnings_held"
-    texts = " ".join(warning["raw_text"] for warning in singapore["warnings"])
-    assert "Sumatran squall line" in texts
-    assert any(
-        warning["provider"] == "mss-singapore-via-data-gov-sg"
-        for warning in singapore["warnings"]
+    warning = next(
+        warning for warning in singapore["warnings"]
+        if warning["provider"] == "mss-singapore-via-data-gov-sg"
     )
+    assert warning["raw_text"] == SG_ACTIVE["data"]["records"][0]["warning"]
+    assert warning["issued_utc_estimate"] == "2026-08-09T23:15:00Z"
+    assert warning["source_url"] == adwx.AUTHORITY_API_ROWS["WS"]["url"]
+
+
+def test_stale_structured_warning_is_never_shown():
+    stale_payload = {
+        "code": 0,
+        "data": {"records": [{
+            "warning": "Persisted warning that is no longer current",
+            "issued": "2026-07-10T07:15:00+08:00",
+        }]},
+    }
+    client = _client([
+        ("/data/raw/ww/", httpx.Response(200, text=INDEX_HTML)),
+        ("/data/raw/wo/", httpx.Response(404, text="")),
+        ("wwjp25.rjtd..txt", httpx.Response(200, text=JMA_BULLETIN)),
+        ("wwsr20.wsss..txt", httpx.Response(200, text=NIL_BULLETIN)),
+        ("api-open.data.gov.sg", httpx.Response(200, json=stale_payload)),
+    ])
+
+    review = adwx.enrich_aerodrome_warnings(_flight(), client=client, now=RETRIEVED_AT)
+
+    singapore = review["products"]["WSSS"]
+    assert singapore["warnings"] == []
 
 
 def test_fetch_failure_never_reads_as_no_active_warning():
@@ -129,6 +178,20 @@ def test_fetch_failure_never_reads_as_no_active_warning():
     ])
     review = adwx.enrich_aerodrome_warnings(_flight(), client=client, now=RETRIEVED_AT)
     assert review["products"]["RJTT"]["status"] == "unavailable"
+    assert review["products"]["WSSS"]["status"] == "unavailable"
+
+
+def test_dead_authority_api_is_not_masked_by_a_nil_mirror_bulletin():
+    client = _client([
+        ("/data/raw/ww/", httpx.Response(200, text=INDEX_HTML)),
+        ("/data/raw/wo/", httpx.Response(404, text="")),
+        ("wwjp25.rjtd..txt", httpx.Response(200, text=JMA_BULLETIN)),
+        ("wwsr20.wsss..txt", httpx.Response(200, text=NIL_BULLETIN)),
+        ("api-open.data.gov.sg", httpx.Response(503, text="down")),
+    ])
+
+    review = adwx.enrich_aerodrome_warnings(_flight(), client=client, now=RETRIEVED_AT)
+
     assert review["products"]["WSSS"]["status"] == "unavailable"
 
 
@@ -216,8 +279,11 @@ def test_hong_kong_active_warning_arrives_from_the_official_hko_api():
     hong_kong = review["products"]["VHHH"]
     assert hong_kong["status"] == "warnings_held"
     assert len(hong_kong["warnings"]) == 1
-    assert "Very Hot Weather Warning" in hong_kong["warnings"][0]["raw_text"]
-    assert hong_kong["warnings"][0]["provider"] == "hko-via-official-open-data"
+    warning = hong_kong["warnings"][0]
+    assert warning["raw_text"] == hko_active["WHOT"]["name"]
+    assert warning["issued_utc_estimate"] == "2026-08-09T22:45:00Z"
+    assert warning["provider"] == "hko-via-official-open-data"
+    assert warning["source_url"] == adwx.AUTHORITY_API_ROWS["VH"]["url"]
 
 
 def test_an_unexpected_internal_error_never_fails_the_analysis(monkeypatch):

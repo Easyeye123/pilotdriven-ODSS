@@ -122,10 +122,13 @@ def _station_prefixes(icao: str) -> tuple[str, ...]:
 
 
 def _flight_stations(flight: dict[str, Any]) -> list[str]:
-    candidates: list[Any] = [flight.get("departure_icao"), flight.get("destination_icao")]
+    candidates: list[Any] = [
+        flight.get("departure") or flight.get("departure_icao"),
+        flight.get("destination") or flight.get("destination_icao"),
+    ]
     for alternate in flight.get("alternates") or []:
         if isinstance(alternate, dict):
-            candidates.append(alternate.get("icao"))
+            candidates.append(alternate.get("airport") or alternate.get("icao"))
         else:
             candidates.append(alternate)
     stations: list[str] = []
@@ -214,6 +217,26 @@ def _estimate_issued_utc(day_hour_minute: str | None, now: datetime) -> datetime
     return max(candidates) if candidates else None
 
 
+def _fresh_authority_time(value: Any, now: datetime) -> datetime | None:
+    """Parse an authority's offset-aware timestamp and enforce the age ceiling."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        issued = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if issued.tzinfo is None:
+        return None
+    issued = issued.astimezone(timezone.utc)
+    age_seconds = (now - issued).total_seconds()
+    if age_seconds < 0 or age_seconds > _max_bulletin_age_hours() * 3600.0:
+        return None
+    return issued
+
+
 def _bulletin_is_nil(text: str) -> bool:
     """A persisted file whose body after the heading is NIL carries no warning."""
     body = _WMO_HEADING.sub("", text, count=1).strip()
@@ -278,13 +301,23 @@ def _gts_bulletins_for_station(
     }
 
 
-def _authority_api_warnings(client: httpx.Client, row: dict[str, Any]) -> dict[str, Any]:
+def _authority_api_warnings(
+    client: httpx.Client,
+    row: dict[str, Any],
+    *,
+    now: datetime,
+) -> dict[str, Any]:
     if row["kind"] == "hko_warnsum":
-        return _hko_warnsum_warnings(client, row)
-    return _data_gov_sg_warnings(client, row)
+        return _hko_warnsum_warnings(client, row, now=now)
+    return _data_gov_sg_warnings(client, row, now=now)
 
 
-def _hko_warnsum_warnings(client: httpx.Client, row: dict[str, Any]) -> dict[str, Any]:
+def _hko_warnsum_warnings(
+    client: httpx.Client,
+    row: dict[str, Any],
+    *,
+    now: datetime,
+) -> dict[str, Any]:
     url = os.environ.get(row["env_url"], "").strip() or row["url"]
     try:
         response = client.get(url, timeout=_TIMEOUT_SECONDS, follow_redirects=False)
@@ -299,32 +332,39 @@ def _hko_warnsum_warnings(client: httpx.Client, row: dict[str, Any]) -> dict[str
     if not isinstance(payload, dict):
         return {"status": "unavailable", "source_url": url, "warnings": []}
     warnings: list[dict[str, Any]] = []
+    active_entries = 0
     for entry in payload.values():
         if not isinstance(entry, dict):
             continue
         if str(entry.get("actionCode") or "").upper() == "CANCEL":
             continue
+        active_entries += 1
         name = str(entry.get("name") or "").strip()
-        if not name:
+        issued = _fresh_authority_time(
+            entry.get("updateTime") or entry.get("issueTime"),
+            now,
+        )
+        if not name or issued is None:
             continue
-        detail = " · ".join(part for part in (
-            name,
-            str(entry.get("code") or "").strip(),
-            f"issued {entry.get('issueTime')}" if entry.get("issueTime") else "",
-            f"updated {entry.get('updateTime')}" if entry.get("updateTime") else "",
-        ) if part)
         warnings.append({
             "provider": row["provider"],
             "header": row["authority"],
-            "raw_text": detail[:4000],
+            "issued_utc_estimate": _iso(issued),
+            "raw_text": name[:4000],
             "source_url": url,
         })
     if not warnings:
-        return {"status": "no_active_warning", "source_url": url, "warnings": []}
+        status = "unavailable" if active_entries else "no_active_warning"
+        return {"status": status, "source_url": url, "warnings": []}
     return {"status": "active_warnings", "source_url": url, "warnings": warnings}
 
 
-def _data_gov_sg_warnings(client: httpx.Client, row: dict[str, Any]) -> dict[str, Any]:
+def _data_gov_sg_warnings(
+    client: httpx.Client,
+    row: dict[str, Any],
+    *,
+    now: datetime,
+) -> dict[str, Any]:
     url = os.environ.get(row["env_url"], "").strip() or row["url"]
     try:
         response = client.get(url, timeout=_TIMEOUT_SECONDS, follow_redirects=False)
@@ -347,19 +387,27 @@ def _data_gov_sg_warnings(client: httpx.Client, row: dict[str, Any]) -> dict[str
     if payload.get("data") in (None, {}, []):
         return {"status": "no_active_warning", "source_url": url, "warnings": []}
     warnings: list[dict[str, Any]] = []
+    active_records = 0
     data = payload.get("data")
     records = data.get("records") if isinstance(data, dict) else None
     for record in records if isinstance(records, list) else [data]:
         if not isinstance(record, dict):
             continue
+        active_records += 1
+        raw_text = str(record.get("warning") or "").strip()
+        issued = _fresh_authority_time(record.get("issued"), now)
+        if not raw_text or issued is None:
+            continue
         warnings.append({
             "provider": row["provider"],
             "header": row["authority"],
-            "raw_text": str(record)[:4000],
+            "issued_utc_estimate": _iso(issued),
+            "raw_text": raw_text[:4000],
             "source_url": url,
         })
     if not warnings:
-        return {"status": "no_active_warning", "source_url": url, "warnings": []}
+        status = "unavailable" if active_records else "no_active_warning"
+        return {"status": status, "source_url": url, "warnings": []}
     return {"status": "active_warnings", "source_url": url, "warnings": warnings}
 
 
@@ -416,7 +464,7 @@ def enrich_aerodrome_warnings(
             api_status: str | None = None
             row = AUTHORITY_API_ROWS.get(icao[:2]) or AUTHORITY_API_ROWS.get(icao[0])
             if row is not None:
-                api_result = _authority_api_warnings(http, row)
+                api_result = _authority_api_warnings(http, row, now=retrieved_at)
                 api_status = api_result["status"]
                 receipts.append({
                     "source_url": api_result["source_url"],
@@ -433,12 +481,12 @@ def enrich_aerodrome_warnings(
                 # The authority's issued text is held and shown verbatim with
                 # its issued time; validity judgement stays with the pilot.
                 status = "warnings_held"
-            elif api_status == "no_active_warning" or gts["nil"] > 0:
-                status = "no_active_warning"
             elif nothing_verifiable and checked_anything:
                 status = "unavailable"
             elif not checked_anything and index is None:
                 status = "unavailable"
+            elif api_status == "no_active_warning" or gts["nil"] > 0:
+                status = "no_active_warning"
             else:
                 # The country publishes nothing under this airport's prefix on
                 # the public mirror and has no configured authority API row.
