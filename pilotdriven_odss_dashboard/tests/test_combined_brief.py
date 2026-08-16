@@ -229,6 +229,25 @@ def test_missing_classification_never_defaults_to_edto(tmp_path):
     assert "SUMMARY EDTO CFP" not in text
 
 
+def test_standard_cfp_keeps_its_printed_label_and_is_non_edto(tmp_path):
+    flight = sample_flight()
+    standard_page1 = SQ23_PAGE1.replace("SUMMARY EDTO CFP", "SUMMARY STANDARD CFP")
+    flight["fuel_summary"] = parse_page1_fuel_summary(standard_page1)
+    flight["edto"] = {
+        "assessment": {"status": "verified_not_applicable", "evidence": []},
+        "sectors": [],
+        "airports": [],
+    }
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "standard-non-edto.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    text = "\n".join(page.get_text() for page in fitz.open(out))
+
+    assert "SUMMARY STANDARD CFP (non-EDTO)" in text
+    assert "SUMMARY EDTO CFP" not in text
+    assert "NON-EDTO" in text
+
+
 def test_airport_identity_places_iata_beside_icao(rendered):
     first = rendered[0].get_text()
     assert "BRU / EBBR" in first

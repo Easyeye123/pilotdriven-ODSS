@@ -73,6 +73,7 @@ def test_reads_the_full_edto_summary_block():
 
     assert summary["state"] == "verified"
     assert summary["classification"] == "EDTO"
+    assert summary["source_classification"] == "EDTO"
     assert summary["ground_miles_nm"] == 9197
     assert summary["air_miles_nm"] == 8760
     assert summary["cruise_wind_component_kt"] == 25
@@ -96,12 +97,23 @@ def test_reads_the_non_edto_summary_with_headwind():
 
     assert summary["state"] == "verified"
     assert summary["classification"] == "NON EDTO"
+    assert summary["source_classification"] == "NON EDTO"
     assert summary["cruise_wind_component_kt"] == -17
     assert summary["alternate"] == {"designator": "CIA", "icao": "LIRA"}
     assert summary["rows"]["burnoff"]["fuel_kg"] == 72139
     assert summary["rows"]["fuel_in_tanks"] == {"time_minutes": 14 * 60 + 17, "fuel_kg": 84668}
     assert summary["masses_kg"] == {"pzfw": 167800, "ptow": 251868, "plwt": 179729}
     assert summary["discrepancies"] == []
+
+
+def test_standard_summary_is_non_edto_without_rewriting_the_source_label():
+    summary = parse_page1_fuel_summary(
+        SQ365_PAGE1.replace("SUMMARY NON EDTO CFP", "SUMMARY STANDARD CFP")
+    )
+
+    assert summary["state"] == "verified"
+    assert summary["classification"] == "NON EDTO"
+    assert summary["source_classification"] == "STANDARD"
 
 
 def test_excess_breakdown_is_kept_when_printed():

@@ -784,7 +784,15 @@ def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
         "plwt": _int_group(text, r"PLWT\s+(\d+)"),
     }
 
-    classification_match = re.search(r"SUMMARY\s+(NON\s+EDTO|EDTO)\s+CFP", text)
+    classification_match = re.search(
+        r"SUMMARY\s+(STANDARD|NON\s+EDTO|EDTO)\s+CFP",
+        text,
+    )
+    source_classification = (
+        re.sub(r"\s+", " ", classification_match.group(1)).strip().upper()
+        if classification_match
+        else None
+    )
     wind_match = re.search(r"CRZ\s+COMP\s+([PM])\s*0*(\d+)", text)
     alternate_match = re.search(r"ALTN\s+([A-Z]{3})\s+\(([A-Z]{4})\)", text)
 
@@ -867,9 +875,14 @@ def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
 
     return {
         "state": "verified" if not discrepancies else "review_required",
+        # Lido prints both "SUMMARY NON EDTO CFP" and "SUMMARY STANDARD
+        # CFP" for plans where EDTO does not apply. Keep a normalized value
+        # for decision gates while retaining the exact printed label so the
+        # report never rewrites STANDARD as though the source said otherwise.
         "classification": (
-            classification_match.group(1).replace("  ", " ") if classification_match else None
+            "NON EDTO" if source_classification == "STANDARD" else source_classification
         ),
+        "source_classification": source_classification,
         "ground_miles_nm": _int_group(text, r"GND\s+MILES\s+(\d+)"),
         "air_miles_nm": _int_group(text, r"AIR\s+MILES\s+(\d+)"),
         "cruise_wind_component_kt": (

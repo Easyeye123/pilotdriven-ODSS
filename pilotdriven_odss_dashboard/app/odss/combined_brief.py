@@ -378,6 +378,12 @@ def _edto_classification(flight: dict[str, Any]) -> str:
     return "EDTO" if (flight.get("edto") or {}).get("sectors") else ""
 
 
+def _edto_source_classification(flight: dict[str, Any]) -> str:
+    fuel_summary = flight.get("fuel_summary") or {}
+    source = str(fuel_summary.get("source_classification") or "").strip().upper()
+    return source or _edto_classification(flight)
+
+
 def _edto_gate_label(flight: dict[str, Any]) -> str:
     classification = _edto_classification(flight)
     if classification.startswith("NON"):
@@ -464,8 +470,11 @@ def _gate_lines(
         else "No deferred item on CFP page 1"
     )
     classification = _edto_classification(flight)
+    source = _edto_source_classification(flight)
     edto_line = (
-        f"CFP classified {classification} CFP"
+        "CFP page 1: SUMMARY STANDARD CFP (non-EDTO)"
+        if source == "STANDARD" and classification.startswith("NON")
+        else f"CFP classified {classification} CFP"
         if classification
         else "CFP classification requires review"
     )
@@ -880,10 +889,16 @@ def _edto_operational_rows(
     fuel_summary: dict[str, Any],
 ) -> list[tuple[str, str]]:
     """Pilot-readable EDTO facts already parsed from the uploaded CFP."""
-    rows: list[tuple[str, str]] = [("CLASSIFICATION", (
-        f"CFP page 1: SUMMARY {classification} CFP."
-        if classification
+    source = str(fuel_summary.get("source_classification") or classification).strip().upper()
+    source_sentence = (
+        "CFP page 1: SUMMARY STANDARD CFP (non-EDTO)."
+        if source == "STANDARD" and classification.startswith("NON")
+        else f"CFP page 1: SUMMARY {source} CFP."
+        if source
         else "CFP classification requires review."
+    )
+    rows: list[tuple[str, str]] = [("CLASSIFICATION", (
+        source_sentence
     ))]
     sectors = edto_view.get("sectors") or []
     for index, sector in enumerate(sectors[:3], start=1):
@@ -1532,6 +1547,7 @@ def draw_alternates_page(
     )
     summary_rows = edto_rows[:-1]
     summary_h = min(150.0, 18.0 + len(summary_rows) * 12.0)
+    source_classification = _edto_source_classification(flight)
     crop = crop_source_region(
         source_pdf_path,
         needle="EDTO INFORMATION",
@@ -1541,7 +1557,11 @@ def draw_alternates_page(
         full_width=True,
     ) or crop_source_region(
         source_pdf_path,
-        needle="SUMMARY EDTO CFP",
+        needle=(
+            f"SUMMARY {source_classification} CFP"
+            if source_classification
+            else "SUMMARY EDTO CFP"
+        ),
         page_hint=0,
         pad_y=8,
         max_pages=6,
