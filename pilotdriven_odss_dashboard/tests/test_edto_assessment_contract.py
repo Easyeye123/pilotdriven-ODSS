@@ -119,6 +119,36 @@ def test_sq23_positive_edto_requires_parsed_operational_evidence() -> None:
     assert briefing["edto"]["airports"][0]["airport"] == "WIMM"
 
 
+def test_edto_section_continuation_page_preserves_every_sector_and_airport() -> None:
+    pages = _lido_pages(
+        "SQ24",
+        """EDTO INFORMATION:
+       7.17 N4125.4 RJCC
+ENTRY1      E15100.4
+       8.40 N4859.9 PASY
+EXIT1       E16437.2
+      10.09 N5626.2 PASY
+ENTRY2      W17533.1
+""",
+    )
+    pages.insert(
+        2,
+        """      10.11 N5634.7 PACD
+EXIT2       W17503.9
+EDTO ENROUTE ALTN AIRPORTS:
+RJCC 1157-1706 19R CAT3B 220FT/950M
+PANC 1527-2123 07R CAT3B 220FT/982M
+""",
+    )
+
+    flight = parse_lido(pages, "SQ24-multipage-controlled-cfp.pdf")
+
+    assert [sector["number"] for sector in flight["edto"]["sectors"]] == [1, 2]
+    assert flight["edto"]["entry_actm_minutes"] == 437
+    assert flight["edto"]["exit_actm_minutes"] == 520
+    assert [item["airport"] for item in flight["edto"]["airports"]] == ["RJCC", "PANC"]
+
+
 def test_empty_edto_section_fails_closed_to_review_required() -> None:
     flight = parse_lido(
         _lido_pages("SQ722", "EDTO INFORMATION"),

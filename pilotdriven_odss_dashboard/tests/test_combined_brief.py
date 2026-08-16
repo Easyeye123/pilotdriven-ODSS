@@ -12,7 +12,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 
 from generate_visual_samples import sample_findings, sample_flight
 
-from app.odss.combined_brief import render_combined_briefing
+from app.odss.combined_brief import (
+    T_BODY,
+    T_CARD_HEAD,
+    T_MICRO,
+    T_SMALL,
+    render_combined_briefing,
+)
 from app.odss.parser import parse_page1_fuel_summary
 from app.odss.timing import build_timing_view
 
@@ -119,6 +125,90 @@ def test_the_open_control_appears_once_per_gate(rendered):
     first = rendered[0].get_text()
     # Six gates, six OPEN controls — a doubled draw would double the count.
     assert first.count("OPEN >") == 6
+
+
+def test_report_copy_uses_a_cockpit_readable_minimum_scale():
+    # The first +20% pass still left the dense report copy at 6.5 pt. Keep the
+    # reusable scale above that floor so a later layout edit cannot quietly
+    # make the generated briefing tiny again.
+    assert T_CARD_HEAD >= 9.2
+    assert T_BODY >= 9.2
+    assert T_SMALL >= 8.0
+    assert T_MICRO >= 7.2
+
+
+def test_rendered_report_content_never_shrinks_below_the_readable_floor(rendered):
+    too_small = []
+    for page_number, page in enumerate(rendered, start=1):
+        for block in page.get_text("dict").get("blocks", []):
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    text = str(span.get("text") or "").strip()
+                    top = float(span.get("bbox", (0, 0, 0, 0))[1])
+                    if text and 65 < top < page.rect.height - 30 and span["size"] < 7.15:
+                        too_small.append((page_number, text, span["size"]))
+    assert not too_small, too_small[:20]
+
+
+def test_every_detail_page_has_a_real_overview_return_link(rendered):
+    assert "BACK TO OVERVIEW" not in rendered[0].get_text()
+    for page in rendered[1:]:
+        assert "BACK TO OVERVIEW" in page.get_text()
+        links = page.get_links()
+        assert any(
+            (link.get("kind") == fitz.LINK_GOTO and link.get("page") == 0)
+            or (link.get("kind") == fitz.LINK_NAMED and link.get("page") == "1")
+            for link in links
+        )
+
+
+def test_overview_return_link_does_not_cover_header_identity(rendered):
+    for page in rendered[1:]:
+        return_link = next(
+            link for link in page.get_links()
+            if (link.get("kind") == fitz.LINK_GOTO and link.get("page") == 0)
+            or (link.get("kind") == fitz.LINK_NAMED and link.get("page") == "1")
+        )
+        for label in ("BLOCK", "FLIGHT BRIEFING"):
+            for text_box in page.search_for(label):
+                assert (return_link["from"] & text_box).is_empty
+
+
+def test_edto_gate_label_agrees_with_the_cfp_classification(rendered):
+    first = rendered[0].get_text()
+    assert "CFP classified EDTO CFP" in first
+    assert "NON-EDTO" not in first
+
+
+def test_edto_page_prints_the_parsed_entry_and_exit(rendered):
+    second = rendered[1].get_text()
+    assert "ENTRY ACTM" in second
+    assert "EXIT ACTM" in second
+
+
+def test_missing_classification_never_defaults_to_edto(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = {}
+    flight["edto"] = {}
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "classification-review.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    text = "\n".join(page.get_text() for page in fitz.open(out))
+
+    assert "EDTO REVIEW" in text
+    assert "SUMMARY EDTO CFP" not in text
+
+
+def test_airport_identity_places_iata_beside_icao(rendered):
+    first = rendered[0].get_text()
+    assert "BRU / EBBR" in first
+    assert "SIN / WSSS" in first
+
+
+def test_hazard_page_states_the_direct_vaac_centre_coverage(rendered):
+    hazard = "\n".join(page.get_text() for page in rendered)
+    assert "VAAC CENTRES" in hazard
+    assert "0/9 reached" in hazard
 
 
 def test_publication_filename_carries_flight_and_expanded_date():

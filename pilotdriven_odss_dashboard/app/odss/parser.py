@@ -347,14 +347,41 @@ def _parse_edto_sectors(edto_text: str) -> list[dict[str, Any]]:
     boundary_pattern = re.compile(
         r"^\s*(?P<actm>\d{1,2}\.\d{2})\s+"
         r"(?P<lat_h>[NS])(?P<lat_deg>\d{2})(?P<lat_min>\d{2}(?:\.\d+)?)\b[^\n]*\n"
-        r"\s*(?P<kind>ENTRY|EXIT)(?P<number>\d+)\s+"
+        # Lido prints either numbered boundaries (ENTRY1/EXIT1) or an
+        # unnumbered dotted form (ENTRY...../EXIT .....), depending on the
+        # route and CFP revision. Both are the same operational declaration.
+        r"\s*(?P<kind>ENTRY|EXIT)(?P<number>\d+)?\s*\.*\s+"
         r"(?P<lon_h>[EW])(?P<lon_deg>\d{3})(?P<lon_min>\d{2}(?:\.\d+)?)\b",
         re.MULTILINE,
     )
     sectors_by_number: dict[int, dict[str, Any]] = {}
+    next_implicit_number = 1
+    open_implicit_number: int | None = None
     for match in boundary_pattern.finditer(edto_text):
-        number = int(match.group("number"))
         kind = match.group("kind").lower()
+        printed_number = match.group("number")
+        if printed_number:
+            number = int(printed_number)
+        elif kind == "entry":
+            while next_implicit_number in sectors_by_number:
+                next_implicit_number += 1
+            number = next_implicit_number
+            open_implicit_number = number
+        else:
+            unmatched = [
+                number
+                for number, sector in sectors_by_number.items()
+                if sector.get("entry") and not sector.get("exit")
+            ]
+            number = (
+                open_implicit_number
+                if open_implicit_number in unmatched
+                else unmatched[-1]
+                if unmatched
+                else next_implicit_number
+            )
+            open_implicit_number = None
+            next_implicit_number = max(next_implicit_number, number + 1)
         point = {
             "name": f"{match.group('kind')}{number}",
             "actm_minutes": actm_minutes(match.group("actm")),
@@ -979,10 +1006,24 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         ),
         None,
     )
-    edto_text = cfp_pages[edto_page_index] if edto_page_index is not None else ""
+    # Long-haul EDTO tables can continue onto the following CFP page (SQ24's
+    # third sector and alternate-airport table are one real example). The CFP
+    # section is already bounded by _detect_sections, and the EDTO patterns are
+    # anchored to their printed row shapes, so retain all continuation pages.
+    edto_text = (
+        "\n".join(cfp_pages[edto_page_index:])
+        if edto_page_index is not None
+        else ""
+    )
     edto_sectors = _parse_edto_sectors(edto_text)
-    entry_match = re.search(r"\n\s*(\d{1,2}\.\d{2})\s+N.*\nENTRY", edto_text)
-    exit_match = re.search(r"\n\s*(\d{1,2}\.\d{2})\s+N.*\nEXIT", edto_text)
+    entry_match = re.search(
+        r"\n\s*(\d{1,2}\.\d{2})\s+[NS].*\n\s*ENTRY(?:\d+|\s*\.*)",
+        edto_text,
+    )
+    exit_match = re.search(
+        r"\n\s*(\d{1,2}\.\d{2})\s+[NS].*\n\s*EXIT(?:\d+|\s*\.*)",
+        edto_text,
+    )
     legacy_etp_actm = [
         actm_minutes(match.group(1))
         for match in re.finditer(

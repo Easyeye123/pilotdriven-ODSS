@@ -12,8 +12,10 @@ from app.odss.direct_vaac_anchorage import (
     parse_anchorage_vaac_listing,
 )
 from app.odss.vaa import (
+    ICAO_VAAC_CENTRES,
     merge_vaac_snapshots,
     mounted_vaac_centres,
+    vaac_centre_ledger,
 )
 
 
@@ -181,6 +183,35 @@ def test_centres_are_mounted_by_token(monkeypatch) -> None:
     for disabled in ("", "disabled", "off", "none"):
         monkeypatch.setenv("ODSS_VAAC_ADVISORY_SOURCE", disabled)
         assert mounted_vaac_centres() == []
+
+
+def test_global_coverage_ledger_always_names_all_nine_icao_vaac_centres() -> None:
+    assert ICAO_VAAC_CENTRES == (
+        "ANCHORAGE",
+        "BUENOS AIRES",
+        "DARWIN",
+        "LONDON",
+        "MONTREAL",
+        "TOKYO",
+        "TOULOUSE",
+        "WASHINGTON",
+        "WELLINGTON",
+    )
+    ledger = vaac_centre_ledger(
+        [{
+            "centre": "TOKYO",
+            "provider": "jma-tokyo-vaac",
+            "status": "available",
+            "coverage_status": "tokyo_vaac_area_direct_advisories",
+            "advisory_count": 1,
+            "source_url": "https://example.invalid/tokyo",
+        }],
+        [{"token": "jma-tokyo", "centre": "TOKYO", "provider": "jma-tokyo-vaac"}],
+    )
+
+    assert [row["centre"] for row in ledger] == list(ICAO_VAAC_CENTRES)
+    assert next(row for row in ledger if row["centre"] == "TOKYO")["status"] == "available"
+    assert next(row for row in ledger if row["centre"] == "DARWIN")["status"] == "not_mounted"
 
 
 def test_an_unknown_token_mounts_nothing_rather_than_guessing(monkeypatch) -> None:

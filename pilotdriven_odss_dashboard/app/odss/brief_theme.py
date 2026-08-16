@@ -152,6 +152,18 @@ def local_time_segment(icao: Any, utc_value: Any) -> str | None:
     return f"{label} {local.strftime('%d %b %H%M').upper()} {offset_text}"
 
 
+def airport_code_label(icao: Any) -> str:
+    """Show the pinned IATA code beside ICAO without guessing either code."""
+    code = str(icao or "").strip().upper()
+    if not code:
+        return "----"
+    entry = _airport_local_registry().get(code)
+    iata = str((entry or {}).get("iata") or "").strip().upper()
+    if re.fullmatch(r"[A-Z]{3}", iata) and iata != code:
+        return f"{iata} / {code}"
+    return code
+
+
 def block_time_label(flight: dict[str, Any]) -> str | None:
     """Apply only the registered SQ/SIA STA-minus-STD block rule."""
     dep = _parse_utc(flight.get("scheduled_departure_utc"))

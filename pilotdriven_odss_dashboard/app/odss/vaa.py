@@ -795,6 +795,21 @@ def evaluate_vaa(
     return result
 
 
+# ICAO names nine VAAC areas of responsibility. Keep the complete ordered list
+# in every receipt: a centre that is not connected must stay visible as a gap,
+# not disappear merely because the deployment did not mount it.
+ICAO_VAAC_CENTRES = (
+    "ANCHORAGE",
+    "BUENOS AIRES",
+    "DARWIN",
+    "LONDON",
+    "MONTREAL",
+    "TOKYO",
+    "TOULOUSE",
+    "WASHINGTON",
+    "WELLINGTON",
+)
+
 # Each VAAC is mounted by its own token, so a deployment can run one centre or
 # several without the code knowing anything about a particular route. Tokens are
 # comma-separated in ODSS_VAAC_ADVISORY_SOURCE, e.g. "jma-tokyo,anchorage".
@@ -811,6 +826,9 @@ _VAAC_ALIASES: dict[str, str] = {
     "anchorage": "anchorage",
     "nws-anchorage": "anchorage",
     "pawu": "anchorage",
+    "wifs": "wifs-global",
+    "wifs-global": "wifs-global",
+    "all": "wifs-global",
 }
 _VAAC_DISABLED = {"", "disabled", "off", "none"}
 
@@ -821,13 +839,33 @@ def mounted_vaac_centres() -> list[dict[str, str]]:
     if raw in _VAAC_DISABLED:
         return []
     mounted: list[dict[str, str]] = []
-    seen: set[str] = set()
+    seen_centres: set[str] = set()
     for piece in raw.split(","):
         token = _VAAC_ALIASES.get(piece.strip())
-        if not token or token in seen:
+        if not token:
             continue
-        seen.add(token)
-        mounted.append({"token": token, **_VAAC_CENTRES[token]})
+        if token == "wifs-global":
+            for centre in ICAO_VAAC_CENTRES:
+                if centre in seen_centres:
+                    for entry in mounted:
+                        if entry["centre"] == centre:
+                            entry["fallback_token"] = (
+                                f"wifs-global:{centre.lower().replace(' ', '-')}"
+                            )
+                            break
+                    continue
+                seen_centres.add(centre)
+                mounted.append({
+                    "token": f"wifs-global:{centre.lower().replace(' ', '-')}",
+                    "centre": centre,
+                    "provider": "noaa-wifs-global-vaa",
+                })
+            continue
+        entry = _VAAC_CENTRES[token]
+        if entry["centre"] in seen_centres:
+            continue
+        seen_centres.add(entry["centre"])
+        mounted.append({"token": token, **entry})
     return mounted
 
 
@@ -837,6 +875,19 @@ def fetch_mounted_vaac_snapshots(
 ) -> list[dict[str, Any]]:
     """One snapshot per mounted centre, each tagged with the centre it came from."""
     snapshots: list[dict[str, Any]] = []
+    wifs_snapshot: dict[str, Any] | None = None
+
+    def wifs_for(centre: str) -> dict[str, Any]:
+        nonlocal wifs_snapshot
+        from .direct_vaac_wifs import (
+            live_wifs_global_vaac_snapshot,
+            wifs_centre_snapshot,
+        )
+
+        if wifs_snapshot is None:
+            wifs_snapshot = live_wifs_global_vaac_snapshot(flight)
+        return wifs_centre_snapshot(wifs_snapshot, centre)
+
     for entry in mounted:
         if entry["token"] == "jma-tokyo":
             from .direct_vaac import live_tokyo_vaac_snapshot
@@ -846,10 +897,68 @@ def fetch_mounted_vaac_snapshots(
             from .direct_vaac_anchorage import live_anchorage_vaac_snapshot
 
             snapshot = live_anchorage_vaac_snapshot(flight)
+        elif entry["token"].startswith("wifs-global:"):
+            snapshot = wifs_for(entry["centre"])
         else:  # pragma: no cover - guarded by mounted_vaac_centres
             continue
+        if entry.get("fallback_token") and snapshot.get("status") != "available":
+            fallback = wifs_for(entry["centre"])
+            if fallback.get("status") == "available":
+                snapshot = fallback
         snapshots.append({**snapshot, "centre": entry["centre"]})
     return snapshots
+
+
+def vaac_centre_ledger(
+    snapshots: list[dict[str, Any]],
+    mounted: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """All nine ICAO centres with reached, failed, or not-mounted truth state."""
+    mounted_by_centre = {entry["centre"]: entry for entry in mounted}
+    snapshots_by_centre: dict[str, dict[str, Any]] = {}
+    provider_centres = {
+        "jma-tokyo-vaac": "TOKYO",
+        "nws-anchorage-vaac": "ANCHORAGE",
+    }
+    for snapshot in snapshots:
+        centre = str(snapshot.get("centre") or "").strip().upper()
+        if not centre:
+            centre = provider_centres.get(str(snapshot.get("provider") or ""), "")
+        if centre in ICAO_VAAC_CENTRES:
+            snapshots_by_centre[centre] = snapshot
+
+    rows: list[dict[str, Any]] = []
+    for centre in ICAO_VAAC_CENTRES:
+        snapshot = snapshots_by_centre.get(centre)
+        mounted_entry = mounted_by_centre.get(centre)
+        if snapshot:
+            rows.append({
+                "centre": centre,
+                "provider": snapshot.get("provider"),
+                "status": snapshot.get("status") or "unavailable",
+                "coverage_status": snapshot.get("coverage_status") or "unavailable",
+                "advisory_count": snapshot.get("advisory_count") or 0,
+                "source_url": snapshot.get("source_url"),
+            })
+        elif mounted_entry:
+            rows.append({
+                "centre": centre,
+                "provider": mounted_entry.get("provider"),
+                "status": "unavailable",
+                "coverage_status": "fetch_not_returned",
+                "advisory_count": 0,
+                "source_url": None,
+            })
+        else:
+            rows.append({
+                "centre": centre,
+                "provider": None,
+                "status": "not_mounted",
+                "coverage_status": "not_mounted",
+                "advisory_count": 0,
+                "source_url": None,
+            })
+    return rows
 
 
 def merge_vaac_snapshots(
@@ -885,9 +994,9 @@ def merge_vaac_snapshots(
     return {
         "schema_version": "1.0",
         "status": status,
-        "provider": ",".join(
+        "provider": ",".join(dict.fromkeys(
             str(snapshot.get("provider")) for snapshot in snapshots if snapshot.get("provider")
-        ),
+        )),
         "centres": [snapshot.get("centre") for snapshot in snapshots],
         "coverage_status": "multi_vaac_area_direct_advisories",
         "retrieved_at_utc": max(
@@ -962,19 +1071,9 @@ def assess_volcanic_ash(
         and direct_snapshot.get("status") in {"available", "partial"}
     )
     review["direct_vaac_snapshot"] = direct_snapshot
-    # One entry per mounted centre, so a pilot receipt can name which VAAC was
-    # reached and which was not. A centre that failed is visible as a gap.
-    review["vaac_centre_ledger"] = [
-        {
-            "centre": item.get("centre"),
-            "provider": item.get("provider"),
-            "status": item.get("status"),
-            "coverage_status": item.get("coverage_status"),
-            "advisory_count": item.get("advisory_count") or 0,
-            "source_url": item.get("source_url"),
-        }
-        for item in direct_snapshots
-    ]
+    # Every ICAO centre is named. Unmounted centres remain explicit gaps rather
+    # than vanishing from the receipt and making partial coverage look global.
+    review["vaac_centre_ledger"] = vaac_centre_ledger(direct_snapshots, mounted)
     review["coverage_ledger"] = {
         "active_international_sigmet": {
             "available": snapshot.get("provider") == "noaa-awc-international-sigmet",
@@ -985,6 +1084,7 @@ def assess_volcanic_ash(
             "provider": (direct_snapshot or {}).get("provider"),
             "coverage_status": (direct_snapshot or {}).get("coverage_status"),
             "mounted_centres": [item["token"] for item in mounted],
+            "centre_count": len(ICAO_VAAC_CENTRES),
             "reached_centres": [
                 item.get("centre")
                 for item in direct_snapshots
@@ -1027,8 +1127,10 @@ __all__ = [
     "fetch_awc_snapshot",
     "fetch_mounted_vaac_snapshots",
     "filter_awc_snapshot",
+    "ICAO_VAAC_CENTRES",
     "live_awc_snapshot",
     "live_vaa_snapshot",
     "merge_vaac_snapshots",
     "mounted_vaac_centres",
+    "vaac_centre_ledger",
 ]

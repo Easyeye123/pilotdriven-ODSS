@@ -1363,6 +1363,29 @@ EXIT2       E09313.0
     assert sectors[1]["etp_actm_minutes"] == [913]
 
 
+def test_edto_parser_pairs_unnumbered_southern_hemisphere_boundaries() -> None:
+    sectors = _parse_edto_sectors(
+        """EDTO INFORMATION:
+       2.06 S1335.5 WARR
+ENTRY.....  E10926.3
+       2.06 S1335.5 WIII 124 230 479
+ 1E    ..... E10926.3 WIII 124 230 479
+       2.26 S1609.4 YPLM
+EXIT .....  E11020.9
+"""
+    )
+
+    assert len(sectors) == 1
+    assert sectors[0]["number"] == 1
+    assert sectors[0]["entry_actm_minutes"] == 126
+    assert sectors[0]["exit_actm_minutes"] == 146
+    assert sectors[0]["entry"]["name"] == "ENTRY1"
+    assert sectors[0]["exit"]["name"] == "EXIT1"
+    assert sectors[0]["entry"]["latitude"] < 0
+    assert sectors[0]["exit"]["latitude"] < 0
+    assert sectors[0]["entry"]["longitude"] > 0
+
+
 def test_bobcat_allocation_accepts_lido_commas_and_suffix() -> None:
     pages = [
         """SUMMARY EDTO CFP

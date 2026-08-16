@@ -589,6 +589,8 @@ def _pilot_route_map_label(value: Any) -> str:
 
 
 def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, width: float, height: float) -> None:
+    map_label_size = 7.2
+    map_note_size = 7.2
     register_fonts()
     snapshot_path = route_map.get("snapshot_path")
     if snapshot_path:
@@ -608,7 +610,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
                 mask="auto",
             )
             canvas.setFillColor(colors.HexColor("#E8F2FF"))
-            canvas.setFont(SANS, 4.8)
+            canvas.setFont(SANS, map_note_size)
             label = _pilot_route_map_label(route_map.get("snapshot_label"))
             canvas.drawString(
                 x + 5,
@@ -678,7 +680,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
         "edto": colors.HexColor("#55D6BE"),
         "route": colors.HexColor("#DCEEFF"),
     }
-    canvas.setFont(SANS_BOLD, 5.8)
+    canvas.setFont(SANS_BOLD, map_label_size)
     for point in points:
         px, py = x + point["x"], y + point["y"]
         canvas.setFillColor(role_colour.get(point.get("role"), colors.HexColor("#DCEEFF")))
@@ -707,7 +709,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
     for index, point in labelled:
         px, py = x + point["x"], y + point["y"]
         label = _shorten(point.get("display_name"), 16)
-        text_width = pdfmetrics.stringWidth(label, SANS_BOLD, 5.8)
+        text_width = pdfmetrics.stringWidth(label, SANS_BOLD, map_label_size)
         right_side = px < x + width * 0.72
         anchors = (
             [(px + 3.5, py + 4.0, "left"), (px + 3.5, py - 8.0, "left")]
@@ -723,7 +725,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
         selected: tuple[float, float, str, tuple[float, float, float, float]] | None = None
         for tx, ty, anchor in anchors:
             left = tx if anchor == "left" else tx - text_width
-            box = (left - 1.0, ty - 1.5, left + text_width + 1.0, ty + 5.8)
+            box = (left - 1.0, ty - 1.5, left + text_width + 1.0, ty + map_label_size)
             within_map = (
                 box[0] >= x + 2
                 and box[2] <= x + width - 2
@@ -752,7 +754,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
             canvas.drawRightString(tx, ty, label)
         occupied.append(box)
     canvas.setFillColor(colors.HexColor("#8396AB"))
-    canvas.setFont(SANS, 4.8)
+    canvas.setFont(SANS, map_note_size)
     canvas.drawString(x + 5, y + 4, str(route_map.get("note") or ""))
     canvas.restoreState()
 
