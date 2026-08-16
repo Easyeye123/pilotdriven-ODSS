@@ -396,10 +396,65 @@ def _first_title(findings: list[dict[str, Any]], engines: set[str]) -> str | Non
     return None
 
 
+def _unique_text(values: list[Any]) -> list[str]:
+    """Keep first-seen display text while collapsing repeated CFP wording."""
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        key = " ".join(text.upper().split())
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
+
+
+def _group_deferred_items(flight: dict[str, Any]) -> list[dict[str, Any]]:
+    """Group separate defect lines governed by the same MEL/CDL reference.
+
+    A CFP can list two cabin defects under one MEL reference.  They remain two
+    source facts, but repeating the same reference in the decision gate makes
+    the report look as though the parser duplicated a row.  This display view
+    keeps both descriptions/remarks while presenting the governing reference
+    once.  The raw parser payload is left unchanged for audit use.
+    """
+    grouped: dict[tuple[str, str] | tuple[str, int], list[dict[str, Any]]] = {}
+    order: list[tuple[str, str] | tuple[str, int]] = []
+    for index, source in enumerate(flight.get("deferred_items") or []):
+        item = dict(source)
+        item_type = str(item.get("item_type") or "ITEM").strip().upper()
+        reference = str(item.get("reference") or "").strip().upper()
+        key: tuple[str, str] | tuple[str, int] = (
+            (item_type, reference) if reference else ("__ROW__", index)
+        )
+        if key not in grouped:
+            grouped[key] = []
+            order.append(key)
+        grouped[key].append(item)
+
+    result: list[dict[str, Any]] = []
+    for key in order:
+        source_items = grouped[key]
+        merged = dict(source_items[0])
+        descriptions = _unique_text([item.get("description") for item in source_items])
+        remarks = _unique_text([item.get("company_remark") for item in source_items])
+        penalties = _unique_text([item.get("penalty") for item in source_items])
+        merged["description"] = descriptions[0] if descriptions else ""
+        merged["company_remark"] = " | ".join([
+            *remarks,
+            *descriptions[1:],
+        ]) or None
+        merged["penalty"] = " | ".join(penalties) or None
+        merged["source_item_count"] = len(source_items)
+        result.append(merged)
+    return result
+
+
 def _gate_lines(
     briefing: dict[str, Any], flight: dict[str, Any], findings: list[dict[str, Any]]
 ) -> dict[str, str]:
-    deferred = flight.get("deferred_items") or []
+    deferred = _group_deferred_items(flight)
     deferred_line = (
         "; ".join(
             f"{item.get('item_type')} {item.get('reference')}".strip()
@@ -916,7 +971,7 @@ def draw_time_gates_page(
         comm_rows = [("FIR", "No early FIR contact requirement derived from this CFP.")]
     _kv_card(canvas, MARGIN + card_w + 10, 30, card_w, card_h, title="FIR / NEXT CONTACT", accent=COMMS_TEAL, rows=comm_rows, open_target="sec_comms")
 
-    deferred = flight.get("deferred_items") or []
+    deferred = _group_deferred_items(flight)
     operating_rows = [
         ("MEL/CDL", "; ".join(f"{i.get('item_type')} {i.get('reference')}" for i in deferred[:2]) or "No deferred item on CFP page 1."),
         ("DEP", str((briefing.get("departure") or {}).get("runway") or "Runway review.")),
@@ -1373,13 +1428,14 @@ def draw_mel_cdl_page(
     y = draw_section_title(canvas, content_top, "MEL/CDL and CDDL")
 
     full_w = width - 2 * MARGIN
-    deferred = flight.get("deferred_items") or []
+    deferred = _group_deferred_items(flight)
     half_w = (full_w - 12) / 2
     card_h = 92.0
     accents = (DEPARTURE, EDTO_GREEN, DESTINATION, COMMS_TEAL)
     cards = deferred[:2] if deferred else [None]
     for index, item in enumerate(cards):
-        cx = MARGIN + index * (half_w + 12)
+        card_w = full_w if len(cards) == 1 else half_w
+        cx = MARGIN + index * (card_w + 12)
         if item is None:
             inner = panel(canvas, cx, y - card_h, full_w, card_h, title="DEFERRED ITEMS", accent=EDTO_GREEN, title_colour=BG)
             canvas.setFillColor(TEXT_SECONDARY)
@@ -1389,7 +1445,7 @@ def draw_mel_cdl_page(
         item_type = str(item.get("item_type") or "ITEM")
         reference = str(item.get("reference") or "")
         title = f"{item_type} {reference}".strip()
-        inner = panel(canvas, cx, y - card_h, half_w, card_h, title=title, accent=accents[index % 4], title_colour=BG if accents[index % 4] in (EDTO_GREEN, COMMS_TEAL, WEATHER_AMBER) else colors.white)
+        inner = panel(canvas, cx, y - card_h, card_w, card_h, title=title, accent=accents[index % 4], title_colour=BG if accents[index % 4] in (EDTO_GREEN, COMMS_TEAL, WEATHER_AMBER) else colors.white)
         ix, iy, iw, ih = inner
         headline = str(item.get("description") or "").strip().upper() or "SEE CROPPED SOURCE BELOW"
         canvas.setFillColor(TEXT)
@@ -1659,7 +1715,10 @@ def draw_hazard_page(
 
     full_w = width - 2 * MARGIN
     half_w = (full_w - 12) / 2
-    top_h = 96.0
+    # The manifest names every VAAC centre as well as the aggregate receipt.
+    # Reserve three compact centre rows so unavailable coverage cannot vanish
+    # behind a truthful-but-opaque "2/9 reached" count.
+    top_h = 128.0
 
     hazard = next(
         (f for f in findings if f.get("engine") in {"sigmet", "vaa", "tropical_cyclone"}),
@@ -1720,9 +1779,32 @@ def draw_hazard_page(
         canvas.setFont(SANS_BOLD, T_MICRO)
         _draw_string_fitted(canvas, ix2 + 96, row_y, status.replace("_", " "), SANS_BOLD, T_MICRO, half_w - 130, EDTO_GREEN if ok else WEATHER_AMBER)
         row_y -= 12
+    status_copy = {
+        "available": "reached",
+        "partial": "partial",
+        "unavailable": "unavailable",
+        "not_mounted": "not mounted",
+    }
+    for start in range(0, len(vaac_ledger), 3):
+        centre_line = " | ".join(
+            f"{str(item.get('centre') or 'UNKNOWN').upper()}: "
+            f"{status_copy.get(str(item.get('status') or '').lower(), 'unavailable')}"
+            for item in vaac_ledger[start:start + 3]
+        )
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(MONO, T_MICRO)
+        _draw_string_fitted(
+            canvas, ix2, row_y, centre_line,
+            MONO, T_MICRO, half_w - 34, TEXT_SECONDARY,
+        )
+        row_y -= 10
     canvas.setFillColor(TEXT_MUTED)
     canvas.setFont(SANS, T_MICRO)
-    canvas.drawString(ix2, row_y, "Absent data is reported, never assumed clear - current SIGMET/radar remain controlling.")
+    _draw_string_fitted(
+        canvas, ix2, row_y,
+        "Absent data is reported, never assumed clear - current SIGMET/radar remain controlling.",
+        SANS, T_MICRO, half_w - 34, TEXT_MUTED,
+    )
 
     # WAFC fixed-time products strip.
     strip_top = y - top_h - 10

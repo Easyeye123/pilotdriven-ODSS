@@ -127,6 +127,36 @@ def test_the_open_control_appears_once_per_gate(rendered):
     assert first.count("OPEN >") == 6
 
 
+def test_repeated_mel_reference_is_one_gate_and_one_detail_group(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["deferred_items"] = [
+        {
+            "item_type": "MEL",
+            "reference": "25-20-50A",
+            "description": "FIRST CHILLING COMPARTMENT",
+            "company_remark": "FIRST GALLEY LOCATION",
+        },
+        {
+            "item_type": "MEL",
+            "reference": "25-20-50A",
+            "description": "SECOND CHILLING COMPARTMENT",
+            "company_remark": "SECOND GALLEY LOCATION",
+        },
+    ]
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "grouped-deferred.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    pages = fitz.open(out)
+
+    assert pages[0].get_text().count("MEL 25-20-50A") == 1
+    assert pages[1].get_text().count("MEL 25-20-50A") == 1
+    mel_page = pages[4].get_text()
+    assert mel_page.count("MEL 25-20-50A") == 1
+    assert "FIRST CHILLING COMPARTMENT" in mel_page
+    assert "SECOND CHILLING COMPARTMENT" in mel_page
+
+
 def test_report_copy_uses_a_cockpit_readable_minimum_scale():
     # The first +20% pass still left the dense report copy at 6.5 pt. Keep the
     # reusable scale above that floor so a later layout edit cannot quietly
@@ -209,6 +239,42 @@ def test_hazard_page_states_the_direct_vaac_centre_coverage(rendered):
     hazard = "\n".join(page.get_text() for page in rendered)
     assert "VAAC CENTRES" in hazard
     assert "0/9 reached" in hazard
+
+
+def test_hazard_page_names_each_vaac_centre_and_truth_state(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    centres = (
+        "ANCHORAGE",
+        "BUENOS AIRES",
+        "DARWIN",
+        "LONDON",
+        "MONTREAL",
+        "TOKYO",
+        "TOULOUSE",
+        "WASHINGTON",
+        "WELLINGTON",
+    )
+    flight["vaa_review"] = {
+        "status": "review_required",
+        "vaac_centre_ledger": [
+            {
+                "centre": centre,
+                "status": "available" if centre in {"ANCHORAGE", "TOKYO"} else "unavailable",
+            }
+            for centre in centres
+        ],
+    }
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "vaac-receipt.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    hazard = fitz.open(out)[7].get_text().upper()
+
+    assert "2/9 REACHED" in hazard
+    for centre in centres:
+        assert centre in hazard
+    assert "ANCHORAGE: REACHED" in hazard
+    assert "LONDON: UNAVAILABLE" in hazard
 
 
 def test_publication_filename_carries_flight_and_expanded_date():
