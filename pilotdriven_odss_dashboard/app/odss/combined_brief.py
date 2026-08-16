@@ -60,6 +60,10 @@ T_VALUE = 12.5        # stat values
 T_SMALL = 8.0
 T_MICRO = 7.2
 
+# Keep MEL/CDL cards at the cockpit-readable type scale.  More governing
+# references create continuation pages instead of being dropped or squeezed.
+MEL_CDL_GROUPS_PER_PAGE = 4
+
 
 _FIT_FLOOR = T_MICRO
 
@@ -1203,6 +1207,7 @@ def crop_source_region(
     source_pdf_path: str | None,
     *,
     needle: str,
+    end_needle: str | None = None,
     page_hint: int = 0,
     pad_x: float = 26.0,
     pad_y: float = 16.0,
@@ -1230,6 +1235,23 @@ def crop_source_region(
                 rect = hits[0]
                 for extra in hits[1:]:
                     rect |= extra
+                bottom = min(page.rect.y1, rect.y1 + pad_y * 5)
+                if end_needle:
+                    following_end_hits = [
+                        hit for hit in page.search_for(end_needle)
+                        if hit.y0 > rect.y1
+                    ]
+                    if following_end_hits:
+                        # Stop immediately before the next printed section.
+                        # This preserves every line in variable-length source
+                        # blocks without pulling the route body into the crop.
+                        bottom = min(
+                            page.rect.y1,
+                            max(
+                                rect.y1 + pad_y,
+                                min(hit.y0 for hit in following_end_hits) - 2,
+                            ),
+                        )
                 if full_width:
                     # A monospace text block reads as a column; crop the whole
                     # printed column so lines are never cut mid-word.
@@ -1237,14 +1259,14 @@ def crop_source_region(
                         page.rect.x0 + 24,
                         max(0, rect.y0 - pad_y),
                         page.rect.x1 - 24,
-                        min(page.rect.y1, rect.y1 + pad_y * 5),
+                        bottom,
                     )
                 else:
                     clip = fitz.Rect(
                         max(0, rect.x0 - pad_x),
                         max(0, rect.y0 - pad_y),
                         min(page.rect.x1, rect.x1 + pad_x * 3.5),
-                        min(page.rect.y1, rect.y1 + pad_y * 5),
+                        bottom,
                     )
                 pixmap = page.get_pixmap(clip=clip, dpi=dpi)
                 return {
@@ -1432,6 +1454,9 @@ def draw_mel_cdl_page(
     page_number: int,
     page_count: int,
     source_pdf_path: str | None,
+    deferred_items: list[dict[str, Any]] | None = None,
+    section_page_number: int = 1,
+    section_page_count: int = 1,
 ) -> None:
     width, height = PAGE_SIZE
     content_top = draw_page_chrome(
@@ -1439,36 +1464,59 @@ def draw_mel_cdl_page(
         page_number=page_number, page_count=page_count,
         source_line="Cropped CFP page 1 deferred-item block | controlled CDL index where mounted",
     )
-    canvas.bookmarkPage("sec_mel_cdl")
-    y = draw_section_title(canvas, content_top, "MEL/CDL and CDDL")
+    if section_page_number == 1:
+        canvas.bookmarkPage("sec_mel_cdl")
+    section_suffix = (
+        f" ({section_page_number}/{section_page_count})"
+        if section_page_count > 1
+        else ""
+    )
+    y = draw_section_title(canvas, content_top, f"MEL/CDL and CDDL{section_suffix}")
 
     full_w = width - 2 * MARGIN
-    deferred = _group_deferred_items(flight)
+    deferred = (
+        list(deferred_items)
+        if deferred_items is not None
+        else _group_deferred_items(flight)
+    )
     half_w = (full_w - 12) / 2
-    card_h = 92.0
     accents = (DEPARTURE, EDTO_GREEN, DESTINATION, COMMS_TEAL)
-    cards = deferred[:2] if deferred else [None]
+    cards = deferred if deferred else [None]
+    if len(cards) > MEL_CDL_GROUPS_PER_PAGE:
+        raise ValueError(
+            "MEL/CDL page received more than its readable card capacity; "
+            "paginate the grouped items before drawing."
+        )
+    row_count = 1 if len(cards) <= 2 else 2
+    row_gap = 10.0
+    card_h = 92.0 if row_count == 1 else 82.0
+    cards_h = card_h * row_count + row_gap * (row_count - 1)
     for index, item in enumerate(cards):
-        card_w = full_w if len(cards) == 1 else half_w
-        cx = MARGIN + index * (card_w + 12)
+        row = index // 2
+        column = index % 2
+        is_single_in_row = index == len(cards) - 1 and len(cards) % 2 == 1
+        card_w = full_w if is_single_in_row else half_w
+        cx = MARGIN if is_single_in_row else MARGIN + column * (half_w + 12)
+        card_top = y - row * (card_h + row_gap)
+        card_bottom = card_top - card_h
         if item is None:
-            inner = panel(canvas, cx, y - card_h, full_w, card_h, title="DEFERRED ITEMS", accent=EDTO_GREEN, title_colour=BG)
+            inner = panel(canvas, cx, card_bottom, full_w, card_h, title="DEFERRED ITEMS", accent=EDTO_GREEN, title_colour=BG)
             canvas.setFillColor(TEXT_SECONDARY)
             canvas.setFont(SANS_BOLD, T_SMALL)
-            canvas.drawString(inner[0], y - card_h / 2 - 8, "No MEL, CDL or CDDL item is listed on CFP page 1.")
+            canvas.drawString(inner[0], card_top - card_h / 2 - 8, "No MEL, CDL or CDDL item is listed on CFP page 1.")
             break
         item_type = str(item.get("item_type") or "ITEM")
         reference = str(item.get("reference") or "")
         title = f"{item_type} {reference}".strip()
-        inner = panel(canvas, cx, y - card_h, card_w, card_h, title=title, accent=accents[index % 4], title_colour=BG if accents[index % 4] in (EDTO_GREEN, COMMS_TEAL, WEATHER_AMBER) else colors.white)
+        inner = panel(canvas, cx, card_bottom, card_w, card_h, title=title, accent=accents[index % 4], title_colour=BG if accents[index % 4] in (EDTO_GREEN, COMMS_TEAL, WEATHER_AMBER) else colors.white)
         ix, iy, iw, ih = inner
         headline = str(item.get("description") or "").strip().upper() or "SEE CROPPED SOURCE BELOW"
         canvas.setFillColor(TEXT)
         canvas.setFont(MONO_BOLD, 9.0)
-        _draw_string_fitted(canvas, ix, y - 34, headline[:64], MONO_BOLD, 9.0, iw, TEXT)
+        _draw_string_fitted(canvas, ix, card_top - 34, headline[:64], MONO_BOLD, 9.0, iw, TEXT)
         remark = str(item.get("company_remark") or "").strip()
         body = remark or "Exact operational conditions remain governed by the cropped source section below."
-        row_y = y - 48
+        row_y = card_top - 48
         for line in _wrap(body, SANS, T_SMALL, iw)[:3]:
             canvas.setFillColor(TEXT_SECONDARY)
             canvas.setFont(SANS, T_SMALL)
@@ -1480,14 +1528,21 @@ def draw_mel_cdl_page(
         canvas.drawString(ix, iy + 4, penalty or "No take-off, enroute or fuel penalty stated in the mounted source.")
 
     # Cropped authoritative sources.
-    crops_top = y - card_h - 10
+    crops_top = y - cards_h - 10
     crops_h = crops_top - 30
     inner = panel(canvas, MARGIN, 30, full_w, crops_h, title="CROPPED AUTHORITATIVE SOURCE SECTIONS", accent=DESTINATION)
     ix, iy, iw, ih = inner
     if deferred:
         first_reference = str(deferred[0].get("reference") or "").strip()
         crop = (
-            crop_source_region(source_pdf_path, needle="ATTN ALL CONCERN", page_hint=0, pad_y=8, full_width=True)
+            crop_source_region(
+                source_pdf_path,
+                needle="ATTN ALL CONCERN",
+                end_needle="RTE NO",
+                page_hint=0,
+                pad_y=8,
+                full_width=True,
+            )
             or (crop_source_region(source_pdf_path, needle=first_reference, page_hint=0, pad_y=10, full_width=True) if first_reference and first_reference != "UNSPECIFIED" else None)
         )
         _draw_crop(
@@ -1990,9 +2045,15 @@ def render_combined_briefing(
     chart_images = load_matched_chart_images(findings)
     briefing = build_briefing_view(flight, findings, warnings)
 
-    page_count = 9 + len(chart_images)
+    deferred_groups = _group_deferred_items(flight)
+    deferred_pages = [
+        deferred_groups[index:index + MEL_CDL_GROUPS_PER_PAGE]
+        for index in range(0, len(deferred_groups), MEL_CDL_GROUPS_PER_PAGE)
+    ] or [[]]
+    mel_page_count = len(deferred_pages)
+    page_count = 8 + mel_page_count + len(chart_images)
     profile_page_numbers = {
-        str(image.get("chart_number")): 10 + index
+        str(image.get("chart_number")): 9 + mel_page_count + index
         for index, image in enumerate(chart_images)
     }
 
@@ -2012,29 +2073,55 @@ def render_combined_briefing(
     canvas.showPage()
     draw_performance_page(canvas, flight, briefing, findings, page_number=4, page_count=page_count)
     canvas.showPage()
-    draw_mel_cdl_page(
-        canvas, flight, briefing, findings,
-        page_number=5, page_count=page_count, source_pdf_path=source_pdf_path,
-    )
-    canvas.showPage()
+    for index, deferred_page in enumerate(deferred_pages):
+        draw_mel_cdl_page(
+            canvas, flight, briefing, findings,
+            page_number=5 + index,
+            page_count=page_count,
+            source_pdf_path=source_pdf_path,
+            deferred_items=deferred_page,
+            section_page_number=index + 1,
+            section_page_count=mel_page_count,
+        )
+        canvas.showPage()
+    alternates_page_number = 5 + mel_page_count
     draw_alternates_page(
         canvas, flight, briefing, findings,
-        page_number=6, page_count=page_count, source_pdf_path=source_pdf_path,
+        page_number=alternates_page_number,
+        page_count=page_count,
+        source_pdf_path=source_pdf_path,
     )
     canvas.showPage()
-    draw_airports_page(canvas, flight, briefing, findings, page_number=7, page_count=page_count)
+    draw_airports_page(
+        canvas,
+        flight,
+        briefing,
+        findings,
+        page_number=alternates_page_number + 1,
+        page_count=page_count,
+    )
     canvas.showPage()
     draw_hazard_page(
         canvas, flight, briefing, findings, weather_charts,
-        page_number=8, page_count=page_count, source_pdf_path=source_pdf_path,
+        page_number=alternates_page_number + 2,
+        page_count=page_count,
+        source_pdf_path=source_pdf_path,
     )
     canvas.showPage()
-    draw_comms_page(canvas, flight, briefing, findings, page_number=9, page_count=page_count)
+    draw_comms_page(
+        canvas,
+        flight,
+        briefing,
+        findings,
+        page_number=alternates_page_number + 3,
+        page_count=page_count,
+    )
     canvas.showPage()
     for index, image in enumerate(chart_images):
         draw_profile_page(
             canvas, flight, image,
-            page_number=10 + index, page_count=page_count,
+            page_number=alternates_page_number + 4 + index,
+            page_count=page_count,
         )
         canvas.showPage()
     canvas.save()

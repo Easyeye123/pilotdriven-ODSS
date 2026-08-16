@@ -17,6 +17,7 @@ from app.odss.combined_brief import (
     T_CARD_HEAD,
     T_MICRO,
     T_SMALL,
+    crop_source_region,
     render_combined_briefing,
 )
 from app.odss.parser import parse_page1_fuel_summary
@@ -155,6 +156,121 @@ def test_repeated_mel_reference_is_one_gate_and_one_detail_group(tmp_path):
     assert mel_page.count("MEL 25-20-50A") == 1
     assert "FIRST CHILLING COMPARTMENT" in mel_page
     assert "SECOND CHILLING COMPARTMENT" in mel_page
+
+
+def test_mel_cdl_page_keeps_all_governing_references_and_duplicate_details(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["deferred_items"] = [
+        {
+            "item_type": "MEL",
+            "reference": "73-09-03A",
+            "description": "ENG 2 SHORT TERM MINOR FAULT",
+        },
+        {
+            "item_type": "MEL",
+            "reference": "25-20-50A",
+            "description": "BOTH SIDE VACUUM GENERATOR INOP",
+            "company_remark": "DO NOT USE LAVATORIES ON GROUND.",
+        },
+        {
+            "item_type": "CDL",
+            "reference": "27-23",
+            "description": "AILERON END SEAL",
+            "company_remark": "LH WING INBOARD AILERON END SEAL FOUND DAMAGED",
+        },
+        {
+            "item_type": "CDL",
+            "reference": "57-21",
+            "description": "FTE PANEL 3 SEAL",
+            "company_remark": "LH WING FTE PANEL 3 SEAL HAS MISSING MATERIAL",
+        },
+        {
+            "item_type": "MEL",
+            "reference": "25-20-50A",
+            "description": "ALL CHILLERS IN FWD AND AFT GALLEY DOWN",
+            "company_remark": "UPLIFT DRY ICE",
+        },
+    ]
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "all-deferred-groups.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    document = fitz.open(out)
+
+    mel_page = document[4].get_text()
+    mel_page_flat = " ".join(mel_page.split())
+    for reference in (
+        "MEL 73-09-03A",
+        "MEL 25-20-50A",
+        "CDL 27-23",
+        "CDL 57-21",
+    ):
+        assert reference in mel_page
+    assert mel_page.count("MEL 25-20-50A") == 1
+    assert "BOTH SIDE VACUUM GENERATOR INOP" in mel_page_flat
+    assert "ALL CHILLERS IN FWD AND AFT GALLEY DOWN" in mel_page_flat
+    assert "DO NOT USE LAVATORIES ON GROUND" in mel_page_flat
+    assert "UPLIFT DRY ICE" in mel_page_flat
+
+
+def test_many_governing_references_create_as_many_pages_as_needed(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["deferred_items"] = [
+        {
+            "item_type": "MEL" if index % 2 == 0 else "CDL",
+            "reference": f"TEST-{index + 1}",
+            "description": f"GOVERNING ITEM {index + 1}",
+        }
+        for index in range(9)
+    ]
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "continued-deferred.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    document = fitz.open(out)
+
+    assert len(document) == 11
+    first_mel_page = document[4].get_text()
+    second_mel_page = document[5].get_text()
+    third_mel_page = document[6].get_text()
+    assert "MEL/CDL AND CDDL (1/3)" in first_mel_page
+    assert "MEL/CDL AND CDDL (2/3)" in second_mel_page
+    assert "MEL/CDL AND CDDL (3/3)" in third_mel_page
+    for index in range(4):
+        assert f"TEST-{index + 1}" in first_mel_page
+    assert "TEST-5" not in first_mel_page
+    for index in range(4, 8):
+        assert f"TEST-{index + 1}" in second_mel_page
+    assert "TEST-9" not in second_mel_page
+    assert "TEST-9" in third_mel_page
+    assert "EDTO AND DESTINATION ALTERNATES" in document[7].get_text()
+    assert "Page 8 of 11" in document[7].get_text()
+
+
+def test_source_crop_extends_to_the_next_printed_section(tmp_path):
+    source = tmp_path / "long-deferred-source.pdf"
+    document = fitz.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_text((50, 60), "ATTN ALL CONCERN FR MAINTROL")
+    for index in range(12):
+        page.insert_text((50, 82 + index * 13), f"ITEM {index + 1} OPERATIONAL CONDITION")
+    page.insert_text((50, 255), "RTE NO SYNTHETIC")
+    document.save(source)
+    document.close()
+
+    crop = crop_source_region(
+        str(source),
+        needle="ATTN ALL CONCERN",
+        end_needle="RTE NO",
+        page_hint=0,
+        pad_y=8,
+        dpi=72,
+        full_width=True,
+    )
+
+    assert crop is not None
+    assert crop["page_number"] == 1
+    assert crop["height"] > 170
 
 
 def test_report_copy_uses_a_cockpit_readable_minimum_scale():
