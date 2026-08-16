@@ -1378,6 +1378,7 @@ def _require_current_reports(flight) -> None:
 def _service_summary(flight) -> dict:
     analysis_id = _public_analysis_id(flight)
     report_refresh = _report_refresh_summary(flight)
+    failure = None
     if str(flight["status"] or "") == "Failed":
         safe_failure = (
             _supported_cfp_failure_detail(flight)
@@ -1385,6 +1386,11 @@ def _service_summary(flight) -> dict:
             else _temporary_analysis_failure_detail(flight)
         )
         warnings = [safe_failure["message"]]
+        failure = {
+            "code": safe_failure["code"],
+            "message": safe_failure["message"],
+            "retryable": flight["analysis_failure_category"] != "cfp_parse_rejected",
+        }
     else:
         warnings = [flight["last_error"]] if flight["last_error"] else []
     if report_refresh["warning"] and report_refresh["warning"] not in warnings:
@@ -1395,6 +1401,7 @@ def _service_summary(flight) -> dict:
         "status": flight["status"],
         "created_at": flight["created_at"],
         "updated_at": flight["updated_at"],
+        "failure": failure,
         "flight": {
             "flight_number": flight["flight_number"],
             "flight_date": flight["flight_date"],
@@ -1632,6 +1639,109 @@ async def _run_service_analysis_record(
     )
 
 
+_async_analysis_tasks: set[asyncio.Task[None]] = set()
+
+
+async def _execute_service_analysis_in_background(
+    flight_id: int,
+    claimed_flight,
+    weather_window_preference: dict[str, int] | None,
+) -> None:
+    failure = await asyncio.to_thread(
+        _execute_analysis,
+        flight_id,
+        claimed_flight,
+        weather_window_preference,
+        claimed_flight=claimed_flight,
+    )
+    if failure:
+        logger.warning(
+            "Asynchronous service analysis failed flight_id=%s error_type=%s",
+            flight_id,
+            failure.partition(":")[0],
+        )
+
+
+def _release_async_analysis_task(task: asyncio.Task[None]) -> None:
+    _async_analysis_tasks.discard(task)
+    if task.cancelled():
+        return
+    try:
+        task.result()
+    except Exception:
+        logger.exception("Asynchronous service analysis task crashed")
+
+
+def _retain_async_analysis_task(task: asyncio.Task[None]) -> None:
+    """Keep detached analysis work alive until it reaches a terminal state."""
+
+    _async_analysis_tasks.add(task)
+    task.add_done_callback(_release_async_analysis_task)
+
+
+def _async_analysis_response(flight, *, status_code: int = 202) -> JSONResponse:
+    analysis_id = _public_analysis_id(flight)
+    return JSONResponse(
+        _service_summary(flight),
+        status_code=status_code,
+        headers={
+            "Location": f"/v1/analyses/{analysis_id}",
+            "Retry-After": "2",
+        },
+    )
+
+
+async def _start_service_analysis_record(
+    flight,
+    weather_window_preference: dict[str, int] | None,
+) -> JSONResponse:
+    """Claim persisted work, return promptly, and finish it off-request."""
+
+    flight_id = int(flight["id"])
+    tenant_id = str(flight["tenant_id"])
+    status = str(flight["status"] or "")
+    if status == "Completed":
+        return JSONResponse(_service_summary(flight), status_code=200)
+    if status == "Processing":
+        return _async_analysis_response(flight)
+    if flight["analysis_failure_category"] == "cfp_parse_rejected":
+        _raise_stored_analysis_failure(flight)
+
+    claimed_flight = await asyncio.to_thread(
+        claim_analysis,
+        flight_id,
+        tenant_id,
+        expected_status=status,
+    )
+    if claimed_flight is None:
+        current = get_flight_for_tenant(flight_id, tenant_id)
+        if not current:
+            raise HTTPException(status_code=500, detail="Analysis record was lost")
+        current_status = str(current["status"] or "")
+        if current_status == "Completed":
+            return JSONResponse(_service_summary(current), status_code=200)
+        if current_status in {"Processing", "Uploaded"}:
+            return _async_analysis_response(current)
+        _raise_stored_analysis_failure(current)
+
+    task = asyncio.create_task(
+        _execute_service_analysis_in_background(
+            flight_id,
+            claimed_flight,
+            weather_window_preference,
+        ),
+        name=f"odss-analysis-{_public_analysis_id(claimed_flight)}",
+    )
+    _retain_async_analysis_task(task)
+    processing = get_flight_for_tenant(flight_id, tenant_id)
+    if not processing:
+        raise HTTPException(status_code=500, detail="Analysis record was lost")
+    return _async_analysis_response(
+        processing,
+        status_code=200 if processing["status"] == "Completed" else 202,
+    )
+
+
 @app.post("/v1/analyses", status_code=201)
 async def create_service_analysis(
     request: Request,
@@ -1644,6 +1754,7 @@ async def create_service_analysis(
     registration: str = Form(""),
     weather_before_minutes: int | None = Form(default=None, ge=0, le=720),
     weather_after_minutes: int | None = Form(default=None, ge=0, le=720),
+    respond_async: bool = Form(default=False),
 ):
     identity = request_service_identity(request)
     tenant_id = identity.tenant_id
@@ -1655,6 +1766,11 @@ async def create_service_analysis(
     if service_request_id:
         existing = get_flight_by_service_request(tenant_id, service_request_id)
         if existing:
+            if respond_async:
+                return await _start_service_analysis_record(
+                    existing,
+                    weather_window_preference,
+                )
             replay = _replay_service_analysis(existing)
             if replay is not None:
                 return replay
@@ -1693,6 +1809,11 @@ async def create_service_analysis(
         )
         if existing is None:
             raise
+        if respond_async:
+            return await _start_service_analysis_record(
+                existing,
+                weather_window_preference,
+            )
         replay = _replay_service_analysis(existing)
         if replay is not None:
             return replay
@@ -1707,6 +1828,11 @@ async def create_service_analysis(
     flight = get_flight_for_tenant(flight_id, tenant_id)
     if not flight:
         raise HTTPException(status_code=500, detail="Analysis record was not created")
+    if respond_async:
+        return await _start_service_analysis_record(
+            flight,
+            weather_window_preference,
+        )
     return await _run_service_analysis_record(
         flight,
         weather_window_preference,

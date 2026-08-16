@@ -5,6 +5,7 @@ import hashlib
 import json
 import sqlite3
 import sys
+import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
@@ -942,6 +943,135 @@ def test_processing_service_analysis_replay_is_never_reported_as_success(
     assert replay.status_code == 409
     assert replay.json()["detail"] == "Analysis is already in progress"
     assert len(database.list_flights("tenant-1")) == 1
+
+
+def test_async_service_analysis_returns_promptly_and_is_polled_to_completion(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def controlled_background_analysis(
+        flight_id,
+        flight,
+        weather_window_preference=None,
+        *,
+        claimed_flight=None,
+        **_kwargs,
+    ):
+        assert weather_window_preference == {
+            "before_minutes": 45,
+            "after_minutes": 75,
+        }
+        assert claimed_flight is flight
+        started.set()
+        assert release.wait(timeout=10)
+        database.update_status(
+            flight_id,
+            "Completed",
+            tenant_id=str(flight["tenant_id"]),
+        )
+        return None
+
+    monkeypatch.setattr(main, "_execute_analysis", controlled_background_analysis)
+    headers = {
+        **_authorization(),
+        "X-PilotDriven-Request-Id": "async-upload-request",
+    }
+    try:
+        created = service_app.post(
+            "/v1/analyses",
+            headers=headers,
+            files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+            data={
+                "weather_before_minutes": "45",
+                "weather_after_minutes": "75",
+                "respond_async": "true",
+            },
+        )
+
+        assert created.status_code == 202
+        assert created.json()["status"] == "Processing"
+        assert created.json()["failure"] is None
+        assert created.headers["retry-after"] == "2"
+        assert created.headers["location"].endswith(
+            f"/{created.json()['analysis_id']}"
+        )
+        assert started.wait(timeout=10)
+
+        duplicate = service_app.post(
+            "/v1/analyses",
+            headers=headers,
+            files={
+                "file": (
+                    "SQ304-duplicate.pdf",
+                    _build_lido_pdf(),
+                    "application/pdf",
+                )
+            },
+            data={"respond_async": "true"},
+        )
+        assert duplicate.status_code == 202
+        assert duplicate.json()["analysis_id"] == created.json()["analysis_id"]
+        assert duplicate.json()["status"] == "Processing"
+        assert len(database.list_flights("tenant-1")) == 1
+
+        release.set()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            completed = service_app.get(
+                f"/v1/analyses/{created.json()['analysis_id']}",
+                headers=_authorization(),
+            )
+            if completed.json()["status"] == "Completed":
+                break
+            time.sleep(0.01)
+        else:
+            pytest.fail("asynchronous analysis did not reach Completed")
+
+        assert completed.status_code == 200
+        assert completed.json()["failure"] is None
+    finally:
+        release.set()
+
+
+def test_failed_service_summary_exposes_only_safe_retry_metadata(
+    service_app: TestClient,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    flight = database.get_flight_by_analysis_id(
+        created.json()["analysis_id"],
+        "tenant-1",
+    )
+    assert flight is not None
+    database.update_status(
+        int(flight["id"]),
+        "Failed",
+        last_error="Synthetic private infrastructure detail",
+        tenant_id="tenant-1",
+        analysis_failure_category="infrastructure",
+    )
+
+    summary = service_app.get(
+        f"/v1/analyses/{created.json()['analysis_id']}",
+        headers=_authorization(),
+    )
+
+    assert summary.status_code == 200
+    assert summary.json()["failure"] == {
+        "code": "ANALYSIS_TEMPORARILY_UNAVAILABLE",
+        "message": (
+            "PilotDriven could not complete this analysis. Retry the same "
+            "upload; the original request remains safe to replay."
+        ),
+        "retryable": True,
+    }
+    assert "Synthetic" not in str(summary.json())
 
 
 def test_service_timing_accepts_atot_and_rejects_unknown_reference(
