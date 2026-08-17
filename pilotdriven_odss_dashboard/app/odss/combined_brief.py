@@ -838,20 +838,35 @@ def _hazard_gate_entries(flight: dict[str, Any], briefing: dict[str, Any]) -> li
 def _kv_card(canvas, x, y, w, h, *, title, accent, rows, open_target=None):
     """Spec card: label column + value text rows, optional OPEN link."""
     panel(canvas, x, y, w, h, title=title, accent=accent, title_colour=BG if accent in (COMMS_TEAL, WEATHER_AMBER, EDTO_GREEN) else colors.white)
+    wrapped_rows = [
+        (label, (_wrap(str(value), SANS, T_SMALL, w - 84) or [""])[:2])
+        for label, value in rows
+    ]
+    natural_height = sum(max(2, len(lines)) * 9.6 + 4 for _, lines in wrapped_rows)
+    available_height = max(0.0, h - 54.0)
+    compact = natural_height > available_height
+    line_height = 9.6
+    row_gap = 4.0
+    if compact and wrapped_rows:
+        line_count = sum(len(lines) for _, lines in wrapped_rows)
+        row_gap = 2.0
+        line_height = max(
+            T_SMALL,
+            min(9.6, (available_height - row_gap * len(wrapped_rows)) / max(1, line_count)),
+        )
     row_y = y + h - 30
-    for label, value in rows:
+    for label, lines in wrapped_rows:
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont(SANS, T_MICRO)
         canvas.drawString(x + 10, row_y, str(label).upper())
-        lines = _wrap(str(value), SANS, T_SMALL, w - 84)
         canvas.setFillColor(TEXT)
         canvas.setFont(SANS, T_SMALL)
-        for line in lines[:2]:
+        for line in lines:
             canvas.drawString(x + 72, row_y, line)
-            row_y -= 9.6
-        if len(lines) < 2:
-            row_y -= 9.6
-        row_y -= 4
+            row_y -= line_height
+        if not compact and len(lines) < 2:
+            row_y -= line_height
+        row_y -= row_gap
     if open_target:
         open_link(canvas, x + w - 10, y + 8, label="OPEN", accent=accent, destination=open_target)
 
@@ -905,7 +920,7 @@ def _edto_operational_rows(
         source_sentence
     ))]
     sectors = edto_view.get("sectors") or []
-    for index, sector in enumerate(sectors[:3], start=1):
+    for index, sector in enumerate(sectors, start=1):
         number = sector.get("number") or index
         rows.append((
             f"SECTOR {number}",

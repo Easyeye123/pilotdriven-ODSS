@@ -332,6 +332,38 @@ def test_edto_page_prints_the_parsed_entry_and_exit(rendered):
     assert "EXIT ACTM" in second
 
 
+def test_edto_page_preserves_every_numbered_sector(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["edto"]["sectors"] = [
+        {
+            "number": number,
+            "entry_actm_minutes": entry,
+            "exit_actm_minutes": exit_,
+            "etp_actm_minutes": [],
+        }
+        for number, entry, exit_ in (
+            (1, 449, 530),
+            (2, 636, 640),
+            (3, 794, 857),
+            (4, 905, 983),
+        )
+    ]
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "four-edto-sectors.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    second = fitz.open(out)[1].get_text()
+
+    for number, entry, exit_ in (
+        (1, "07.29", "08.50"),
+        (2, "10.36", "10.40"),
+        (3, "13.14", "14.17"),
+        (4, "15.05", "16.23"),
+    ):
+        assert f"SECTOR {number}" in second
+        assert f"ENTRY ACTM {entry} | EXIT ACTM {exit_}" in second
+
+
 def test_missing_classification_never_defaults_to_edto(tmp_path):
     flight = sample_flight()
     flight["fuel_summary"] = {}
