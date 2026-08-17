@@ -64,13 +64,25 @@ def _run(name: str, source: Path, root: Path, flight_id: int) -> dict:
     assert len(flight["route_waypoints"]) >= 100
     assert contract["route_hash"] == expected["route_hash"]
     assert len(contract["route_geojson"]["features"]) == 1
-    assert len(contract["markers_geojson"]["features"]) == len(flight["route_waypoints"])
+    # Every coordinate-bearing route waypoint remains a marker. EDTO ETPs are
+    # deliberate standalone markers because they can fall between waypoints;
+    # the contract records their exact count so the golden check stays strict
+    # without treating those governed additions as duplicates.
+    expected_marker_count = (
+        len(flight["route_waypoints"])
+        + int(contract.get("metadata", {}).get("edto_etp_marker_count", 0))
+    )
+    assert len(contract["markers_geojson"]["features"]) == expected_marker_count
     assert Path(result["level1_report"]).read_bytes().startswith(b"%PDF")
     assert Path(result["level2_report"]).read_bytes().startswith(b"%PDF")
 
     if name == "SQ303":
         assert flight.get("bobcat") is None
-        assert len([item for item in findings if item["engine"] == "communications"]) == 5
+        communications = [item for item in findings if item["engine"] == "communications"]
+        assert len(communications) == 1
+        assert communications[0]["severity"] == "unknown"
+        assert communications[0]["title"] == "FIR communication review required"
+        assert communications[0]["data"]["reference_status"] != "approved"
         assert max(
             item["data"].get("maximum_msa_hundreds_ft", 0)
             for item in findings
@@ -86,8 +98,16 @@ def _run(name: str, source: Path, root: Path, flight_id: int) -> dict:
         }
         depressurisation = [item for item in findings if item["engine"] == "depressurisation"]
         assert [item["title"] for item in depressurisation] == [
+            "Profile unresolved - ZB to RANAH",
+            "Profile unresolved - VETEN to CRM",
+            "Profile unresolved - IRLOX to BALUX",
             "High terrain detected but no profile matched"
         ]
+        assert all(item["severity"] == "unknown" for item in depressurisation)
+        assert all(
+            item["data"].get("controlled_index_loaded") is False
+            for item in depressurisation
+        )
         assert [item["airport"] for item in flight["edto"]["airports"]] == ["WIMM", "VCBI"]
         assert any(item["engine"] == "bobcat" for item in findings)
 
