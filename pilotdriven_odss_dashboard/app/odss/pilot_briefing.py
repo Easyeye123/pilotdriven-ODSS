@@ -69,7 +69,7 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     )
     taxiway = bool(taxiway_match or re.search(r"\b(?:TAXILANE|STOP\s*BAR)\b", upper))
     lighting = bool(re.search(rf"\b{_LIGHTING}\b", upper))
-    obstacle = bool(re.search(r"\b(?:OBST|OBSTACLE|CRANE)\b", upper))
+    obstacle = bool(re.search(r"\b(?:OBST|OBSTACLES?|CRANES?|POLES?)\b", upper))
 
     airport_closure = bool(
         re.search(
@@ -122,14 +122,14 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
         return 6, "taxiway_restriction"
     if unavailable and runway and lighting:
         return 3, "runway_lighting_restriction"
+    if obstacle:
+        return 8, "obstacle"
     if runway or approach:
         return 3, "runway_approach_restriction"
     if taxiway_closure:
         return 4, "taxiway_closure"
     if taxiway:
         return 6, "taxiway_restriction"
-    if obstacle:
-        return 8, "obstacle"
     return 7, "other_operational"
 
 

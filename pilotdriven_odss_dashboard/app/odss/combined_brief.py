@@ -589,7 +589,9 @@ def draw_overview_page(
     def weather_line(panel_data: dict[str, Any]) -> str:
         weather = panel_data.get("weather") or {}
         return str(
-            weather.get("summary")
+            weather.get("primary")
+            or weather.get("secondary")
+            or weather.get("summary")
             or weather.get("detail")
             or "Weather review on the hazard assessment page."
         )
@@ -835,6 +837,21 @@ def _hazard_gate_entries(flight: dict[str, Any], briefing: dict[str, Any]) -> li
     return entries
 
 
+def _kv_card_required_height(rows, width: float) -> float:
+    """Return a readable content-led height for a time/gate card.
+
+    Sparse cards used to be stretched from the timeline to the footer, which
+    made three short operational summaries look like three mostly empty pages.
+    The same wrapping calculation used while drawing now owns their height.
+    """
+    wrapped_rows = [
+        (_wrap(str(value), SANS, T_SMALL, width - 84) or [""])[:2]
+        for _, value in rows
+    ]
+    natural_height = sum(max(2, len(lines)) * 9.6 + 4 for lines in wrapped_rows)
+    return max(90.0, 54.0 + natural_height)
+
+
 def _kv_card(canvas, x, y, w, h, *, title, accent, rows, open_target=None):
     """Spec card: label column + value text rows, optional OPEN link."""
     panel(canvas, x, y, w, h, title=title, accent=accent, title_colour=BG if accent in (COMMS_TEAL, WEATHER_AMBER, EDTO_GREEN) else colors.white)
@@ -842,7 +859,7 @@ def _kv_card(canvas, x, y, w, h, *, title, accent, rows, open_target=None):
         (label, (_wrap(str(value), SANS, T_SMALL, w - 84) or [""])[:2])
         for label, value in rows
     ]
-    natural_height = sum(max(2, len(lines)) * 9.6 + 4 for _, lines in wrapped_rows)
+    natural_height = _kv_card_required_height(rows, w) - 54.0
     available_height = max(0.0, h - 54.0)
     compact = natural_height > available_height
     line_height = 9.6
@@ -989,21 +1006,19 @@ def draw_time_gates_page(
     inner = panel(canvas, MARGIN, hazard_y - strip_h, full_w, strip_h, title="HAZARD AND COMMUNICATION GATES", accent=WEATHER_AMBER, title_colour=BG)
     _timeline(canvas, inner[0] + 14, hazard_y - strip_h + 12, full_w - 44, hazard_entries, accent_default=WEATHER_AMBER)
 
-    # Three cards.
+    # Three content-led cards. Sparse summaries stay near the timeline instead
+    # of being stretched to the footer as large empty panels.
     cards_top = hazard_y - strip_h - 10
-    card_h = cards_top - 30
     card_w = (full_w - 2 * 10) / 3
     edto_view = briefing.get("edto") or {}
     fuel_summary = flight.get("fuel_summary") or {}
     edto_rows = _edto_operational_rows(classification, edto_view, fuel_summary)
-    _kv_card(canvas, MARGIN, 30, card_w, card_h, title=f"{classification_label} STATUS", accent=EDTO_GREEN, rows=edto_rows, open_target="sec_alternates")
 
     comm_rows = []
     for item in (briefing.get("communications") or [])[:3]:
         comm_rows.append((str(item.get("event") or "")[:12], f"{item.get('time')} - {item.get('detail')}"))
     if not comm_rows:
         comm_rows = [("FIR", "No early FIR contact requirement derived from this CFP.")]
-    _kv_card(canvas, MARGIN + card_w + 10, 30, card_w, card_h, title="FIR / NEXT CONTACT", accent=COMMS_TEAL, rows=comm_rows, open_target="sec_comms")
 
     deferred = _group_deferred_items(flight)
     operating_rows = [
@@ -1011,7 +1026,18 @@ def draw_time_gates_page(
         ("DEP", str((briefing.get("departure") or {}).get("runway") or "Runway review.")),
         ("DEST", str((briefing.get("destination") or {}).get("runway") or "Runway review.")),
     ]
-    _kv_card(canvas, MARGIN + 2 * (card_w + 10), 30, card_w, card_h, title="OPERATING GATES", accent=DEPARTURE, rows=operating_rows, open_target="sec_airports")
+    card_h = min(
+        cards_top - 30,
+        max(
+            _kv_card_required_height(edto_rows, card_w),
+            _kv_card_required_height(comm_rows, card_w),
+            _kv_card_required_height(operating_rows, card_w),
+        ),
+    )
+    cards_y = cards_top - card_h
+    _kv_card(canvas, MARGIN, cards_y, card_w, card_h, title=f"{classification_label} STATUS", accent=EDTO_GREEN, rows=edto_rows, open_target="sec_alternates")
+    _kv_card(canvas, MARGIN + card_w + 10, cards_y, card_w, card_h, title="FIR / NEXT CONTACT", accent=COMMS_TEAL, rows=comm_rows, open_target="sec_comms")
+    _kv_card(canvas, MARGIN + 2 * (card_w + 10), cards_y, card_w, card_h, title="OPERATING GATES", accent=DEPARTURE, rows=operating_rows, open_target="sec_airports")
 
 
 # ---------------------------------------------------------------------------
@@ -1072,9 +1098,17 @@ def draw_terrain_page(
     stat_card(canvas, MARGIN + 3 * (card_w + 10), cards_y, card_w, card_h, label="EFFECTIVITY", value=theme.normalized_registration(flight.get("registration")) or "--", caption=str(flight.get("aircraft_type") or ""), accent=DEPARTURE, mono=True)
 
     # Profile cards with embedded cropped charts.
-    table_h = 74.0
+    table_h = (
+        74.0
+        if chart_images
+        else max(96.0, 58.0 + min(3, len(unmatched)) * 16.0)
+    )
     profiles_top = cards_y - 10
-    profiles_h = profiles_top - 30 - table_h - 10
+    profiles_h = (
+        profiles_top - 30 - table_h - 10
+        if chart_images
+        else 62.0
+    )
     profile_w = (full_w - 10) / 2
     accents = (EDTO_GREEN, WEATHER_AMBER)
     for index, image in enumerate(chart_images[:2]):
@@ -1122,13 +1156,16 @@ def draw_terrain_page(
             canvas.setFont(SANS_BOLD, T_SMALL)
             canvas.drawCentredString(MARGIN + full_w / 2, inner[1] + inner[3] / 2, "No approved profile match in the mounted controlled index.")
 
-    # Unmatched exposures table.
-    table_top = 30 + table_h
-    inner = panel(canvas, MARGIN, 30, full_w, table_h, title="UNMATCHED EXPOSURES - NO PROFILE SUBSTITUTED", accent=CRITICAL)
+    # Unmatched exposures table. With no served chart, keep the concise
+    # controlled-index message and this operational result together near the
+    # top instead of stretching an empty profile panel across the page.
+    table_y = 30.0 if chart_images else profiles_top - profiles_h - 10 - table_h
+    table_top = table_y + table_h
+    inner = panel(canvas, MARGIN, table_y, full_w, table_h, title="UNMATCHED EXPOSURES - NO PROFILE SUBSTITUTED", accent=CRITICAL)
     ix = inner[0]
     row_y = table_top - 26
     canvas.setFillColor(TEXT_MUTED)
-    canvas.setFont(SANS_BOLD, T_MICRO)
+    canvas.setFont(SANS_BOLD, T_SMALL)
     canvas.drawString(ix, row_y, "EVENT")
     canvas.drawString(ix + 150, row_y, "ACTM")
     canvas.drawString(ix + 260, row_y, "STATUS")
@@ -1138,13 +1175,13 @@ def draw_terrain_page(
             data = finding.get("data") or {}
             start = data.get("start_actm_minutes")
             canvas.setFillColor(TEXT)
-            canvas.setFont(SANS, T_MICRO)
+            canvas.setFont(SANS, T_SMALL)
             canvas.drawString(ix, row_y, str(finding.get("title") or "")[:34])
-            canvas.setFont(MONO, T_MICRO)
+            canvas.setFont(MONO, T_SMALL)
             canvas.drawString(ix + 150, row_y, format_actm(start) if start is not None else "--")
-            canvas.setFont(SANS, T_MICRO)
-            _draw_string_fitted(canvas, ix + 260, row_y, str(finding.get("summary") or "Exact endpoint/airway profile unresolved."), SANS, T_MICRO, full_w - 290, TEXT_SECONDARY)
-            row_y -= 11
+            canvas.setFont(SANS, T_SMALL)
+            _draw_string_fitted(canvas, ix + 260, row_y, str(finding.get("summary") or "Exact endpoint/airway profile unresolved."), SANS, T_SMALL, full_w - 290, TEXT_SECONDARY)
+            row_y -= 14
     else:
         canvas.setFillColor(EDTO_GREEN)
         canvas.setFont(SANS_BOLD, T_SMALL)
@@ -1707,6 +1744,21 @@ def _notam_rows(panel_data: dict[str, Any], flight: dict[str, Any], role: str) -
     return rows[:6]
 
 
+def _airport_table_required_height(
+    rows: list[tuple[str, str, str]],
+    width: float,
+) -> float:
+    """Keep an airport table only as tall as its bounded six-row content."""
+    effect_width = max(36.0, width - 230.0)
+    row_height = 0.0
+    for _, _, effect in rows:
+        lines = (_wrap(effect, SANS, T_MICRO, effect_width) or [""])[:2]
+        # The table reserves two cockpit-readable lines per row so its columns
+        # stay aligned even when one airport has shorter wording.
+        row_height += max(2, len(lines)) * 9.4 + 3.4
+    return max(120.0, 59.0 + row_height)
+
+
 def draw_airports_page(
     canvas,
     flight: dict[str, Any],
@@ -1728,16 +1780,24 @@ def draw_airports_page(
     full_w = width - 2 * MARGIN
     half_w = (full_w - 12) / 2
     rule_h = 24.0
-    table_h = y - 30 - rule_h - 10
+    airport_tables = [
+        (role, panel_data, accent, _notam_rows(panel_data, flight, role))
+        for role, panel_data, accent in (
+            ("DEPARTURE", briefing.get("departure") or {}, DEPARTURE),
+            ("DESTINATION", briefing.get("destination") or {}, DESTINATION),
+        )
+    ]
+    table_h = min(
+        y - 30 - rule_h - 10,
+        max(_airport_table_required_height(rows, half_w) for _, _, _, rows in airport_tables),
+    )
+    table_y = y - table_h
 
-    for index, (role, panel_data, accent) in enumerate((
-        ("DEPARTURE", briefing.get("departure") or {}, DEPARTURE),
-        ("DESTINATION", briefing.get("destination") or {}, DESTINATION),
-    )):
+    for index, (role, panel_data, accent, rows) in enumerate(airport_tables):
         px = MARGIN + index * (half_w + 12)
         icao = panel_data.get("icao") or (flight.get("departure") if index == 0 else flight.get("destination")) or "----"
         inner = panel(
-            canvas, px, y - table_h, half_w, table_h,
+            canvas, px, table_y, half_w, table_h,
             title=f"{theme.airport_code_label(icao)} - {role}", accent=accent,
         )
         ix, iy, iw, ih = inner
@@ -1748,7 +1808,7 @@ def draw_airports_page(
         canvas.drawString(ix + 118, header_y, "CONDITION")
         canvas.drawString(ix + 210, header_y, "OPERATIONAL EFFECT")
         row_y = header_y - 13
-        for item, condition, effect in _notam_rows(panel_data, flight, role):
+        for item, condition, effect in rows:
             canvas.setFillColor(TEXT)
             canvas.setFont(SANS_BOLD, T_MICRO)
             _draw_string_fitted(canvas, ix, row_y, item, SANS_BOLD, T_MICRO, 112, TEXT)
@@ -1768,14 +1828,15 @@ def draw_airports_page(
         canvas.drawString(ix, iy + 2, "BOUNDARY: assigned runway/stand, clearance and current charting remain controlling.")
 
     # Applicability rule bar.
+    rule_y = table_y - rule_h - 10
     canvas.setFillColor(ELEVATED)
-    canvas.roundRect(MARGIN, 30, full_w, rule_h, 6, stroke=0, fill=1)
+    canvas.roundRect(MARGIN, rule_y, full_w, rule_h, 6, stroke=0, fill=1)
     canvas.setFillColor(ACCENT)
     canvas.setFont(SANS_BOLD, T_MICRO)
-    canvas.drawString(MARGIN + 10, 30 + 9, "APPLICABILITY RULE")
+    canvas.drawString(MARGIN + 10, rule_y + 9, "APPLICABILITY RULE")
     canvas.setFillColor(TEXT_SECONDARY)
     canvas.setFont(SANS, T_SMALL)
-    canvas.drawString(MARGIN + 110, 30 + 9, "Promote only restrictions intersecting the flight window, planned procedure, assigned stand or cleared taxi route.")
+    canvas.drawString(MARGIN + 110, rule_y + 9, "Promote only restrictions intersecting the flight window, planned procedure, assigned stand or cleared taxi route.")
 
 
 # ---------------------------------------------------------------------------

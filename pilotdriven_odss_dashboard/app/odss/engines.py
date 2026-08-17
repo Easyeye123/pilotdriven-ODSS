@@ -829,10 +829,13 @@ def _notam_operational_summary(
     if kind == "apron_stand_closure":
         return f"{subject.upper()} closed during the applicable {phase} window."
     if kind == "obstacle":
-        return (
+        summary = (
             f"Obstacle or crane affects the {phase} airport environment; "
             "assess against expected runway and approach use."
         )
+        if re.search(r"\b(?:RWY|RUNWAY)\s+\d{1,2}", upper):
+            summary += " The runway is not reported closed by this notice."
+        return summary
     return f"Operational airport restriction requires review during the applicable {phase} window."
 
 

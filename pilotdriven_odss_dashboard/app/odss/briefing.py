@@ -152,6 +152,8 @@ def _weather_summary(
 
 def _notice_kind(text: str) -> str:
     upper = text.upper()
+    if any(token in upper for token in ("OBST", "OBSTACLE", "CRANE", "POLE")):
+        return "Obstacle"
     if any(token in upper for token in ("RWY", "RUNWAY", "ILS", "LOC", "RNP", "VOR", "OCA", "MINIMA")):
         return "Runway / approach"
     if any(token in upper for token in ("TWY", "TAXIWAY", "STOP BAR", "TAXILANE")):
