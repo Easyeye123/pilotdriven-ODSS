@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs
 
 import fitz
 import pytest
@@ -13,11 +14,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 from generate_visual_samples import sample_findings, sample_flight
 
 from app.odss.combined_brief import (
+    COMBINED_BRIEFING_SCHEMA_VERSION,
     T_BODY,
     T_CARD_HEAD,
     T_MICRO,
     T_SMALL,
     crop_source_region,
+    governed_deferred_source_target,
     render_combined_briefing,
 )
 from app.odss.parser import parse_page1_fuel_summary
@@ -74,6 +77,53 @@ def test_the_naming_rule_holds_everywhere(rendered):
     text = "\n".join(page.get_text().upper() for page in rendered)
     for banned in ("LEVEL 1", "LEVEL 2", "PERTINENT", "EVIDENCE LEVEL"):
         assert banned not in text, f"banned naming leaked: {banned}"
+
+
+def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
+    flight = sample_flight()
+    flight["deferred_items"] = [{
+        "item_type": "MEL",
+        "reference": "25-20-50A",
+        "description": "Non-essential equipment and furnishings",
+        "company_remark": "Review the current governed item.",
+    }]
+    output = tmp_path / "mel-source-link.pdf"
+    findings = [
+        finding for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    render_combined_briefing(flight, findings, [], output)
+
+    document = fitz.open(output)
+    mel_page = document[4]
+    assert "OPEN GOVERNED MEL SOURCE >" in mel_page.get_text()
+    source_links = [
+        link["uri"] for link in mel_page.get_links()
+        if link.get("uri") and "governed-deferred-reference" in link["uri"]
+    ]
+    assert len(source_links) == 1
+    origin, _, fragment = source_links[0].partition("/#/")
+    assert origin == "https://www.pilotdriven.com"
+    route, _, query = fragment.partition("?")
+    assert route == "governed-deferred-reference"
+    assert parse_qs(query) == {
+        "type": ["MEL"],
+        "reference": ["25-20-50A"],
+        "flightNumber": ["SQ303"],
+        "registration": ["9V-SMR"],
+        "aircraftType": ["A350-941"],
+        "departure": ["EBBR"],
+        "destination": ["WSSS"],
+        "sourcePage": ["1"],
+    }
+    assert COMBINED_BRIEFING_SCHEMA_VERSION
+
+
+def test_unclassified_declaration_never_gets_a_governed_source_link():
+    assert governed_deferred_source_target(
+        sample_flight(),
+        {"item_type": "UNCLASSIFIED", "reference": "IFEDDL"},
+    ) is None
 
 
 def test_governance_chrome_is_on_every_page(rendered):

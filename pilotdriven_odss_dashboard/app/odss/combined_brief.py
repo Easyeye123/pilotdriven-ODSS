@@ -14,8 +14,10 @@ review flag, never as a number. AI authority: none.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
+from urllib.parse import urlencode
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -63,6 +65,11 @@ T_MICRO = 7.2
 # Keep MEL/CDL cards at the cockpit-readable type scale.  More governing
 # references create continuation pages instead of being dropped or squeezed.
 MEL_CDL_GROUPS_PER_PAGE = 4
+
+# Part of the cached-report identity. Bump whenever the publication contract
+# changes so an analysis created before a deployment cannot keep serving an
+# older PDF from persistent report storage.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-17-governed-deferred-source-v1"
 
 
 _FIT_FLOOR = T_MICRO
@@ -418,6 +425,46 @@ def _unique_text(values: list[Any]) -> list[str]:
         seen.add(key)
         result.append(text)
     return result
+
+
+def governed_deferred_source_target(
+    flight: dict[str, Any],
+    item: dict[str, Any],
+    *,
+    public_origin: str | None = None,
+) -> str | None:
+    """Durable signed-in app target for the exact current governed source.
+
+    The PDF never embeds a presigned S3 URL: that would work during QA and
+    expire minutes later. The landing route repeats only facts already printed
+    in the report, then the signed-in app resolves the current approved source
+    and opens its cited page.
+    """
+    item_type = str(item.get("item_type") or "").strip().upper()
+    reference = str(item.get("reference") or "").strip().upper()
+    if item_type not in {"MEL", "CDL", "CDDL"} or not re.fullmatch(
+        r"[A-Z0-9][A-Z0-9._/-]{0,79}", reference
+    ):
+        return None
+    origin = str(
+        public_origin
+        or os.environ.get("PILOTDRIVEN_PUBLIC_ORIGIN")
+        or "https://www.pilotdriven.com"
+    ).strip().rstrip("/")
+    if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::\d{1,5})?", origin):
+        return None
+    values = {
+        "type": item_type,
+        "reference": reference,
+        "flightNumber": str(flight.get("flight_number") or "").strip().upper(),
+        "registration": str(flight.get("registration") or "").strip().upper(),
+        "aircraftType": str(flight.get("aircraft_type") or "").strip().upper(),
+        "departure": str(flight.get("departure") or "").strip().upper(),
+        "destination": str(flight.get("destination") or "").strip().upper(),
+        "sourcePage": "1",
+    }
+    query = urlencode({key: value for key, value in values.items() if value})
+    return f"{origin}/#/governed-deferred-reference?{query}"
 
 
 def _group_deferred_items(flight: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1625,9 +1672,36 @@ def draw_mel_cdl_page(
             canvas.drawString(ix, row_y, line)
             row_y -= 9.6
         penalty = str(item.get("penalty") or "").strip()
-        canvas.setFillColor(EDTO_GREEN if not penalty else WEATHER_AMBER)
-        canvas.setFont(SANS_BOLD, T_MICRO)
-        canvas.drawString(ix, iy + 4, penalty or "No take-off, enroute or fuel penalty stated in the mounted source.")
+        source_target = governed_deferred_source_target(flight, item)
+        source_label = f"OPEN GOVERNED {item_type} SOURCE >" if source_target else ""
+        source_width = (
+            pdfmetrics.stringWidth(source_label, SANS_BOLD, T_MICRO)
+            if source_label
+            else 0
+        )
+        penalty_width = iw - source_width - (14 if source_label else 0)
+        _draw_string_fitted(
+            canvas,
+            ix,
+            iy + 4,
+            penalty or "No take-off, enroute or fuel penalty stated in the mounted source.",
+            SANS_BOLD,
+            T_MICRO,
+            max(40, penalty_width),
+            EDTO_GREEN if not penalty else WEATHER_AMBER,
+        )
+        if source_target:
+            source_x = ix + iw - source_width
+            source_y = iy + 4
+            canvas.setFillColor(ACCENT)
+            canvas.setFont(SANS_BOLD, T_MICRO)
+            canvas.drawString(source_x, source_y, source_label)
+            canvas.linkURL(
+                source_target,
+                (source_x - 2, source_y - 2, source_x + source_width + 2, source_y + T_MICRO + 2),
+                relative=0,
+                thickness=0,
+            )
 
     # Cropped authoritative sources.
     crops_top = y - cards_h - 10

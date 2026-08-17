@@ -61,7 +61,11 @@ from .odss.profile_chart_delivery import (
     held_profile_chart,
     render_held_profile_chart_page,
 )
-from .odss.combined_brief import combined_briefing_filename, render_combined_briefing
+from .odss.combined_brief import (
+    COMBINED_BRIEFING_SCHEMA_VERSION,
+    combined_briefing_filename,
+    render_combined_briefing,
+)
 from .odss.reporting import render_pdf
 from .odss.surface_overlays import (
     SurfaceOverlayRequest,
@@ -2364,7 +2368,10 @@ def get_service_combined_report(request: Request, analysis_id: str):
         except (OSError, ValueError):
             analysis_flight["fuel_summary"] = None
     token = sha256(
-        f"{analysis_path.stat().st_mtime_ns}:{flight['id']}".encode("utf-8")
+        (
+            f"{analysis_path.stat().st_mtime_ns}:{flight['id']}:"
+            f"{COMBINED_BRIEFING_SCHEMA_VERSION}"
+        ).encode("utf-8")
     ).hexdigest()[:16]
     cache_path = REPORT_DIR / f"flight_{flight['id']}_combined_{token}.pdf"
     if not cache_path.exists():
