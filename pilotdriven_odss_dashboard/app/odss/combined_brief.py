@@ -69,7 +69,7 @@ MEL_CDL_GROUPS_PER_PAGE = 4
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-17-governed-deferred-source-v1"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-17-responsive-deferred-source-v2"
 
 
 _FIT_FLOOR = T_MICRO
@@ -1429,6 +1429,57 @@ def crop_source_region(
     return None
 
 
+_CROP_PAD = 5.0
+_CROP_PANEL_MIN_HEIGHT = 72.0
+_CROP_PANEL_CHROME_HEIGHT = 47.0
+
+
+def _crop_image_dimensions(
+    crop: dict[str, Any],
+    width: float,
+    height: float,
+    *,
+    dpi: int = 220,
+) -> tuple[float, float]:
+    """Return a crop's bounded display size without changing its scale rule."""
+    aspect = crop["width"] / max(1, crop["height"])
+    natural_w_pt = crop["width"] * 72.0 / dpi
+    draw_h = max(1.0, height - 2 * _CROP_PAD)
+    draw_w = min(
+        max(1.0, width - 2 * _CROP_PAD),
+        draw_h * aspect,
+        natural_w_pt * 1.15,
+    )
+    return draw_w, draw_w / aspect
+
+
+def _crop_panel_required_height(
+    crop: dict[str, Any] | None,
+    panel_width: float,
+    max_height: float,
+    *,
+    dpi: int = 220,
+) -> float:
+    """Fit the source card to its evidence while retaining readable bounds.
+
+    The 47-point chrome allowance is the existing panel title/insets plus the
+    padding used by ``_draw_crop``.  Width and source-DPI determine the natural
+    height; unusually tall evidence still uses all available space and scales
+    down exactly as it did before.
+    """
+    bounded_max = max(1.0, max_height)
+    if bounded_max <= _CROP_PANEL_MIN_HEIGHT:
+        return bounded_max
+    if not crop:
+        return _CROP_PANEL_MIN_HEIGHT
+    inner_width = max(1.0, panel_width - 16.0)
+    natural_width = crop["width"] * 72.0 / dpi * 1.15
+    draw_width = min(max(1.0, inner_width - 2 * _CROP_PAD), natural_width)
+    aspect = crop["width"] / max(1, crop["height"])
+    required = draw_width / aspect + _CROP_PANEL_CHROME_HEIGHT
+    return min(bounded_max, max(_CROP_PANEL_MIN_HEIGHT, required))
+
+
 def _draw_crop(canvas, crop: dict[str, Any] | None, x, y, w, h, *, missing_text: str, dpi: int = 220) -> None:
     from io import BytesIO
 
@@ -1437,23 +1488,18 @@ def _draw_crop(canvas, crop: dict[str, Any] | None, x, y, w, h, *, missing_text:
     if not crop:
         review_line(canvas, x + 8, y + h / 2, missing_text)
         return
-    pad = 5
-    aspect = crop["width"] / max(1, crop["height"])
     # A crop is evidence: render at up to its printed size, never enlarged
-    # into a poster. natural_pt is the region's true size on the source page.
-    natural_w_pt = crop["width"] * 72.0 / dpi
-    draw_h = h - 2 * pad
-    draw_w = min(w - 2 * pad, draw_h * aspect, natural_w_pt * 1.15)
-    draw_h = draw_w / aspect
-    sheet_w = draw_w + 2 * pad
-    sheet_h = draw_h + 2 * pad
+    # into a poster.
+    draw_w, draw_h = _crop_image_dimensions(crop, w, h, dpi=dpi)
+    sheet_w = draw_w + 2 * _CROP_PAD
+    sheet_h = draw_h + 2 * _CROP_PAD
     sheet_x = x + (w - sheet_w) / 2
     sheet_y = y + h - sheet_h
     canvas.setFillColor(colors.white)
     canvas.roundRect(sheet_x, sheet_y, sheet_w, sheet_h, 3, stroke=0, fill=1)
     canvas.drawImage(
         ImageReader(BytesIO(crop["png"])),
-        sheet_x + pad, sheet_y + pad,
+        sheet_x + _CROP_PAD, sheet_y + _CROP_PAD,
         width=draw_w, height=draw_h, preserveAspectRatio=True, mask="auto",
     )
 
@@ -1703,11 +1749,11 @@ def draw_mel_cdl_page(
                 thickness=0,
             )
 
-    # Cropped authoritative sources.
+    # Cropped authoritative sources. The card keeps the original evidence
+    # scale and only removes unused container height.
     crops_top = y - cards_h - 10
-    crops_h = crops_top - 30
-    inner = panel(canvas, MARGIN, 30, full_w, crops_h, title="CROPPED AUTHORITATIVE SOURCE SECTIONS", accent=DESTINATION)
-    ix, iy, iw, ih = inner
+    max_crops_h = crops_top - 30
+    crop = None
     if deferred:
         first_reference = str(deferred[0].get("reference") or "").strip()
         crop = (
@@ -1721,6 +1767,19 @@ def draw_mel_cdl_page(
             )
             or (crop_source_region(source_pdf_path, needle=first_reference, page_hint=0, pad_y=10, full_width=True) if first_reference and first_reference != "UNSPECIFIED" else None)
         )
+    crops_h = _crop_panel_required_height(crop, full_w, max_crops_h)
+    crops_bottom = crops_top - crops_h
+    inner = panel(
+        canvas,
+        MARGIN,
+        crops_bottom,
+        full_w,
+        crops_h,
+        title="CROPPED AUTHORITATIVE SOURCE SECTIONS",
+        accent=DESTINATION,
+    )
+    ix, iy, iw, ih = inner
+    if deferred:
         _draw_crop(
             canvas, crop, ix, iy + 6, iw, ih - 10,
             missing_text="The deferred-item block could not be located for cropping - review CFP page 1 directly.",

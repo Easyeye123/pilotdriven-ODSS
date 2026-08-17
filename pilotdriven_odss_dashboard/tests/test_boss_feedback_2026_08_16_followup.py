@@ -12,6 +12,7 @@ from generate_visual_samples import sample_findings, sample_flight
 from app.odss.briefing import _notice_kind
 from app.odss.combined_brief import (
     _airport_table_required_height,
+    _crop_panel_required_height,
     _kv_card_required_height,
     _terrain_profile_width,
     _terrain_table_height,
@@ -79,6 +80,71 @@ def test_sparse_gate_cards_use_content_height_instead_of_stretching_to_footer():
     height = _kv_card_required_height(rows, 240)
 
     assert 90 <= height < 180
+
+
+def test_authoritative_source_card_height_tracks_crop_content_with_hard_bounds():
+    short_wide_crop = {"width": 1672, "height": 417}
+    tall_crop = {"width": 800, "height": 2400}
+
+    short_height = _crop_panel_required_height(short_wide_crop, 789.89, 364)
+    tall_height = _crop_panel_required_height(tall_crop, 789.89, 240)
+
+    assert 195 <= short_height <= 210
+    assert tall_height == 240
+    assert _crop_panel_required_height(None, 789.89, 364) == 72
+
+
+def test_short_authoritative_source_crop_does_not_stretch_card_to_footer(tmp_path):
+    source = tmp_path / "short-deferred-source.pdf"
+    with fitz.open() as source_document:
+        page = source_document.new_page(width=595, height=842)
+        page.insert_text((50, 80), "ATTN ALL CONCERN", fontsize=10, fontname="cour")
+        page.insert_text((50, 96), "MEL 25-20-50A NON-ESSENTIAL EQUIPMENT", fontsize=10, fontname="cour")
+        page.insert_text((50, 112), "COMPANY REMARK REVIEW GOVERNED SOURCE", fontsize=10, fontname="cour")
+        page.insert_text((50, 138), "RTE NO WSSS YPPH", fontsize=10, fontname="cour")
+        source_document.save(source)
+
+    flight = sample_flight()
+    flight["deferred_items"] = [{
+        "item_type": "MEL",
+        "reference": "25-20-50A",
+        "description": "Non-essential equipment and furnishings",
+        "company_remark": "Review the current governed item.",
+    }]
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    output = tmp_path / "responsive-source-card.pdf"
+
+    render_combined_briefing(
+        flight,
+        findings,
+        [],
+        output,
+        source_pdf_path=str(source),
+    )
+
+    with fitz.open(output) as document:
+        mel_page = document[4]
+        title_box = mel_page.search_for("CROPPED AUTHORITATIVE SOURCE SECTIONS")[0]
+        enclosing_panels = [
+            drawing["rect"]
+            for drawing in mel_page.get_drawings()
+            if drawing["type"] == "fs"
+            and drawing["rect"].width > 700
+            and abs(drawing["rect"].x0 - 26) < 0.1
+            and drawing["rect"].y0 <= title_box.y0
+            and drawing["rect"].y1 >= title_box.y1
+        ]
+
+        assert len(enclosing_panels) == 1
+        assert 90 <= enclosing_panels[0].height < 180
+        assert mel_page.get_images(full=True)
+        assert abs(mel_page.rect.width - 841.89) < 0.1
+        assert abs(mel_page.rect.height - 595.28) < 0.1
+        assert "OPEN GOVERNED MEL SOURCE >" in mel_page.get_text()
 
 
 def test_time_gate_cards_use_a_content_filling_mosaic_without_three_empty_columns():
