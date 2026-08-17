@@ -69,7 +69,7 @@ MEL_CDL_GROUPS_PER_PAGE = 4
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-17-responsive-deferred-source-v2"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-17-responsive-deferred-source-v3"
 
 
 _FIT_FLOOR = T_MICRO
@@ -1657,7 +1657,7 @@ def draw_mel_cdl_page(
     content_top = draw_page_chrome(
         canvas, flight,
         page_number=page_number, page_count=page_count,
-        source_line="Cropped CFP page 1 deferred-item block | controlled CDL index where mounted",
+        source_line="CFP page 1 declarations | exact governed MEL/CDL item links",
     )
     if section_page_number == 1:
         canvas.bookmarkPage("sec_mel_cdl")
@@ -1710,7 +1710,14 @@ def draw_mel_cdl_page(
         canvas.setFont(MONO_BOLD, 9.0)
         _draw_string_fitted(canvas, ix, card_top - 34, headline[:64], MONO_BOLD, 9.0, iw, TEXT)
         remark = str(item.get("company_remark") or "").strip()
-        body = remark or "Exact operational conditions remain governed by the cropped source section below."
+        body = (
+            f"CFP REMARK - NOT THE APPROVED {item_type} REMEDY: {remark}"
+            if remark
+            else (
+                f"CFP declaration only. The approved {item_type} remedy must be read "
+                "from the exact governed item."
+            )
+        )
         row_y = card_top - 48
         for line in _wrap(body, SANS, T_SMALL, iw)[:3]:
             canvas.setFillColor(TEXT_SECONDARY)
@@ -1719,7 +1726,7 @@ def draw_mel_cdl_page(
             row_y -= 9.6
         penalty = str(item.get("penalty") or "").strip()
         source_target = governed_deferred_source_target(flight, item)
-        source_label = f"OPEN GOVERNED {item_type} SOURCE >" if source_target else ""
+        source_label = f"OPEN EXACT {item_type} ITEM / REMEDY >" if source_target else ""
         source_width = (
             pdfmetrics.stringWidth(source_label, SANS_BOLD, T_MICRO)
             if source_label
@@ -1749,8 +1756,9 @@ def draw_mel_cdl_page(
                 thickness=0,
             )
 
-    # Cropped authoritative sources. The card keeps the original evidence
-    # scale and only removes unused container height.
+    # Cropped CFP declaration. It remains useful source evidence, but it is
+    # never labelled as the approved MEL/CDL/CDDL remedy. The card keeps the
+    # original evidence scale and only removes unused container height.
     crops_top = y - cards_h - 10
     max_crops_h = crops_top - 30
     crop = None
@@ -1775,7 +1783,7 @@ def draw_mel_cdl_page(
         crops_bottom,
         full_w,
         crops_h,
-        title="CROPPED AUTHORITATIVE SOURCE SECTIONS",
+        title="CROPPED CFP DECLARATION - NOT THE APPROVED REMEDY",
         accent=DESTINATION,
     )
     ix, iy, iw, ih = inner

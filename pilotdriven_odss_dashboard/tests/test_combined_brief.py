@@ -96,7 +96,9 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
 
     document = fitz.open(output)
     mel_page = document[4]
-    assert "OPEN GOVERNED MEL SOURCE >" in mel_page.get_text()
+    mel_text = mel_page.get_text()
+    assert "CFP REMARK - NOT THE APPROVED MEL REMEDY" in mel_text
+    assert "OPEN EXACT MEL ITEM / REMEDY >" in mel_text
     source_links = [
         link["uri"] for link in mel_page.get_links()
         if link.get("uri") and "governed-deferred-reference" in link["uri"]

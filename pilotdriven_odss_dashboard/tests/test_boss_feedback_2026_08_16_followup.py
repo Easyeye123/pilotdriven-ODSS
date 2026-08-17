@@ -128,7 +128,7 @@ def test_short_authoritative_source_crop_does_not_stretch_card_to_footer(tmp_pat
 
     with fitz.open(output) as document:
         mel_page = document[4]
-        title_box = mel_page.search_for("CROPPED AUTHORITATIVE SOURCE SECTIONS")[0]
+        title_box = mel_page.search_for("CROPPED CFP DECLARATION - NOT THE APPROVED REMEDY")[0]
         enclosing_panels = [
             drawing["rect"]
             for drawing in mel_page.get_drawings()
@@ -144,7 +144,8 @@ def test_short_authoritative_source_crop_does_not_stretch_card_to_footer(tmp_pat
         assert mel_page.get_images(full=True)
         assert abs(mel_page.rect.width - 841.89) < 0.1
         assert abs(mel_page.rect.height - 595.28) < 0.1
-        assert "OPEN GOVERNED MEL SOURCE >" in mel_page.get_text()
+        assert "CFP REMARK - NOT THE APPROVED MEL REMEDY" in mel_page.get_text()
+        assert "OPEN EXACT MEL ITEM / REMEDY >" in mel_page.get_text()
 
 
 def test_time_gate_cards_use_a_content_filling_mosaic_without_three_empty_columns():

@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+import fitz
+
+from scripts.run_private_cfp_corpus import (
+    EXPECTED_CORPUS_SIZE,
+    load_manifest,
+    scan_physical_pdf,
+)
+
+
+MANIFEST = Path(__file__).with_name("private_cfp_corpus_manifest.json")
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_private_release_manifest_pins_exactly_eleven_unique_physical_pdfs():
+    payload = load_manifest(MANIFEST)
+    cases = payload["cases"]
+
+    assert len(cases) == EXPECTED_CORPUS_SIZE == 11
+    assert len({case["filename"] for case in cases}) == 11
+    assert len({case["source_sha256"] for case in cases}) == 11
+    assert len({case["route_hash"] for case in cases}) == 11
+    assert {case["flight_number"] for case in cases} == {
+        "SQ23",
+        "SQ24",
+        "SQ223",
+        "SQ279",
+        "SQ303",
+        "SQ304",
+        "SQ322",
+        "SQ326",
+        "SQ366",
+        "SQ482",
+        "SQ910",
+    }
+    assert all(case["source_page_count"] >= 52 for case in cases)
+    assert all(len(case["source_sha256"]) == 64 for case in cases)
+
+
+def test_manifest_is_plain_json_and_contains_no_private_pdf_bytes():
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == 1
+    assert MANIFEST.stat().st_size < 20_000
+
+
+def test_odss_runtime_image_is_reachable_only_through_the_full_pytest_stage():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "RUN python -m pytest -q" in dockerfile
+    assert "COPY --from=test /tmp/odss-tests-passed" in dockerfile
+
+
+def test_physical_scanner_accepts_a_readable_non_overlapping_page(tmp_path):
+    output = tmp_path / "readable.pdf"
+    with fitz.open() as document:
+        page = document.new_page(width=841.89, height=595.28)
+        page.insert_text(
+            (50, 80),
+            "FLIGHT BRIEFING synthetic physical release gate page with enough readable text.",
+            fontsize=12,
+        )
+        page.insert_text(
+            (50, 110),
+            "The second line is separated and proves that the raster contains visible contrast.",
+            fontsize=12,
+        )
+        document.save(output)
+
+    result = scan_physical_pdf(output)
+
+    assert result["valid"] is True
+    assert result["page_count"] == 1
+    assert result["pages"][0]["visible_overlap_count"] == 0
+    assert result["pages"][0]["outside_text_box_count"] == 0
+    assert result["pages"][0]["raster_has_contrast"] is True
+
+
+def test_physical_scanner_rejects_visible_overlapping_text(tmp_path):
+    output = tmp_path / "overlap.pdf"
+    with fitz.open() as document:
+        page = document.new_page(width=841.89, height=595.28)
+        text = "FLIGHT BRIEFING overlapping synthetic text must stop the release immediately."
+        page.insert_text((50, 80), text, fontsize=12)
+        page.insert_text((50, 80), text, fontsize=12)
+        document.save(output)
+
+    result = scan_physical_pdf(output)
+
+    assert result["valid"] is False
+    assert result["pages"][0]["visible_overlap_count"] > 0
+    assert any("overlap" in item["message"] for item in result["violations"])
+
+
+def test_one_missing_private_cfp_makes_the_corpus_command_fail(tmp_path):
+    corpus_dir = tmp_path / "empty-corpus"
+    output_dir = tmp_path / "receipt"
+    corpus_dir.mkdir()
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "run_private_cfp_corpus.py"),
+            "--corpus-dir",
+            str(corpus_dir),
+            "--output",
+            str(output_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    receipt = json.loads(
+        (output_dir / "private-cfp-corpus-receipt.json").read_text(encoding="utf-8")
+    )
+
+    assert completed.returncode != 0
+    assert receipt["status"] == "failed"
+    assert receipt["failed_case_count"] == EXPECTED_CORPUS_SIZE
+    assert "Required private CFP is missing" in receipt["preflight_error"]
