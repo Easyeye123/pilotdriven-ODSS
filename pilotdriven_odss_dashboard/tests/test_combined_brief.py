@@ -364,6 +364,35 @@ def test_edto_page_preserves_every_numbered_sector(tmp_path):
         assert f"ENTRY ACTM {entry} | EXIT ACTM {exit_}" in second
 
 
+def test_edto_page_preserves_every_alternate(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["edto"]["airports"] = [
+        {
+            "airport": airport,
+            "runway": runway,
+            "approach": "CAT1",
+            "period_start_utc": "2026-08-15T17:00:00+00:00",
+            "period_end_utc": "2026-08-16T02:00:00+00:00",
+        }
+        for airport, runway in (
+            ("PGUM", "24R"),
+            ("RJTT", "34R"),
+            ("RJCC", "01R"),
+            ("PASY", "28"),
+            ("PACD", "15"),
+            ("KSFO", "28R"),
+        )
+    ]
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "six-edto-alternates.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    second = fitz.open(out)[1].get_text()
+
+    for airport in ("PGUM", "RJTT", "RJCC", "PASY", "PACD", "KSFO"):
+        assert airport in second
+
+
 def test_missing_classification_never_defaults_to_edto(tmp_path):
     flight = sample_flight()
     flight["fuel_summary"] = {}

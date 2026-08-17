@@ -935,7 +935,7 @@ def _edto_operational_rows(
         ))
     elif not sectors:
         rows.append(("ENTRY / EXIT", "No parsed EDTO sector is held."))
-    for airport in (edto_view.get("airports") or [])[:4]:
+    for airport in edto_view.get("airports") or []:
         identity = f"{airport.get('airport') or '----'}/{airport.get('runway') or '--'}"
         rows.append((
             "EDTO ALTN",

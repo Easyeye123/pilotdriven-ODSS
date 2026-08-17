@@ -972,7 +972,7 @@ def build_briefing_view(
             "approach": item.get("approach") or "",
             "period": f"{_display_utc(item.get('period_start_utc'))} - {_display_utc(item.get('period_end_utc'))}",
         }
-        for item in (edto.get("airports") or [])[:4]
+        for item in edto.get("airports") or []
     ]
     edto_sector_view = [
         {
