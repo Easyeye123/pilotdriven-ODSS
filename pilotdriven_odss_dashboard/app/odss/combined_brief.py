@@ -852,6 +852,43 @@ def _kv_card_required_height(rows, width: float) -> float:
     return max(90.0, 54.0 + natural_height)
 
 
+def _time_gate_card_layout(
+    *,
+    full_width: float,
+    cards_top: float,
+    cards_bottom: float = 30.0,
+    gap: float = 10.0,
+) -> dict[str, tuple[float, float, float, float]]:
+    """Lay out time/gate facts as one wide card plus a compact right stack.
+
+    The previous three-column grid forced the one-row FIR summary to be as
+    tall as the multi-row EDTO status and still left a large unused band below
+    all three cards.  The mosaic lets the operationally dense EDTO block use
+    the wide column while the two shorter summaries share the right column.
+    Coordinates are relative to the page content margin.
+    """
+    usable_height = max(0.0, cards_top - cards_bottom)
+    left_width = (full_width - gap) * 0.58
+    right_width = full_width - left_width - gap
+    stacked_height = max(0.0, (usable_height - gap) / 2)
+    right_x = left_width + gap
+    return {
+        "edto": (0.0, cards_bottom, left_width, usable_height),
+        "communications": (
+            right_x,
+            cards_bottom + stacked_height + gap,
+            right_width,
+            stacked_height,
+        ),
+        "operating": (
+            right_x,
+            cards_bottom,
+            right_width,
+            stacked_height,
+        ),
+    }
+
+
 def _kv_card(canvas, x, y, w, h, *, title, accent, rows, open_target=None):
     """Spec card: label column + value text rows, optional OPEN link."""
     panel(canvas, x, y, w, h, title=title, accent=accent, title_colour=BG if accent in (COMMS_TEAL, WEATHER_AMBER, EDTO_GREEN) else colors.white)
@@ -871,6 +908,10 @@ def _kv_card(canvas, x, y, w, h, *, title, accent, rows, open_target=None):
             T_SMALL,
             min(9.6, (available_height - row_gap * len(wrapped_rows)) / max(1, line_count)),
         )
+    elif len(wrapped_rows) > 1:
+        reserved_text_height = sum(max(2, len(lines)) * line_height for _, lines in wrapped_rows)
+        spare_height = max(0.0, available_height - reserved_text_height)
+        row_gap = min(14.0, max(row_gap, spare_height / len(wrapped_rows)))
     row_y = y + h - 30
     for label, lines in wrapped_rows:
         canvas.setFillColor(TEXT_MUTED)
@@ -1006,10 +1047,9 @@ def draw_time_gates_page(
     inner = panel(canvas, MARGIN, hazard_y - strip_h, full_w, strip_h, title="HAZARD AND COMMUNICATION GATES", accent=WEATHER_AMBER, title_colour=BG)
     _timeline(canvas, inner[0] + 14, hazard_y - strip_h + 12, full_w - 44, hazard_entries, accent_default=WEATHER_AMBER)
 
-    # Three content-led cards. Sparse summaries stay near the timeline instead
-    # of being stretched to the footer as large empty panels.
+    # One wide EDTO card plus two compact cards. This uses the printable height
+    # without forcing the sparse FIR summary into a mostly empty third column.
     cards_top = hazard_y - strip_h - 10
-    card_w = (full_w - 2 * 10) / 3
     edto_view = briefing.get("edto") or {}
     fuel_summary = flight.get("fuel_summary") or {}
     edto_rows = _edto_operational_rows(classification, edto_view, fuel_summary)
@@ -1026,18 +1066,13 @@ def draw_time_gates_page(
         ("DEP", str((briefing.get("departure") or {}).get("runway") or "Runway review.")),
         ("DEST", str((briefing.get("destination") or {}).get("runway") or "Runway review.")),
     ]
-    card_h = min(
-        cards_top - 30,
-        max(
-            _kv_card_required_height(edto_rows, card_w),
-            _kv_card_required_height(comm_rows, card_w),
-            _kv_card_required_height(operating_rows, card_w),
-        ),
-    )
-    cards_y = cards_top - card_h
-    _kv_card(canvas, MARGIN, cards_y, card_w, card_h, title=f"{classification_label} STATUS", accent=EDTO_GREEN, rows=edto_rows, open_target="sec_alternates")
-    _kv_card(canvas, MARGIN + card_w + 10, cards_y, card_w, card_h, title="FIR / NEXT CONTACT", accent=COMMS_TEAL, rows=comm_rows, open_target="sec_comms")
-    _kv_card(canvas, MARGIN + 2 * (card_w + 10), cards_y, card_w, card_h, title="OPERATING GATES", accent=DEPARTURE, rows=operating_rows, open_target="sec_airports")
+    layout = _time_gate_card_layout(full_width=full_w, cards_top=cards_top)
+    edto_x, edto_y, edto_w, edto_h = layout["edto"]
+    comm_x, comm_y, comm_w, comm_h = layout["communications"]
+    gate_x, gate_y, gate_w, gate_h = layout["operating"]
+    _kv_card(canvas, MARGIN + edto_x, edto_y, edto_w, edto_h, title=f"{classification_label} STATUS", accent=EDTO_GREEN, rows=edto_rows, open_target="sec_alternates")
+    _kv_card(canvas, MARGIN + comm_x, comm_y, comm_w, comm_h, title="FIR / NEXT CONTACT", accent=COMMS_TEAL, rows=comm_rows, open_target="sec_comms")
+    _kv_card(canvas, MARGIN + gate_x, gate_y, gate_w, gate_h, title="OPERATING GATES", accent=DEPARTURE, rows=operating_rows, open_target="sec_airports")
 
 
 # ---------------------------------------------------------------------------
@@ -1054,6 +1089,20 @@ def _matched_profiles(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
         f for f in findings
         if f.get("engine") == "depressurisation" and (f.get("data") or {}).get("chart_number")
     ]
+
+
+def _terrain_profile_width(full_width: float, *, image_count: int) -> float:
+    """Use all available width when only one governed profile is served."""
+    return full_width if image_count == 1 else (full_width - 10.0) / 2
+
+
+def _terrain_table_height(*, has_charts: bool, unmatched_count: int) -> float:
+    """Reserve an unmatched table only when it carries non-redundant facts."""
+    if has_charts and unmatched_count == 0:
+        return 0.0
+    if has_charts:
+        return 74.0
+    return max(96.0, 58.0 + min(3, unmatched_count) * 16.0)
 
 
 def draw_terrain_page(
@@ -1098,20 +1147,20 @@ def draw_terrain_page(
     stat_card(canvas, MARGIN + 3 * (card_w + 10), cards_y, card_w, card_h, label="EFFECTIVITY", value=theme.normalized_registration(flight.get("registration")) or "--", caption=str(flight.get("aircraft_type") or ""), accent=DEPARTURE, mono=True)
 
     # Profile cards with embedded cropped charts.
-    table_h = (
-        74.0
-        if chart_images
-        else max(96.0, 58.0 + min(3, len(unmatched)) * 16.0)
+    table_h = _terrain_table_height(
+        has_charts=bool(chart_images),
+        unmatched_count=len(unmatched),
     )
     profiles_top = cards_y - 10
     profiles_h = (
-        profiles_top - 30 - table_h - 10
+        profiles_top - 30 - table_h - (10 if table_h else 0)
         if chart_images
         else 62.0
     )
-    profile_w = (full_w - 10) / 2
+    served_images = chart_images[:2]
+    profile_w = _terrain_profile_width(full_w, image_count=len(served_images))
     accents = (EDTO_GREEN, WEATHER_AMBER)
-    for index, image in enumerate(chart_images[:2]):
+    for index, image in enumerate(served_images):
         px = MARGIN + index * (profile_w + 10)
         chart_number = image.get("chart_number") or "--"
         finding = next((m for m in matched if (m.get("data") or {}).get("chart_number") == chart_number), {})
@@ -1156,36 +1205,37 @@ def draw_terrain_page(
             canvas.setFont(SANS_BOLD, T_SMALL)
             canvas.drawCentredString(MARGIN + full_w / 2, inner[1] + inner[3] / 2, "No approved profile match in the mounted controlled index.")
 
-    # Unmatched exposures table. With no served chart, keep the concise
-    # controlled-index message and this operational result together near the
-    # top instead of stretching an empty profile panel across the page.
-    table_y = 30.0 if chart_images else profiles_top - profiles_h - 10 - table_h
-    table_top = table_y + table_h
-    inner = panel(canvas, MARGIN, table_y, full_w, table_h, title="UNMATCHED EXPOSURES - NO PROFILE SUBSTITUTED", accent=CRITICAL)
-    ix = inner[0]
-    row_y = table_top - 26
-    canvas.setFillColor(TEXT_MUTED)
-    canvas.setFont(SANS_BOLD, T_SMALL)
-    canvas.drawString(ix, row_y, "EVENT")
-    canvas.drawString(ix + 150, row_y, "ACTM")
-    canvas.drawString(ix + 260, row_y, "STATUS")
-    row_y -= 11
-    if unmatched:
-        for finding in unmatched[:3]:
-            data = finding.get("data") or {}
-            start = data.get("start_actm_minutes")
-            canvas.setFillColor(TEXT)
-            canvas.setFont(SANS, T_SMALL)
-            canvas.drawString(ix, row_y, str(finding.get("title") or "")[:34])
-            canvas.setFont(MONO, T_SMALL)
-            canvas.drawString(ix + 150, row_y, format_actm(start) if start is not None else "--")
-            canvas.setFont(SANS, T_SMALL)
-            _draw_string_fitted(canvas, ix + 260, row_y, str(finding.get("summary") or "Exact endpoint/airway profile unresolved."), SANS, T_SMALL, full_w - 290, TEXT_SECONDARY)
-            row_y -= 14
-    else:
-        canvas.setFillColor(EDTO_GREEN)
+    # Unmatched exposures table. When a served chart already covers every
+    # detected window, the zero-unresolved stat card is sufficient and the
+    # redundant table gives its height back to the critical profile image.
+    if table_h:
+        table_y = 30.0 if chart_images else profiles_top - profiles_h - 10 - table_h
+        table_top = table_y + table_h
+        inner = panel(canvas, MARGIN, table_y, full_w, table_h, title="UNMATCHED EXPOSURES - NO PROFILE SUBSTITUTED", accent=CRITICAL)
+        ix = inner[0]
+        row_y = table_top - 26
+        canvas.setFillColor(TEXT_MUTED)
         canvas.setFont(SANS_BOLD, T_SMALL)
-        canvas.drawString(ix, row_y, "All detected windows covered by the approved profile set; no nearby or generic chart substituted.")
+        canvas.drawString(ix, row_y, "EVENT")
+        canvas.drawString(ix + 150, row_y, "ACTM")
+        canvas.drawString(ix + 260, row_y, "STATUS")
+        row_y -= 11
+        if unmatched:
+            for finding in unmatched[:3]:
+                data = finding.get("data") or {}
+                start = data.get("start_actm_minutes")
+                canvas.setFillColor(TEXT)
+                canvas.setFont(SANS, T_SMALL)
+                canvas.drawString(ix, row_y, str(finding.get("title") or "")[:34])
+                canvas.setFont(MONO, T_SMALL)
+                canvas.drawString(ix + 150, row_y, format_actm(start) if start is not None else "--")
+                canvas.setFont(SANS, T_SMALL)
+                _draw_string_fitted(canvas, ix + 260, row_y, str(finding.get("summary") or "Exact endpoint/airway profile unresolved."), SANS, T_SMALL, full_w - 290, TEXT_SECONDARY)
+                row_y -= 14
+        else:
+            canvas.setFillColor(EDTO_GREEN)
+            canvas.setFont(SANS_BOLD, T_SMALL)
+            canvas.drawString(ix, row_y, "All detected windows covered by the approved profile set; no nearby or generic chart substituted.")
 
 
 def draw_profile_page(
@@ -2201,6 +2251,9 @@ def render_combined_briefing(
         )
         canvas.showPage()
     canvas.save()
+    from .report_quality import assert_combined_briefing_quality
+
+    assert_combined_briefing_quality(output_path)
 
 
 def combined_briefing_filename(flight_number: Any, flight_date: Any) -> str:

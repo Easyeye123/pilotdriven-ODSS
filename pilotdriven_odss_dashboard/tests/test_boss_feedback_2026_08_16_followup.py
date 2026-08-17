@@ -13,10 +13,14 @@ from app.odss.briefing import _notice_kind
 from app.odss.combined_brief import (
     _airport_table_required_height,
     _kv_card_required_height,
+    _terrain_profile_width,
+    _terrain_table_height,
+    _time_gate_card_layout,
     render_combined_briefing,
 )
 from app.odss.engines import _notam_operational_summary
 from app.odss.pilot_briefing import notam_pertinence
+from app.odss.report_quality import validate_combined_briefing_pdf
 
 
 def test_overview_uses_operating_window_weather_primary(tmp_path):
@@ -48,6 +52,23 @@ def test_overview_uses_operating_window_weather_primary(tmp_path):
     assert "Weather review on the hazard assessment page." not in first_page
 
 
+def test_combined_briefing_uses_the_combined_publication_contract(tmp_path):
+    flight = sample_flight()
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    output = tmp_path / "combined-contract.pdf"
+
+    render_combined_briefing(flight, findings, [], output)
+
+    result = validate_combined_briefing_pdf(output)
+    assert result["valid"] is True
+    assert result["page_count"] == 9
+    assert result["violations"] == []
+
+
 def test_sparse_gate_cards_use_content_height_instead_of_stretching_to_footer():
     rows = [
         ("MEL/CDL", "MEL 25-20-50A"),
@@ -58,6 +79,35 @@ def test_sparse_gate_cards_use_content_height_instead_of_stretching_to_footer():
     height = _kv_card_required_height(rows, 240)
 
     assert 90 <= height < 180
+
+
+def test_time_gate_cards_use_a_content_filling_mosaic_without_three_empty_columns():
+    layout = _time_gate_card_layout(full_width=780, cards_top=270)
+
+    edto_x, edto_y, edto_w, edto_h = layout["edto"]
+    comms_x, comms_y, comms_w, comms_h = layout["communications"]
+    gates_x, gates_y, gates_w, gates_h = layout["operating"]
+
+    assert edto_x == 0
+    assert edto_y == 30
+    assert edto_w > comms_w
+    assert edto_h == 240
+    assert comms_x == gates_x
+    assert comms_w == gates_w
+    assert comms_y > gates_y
+    assert comms_h == gates_h
+    assert gates_y == 30
+
+
+def test_single_terrain_profile_uses_the_full_content_width():
+    assert _terrain_profile_width(780, image_count=1) == 780
+    assert _terrain_profile_width(780, image_count=2) == 385
+
+
+def test_matched_terrain_page_drops_redundant_zero_unresolved_table():
+    assert _terrain_table_height(has_charts=True, unmatched_count=0) == 0
+    assert _terrain_table_height(has_charts=True, unmatched_count=1) == 74
+    assert _terrain_table_height(has_charts=False, unmatched_count=2) >= 96
 
 
 def test_obstacle_surface_notice_does_not_become_a_runway_restriction():

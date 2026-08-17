@@ -85,6 +85,163 @@ _LEVEL_2_FAIL_CLOSED_ADVISORY_RESULTS = (
     ),
 )
 
+_COMBINED_FIXED_PREFIX = (
+    ("FLIGHT OVERVIEW",),
+    ("TIME,", "FIR AND OPERATING GATES"),
+    ("HIGH TERRAIN EXPOSURE AND DEPRESSURISATION",),
+    ("PERFORMANCE AND PLANNING SENSITIVITY",),
+)
+_COMBINED_MEL_TITLE = "MEL/CDL AND CDDL"
+_COMBINED_FIXED_SUFFIX = (
+    ("DESTINATION ALTERNATES",),
+    ("AIRPORT AND NOTAM APPLICABILITY",),
+    ("OPERATIONAL HAZARD ASSESSMENT",),
+    ("FIR COMMUNICATION AND TIME RECONCILIATION",),
+)
+_COMBINED_PROFILE_TITLE = "DEPRESSURISATION PROFILE"
+_COMBINED_RETIRED_LABELS = (
+    "LEVEL 1",
+    "LEVEL 2",
+    "PERTINENT BRIEF",
+    "EVIDENCE LEVEL",
+)
+
+
+def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
+    """Validate the post-Level-1/Level-2 Flight Briefing page contract.
+
+    MEL/CDL continuation pages and governed depressurisation source charts are
+    dynamic, while the operational section order remains fixed. Keeping this
+    separate from ``validate_report_pdf(level=2)`` prevents the retired report
+    layout from silently becoming the publication gate for the combined PDF.
+    """
+    violations: list[ReportQualityViolation] = []
+    try:
+        reader = PdfReader(path)
+    except Exception as exc:
+        return {
+            "valid": False,
+            "page_count": 0,
+            "violations": [
+                ReportQualityViolation(
+                    "PDF_UNREADABLE",
+                    f"The generated PDF cannot be read: {type(exc).__name__}.",
+                )
+            ],
+        }
+
+    pages = list(reader.pages)
+    page_count = len(pages)
+    if page_count < 9:
+        violations.append(ReportQualityViolation(
+            "COMBINED_PAGE_CONTRACT",
+            f"Flight Briefing must contain at least 9 pages; generated {page_count}.",
+        ))
+
+    extracted_pages: list[str] = []
+    for page_number, page in enumerate(pages, start=1):
+        width = float(page.mediabox.width)
+        height = float(page.mediabox.height)
+        if (
+            width <= height
+            or abs(width - _A4_LANDSCAPE_WIDTH) > _PAGE_TOLERANCE_POINTS
+            or abs(height - _A4_LANDSCAPE_HEIGHT) > _PAGE_TOLERANCE_POINTS
+        ):
+            violations.append(ReportQualityViolation(
+                "PAGE_FORMAT_CONTRACT",
+                f"Page {page_number} is not A4 landscape.",
+            ))
+        try:
+            text = page.extract_text() or ""
+        except Exception as exc:
+            violations.append(ReportQualityViolation(
+                "PDF_TEXT_UNREADABLE",
+                f"Page {page_number} text cannot be checked: {type(exc).__name__}.",
+            ))
+            text = ""
+        extracted_pages.append(text)
+        if "FLIGHT BRIEFING" not in text.upper():
+            violations.append(ReportQualityViolation(
+                "COMBINED_PAGE_CHROME",
+                f"Flight Briefing page {page_number} is missing its report label.",
+            ))
+
+    pilot_text = "\n".join(extracted_pages)
+    for code, pattern in _PILOT_FACING_FORBIDDEN:
+        if pattern.search(pilot_text):
+            violations.append(ReportQualityViolation(
+                code,
+                f"Flight Briefing contains prohibited internal wording matched by {pattern.pattern}.",
+            ))
+    folded_text = pilot_text.upper()
+    for label in _COMBINED_RETIRED_LABELS:
+        if label in folded_text:
+            violations.append(ReportQualityViolation(
+                "COMBINED_RETIRED_LABEL",
+                f"Flight Briefing contains retired pilot-facing label: {label}.",
+            ))
+
+    if page_count >= 4:
+        for page_index, required_markers in enumerate(_COMBINED_FIXED_PREFIX):
+            page_text = extracted_pages[page_index].upper()
+            if not all(marker in page_text for marker in required_markers):
+                violations.append(ReportQualityViolation(
+                    "COMBINED_PAGE_STRUCTURE",
+                    (
+                        f"Flight Briefing page {page_index + 1} must contain "
+                        f"{', '.join(required_markers)}."
+                    ),
+                ))
+
+        cursor = len(_COMBINED_FIXED_PREFIX)
+        mel_pages = 0
+        while cursor < page_count and _COMBINED_MEL_TITLE in extracted_pages[cursor].upper():
+            mel_pages += 1
+            cursor += 1
+        if mel_pages == 0:
+            violations.append(ReportQualityViolation(
+                "COMBINED_MEL_STRUCTURE",
+                "Flight Briefing must contain at least one MEL/CDL and CDDL page.",
+            ))
+
+        for required_markers in _COMBINED_FIXED_SUFFIX:
+            if cursor >= page_count or not all(
+                marker in extracted_pages[cursor].upper()
+                for marker in required_markers
+            ):
+                violations.append(ReportQualityViolation(
+                    "COMBINED_PAGE_STRUCTURE",
+                    (
+                        f"Flight Briefing page {cursor + 1} must contain "
+                        f"{', '.join(required_markers)}."
+                    ),
+                ))
+            cursor += 1
+
+        while cursor < page_count:
+            if _COMBINED_PROFILE_TITLE not in extracted_pages[cursor].upper():
+                violations.append(ReportQualityViolation(
+                    "COMBINED_PROFILE_STRUCTURE",
+                    (
+                        f"Flight Briefing page {cursor + 1} must be a governed "
+                        "depressurisation profile source-chart page."
+                    ),
+                ))
+            cursor += 1
+
+    return {
+        "valid": not violations,
+        "page_count": page_count,
+        "violations": violations,
+    }
+
+
+def assert_combined_briefing_quality(path: Path) -> dict[str, Any]:
+    result = validate_combined_briefing_pdf(path)
+    if not result["valid"]:
+        raise ReportQualityError(result["violations"])
+    return result
+
 
 def validate_report_pdf(
     path: Path,
@@ -281,6 +438,8 @@ def assert_report_quality(
 __all__ = [
     "ReportQualityError",
     "ReportQualityViolation",
+    "assert_combined_briefing_quality",
     "assert_report_quality",
+    "validate_combined_briefing_pdf",
     "validate_report_pdf",
 ]
