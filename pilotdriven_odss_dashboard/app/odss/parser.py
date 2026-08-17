@@ -590,6 +590,63 @@ def _edto_period(
     return period_start, period_end
 
 
+def _parse_edto_airports(
+    edto_text: str,
+    departure_utc: datetime,
+    arrival_utc: datetime,
+) -> list[dict[str, Any]]:
+    """Parse every checked-period row without joining a blank approach row.
+
+    Some Lido rows intentionally leave APCH blank. Parsing the whole section
+    with ``\\s+`` can then cross the newline and consume the next airport as the
+    missing approach. Read one physical table row at a time and split the
+    trailing minima from the optional approach instead.
+    """
+    row_pattern = re.compile(
+        r"^(?P<airport>[A-Z]{4})[ \t]+"
+        r"(?P<start>\d{4})-(?P<end>\d{4})[ \t]+"
+        r"(?P<runway>[0-9A-Z]{2,3})[ \t]+(?P<tail>\S.*)$"
+    )
+    airports: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str, str, str]] = set()
+    for line in edto_text.splitlines():
+        match = row_pattern.match(line)
+        if not match:
+            continue
+        tail_parts = match.group("tail").rsplit(maxsplit=1)
+        approach, minima = (
+            (tail_parts[0], tail_parts[1])
+            if len(tail_parts) == 2
+            else ("", tail_parts[0])
+        )
+        key = (
+            match.group("airport"),
+            match.group("start"),
+            match.group("end"),
+            match.group("runway"),
+            approach,
+            minima,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        period_start, period_end = _edto_period(
+            match.group("start"),
+            match.group("end"),
+            departure_utc,
+            arrival_utc,
+        )
+        airports.append({
+            "airport": match.group("airport"),
+            "period_start_utc": period_start.isoformat(),
+            "period_end_utc": period_end.isoformat(),
+            "runway": match.group("runway"),
+            "approach": approach,
+            "minima": minima,
+        })
+    return airports
+
+
 def _utc_nearest(reference: datetime, hhmm: str) -> datetime:
     candidates = [
         utc_on_date(reference + timedelta(days=offset), hhmm)
@@ -1045,18 +1102,11 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         )
     ]
     primary_edto_sector = edto_sectors[0] if edto_sectors else None
-    edto_airports = []
-    for m in re.finditer(r"^(\w{4})\s+(\d{4})-(\d{4})\s+(\w+)\s+(\S+)\s+(.+)$", edto_text, re.MULTILINE):
-        apt, start_hhmm, end_hhmm, runway, approach, minima = m.groups()
-        period_start, period_end = _edto_period(start_hhmm, end_hhmm, departure_utc, arrival_utc)
-        edto_airports.append({
-            "airport": apt,
-            "period_start_utc": period_start.isoformat(),
-            "period_end_utc": period_end.isoformat(),
-            "runway": runway,
-            "approach": approach,
-            "minima": minima.strip(),
-        })
+    edto_airports = _parse_edto_airports(
+        edto_text,
+        departure_utc,
+        arrival_utc,
+    )
     edto_assessment = _build_edto_assessment(
         cfp_pages=cfp_pages,
         cfp_start=cfp_start,

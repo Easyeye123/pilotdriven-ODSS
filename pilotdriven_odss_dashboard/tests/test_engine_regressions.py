@@ -26,6 +26,7 @@ from app.odss.enrichment import (
 from app.odss.briefing import _weather_summary
 from app.odss.parser import (
     _parse_deferred_items,
+    _parse_edto_airports,
     _parse_edto_sectors,
     _parse_named_procedure,
     parse_lido,
@@ -1361,6 +1362,32 @@ EXIT2       E09313.0
     assert sectors[0]["etps"][0]["label"] == "1E"
     assert sectors[0]["etps"][0]["airports"] == ["CYQX", "EINN"]
     assert sectors[1]["etp_actm_minutes"] == [913]
+
+
+def test_edto_airport_parser_does_not_consume_row_after_blank_approach() -> None:
+    airports = _parse_edto_airports(
+        """EDTO ENROUTE ALTN AIRPORTS:
+APT      PERIOD CHKD       RWY           APCH             MINIMA
+PGUM     1737-2046         24R     CIRC VORDME@06L     1035FT/4316M
+RJTT     1830-2300         34R           CAT2           300FT/1350M
+RJCC     2037-0020         01R       CAT1+VORDME        452FT/1550M
+PASY     2155-0140          28                          400FT/2409M
+PACD     2311-0509          15    RNAV GPS LNAV/VNAV    700FT/2250M
+KSFO     0220-0509         28R          CAT3A           250FT/1000M
+""",
+        datetime(2026, 8, 15, 11, 55, tzinfo=UTC),
+        datetime(2026, 8, 16, 3, 35, tzinfo=UTC),
+    )
+
+    assert [item["airport"] for item in airports] == [
+        "PGUM", "RJTT", "RJCC", "PASY", "PACD", "KSFO"
+    ]
+    pasy = next(item for item in airports if item["airport"] == "PASY")
+    pacd = next(item for item in airports if item["airport"] == "PACD")
+    assert pasy["approach"] == ""
+    assert pasy["minima"] == "400FT/2409M"
+    assert pacd["approach"] == "RNAV GPS LNAV/VNAV"
+    assert pacd["minima"] == "700FT/2250M"
 
 
 def test_edto_parser_pairs_unnumbered_southern_hemisphere_boundaries() -> None:
