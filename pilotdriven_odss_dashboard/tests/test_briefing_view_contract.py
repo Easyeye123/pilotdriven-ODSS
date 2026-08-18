@@ -128,11 +128,31 @@ def test_va_polygon_screening_derives_closest_approach() -> None:
     }]
     view = build_briefing_view(flight, [], [])
     derived = view["vaa"]["cfp_advisories"][0]["derived"]
-    # Nearest polygon vertex S0720 E10749 sits 60 NM north of ALPHA
-    # (S08 20.2 E107 49.7) - the screening must say so, with the layer,
-    # and carry the no-official-VAAC caveat verbatim.
-    assert derived.startswith("Closest approach 60 NM near ALPHA; ash layer SFC/FL070;")
+    # Nearest polygon point sits 60 NM north of ALPHA (S08 20.2 E107 49.7):
+    # the screening says so with the passage time (ALPHA ACTM 01:25 after the
+    # 0250Z departure), the layer, and the no-official-VAAC caveat verbatim.
+    # The SIGMET's validity day is nowhere near this synthetic flight date,
+    # so no expiry comparison may be printed.
+    assert derived.startswith("Closest approach 60 NM near ALPHA; route passes ~0415Z; ash layer SFC/FL070;")
+    assert "expiry" not in derived and "validity (to" not in derived
     assert "official VAAC confirmation unavailable" in derived
+
+
+def test_va_screening_compares_passage_time_with_sigmet_validity() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    polygon = "WI S0720 E10749 - S0720 E10849 - S0620 E10800 SFC/FL070"
+    # Passage is ~0415Z on 01 Aug (ALPHA ACTM 01:25 after 0250Z departure).
+    for valid, expected in (
+        ("010300/010500", "inside the SIGMET's validity (to 0500Z)"),
+        ("010200/010355", "20 min after the SIGMET's 0355Z expiry"),
+    ):
+        flight["weather"] = [{
+            "location": "WIIF", "record_type": "VA_SIGMET",
+            "text": f"WIIF JAKARTA FIR WV SIGMET 08 VALID {valid} VA ERUPTION MT KRAKATAU {polygon}",
+        }]
+        view = build_briefing_view(flight, [], [])
+        derived = view["vaa"]["cfp_advisories"][0]["derived"]
+        assert expected in derived, derived
 
 
 def test_va_advisory_without_readable_polygon_has_no_derived_line() -> None:

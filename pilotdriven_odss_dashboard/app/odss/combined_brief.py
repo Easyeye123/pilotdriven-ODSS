@@ -2028,7 +2028,7 @@ def draw_hazard_page(
         if advisory.get("derived"):
             canvas.setFillColor(TEXT)
             canvas.setFont(SANS, T_SMALL)
-            for line in _wrap(str(advisory["derived"]), SANS, T_SMALL, width - 2 * MARGIN)[:2]:
+            for line in _wrap(str(advisory["derived"]), SANS, T_SMALL, width - 2 * MARGIN)[:3]:
                 canvas.drawString(MARGIN, y - 2, line)
                 y -= T_SMALL + 3.5
         y -= 4

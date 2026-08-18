@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 import gzip
 from html import escape
@@ -973,7 +973,8 @@ def _edto_operational_rows(
 
 
 def _va_derived_screening(
-    text: str, waypoints: list[dict[str, Any]], profile: str | None
+    text: str, waypoints: list[dict[str, Any]], profile: str | None,
+    flight: dict[str, Any] | None = None,
 ) -> str | None:
     """Closest-approach screening of the CFP's ash polygon against the route.
 
@@ -991,23 +992,108 @@ def _va_derived_screening(
     ]
     if len(points) < 3:
         return None
-    best_nm, best_name = None, None
-    for waypoint in waypoints:
-        lat, lon = waypoint.get("latitude"), waypoint.get("longitude")
-        if lat is None or lon is None:
-            continue
-        for (plat, plon) in points:
-            d_lat = (lat - plat) * 60.0
-            d_lon = (lon - plon) * 60.0 * cos(radians((lat + plat) / 2.0))
-            nm = (d_lat * d_lat + d_lon * d_lon) ** 0.5
-            if best_nm is None or nm < best_nm:
-                best_nm, best_name = nm, str(waypoint.get("name") or "").lstrip("-")
-    if best_nm is None:
+    held = [
+        (float(w["latitude"]), float(w["longitude"]),
+         str(w.get("name") or "").lstrip("-"), w.get("actm_minutes"))
+        for w in waypoints
+        if w.get("latitude") is not None and w.get("longitude") is not None
+    ]
+    if not held:
         return None
+
+    # Closest approach is measured to the route LINE, not only its fixes: the
+    # true minimum usually falls between waypoints (18 Aug SQ223: 88 NM on the
+    # IKIBU-LEMUS leg vs 90 NM at IKIBU itself). Route legs are checked
+    # against every polygon vertex and every polygon edge against every fix,
+    # in a local equirectangular frame - screening precision, not navigation.
+    def _xy(lat: float, lon: float, ref_lat: float) -> tuple[float, float]:
+        return lon * 60.0 * cos(radians(ref_lat)), lat * 60.0
+
+    def _seg(px: float, py: float, ax: float, ay: float,
+             bx: float, by: float) -> tuple[float, float]:
+        dx, dy = bx - ax, by - ay
+        length_sq = dx * dx + dy * dy
+        t = 0.0 if length_sq == 0 else max(
+            0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length_sq)
+        )
+        cx, cy = ax + t * dx, ay + t * dy
+        return ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5, t
+
+    best: tuple[float, str, float | None] | None = None  # nm, place, passage_actm
+    for i in range(len(held) - 1):
+        lat1, lon1, name1, actm1 = held[i]
+        lat2, lon2, name2, actm2 = held[i + 1]
+        ref = (lat1 + lat2) / 2.0
+        ax, ay = _xy(lat1, lon1, ref)
+        bx, by = _xy(lat2, lon2, ref)
+        for (plat, plon) in points:
+            px, py = _xy(plat, plon, ref)
+            nm, t = _seg(px, py, ax, ay, bx, by)
+            if best is None or nm < best[0]:
+                place = name1 if t <= 0.05 else name2 if t >= 0.95 else f"between {name1} and {name2}"
+                passage = (
+                    float(actm1) + t * (float(actm2) - float(actm1))
+                    if actm1 is not None and actm2 is not None else None
+                )
+                best = (nm, place if place.startswith("between") else f"near {place}", passage)
+    for lat, lon, name, actm in held:
+        for j in range(len(points)):
+            p1, p2 = points[j], points[(j + 1) % len(points)]
+            ax, ay = _xy(p1[0], p1[1], lat)
+            bx, by = _xy(p2[0], p2[1], lat)
+            px, py = _xy(lat, lon, lat)
+            nm, _ = _seg(px, py, ax, ay, bx, by)
+            if best is None or nm < best[0]:
+                best = (nm, f"near {name}", float(actm) if actm is not None else None)
+    if best is None:
+        return None
+    best_nm, place, passage_actm = best
+
+    # Passage time against the SIGMET's own validity is derived, never
+    # asserted beyond the data: both clauses drop out when the CFP does not
+    # carry the inputs.
+    timing = ""
+    valid_to = re.search(r"\bVALID\s+\d{6}/(\d{2})(\d{2})(\d{2})", text)
+    departure = None
+    raw_departure = str((flight or {}).get("scheduled_departure_utc") or "").replace("Z", "+00:00")
+    if raw_departure:
+        try:
+            departure = datetime.fromisoformat(raw_departure)
+            if departure.tzinfo is None:
+                departure = departure.replace(tzinfo=timezone.utc)
+        except ValueError:
+            departure = None
+    if passage_actm is not None and departure is not None:
+        passage_utc = departure + timedelta(minutes=passage_actm)
+        timing = f"; route passes ~{passage_utc:%H%M}Z"
+        if valid_to:
+            day, hour, minute = (int(g) for g in valid_to.groups())
+            candidates = []
+            for month_offset in (-1, 0, 1):
+                month_index = passage_utc.month - 1 + month_offset
+                year = passage_utc.year + month_index // 12
+                month = month_index % 12 + 1
+                try:
+                    candidates.append(passage_utc.replace(
+                        year=year, month=month, day=day, hour=hour, minute=minute
+                    ))
+                except ValueError:
+                    continue
+            if candidates:
+                expiry = min(candidates, key=lambda item: abs(item - passage_utc))
+                delta = round((passage_utc - expiry).total_seconds() / 60.0)
+                # A validity nowhere near the flight day is bad input, not a
+                # sentence: the comparison only prints within a day.
+                if abs(delta) <= 24 * 60:
+                    timing += (
+                        f", {delta} min after the SIGMET's {expiry:%H%M}Z expiry"
+                        if delta > 0 else
+                        f", inside the SIGMET's validity (to {expiry:%H%M}Z)"
+                    )
     layer = f"{cloud.group(2)}/{cloud.group(3)}"
     levels = _cruise_summary(profile)
     return (
-        f"Closest approach {round(best_nm)} NM near {best_name}; ash layer {layer}; "
+        f"Closest approach {round(best_nm)} NM {place}{timing}; ash layer {layer}; "
         f"planned {levels}. ODSS screening of the CFP advisory polygon - "
         "official VAAC confirmation unavailable."
     )
@@ -1047,6 +1133,7 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
                 text,
                 flight.get("route_waypoints") or [],
                 flight.get("planned_level_profile"),
+                flight,
             ),
             "text": text,
             "fir": record.get("location"),
