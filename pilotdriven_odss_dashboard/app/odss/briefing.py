@@ -200,6 +200,24 @@ def _notam_cards(findings: list[dict[str, Any]], role: str, limit: int = 4) -> l
     return cards
 
 
+def _station_weather_text(
+    flight: dict[str, Any], location: str, record_type: str
+) -> str | None:
+    """First CFP-embedded bulletin of the given type for a station.
+
+    These are the raw METAR/TAF strings LIDO prints in the wx section; the
+    panels carry them verbatim so every surface shows the actual groups, not
+    a synthesised overlap sentence."""
+    for record in flight.get("weather") or []:
+        if (
+            record.get("location") == location
+            and record.get("record_type") == record_type
+            and str(record.get("text") or "").strip()
+        ):
+            return str(record["text"]).strip()
+    return None
+
+
 def _airport_panel(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -208,6 +226,8 @@ def _airport_panel(
     runway: str | None,
 ) -> dict[str, Any]:
     weather = _weather_summary(findings, location, role)
+    weather["metar"] = _station_weather_text(flight, location, "METAR")
+    weather["taf"] = _station_weather_text(flight, location, "TAF")
     return {
         "icao": location,
         "role": role,
@@ -887,6 +907,7 @@ def build_briefing_view(
 
     route_map = build_route_map(flight)
     waypoints = flight.get("route_waypoints") or []
+    terrain_events = detect_terrain_events(waypoints)
     final_actm = max((int(item.get("actm_minutes")) for item in waypoints if item.get("actm_minutes") is not None), default=0)
     firs = [str(item.get("fir_boundary")) for item in waypoints if item.get("fir_boundary")]
     unique_firs = list(dict.fromkeys(firs))
@@ -1017,6 +1038,7 @@ def build_briefing_view(
             )
             or "--",
             "cruise": _cruise_summary(flight.get("planned_level_profile")),
+            "captain": flight.get("captain"),
             "alternate": (alternates[0].get("airport") if alternates else "--"),
             "clock_basis": "ATOT + CFP ACTM" if timing_view else "CFP ACTM only",
             "atot": (
@@ -1043,6 +1065,19 @@ def build_briefing_view(
         "destination": destination_panel,
         "route_map": route_map,
         "route_svg": render_route_svg(route_map),
+        # The one terrain opinion every surface prints. Events come from the
+        # ODSS engine over the parsed route; the summary sentence is composed
+        # here exactly once so overview, dashboard and PDF cannot disagree.
+        "terrain": {
+            "events": terrain_events,
+            "summary": (
+                f"{len(terrain_events)} MSA >100* window"
+                f"{'s' if len(terrain_events) != 1 else ''}; "
+                "profile match on the terrain page"
+                if terrain_events
+                else "No strict MSA >100* window detected"
+            ),
+        },
         "exception_cards": exception_cards,
         "communications": _communication_timeline(findings, timing_view),
         "edto": {
