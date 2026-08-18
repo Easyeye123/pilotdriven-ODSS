@@ -8,7 +8,7 @@ import sys
 import fitz
 
 from scripts.run_private_cfp_corpus import (
-    EXPECTED_CORPUS_SIZE,
+    REQUIRED_CASE_IDS,
     load_manifest,
     scan_physical_pdf,
 )
@@ -18,29 +18,22 @@ MANIFEST = Path(__file__).with_name("private_cfp_corpus_manifest.json")
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_private_release_manifest_pins_exactly_eleven_unique_physical_pdfs():
+def test_private_release_manifest_holds_at_least_the_pinned_set():
+    """The corpus only grows: every required case is pinned, new failures are
+    minted in via scripts/mint_corpus_case.py, and nothing pins an exact size
+    (an exact-size assert would need editing to admit a newly failing CFP)."""
     payload = load_manifest(MANIFEST)
     cases = payload["cases"]
 
-    assert len(cases) == EXPECTED_CORPUS_SIZE == 11
-    assert len({case["filename"] for case in cases}) == 11
-    assert len({case["source_sha256"] for case in cases}) == 11
-    assert len({case["route_hash"] for case in cases}) == 11
-    assert {case["flight_number"] for case in cases} == {
-        "SQ23",
-        "SQ24",
-        "SQ223",
-        "SQ279",
-        "SQ303",
-        "SQ304",
-        "SQ322",
-        "SQ326",
-        "SQ366",
-        "SQ482",
-        "SQ910",
-    }
+    case_ids = {case["case_id"] for case in cases}
+    assert REQUIRED_CASE_IDS <= case_ids
+    assert len(case_ids) == len(cases), "case ids must be unique"
+    assert len({case["filename"] for case in cases}) == len(cases)
+    assert len({case["source_sha256"] for case in cases}) == len(cases)
+    assert len({case["route_hash"] for case in cases}) == len(cases)
     assert all(case["source_page_count"] >= 52 for case in cases)
     assert all(len(case["source_sha256"]) == 64 for case in cases)
+    assert all(int(case["route_point_count"]) > 0 for case in cases)
 
 
 def test_manifest_is_plain_json_and_contains_no_private_pdf_bytes():
@@ -122,5 +115,5 @@ def test_one_missing_private_cfp_makes_the_corpus_command_fail(tmp_path):
 
     assert completed.returncode != 0
     assert receipt["status"] == "failed"
-    assert receipt["failed_case_count"] == EXPECTED_CORPUS_SIZE
+    assert receipt["failed_case_count"] == receipt["expected_case_count"] > 0
     assert "Required private CFP is missing" in receipt["preflight_error"]

@@ -21,7 +21,23 @@ from app.odss.report_quality import validate_combined_briefing_pdf
 
 
 DEFAULT_MANIFEST = ROOT / "tests" / "private_cfp_corpus_manifest.json"
-EXPECTED_CORPUS_SIZE = 11
+# The corpus is "at least the pinned set": every case_id here must exist, and
+# new failures are added via scripts/mint_corpus_case.py - never removed. An
+# exact-size pin would force editing tests to admit a newly failing CFP.
+REQUIRED_CASE_IDS = frozenset({
+    "SQ223-SIN-PER",
+    "SQ223-SIN-PER-18AUG",
+    "SQ304-SIN-BRU",
+    "SQ366-SIN-FCO",
+    "SQ24-SIN-JFK",
+    "SQ303-BRU-SIN",
+    "SQ23-JFK-SIN",
+    "SQ322-SIN-LHR",
+    "SQ279-SIN-ADL",
+    "SQ326-SIN-FRA",
+    "SQ482-SIN-JNB",
+    "SQ910-SIN-MNL",
+})
 DEFERRED_TYPES = {"MEL", "CDL", "CDDL"}
 DEFERRED_REFERENCE = re.compile(r"^[A-Z0-9]+(?:-[A-Z0-9]+)+$")
 
@@ -39,10 +55,12 @@ def load_manifest(path: Path) -> dict[str, Any]:
     cases = payload.get("cases")
     if payload.get("schema_version") != 1 or not isinstance(cases, list):
         raise ValueError("Private CFP corpus manifest must use schema version 1.")
-    if len(cases) != EXPECTED_CORPUS_SIZE:
+    manifest_ids = {str(case.get("case_id")) for case in cases if isinstance(case, dict)}
+    missing_ids = REQUIRED_CASE_IDS - manifest_ids
+    if missing_ids:
         raise ValueError(
-            f"Private CFP corpus must contain exactly {EXPECTED_CORPUS_SIZE} cases; "
-            f"manifest contains {len(cases)}."
+            "Private CFP corpus manifest is missing required cases: "
+            f"{sorted(missing_ids)}."
         )
     filenames: set[str] = set()
     hashes: set[str] = set()
@@ -379,11 +397,11 @@ def main() -> int:
     receipt_path = output_root / "private-cfp-corpus-receipt.json"
     receipt: dict[str, Any] = {
         "schema_version": 1,
-        "gate": "private-11-cfp-physical-pdf",
+        "gate": "private-cfp-physical-pdf",
         "status": "failed",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "manifest_sha256": None,
-        "expected_case_count": EXPECTED_CORPUS_SIZE,
+        "expected_case_count": len(REQUIRED_CASE_IDS),
         "passed_case_count": 0,
         "failed_case_count": 0,
         "cases": [],
@@ -391,12 +409,14 @@ def main() -> int:
     try:
         manifest = load_manifest(args.manifest)
         receipt["manifest_sha256"] = sha256_file(args.manifest)
+        receipt["expected_case_count"] = len(manifest["cases"])
         preflights = []
         for case in manifest["cases"]:
             preflights.append(preflight_source(case, args.corpus_dir.resolve()))
 
+        total = len(manifest["cases"])
         for index, (case, preflight) in enumerate(zip(manifest["cases"], preflights), start=1):
-            print(f"[{index}/{EXPECTED_CORPUS_SIZE}] {case['case_id']} - analysing and rendering")
+            print(f"[{index}/{total}] {case['case_id']} - analysing and rendering")
             try:
                 case_receipt = run_case(case, preflight, output_root, 9000 + index)
             except Exception as exc:
@@ -416,7 +436,7 @@ def main() -> int:
     except Exception as exc:
         receipt["preflight_error_type"] = type(exc).__name__
         receipt["preflight_error"] = str(exc)
-        receipt["failed_case_count"] = EXPECTED_CORPUS_SIZE
+        receipt["failed_case_count"] = receipt["expected_case_count"]
     write_receipt(receipt_path, receipt)
     print(json.dumps({
         "status": receipt["status"],

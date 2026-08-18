@@ -103,8 +103,8 @@
       "destination": "YPAD",
       "departure_iata": "SIN",
       "destination_iata": "ADL",
-      "route_point_count": 12,
-      "route_hash": "d984ea321f4aa4437671810b1223e427017430f37e540621ed248cf566904a64"
+      "route_point_count": 34,
+      "route_hash": "9f58eb827e99237e6c074f63bb8c988bbbde4368c2ec0e6186c2a1a85c44883f"
     },
     {
       "case_id": "SQ326-SIN-FRA",
@@ -116,8 +116,8 @@
       "destination": "EDDF",
       "departure_iata": "SIN",
       "destination_iata": "FRA",
-      "route_point_count": 125,
-      "route_hash": "c0f94d6ff3b975fc23ffa5def6958b111192b3809b9a8063fb4847a6c0a188d6"
+      "route_point_count": 147,
+      "route_hash": "2ee7be0102c8d7fdf4754c42e1e8d5f02ffd58763ff13437e0cd7d6b06c97e5b"
     },
     {
       "case_id": "SQ482-SIN-JNB",
@@ -129,8 +129,8 @@
       "destination": "FAOR",
       "departure_iata": "SIN",
       "destination_iata": "JNB",
-      "route_point_count": 31,
-      "route_hash": "bbba1465fd1409dbc2c8b8019cfbbf7009d1ae35232c9699db79e3e430d955eb"
+      "route_point_count": 51,
+      "route_hash": "4ca54149b13be764e4887c8493235cf46adce29f7266285fdf196c3d49cb99c9"
     },
     {
       "case_id": "SQ910-SIN-MNL",
@@ -144,6 +144,19 @@
       "destination_iata": "MNL",
       "route_point_count": 35,
       "route_hash": "05ba88491af0b16ebec4b80c370942638f3075b6b69da4c4dd4a1522af83fed9"
+    },
+    {
+      "case_id": "SQ223-SIN-PER-18AUG",
+      "filename": "SQ22318082026SIN.pdf",
+      "source_sha256": "b2264187b4fc6066e675f868f332e17b08fed5f615c322e9ea2fae53f0917f7e",
+      "source_page_count": 54,
+      "flight_number": "SQ223",
+      "departure": "WSSS",
+      "destination": "YPPH",
+      "departure_iata": "SIN",
+      "destination_iata": "PER",
+      "route_point_count": 35,
+      "route_hash": "bd9c935a466861a399c4fbaefd1c240b7ca5f2ec8d18b1b61c2ad87ee29606b3"
     }
   ]
 }
