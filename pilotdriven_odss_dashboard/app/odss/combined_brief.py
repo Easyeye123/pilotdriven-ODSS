@@ -58,14 +58,17 @@ HEADER_H = 64.0
 FOOTER_H = 26.0
 
 # Type scale: the old brief sizes +20% per instruction 3 ("especially for
-# detailed content words and numerics").
+# detailed content words and numerics"), raised again per the 18 Aug 1:31
+# instruction ("make the font sizes larger") - content and numerics only,
+# headings unchanged. The geometric overlap scan gates every page at the
+# larger sizes across the whole corpus.
 T_TITLE = 19.0        # page section title
 T_FLIGHT = 25.0       # header flight number
-T_CARD_HEAD = 9.2     # panel title bars
-T_BODY = 9.2
-T_VALUE = 12.5        # stat values
-T_SMALL = 8.0
-T_MICRO = 7.2
+T_CARD_HEAD = 9.6     # panel title bars
+T_BODY = 9.8
+T_VALUE = 13.2        # stat values
+T_SMALL = 8.6
+T_MICRO = 7.6
 
 # Keep MEL/CDL cards at the cockpit-readable type scale.  More governing
 # references create continuation pages instead of being dropped or squeezed.
@@ -555,7 +558,8 @@ def _airport_card(canvas, x, y, w, h, *, title, accent, headline, body, tag):
     # The tag band at the card foot is RESERVED: the body may take only as
     # many wrapped lines as fit above it, however long the airport copy runs
     # (08 Aug audit: four fixed lines could reach the DEP/DEST tag).
-    leading = 9.4
+    # Leading tracks T_SMALL (~1.17x) so the larger type never overprints.
+    leading = round(T_SMALL * 1.17, 1)
     tag_band = 14.0
     body_top = y + h - 45
     max_lines = max(1, int((body_top - (y + tag_band)) // leading))
