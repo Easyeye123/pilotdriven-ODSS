@@ -25,6 +25,11 @@ from reportlab.pdfbase import pdfmetrics
 
 from . import brief_theme as theme
 from .brief_theme import MONO, MONO_BOLD, SANS, SANS_BOLD, register_fonts
+from .briefing import (
+    _edto_classification,
+    _edto_gate_sentence,
+    _edto_operational_rows,
+)
 from .constants import format_actm
 
 PAGE_SIZE = landscape(A4)
@@ -381,15 +386,6 @@ _GATES = (
 )
 
 
-def _edto_classification(flight: dict[str, Any]) -> str:
-    classification = str(
-        ((flight.get("fuel_summary") or {}).get("classification")) or ""
-    ).strip().upper()
-    if classification:
-        return classification
-    return "EDTO" if (flight.get("edto") or {}).get("sectors") else ""
-
-
 def _edto_source_classification(flight: dict[str, Any]) -> str:
     fuel_summary = flight.get("fuel_summary") or {}
     source = str(fuel_summary.get("source_classification") or "").strip().upper()
@@ -570,7 +566,10 @@ def _airport_card(canvas, x, y, w, h, *, title, accent, headline, body, tag):
     wrapped: list[str] = []
     for paragraph in str(body).split("\n"):
         wrapped.extend(_wrap(paragraph, SANS, T_SMALL, iw))
-    for out_line in wrapped[:max_lines]:
+    if len(wrapped) > max_lines:
+        wrapped = wrapped[:max_lines]
+        wrapped[-1] = wrapped[-1].rstrip(" .") + " ..."
+    for out_line in wrapped:
         text.textLine(out_line)
     canvas.drawText(text)
     canvas.setFillColor(TEXT_MUTED)
@@ -630,7 +629,10 @@ def draw_overview_page(
     # Left column: three EQUAL airport cards + decision gates (instruction 1:
     # same size, same dimensions, aligned text).
     left_w = (width - 2 * MARGIN) * 0.385
-    card_h = 82.0
+    # Tall enough for a wrapped METAR plus the TAF's opening line - the raw
+    # bulletins are the card content now, and a card that silently swallowed
+    # the TAF is exactly the drift the parity gate flags.
+    card_h = 100.0
     gap = 8.0
     departure_panel = briefing.get("departure") or {}
     destination_panel = briefing.get("destination") or {}
@@ -1013,72 +1015,6 @@ def _wrap(text: str, font: str, size: float, max_width: float) -> list[str]:
 # ---------------------------------------------------------------------------
 # Page 2 — TIME, EDTO STATUS, FIR AND OPERATING GATES.
 # ---------------------------------------------------------------------------
-
-
-def _edto_gate_sentence(edto_view: dict[str, Any]) -> str:
-    assessment = edto_view.get("assessment")
-    status = str((assessment or {}).get("status") if isinstance(assessment, dict) else assessment or "").strip()
-    if status == "review_required":
-        return "Checked-period suitability requires review - see the alternates page."
-    if status in {"ok", "complete", "verified"}:
-        return "Checked-period suitability verified against the governed window."
-    return "Destination alternate and enroute suitability remain independent checks."
-
-
-def _edto_operational_rows(
-    classification: str,
-    edto_view: dict[str, Any],
-    fuel_summary: dict[str, Any],
-) -> list[tuple[str, str]]:
-    """Pilot-readable EDTO facts already parsed from the uploaded CFP."""
-    source = str(fuel_summary.get("source_classification") or classification).strip().upper()
-    source_sentence = (
-        "CFP page 1: SUMMARY STANDARD CFP (non-EDTO)."
-        if source == "STANDARD" and classification.startswith("NON")
-        else f"CFP page 1: SUMMARY {source} CFP."
-        if source
-        else "CFP classification requires review."
-    )
-    rows: list[tuple[str, str]] = [("CLASSIFICATION", (
-        source_sentence
-    ))]
-    sectors = edto_view.get("sectors") or []
-    for index, sector in enumerate(sectors, start=1):
-        number = sector.get("number") or index
-        rows.append((
-            f"SECTOR {number}",
-            f"ENTRY ACTM {sector.get('entry') or '--.--'} | "
-            f"EXIT ACTM {sector.get('exit') or '--.--'}",
-        ))
-    if not sectors and classification:
-        rows.append((
-            "ENTRY / EXIT",
-            f"ENTRY ACTM {edto_view.get('entry') or '--.--'} | "
-            f"EXIT ACTM {edto_view.get('exit') or '--.--'}",
-        ))
-    elif not sectors:
-        rows.append(("ENTRY / EXIT", "No parsed EDTO sector is held."))
-    for airport in edto_view.get("airports") or []:
-        identity = f"{airport.get('airport') or '----'}/{airport.get('runway') or '--'}"
-        rows.append((
-            "EDTO ALTN",
-            " | ".join(
-                part for part in (
-                    identity,
-                    str(airport.get("approach") or "").strip(),
-                    str(airport.get("period") or "").strip(),
-                ) if part
-            ),
-        ))
-    top_up = (((fuel_summary.get("rows") or {}).get("edto_top_up") or {}).get("fuel_kg"))
-    rows.append((
-        "FUEL",
-        "No EDTO top-up or EDTO alternate sector."
-        if top_up in (0, None) and classification.startswith("NON")
-        else f"EDTO top-up {(top_up or 0):,} kg.",
-    ))
-    rows.append(("GATE", _edto_gate_sentence(edto_view)))
-    return rows
 
 
 def draw_time_gates_page(

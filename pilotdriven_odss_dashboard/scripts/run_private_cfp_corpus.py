@@ -278,6 +278,69 @@ def inspect_deferred_contract(
     }
 
 
+def check_cross_surface_parity(
+    flight: dict[str, Any],
+    findings: list[dict[str, Any]],
+    warnings: list[str],
+    output_text: str,
+) -> dict[str, Any]:
+    """Parsed fact = printed fact, for the facts a captain reads first.
+
+    Every expectation derives from this flight's own parse - never from a
+    fixture literal - so any CFP that reaches the corpus is protected. A
+    surface printing 'none' while the engine holds an event is exactly the
+    class of defect this gate exists to stop."""
+    from app.odss.briefing import build_briefing_view
+    from app.odss.combined_brief import _edto_classification, _edto_operational_rows
+
+    view = build_briefing_view(flight, findings, warnings)
+    folded = " ".join(output_text.upper().split())
+    failures: list[str] = []
+
+    def printed(text: str) -> bool:
+        return " ".join(str(text).upper().split()) in folded
+
+    terrain_events = (view.get("terrain") or {}).get("events") or []
+    says_none = "NO STRICT MSA" in folded
+    if terrain_events and says_none:
+        failures.append(
+            "terrain: PDF prints 'No strict MSA' while the engine holds "
+            f"{len(terrain_events)} event(s)"
+        )
+    if not terrain_events and not says_none:
+        failures.append("terrain: PDF omits the no-window sentence while the engine holds none")
+
+    classification = _edto_classification(flight)
+    edto_rows = _edto_operational_rows(
+        classification, view.get("edto") or {}, flight.get("fuel_summary") or {}
+    )
+    for label, value in edto_rows:
+        if not printed(value):
+            failures.append(f"edto: row {label!r} ({value!r}) not printed")
+
+    for role in ("departure", "destination"):
+        weather = ((view.get(role) or {}).get("weather") or {})
+        for kind in ("metar", "taf"):
+            bulletin = str(weather.get(kind) or "").strip()
+            if bulletin:
+                head = " ".join(f"{kind.upper()} {bulletin}".split()[:4])
+                if not printed(head):
+                    failures.append(f"weather: {role} {kind} bulletin not printed")
+
+    for item in (flight.get("fuel_summary") or {}).get("excess_breakdown") or []:
+        if item.get("fuel_kg"):
+            if not printed(f"{item['label']} {item['fuel_kg']:,} kg"):
+                failures.append(
+                    f"units: excess item {item['label']!r} not printed with kg"
+                )
+
+    for banned in ("LEVEL 1", "LEVEL 2", "PERTINENT BRIEF", "EVIDENCE LEVEL"):
+        if banned in folded:
+            failures.append(f"naming: banned wording {banned!r} in the pilot PDF")
+
+    return {"valid": not failures, "failures": failures}
+
+
 def run_case(
     case: dict[str, Any],
     preflight: dict[str, Any],
@@ -346,6 +409,16 @@ def run_case(
     if not deferred["valid"]:
         raise AssertionError(
             f"{case['case_id']} governed deferred-item contract failed: {deferred}."
+        )
+    parity = check_cross_surface_parity(
+        flight,
+        payload["findings"],
+        payload.get("view", {}).get("warnings") or [],
+        output_text,
+    )
+    if not parity["valid"]:
+        raise AssertionError(
+            f"{case['case_id']} cross-surface parity failed: {parity['failures']}."
         )
     return {
         "case_id": case["case_id"],

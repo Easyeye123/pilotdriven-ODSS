@@ -87,3 +87,12 @@ def test_airport_panels_without_records_stay_honest() -> None:
 def test_metrics_carry_the_captain() -> None:
     view = build_briefing_view(_flight(LOG_PAGE_LOW), [], [])
     assert view["metrics"]["captain"] == "TESTA B C"
+
+
+def test_edto_operational_rows_are_part_of_the_view() -> None:
+    view = build_briefing_view(_flight(LOG_PAGE_LOW), [], [])
+    rows = view["edto"]["operational_rows"]
+    assert rows and rows[0]["label"] == "CLASSIFICATION"
+    labels = [row["label"] for row in rows]
+    assert "GATE" in labels and "FUEL" in labels
+    assert all(isinstance(row["value"], str) and row["value"] for row in rows)
