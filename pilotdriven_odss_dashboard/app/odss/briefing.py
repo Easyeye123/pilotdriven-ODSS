@@ -972,6 +972,45 @@ def _edto_operational_rows(
 
 
 
+def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
+    """Named volcanic-ash advisories captured verbatim from the CFP.
+
+    The name line is the label the 18 Aug defect was missing: the hazard is
+    called VOLCANIC ASH with its volcano and SIGMET identity, never a generic
+    "1 CFP advisory"."""
+    advisories: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in flight.get("weather") or []:
+        if record.get("record_type") != "VA_SIGMET":
+            continue
+        text = str(record.get("text") or "")
+        key = " ".join(text.split())
+        if key in seen:
+            # The CFP prints its wx list twice; one advisory, one card.
+            continue
+        seen.add(key)
+        volcano = re.search(r"VA ERUPTION\s+((?:MT|MOUNT)\s+[A-Z]+)", text)
+        sigmet_id = re.search(r"\bWV\s+SIGMET\s+(\w+)", text)
+        valid = re.search(r"\bVALID\s+(\d{6})/(\d{6})", text)
+        name = " · ".join(part for part in (
+            "VOLCANIC ASH",
+            volcano.group(1) if volcano else None,
+            (
+                f"{record.get('location')} WV SIGMET {sigmet_id.group(1)}"
+                if sigmet_id else str(record.get("location") or "")
+            ) or None,
+        ) if part)
+        advisories.append({
+            "name": name,
+            "text": text,
+            "fir": record.get("location"),
+            "valid_from": valid.group(1) if valid else None,
+            "valid_to": valid.group(2) if valid else None,
+            "source_page": record.get("source_page"),
+        })
+    return advisories
+
+
 def build_briefing_view(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -1203,6 +1242,7 @@ def build_briefing_view(
             ),
         },
         "vaa": {
+            "cfp_advisories": _va_cfp_advisories(flight),
             "status": (flight.get("vaa_review") or {}).get("status"),
             "page": (
                 level2_page("weather_detail")

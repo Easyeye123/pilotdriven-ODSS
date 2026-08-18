@@ -342,6 +342,15 @@ def check_cross_surface_parity(
                     f"units: excess item {item['label']!r} not printed with kg"
                 )
 
+    # A VA SIGMET in the CFP must be NAMED on the briefing - both directions,
+    # like terrain: presence demands the words, absence forbids a false claim.
+    has_va = any(
+        record.get("record_type") == "VA_SIGMET"
+        for record in flight.get("weather") or []
+    )
+    if has_va and "VOLCANIC ASH" not in folded:
+        failures.append("vaa: CFP carries a VA SIGMET but the briefing never says VOLCANIC ASH")
+
     for banned in ("LEVEL 1", "LEVEL 2", "PERTINENT BRIEF", "EVIDENCE LEVEL"):
         if banned in folded:
             failures.append(f"naming: banned wording {banned!r} in the pilot PDF")

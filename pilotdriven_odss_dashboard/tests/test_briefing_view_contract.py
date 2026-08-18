@@ -96,3 +96,26 @@ def test_edto_operational_rows_are_part_of_the_view() -> None:
     labels = [row["label"] for row in rows]
     assert "GATE" in labels and "FUEL" in labels
     assert all(isinstance(row["value"], str) and row["value"] for row in rows)
+
+
+def test_va_sigmet_records_become_named_deduped_advisories() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    record = {
+        "location": "WIIF",
+        "record_type": "VA_SIGMET",
+        "text": "WIIF JAKARTA FIR WV SIGMET 08 VALID 172009/180208 WIII- WIIF JAKARTA FIR VA ERUPTION MT KRAKATAU PSN S0606 E10525 VA CLD OBS AT 1930Z WI S0614 E10534 - S0623 E10451 SFC/FL070 MOV NW 10KT NC=",
+        "source_page": 13,
+    }
+    flight["weather"] = [dict(record), dict(record)]
+    view = build_briefing_view(flight, [], [])
+    advisories = view["vaa"]["cfp_advisories"]
+    assert len(advisories) == 1, "identical wx-list reprints collapse to one advisory"
+    assert advisories[0]["name"] == "VOLCANIC ASH · MT KRAKATAU · WIIF WV SIGMET 08"
+    assert advisories[0]["valid_from"] == "172009" and advisories[0]["valid_to"] == "180208"
+
+
+def test_no_va_records_mean_no_advisories() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["weather"] = []
+    view = build_briefing_view(flight, [], [])
+    assert view["vaa"]["cfp_advisories"] == []

@@ -90,6 +90,24 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
             record["source_page"] = _record_source_page(pages, record["text"])
         flight["weather"].extend(records)
 
+    # The CFP's dedicated volcanic-ash section. Captured verbatim so the
+    # briefing can NAME the hazard ("VOLCANIC ASH - MT KRAKATAU - WV SIGMET
+    # 08") instead of a generic advisory line - the 18 Aug label defect.
+    volcanic = re.search(
+        r"(?ms)^Volcanic Ash SIGMETs:\s*(?P<body>.*?)(?=^(?:[A-Z][A-Za-z ]+ SIGMETs:|DESTINATION AIRPORT:|[A-Z]{4}/))",
+        text,
+    )
+    if volcanic:
+        body = " ".join(volcanic.group("body").split())
+        if body and "NO WX DATA" not in body.upper():
+            fir = re.search(r"\b([A-Z]{4})\s+[A-Z ]+FIR\b", body)
+            flight["weather"].append({
+                "location": fir.group(1) if fir else "FIR",
+                "record_type": "VA_SIGMET",
+                "text": body,
+                "source_page": _record_source_page(pages, body),
+            })
+
     sigmet = re.search(r"(?ms)^SIGMETs:\s*(?P<body>.*?)(?=^Tropical Cyclone SIGMETs:)", text)
     if sigmet:
         body = " ".join(sigmet.group("body").split())

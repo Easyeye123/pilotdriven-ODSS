@@ -536,7 +536,12 @@ def _gate_lines(
         (briefing.get("terrain") or {}).get("summary")
         or "Terrain review required"
     )
-    va_line = _first_title(findings, {"weather"}) or "Weather review on the hazard page"
+    va_advisories = (briefing.get("vaa") or {}).get("cfp_advisories") or []
+    va_line = (
+        f"{va_advisories[0]['name']} - see the hazard page"
+        if va_advisories
+        else _first_title(findings, {"weather"}) or "Weather review on the hazard page"
+    )
     airports_line = _first_title(findings, {"notam"}) or "Airport restrictions reviewed"
     comms_line = _first_title(findings, {"communications"}) or "No early FIR contact requirement"
     return {
