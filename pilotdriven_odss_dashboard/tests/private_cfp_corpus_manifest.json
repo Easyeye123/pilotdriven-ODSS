@@ -170,6 +170,97 @@
       "destination_iata": "CHC",
       "route_point_count": 55,
       "route_hash": "14c9155e30c63a61fc51bb3193221bb7e5c9124b6f788e6dd6c7fe59c5a012ed"
+    },
+    {
+      "case_id": "SQ194-SIN-HAN",
+      "filename": "lido-briefing_SQ_194_16Aug2026_SIN_HAN.pdf",
+      "source_sha256": "83873638b9b09ccbae228cafb9493c52aa6cc46b9631e4ad75d321d7d0f9dd75",
+      "source_page_count": 55,
+      "flight_number": "SQ194",
+      "departure": "WSSS",
+      "destination": "VVNB",
+      "departure_iata": "SIN",
+      "destination_iata": "HAN",
+      "route_point_count": 43,
+      "route_hash": "cc3cf8274110de7e53699ed88466800e6fe39f909283d038f88da03fb08b7358"
+    },
+    {
+      "case_id": "SQ214-PER-SIN",
+      "filename": "lido-briefing_SQ_214_16Aug2026_PER_SIN.pdf",
+      "source_sha256": "eb7c9105c78adc5fcaa90c05153cd0a691c2095fad9213ce7ccbea345db0a38e",
+      "source_page_count": 51,
+      "flight_number": "SQ214",
+      "departure": "YPPH",
+      "destination": "WSSS",
+      "departure_iata": "PER",
+      "destination_iata": "SIN",
+      "route_point_count": 32,
+      "route_hash": "7eca5c601c924442eefb1805eb2aab952a86608d567451011820c355d061379e"
+    },
+    {
+      "case_id": "SQ24-SIN-JFK-15AUG",
+      "filename": "lido-briefing_SQ_24_15Aug2026_SIN_JFK.pdf",
+      "source_sha256": "ef773ec3cc808f2269522ae608750e4bd1cdab33a17603842c3fd7837815e240",
+      "source_page_count": 129,
+      "flight_number": "SQ24",
+      "departure": "WSSS",
+      "destination": "KJFK",
+      "departure_iata": "SIN",
+      "destination_iata": "JFK",
+      "route_point_count": 119,
+      "route_hash": "5c2fe501b3a4b36db3410fa1dfd68b0eb42e600e783359176829ec15f8a0c153"
+    },
+    {
+      "case_id": "SQ314-SIN-LGW",
+      "filename": "lido-briefing_SQ_314_15Aug2026_SIN_LGW.pdf",
+      "source_sha256": "11e92fadc1c7874a2f950d3c48cbc6281974ce91d48222329608538545754efa",
+      "source_page_count": 134,
+      "flight_number": "SQ314",
+      "departure": "WSSS",
+      "destination": "EGKK",
+      "departure_iata": "SIN",
+      "destination_iata": "LGW",
+      "route_point_count": 149,
+      "route_hash": "20bfaa1a28a8380d9a9e2bd638655b9696ec2f50e4343ff0726b50e966900726"
+    },
+    {
+      "case_id": "SQ352-SIN-CPH",
+      "filename": "lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf",
+      "source_sha256": "2162330ae3b544b6af770cdc14ebd3fa657db69d1d7fc302adf00fd77d76adf1",
+      "source_page_count": 121,
+      "flight_number": "SQ352",
+      "departure": "WSSS",
+      "destination": "EKCH",
+      "departure_iata": "SIN",
+      "destination_iata": "CPH",
+      "route_point_count": 134,
+      "route_hash": "aa69235e3c199f1ac1c1cf2138057b62ee1f2d23627aeb6ca182dae66b5ca4d9"
+    },
+    {
+      "case_id": "SQ34-SIN-SFO",
+      "filename": "lido-briefing_SQ_34_15Aug2026_SIN_SFO.pdf",
+      "source_sha256": "2e0f83ff5280ecb063da7d68133b970791109c4647e25de11efe66f0e85fc3b2",
+      "source_page_count": 80,
+      "flight_number": "SQ34",
+      "departure": "WSSS",
+      "destination": "KSFO",
+      "departure_iata": "SIN",
+      "destination_iata": "SFO",
+      "route_point_count": 53,
+      "route_hash": "23135639f84309f1701ae8b46316533674e5f3b299b2a53632679045310a5207"
+    },
+    {
+      "case_id": "SQ365-FCO-SIN",
+      "filename": "SQ36507082026FCO.pdf",
+      "source_sha256": "1be9a94eb5e5dffb25bd02aec61fc3a1adf9b13953bec27ee43345fdf5a02d4b",
+      "source_page_count": 112,
+      "flight_number": "SQ365",
+      "departure": "LIRF",
+      "destination": "WSSS",
+      "departure_iata": "FCO",
+      "destination_iata": "SIN",
+      "route_point_count": 138,
+      "route_hash": "7800a2c72e432de9630eaf1c00a2e2c4d58917e48fd34599ee651f9cdbb210dc"
     }
   ]
 }

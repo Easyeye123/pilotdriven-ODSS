@@ -31,7 +31,10 @@ def test_private_release_manifest_holds_at_least_the_pinned_set():
     assert len({case["filename"] for case in cases}) == len(cases)
     assert len({case["source_sha256"] for case in cases}) == len(cases)
     assert len({case["route_hash"] for case in cases}) == len(cases)
-    assert all(case["source_page_count"] >= 52 for case in cases)
+    # Plausibility floor only: a real LIDO briefing package is never a
+    # few-page summary. The old >=52 bound was an artifact of the first
+    # batch being exclusively long-haul (PER-SIN is a legitimate 51 pages).
+    assert all(case["source_page_count"] >= 20 for case in cases)
     assert all(len(case["source_sha256"]) == 64 for case in cases)
     assert all(int(case["route_point_count"]) > 0 for case in cases)
 
