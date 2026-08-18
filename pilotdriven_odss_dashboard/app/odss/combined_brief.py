@@ -2018,6 +2018,21 @@ def draw_hazard_page(
     canvas.bookmarkPage("sec_hazard")
     y = draw_section_title(canvas, content_top, "Operational Hazard Assessment")
 
+    # Named volcanic-ash advisories lead the page: the label, the derived
+    # closest-approach screening, then everything else (boss, 18 Aug).
+    for advisory in ((briefing.get("vaa") or {}).get("cfp_advisories") or [])[:2]:
+        canvas.setFillColor(TERRAIN_ORANGE)
+        canvas.setFont(SANS_BOLD, T_BODY)
+        canvas.drawString(MARGIN, y - 4, str(advisory.get("name") or ""))
+        y -= T_BODY + 6
+        if advisory.get("derived"):
+            canvas.setFillColor(TEXT)
+            canvas.setFont(SANS, T_SMALL)
+            for line in _wrap(str(advisory["derived"]), SANS, T_SMALL, width - 2 * MARGIN)[:2]:
+                canvas.drawString(MARGIN, y - 2, line)
+                y -= T_SMALL + 3.5
+        y -= 4
+
     full_w = width - 2 * MARGIN
     half_w = (full_w - 12) / 2
     # The manifest names every VAAC centre as well as the aggregate receipt.

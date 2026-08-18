@@ -114,6 +114,41 @@ def test_va_sigmet_records_become_named_deduped_advisories() -> None:
     assert advisories[0]["valid_from"] == "172009" and advisories[0]["valid_to"] == "180208"
 
 
+def test_va_polygon_screening_derives_closest_approach() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["weather"] = [{
+        "location": "WIIF",
+        "record_type": "VA_SIGMET",
+        "text": (
+            "WIIF JAKARTA FIR WV SIGMET 08 VALID 172009/180208 VA ERUPTION "
+            "MT KRAKATAU PSN S0606 E10525 VA CLD OBS AT 1930Z WI "
+            "S0720 E10749 - S0720 E10849 - S0620 E10800 SFC/FL070 MOV NW 10KT NC="
+        ),
+        "source_page": 13,
+    }]
+    view = build_briefing_view(flight, [], [])
+    derived = view["vaa"]["cfp_advisories"][0]["derived"]
+    # Nearest polygon vertex S0720 E10749 sits 60 NM north of ALPHA
+    # (S08 20.2 E107 49.7) - the screening must say so, with the layer,
+    # and carry the no-official-VAAC caveat verbatim.
+    assert derived.startswith("Closest approach 60 NM near ALPHA; ash layer SFC/FL070;")
+    assert "official VAAC confirmation unavailable" in derived
+
+
+def test_va_advisory_without_readable_polygon_has_no_derived_line() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["weather"] = [{
+        "location": "WIIF",
+        "record_type": "VA_SIGMET",
+        # Two-point "polygon": unreadable as an area, so no distance may be
+        # invented - the card shows only the named advisory.
+        "text": "WIIF JAKARTA FIR WV SIGMET 08 VALID 172009/180208 VA ERUPTION MT KRAKATAU WI S0614 E10534 - S0623 E10451 SFC/FL070",
+        "source_page": 13,
+    }]
+    view = build_briefing_view(flight, [], [])
+    assert view["vaa"]["cfp_advisories"][0]["derived"] is None
+
+
 def test_no_va_records_mean_no_advisories() -> None:
     flight = _flight(LOG_PAGE_LOW)
     flight["weather"] = []

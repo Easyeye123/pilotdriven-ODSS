@@ -350,6 +350,16 @@ def check_cross_surface_parity(
     )
     if has_va and "VOLCANIC ASH" not in folded:
         failures.append("vaa: CFP carries a VA SIGMET but the briefing never says VOLCANIC ASH")
+    for advisory in (view.get("vaa") or {}).get("cfp_advisories") or []:
+        if advisory.get("name") and not printed(advisory["name"]):
+            failures.append(f"vaa: advisory name {advisory['name']!r} not printed")
+        derived = str(advisory.get("derived") or "").strip()
+        if derived:
+            head = " ".join(derived.split()[:4])
+            if not printed(head):
+                failures.append(
+                    f"vaa: derived screening line ({head!r}...) not printed"
+                )
 
     for banned in ("LEVEL 1", "LEVEL 2", "PERTINENT BRIEF", "EVIDENCE LEVEL"):
         if banned in folded:

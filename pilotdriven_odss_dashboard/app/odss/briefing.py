@@ -972,6 +972,47 @@ def _edto_operational_rows(
 
 
 
+def _va_derived_screening(
+    text: str, waypoints: list[dict[str, Any]], profile: str | None
+) -> str | None:
+    """Closest-approach screening of the CFP's ash polygon against the route.
+
+    Pure derived facts (distance, layer, planned levels) with the same
+    interpolation caveat the cyclone screening carries. Returns None when the
+    advisory carries no readable polygon - the card then shows only the named
+    advisory and the review status, never an invented distance."""
+    cloud = re.search(r"\bWI\s+(.+?)\s+(SFC|FL\d{3})/(FL\d{3})", text)
+    if not cloud:
+        return None
+    points = [
+        (-(int(m[1]) + int(m[2]) / 60.0) if m[0] == "S" else int(m[1]) + int(m[2]) / 60.0,
+         -(int(m[4]) + int(m[5]) / 60.0) if m[3] == "W" else int(m[4]) + int(m[5]) / 60.0)
+        for m in re.findall(r"([NS])(\d{2})(\d{2})\s+([EW])(\d{3})(\d{2})", cloud.group(1))
+    ]
+    if len(points) < 3:
+        return None
+    best_nm, best_name = None, None
+    for waypoint in waypoints:
+        lat, lon = waypoint.get("latitude"), waypoint.get("longitude")
+        if lat is None or lon is None:
+            continue
+        for (plat, plon) in points:
+            d_lat = (lat - plat) * 60.0
+            d_lon = (lon - plon) * 60.0 * cos(radians((lat + plat) / 2.0))
+            nm = (d_lat * d_lat + d_lon * d_lon) ** 0.5
+            if best_nm is None or nm < best_nm:
+                best_nm, best_name = nm, str(waypoint.get("name") or "").lstrip("-")
+    if best_nm is None:
+        return None
+    layer = f"{cloud.group(2)}/{cloud.group(3)}"
+    levels = _cruise_summary(profile)
+    return (
+        f"Closest approach {round(best_nm)} NM near {best_name}; ash layer {layer}; "
+        f"planned {levels}. ODSS screening of the CFP advisory polygon - "
+        "official VAAC confirmation unavailable."
+    )
+
+
 def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
     """Named volcanic-ash advisories captured verbatim from the CFP.
 
@@ -1002,6 +1043,11 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
         ) if part)
         advisories.append({
             "name": name,
+            "derived": _va_derived_screening(
+                text,
+                flight.get("route_waypoints") or [],
+                flight.get("planned_level_profile"),
+            ),
             "text": text,
             "fir": record.get("location"),
             "valid_from": valid.group(1) if valid else None,

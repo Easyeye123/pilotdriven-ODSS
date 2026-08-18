@@ -132,3 +132,23 @@ def test_unnamed_volcanic_ash_fails() -> None:
     assert any("VOLCANIC ASH" in failure for failure in result["failures"])
     result_ok = check_cross_surface_parity(flight, [], [], text + "\nVOLCANIC ASH · MT KRAKATAU · WIIF WV SIGMET 08")
     assert result_ok["valid"], result_ok["failures"]
+
+
+def test_missing_derived_screening_line_fails() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["weather"].append({
+        "location": "WIIF", "record_type": "VA_SIGMET",
+        "text": (
+            "WIIF JAKARTA FIR WV SIGMET 08 VALID 172009/180208 VA ERUPTION "
+            "MT KRAKATAU VA CLD OBS WI S0720 E10749 - S0720 E10849 - "
+            "S0620 E10800 SFC/FL070"
+        ),
+    })
+    named = _passing_text(flight) + "\nVOLCANIC ASH · MT KRAKATAU · WIIF WV SIGMET 08"
+    result = check_cross_surface_parity(flight, [], [], named)
+    assert not result["valid"]
+    assert any("derived" in failure for failure in result["failures"])
+    result_ok = check_cross_surface_parity(
+        flight, [], [], named + "\nClosest approach 60 NM near ALPHA; ash layer SFC/FL070"
+    )
+    assert result_ok["valid"], result_ok["failures"]
