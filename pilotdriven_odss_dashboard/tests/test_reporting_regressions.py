@@ -676,7 +676,7 @@ def test_level2_timing_header_note_clears_section_pill(
     with fitz.open(path) as document:
         page = document[0]
         note_matches = page.search_for(header_note)
-        pill_matches = page.search_for("LEVEL 2 - OPERATIONAL BRIEF")
+        pill_matches = page.search_for("OPERATIONAL BRIEF")
         assert len(note_matches) == 1
         assert len(pill_matches) == 1
         note_bounds = note_matches[0]
@@ -771,18 +771,18 @@ def test_current_sq338_atot_headers_stay_complete_and_clear_every_page_pill(
             pill_label = next(
                 label
                 for label in (
-                    "LEVEL 1 - PERTINENT BRIEF",
+                    "PERTINENT BRIEF",
                     "SQ338 - OPERATIONAL TIMING",
-                    "LEVEL 1 - DEPRESSURISATION",
-                    "LEVEL 2 - OPERATIONAL BRIEF",
-                    "LEVEL 2 - PERFORMANCE / AIRPORTS",
-                    "LEVEL 2 - NOTAM APPLICABILITY",
-                    "LEVEL 2 - EDTO / WEATHER",
-                    "LEVEL 2 - OCEANIC / FIR COMMUNICATIONS",
-                    "LEVEL 2 - PROFILE MATCH",
-                    "LEVEL 2 - WEATHER / PROMOTION",
-                    "LEVEL 2 - NOTAM CONTINUATION",
-                    "LEVEL 2 - AIP SUPPLEMENT DETAILS",
+                    "DEPRESSURISATION",
+                    "OPERATIONAL BRIEF",
+                    "PERFORMANCE / AIRPORTS",
+                    "NOTAM APPLICABILITY",
+                    "EDTO / WEATHER",
+                    "OCEANIC / FIR COMMUNICATIONS",
+                    "PROFILE MATCH",
+                    "WEATHER / PROMOTION",
+                    "NOTAM CONTINUATION",
+                    "AIP SUPPLEMENT DETAILS",
                 )
                 if page.search_for(label)
             )
@@ -874,9 +874,9 @@ def test_sparse_report_header_pills_remain_inside_page_bounds(
     render_pdf(flight, [], [], 2, level2_path)
 
     checks = (
-        (level1_path, 2, "LEVEL 1 - DEPRESSURISATION"),
-        (level2_path, 3, "LEVEL 2 - EDTO"),
-        (level2_path, 4, "LEVEL 2 - OCEANIC / FIR COMMUNICATIONS"),
+        (level1_path, 2, "DEPRESSURISATION"),
+        (level2_path, 3, "EDTO"),
+        (level2_path, 4, "OCEANIC / FIR COMMUNICATIONS"),
     )
     for path, page_index, label in checks:
         with fitz.open(path) as document:
@@ -1076,7 +1076,7 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert "Decision support only" not in second
     assert "Decision support only" not in third
     assert float(reader.pages[0].mediabox.width) > float(reader.pages[0].mediabox.height)
-    assert "LEVEL 1 - PERTINENT BRIEF" in first
+    assert "PERTINENT BRIEF" in first
     assert "PERFORMANCE" in first
     assert "EXCESS FUEL" in first
     assert "EDTO" in first
@@ -1493,7 +1493,7 @@ def test_confirmed_profile_is_prominent_in_l1_and_complete_in_l2(
                 last = " ".join(
                     (reader.pages[-1].extract_text() or "").split()
                 )
-                assert "LEVEL 2 SOURCE CHART - PROFILE GEN-1" in last
+                assert "SOURCE CHART - PROFILE GEN-1" in last
     finally:
         _engines.DEPRESS_PROFILES = original_profiles
         if original_chart_dir is None:
@@ -1765,7 +1765,7 @@ def test_level2_matches_seven_page_operational_contract(tmp_path: Path) -> None:
     assert "actual exposure" not in "\n".join(pages).casefold()
     assert "actual msa exposure" not in "\n".join(pages).casefold()
     assert "WEATHER AND PROMOTION RESULT" in pages[6]
-    assert "LEVEL 2 - WEATHER / VAAC / PROMOTION" not in pages[6]
+    assert "WEATHER / VAAC / PROMOTION" not in pages[6]
     assert "see the dedicated Level 2 section" not in pages[6]
     assert all(f"Page {index} of 7" in text for index, text in enumerate(pages, 1))
 
@@ -1819,7 +1819,7 @@ def test_level2_compiles_verified_nil_edto_once_and_hides_vaac_title_without_ash
     assert text.count("NIL EDTO") == 1
     assert "EDTO STATUS" in pages[3]
     assert "WEATHER AND PROMOTION RESULT" in pages[6]
-    assert "LEVEL 2 - WEATHER / VAAC / PROMOTION" not in pages[6]
+    assert "WEATHER / VAAC / PROMOTION" not in pages[6]
 
 
 def test_level2_names_vaac_in_header_only_for_an_affected_ash_advisory(
@@ -1840,7 +1840,7 @@ def test_level2_names_vaac_in_header_only_for_an_affected_ash_advisory(
     render_pdf(flight, findings, [], 2, path)
 
     weather_page = PdfReader(path).pages[6].extract_text() or ""
-    assert "LEVEL 2 - WEATHER / VAAC / PROMOTION" in weather_page
+    assert "WEATHER / VAAC / PROMOTION" in weather_page
 
 
 def test_level2_keeps_fail_closed_advisory_results_complete(

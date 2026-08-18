@@ -24,14 +24,8 @@ from app.odss.pilot_briefing import notam_pertinence
 from app.odss.report_quality import validate_combined_briefing_pdf
 
 
-def test_overview_uses_operating_window_weather_primary(tmp_path):
-    flight = sample_flight()
-    findings = [
-        finding
-        for finding in sample_findings()
-        if finding["engine"] != "depressurisation"
-    ]
-    findings.append({
+def _window_weather_finding() -> dict:
+    return {
         "engine": "weather",
         "severity": "warning",
         "title": "Destination weather - WSSS",
@@ -42,8 +36,40 @@ def test_overview_uses_operating_window_weather_primary(tmp_path):
             "window_status_text": "Forecast overlaps ETA plus or minus one hour.",
             "timing": "Arrival window 2140Z to 2340Z.",
         },
-    })
+    }
+
+
+def test_overview_prefers_raw_bulletins_on_airport_cards(tmp_path):
+    """18 Aug instruction: the dep/dest cards print the actual METAR and TAF
+    from the CFP; synthesised window prose only appears when no bulletin is
+    held."""
+    flight = sample_flight()
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    findings.append(_window_weather_finding())
     output = tmp_path / "weather-overview.pdf"
+
+    render_combined_briefing(flight, findings, [], output)
+
+    with fitz.open(output) as document:
+        first_page = document[0].get_text()
+    assert "METAR SA 160630 17007KT" in first_page.replace("\n", " ")
+    assert "Forecast overlaps ETA plus or minus one hour." not in first_page
+
+
+def test_overview_falls_back_to_operating_window_weather_primary(tmp_path):
+    flight = sample_flight()
+    flight["weather"] = []
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    findings.append(_window_weather_finding())
+    output = tmp_path / "weather-overview-fallback.pdf"
 
     render_combined_briefing(flight, findings, [], output)
 

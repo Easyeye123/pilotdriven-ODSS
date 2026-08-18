@@ -153,7 +153,7 @@ def test_personal_notes_are_persisted_positioned_and_regenerate_reports(
     level2_text = _pdf_text(client.get(f"/files/report/{flight_id}/2"))
     level2_compact = " ".join(level2_text.split())
     assert "Monitor the company frequency before the FIR transfer." not in level1_text
-    assert "LEVEL 2 - OCEANIC / FIR COMMUNICATIONS" in level2_text
+    assert "OCEANIC / FIR COMMUNICATIONS" in level2_text
     assert "PERSONAL NOTE" in level2_compact
     assert "Monitor the company frequency before the FIR transfer." in level2_compact
 

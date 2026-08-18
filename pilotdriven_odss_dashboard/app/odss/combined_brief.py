@@ -204,7 +204,8 @@ def draw_page_chrome(
         identity_x,
         top - 44,
         f"{flight.get('aircraft_type') or ''} | "
-        f"{theme.normalized_registration(flight.get('registration'))}",
+        f"{theme.normalized_registration(flight.get('registration'))}"
+        + (f" | CAPT {flight.get('captain')}" if flight.get("captain") else ""),
     )
 
     # Centre schedule block.
@@ -529,12 +530,12 @@ def _gate_lines(
         if classification
         else "CFP classification requires review"
     )
-    terrain_events = (briefing.get("terrain") or {}).get("events") or []
-    strict = [event for event in terrain_events if event]
-    terrain_line = (
-        f"{len(strict)} MSA >100* window{'s' if len(strict) != 1 else ''}; profile match on the terrain page"
-        if strict
-        else "No strict MSA >100* window detected"
+    # Verbatim from the briefing view - the one terrain sentence composed in
+    # build_briefing_view. Recomposing it here is how the overview once
+    # contradicted the terrain page.
+    terrain_line = str(
+        (briefing.get("terrain") or {}).get("summary")
+        or "Terrain review required"
     )
     va_line = _first_title(findings, {"weather"}) or "Weather review on the hazard page"
     airports_line = _first_title(findings, {"notam"}) or "Airport restrictions reviewed"
@@ -566,7 +567,10 @@ def _airport_card(canvas, x, y, w, h, *, title, accent, headline, body, tag):
     canvas.setFont(SANS, T_SMALL)
     text = canvas.beginText(ix, body_top)
     text.setLeading(leading)
-    for out_line in _wrap(str(body), SANS, T_SMALL, iw)[:max_lines]:
+    wrapped: list[str] = []
+    for paragraph in str(body).split("\n"):
+        wrapped.extend(_wrap(paragraph, SANS, T_SMALL, iw))
+    for out_line in wrapped[:max_lines]:
         text.textLine(out_line)
     canvas.drawText(text)
     canvas.setFillColor(TEXT_MUTED)
@@ -634,7 +638,21 @@ def draw_overview_page(
     fuel_summary = flight.get("fuel_summary") or {}
 
     def weather_line(panel_data: dict[str, Any]) -> str:
+        # The actual CFP bulletins, METAR and TAF each starting their own
+        # line (16 Aug instruction). The overlap narrative is a fallback for
+        # stations whose bulletins the CFP does not carry.
         weather = panel_data.get("weather") or {}
+        metar = str(weather.get("metar") or "").strip()
+        taf = str(weather.get("taf") or "").strip()
+        if metar or taf:
+            return "\n".join(
+                part
+                for part in (
+                    f"METAR {metar}" if metar else None,
+                    f"TAF {taf}" if taf else None,
+                )
+                if part
+            )
         return str(
             weather.get("primary")
             or weather.get("secondary")
@@ -1613,7 +1631,7 @@ def draw_performance_page(
     ix3 = inner[0]
     zfw_burn = flight.get("zfw_change_burn_kg_per_1000")
     breakdown = fuel_summary.get("excess_breakdown") or []
-    excess_parts = " + ".join(f"{item['label']} {item['fuel_kg']:,}" for item in breakdown if item.get("fuel_kg")) or None
+    excess_parts = " + ".join(f"{item['label']} {item['fuel_kg']:,} kg" for item in breakdown if item.get("fuel_kg")) or None
     sens_rows = [
         ("ZFW +/-1,000 kg", f"BURN +/-{zfw_burn:,} kg" if zfw_burn else "Sensitivity line not printed on this CFP.", "Update burn and arrival fuel"),
         ("EXCESS ALLOCATION", excess_parts or "No itemised excess on CFP page 1.", "Purpose of carried excess fuel"),

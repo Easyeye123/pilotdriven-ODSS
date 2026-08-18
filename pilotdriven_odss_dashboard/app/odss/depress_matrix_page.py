@@ -102,7 +102,7 @@ def draw_match_matrix_page(
         flight,
         width=width,
         height=height,
-        pill_text="LEVEL 2 - PROFILE MATCH",
+        pill_text="PROFILE MATCH",
     )
     canvas.setFillColor(theme.TEXT)
     canvas.setFont(theme.SANS_BOLD, 16)
@@ -401,7 +401,7 @@ def draw_source_chart_page(
                     f"{flight.get('aircraft_type') or ''} "
                     f"{normalized_registration(flight.get('registration'))}"
                 ).strip(),
-                f"LEVEL 2 SOURCE CHART - PROFILE {chart_number}",
+                f"SOURCE CHART - PROFILE {chart_number}",
             )
         ),
     )

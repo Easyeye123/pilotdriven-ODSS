@@ -1651,7 +1651,7 @@ def _draw_header(
     width: float,
     height: float,
     *,
-    section_title: str = "LEVEL 1 - PERTINENT BRIEF",
+    section_title: str = "PERTINENT BRIEF",
     page_number: int = 1,
 ) -> float:
     flight = briefing.get("_flight") or {}

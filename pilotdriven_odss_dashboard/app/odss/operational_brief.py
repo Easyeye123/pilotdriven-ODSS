@@ -477,6 +477,10 @@ def _draw_header(
     page_number: int,
 ) -> float:
     width, height = PAGE_SIZE
+    # Level naming is banned from anything a pilot can open (boss, 07 Aug
+    # pt 2, repeated 16 and 18 Aug). The internal section registry keeps its
+    # level2_* identifiers; only the printed label drops the tier prefix.
+    label = re.sub(r"^LEVEL \d+ - ", "", label)
     page_count = int(flight.get("_l2_page_count") or 7)
     metrics = briefing.get("metrics") or {}
     atot = metrics.get("atot")
