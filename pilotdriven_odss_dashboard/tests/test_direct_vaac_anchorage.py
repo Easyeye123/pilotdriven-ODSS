@@ -215,7 +215,9 @@ def test_global_coverage_ledger_always_names_all_nine_icao_vaac_centres() -> Non
 
 
 def test_an_unknown_token_mounts_nothing_rather_than_guessing(monkeypatch) -> None:
-    monkeypatch.setenv("ODSS_VAAC_ADVISORY_SOURCE", "darwin,washington")
+    # darwin graduated to a real connector on 18 Aug 2026; montreal and
+    # washington remain unmounted centres and stand in as the unknown tokens.
+    monkeypatch.setenv("ODSS_VAAC_ADVISORY_SOURCE", "montreal,washington")
     assert mounted_vaac_centres() == []
 
 

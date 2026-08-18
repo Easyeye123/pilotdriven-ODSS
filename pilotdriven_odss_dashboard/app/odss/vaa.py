@@ -816,6 +816,7 @@ ICAO_VAAC_CENTRES = (
 _VAAC_CENTRES: dict[str, dict[str, str]] = {
     "jma-tokyo": {"centre": "TOKYO", "provider": "jma-tokyo-vaac"},
     "anchorage": {"centre": "ANCHORAGE", "provider": "nws-anchorage-vaac"},
+    "darwin-gts": {"centre": "DARWIN", "provider": "noaa-gts-darwin-vaa"},
 }
 # Spellings accepted for the same centre, kept so existing deployments that set
 # a single legacy value keep working unchanged.
@@ -826,6 +827,10 @@ _VAAC_ALIASES: dict[str, str] = {
     "anchorage": "anchorage",
     "nws-anchorage": "anchorage",
     "pawu": "anchorage",
+    "darwin": "darwin-gts",
+    "darwin-gts": "darwin-gts",
+    "bom-darwin": "darwin-gts",
+    "adrm": "darwin-gts",
     "wifs": "wifs-global",
     "wifs-global": "wifs-global",
     "all": "wifs-global",
@@ -897,6 +902,10 @@ def fetch_mounted_vaac_snapshots(
             from .direct_vaac_anchorage import live_anchorage_vaac_snapshot
 
             snapshot = live_anchorage_vaac_snapshot(flight)
+        elif entry["token"] == "darwin-gts":
+            from .direct_vaac_darwin import live_darwin_vaac_snapshot
+
+            snapshot = live_darwin_vaac_snapshot(flight)
         elif entry["token"].startswith("wifs-global:"):
             snapshot = wifs_for(entry["centre"])
         else:  # pragma: no cover - guarded by mounted_vaac_centres
@@ -919,6 +928,7 @@ def vaac_centre_ledger(
     provider_centres = {
         "jma-tokyo-vaac": "TOKYO",
         "nws-anchorage-vaac": "ANCHORAGE",
+        "noaa-gts-darwin-vaa": "DARWIN",
     }
     for snapshot in snapshots:
         centre = str(snapshot.get("centre") or "").strip().upper()
