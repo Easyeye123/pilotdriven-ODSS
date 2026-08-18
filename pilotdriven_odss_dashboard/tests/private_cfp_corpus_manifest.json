@@ -157,6 +157,19 @@
       "destination_iata": "PER",
       "route_point_count": 35,
       "route_hash": "bd9c935a466861a399c4fbaefd1c240b7ca5f2ec8d18b1b61c2ad87ee29606b3"
+    },
+    {
+      "case_id": "SQ297-SIN-CHC",
+      "filename": "lido-briefing_SQ_297_16Aug2026_SIN_CHC.pdf",
+      "source_sha256": "8d5ce8c599674631acf83617e3772d09f6ef9a76304a2d796bab832ace7917ee",
+      "source_page_count": 63,
+      "flight_number": "SQ297",
+      "departure": "WSSS",
+      "destination": "NZCH",
+      "departure_iata": "SIN",
+      "destination_iata": "CHC",
+      "route_point_count": 55,
+      "route_hash": "14c9155e30c63a61fc51bb3193221bb7e5c9124b6f788e6dd6c7fe59c5a012ed"
     }
   ]
 }
