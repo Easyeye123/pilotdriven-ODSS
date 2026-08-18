@@ -477,6 +477,54 @@ def _parse_edto_sectors(edto_text: str) -> list[dict[str, Any]]:
     return sectors
 
 
+_WAYPOINT_LINE = re.compile(
+    r"^(?P<name>\*\*ETP\S*|-[A-Z0-9]+|\d{1,2}[NS]\d{2,3}|[A-Z][A-Z0-9]{1,8}|TOC|TOD|ENTRY\d|EXIT\d)"
+    r"(?:\s+\d{3}(?:\.\d+)?)?\s+(?P<actm>\d{2}\.\d{2})\b"
+)
+_COORDINATE_LINE = re.compile(
+    r"^(?P<lat_hem>[NS])(?P<lat_deg>\d{2})\s+(?P<lat_min>\d{2}\.\d+)\s+"
+    r"(?P<lon_hem>[EW])(?P<lon_deg>\d{3})\s+(?P<lon_min>\d{2}\.\d+)\s+"
+    r"(?P<msa>\d{3})(?P<star>\*)?"
+)
+# Sensitivity and command lines on CFP page 1. LIDO prints the ZFW line in two
+# shapes — "ZFW CHANGE / M1000KG BURN LESS 454 KG" and the dual-direction
+# "ZFW CHANGE P1000KG BURN ADD 96KG / M1000KG BURN LESS 96 KG" — both carry
+# the same per-1000kg figure, so the first burn value wins.
+_ZFW_BURN_RE = re.compile(
+    r"ZFW\s+CHANGE\s+(?:/\s*)?[PM]?1000KG\s+BURN\s+(?:ADD|LESS|MORE)\s+0*(?P<kg>\d+)\s*KG"
+)
+# "CAPT CHAN K B DAVID" at end of the plan line; the signature placeholder
+# "CAPT(SIGN) ..." never matches because no whitespace follows CAPT.
+_CAPTAIN_RE = re.compile(r"\bCAPT\s+(?P<name>[A-Z][A-Z .'-]*[A-Z])\s*$", re.MULTILINE)
+
+_LEGACY_WAYPOINT_LOG_OFFSET = 6
+
+
+def _waypoint_log_start(cfp_pages: list[str]) -> int:
+    """Index of the first CFP page carrying the waypoint log.
+
+    LIDO variants shift where the log begins — front-matter length varies by
+    route and OFP revision — so a fixed offset silently drops leading log
+    pages (and every high-MSA or FIR row on them). A log page is recognised
+    by waypoint rows immediately followed by their coordinate rows; the
+    legacy offset survives only as the fallback for documents where no log
+    page is recognisable.
+    """
+    for index, text in enumerate(cfp_pages):
+        pairs = 0
+        armed = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if _WAYPOINT_LINE.match(stripped):
+                armed = True
+            elif armed and _COORDINATE_LINE.match(stripped):
+                pairs += 1
+                armed = False
+                if pairs >= 2:
+                    return index
+    return _LEGACY_WAYPOINT_LOG_OFFSET
+
+
 def _parse_waypoints(
     route_pages: list[str],
     route_text: str,
@@ -485,15 +533,8 @@ def _parse_waypoints(
 ) -> list[dict[str, Any]]:
     pending: dict[str, Any] | None = None
     waypoints: list[dict[str, Any]] = []
-    waypoint_line = re.compile(
-        r"^(?P<name>\*\*ETP\S*|-[A-Z0-9]+|\d{1,2}[NS]\d{2,3}|[A-Z][A-Z0-9]{1,8}|TOC|TOD|ENTRY\d|EXIT\d)"
-        r"(?:\s+\d{3}(?:\.\d+)?)?\s+(?P<actm>\d{2}\.\d{2})\b"
-    )
-    coordinate_line = re.compile(
-        r"^(?P<lat_hem>[NS])(?P<lat_deg>\d{2})\s+(?P<lat_min>\d{2}\.\d+)\s+"
-        r"(?P<lon_hem>[EW])(?P<lon_deg>\d{3})\s+(?P<lon_min>\d{2}\.\d+)\s+"
-        r"(?P<msa>\d{3})(?P<star>\*)?"
-    )
+    waypoint_line = _WAYPOINT_LINE
+    coordinate_line = _COORDINATE_LINE
     vws_line = re.compile(r"\s(?P<tas>\d{3})\s+(?P<vws>\d{3})\s+\d{2}\.\d\s")
     for page_number, text in enumerate(route_pages, start=start_page_number):
         for line in text.splitlines():
@@ -1001,10 +1042,11 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     route_text = _parse_route_text(page1)
     sid, sid_source_page = _parse_named_procedure(cfp_pages, "SID")
     star, star_source_page = _parse_named_procedure(cfp_pages, "STAR")
+    log_start = _waypoint_log_start(cfp_pages)
     waypoints = _parse_waypoints(
-        cfp_pages[6:],
+        cfp_pages[log_start:],
         route_text,
-        start_page_number=cfp_start + 7,
+        start_page_number=cfp_start + log_start + 1,
     )
 
     bobcat = None
@@ -1121,6 +1163,8 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     )
     level_match = re.search(r"^[A-Z]{3}/\d{3}(?:/.*)$", page1, re.MULTILINE)
     aircraft_match = re.search(r"RTE NO\s+\S+\s+(?P<aircraft>[A-Z0-9-]+)", page1)
+    captain_match = _CAPTAIN_RE.search(page1)
+    zfw_burn_match = _ZFW_BURN_RE.search(page1)
     flight = {
         "document_id": source_name,
         "source_evidence": {
@@ -1149,6 +1193,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         ),
         "aircraft_type": aircraft_match.group("aircraft") if aircraft_match else "UNKNOWN",
         "registration": identity.group("reg"),
+        "captain": captain_match.group("name").strip() if captain_match else None,
         "departure": departure,
         "destination": destination,
         "departure_runway": route_line.group("dep_rwy") if route_line else None,
@@ -1169,10 +1214,10 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "route_waypoints": waypoints,
         "planned_level_profile": level_match.group(0).strip() if level_match else None,
         "cost_index": _int_group(page1, r"CRUISE CI\s+(\d+)"),
-        # "ZFW CHANGE / M1000KG BURN LESS 454 KG" — the printed planning
-        # sensitivity, carried for the report's sensitivities table.
-        "zfw_change_burn_kg_per_1000": _int_group(
-            page1, r"ZFW\s+CHANGE\s+/\s*[PM]?1000KG\s+BURN\s+(?:LESS|MORE)\s+0*(\d+)\s*KG"
+        # The printed planning sensitivity, carried for the report's
+        # sensitivities table; _ZFW_BURN_RE covers both LIDO line shapes.
+        "zfw_change_burn_kg_per_1000": (
+            int(zfw_burn_match.group("kg")) if zfw_burn_match else None
         ),
         "edto_rvsm": "EDTO/RVSM" if "EDTO/RVSM" in page1 else None,
         "bobcat": bobcat,
