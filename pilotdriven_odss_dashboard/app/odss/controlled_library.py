@@ -10,6 +10,9 @@ from urllib.parse import urlparse
 
 CDL_INDEX_ENV = "ODSS_CDL_INDEX_PATH"
 DEPRESS_INDEX_ENV = "ODSS_DEPRESS_PROFILE_INDEX_PATH"
+# Declares which governed tenant the mounted index belongs to when it is not
+# the runtime tenant; the index's own tenant_id must still match exactly.
+DEPRESS_INDEX_TENANT_ENV = "ODSS_DEPRESS_PROFILE_TENANT_ID"
 DEPRESS_INDEX_S3_ENV = "ODSS_DEPRESS_PROFILE_INDEX_S3_URI"
 DEPRESS_CHART_DIR_ENV = "ODSS_DEPRESS_CHART_DIR"
 FLEET_EFFECTIVITY_ENV = "ODSS_FLEET_EFFECTIVITY_PATH"
@@ -54,7 +57,15 @@ def _load_depress_index() -> tuple[dict[str, Any], str, str, str] | None:
     if not path_value and not s3_uri:
         return None
 
-    configured_tenant = str(os.environ.get(TENANT_ID_ENV) or "").strip()
+    # The index names the tenant that governs it. When the runtime tenant
+    # differs (19 Aug: prod runs synthetic-tenant while the 333-profile index
+    # was ingested under ezzogenics), the deployment must DECLARE the
+    # governing tenant explicitly - the check stays, nothing is guessed.
+    configured_tenant = str(
+        os.environ.get(DEPRESS_INDEX_TENANT_ENV)
+        or os.environ.get(TENANT_ID_ENV)
+        or ""
+    ).strip()
     if not configured_tenant:
         raise ValueError(
             f"{TENANT_ID_ENV} is required when a controlled profile index is configured"
