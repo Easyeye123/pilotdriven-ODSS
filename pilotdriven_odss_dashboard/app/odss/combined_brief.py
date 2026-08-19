@@ -2237,7 +2237,14 @@ def draw_alternates_page(
     # Every operational row prints here now that the old time-gates page is
     # folded away - the parity gate checks each one verbatim.
     summary_rows = edto_rows
-    summary_h = min(150.0, 18.0 + len(summary_rows) * 12.0)
+    # Rows wrap instead of truncating: a fitted-and-elided ETPS row breaks
+    # the parity gate's verbatim requirement (SQ34's 15 equal-time points).
+    row_value_width = half_w - 28 - 82
+    row_line_counts = [
+        max(1, len(_wrap(str(value), SANS, T_SMALL, row_value_width)[:3]))
+        for _, value in summary_rows
+    ]
+    summary_h = min(190.0, 18.0 + sum(count * 11.0 + 1.0 for count in row_line_counts))
     source_classification = _edto_source_classification(flight)
     crop = crop_source_region(
         source_pdf_path,
@@ -2267,11 +2274,12 @@ def draw_alternates_page(
         canvas.setFillColor(EDTO_GREEN if label == "CLASSIFICATION" else TEXT_MUTED)
         canvas.setFont(SANS_BOLD, T_MICRO)
         canvas.drawString(ix, row_y, label)
-        _draw_string_fitted(
-            canvas, ix + 78, row_y, value, SANS, T_SMALL,
-            iw - 82, TEXT,
-        )
-        row_y -= 12
+        canvas.setFillColor(TEXT)
+        canvas.setFont(SANS, T_SMALL)
+        for line in _wrap(str(value), SANS, T_SMALL, iw - 82)[:3]:
+            canvas.drawString(ix + 78, row_y, line)
+            row_y -= 11
+        row_y -= 1
 
     inner = panel(canvas, MARGIN + half_w + 12, y - crops_h, half_w, crops_h, title="ALTERNATE PLANNING SOURCE", accent=DESTINATION)
     ix2, iy2, iw2, ih2 = inner
@@ -2805,6 +2813,16 @@ def draw_analysis_page(
             if tanks is not None and reqmt is not None else None
         ),
         f"A 1,000 kg ZFW change moves burn {flight.get('zfw_change_burn_kg_per_1000')} kg." if flight.get("zfw_change_burn_kg_per_1000") else None,
+        (
+            "Excess composition: "
+            + "; ".join(
+                f"{item['label']} {item['fuel_kg']:,} kg"
+                for item in fuel_summary.get("excess_breakdown") or []
+                if item.get("fuel_kg")
+            ) + "."
+            if any(item.get("fuel_kg") for item in fuel_summary.get("excess_breakdown") or [])
+            else None
+        ),
     ) if part)
 
     refs = [
