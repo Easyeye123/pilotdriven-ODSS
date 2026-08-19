@@ -261,6 +261,19 @@
       "destination_iata": "SIN",
       "route_point_count": 138,
       "route_hash": "7800a2c72e432de9630eaf1c00a2e2c4d58917e48fd34599ee651f9cdbb210dc"
+    },
+    {
+      "case_id": "SQ214-PER-SIN-19AUG",
+      "filename": "SQ21419082026PER.pdf",
+      "source_sha256": "caa1f04e7d29aaeb34834695b8c50785c87174f152b9af9c03efd7425a08b428",
+      "source_page_count": 54,
+      "flight_number": "SQ214",
+      "departure": "YPPH",
+      "destination": "WSSS",
+      "departure_iata": "PER",
+      "destination_iata": "SIN",
+      "route_point_count": 38,
+      "route_hash": "474d6503d96b81ea1f0bcfc5054424ad8b60688b49a8c6f921eb8fb00e25f0b0"
     }
   ]
 }

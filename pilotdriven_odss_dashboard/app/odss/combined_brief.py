@@ -606,7 +606,7 @@ def _fuel_panel_rows(fuel_summary: dict[str, Any]) -> list[tuple[str, str]]:
     return [
         ("GROUND", f"{ground:,} NM" if ground else "--"),
         ("BURNOFF", timed("burnoff")),
-        ("FPL REQMT", timed("flt_plan_reqmt")),
+        ("FPL REQ", timed("flt_plan_reqmt")),
         ("FUEL IN TANKS", timed("fuel_in_tanks")),
         ("PZFW", mass("pzfw")),
         ("PTOW", mass("ptow")),
@@ -922,14 +922,26 @@ def draw_overview_page(
         ("MARGIN", f"+{margin_kg:,}" if margin_kg and margin_kg > 0 else f"{margin_kg:,}" if margin_kg is not None else "--"),
         ("ZFW +1000", f"+{flight.get('zfw_change_burn_kg_per_1000')} BURN" if flight.get("zfw_change_burn_kg_per_1000") else "--"),
     ]
+    def _value_right(x_right, y_row, value, colour, label_end):
+        # Numbers shrink to fit but never truncate - a fuel figure with a
+        # missing digit is worse than a small one (SQ322 A380 masses).
+        size = T_MICRO
+        # Floor at the legibility gate (boss, 18 Aug type ruling): make
+        # room with format, never with unreadable digits.
+        while size > 7.2 and pdfmetrics.stringWidth(str(value), MONO_BOLD, size) > (x_right - label_end):
+            size -= 0.2
+        canvas.setFillColor(colour)
+        canvas.setFont(MONO_BOLD, size)
+        canvas.drawRightString(x_right, y_row, str(value))
+
     row_y = row2_top - 28
     for label, value in mass_rows:
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont(SANS, T_MICRO)
         canvas.drawString(ix, row_y, label)
-        canvas.setFillColor(ACCENT if label == "MARGIN" else TEXT)
-        canvas.setFont(MONO_BOLD, T_MICRO)
-        canvas.drawRightString(ix + half_col - 8, row_y, str(value))
+        _value_right(ix + half_col - 8, row_y, value,
+                     ACCENT if label == "MARGIN" else TEXT,
+                     ix + pdfmetrics.stringWidth(label, SANS, T_MICRO) + 4)
         row_y -= 13
     rows_data = fuel_summary.get("rows") or {}
     def timed(key):
@@ -939,23 +951,22 @@ def draw_overview_page(
         if fuel_kg is None:
             return "--"
         clock = f"{int(minutes) // 60}:{int(minutes) % 60:02d}" if minutes is not None else "-"
-        return f"{fuel_kg:,} / {clock}"
+        return f"{fuel_kg:,}/{clock}"
     fuel_rows = [
         ("BURNOFF", timed("burnoff")),
         ("STAT CONT", timed("stat_cont")),
         ("ALTN", timed("altn_fuel")),
         ("TAXI", f"{fuel_summary.get('taxi_fuel_kg'):,}" if fuel_summary.get("taxi_fuel_kg") else "--"),
         ("FPL REQMT", timed("flt_plan_reqmt")),
-        ("TANKS/EXC", f"{(rows_data.get('fuel_in_tanks') or {}).get('fuel_kg') or 0:,} / {(rows_data.get('excess_fuel') or {}).get('fuel_kg') or 0:,}"),
+        ("TANKS", f"{(rows_data.get('fuel_in_tanks') or {}).get('fuel_kg') or 0:,}/{(rows_data.get('excess_fuel') or {}).get('fuel_kg') or 0:,}"),
     ]
     row_y = row2_top - 28
     for label, value in fuel_rows:
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont(SANS, T_MICRO)
         canvas.drawString(ix + half_col + 8, row_y, label)
-        canvas.setFillColor(TEXT)
-        canvas.setFont(MONO_BOLD, T_MICRO)
-        canvas.drawRightString(ix + col_w - 28, row_y, str(value))
+        _value_right(ix + col_w - 28, row_y, value, TEXT,
+                     ix + half_col + 8 + pdfmetrics.stringWidth(label, SANS, T_MICRO) + 4)
         row_y -= 13
     if str(fuel_summary.get("state") or "") != "verified":
         canvas.setFillColor(WEATHER_AMBER)
@@ -1408,6 +1419,14 @@ def draw_terrain_page(
     y = draw_section_title(canvas, content_top, "High Terrain Exposure and Depressurisation")
 
     full_w = width - 2 * MARGIN
+    # The one composed terrain sentence prints verbatim here - the parity
+    # gate requires it in both directions (a no-window flight must SAY so).
+    summary_line = str((briefing.get("terrain") or {}).get("summary") or "")
+    if summary_line:
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, T_SMALL)
+        _draw_string_fitted(canvas, MARGIN, y - 2, summary_line, SANS, T_SMALL, full_w, TEXT_SECONDARY)
+        y -= T_SMALL + 8
     terrain = _terrain_findings(findings)
     matched = _matched_profiles(findings)
     unmatched = [f for f in terrain if not any(
