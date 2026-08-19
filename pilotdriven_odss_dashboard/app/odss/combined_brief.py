@@ -112,7 +112,7 @@ MEL_CDL_GROUPS_PER_PAGE = 4
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-17-responsive-deferred-source-v3"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-20-rev3-measured-skin-v4"
 
 
 _FIT_FLOOR = T_MICRO
