@@ -220,48 +220,64 @@ def draw_page_chrome(
     top = height - 16
     draw_logo(canvas, MARGIN, top - 26, height=13.0)
 
-    # Flight identity block.
-    identity_x = width * 0.19
+    # Flight identity block - geometry measured from the boss's REV3 file
+    # (20 Aug): mono flight number at x137, route at x223, date block at
+    # x370, aircraft block at x548; the captain moves to FLIGHT BASIS.
     flight_number = theme.display_flight_number(flight)
     canvas.setFillColor(TEXT)
-    canvas.setFont(SANS_BOLD, 23)
-    canvas.drawString(identity_x, top - 17, flight_number)
-    canvas.setFont(SANS_BOLD, 10.5)
+    canvas.setFont(MONO_BOLD, 20)
+    canvas.drawString(137, top - 15, flight_number)
+    canvas.setFont(SANS_BOLD, 12.5)
     canvas.drawString(
-        identity_x,
-        top - 33,
-        f"{theme.airport_code_label(flight.get('departure'))} -> "
-        f"{theme.airport_code_label(flight.get('destination'))}",
+        223,
+        top - 12,
+        f"{str(flight.get('departure') or '----').upper()}  ->  "
+        f"{str(flight.get('destination') or '----').upper()}",
     )
     canvas.setFillColor(TEXT_SECONDARY)
-    canvas.setFont(SANS, 7.4)
+    canvas.setFont(SANS, 6.6)
     canvas.drawString(
-        identity_x,
-        top - 44,
+        223,
+        top - 24,
         f"{flight.get('aircraft_type') or ''} | "
-        f"{theme.normalized_registration(flight.get('registration'))}"
-        + (f" | CAPT {flight.get('captain')}" if flight.get("captain") else ""),
+        f"{theme.normalized_registration(flight.get('registration'))}",
     )
 
-    # Centre schedule block.
-    centre_x = width * 0.50
     canvas.setFillColor(TEXT)
-    canvas.setFont(SANS_BOLD, 9.6)
-    canvas.drawString(centre_x, top - 16, theme.header_date_label(flight))
+    canvas.setFont(SANS_BOLD, 8.6)
+    canvas.drawString(370, top - 13, theme.header_date_label(flight))
     utc_line, local_line = _header_times(flight)
-    canvas.setFillColor(TEXT_SECONDARY)
-    canvas.setFont(MONO, T_MICRO)
-    canvas.drawString(centre_x, top - 27, utc_line)
-    canvas.setFillColor(TEXT)
-    canvas.setFont(MONO_BOLD, T_MICRO)
-    canvas.drawString(centre_x, top - 37, local_line)
-
-    # Right: block time + product pill.
     block_label = theme.block_time_label(flight)
-    if block_label:
+    if page_number == 1:
+        # REV3 page 1: one compact mono schedule line.
+        etd_eta = utc_line.replace("UTC DEP", "ETD").replace("-> ARR", "|  ETA")
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(MONO, 6.5)
+        canvas.drawString(370, top - 25, f"{etd_eta}  |  {block_label or ''}".strip(" |"))
+        canvas.setFillColor(TEXT_MUTED)
+        canvas.setFont(SANS, 5.8)
+        canvas.drawString(548, top - 11, "AIRCRAFT / REG")
         canvas.setFillColor(TEXT)
-        canvas.setFont(SANS_BOLD, 10.5)
-        canvas.drawRightString(width * 0.80, top - 16, block_label)
+        canvas.setFont(MONO_BOLD, 7.4)
+        canvas.drawString(548, top - 22, f"{flight.get('aircraft_type') or '--'} / {theme.normalized_registration(flight.get('registration')) or '--'}")
+        meta_bits = " | ".join(part for part in (
+            f"CI{flight.get('cost_index')}" if flight.get("cost_index") is not None else None,
+            str(flight.get("captain") or "") or None,
+        ) if part)
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(MONO, 5.8)
+        canvas.drawString(548, top - 33, meta_bits)
+    else:
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(MONO, 6.5)
+        canvas.drawString(370, top - 24, utc_line)
+        canvas.setFillColor(TEXT)
+        canvas.setFont(MONO_BOLD, 6.5)
+        canvas.drawString(370, top - 34, local_line)
+        if block_label:
+            canvas.setFillColor(TEXT)
+            canvas.setFont(SANS_BOLD, 9.6)
+            canvas.drawRightString(width - MARGIN, top - 13, block_label)
     if page_number == 1:
         pill_text = "SOURCE CHECKS OPEN"
         pill_sub = "Current products controlling"
@@ -306,9 +322,10 @@ def draw_page_chrome(
             relative=0,
             thickness=0,
         )
-    canvas.setFillColor(TEXT_MUTED)
-    canvas.setFont(SANS, T_MICRO)
-    canvas.drawRightString(width - MARGIN, top - 34, f"Page {page_number} of {page_count}")
+    if page_number > 1:
+        canvas.setFillColor(TEXT_MUTED)
+        canvas.setFont(SANS, T_MICRO)
+        canvas.drawRightString(width - MARGIN, top - 38, f"Page {page_number} of {page_count}")
 
     # Header rule.
     canvas.setStrokeColor(BORDER)
@@ -381,21 +398,23 @@ def draw_section_title(canvas, y: float, text: str) -> float:
 
 
 def panel(canvas, x, y, w, h, *, title, accent, title_colour=colors.white) -> tuple[float, float, float, float]:
-    """Spec panel: elevated card with a colored full-width title bar on top.
+    """REV3 canon card (boss, 20 Aug: "this look"): panel fill with a thin
+    accent TOP border and the title inside as coloured text - the full-width
+    coloured title bands are retired. Measured from the boss's REV3 file:
+    #0E1B2A card, ~4pt accent bar, title text in the accent colour.
     Returns the inner content box (x, y, w, h)."""
-    bar_h = 15.0
-    canvas.setFillColor(ELEVATED)
+    canvas.setFillColor(PANEL)
     canvas.setStrokeColor(BORDER)
     canvas.setLineWidth(0.7)
     canvas.roundRect(x, y, w, h, 6, stroke=1, fill=1)
     canvas.setFillColor(accent)
-    canvas.roundRect(x, y + h - bar_h, w, bar_h, 6, stroke=0, fill=1)
-    canvas.rect(x, y + h - bar_h, w, bar_h / 2, stroke=0, fill=1)
+    canvas.roundRect(x, y + h - 3.6, w, 3.6, 1.8, stroke=0, fill=1)
+    title_text_colour = accent if accent not in (PANEL, ELEVATED) else TEXT
     _draw_string_fitted(
-        canvas, x + 8, y + h - bar_h + 4.4, str(title).upper(),
-        SANS_BOLD, T_CARD_HEAD, w - 16, title_colour,
+        canvas, x + 10, y + h - 16.5, str(title).upper(),
+        SANS_BOLD, T_CARD_HEAD, w - 20, title_text_colour,
     )
-    return (x + 8, y + 6, w - 16, h - bar_h - 12)
+    return (x + 10, y + 6, w - 20, h - 24)
 
 
 def stat_card(canvas, x, y, w, h, *, label, value, caption, accent, mono=True) -> None:
@@ -758,7 +777,7 @@ def draw_overview_page(
     row1_top = y
     dep_inner = panel(canvas, MARGIN, row1_top - row1_h, side_w, row1_h,
                       title=f"DEPARTURE  {theme.airport_code_label(departure_panel.get('icao') or flight.get('departure'))}",
-                      accent=DEPARTURE, title_colour=BG)
+                      accent=DEPARTURE, title_colour=None)
     ix = dep_inner[0]
     row_y = row1_top - 30
     canvas.setFillColor(TEXT)
@@ -788,7 +807,7 @@ def draw_overview_page(
     primary_alternate = alternates[0] if alternates else {}
     dest_inner = panel(canvas, right_x, row1_top - row1_h, side_w, row1_h,
                        title=f"DESTINATION  {theme.airport_code_label(destination_panel.get('icao') or flight.get('destination'))}",
-                       accent=DESTINATION, title_colour=BG)
+                       accent=DESTINATION, title_colour=None)
     ix2 = dest_inner[0]
     row_y2 = row1_top - 30
     canvas.setFillColor(TEXT)
@@ -845,7 +864,7 @@ def draw_overview_page(
 
     centre_inner = panel(canvas, centre_x, row1_top - row1_h, centre_w, row1_h,
                          title="CFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY",
-                         accent=ACCENT, title_colour=BG)
+                         accent=ACCENT, title_colour=None)
     cx0 = centre_inner[0]
     text_w = centre_w * 0.55
     map_w = centre_w - text_w - 34
@@ -968,7 +987,7 @@ def draw_overview_page(
     row2_top = row1_top - row1_h - row_gap
     col_w = (full_w - 2 * 10) / 3
     basis_inner = panel(canvas, MARGIN, row2_top - row2_h, col_w, row2_h,
-                        title="CFP P1 - FLIGHT BASIS", accent=COMMS_TEAL, title_colour=BG)
+                        title="CFP P1 - FLIGHT BASIS", accent=COMMS_TEAL, title_colour=None)
     ix = basis_inner[0]
     kv_rows(ix, row2_top - 28, col_w - 28, (
         ("AIRCRAFT/REG", f"{flight.get('aircraft_type') or '--'} / {theme.normalized_registration(flight.get('registration')) or '--'}"),
@@ -985,7 +1004,7 @@ def draw_overview_page(
     ))
 
     fuel_inner = panel(canvas, MARGIN + col_w + 10, row2_top - row2_h, col_w, row2_h,
-                       title="CFP P1 - MASS / FUEL", accent=EDTO_GREEN, title_colour=BG)
+                       title="CFP P1 - MASS / FUEL", accent=EDTO_GREEN, title_colour=None)
     ix = fuel_inner[0]
     masses = fuel_summary.get("masses_kg") or {}
     performance = flight.get("performance") or {}
@@ -1053,7 +1072,7 @@ def draw_overview_page(
         canvas.drawString(ix, row2_top - row2_h + 10, "Page-1 fuel arithmetic did not verify - review the source CFP page.")
 
     tech_inner = panel(canvas, MARGIN + 2 * (col_w + 10), row2_top - row2_h, col_w, row2_h,
-                       title="CFP P1 - TECHNICAL STATUS", accent=CRITICAL, title_colour=BG)
+                       title="CFP P1 - TECHNICAL STATUS", accent=CRITICAL, title_colour=None)
     ix = tech_inner[0]
     row_y = row2_top - 28
     deferred = flight.get("deferred_items") or []
@@ -1412,7 +1431,7 @@ def draw_time_gates_page(
 
     hazard_y = y - strip_h - 10
     hazard_entries = _hazard_gate_entries(flight, briefing)
-    inner = panel(canvas, MARGIN, hazard_y - strip_h, full_w, strip_h, title="HAZARD AND COMMUNICATION GATES", accent=WEATHER_AMBER, title_colour=BG)
+    inner = panel(canvas, MARGIN, hazard_y - strip_h, full_w, strip_h, title="HAZARD AND COMMUNICATION GATES", accent=WEATHER_AMBER, title_colour=None)
     _timeline(canvas, inner[0] + 14, hazard_y - strip_h + 12, full_w - 44, hazard_entries, accent_default=WEATHER_AMBER)
 
     # One wide EDTO card plus two compact cards. This uses the printable height
@@ -1548,7 +1567,7 @@ def draw_terrain_page(
     if point_rows:
         table_top = cards_y - 10
         inner = panel(canvas, MARGIN, table_top - point_table_h, full_w, point_table_h,
-                      title="STRICT MSA >100* EVENT", accent=TERRAIN_ORANGE, title_colour=BG)
+                      title="STRICT MSA >100* EVENT", accent=TERRAIN_ORANGE, title_colour=None)
         ix = inner[0]
         row_y = table_top - 26
         canvas.setFillColor(TEXT_MUTED)
@@ -1592,7 +1611,7 @@ def draw_terrain_page(
         finding = next((m for m in matched if (m.get("data") or {}).get("chart_number") == chart_number), {})
         data = finding.get("data") or {}
         title = f"PROFILE {chart_number}" + (f" - CP {data.get('critical_point')}" if data.get("critical_point") else "")
-        inner = panel(canvas, px, profiles_top - profiles_h, profile_w, profiles_h, title=title, accent=accents[index % 2], title_colour=BG)
+        inner = panel(canvas, px, profiles_top - profiles_h, profile_w, profiles_h, title=title, accent=accents[index % 2], title_colour=None)
         ix, iy, iw, ih = inner
         # White sheet behind the chart raster, preserving aspect.
         pad = 4
@@ -1623,7 +1642,7 @@ def draw_terrain_page(
             canvas.drawRightString(ix + iw, iy + 4, "OPEN >")
             canvas.linkRect("", f"sec_profile_{chart_number}", (ix + iw - 40, iy, ix + iw, iy + 12), relative=0, thickness=0)
     if not chart_images:
-        inner = panel(canvas, MARGIN, profiles_top - profiles_h, full_w, profiles_h, title="APPROVED PROFILE SET", accent=EDTO_GREEN, title_colour=BG)
+        inner = panel(canvas, MARGIN, profiles_top - profiles_h, full_w, profiles_h, title="APPROVED PROFILE SET", accent=EDTO_GREEN, title_colour=None)
         if matched:
             review_line(canvas, inner[0], inner[1] + inner[3] / 2, "Matched profile charts could not be served from the controlled library - publication review required.")
         else:
@@ -2000,7 +2019,7 @@ def draw_performance_page(
         row_y -= (body_h - 34) / len(rows)
 
     # Sensitivities strip.
-    inner = panel(canvas, MARGIN, 30, full_w, sens_h, title="FLIGHT-PLANNING SENSITIVITIES", accent=WEATHER_AMBER, title_colour=BG)
+    inner = panel(canvas, MARGIN, 30, full_w, sens_h, title="FLIGHT-PLANNING SENSITIVITIES", accent=WEATHER_AMBER, title_colour=None)
     ix3 = inner[0]
     zfw_burn = flight.get("zfw_change_burn_kg_per_1000")
     breakdown = fuel_summary.get("excess_breakdown") or []
@@ -2086,7 +2105,7 @@ def draw_mel_cdl_page(
         card_top = y - row * (card_h + row_gap)
         card_bottom = card_top - card_h
         if item is None:
-            inner = panel(canvas, cx, card_bottom, full_w, card_h, title="DEFERRED ITEMS", accent=EDTO_GREEN, title_colour=BG)
+            inner = panel(canvas, cx, card_bottom, full_w, card_h, title="DEFERRED ITEMS", accent=EDTO_GREEN, title_colour=None)
             canvas.setFillColor(TEXT_SECONDARY)
             canvas.setFont(SANS_BOLD, T_SMALL)
             canvas.drawString(inner[0], card_top - card_h / 2 - 8, "No MEL, CDL or CDDL item is listed on CFP page 1.")
@@ -2227,7 +2246,7 @@ def draw_alternates_page(
     # Left: the parsed entry/exit/alternate facts stay readable above the exact
     # airline EDTO source crop. This is the operational data the earlier report
     # lost even after the parser had successfully extracted it.
-    inner = panel(canvas, MARGIN, y - crops_h, half_w, crops_h, title=f"{classification_label} SOURCE / STATUS", accent=EDTO_GREEN, title_colour=BG)
+    inner = panel(canvas, MARGIN, y - crops_h, half_w, crops_h, title=f"{classification_label} SOURCE / STATUS", accent=EDTO_GREEN, title_colour=None)
     ix, iy, iw, ih = inner
     edto_rows = _edto_operational_rows(
         classification,
@@ -2287,7 +2306,7 @@ def draw_alternates_page(
     _draw_crop(canvas, crop2, ix2, iy2 + 6, iw2, ih2 - 10, missing_text="Alternate planning section not found for cropping - review the CFP weather pages.")
 
     # Alternates table.
-    inner = panel(canvas, MARGIN, 30, full_w, table_h, title="ALTERNATES AND PLANNING BASIS", accent=WEATHER_AMBER, title_colour=BG)
+    inner = panel(canvas, MARGIN, 30, full_w, table_h, title="ALTERNATES AND PLANNING BASIS", accent=WEATHER_AMBER, title_colour=None)
     ix3 = inner[0]
     header_y = 30 + table_h - 26
     for label, off in (("APT/RWY", 0), ("APPROACH", 90), ("MINIMA", 200), ("DIST", 330), ("TIME / FUEL", 390), ("ROUTE BASIS", 500)):
@@ -2495,7 +2514,7 @@ def draw_hazard_page(
             break
         accent = card_accents.get(str(card.get("disposition") or ""), WEATHER_AMBER)
         panel(canvas, MARGIN, card_y - card_h, half_w, card_h,
-              title=str(card.get("name") or "SIGMET")[:52].upper(), accent=accent, title_colour=BG)
+              title=str(card.get("name") or "SIGMET")[:52].upper(), accent=accent, title_colour=None)
         meta = " | ".join(part for part in (
             f"VALID {card.get('valid_from')}/{card.get('valid_to')}"
             if card.get("valid_from") else None,
@@ -2516,7 +2535,7 @@ def draw_hazard_page(
     if not cards:
         none_h = 40.0
         panel(canvas, MARGIN, card_y - none_h, half_w, none_h,
-              title="ENROUTE SIGMETS", accent=COMMS_TEAL, title_colour=BG)
+              title="ENROUTE SIGMETS", accent=COMMS_TEAL, title_colour=None)
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS, T_MICRO)
         canvas.drawString(MARGIN + 14, card_y - 30,
@@ -2589,7 +2608,7 @@ def draw_hazard_page(
     right_x = MARGIN + half_w + 12
     right_h = y - columns_bottom
     panel(canvas, right_x, y - right_h, half_w, right_h,
-          title="CFP SIGMET / WEATHER SOURCE", accent=WEATHER_AMBER, title_colour=BG)
+          title="CFP SIGMET / WEATHER SOURCE", accent=WEATHER_AMBER, title_colour=None)
     wx_crop = crop_source_region(
         source_pdf_path,
         needle="Airport WX List",
@@ -2626,7 +2645,7 @@ def draw_hazard_page(
     # WAFC fixed-time products strip.
     strip_top = 30 + strip_h
     strip_h = strip_top - 30
-    inner = panel(canvas, MARGIN, 30, full_w, strip_h, title="PACKAGE WAFC FIXED-TIME PRODUCTS", accent=WEATHER_AMBER, title_colour=BG)
+    inner = panel(canvas, MARGIN, 30, full_w, strip_h, title="PACKAGE WAFC FIXED-TIME PRODUCTS", accent=WEATHER_AMBER, title_colour=None)
     ix3, iy3, iw3, ih3 = inner
     charts = ((weather_charts or {}).get("charts") or [])[:3]
     if charts and source_pdf_path:
@@ -2703,7 +2722,7 @@ def draw_comms_page(
     right_w = 190.0
     seq_w = full_w - right_w - 12
     seq_h = seq_top - 30
-    inner = panel(canvas, MARGIN, 30, seq_w, seq_h, title="COMMUNICATION SEQUENCE", accent=COMMS_TEAL, title_colour=BG)
+    inner = panel(canvas, MARGIN, 30, seq_w, seq_h, title="COMMUNICATION SEQUENCE", accent=COMMS_TEAL, title_colour=None)
     ix, iy, iw, ih = inner
     header_y = seq_top - 26
     for label, off in (("UTC / ACTM", 0), ("EVENT", 110), ("RULE / DETAIL", 260)):
