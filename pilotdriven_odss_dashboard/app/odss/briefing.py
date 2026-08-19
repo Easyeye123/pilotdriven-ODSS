@@ -971,6 +971,7 @@ def _edto_operational_rows(
                 part for part in (
                     identity,
                     str(airport.get("approach") or "").strip(),
+                    str(airport.get("minima") or "").strip(),
                     str(airport.get("period") or "").strip(),
                 ) if part
             ),
@@ -1597,6 +1598,7 @@ def build_briefing_view(
             "airport": item.get("airport") or "----",
             "runway": item.get("runway") or "--",
             "approach": item.get("approach") or "",
+            "minima": item.get("minima") or "",
             "period": f"{_display_utc(item.get('period_start_utc'))} - {_display_utc(item.get('period_end_utc'))}",
         }
         for item in edto.get("airports") or []
