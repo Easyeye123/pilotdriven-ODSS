@@ -155,6 +155,35 @@ def test_va_screening_compares_passage_time_with_sigmet_validity() -> None:
         assert expected in derived, derived
 
 
+def test_va_caveat_reflects_a_held_official_advisory() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["weather"] = [{
+        "location": "WIIF", "record_type": "VA_SIGMET",
+        "text": (
+            "WIIF JAKARTA FIR WV SIGMET 08 VALID 010300/010500 VA ERUPTION "
+            "MT KRAKATAU WI S0720 E10749 - S0720 E10849 - S0620 E10800 SFC/FL070"
+        ),
+    }]
+    flight["vaa_review"] = {"direct_vaac_snapshot": {"advisories": [{
+        "volcano": "KRAKATAU 262000", "vaac": "DARWIN", "centre": "DARWIN",
+        "advisory_number": "2026/116", "issued_at_utc": "2026-08-01T08:00:00+00:00",
+        "remarks": "CURRENT SATELLITE IMAGERY INDICATES VA HAS NOW DISSIPATED. ADVISORY TERMINATED.",
+    }]}}
+    view = build_briefing_view(flight, [], [])
+    derived = view["vaa"]["cfp_advisories"][0]["derived"]
+    assert "official VAAC confirmation unavailable" not in derived
+    assert (
+        "official DARWIN advisory 2026/116 (01/0800Z) reports the ash dissipated"
+        in derived
+    ), derived
+
+    # A held advisory for a DIFFERENT volcano changes nothing: the honest
+    # caveat stays, and the manifest may still say DARWIN reached.
+    flight["vaa_review"]["direct_vaac_snapshot"]["advisories"][0]["volcano"] = "SEMERU 263300"
+    view = build_briefing_view(flight, [], [])
+    assert "official VAAC confirmation unavailable" in view["vaa"]["cfp_advisories"][0]["derived"]
+
+
 def test_va_advisory_without_readable_polygon_has_no_derived_line() -> None:
     flight = _flight(LOG_PAGE_LOW)
     flight["weather"] = [{

@@ -972,9 +972,46 @@ def _edto_operational_rows(
 
 
 
+def _va_official_note(flight: dict[str, Any] | None, volcano: str | None) -> str | None:
+    """The held official advisory for this volcano, as one sober sentence.
+
+    Returns None when nothing official is held - the caller then prints the
+    honest "confirmation unavailable" caveat. This is what stops the derived
+    line contradicting a coverage manifest that says DARWIN: reached."""
+    if not flight or not volcano:
+        return None
+    bare = re.sub(r"^(?:MT|MOUNT)\s+", "", str(volcano).upper()).strip()
+    held = (
+        ((flight.get("vaa_review") or {}).get("direct_vaac_snapshot") or {}).get("advisories")
+    ) or []
+    matches = [
+        advisory for advisory in held
+        if bare and bare in str(advisory.get("volcano") or "").upper()
+    ]
+    if not matches:
+        return None
+    latest = max(matches, key=lambda advisory: str(advisory.get("issued_at_utc") or ""))
+    centre = str(latest.get("vaac") or latest.get("centre") or "VAAC").strip()
+    number = str(latest.get("advisory_number") or "").strip()
+    issued = str(latest.get("issued_at_utc") or "")
+    stamp = ""
+    stamp_match = re.search(r"\d{4}-\d{2}-(\d{2})T(\d{2}):(\d{2})", issued)
+    if stamp_match:
+        day, hour, minute = stamp_match.groups()
+        stamp = f" ({day}/{hour}{minute}Z)"
+    remarks = str(latest.get("remarks") or "").upper()
+    if "TERMINATED" in remarks or "DISSIPATED" in remarks:
+        state = "reports the ash dissipated - advisory terminated"
+    else:
+        state = "is held for this volcano - see hazard coverage"
+    label = f"official {centre} advisory {number}".strip() if number else f"official {centre} advisory"
+    return f"{label}{stamp} {state}."
+
+
 def _va_derived_screening(
     text: str, waypoints: list[dict[str, Any]], profile: str | None,
     flight: dict[str, Any] | None = None,
+    official_note: str | None = None,
 ) -> str | None:
     """Closest-approach screening of the CFP's ash polygon against the route.
 
@@ -1092,10 +1129,10 @@ def _va_derived_screening(
                     )
     layer = f"{cloud.group(2)}/{cloud.group(3)}"
     levels = _cruise_summary(profile)
+    tail = official_note or "official VAAC confirmation unavailable."
     return (
         f"Closest approach {round(best_nm)} NM {place}{timing}; ash layer {layer}; "
-        f"planned {levels}. ODSS screening of the CFP advisory polygon - "
-        "official VAAC confirmation unavailable."
+        f"planned {levels}. ODSS screening of the CFP advisory polygon - {tail}"
     )
 
 
@@ -1134,6 +1171,9 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
                 flight.get("route_waypoints") or [],
                 flight.get("planned_level_profile"),
                 flight,
+                official_note=_va_official_note(
+                    flight, volcano.group(1) if volcano else None
+                ),
             ),
             "text": text,
             "fir": record.get("location"),
