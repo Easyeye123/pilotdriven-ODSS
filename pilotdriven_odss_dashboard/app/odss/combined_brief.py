@@ -1267,16 +1267,18 @@ def _timeline(canvas, x, y, w, entries, *, accent_default=COMMS_TEAL) -> None:
         time_text = str(entry.get("time") or "--")
         tw = pdfmetrics.stringWidth(time_text, UTIL_MONO_BOLD, 7.6)
         canvas.drawString(min(max(x, cx - tw / 2), x + w - tw), rail_y + 8, time_text)
+        # Labels hold at T_MICRO: REV3 prints 7.0 here, but the boss's own
+        # readable floor (>= 7.15 in content) outranks his generator's size.
         canvas.setFillColor(accent)
-        canvas.setFont(SANS_BOLD, 7.0)
+        canvas.setFont(SANS_BOLD, T_MICRO)
         label = str(entry.get("label") or "")[:14]
-        lw = pdfmetrics.stringWidth(label, SANS_BOLD, 7.0)
+        lw = pdfmetrics.stringWidth(label, SANS_BOLD, T_MICRO)
         canvas.drawString(min(max(x, cx - lw / 2), x + w - lw), rail_y - 15, label)
         sub = str(entry.get("sub") or "")[:20]
         if sub:
             canvas.setFillColor(TEXT_MUTED)
-            canvas.setFont(SANS, 7.0)
-            sw = pdfmetrics.stringWidth(sub, SANS, 7.0)
+            canvas.setFont(SANS, T_MICRO)
+            sw = pdfmetrics.stringWidth(sub, SANS, T_MICRO)
             canvas.drawString(min(max(x, cx - sw / 2), x + w - sw), rail_y - 24, sub)
 
 

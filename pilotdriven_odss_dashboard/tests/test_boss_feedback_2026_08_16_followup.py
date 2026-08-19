@@ -11,6 +11,7 @@ from generate_visual_samples import sample_findings, sample_flight
 
 from app.odss.briefing import _notice_kind
 from app.odss.combined_brief import (
+    MARGIN as combined_brief_margin,
     _airport_table_required_height,
     _crop_panel_required_height,
     _kv_card_required_height,
@@ -161,7 +162,7 @@ def test_short_authoritative_source_crop_does_not_stretch_card_to_footer(tmp_pat
             for drawing in mel_page.get_drawings()
             if drawing["type"] == "fs"
             and drawing["rect"].width > 700
-            and abs(drawing["rect"].x0 - 26) < 0.1
+            and abs(drawing["rect"].x0 - combined_brief_margin) < 0.1
             and drawing["rect"].y0 <= title_box.y0
             and drawing["rect"].y1 >= title_box.y1
         ]
