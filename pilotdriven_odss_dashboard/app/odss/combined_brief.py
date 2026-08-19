@@ -897,7 +897,32 @@ def _route_anchor_entries(flight: dict[str, Any], briefing: dict[str, Any]) -> l
             "label": str(w.get("name") or "").lstrip("-"),
             "sub": str(sub or ""),
             "accent": TERRAIN_ORANGE if (w.get("msa_hundreds_ft") or 0) > 100 else COMMS_TEAL if w.get("fir_boundary") else ACCENT,
+            "actm": w.get("actm_minutes"),
         })
+    # EDTO anchors from the parsed sectors join the strip; a boundary graze
+    # collapses to one anchor, matching the canon's single "EDTO" dot.
+    for sector in (flight.get("edto") or {}).get("sectors") or []:
+        entry_actm = (sector.get("entry") or {}).get("actm_minutes")
+        exit_actm = (sector.get("exit") or {}).get("actm_minutes")
+        if entry_actm is not None and entry_actm == exit_actm:
+            entries.append({
+                "time": _clock_at(flight, entry_actm),
+                "label": "EDTO",
+                "sub": f"E/X {format_actm(entry_actm)}",
+                "accent": EDTO_GREEN,
+                "actm": entry_actm,
+            })
+            continue
+        for actm, label in ((entry_actm, "EDTO ENTRY"), (exit_actm, "EDTO EXIT")):
+            if actm is not None:
+                entries.append({
+                    "time": _clock_at(flight, actm),
+                    "label": label,
+                    "sub": format_actm(actm),
+                    "accent": EDTO_GREEN,
+                    "actm": actm,
+                })
+    entries.sort(key=lambda item: item.get("actm") if item.get("actm") is not None else 0)
     return entries
 
 
@@ -1156,6 +1181,56 @@ def draw_terrain_page(
     stat_card(canvas, MARGIN + 2 * (card_w + 10), cards_y, card_w, card_h, label="UNRESOLVED", value=str(len(unmatched)), caption="manual review" if unmatched else "none", accent=CRITICAL if unmatched else EDTO_GREEN)
     stat_card(canvas, MARGIN + 3 * (card_w + 10), cards_y, card_w, card_h, label="EFFECTIVITY", value=theme.normalized_registration(flight.get("registration")) or "--", caption=str(flight.get("aircraft_type") or ""), accent=DEPARTURE, mono=True)
 
+    # Strict MSA >100* point table - the canon names every point with its
+    # ACTM/UTC, MSA and VWS instead of an anonymous "event 1".
+    events = (briefing.get("terrain") or {}).get("events") or []
+    point_rows: list[tuple[str, str, str, str]] = []
+    for event in events[:2]:
+        seen_points: set[str] = set()
+        for key in ("preceding", "first_high", "maximum", "last_high", "drop"):
+            point = event.get(key) or {}
+            name = str(point.get("name") or "").lstrip("-")
+            if not name or name in seen_points:
+                continue
+            seen_points.add(name)
+            actm = point.get("actm_minutes")
+            clock = _clock_at(flight, actm) if actm is not None else None
+            msa = point.get("msa_hundreds_ft")
+            point_rows.append((
+                name,
+                (format_actm(actm) if actm is not None else "--")
+                + (f" / {clock}" if clock else ""),
+                f"{msa:03d}{'*' if point.get('msa_asterisk') else ''}" if msa is not None else "--",
+                f"{point.get('vws'):03d}" if point.get("vws") is not None else "--",
+            ))
+    point_table_h = (26 + len(point_rows) * 12 + 8) if point_rows else 0.0
+    if point_rows:
+        table_top = cards_y - 10
+        inner = panel(canvas, MARGIN, table_top - point_table_h, full_w, point_table_h,
+                      title="STRICT MSA >100* EVENT", accent=TERRAIN_ORANGE, title_colour=BG)
+        ix = inner[0]
+        row_y = table_top - 26
+        canvas.setFillColor(TEXT_MUTED)
+        canvas.setFont(SANS_BOLD, T_MICRO)
+        for label, offset in (("POINT", 0), ("ACTM / UTC", 110), ("MSA", 250), ("VWS", 320)):
+            canvas.drawString(ix + offset, row_y, label)
+        row_y -= 12
+        for name, actm, msa, vws in point_rows:
+            starred = msa.endswith("*")
+            canvas.setFillColor(TEXT)
+            canvas.setFont(MONO_BOLD if starred else MONO, T_SMALL)
+            canvas.drawString(ix, row_y, name)
+            canvas.setFont(MONO, T_SMALL)
+            canvas.drawString(ix + 110, row_y, actm)
+            canvas.setFillColor(TERRAIN_ORANGE if starred else TEXT)
+            canvas.setFont(MONO_BOLD if starred else MONO, T_SMALL)
+            canvas.drawString(ix + 250, row_y, msa)
+            canvas.setFillColor(CRITICAL if vws not in ("--",) and int(vws) > 4 else TEXT_SECONDARY)
+            canvas.setFont(MONO, T_SMALL)
+            canvas.drawString(ix + 320, row_y, vws)
+            row_y -= 12
+        cards_y = table_top - point_table_h
+
     # Profile cards with embedded cropped charts.
     table_h = _terrain_table_height(
         has_charts=bool(chart_images),
@@ -1234,9 +1309,21 @@ def draw_terrain_page(
             for finding in unmatched[:3]:
                 data = finding.get("data") or {}
                 start = data.get("start_actm_minutes")
+                label = str(finding.get("title") or "")
+                for event in events:
+                    first = event.get("first_high") or {}
+                    if first.get("actm_minutes") == start:
+                        last = event.get("last_high") or {}
+                        airway = str(first.get("airway_in") or "").strip()
+                        label = (
+                            f"{str(first.get('name') or '').lstrip('-')}"
+                            f"-{str(last.get('name') or '').lstrip('-')}"
+                            + (f" on {airway}" if airway else "")
+                        )
+                        break
                 canvas.setFillColor(TEXT)
                 canvas.setFont(SANS, T_SMALL)
-                canvas.drawString(ix, row_y, str(finding.get("title") or "")[:34])
+                canvas.drawString(ix, row_y, label[:34])
                 canvas.setFont(MONO, T_SMALL)
                 canvas.drawString(ix + 150, row_y, format_actm(start) if start is not None else "--")
                 canvas.setFont(SANS, T_SMALL)
@@ -2035,44 +2122,78 @@ def draw_hazard_page(
 
     full_w = width - 2 * MARGIN
     half_w = (full_w - 12) / 2
-    # The manifest names every VAAC centre as well as the aggregate receipt.
-    # Reserve three compact centre rows so unavailable coverage cannot vanish
-    # behind a truthful-but-opaque "2/9 reached" count.
-    top_h = 128.0
 
-    hazard = next(
-        (f for f in findings if f.get("engine") in {"sigmet", "vaa", "tropical_cyclone"}),
-        None,
-    ) or next((f for f in findings if f.get("engine") == "weather"), None)
-    inner = panel(canvas, MARGIN, y - top_h, half_w, top_h, title=(str(hazard.get("title"))[:44].upper() if hazard else "ENROUTE HAZARD REVIEW"), accent=WEATHER_AMBER, title_colour=BG)
-    ix, iy, iw, ih = inner
-    if hazard:
-        rows = [("FINDING", str(hazard.get("summary") or ""))]
-        for line in (hazard.get("details") or [])[:3]:
-            rows.append(("DETAIL", str(line)))
-        row_y = y - 30
-        for label, value in rows:
-            canvas.setFillColor(TEXT_MUTED)
-            canvas.setFont(SANS, T_MICRO)
-            canvas.drawString(ix, row_y, label)
-            lines = _wrap(value, SANS, T_MICRO, iw - 64)
-            for line in lines[:2]:
-                canvas.setFillColor(TEXT_SECONDARY)
-                canvas.setFont(SANS, T_MICRO)
-                canvas.drawString(ix + 58, row_y, line)
-                row_y -= 9.2
-            if len(lines) < 2:
-                row_y -= 9.2
-            row_y -= 3
-    else:
+    # REV3 canon (boss, 20 Aug): one verdict card per enroute SIGMET, each
+    # carrying its deterministic reason, then the coverage ledger; the CFP's
+    # own weather page rides alongside as the printed source.
+    strip_h = 150.0
+    columns_bottom = 30 + strip_h + 10
+    cards = (briefing.get("hazards") or {}).get("sigmet_cards") or []
+    ledger_rows = (briefing.get("hazards") or {}).get("coverage_ledger") or []
+
+    card_accents = {
+        "PROMOTED": CRITICAL,
+        "NOT PROMOTED": WEATHER_AMBER,
+        "REVIEW REQUIRED": COMMS_TEAL,
+    }
+    card_y = y
+    for card in cards[:4]:
+        screen_lines = _wrap(str(card.get("screening") or ""), SANS, T_MICRO, half_w - 28)[:4]
+        card_h = 34 + 12 + len(screen_lines) * 9.6
+        if card_y - card_h < columns_bottom + 96:
+            break
+        accent = card_accents.get(str(card.get("disposition") or ""), WEATHER_AMBER)
+        panel(canvas, MARGIN, card_y - card_h, half_w, card_h,
+              title=str(card.get("name") or "SIGMET")[:52].upper(), accent=accent, title_colour=BG)
+        meta = " | ".join(part for part in (
+            f"VALID {card.get('valid_from')}/{card.get('valid_to')}"
+            if card.get("valid_from") else None,
+            str(card.get("layer") or "") or None,
+            str(card.get("movement") or "") or None,
+        ) if part)
+        row_y = card_y - 30
+        canvas.setFillColor(TEXT)
+        canvas.setFont(MONO, T_MICRO)
+        _draw_string_fitted(canvas, MARGIN + 14, row_y, meta, MONO, T_MICRO, half_w - 28, TEXT)
+        row_y -= 12
         canvas.setFillColor(TEXT_SECONDARY)
-        canvas.setFont(SANS_BOLD, T_SMALL)
-        canvas.drawString(ix, y - top_h / 2 - 10, "No enroute hazard finding was promoted for this package.")
+        canvas.setFont(SANS, T_MICRO)
+        for line in screen_lines:
+            canvas.drawString(MARGIN + 14, row_y, line)
+            row_y -= 9.6
+        card_y -= card_h + 8
+    if not cards:
+        none_h = 40.0
+        panel(canvas, MARGIN, card_y - none_h, half_w, none_h,
+              title="ENROUTE SIGMETS", accent=COMMS_TEAL, title_colour=BG)
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, T_MICRO)
+        canvas.drawString(MARGIN + 14, card_y - 30,
+                          "No enroute SIGMET is printed in this CFP's weather pages.")
+        card_y -= none_h + 8
 
-    # Coverage manifest from the governed reviews.
-    inner = panel(canvas, MARGIN + half_w + 12, y - top_h, half_w, top_h, title="COVERAGE MANIFEST", accent=CRITICAL)
-    ix2 = inner[0]
-    row_y = y - 30
+    # Coverage ledger: the CFP's section availability, the governed review
+    # statuses, and every VAAC centre - gaps stay visible, never assumed clear.
+    ledger_h = max(96.0, card_y - columns_bottom)
+    ledger_top = card_y
+    panel(canvas, MARGIN, ledger_top - ledger_h, half_w, ledger_h,
+          title="COVERAGE LEDGER", accent=ELEVATED)
+    row_y = ledger_top - 28
+    ledger_line = " | ".join(
+        f"{row.get('label')}: {row.get('status')}" for row in ledger_rows
+    ) or "AIRMET: unavailable | TC SIGMET: unavailable | VA SIGMET: unavailable"
+    canvas.setFillColor(TEXT)
+    canvas.setFont(MONO, T_MICRO)
+    _draw_string_fitted(canvas, MARGIN + 14, row_y, ledger_line, MONO, T_MICRO, half_w - 28, TEXT)
+    row_y -= 11
+    canvas.setFillColor(TEXT_MUTED)
+    canvas.setFont(SANS, T_MICRO)
+    _draw_string_fitted(
+        canvas, MARGIN + 14, row_y,
+        "These are source-coverage gaps, not NIL findings.",
+        SANS, T_MICRO, half_w - 28, TEXT_MUTED,
+    )
+    row_y -= 13
     vaa_review = flight.get("vaa_review") or {}
     vaac_ledger = vaa_review.get("vaac_centre_ledger") or []
     vaac_total = len(vaac_ledger) or 9
@@ -2080,54 +2201,79 @@ def draw_hazard_page(
         1 for item in vaac_ledger
         if item.get("status") in {"available", "partial"}
     )
-    vaac_partial = sum(1 for item in vaac_ledger if item.get("status") == "partial")
-    vaac_receipt = f"{vaac_reached}/{vaac_total} reached"
-    if vaac_partial:
-        vaac_receipt += f" | {vaac_partial} partial"
-    entries = (
-        ("SIGMET", str(((flight.get("sigmet_review") or {}).get("status")) or "no data in CFP")),
-        ("VA SIGMET", str(vaa_review.get("status") or "no data in CFP")),
-        ("VAAC CENTRES", vaac_receipt),
-        ("TROPICAL CYCLONE", str(((flight.get("tropical_cyclone_review") or {}).get("status")) or "no data in CFP")),
-    )
-    for label, status in entries:
-        ok = status.lower() in {"ok", "complete", "reviewed", "verified", "9/9 reached"}
+    for label, status in (
+        ("SIGMET REVIEW", str(((flight.get("sigmet_review") or {}).get("status")) or "no data in CFP")),
+        ("VA REVIEW", str(vaa_review.get("status") or "no data in CFP")),
+        ("TC REVIEW", str(((flight.get("tropical_cyclone_review") or {}).get("status")) or "no data in CFP")),
+        ("VAAC CENTRES", f"{vaac_reached}/{vaac_total} reached"),
+    ):
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont(SANS, T_MICRO)
-        canvas.drawString(ix2, row_y, label)
-        canvas.setFillColor(EDTO_GREEN if ok else WEATHER_AMBER)
+        canvas.drawString(MARGIN + 14, row_y, label)
+        canvas.setFillColor(WEATHER_AMBER)
         canvas.setFont(SANS_BOLD, T_MICRO)
-        _draw_string_fitted(canvas, ix2 + 96, row_y, status.replace("_", " "), SANS_BOLD, T_MICRO, half_w - 130, EDTO_GREEN if ok else WEATHER_AMBER)
-        row_y -= 12
+        _draw_string_fitted(canvas, MARGIN + 110, row_y, status.replace("_", " "), SANS_BOLD, T_MICRO, half_w - 140, WEATHER_AMBER)
+        row_y -= 11
     status_copy = {
         "available": "reached",
         "partial": "partial",
         "unavailable": "unavailable",
         "not_mounted": "not mounted",
     }
-    for start in range(0, len(vaac_ledger), 3):
+    for start_index in range(0, len(vaac_ledger), 3):
         centre_line = " | ".join(
             f"{str(item.get('centre') or 'UNKNOWN').upper()}: "
             f"{status_copy.get(str(item.get('status') or '').lower(), 'unavailable')}"
-            for item in vaac_ledger[start:start + 3]
+            for item in vaac_ledger[start_index:start_index + 3]
         )
+        if row_y < ledger_top - ledger_h + 12:
+            break
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(MONO, T_MICRO)
-        _draw_string_fitted(
-            canvas, ix2, row_y, centre_line,
-            MONO, T_MICRO, half_w - 34, TEXT_SECONDARY,
-        )
+        _draw_string_fitted(canvas, MARGIN + 14, row_y, centre_line, MONO, T_MICRO, half_w - 28, TEXT_SECONDARY)
         row_y -= 10
-    canvas.setFillColor(TEXT_MUTED)
-    canvas.setFont(SANS, T_MICRO)
-    _draw_string_fitted(
-        canvas, ix2, row_y,
-        "Absent data is reported, never assumed clear - current SIGMET/radar remain controlling.",
-        SANS, T_MICRO, half_w - 34, TEXT_MUTED,
+
+    # The CFP's own weather page, cropped as printed - the source beside the
+    # verdicts, exactly as the canon lays it out.
+    right_x = MARGIN + half_w + 12
+    right_h = y - columns_bottom
+    panel(canvas, right_x, y - right_h, half_w, right_h,
+          title="CFP SIGMET / WEATHER SOURCE", accent=WEATHER_AMBER, title_colour=BG)
+    wx_crop = crop_source_region(
+        source_pdf_path,
+        needle="Airport WX List",
+        end_needle="DESTINATION ALTERNATE",
+        page_hint=13, max_pages=54, pad_y=10,
+    ) or crop_source_region(
+        source_pdf_path,
+        needle="SIGMETs:",
+        page_hint=13, max_pages=54, pad_y=14,
     )
+    if wx_crop:
+        from io import BytesIO as _BytesIO
+
+        from reportlab.lib.utils import ImageReader as _ImageReader
+
+        pad = 10
+        image = _ImageReader(_BytesIO(wx_crop["png"]))
+        aspect = wx_crop["width"] / max(1, wx_crop["height"])
+        draw_w = half_w - 2 * pad
+        draw_h = min(right_h - 34, draw_w / aspect)
+        draw_w = min(draw_w, draw_h * aspect)
+        canvas.setFillColor(colors.white)
+        canvas.roundRect(right_x + pad, y - 24 - draw_h - 4, draw_w + 8, draw_h + 8, 3, stroke=0, fill=1)
+        canvas.drawImage(image, right_x + pad + 4, y - 24 - draw_h,
+                         width=draw_w, height=draw_h, preserveAspectRatio=True, mask="auto")
+    else:
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, T_SMALL)
+        canvas.drawString(right_x + 14, y - right_h / 2,
+                          "Source weather page unavailable for cropping - see the uploaded CFP.")
+
+    y = columns_bottom - 10
 
     # WAFC fixed-time products strip.
-    strip_top = y - top_h - 10
+    strip_top = 30 + strip_h
     strip_h = strip_top - 30
     inner = panel(canvas, MARGIN, 30, full_w, strip_h, title="PACKAGE WAFC FIXED-TIME PRODUCTS", accent=WEATHER_AMBER, title_colour=BG)
     ix3, iy3, iw3, ih3 = inner
