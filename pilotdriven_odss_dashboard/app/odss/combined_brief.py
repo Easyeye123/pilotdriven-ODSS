@@ -16,15 +16,17 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 from . import brief_theme as theme
-from .brief_theme import MONO, MONO_BOLD, SANS, SANS_BOLD, register_fonts
+from .brief_theme import register_fonts
 from .briefing import (
     _edto_classification,
     _edto_gate_sentence,
@@ -35,25 +37,58 @@ from .constants import format_actm
 PAGE_SIZE = landscape(A4)
 
 # ---------------------------------------------------------------------------
-# Palette — the web token sheet, verbatim (--pd-* values).
+# Faces — measured off the boss's REV3 file (20 Aug, "this look").  His
+# analysis pages set every title and body line in base-14 Helvetica with
+# Courier utility lines (header schedule, footer) — those are font objects,
+# not files, so using the same names reproduces his glyphs exactly.  His
+# dashboard prints data values in DejaVu Sans Mono; the cut is vendored
+# beside the other faces.  Inter/JetBrains are retired from this surface by
+# that same file.
 # ---------------------------------------------------------------------------
-BG = colors.HexColor("#08111c")
-PANEL = colors.HexColor("#0e1b2a")
-ELEVATED = colors.HexColor("#13263a")
-BORDER = colors.HexColor("#23374d")
+SANS = "Helvetica"
+SANS_BOLD = "Helvetica-Bold"
+UTIL_MONO = "Courier"
+UTIL_MONO_BOLD = "Courier-Bold"
+
+_FONT_DIR = Path(__file__).resolve().parent / "fonts"
+
+
+def _data_mono_faces() -> tuple[str, str]:
+    regular = _FONT_DIR / "DejaVuSansMono.ttf"
+    bold = _FONT_DIR / "DejaVuSansMono-Bold.ttf"
+    if regular.is_file() and bold.is_file():
+        if "BriefDataMono" not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont("BriefDataMono", str(regular)))
+            pdfmetrics.registerFont(TTFont("BriefDataMono-Bold", str(bold)))
+        return "BriefDataMono", "BriefDataMono-Bold"
+    return UTIL_MONO, UTIL_MONO_BOLD  # pragma: no cover - fonts are vendored
+
+
+MONO, MONO_BOLD = _data_mono_faces()
+
+# ---------------------------------------------------------------------------
+# Palette — REV3 analysis-page vector fills, measured (his page 1 re-renders
+# our dashboard with the web tokens; pages 2-7 are his own design and carry
+# these values, so they govern the document).
+# ---------------------------------------------------------------------------
+BG = colors.HexColor("#07131f")
+PANEL = colors.HexColor("#0f2336")
+ELEVATED = colors.HexColor("#142e45")
+BORDER = colors.HexColor("#26445b")
 ACCENT = colors.HexColor("#2f80ed")
-DEPARTURE = colors.HexColor("#2d9cdb")
-DESTINATION = colors.HexColor("#9b51e0")
-EDTO_GREEN = colors.HexColor("#27ae60")
-WEATHER_AMBER = colors.HexColor("#f2c94c")
+SECTION_BLUE = colors.HexColor("#35a6dc")
+DEPARTURE = colors.HexColor("#34a5db")
+DESTINATION = colors.HexColor("#974fe6")
+EDTO_GREEN = colors.HexColor("#2dcf82")
+WEATHER_AMBER = colors.HexColor("#f2c84b")
 COMMS_TEAL = colors.HexColor("#2dcecf")
-TERRAIN_ORANGE = colors.HexColor("#f2994a")
+TERRAIN_ORANGE = colors.HexColor("#f29a49")
 CRITICAL = colors.HexColor("#eb5757")
-TEXT = colors.HexColor("#f5f7fa")
-TEXT_SECONDARY = colors.HexColor("#a9b6c5")
+TEXT = colors.HexColor("#f3f7fa")
+TEXT_SECONDARY = colors.HexColor("#9ab0c1")
 TEXT_MUTED = colors.HexColor("#6f8095")
 
-MARGIN = 26.0
+MARGIN = 20.0
 HEADER_H = 64.0
 FOOTER_H = 26.0
 
@@ -63,8 +98,8 @@ FOOTER_H = 26.0
 # headings unchanged. The geometric overlap scan gates every page at the
 # larger sizes across the whole corpus.
 T_TITLE = 19.0        # page section title
-T_FLIGHT = 25.0       # header flight number
-T_CARD_HEAD = 9.6     # panel title bars
+T_FLIGHT = 27.0       # header flight number (REV3 measured: Helvetica-Bold 27)
+T_CARD_HEAD = 9.3     # panel titles (REV3 measured)
 T_BODY = 9.8
 T_VALUE = 13.2        # stat values
 T_SMALL = 8.6
@@ -188,16 +223,19 @@ REV3_TABS = (
 
 
 def rev3_card(canvas, x, y, w, h, *, title: str, accent, title_colour=None) -> tuple[float, float, float, float]:
-    """REV3 canon card: dark rounded panel with a 3pt accent TOP border and
-    the title inside - not the old full-colour title band."""
+    """REV3 canon card, measured: #0F2336 rounded panel with a 0.8pt #26445B
+    border, a square 3pt accent TOP bar, and a white 9.3 bold title 10pt in
+    from the left edge."""
     canvas.setFillColor(PANEL)
-    canvas.roundRect(x, y, w, h, 6, stroke=0, fill=1)
+    canvas.setStrokeColor(BORDER)
+    canvas.setLineWidth(0.8)
+    canvas.roundRect(x, y, w, h, 6, stroke=1, fill=1)
     canvas.setFillColor(accent)
-    canvas.roundRect(x, y + h - 3, w, 3, 1.5, stroke=0, fill=1)
+    canvas.rect(x, y + h - 3, w, 3, stroke=0, fill=1)
     canvas.setFillColor(title_colour or TEXT)
-    canvas.setFont(SANS_BOLD, T_SMALL)
-    canvas.drawString(x + 14, y + h - 18, str(title)[:64])
-    return (x + 14, y + 10, w - 28, h - 30)
+    canvas.setFont(SANS_BOLD, T_CARD_HEAD)
+    canvas.drawString(x + 10, y + h - 16.3, str(title)[:64])
+    return (x + 10, y + 10, w - 20, h - 30)
 
 
 def draw_page_chrome(
@@ -218,37 +256,35 @@ def draw_page_chrome(
     canvas.rect(0, 0, width, height, stroke=0, fill=1)
 
     top = height - 16
-    draw_logo(canvas, MARGIN, top - 26, height=13.0)
-
-    # Flight identity block - geometry measured from the boss's REV3 file
-    # (20 Aug): mono flight number at x137, route at x223, date block at
-    # x370, aircraft block at x548; the captain moves to FLIGHT BASIS.
     flight_number = theme.display_flight_number(flight)
-    canvas.setFillColor(TEXT)
-    canvas.setFont(MONO_BOLD, 20)
-    canvas.drawString(137, top - 15, flight_number)
-    canvas.setFont(SANS_BOLD, 12.5)
-    canvas.drawString(
-        223,
-        top - 12,
-        f"{str(flight.get('departure') or '----').upper()}  ->  "
-        f"{str(flight.get('destination') or '----').upper()}",
-    )
-    canvas.setFillColor(TEXT_SECONDARY)
-    canvas.setFont(SANS, 6.6)
-    canvas.drawString(
-        223,
-        top - 24,
-        f"{flight.get('aircraft_type') or ''} | "
-        f"{theme.normalized_registration(flight.get('registration'))}",
-    )
-
-    canvas.setFillColor(TEXT)
-    canvas.setFont(SANS_BOLD, 8.6)
-    canvas.drawString(370, top - 13, theme.header_date_label(flight))
     utc_line, local_line = _header_times(flight)
     block_label = theme.block_time_label(flight)
     if page_number == 1:
+        draw_logo(canvas, MARGIN, top - 26, height=13.0)
+        # REV3 page 1 header - geometry measured from the boss's REV3 file
+        # (20 Aug): mono flight number at x137, route at x223, date block at
+        # x370, aircraft block at x548; the captain moves to FLIGHT BASIS.
+        canvas.setFillColor(TEXT)
+        canvas.setFont(MONO_BOLD, 20)
+        canvas.drawString(137, top - 15, flight_number)
+        canvas.setFont(SANS_BOLD, 12.5)
+        canvas.drawString(
+            223,
+            top - 12,
+            f"{str(flight.get('departure') or '----').upper()}  ->  "
+            f"{str(flight.get('destination') or '----').upper()}",
+        )
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, 6.6)
+        canvas.drawString(
+            223,
+            top - 24,
+            f"{flight.get('aircraft_type') or ''} | "
+            f"{theme.normalized_registration(flight.get('registration'))}",
+        )
+        canvas.setFillColor(TEXT)
+        canvas.setFont(SANS_BOLD, 8.6)
+        canvas.drawString(370, top - 13, theme.header_date_label(flight))
         # REV3 page 1: one compact mono schedule line.
         etd_eta = utc_line.replace("UTC DEP", "ETD").replace("-> ARR", "|  ETA")
         canvas.setFillColor(TEXT_SECONDARY)
@@ -268,16 +304,41 @@ def draw_page_chrome(
         canvas.setFont(MONO, 5.8)
         canvas.drawString(548, top - 33, meta_bits)
     else:
-        canvas.setFillColor(TEXT_SECONDARY)
-        canvas.setFont(MONO, 6.5)
-        canvas.drawString(370, top - 24, utc_line)
+        # REV3 analysis-page header, every coordinate measured off his file:
+        # stacked identity block at x178 (number 27 / route 14 / aircraft
+        # 8.5), schedule column at x454 (date 10 / UTC 8.5 / LT 7.9 in
+        # Courier), BLK at x690, section label and page number right-aligned.
+        draw_logo(canvas, MARGIN, height - 52, height=11.0)
         canvas.setFillColor(TEXT)
-        canvas.setFont(MONO_BOLD, 6.5)
-        canvas.drawString(370, top - 34, local_line)
+        canvas.setFont(SANS_BOLD, T_FLIGHT)
+        canvas.drawString(178, height - 33, flight_number)
+        canvas.setFont(SANS_BOLD, 14)
+        canvas.drawString(
+            178,
+            height - 55.3,
+            f"{str(flight.get('departure') or '----').upper()} -> "
+            f"{str(flight.get('destination') or '----').upper()}",
+        )
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, 8.5)
+        canvas.drawString(
+            178,
+            height - 72.3,
+            f"{flight.get('aircraft_type') or ''} | "
+            f"{theme.normalized_registration(flight.get('registration'))}",
+        )
+        canvas.setFillColor(TEXT)
+        canvas.setFont(SANS_BOLD, 10)
+        canvas.drawString(454, height - 37.8, theme.header_date_label(flight))
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(UTIL_MONO, 8.5)
+        canvas.drawString(454, height - 58.5, utc_line)
+        canvas.setFont(UTIL_MONO, 7.9)
+        canvas.drawString(454, height - 73.5, local_line)
         if block_label:
             canvas.setFillColor(TEXT)
-            canvas.setFont(SANS_BOLD, 9.6)
-            canvas.drawRightString(width - MARGIN, top - 13, block_label)
+            canvas.setFont(SANS_BOLD, 10)
+            canvas.drawString(690, height - 37.8, block_label)
     if page_number == 1:
         pill_text = "SOURCE CHECKS OPEN"
         pill_sub = "Current products controlling"
@@ -298,16 +359,20 @@ def draw_page_chrome(
         canvas.drawCentredString(pill_x + pill_w / 2, top - 24.5, pill_sub)
     else:
         label = section_label or "FLIGHT BRIEFING"
-        canvas.setFillColor(section_colour or ACCENT)
-        canvas.setFont(SANS_BOLD, 9.6)
-        canvas.drawRightString(width - MARGIN, top - 27, label.upper())
-    if page_number > 1:
+        canvas.setFillColor(section_colour or SECTION_BLUE)
+        canvas.setFont(SANS_BOLD, 9.3)
+        canvas.drawRightString(width - MARGIN, height - 57.9, label.upper())
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, 7.4)
+        canvas.drawRightString(width - MARGIN, height - 74.5, f"Page {page_number} of {page_count}")
         # Boss, 19 Aug video: "back to overview must be on top, nice and
-        # big" - larger type, taller pill, top-aligned with the section title.
+        # big". REV3's header leaves the band between the schedule column
+        # and BLK empty, so the pill lives there - on top, inside the
+        # measured header, without pushing content below his content line.
         back_text = "BACK TO OVERVIEW"
         back_w = pdfmetrics.stringWidth(back_text, SANS_BOLD, T_SMALL) + 28
-        back_x = width - MARGIN - back_w
-        back_y = top - 72
+        back_x = 680 - back_w
+        back_y = height - 50
         canvas.setFillColor(ELEVATED)
         canvas.setStrokeColor(ACCENT)
         canvas.setLineWidth(1.1)
@@ -322,15 +387,12 @@ def draw_page_chrome(
             relative=0,
             thickness=0,
         )
-    if page_number > 1:
-        canvas.setFillColor(TEXT_MUTED)
-        canvas.setFont(SANS, T_MICRO)
-        canvas.drawRightString(width - MARGIN, top - 38, f"Page {page_number} of {page_count}")
 
-    # Header rule.
+    # Header rule - REV3 measured: 88pt below the page top on analysis pages.
     canvas.setStrokeColor(BORDER)
     canvas.setLineWidth(0.8)
-    canvas.line(MARGIN, top - 48, width - MARGIN, top - 48)
+    rule_y = (top - 48) if page_number == 1 else (height - 88)
+    canvas.line(MARGIN, rule_y, width - MARGIN, rule_y)
 
     tabs_offset = 0.0
     if show_tabs:
@@ -353,9 +415,14 @@ def draw_page_chrome(
         canvas.setFont(SANS_BOLD, T_MICRO)
         canvas.drawRightString(width - MARGIN, tab_y, f"FLIGHT BRIEFING | PAGE {page_number} OF {page_count}")
 
-    # Footer.
-    canvas.setFillColor(TEXT_MUTED)
-    canvas.setFont(SANS, T_MICRO)
+    # Footer - REV3 measured: hairline over one Courier 6.7 line in the body
+    # grey. The SOURCE and derivation lines keep their content, restyled to
+    # the same utility mono.
+    canvas.setStrokeColor(BORDER)
+    canvas.setLineWidth(0.7)
+    canvas.line(MARGIN, 28, width - MARGIN, 28)
+    canvas.setFillColor(TEXT_SECONDARY)
+    canvas.setFont(UTIL_MONO, 6.7)
     canvas.drawString(
         MARGIN,
         9,
@@ -364,6 +431,7 @@ def draw_page_chrome(
             for value in (
                 "FLIGHT BRIEFING",
                 theme.display_flight_number(flight),
+                f"OFP {theme.ofp_label(flight)}",
                 (
                     f"{flight.get('aircraft_type') or ''} "
                     f"{theme.normalized_registration(flight.get('registration'))}"
@@ -380,21 +448,27 @@ def draw_page_chrome(
     )
     # SOURCE line above the footer.
     canvas.setFillColor(ACCENT)
-    canvas.setFont(SANS_BOLD, T_MICRO)
-    canvas.drawString(MARGIN, 21, "SOURCE")
+    canvas.setFont(UTIL_MONO_BOLD, 6.7)
+    canvas.drawString(MARGIN, 18.5, "SOURCE")
     _draw_string_fitted(
-        canvas, MARGIN + 34, 21, source_line[:180], SANS, T_MICRO,
-        width - 2 * MARGIN - 34, TEXT_MUTED,
+        canvas, MARGIN + 34, 18.5, source_line[:180], UTIL_MONO, 6.7,
+        width - 2 * MARGIN - 34, TEXT_SECONDARY,
     )
-    # Pages after the dashboard reserve room for the enlarged back pill.
-    return top - (56 if page_number == 1 else 100) - tabs_offset
+    # Analysis pages start where his content line sits: 94pt from the top.
+    return top - 56 - tabs_offset if page_number == 1 else height - 94
 
 
-def draw_section_title(canvas, y: float, text: str) -> float:
-    canvas.setFillColor(TEXT)
-    canvas.setFont(SANS_BOLD, T_TITLE)
-    canvas.drawString(MARGIN, y - T_TITLE, text.upper())
-    return y - T_TITLE - 8
+def draw_section_title(canvas, y: float, text: str, accent=WEATHER_AMBER) -> float:
+    """REV3 p3 banner vocabulary: a filled accent bar with dark bold caps
+    inside - the giant white headings are retired (boss, 20 Aug REV3)."""
+    width = PAGE_SIZE[0]
+    bar_h = 20.0
+    canvas.setFillColor(accent)
+    canvas.roundRect(MARGIN, y - bar_h, width - 2 * MARGIN, bar_h, 4, stroke=0, fill=1)
+    canvas.setFillColor(BG)
+    canvas.setFont(SANS_BOLD, T_CARD_HEAD)
+    canvas.drawString(MARGIN + 12, y - bar_h + 6.6, text.upper())
+    return y - bar_h - 10
 
 
 def panel(canvas, x, y, w, h, *, title, accent, title_colour=colors.white) -> tuple[float, float, float, float]:
@@ -405,13 +479,13 @@ def panel(canvas, x, y, w, h, *, title, accent, title_colour=colors.white) -> tu
     Returns the inner content box (x, y, w, h)."""
     canvas.setFillColor(PANEL)
     canvas.setStrokeColor(BORDER)
-    canvas.setLineWidth(0.7)
+    canvas.setLineWidth(0.8)
     canvas.roundRect(x, y, w, h, 6, stroke=1, fill=1)
     canvas.setFillColor(accent)
-    canvas.roundRect(x, y + h - 3.6, w, 3.6, 1.8, stroke=0, fill=1)
+    canvas.rect(x, y + h - 3, w, 3, stroke=0, fill=1)
     title_text_colour = accent if accent not in (PANEL, ELEVATED) else TEXT
     _draw_string_fitted(
-        canvas, x + 10, y + h - 16.5, str(title).upper(),
+        canvas, x + 10, y + h - 16.3, str(title).upper(),
         SANS_BOLD, T_CARD_HEAD, w - 20, title_text_colour,
     )
     return (x + 10, y + 6, w - 20, h - 24)
@@ -646,8 +720,8 @@ def _airport_card(canvas, x, y, w, h, *, title, accent, headline, body, tag):
     # The tag band at the card foot is RESERVED: the body may take only as
     # many wrapped lines as fit above it, however long the airport copy runs
     # (08 Aug audit: four fixed lines could reach the DEP/DEST tag).
-    # Leading tracks T_SMALL (~1.17x) so the larger type never overprints.
-    leading = round(T_SMALL * 1.17, 1)
+    # Leading tracks T_SMALL at the REV3-measured 1.2 pitch.
+    leading = round(T_SMALL * 1.2, 1)
     tag_band = 14.0
     body_top = y + h - 45
     max_lines = max(1, int((body_top - (y + tag_band)) // leading))
@@ -1179,27 +1253,30 @@ def _timeline(canvas, x, y, w, entries, *, accent_default=COMMS_TEAL) -> None:
     step = w / max(1, len(entries) - 1) if len(entries) > 1 else 0
     rail_y = y + 13
     canvas.setStrokeColor(BORDER)
-    canvas.setLineWidth(1.2)
+    canvas.setLineWidth(1.0)
     canvas.line(x, rail_y, x + w, rail_y)
     for index, entry in enumerate(entries):
         cx = x + (index * step if len(entries) > 1 else w / 2)
         accent = entry.get("accent") or accent_default
         canvas.setFillColor(accent)
         canvas.circle(cx, rail_y, 3.4, stroke=0, fill=1)
-        canvas.setFont(MONO_BOLD, 7.4)
-        time_text = str(entry.get("time") or "--")
-        tw = pdfmetrics.stringWidth(time_text, MONO_BOLD, 7.4)
-        canvas.drawString(min(max(x, cx - tw / 2), x + w - tw), rail_y + 8, time_text)
+        # REV3 measured strip: white Courier-Bold times above the rail,
+        # accent-coloured labels below it - his file inverts our old colours.
         canvas.setFillColor(TEXT)
-        canvas.setFont(SANS_BOLD, T_MICRO)
+        canvas.setFont(UTIL_MONO_BOLD, 7.6)
+        time_text = str(entry.get("time") or "--")
+        tw = pdfmetrics.stringWidth(time_text, UTIL_MONO_BOLD, 7.6)
+        canvas.drawString(min(max(x, cx - tw / 2), x + w - tw), rail_y + 8, time_text)
+        canvas.setFillColor(accent)
+        canvas.setFont(SANS_BOLD, 7.0)
         label = str(entry.get("label") or "")[:14]
-        lw = pdfmetrics.stringWidth(label, SANS_BOLD, T_MICRO)
+        lw = pdfmetrics.stringWidth(label, SANS_BOLD, 7.0)
         canvas.drawString(min(max(x, cx - lw / 2), x + w - lw), rail_y - 15, label)
         sub = str(entry.get("sub") or "")[:20]
         if sub:
             canvas.setFillColor(TEXT_MUTED)
-            canvas.setFont(SANS, T_MICRO)
-            sw = pdfmetrics.stringWidth(sub, SANS, T_MICRO)
+            canvas.setFont(SANS, 7.0)
+            sw = pdfmetrics.stringWidth(sub, SANS, 7.0)
             canvas.drawString(min(max(x, cx - sw / 2), x + w - sw), rail_y - 24, sub)
 
 
@@ -1966,7 +2043,7 @@ def draw_performance_page(
     body_top = cards_y - 10
     sens_h = 84.0
     body_h = body_top - 30 - sens_h - 10
-    half_w = (full_w - 12) / 2
+    half_w = (full_w - 22) / 2
     inner = panel(canvas, MARGIN, body_top - body_h, half_w, body_h, title="RTOW LIMIT STACK - kg", accent=DEPARTURE)
     ix, iy, iw, ih = inner
     bars = [
@@ -1999,7 +2076,7 @@ def draw_performance_page(
     else:
         review_line(canvas, ix, iy + ih / 2, "No RTOW figures parsed from the CFP - performance review required.")
 
-    right_x = MARGIN + half_w + 12
+    right_x = MARGIN + half_w + 22
     inner = panel(canvas, right_x, body_top - body_h, half_w, body_h, title=f"{flight.get('departure') or '----'} RWY {performance.get('runway') or '--'} PERFORMANCE BASIS", accent=DEPARTURE)
     ix2 = inner[0]
     rows = [
@@ -2084,7 +2161,7 @@ def draw_mel_cdl_page(
         if deferred_items is not None
         else _group_deferred_items(flight)
     )
-    half_w = (full_w - 12) / 2
+    half_w = (full_w - 22) / 2
     accents = (DEPARTURE, EDTO_GREEN, DESTINATION, COMMS_TEAL)
     cards = deferred if deferred else [None]
     if len(cards) > MEL_CDL_GROUPS_PER_PAGE:
@@ -2094,14 +2171,14 @@ def draw_mel_cdl_page(
         )
     row_count = 1 if len(cards) <= 2 else 2
     row_gap = 10.0
-    card_h = 92.0 if row_count == 1 else 82.0
+    card_h = 92.0 if row_count == 1 else 88.0
     cards_h = card_h * row_count + row_gap * (row_count - 1)
     for index, item in enumerate(cards):
         row = index // 2
         column = index % 2
         is_single_in_row = index == len(cards) - 1 and len(cards) % 2 == 1
         card_w = full_w if is_single_in_row else half_w
-        cx = MARGIN if is_single_in_row else MARGIN + column * (half_w + 12)
+        cx = MARGIN if is_single_in_row else MARGIN + column * (half_w + 22)
         card_top = y - row * (card_h + row_gap)
         card_bottom = card_top - card_h
         if item is None:
@@ -2128,12 +2205,17 @@ def draw_mel_cdl_page(
                 "from the exact governed item."
             )
         )
+        # Body lines stop where the bottom-anchored penalty line begins -
+        # the count comes from the card geometry so no width or wording can
+        # push a line into it (the full remark is always in the crop below).
+        body_step = round(T_SMALL * 1.2, 2)
+        body_lines = max(1, min(3, 1 + int((card_h - 48 - 18.7) // body_step)))
         row_y = card_top - 48
-        for line in _wrap(body, SANS, T_SMALL, iw)[:3]:
+        for line in _wrap(body, SANS, T_SMALL, iw)[:body_lines]:
             canvas.setFillColor(TEXT_SECONDARY)
             canvas.setFont(SANS, T_SMALL)
             canvas.drawString(ix, row_y, line)
-            row_y -= 9.6
+            row_y -= body_step
         penalty = str(item.get("penalty") or "").strip()
         source_target = governed_deferred_source_target(flight, item)
         source_label = f"OPEN EXACT {item_type} ITEM / REMEDY >" if source_target else ""
@@ -2239,7 +2321,7 @@ def draw_alternates_page(
     y = draw_section_title(canvas, content_top, f"{classification_label} and Destination Alternates")
 
     full_w = width - 2 * MARGIN
-    half_w = (full_w - 12) / 2
+    half_w = (full_w - 22) / 2
     table_h = 92.0
     crops_h = y - 30 - table_h - 10
 
@@ -2300,7 +2382,7 @@ def draw_alternates_page(
             row_y -= 11
         row_y -= 1
 
-    inner = panel(canvas, MARGIN + half_w + 12, y - crops_h, half_w, crops_h, title="ALTERNATE PLANNING SOURCE", accent=DESTINATION)
+    inner = panel(canvas, MARGIN + half_w + 22, y - crops_h, half_w, crops_h, title="ALTERNATE PLANNING SOURCE", accent=DESTINATION)
     ix2, iy2, iw2, ih2 = inner
     crop2 = crop_source_region(source_pdf_path, needle="FLT PLANNING ALTN SUMMARY", page_hint=0, full_width=True) or crop_source_region(source_pdf_path, needle="ALTN/RWY", page_hint=0, full_width=True)
     _draw_crop(canvas, crop2, ix2, iy2 + 6, iw2, ih2 - 10, missing_text="Alternate planning section not found for cropping - review the CFP weather pages.")
@@ -2389,7 +2471,7 @@ def draw_airports_page(
     y = draw_section_title(canvas, content_top, "Airport and NOTAM Applicability")
 
     full_w = width - 2 * MARGIN
-    half_w = (full_w - 12) / 2
+    half_w = (full_w - 22) / 2
     rule_h = 24.0
     airport_tables = [
         (role, panel_data, accent, _notam_rows(panel_data, flight, role))
@@ -2405,7 +2487,7 @@ def draw_airports_page(
     table_y = y - table_h
 
     for index, (role, panel_data, accent, rows) in enumerate(airport_tables):
-        px = MARGIN + index * (half_w + 12)
+        px = MARGIN + index * (half_w + 22)
         icao = panel_data.get("icao") or (flight.get("departure") if index == 0 else flight.get("destination")) or "----"
         inner = panel(
             canvas, px, table_y, half_w, table_h,
@@ -2491,7 +2573,7 @@ def draw_hazard_page(
         y -= 4
 
     full_w = width - 2 * MARGIN
-    half_w = (full_w - 12) / 2
+    half_w = (full_w - 22) / 2
 
     # REV3 canon (boss, 20 Aug): one verdict card per enroute SIGMET, each
     # carrying its deterministic reason, then the coverage ledger; the CFP's
@@ -2605,7 +2687,7 @@ def draw_hazard_page(
 
     # The CFP's own weather page, cropped as printed - the source beside the
     # verdicts, exactly as the canon lays it out.
-    right_x = MARGIN + half_w + 12
+    right_x = MARGIN + half_w + 22
     right_h = y - columns_bottom
     panel(canvas, right_x, y - right_h, half_w, right_h,
           title="CFP SIGMET / WEATHER SOURCE", accent=WEATHER_AMBER, title_colour=None)
@@ -2790,19 +2872,20 @@ def draw_analysis_page(
         canvas, flight,
         page_number=page_number, page_count=page_count,
         source_line="CFP-derived deterministic verdicts | no unsupported hazard inference",
-        section_label="CRITICAL ANALYSIS", section_colour=ACCENT,
+        section_label="CRITICAL ANALYSIS",
     )
     canvas.bookmarkPage("sec_analysis")
     canvas.bookmarkPage("sec_time")
     y = content_top - 4
 
-    # FLIGHT-PHASE DECISION TIMELINE band.
-    strip_h = 64.0
+    # FLIGHT-PHASE DECISION TIMELINE band - REV3 measured: a slim strip
+    # hugging the header rule.
+    strip_h = 56.0
     inner = panel(canvas, MARGIN, y - strip_h, width - 2 * MARGIN, strip_h,
                   title="FLIGHT-PHASE DECISION TIMELINE", accent=PANEL, title_colour=TEXT)
-    _timeline(canvas, MARGIN + 20, y - strip_h + 14, width - 2 * MARGIN - 40,
+    _timeline(canvas, MARGIN + 25, y - strip_h + 11, width - 2 * MARGIN - 50,
               _route_anchor_entries(flight, briefing))
-    y -= strip_h + 12
+    y -= strip_h + 16
 
     fuel_summary = flight.get("fuel_summary") or {}
     masses = fuel_summary.get("masses_kg") or {}
@@ -2901,13 +2984,15 @@ def draw_analysis_page(
         ("AIRPORTS / ALTERNATE", DESTINATION, airports_text),
         ("HIGH TERRAIN / VWS", TERRAIN_ORANGE, terrain_text),
     )
-    col_w = (width - 2 * MARGIN - 14) / 2
-    card_h = (y - 34 - 2 * 10) / 3
+    # REV3 measured grid: 22pt gutter, 16pt row gaps, body on a 1.2 pitch.
+    col_w = (width - 2 * MARGIN - 22) / 2
+    card_h = (y - 34 - 2 * 16) / 3
+    body_step = round(T_SMALL * 1.2, 2)
     for index, (title, accent, text) in enumerate(cells):
         col = index % 2
         row = index // 2
-        cx = MARGIN + col * (col_w + 14)
-        cy = y - (row + 1) * card_h - row * 10
+        cx = MARGIN + col * (col_w + 22)
+        cy = y - (row + 1) * card_h - row * 16
         inner = rev3_card(canvas, cx, cy, col_w, card_h, title=title, accent=accent)
         ix, iy, iw, ih = inner
         line_y = cy + card_h - 34
@@ -2915,7 +3000,7 @@ def draw_analysis_page(
         canvas.setFont(SANS, T_SMALL)
         for line in _wrap(text, SANS, T_SMALL, iw)[:6]:
             canvas.drawString(ix, line_y, line)
-            line_y -= T_SMALL + 3.2
+            line_y -= body_step
 
 
 def render_combined_briefing(
