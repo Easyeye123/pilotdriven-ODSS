@@ -935,11 +935,26 @@ def _edto_operational_rows(
     sectors = edto_view.get("sectors") or []
     for index, sector in enumerate(sectors, start=1):
         number = sector.get("number") or index
-        rows.append((
-            f"SECTOR {number}",
-            f"ENTRY ACTM {sector.get('entry') or '--.--'} | "
-            f"EXIT ACTM {sector.get('exit') or '--.--'}",
-        ))
+        entry = sector.get("entry") or "--.--"
+        exit_ = sector.get("exit") or "--.--"
+        line = f"ENTRY ACTM {entry} | EXIT ACTM {exit_}"
+        if entry == exit_ and entry != "--.--":
+            # Canon wording (REV3 p4): a zero-duration boundary contact is a
+            # printed CFP fact, and it stays an EDTO flight.
+            line += (
+                " - boundary-contact sector at CFP display resolution; "
+                "retain the EDTO source status, do not reinterpret as non-EDTO"
+            )
+        rows.append((f"SECTOR {number}", line))
+        etps = [str(value) for value in sector.get("etps") or [] if str(value).strip()]
+        etp_count = sector.get("etp_count")
+        if etps or etp_count:
+            distinct = sorted(set(etps))
+            rows.append((
+                f"ETPS {number}",
+                f"{etp_count or len(etps)} equal-time points"
+                + (f" | ACTM {' / '.join(distinct)}" if distinct else ""),
+            ))
     if not sectors and classification:
         rows.append((
             "ENTRY / EXIT",
@@ -970,6 +985,305 @@ def _edto_operational_rows(
     rows.append(("GATE", _edto_gate_sentence(edto_view)))
     return rows
 
+
+
+_SIGMET_POINT = re.compile(r"([NS])(\d{2})(\d{2})\s+([EW])(\d{3})(\d{2})")
+_SIGMET_LAYER = re.compile(r"\b(SFC|\d{4,5}FT|FL\d{3})/((?:FL)?\d{3})\b")
+
+
+def _screening_xy(lat: float, lon: float, ref_lat: float) -> tuple[float, float]:
+    return lon * 60.0 * cos(radians(ref_lat)), lat * 60.0
+
+
+def _screening_geometry(
+    points: list[tuple[float, float]],
+    waypoints: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Deterministic route-vs-polygon screening: closest approach to the route
+    LINE (legs vs vertices and edges vs fixes) plus the crossing window when
+    route legs actually enter the polygon. Local equirectangular frames -
+    screening precision, not navigation."""
+    held = [
+        (float(w["latitude"]), float(w["longitude"]),
+         str(w.get("name") or "").lstrip("-"), w.get("actm_minutes"))
+        for w in waypoints
+        if w.get("latitude") is not None and w.get("longitude") is not None
+    ]
+    if len(points) < 3 or not held:
+        return None
+
+    def seg(px, py, ax, ay, bx, by):
+        dx, dy = bx - ax, by - ay
+        length_sq = dx * dx + dy * dy
+        t = 0.0 if length_sq == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length_sq))
+        cx, cy = ax + t * dx, ay + t * dy
+        return ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5, t
+
+    def inside(lat, lon):
+        crossings = 0
+        for j in range(len(points)):
+            (alat, alon), (blat, blon) = points[j], points[(j + 1) % len(points)]
+            if (alat > lat) != (blat > lat):
+                lon_cross = alon + (lat - alat) * (blon - alon) / (blat - alat)
+                if lon_cross > lon:
+                    crossings += 1
+        return crossings % 2 == 1
+
+    best: tuple[float, str, float | None] | None = None
+    for i in range(len(held) - 1):
+        lat1, lon1, name1, actm1 = held[i]
+        lat2, lon2, name2, actm2 = held[i + 1]
+        ref = (lat1 + lat2) / 2.0
+        ax, ay = _screening_xy(lat1, lon1, ref)
+        bx, by = _screening_xy(lat2, lon2, ref)
+        for (plat, plon) in points:
+            px, py = _screening_xy(plat, plon, ref)
+            nm, t = seg(px, py, ax, ay, bx, by)
+            if best is None or nm < best[0]:
+                place = name1 if t <= 0.05 else name2 if t >= 0.95 else f"between {name1} and {name2}"
+                passage = (
+                    float(actm1) + t * (float(actm2) - float(actm1))
+                    if actm1 is not None and actm2 is not None else None
+                )
+                best = (nm, place if place.startswith("between") else f"near {place}", passage)
+    for lat, lon, name, actm in held:
+        for j in range(len(points)):
+            p1, p2 = points[j], points[(j + 1) % len(points)]
+            ax, ay = _screening_xy(p1[0], p1[1], lat)
+            bx, by = _screening_xy(p2[0], p2[1], lat)
+            px, py = _screening_xy(lat, lon, lat)
+            nm, _ = seg(px, py, ax, ay, bx, by)
+            if best is None or nm < best[0]:
+                best = (nm, f"near {name}", float(actm) if actm is not None else None)
+    if best is None:
+        return None
+
+    # Crossing window: contiguous run of fixes inside the polygon, expressed
+    # in ACTM minutes. Fix-resolution is deliberate: no interpolated entry
+    # point is invented between fixes.
+    inside_actms = [
+        actm for (lat, lon, name, actm) in held
+        if actm is not None and inside(lat, lon)
+    ]
+    crossing = (min(inside_actms), max(inside_actms)) if inside_actms else None
+
+    # Rough cardinal from the route toward the polygon for the no-intersect
+    # sentence ("approximately 751 NM south").
+    mid_lat = sum(p[0] for p in points) / len(points)
+    mid_lon = sum(p[1] for p in points) / len(points)
+    route_lat = sum(h[0] for h in held) / len(held)
+    route_lon = sum(h[1] for h in held) / len(held)
+    d_lat, d_lon = mid_lat - route_lat, mid_lon - route_lon
+    if abs(d_lat) >= abs(d_lon):
+        bearing = "south" if d_lat < 0 else "north"
+    else:
+        bearing = "west" if d_lon < 0 else "east"
+    return {
+        "closest_nm": best[0],
+        "closest_place": best[1],
+        "closest_passage_actm": best[2],
+        "crossing_actm": crossing,
+        "bearing": bearing,
+    }
+
+
+def _sigmet_utc(flight: dict[str, Any], ddhhmm: str, near: datetime | None = None) -> datetime | None:
+    """A SIGMET ddhhmm resolved against the flight's departure month."""
+    raw = str((flight or {}).get("scheduled_departure_utc") or "").replace("Z", "+00:00")
+    try:
+        base = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=timezone.utc)
+    match = re.fullmatch(r"(\d{2})(\d{2})(\d{2})", str(ddhhmm or ""))
+    if not match:
+        return None
+    day, hour, minute = (int(g) for g in match.groups())
+    anchor = near or base
+    candidates = []
+    for offset in (-1, 0, 1):
+        month_index = base.month - 1 + offset
+        year = base.year + month_index // 12
+        month = month_index % 12 + 1
+        try:
+            candidates.append(datetime(year, month, day, hour, minute, tzinfo=timezone.utc))
+        except ValueError:
+            continue
+    return min(candidates, key=lambda item: abs(item - anchor), default=None)
+
+
+def _clock_from_actm(flight: dict[str, Any], actm: float | None) -> datetime | None:
+    raw = str((flight or {}).get("scheduled_departure_utc") or "").replace("Z", "+00:00")
+    if actm is None:
+        return None
+    try:
+        base = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=timezone.utc)
+    return base + timedelta(minutes=float(actm))
+
+
+def _terrain_summary(terrain_events: list[dict[str, Any]]) -> str:
+    """One terrain sentence, now naming the window (REV3: 'IMABA 117* to
+    HLM 124*, maximum 124* at HLM'). The names come from the same event the
+    page renders, so no surface can call it 'event 1' while another names it."""
+    if not terrain_events:
+        return "No strict MSA >100* window detected"
+    spans: list[str] = []
+    for event in terrain_events:
+        first = event.get("first_high") or {}
+        last = event.get("last_high") or {}
+        maximum = event.get("maximum") or {}
+        first_name = str(first.get("name") or "").lstrip("-")
+        last_name = str(last.get("name") or "").lstrip("-")
+        if first_name and last_name:
+            span = (
+                f"{first_name} {first.get('msa_hundreds_ft')}*"
+                if first_name == last_name
+                else f"{first_name} {first.get('msa_hundreds_ft')}* to "
+                     f"{last_name} {last.get('msa_hundreds_ft')}*"
+            )
+            if maximum.get("name"):
+                span += (
+                    f", max {maximum.get('msa_hundreds_ft')}* at "
+                    f"{str(maximum.get('name') or '').lstrip('-')}"
+                )
+            spans.append(span)
+    label = f"{len(terrain_events)} MSA >100* window{'s' if len(terrain_events) != 1 else ''}"
+    if spans:
+        label += f" ({'; '.join(spans)})"
+    return f"{label}; profile match on the terrain page"
+
+
+def _weather_coverage_ledger(flight: dict[str, Any]) -> list[dict[str, str]]:
+    """Which CFP weather sections carry data, as canon honesty tiles.
+
+    "unavailable" here means the CFP printed no data for the section - a
+    source-coverage gap, never a NIL finding (REV3 coverage ledger)."""
+    sections = flight.get("weather_section_availability") or {}
+    rows = []
+    for key, label in (
+        ("airmet", "AIRMET"),
+        ("tropical_cyclone", "TC SIGMET"),
+        ("volcanic_ash", "VA SIGMET"),
+    ):
+        status = str(sections.get(key) or "").strip()
+        if not status:
+            held = any(
+                record.get("record_type") == {"tropical_cyclone": "TC_SIGMET", "volcanic_ash": "VA_SIGMET"}.get(key)
+                for record in flight.get("weather") or []
+            ) if key != "airmet" else False
+            status = "held" if held else "unavailable"
+        rows.append({"label": label, "status": status})
+    return rows
+
+
+def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
+    """One REV3-style verdict card per enroute SIGMET in the CFP.
+
+    Every disposition carries its deterministic reason; a SIGMET whose
+    polygon cannot be read gets 'screening unavailable - review required',
+    never a NOT PROMOTED it did not earn (boss's REV3 canon, 20 Aug)."""
+    cards: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    waypoints = flight.get("route_waypoints") or []
+    for record in flight.get("weather") or []:
+        if record.get("record_type") != "SIGMET":
+            continue
+        text = str(record.get("text") or "")
+        # A CFP FIR block can print several SIGMETs in one record.
+        pieces = re.split(r"(?=\bW[SVC]\s+SIGMET\s+\w+\s+VALID\b)", text)
+        for piece in pieces:
+            head = re.search(
+                r"\b(W[SVC])\s+SIGMET\s+(\w+)\s+VALID\s+(\d{6})/(\d{6})", piece
+            )
+            if not head:
+                continue
+            fir = str(record.get("location") or "").strip().upper()
+            key = f"{fir}-{head.group(2)}-{head.group(3)}"
+            if key in seen:
+                continue
+            seen.add(key)
+            phenomenon = re.search(r"FIR\s+([A-Z][A-Z ]+?)\s+(?:FCST|OBS)\b", piece)
+            layer = _SIGMET_LAYER.search(piece)
+            movement = re.search(r"\bMOV\s+([NSEW]{1,3})\s+(\d{1,3})\s*KT", piece)
+            points = [
+                (-(int(m[1]) + int(m[2]) / 60.0) if m[0] == "S" else int(m[1]) + int(m[2]) / 60.0,
+                 -(int(m[4]) + int(m[5]) / 60.0) if m[3] == "W" else int(m[4]) + int(m[5]) / 60.0)
+                for m in _SIGMET_POINT.findall(piece)
+            ]
+            geometry = _screening_geometry(points, waypoints)
+            valid_from = _sigmet_utc(flight, head.group(3))
+            valid_to = _sigmet_utc(flight, head.group(4), near=valid_from)
+            name = f"{fir} SIGMET {head.group(2)}"
+            if phenomenon:
+                name += f" - {phenomenon.group(1).strip()}"
+            card: dict[str, Any] = {
+                "name": name,
+                "fir": fir,
+                "sigmet_id": head.group(2),
+                "phenomenon": phenomenon.group(1).strip() if phenomenon else None,
+                "valid_from": head.group(3),
+                "valid_to": head.group(4),
+                "layer": f"{layer.group(1)}/{layer.group(2)}" if layer else None,
+                "movement": (
+                    f"MOV {movement.group(1)} {movement.group(2)}KT" if movement else None
+                ),
+                "text": " ".join(piece.split()),
+            }
+            if geometry is None:
+                card["disposition"] = "REVIEW REQUIRED"
+                card["screening"] = (
+                    "No readable polygon in the CFP record - deterministic "
+                    "screening unavailable; review the original SIGMET."
+                )
+                cards.append(card)
+                continue
+            crossing = geometry["crossing_actm"]
+            if crossing is None:
+                card["disposition"] = "NOT PROMOTED"
+                card["screening"] = (
+                    "The filed route does not intersect the polygon. Closest "
+                    f"deterministic screening distance is approximately "
+                    f"{round(geometry['closest_nm'])} NM {geometry['bearing']}. "
+                    "NOT PROMOTED."
+                )
+                cards.append(card)
+                continue
+            entry_utc = _clock_from_actm(flight, crossing[0])
+            exit_utc = _clock_from_actm(flight, crossing[1])
+            window = (
+                f"about ACTM {int(crossing[0]) // 60:02d}:{int(crossing[0]) % 60:02d}"
+                f"-{int(crossing[1]) // 60:02d}:{int(crossing[1]) % 60:02d}"
+            )
+            if entry_utc and exit_utc:
+                window += f" / {entry_utc:%H%M}-{exit_utc:%H%M}Z"
+            if valid_to and entry_utc and valid_to <= entry_utc:
+                gap = round((entry_utc - valid_to).total_seconds() / 60.0)
+                card["disposition"] = "NOT PROMOTED"
+                card["screening"] = (
+                    f"The polygon crosses the route {window}, but the product "
+                    f"expires {gap} minutes before route entry. NOT PROMOTED."
+                )
+            elif valid_from and exit_utc and valid_from >= exit_utc:
+                gap = round((valid_from - exit_utc).total_seconds() / 60.0)
+                card["disposition"] = "NOT PROMOTED"
+                card["screening"] = (
+                    f"The polygon crosses the route {window}, but the product "
+                    f"only becomes valid {gap} minutes after route exit. "
+                    "NOT PROMOTED."
+                )
+            else:
+                card["disposition"] = "PROMOTED"
+                card["screening"] = (
+                    f"The polygon crosses the route {window} inside the "
+                    "product's validity. PROMOTED - review required."
+                )
+            cards.append(card)
+    return cards
 
 
 def _va_official_note(flight: dict[str, Any] | None, volcano: str | None) -> str | None:
@@ -1296,6 +1610,7 @@ def build_briefing_view(
                 format_actm(value)
                 for value in (sector.get("etp_actm_minutes") or [])
             ],
+            "etp_count": len(sector.get("etps") or sector.get("etp_actm_minutes") or []),
         }
         for index, sector in enumerate(edto_sectors(edto), start=1)
     ]
@@ -1393,13 +1708,7 @@ def build_briefing_view(
         # here exactly once so overview, dashboard and PDF cannot disagree.
         "terrain": {
             "events": terrain_events,
-            "summary": (
-                f"{len(terrain_events)} MSA >100* window"
-                f"{'s' if len(terrain_events) != 1 else ''}; "
-                "profile match on the terrain page"
-                if terrain_events
-                else "No strict MSA >100* window detected"
-            ),
+            "summary": _terrain_summary(terrain_events),
         },
         "exception_cards": exception_cards,
         "communications": _communication_timeline(findings, timing_view),
@@ -1413,6 +1722,10 @@ def build_briefing_view(
                 in {"affected", "review_required"}
                 else None
             ),
+        },
+        "hazards": {
+            "sigmet_cards": _sigmet_screening_cards(flight),
+            "coverage_ledger": _weather_coverage_ledger(flight),
         },
         "vaa": {
             "cfp_advisories": _va_cfp_advisories(flight),
