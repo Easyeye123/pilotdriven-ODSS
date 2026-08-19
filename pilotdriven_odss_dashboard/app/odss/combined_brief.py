@@ -246,21 +246,23 @@ def draw_page_chrome(
     canvas.setFont(SANS_BOLD, 7.4)
     canvas.drawCentredString(pill_x + pill_w / 2, top - 18.6, pill_text)
     if page_number > 1:
+        # Boss, 19 Aug video: "back to overview must be on top, nice and
+        # big" - larger type, taller pill, top-aligned with the section title.
         back_text = "BACK TO OVERVIEW"
-        back_w = pdfmetrics.stringWidth(back_text, SANS_BOLD, T_MICRO) + 20
+        back_w = pdfmetrics.stringWidth(back_text, SANS_BOLD, T_SMALL) + 28
         back_x = width - MARGIN - back_w
-        back_y = top - 80
+        back_y = top - 76
         canvas.setFillColor(ELEVATED)
         canvas.setStrokeColor(ACCENT)
-        canvas.setLineWidth(0.8)
-        canvas.roundRect(back_x, back_y, back_w, 16, 8, stroke=1, fill=1)
+        canvas.setLineWidth(1.1)
+        canvas.roundRect(back_x, back_y, back_w, 22, 11, stroke=1, fill=1)
         canvas.setFillColor(TEXT)
-        canvas.setFont(SANS_BOLD, T_MICRO)
-        canvas.drawCentredString(back_x + back_w / 2, back_y + 5.5, back_text)
+        canvas.setFont(SANS_BOLD, T_SMALL)
+        canvas.drawCentredString(back_x + back_w / 2, back_y + 7.5, back_text)
         canvas.linkRect(
             "",
             "sec_overview",
-            (back_x, back_y, back_x + back_w, back_y + 16),
+            (back_x, back_y, back_x + back_w, back_y + 22),
             relative=0,
             thickness=0,
         )
@@ -818,8 +820,21 @@ def draw_overview_page(
         row_y3 -= 10
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(MONO, T_MICRO)
-        for wrapped in _wrap(profile, MONO, T_MICRO, text_w)[:2]:
-            canvas.drawString(cx0, row_y3, wrapped)
+        # The profile is one unbroken FIX/LEVEL token chain - word wrapping
+        # cannot split it (SQ322's ran under the map), so break on slashes.
+        profile_lines: list[str] = []
+        current = ""
+        for segment in profile.split("/"):
+            candidate = f"{current}/{segment}" if current else segment
+            if pdfmetrics.stringWidth(candidate + "/", MONO, T_MICRO) > text_w and current:
+                profile_lines.append(current + "/")
+                current = segment
+            else:
+                current = candidate
+        if current:
+            profile_lines.append(current)
+        for line in profile_lines[:2]:
+            canvas.drawString(cx0, row_y3, line)
             row_y3 -= 9.4
     ground = fuel_summary.get("ground_miles_nm")
     air = fuel_summary.get("air_miles_nm")
