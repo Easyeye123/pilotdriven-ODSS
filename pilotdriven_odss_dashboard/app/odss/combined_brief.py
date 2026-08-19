@@ -624,193 +624,436 @@ def draw_overview_page(
     page_number: int,
     page_count: int,
 ) -> None:
+    """REV3 canon dashboard (boss, 20 Aug: "this format, this content, this
+    look"): airport cards flanking the CFP P1 route/levels panel with the
+    analysis overlay, then FLIGHT BASIS | MASS/FUEL | TECHNICAL STATUS, and
+    the PRIORITY strip across the bottom."""
     width, height = PAGE_SIZE
     content_top = draw_page_chrome(
         canvas,
         flight,
         page_number=page_number,
         page_count=page_count,
-        source_line="CFP p.1 fuel summary, route log and NOTAM bulletin | controlled deferred-item sources",
+        source_line="CFP P1 master context + deterministic analysis",
     )
     canvas.bookmarkPage("sec_overview")
     y = draw_section_title(canvas, content_top, "Flight Overview")
 
-    # Left column: three EQUAL airport cards + decision gates (instruction 1:
-    # same size, same dimensions, aligned text).
-    left_w = (width - 2 * MARGIN) * 0.385
-    # Tall enough for a wrapped METAR plus the TAF's opening line - the raw
-    # bulletins are the card content now, and a card that silently swallowed
-    # the TAF is exactly the drift the parity gate flags.
-    card_h = 100.0
-    gap = 8.0
+    full_w = width - 2 * MARGIN
     departure_panel = briefing.get("departure") or {}
     destination_panel = briefing.get("destination") or {}
     alternates = flight.get("alternates") or []
     fuel_summary = flight.get("fuel_summary") or {}
+    hazards = briefing.get("hazards") or {}
+    cards = hazards.get("sigmet_cards") or []
+    edto_view = briefing.get("edto") or {}
 
-    def weather_line(panel_data: dict[str, Any]) -> str:
-        # The actual CFP bulletins, METAR and TAF each starting their own
-        # line (16 Aug instruction). The overlap narrative is a fallback for
-        # stations whose bulletins the CFP does not carry.
+    priority_h = 24.0
+    row_gap = 10.0
+    bottom = 30 + priority_h + row_gap
+    row2_h = 158.0
+    row1_h = y - bottom - row2_h - row_gap
+    side_w = full_w * 0.215
+    centre_x = MARGIN + side_w + 10
+    centre_w = full_w - 2 * (side_w + 10)
+    right_x = MARGIN + full_w - side_w
+
+    def kv_rows(ix, top, iw, rows, *, mono_value=True, row_h=13.0):
+        row_y = top
+        for label, value in rows:
+            canvas.setFillColor(TEXT_MUTED)
+            canvas.setFont(SANS, T_MICRO)
+            canvas.drawString(ix, row_y, str(label))
+            canvas.setFillColor(TEXT)
+            canvas.setFont(MONO_BOLD if mono_value else SANS_BOLD, T_MICRO)
+            _draw_string_fitted(canvas, ix + 78, row_y, str(value), MONO_BOLD if mono_value else SANS_BOLD, T_MICRO, iw - 82, TEXT)
+            row_y -= row_h
+        return row_y
+
+    def bulletin_first_line(panel_data, kind):
         weather = panel_data.get("weather") or {}
-        metar = str(weather.get("metar") or "").strip()
-        taf = str(weather.get("taf") or "").strip()
-        if metar or taf:
-            return "\n".join(
-                part
-                for part in (
-                    f"METAR {metar}" if metar else None,
-                    f"TAF {taf}" if taf else None,
-                )
-                if part
-            )
-        return str(
+        return str(weather.get(kind) or "").strip()
+
+    def weather_fallback(panel_data):
+        weather = panel_data.get("weather") or {}
+        text = str(
             weather.get("primary")
             or weather.get("secondary")
             or weather.get("summary")
             or weather.get("detail")
             or "Weather review on the hazard assessment page."
         )
+        # First sentence, drawn as one fitted line: a mid-sentence wrap breaks
+        # the exact-text contract the 16 Aug fallback test pins.
+        head, _, _ = text.partition(". ")
+        return head + "." if not head.endswith(".") else head
 
-    top_y = y - card_h
-    _airport_card(
-        canvas, MARGIN, top_y, left_w, card_h,
-        title=f"DEPARTURE - {theme.airport_code_label(departure_panel.get('icao') or flight.get('departure'))}",
-        accent=DEPARTURE,
-        headline=str(departure_panel.get("runway") or "Runway review"),
-        body=weather_line(departure_panel),
-        tag="DEP",
-    )
-    mid_y = top_y - gap - card_h
-    _airport_card(
-        canvas, MARGIN, mid_y, left_w, card_h,
-        title=f"DESTINATION - {theme.airport_code_label(destination_panel.get('icao') or flight.get('destination'))}",
-        accent=DESTINATION,
-        headline=str(destination_panel.get("runway") or "Runway review"),
-        body=weather_line(destination_panel),
-        tag="DEST",
-    )
+    # --- Row 1: DEPARTURE | CFP P1 ROUTE / LEVELS + ANALYSIS OVERLAY | DESTINATION
+    row1_top = y
+    dep_inner = panel(canvas, MARGIN, row1_top - row1_h, side_w, row1_h,
+                      title=f"DEPARTURE  {theme.airport_code_label(departure_panel.get('icao') or flight.get('departure'))}",
+                      accent=DEPARTURE, title_colour=BG)
+    ix = dep_inner[0]
+    row_y = row1_top - 30
+    canvas.setFillColor(TEXT)
+    canvas.setFont(SANS_BOLD, T_BODY)
+    canvas.drawString(ix, row_y, str(departure_panel.get("runway") or "Runway review"))
+    row_y -= 15
+    row_y = kv_rows(ix, row_y, side_w - 28, (
+        ("SCHEDULE", f"{_clock_at(flight, 0)}"),
+    ))
+    canvas.setFillColor(TEXT_MUTED)
+    canvas.setFont(SANS, T_MICRO)
+    canvas.drawString(ix, row_y, "FORECAST AT ETD")
+    row_y -= 10
+    metar = bulletin_first_line(departure_panel, "metar")
+    taf = bulletin_first_line(departure_panel, "taf")
+    canvas.setFillColor(TEXT_SECONDARY)
+    canvas.setFont(MONO, T_MICRO)
+    dep_lines = ([f"METAR {metar}"] if metar else []) + ([f"TAF {taf}"] if taf else [])
+    if dep_lines:
+        for line in dep_lines:
+            for wrapped in _wrap(line, MONO, T_MICRO, side_w - 28)[:2]:
+                canvas.drawString(ix, row_y, wrapped)
+                row_y -= 9.4
+    else:
+        _draw_string_fitted(canvas, ix, row_y, weather_fallback(departure_panel), SANS, T_MICRO, side_w - 28, TEXT_SECONDARY)
+        row_y -= 9.4
     primary_alternate = alternates[0] if alternates else {}
+    dest_inner = panel(canvas, right_x, row1_top - row1_h, side_w, row1_h,
+                       title=f"DESTINATION  {theme.airport_code_label(destination_panel.get('icao') or flight.get('destination'))}",
+                       accent=DESTINATION, title_colour=BG)
+    ix2 = dest_inner[0]
+    row_y2 = row1_top - 30
+    canvas.setFillColor(TEXT)
+    canvas.setFont(SANS_BOLD, T_BODY)
+    canvas.drawString(ix2, row_y2, str(destination_panel.get("runway") or "Runway review"))
+    row_y2 -= 15
+    arrival_minutes = None
+    for waypoint in reversed(flight.get("route_waypoints") or []):
+        if waypoint.get("actm_minutes") is not None:
+            arrival_minutes = waypoint.get("actm_minutes")
+            break
+    row_y2 = kv_rows(ix2, row_y2, side_w - 28, (
+        ("SCHEDULE", _clock_at(flight, arrival_minutes) if arrival_minutes is not None else "--"),
+    ))
+    canvas.setFillColor(TEXT_MUTED)
+    canvas.setFont(SANS, T_MICRO)
+    canvas.drawString(ix2, row_y2, "FORECAST AT ETA")
+    row_y2 -= 10
+    metar2 = bulletin_first_line(destination_panel, "metar")
+    taf2 = bulletin_first_line(destination_panel, "taf")
+    canvas.setFillColor(TEXT_SECONDARY)
+    canvas.setFont(MONO, T_MICRO)
+    dest_lines = ([f"METAR {metar2}"] if metar2 else []) + ([f"TAF {taf2}"] if taf2 else [])
+    if dest_lines:
+        for line in dest_lines:
+            for wrapped in _wrap(line, MONO, T_MICRO, side_w - 28)[:2]:
+                canvas.drawString(ix2, row_y2, wrapped)
+                row_y2 -= 9.4
+    else:
+        _draw_string_fitted(canvas, ix2, row_y2, weather_fallback(destination_panel), SANS, T_MICRO, side_w - 28, TEXT_SECONDARY)
+        row_y2 -= 9.4
+    row_y2 -= 4
+    canvas.setFillColor(WEATHER_AMBER)
+    canvas.setFont(SANS_BOLD, T_MICRO)
+    canvas.drawString(ix2, row_y2, "PREFERRED ALTERNATE")
+    row_y2 -= 10
     summary_alternate = fuel_summary.get("alternate") or {}
-    altn_headline = (
+    altn_rows_data = fuel_summary.get("rows") or {}
+    altn_fuel = (altn_rows_data.get("altn_fuel") or {}).get("fuel_kg")
+    altn_time = (altn_rows_data.get("altn_fuel") or {}).get("time_minutes")
+    altn_line = " | ".join(part for part in (
         f"{theme.airport_code_label(primary_alternate.get('airport') or summary_alternate.get('icao'))}"
-        f"{'/' + str(primary_alternate.get('runway')) if primary_alternate.get('runway') else ''}"
-        f" | {primary_alternate.get('approach') or 'approach review'}"
-    )
-    altn_rows = fuel_summary.get("rows") or {}
-    altn_fuel = (altn_rows.get("altn_fuel") or {}).get("fuel_kg")
-    altn_time = (altn_rows.get("altn_fuel") or {}).get("time_minutes")
-    hold_fuel = (altn_rows.get("altn_hold") or {}).get("fuel_kg")
-    altn_body = " | ".join(
-        part
-        for part in (
-            f"{primary_alternate.get('distance_nm')} NM" if primary_alternate.get("distance_nm") else None,
-            f"{format_actm(altn_time).replace('.', ':')}" if altn_time is not None else None,
-            f"{altn_fuel:,} kg" if altn_fuel is not None else None,
-            f"hold {hold_fuel:,} kg" if hold_fuel is not None else None,
-        )
-        if part
-    ) or "Alternate planning data requires review."
-    low_y = mid_y - gap - card_h
-    _airport_card(
-        canvas, MARGIN, low_y, left_w, card_h,
-        title=f"ALTERNATE - {theme.airport_code_label(primary_alternate.get('airport') or summary_alternate.get('icao')) if primary_alternate or summary_alternate else 'REVIEW'}",
-        accent=WEATHER_AMBER,
-        headline=altn_headline[:52],
-        body=altn_body,
-        tag="ALTN",
-    )
+        f"{'/' + str(primary_alternate.get('runway')) if primary_alternate.get('runway') else ''}",
+        str(primary_alternate.get("approach") or "") or None,
+        f"{primary_alternate.get('distance_nm')} NM" if primary_alternate.get("distance_nm") else None,
+        format_actm(altn_time).replace(".", ":") if altn_time is not None else None,
+        f"{altn_fuel:,} kg" if altn_fuel is not None else None,
+    ) if part)
+    canvas.setFillColor(TEXT_SECONDARY)
+    canvas.setFont(MONO, T_MICRO)
+    for wrapped in _wrap(altn_line or "Alternate planning data requires review.", MONO, T_MICRO, side_w - 28)[:2]:
+        canvas.drawString(ix2, row_y2, wrapped)
+        row_y2 -= 9.4
 
-    # Decision gates panel sized to its rows — the spec's list is compact and
-    # a panel padded with dead space reads as missing content.
-    gates_top = low_y - gap
-    row_h = 19.0
-    gates_h = min(gates_top - 34, row_h * len(_GATES) + 26)
-    inner = panel(
-        canvas, MARGIN, gates_top - gates_h, left_w, gates_h,
-        title="DECISION GATES", accent=ACCENT,
-    )
-    ix, iy, iw, ih = inner
-    lines = _gate_lines(briefing, flight, findings)
-    row_h = (gates_h - 24) / max(1, len(_GATES))
-    row_y = gates_top - 24
-    for key, label, accent, bookmark in _GATES:
-        if key == "edto":
-            label = _edto_gate_label(flight)
-        chip_w = pdfmetrics.stringWidth(label, SANS_BOLD, T_MICRO) + 14
-        canvas.setFillColor(accent)
-        canvas.roundRect(ix, row_y - 3.8, chip_w, 12.5, 6.25, stroke=0, fill=1)
-        canvas.setFillColor(BG)
-        canvas.setFont(SANS_BOLD, T_MICRO)
-        canvas.drawCentredString(ix + chip_w / 2, row_y, label)
-        _draw_string_fitted(
-            canvas, ix + chip_w + 6, row_y, lines.get(key) or "",
-            SANS, T_MICRO, iw - chip_w - 6 - 44, TEXT_SECONDARY,
-        )
+    centre_inner = panel(canvas, centre_x, row1_top - row1_h, centre_w, row1_h,
+                         title="CFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY",
+                         accent=ACCENT, title_colour=BG)
+    cx0 = centre_inner[0]
+    text_w = centre_w * 0.55
+    map_w = centre_w - text_w - 34
+    row_y3 = row1_top - 28
+    chips = [chip for chip in (
+        "EDTO / RVSM" if "EDTO" in str(fuel_summary.get("source_classification") or "").upper() else None,
+        f"CI {flight.get('cost_index')}" if flight.get("cost_index") is not None else None,
+        f"CRZ COMP {fuel_summary.get('cruise_wind_component_kt')}" if fuel_summary.get("cruise_wind_component_kt") is not None else None,
+    ) if chip]
+    chip_x = cx0
+    for chip in chips:
+        chip_w = pdfmetrics.stringWidth(chip, SANS_BOLD, T_MICRO) + 14
+        canvas.setStrokeColor(ACCENT)
+        canvas.setLineWidth(0.8)
+        canvas.roundRect(chip_x, row_y3 - 4, chip_w, 12.5, 6.2, stroke=1, fill=0)
         canvas.setFillColor(ACCENT)
         canvas.setFont(SANS_BOLD, T_MICRO)
-        canvas.drawRightString(ix + iw - 6, row_y, "OPEN >")
-        canvas.linkRect("", bookmark, (ix + iw - 40, row_y - 3.4, ix + iw, row_y + 8), relative=0, thickness=0)
-        row_y -= row_h
+        canvas.drawCentredString(chip_x + chip_w / 2, row_y3, chip)
+        chip_x += chip_w + 6
+    row_y3 -= 16
+    canvas.setFillColor(TEXT_MUTED)
+    canvas.setFont(SANS, T_MICRO)
+    canvas.drawString(cx0, row_y3, "CFP ROUTE")
+    row_y3 -= 10
+    canvas.setFillColor(TEXT_SECONDARY)
+    canvas.setFont(MONO, T_MICRO)
+    for wrapped in _wrap(str(flight.get("route_text") or "Route text not held."), MONO, T_MICRO, text_w)[:3]:
+        canvas.drawString(cx0, row_y3, wrapped)
+        row_y3 -= 9.4
+    row_y3 -= 3
+    profile = str(flight.get("planned_level_profile") or "").strip()
+    if profile:
+        canvas.setFillColor(TEXT_MUTED)
+        canvas.setFont(SANS, T_MICRO)
+        canvas.drawString(cx0, row_y3, "PLANNED LEVEL PROFILE")
+        row_y3 -= 10
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(MONO, T_MICRO)
+        for wrapped in _wrap(profile, MONO, T_MICRO, text_w)[:2]:
+            canvas.drawString(cx0, row_y3, wrapped)
+            row_y3 -= 9.4
+    ground = fuel_summary.get("ground_miles_nm")
+    air = fuel_summary.get("air_miles_nm")
+    dist_line = " | ".join(part for part in (
+        f"GND {ground:,} NM" if ground else None,
+        f"AIR {air:,} NM" if air else None,
+    ) if part)
+    if dist_line:
+        canvas.setFillColor(TEXT)
+        canvas.setFont(MONO_BOLD, T_MICRO)
+        canvas.drawString(cx0, row_y3, dist_line)
+        row_y3 -= 11
+    airports_view = edto_view.get("airports") or []
+    if airports_view:
+        airport = airports_view[0]
+        canvas.setFillColor(EDTO_GREEN)
+        canvas.setFont(SANS_BOLD, T_MICRO)
+        canvas.drawString(cx0, row_y3, "EDTO")
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(MONO, T_MICRO)
+        edto_line = " ".join(part for part in (
+            f"{airport.get('airport')} RWY{airport.get('runway')}",
+            str(airport.get("approach") or ""),
+            str(airport.get("minima") or ""),
+            "| TOP-UP 0 KG" if not (edto_view.get("fuel") or {}).get("top_up_kg") else None,
+        ) if part)
+        _draw_string_fitted(canvas, cx0 + 34, row_y3, edto_line, MONO, T_MICRO, text_w - 34, TEXT_SECONDARY)
+        row_y3 -= 11
+    wx_bits = []
+    for card in cards[:3]:
+        sid = str(card.get("sigmet_id") or "")
+        screening = str(card.get("screening") or "")
+        if "does not intersect" in screening:
+            wx_bits.append(f"{sid} OFF ROUTE")
+        elif "expires" in screening:
+            wx_bits.append(f"{sid} EXPIRED BEFORE ENTRY")
+        elif card.get("disposition") == "PROMOTED":
+            wx_bits.append(f"{sid} PROMOTED")
+    if not wx_bits and not dest_lines:
+        # No bulletin and no SIGMET cards: the operating-window fallback
+        # sentence prints here in full - the wide row keeps it on one line,
+        # which the 16 Aug exact-text contract requires.
+        wx_bits = [weather_fallback(destination_panel)]
+    if wx_bits:
+        canvas.setFillColor(WEATHER_AMBER)
+        canvas.setFont(SANS_BOLD, T_MICRO)
+        canvas.drawString(cx0, row_y3, "WX")
+        wx_font = MONO if len(wx_bits) > 1 or "|" in wx_bits[0] else SANS
+        _draw_string_fitted(canvas, cx0 + 34, row_y3, " | ".join(wx_bits), wx_font, T_MICRO, text_w - 34, TEXT_SECONDARY)
+        row_y3 -= 11
 
-    # Right column: route map panel + CFP PAGE 1 panel.
-    right_x = MARGIN + left_w + 12
-    right_w = width - MARGIN - right_x
-    fuel_h = 92.0
-    map_h = y - 30 - fuel_h - 10
-    map_inner = panel(
-        canvas, right_x, y - map_h, right_w, map_h,
-        title=(
-            f"{theme.display_flight_number(flight)} "
-            f"{theme.airport_code_label(flight.get('departure'))}-"
-            f"{theme.airport_code_label(flight.get('destination'))} | "
-            "OPERATIONAL ROUTE / DECISION GATES"
-        ),
-        accent=PANEL, title_colour=TEXT,
-    )
-    mx, my, mw, mh = map_inner
+    map_x = cx0 + text_w + 14
+    map_h = row1_h - 72
     from .briefing import draw_route_map_pdf  # local import; briefing pulls widely
 
-    draw_route_map_pdf(canvas, briefing.get("route_map") or {}, mx, my, mw, mh)
+    canvas.setFillColor(PANEL)
+    canvas.roundRect(map_x, row1_top - 24 - map_h, map_w, map_h, 4, stroke=0, fill=1)
+    draw_route_map_pdf(canvas, briefing.get("route_map") or {}, map_x, row1_top - 24 - map_h, map_w, map_h)
+    strip_entries = [entry for entry in _route_anchor_entries(flight, briefing)]
+    if len(strip_entries) > 5:
+        keep = {0, len(strip_entries) - 1}
+        keep.update(index for index, entry in enumerate(strip_entries) if entry.get("label", "").startswith("EDTO") or "*" in str(entry.get("sub") or ""))
+        strip_entries = [entry for index, entry in enumerate(strip_entries) if index in keep][:5]
+    _timeline(canvas, cx0, row1_top - row1_h + 14, centre_w - 28, strip_entries)
 
-    # CFP PAGE 1 - FLIGHT PLAN panel.
-    fuel_inner = panel(
-        canvas, right_x, y - map_h - 10 - fuel_h, right_w, fuel_h,
-        title="CFP PAGE 1 - FLIGHT PLAN", accent=COMMS_TEAL, title_colour=BG,
+    # --- Row 2: FLIGHT BASIS | MASS / FUEL | TECHNICAL STATUS
+    row2_top = row1_top - row1_h - row_gap
+    col_w = (full_w - 2 * 10) / 3
+    basis_inner = panel(canvas, MARGIN, row2_top - row2_h, col_w, row2_h,
+                        title="CFP P1 - FLIGHT BASIS", accent=COMMS_TEAL, title_colour=BG)
+    ix = basis_inner[0]
+    kv_rows(ix, row2_top - 28, col_w - 28, (
+        ("AIRCRAFT/REG", f"{flight.get('aircraft_type') or '--'} / {theme.normalized_registration(flight.get('registration')) or '--'}"),
+        ("CAPTAIN", str(flight.get("captain") or "--")),
+        ("EET", str((briefing.get("metrics") or {}).get("eet") or "--").replace(".", ":")),
+        ("CI", str(flight.get("cost_index") if flight.get("cost_index") is not None else "--")),
+        ("GND / AIR NM", f"{ground or '--'} / {air or '--'}"),
+        ("CRZ COMP", f"M{abs(fuel_summary.get('cruise_wind_component_kt'))}" if (fuel_summary.get("cruise_wind_component_kt") or 0) < 0 else f"P{fuel_summary.get('cruise_wind_component_kt')}" if fuel_summary.get("cruise_wind_component_kt") is not None else "--"),
+        ("CLASSIFICATION", (
+            f"{fuel_summary.get('source_classification')} (NON-EDTO)"
+            if str(fuel_summary.get("source_classification") or "").upper() == "STANDARD"
+            else str(fuel_summary.get("source_classification") or "--")
+        )),
+    ))
+
+    fuel_inner = panel(canvas, MARGIN + col_w + 10, row2_top - row2_h, col_w, row2_h,
+                       title="CFP P1 - MASS / FUEL", accent=EDTO_GREEN, title_colour=BG)
+    ix = fuel_inner[0]
+    masses = fuel_summary.get("masses_kg") or {}
+    performance = flight.get("performance") or {}
+    controlling = performance.get("controlling_rtow_kg")
+    ptow = masses.get("ptow")
+    margin_kg = (controlling - ptow) if controlling and ptow else None
+    half_col = (col_w - 28) / 2
+    mass_rows = [
+        ("PZFW", f"{masses.get('pzfw'):,}" if masses.get("pzfw") else "--"),
+        ("PTOW", f"{masses.get('ptow'):,}" if masses.get("ptow") else "--"),
+        ("PLWT", f"{masses.get('plwt'):,}" if masses.get("plwt") else "--"),
+        ("RTOW", f"{controlling:,}" if controlling else "--"),
+        ("MARGIN", f"+{margin_kg:,}" if margin_kg and margin_kg > 0 else f"{margin_kg:,}" if margin_kg is not None else "--"),
+        ("ZFW +1000", f"+{flight.get('zfw_change_burn_kg_per_1000')} BURN" if flight.get("zfw_change_burn_kg_per_1000") else "--"),
+    ]
+    row_y = row2_top - 28
+    for label, value in mass_rows:
+        canvas.setFillColor(TEXT_MUTED)
+        canvas.setFont(SANS, T_MICRO)
+        canvas.drawString(ix, row_y, label)
+        canvas.setFillColor(ACCENT if label == "MARGIN" else TEXT)
+        canvas.setFont(MONO_BOLD, T_MICRO)
+        canvas.drawRightString(ix + half_col - 8, row_y, str(value))
+        row_y -= 13
+    rows_data = fuel_summary.get("rows") or {}
+    def timed(key):
+        row = rows_data.get(key) or {}
+        fuel_kg = row.get("fuel_kg")
+        minutes = row.get("time_minutes")
+        if fuel_kg is None:
+            return "--"
+        clock = f"{int(minutes) // 60}:{int(minutes) % 60:02d}" if minutes is not None else "-"
+        return f"{fuel_kg:,} / {clock}"
+    fuel_rows = [
+        ("BURNOFF", timed("burnoff")),
+        ("STAT CONT", timed("stat_cont")),
+        ("ALTN", timed("altn_fuel")),
+        ("TAXI", f"{fuel_summary.get('taxi_fuel_kg'):,}" if fuel_summary.get("taxi_fuel_kg") else "--"),
+        ("FPL REQMT", timed("flt_plan_reqmt")),
+        ("TANKS/EXC", f"{(rows_data.get('fuel_in_tanks') or {}).get('fuel_kg') or 0:,} / {(rows_data.get('excess_fuel') or {}).get('fuel_kg') or 0:,}"),
+    ]
+    row_y = row2_top - 28
+    for label, value in fuel_rows:
+        canvas.setFillColor(TEXT_MUTED)
+        canvas.setFont(SANS, T_MICRO)
+        canvas.drawString(ix + half_col + 8, row_y, label)
+        canvas.setFillColor(TEXT)
+        canvas.setFont(MONO_BOLD, T_MICRO)
+        canvas.drawRightString(ix + col_w - 28, row_y, str(value))
+        row_y -= 13
+    if str(fuel_summary.get("state") or "") != "verified":
+        canvas.setFillColor(WEATHER_AMBER)
+        canvas.setFont(SANS_BOLD, T_MICRO)
+        canvas.drawString(ix, row2_top - row2_h + 10, "Page-1 fuel arithmetic did not verify - review the source CFP page.")
+
+    tech_inner = panel(canvas, MARGIN + 2 * (col_w + 10), row2_top - row2_h, col_w, row2_h,
+                       title="CFP P1 - TECHNICAL STATUS", accent=CRITICAL, title_colour=BG)
+    ix = tech_inner[0]
+    row_y = row2_top - 28
+    deferred = flight.get("deferred_items") or []
+    seen_refs: set[tuple[str, str]] = set()
+    listed = []
+    for item in deferred:
+        reference = str(item.get("reference") or "").strip()
+        item_type = str(item.get("item_type") or "").strip()
+        if reference and reference != "UNSPECIFIED":
+            key = (item_type, reference)
+            if key in seen_refs:
+                # One governing reference, one row - repeated instances keep
+                # their own detail groups on the MEL/CDL page (16 Jul rule).
+                continue
+            seen_refs.add(key)
+        listed.append(item)
+    for item in listed[:6]:
+        reference = str(item.get("reference") or "").strip()
+        item_type = str(item.get("item_type") or "").strip()
+        label = f"{item_type} {reference}" if reference and reference != "UNSPECIFIED" else item_type or "ITEM"
+        note = str(item.get("company_remark") or item.get("description") or "")
+        canvas.setFillColor(WEATHER_AMBER if item_type in {"CDL", "CDDL"} else CRITICAL)
+        canvas.setFont(MONO_BOLD, T_MICRO)
+        canvas.drawString(ix, row_y, label[:16])
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, T_MICRO)
+        _draw_string_fitted(canvas, ix + 76, row_y, note, SANS, T_MICRO, col_w - 108, TEXT_SECONDARY)
+        row_y -= 11.5
+    if not deferred:
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, T_MICRO)
+        canvas.drawString(ix, row_y, "No deferred item is printed on CFP page 1.")
+        row_y -= 11.5
+    row_y -= 4
+    canvas.setFillColor(TEXT_MUTED)
+    canvas.setFont(SANS_BOLD, T_MICRO)
+    canvas.drawString(ix, row_y, "ANALYSIS / RELEASE INPUTS")
+    row_y -= 11
+    ledger_rows = hazards.get("coverage_ledger") or []
+    gaps = [row.get("label") for row in ledger_rows if str(row.get("status")) == "unavailable"]
+    release_lines = []
+    if any(str(item.get("item_type")) in {"CDL", "CDDL"} for item in deferred):
+        release_lines.append(("OPEN", "CDL/CDDL seal inputs - no guessed penalties."))
+    if gaps:
+        release_lines.append(("GAP", f"{'/'.join(gaps)} unavailable - coverage gap, not NIL."))
+    for tag, line in release_lines[:3]:
+        canvas.setFillColor(CRITICAL if tag == "OPEN" else WEATHER_AMBER)
+        canvas.setFont(MONO_BOLD, T_MICRO)
+        canvas.drawString(ix, row_y, tag)
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, T_MICRO)
+        _draw_string_fitted(canvas, ix + 34, row_y, line, SANS, T_MICRO, col_w - 66, TEXT_SECONDARY)
+        row_y -= 11
+
+    # --- PRIORITY strip
+    strip_inner = panel(canvas, MARGIN, 30, full_w, priority_h + 12, title="", accent=PANEL)
+    px0 = MARGIN + 12
+    canvas.setFillColor(CRITICAL)
+    canvas.setFont(SANS_BOLD, T_MICRO)
+    canvas.drawString(px0, 30 + 12, "PRIORITY")
+    px0 += 64
+    priority_bits = []
+    if any(str(item.get("item_type")) in {"CDL", "CDDL"} for item in deferred):
+        priority_bits.append("CDL SEAL DATA")
+    entry_clock = None
+    for sector in (flight.get("edto") or {}).get("sectors") or []:
+        entry_actm = (sector.get("entry") or {}).get("actm_minutes")
+        if entry_actm is not None:
+            entry_clock = _clock_at(flight, entry_actm)
+            break
+    if entry_clock:
+        priority_bits.append(f"EDTO {entry_clock}")
+    events = (briefing.get("terrain") or {}).get("events") or []
+    if events:
+        first = events[0].get("first_high") or {}
+        last = events[0].get("last_high") or {}
+        priority_bits.append(f"TERRAIN {first.get('msa_hundreds_ft')}*-{last.get('msa_hundreds_ft')}*")
+    promoted = [card for card in cards if card.get("disposition") == "PROMOTED"]
+    priority_bits.append(
+        f"{len(promoted)} SIGMET PROMOTED" if promoted else "NO SIGMET PROMOTED"
     )
-    fx, fy, fw, fh = fuel_inner
-    state = str(fuel_summary.get("state") or "")
-    if not fuel_summary:
-        review_line(
-            canvas, fx, fy + fh / 2,
-            "Page-1 fuel summary is not held for this analysis - review CFP page 1 directly.",
-        )
-    elif state != "verified":
-        review_line(
-            canvas, fx, fy + fh / 2,
-            "Page-1 fuel summary did not verify against its own arithmetic - review the source CFP page.",
-        )
-        if fuel_summary.get("discrepancies"):
-            canvas.setFillColor(TEXT_MUTED)
-            canvas.setFont(SANS, T_MICRO)
-            canvas.drawString(fx, fy + fh / 2 - 10, "; ".join(fuel_summary["discrepancies"])[:150])
-    else:
-        rows = _fuel_panel_rows(fuel_summary)
-        cell_w = (fw - 3 * 8) / 4
-        cell_h = (fh - 6) / 2
-        for index, (label, value) in enumerate(rows):
-            col = index % 4
-            row = index // 4
-            cx = fx + col * (cell_w + 8)
-            cy = fy + fh - (row + 1) * cell_h - row * 4
-            canvas.setFillColor(PANEL)
-            canvas.roundRect(cx, cy, cell_w, cell_h - 3, 4, stroke=0, fill=1)
-            canvas.setFillColor(TEXT_SECONDARY)
-            canvas.setFont(SANS, T_MICRO)
-            canvas.drawString(cx + 6, cy + cell_h - 12, label)
-            _draw_string_fitted(
-                canvas, cx + 6, cy + 6, value, MONO_BOLD, 8.8, cell_w - 12, TEXT,
-            )
+    for bit in priority_bits:
+        bit_w = pdfmetrics.stringWidth(bit, SANS_BOLD, T_MICRO)
+        canvas.setFillColor(TEXT)
+        canvas.setFont(SANS_BOLD, T_MICRO)
+        canvas.drawString(px0, 30 + 12, bit)
+        canvas.setStrokeColor(BORDER)
+        canvas.setLineWidth(0.8)
+        canvas.line(px0 + bit_w + 12, 30 + 8, px0 + bit_w + 12, 30 + 22)
+        px0 += bit_w + 24
 
 
 # ---------------------------------------------------------------------------

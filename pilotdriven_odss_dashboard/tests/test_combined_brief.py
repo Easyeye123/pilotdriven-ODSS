@@ -58,7 +58,10 @@ def test_renders_the_full_section_set(rendered):
     assert len(rendered) == 9
     first = rendered[0].get_text()
     assert "FLIGHT OVERVIEW" in first
-    assert "CFP PAGE 1 - FLIGHT PLAN" in first
+    # REV3 canon (boss, 20 Aug): page 1 is the dashboard - route/levels
+    # panel plus the mass/fuel column, not the old flight-plan grid.
+    assert "CFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY" in first
+    assert "CFP P1 - MASS / FUEL" in first
     assert "107,027" in first.replace(" ", ",")
     titles = "\n".join(rendered[n].get_text() for n in range(len(rendered)))
     for expected in (
@@ -175,9 +178,14 @@ def test_long_airport_copy_never_reaches_the_card_tag(tmp_path):
 
 
 def test_the_open_control_appears_once_per_gate(rendered):
+    # REV3 canon (boss, 20 Aug): page 1 is the dashboard with the PRIORITY
+    # strip - no gate rows, so no OPEN controls; the operating gates live on
+    # page 2 with their own links.
     first = rendered[0].get_text()
-    # Six gates, six OPEN controls — a doubled draw would double the count.
-    assert first.count("OPEN >") == 6
+    assert first.count("OPEN >") == 0
+    assert "PRIORITY" in first
+    second = rendered[1].get_text()
+    assert second.count("OPEN") >= 2
 
 
 def test_repeated_mel_reference_is_one_gate_and_one_detail_group(tmp_path):
@@ -373,9 +381,12 @@ def test_overview_return_link_does_not_cover_header_identity(rendered):
 
 
 def test_edto_gate_label_agrees_with_the_cfp_classification(rendered):
+    # REV3 canon: page 1 declares EDTO via the chip and the CLASSIFICATION
+    # row; the full source sentence lives on the EDTO page.
     first = rendered[0].get_text()
-    assert "CFP classified EDTO CFP" in first
+    assert "EDTO" in first
     assert "NON-EDTO" not in first
+    assert "CFP page 1: SUMMARY EDTO CFP." in rendered[1].get_text()
 
 
 def test_edto_page_prints_the_parsed_entry_and_exit(rendered):

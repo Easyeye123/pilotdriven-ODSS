@@ -423,7 +423,7 @@ def run_case(
         output_text = "\n".join(page.get_text() for page in document).upper()
     required_text = (
         "FLIGHT BRIEFING",
-        "CFP PAGE 1 - FLIGHT PLAN",
+        "CFP P1 - MASS / FUEL",
         f"{case['departure_iata']} / {case['departure']}",
         f"{case['destination_iata']} / {case['destination']}",
     )
