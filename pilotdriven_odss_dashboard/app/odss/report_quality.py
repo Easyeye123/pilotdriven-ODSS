@@ -85,18 +85,19 @@ _LEVEL_2_FAIL_CLOSED_ADVISORY_RESULTS = (
     ),
 )
 
+# REV3 canon contract (boss, 20 Aug: "this format, this content, this
+# look"): seven fixed sections in the tab-strip order - the old time-gates,
+# performance and comms pages fold into pages 1, 2 and 4.
 _COMBINED_FIXED_PREFIX = (
-    ("FLIGHT OVERVIEW",),
-    ("TIME,", "FIR AND OPERATING GATES"),
-    ("HIGH TERRAIN EXPOSURE AND DEPRESSURISATION",),
-    ("PERFORMANCE AND PLANNING SENSITIVITY",),
+    ("CFP P1 - ROUTE / LEVELS", "PRIORITY"),
+    ("CRITICAL ANALYSIS", "FLIGHT-PHASE DECISION TIMELINE"),
 )
 _COMBINED_MEL_TITLE = "MEL/CDL AND CDDL"
 _COMBINED_FIXED_SUFFIX = (
     ("DESTINATION ALTERNATES",),
     ("AIRPORT AND NOTAM APPLICABILITY",),
     ("OPERATIONAL HAZARD ASSESSMENT",),
-    ("FIR COMMUNICATION AND TIME RECONCILIATION",),
+    ("HIGH TERRAIN EXPOSURE AND DEPRESSURISATION",),
 )
 _COMBINED_PROFILE_TITLE = "DEPRESSURISATION PROFILE"
 _COMBINED_RETIRED_LABELS = (
@@ -132,10 +133,10 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
 
     pages = list(reader.pages)
     page_count = len(pages)
-    if page_count < 9:
+    if page_count < 7:
         violations.append(ReportQualityViolation(
             "COMBINED_PAGE_CONTRACT",
-            f"Flight Briefing must contain at least 9 pages; generated {page_count}.",
+            f"Flight Briefing must contain at least 7 pages; generated {page_count}.",
         ))
 
     extracted_pages: list[str] = []

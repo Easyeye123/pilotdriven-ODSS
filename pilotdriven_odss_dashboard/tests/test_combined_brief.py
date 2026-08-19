@@ -55,9 +55,11 @@ def rendered(tmp_path):
 
 
 def test_renders_the_full_section_set(rendered):
-    assert len(rendered) == 9
+    # REV3 canon: seven sections - dashboard, critical analysis, MEL/CDL,
+    # EDTO, airports, hazards, terrain.
+    assert len(rendered) == 7
     first = rendered[0].get_text()
-    assert "FLIGHT OVERVIEW" in first
+    assert "CFP P1 - ROUTE / LEVELS" in first
     # REV3 canon (boss, 20 Aug): page 1 is the dashboard - route/levels
     # panel plus the mass/fuel column, not the old flight-plan grid.
     assert "CFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY" in first
@@ -65,11 +67,11 @@ def test_renders_the_full_section_set(rendered):
     assert "107,027" in first.replace(" ", ",")
     titles = "\n".join(rendered[n].get_text() for n in range(len(rendered)))
     for expected in (
-        "PERFORMANCE AND PLANNING SENSITIVITY",
+        "CRITICAL ANALYSIS",
         "MEL/CDL AND CDDL",
         "AIRPORT AND NOTAM APPLICABILITY",
         "OPERATIONAL HAZARD ASSESSMENT",
-        "FIR COMMUNICATION AND TIME RECONCILIATION",
+        "HIGH TERRAIN EXPOSURE AND DEPRESSURISATION",
     ):
         assert expected in titles
 
@@ -98,7 +100,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     render_combined_briefing(flight, findings, [], output)
 
     document = fitz.open(output)
-    mel_page = document[4]
+    mel_page = document[2]
     mel_text = mel_page.get_text()
     assert "CFP REMARK - NOT THE APPROVED MEL REMEDY" in mel_text
     assert "OPEN EXACT MEL ITEM / REMEDY >" in mel_text
@@ -184,8 +186,6 @@ def test_the_open_control_appears_once_per_gate(rendered):
     first = rendered[0].get_text()
     assert first.count("OPEN >") == 0
     assert "PRIORITY" in first
-    second = rendered[1].get_text()
-    assert second.count("OPEN") >= 2
 
 
 def test_repeated_mel_reference_is_one_gate_and_one_detail_group(tmp_path):
@@ -212,7 +212,7 @@ def test_repeated_mel_reference_is_one_gate_and_one_detail_group(tmp_path):
 
     assert pages[0].get_text().count("MEL 25-20-50A") == 1
     assert pages[1].get_text().count("MEL 25-20-50A") == 1
-    mel_page = pages[4].get_text()
+    mel_page = pages[2].get_text()
     assert mel_page.count("MEL 25-20-50A") == 1
     assert "FIRST CHILLING COMPARTMENT" in mel_page
     assert "SECOND CHILLING COMPARTMENT" in mel_page
@@ -257,7 +257,7 @@ def test_mel_cdl_page_keeps_all_governing_references_and_duplicate_details(tmp_p
     render_combined_briefing(flight, findings, [], out)
     document = fitz.open(out)
 
-    mel_page = document[4].get_text()
+    mel_page = document[2].get_text()
     mel_page_flat = " ".join(mel_page.split())
     for reference in (
         "MEL 73-09-03A",
@@ -289,10 +289,10 @@ def test_many_governing_references_create_as_many_pages_as_needed(tmp_path):
     render_combined_briefing(flight, findings, [], out)
     document = fitz.open(out)
 
-    assert len(document) == 11
-    first_mel_page = document[4].get_text()
-    second_mel_page = document[5].get_text()
-    third_mel_page = document[6].get_text()
+    assert len(document) == 9
+    first_mel_page = document[2].get_text()
+    second_mel_page = document[3].get_text()
+    third_mel_page = document[4].get_text()
     assert "MEL/CDL AND CDDL (1/3)" in first_mel_page
     assert "MEL/CDL AND CDDL (2/3)" in second_mel_page
     assert "MEL/CDL AND CDDL (3/3)" in third_mel_page
@@ -303,8 +303,8 @@ def test_many_governing_references_create_as_many_pages_as_needed(tmp_path):
         assert f"TEST-{index + 1}" in second_mel_page
     assert "TEST-9" not in second_mel_page
     assert "TEST-9" in third_mel_page
-    assert "EDTO AND DESTINATION ALTERNATES" in document[7].get_text()
-    assert "Page 8 of 11" in document[7].get_text()
+    assert "EDTO AND DESTINATION ALTERNATES" in document[5].get_text()
+    assert "Page 6 of 9" in document[5].get_text()
 
 
 def test_source_crop_extends_to_the_next_printed_section(tmp_path):
@@ -386,11 +386,12 @@ def test_edto_gate_label_agrees_with_the_cfp_classification(rendered):
     first = rendered[0].get_text()
     assert "EDTO" in first
     assert "NON-EDTO" not in first
-    assert "CFP page 1: SUMMARY EDTO CFP." in rendered[1].get_text()
+    # The full source sentence lives on the EDTO page (page 4 with one MEL page).
+    assert "CFP page 1: SUMMARY EDTO CFP." in rendered[3].get_text()
 
 
 def test_edto_page_prints_the_parsed_entry_and_exit(rendered):
-    second = rendered[1].get_text()
+    second = rendered[3].get_text()
     assert "ENTRY ACTM" in second
     assert "EXIT ACTM" in second
 
@@ -415,7 +416,7 @@ def test_edto_page_preserves_every_numbered_sector(tmp_path):
     findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
     out = tmp_path / "four-edto-sectors.pdf"
     render_combined_briefing(flight, findings, [], out)
-    second = fitz.open(out)[1].get_text()
+    second = fitz.open(out)[3].get_text()
 
     for number, entry, exit_ in (
         (1, "07.29", "08.50"),
@@ -450,10 +451,10 @@ def test_edto_page_preserves_every_alternate(tmp_path):
     findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
     out = tmp_path / "six-edto-alternates.pdf"
     render_combined_briefing(flight, findings, [], out)
-    second = fitz.open(out)[1].get_text()
+    edto_page = fitz.open(out)[3].get_text()
 
     for airport in ("PGUM", "RJTT", "RJCC", "PASY", "PACD", "KSFO"):
-        assert airport in second
+        assert airport in edto_page
 
 
 def test_missing_classification_never_defaults_to_edto(tmp_path):
@@ -527,7 +528,7 @@ def test_hazard_page_names_each_vaac_centre_and_truth_state(tmp_path):
     findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
     out = tmp_path / "vaac-receipt.pdf"
     render_combined_briefing(flight, findings, [], out)
-    hazard = fitz.open(out)[7].get_text().upper()
+    hazard = fitz.open(out)[5].get_text().upper()
 
     assert "2/9 REACHED" in hazard
     for centre in centres:

@@ -92,7 +92,8 @@ def test_combined_briefing_uses_the_combined_publication_contract(tmp_path):
 
     result = validate_combined_briefing_pdf(output)
     assert result["valid"] is True
-    assert result["page_count"] == 9
+    # REV3 canon: seven sections.
+    assert result["page_count"] == 7
     assert result["violations"] == []
 
 
@@ -153,7 +154,7 @@ def test_short_authoritative_source_crop_does_not_stretch_card_to_footer(tmp_pat
     )
 
     with fitz.open(output) as document:
-        mel_page = document[4]
+        mel_page = document[2]
         title_box = mel_page.search_for("CROPPED CFP DECLARATION - NOT THE APPROVED REMEDY")[0]
         enclosing_panels = [
             drawing["rect"]

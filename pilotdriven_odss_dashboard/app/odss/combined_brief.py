@@ -176,6 +176,30 @@ def _header_times(flight: dict[str, Any]) -> tuple[str, str]:
     return utc_line, local_line
 
 
+REV3_TABS = (
+    ("DASHBOARD", "sec_overview"),
+    ("PERF / FUEL", "sec_analysis"),
+    ("TECH STATUS", "sec_mel_cdl"),
+    ("EDTO", "sec_alternates"),
+    ("AIRPORTS", "sec_airports"),
+    ("WEATHER", "sec_hazard"),
+    ("TERRAIN", "sec_terrain"),
+)
+
+
+def rev3_card(canvas, x, y, w, h, *, title: str, accent, title_colour=None) -> tuple[float, float, float, float]:
+    """REV3 canon card: dark rounded panel with a 3pt accent TOP border and
+    the title inside - not the old full-colour title band."""
+    canvas.setFillColor(PANEL)
+    canvas.roundRect(x, y, w, h, 6, stroke=0, fill=1)
+    canvas.setFillColor(accent)
+    canvas.roundRect(x, y + h - 3, w, 3, 1.5, stroke=0, fill=1)
+    canvas.setFillColor(title_colour or TEXT)
+    canvas.setFont(SANS_BOLD, T_SMALL)
+    canvas.drawString(x + 14, y + h - 18, str(title)[:64])
+    return (x + 14, y + 10, w - 28, h - 30)
+
+
 def draw_page_chrome(
     canvas,
     flight: dict[str, Any],
@@ -183,6 +207,9 @@ def draw_page_chrome(
     page_number: int,
     page_count: int,
     source_line: str,
+    section_label: str | None = None,
+    section_colour=None,
+    show_tabs: bool = False,
 ) -> float:
     """Background, header band, footer, SOURCE line. Returns content top y."""
     register_fonts()
@@ -235,23 +262,36 @@ def draw_page_chrome(
         canvas.setFillColor(TEXT)
         canvas.setFont(SANS_BOLD, 10.5)
         canvas.drawRightString(width * 0.80, top - 16, block_label)
-    pill_text = "FLIGHT BRIEFING"
-    pill_w = pdfmetrics.stringWidth(pill_text, SANS_BOLD, 7.4) + 26
-    pill_x = width - MARGIN - pill_w
-    canvas.setStrokeColor(ACCENT)
-    canvas.setLineWidth(1.1)
-    canvas.setFillColor(BG)
-    canvas.roundRect(pill_x, top - 24, pill_w, 16, 8, stroke=1, fill=1)
-    canvas.setFillColor(TEXT)
-    canvas.setFont(SANS_BOLD, 7.4)
-    canvas.drawCentredString(pill_x + pill_w / 2, top - 18.6, pill_text)
+    if page_number == 1:
+        pill_text = "SOURCE CHECKS OPEN"
+        pill_sub = "Current products controlling"
+        pill_w = max(
+            pdfmetrics.stringWidth(pill_text, SANS_BOLD, 7.4),
+            pdfmetrics.stringWidth(pill_sub, SANS, 6.4),
+        ) + 30
+        pill_x = width - MARGIN - pill_w
+        canvas.setStrokeColor(WEATHER_AMBER)
+        canvas.setLineWidth(1.1)
+        canvas.setFillColor(BG)
+        canvas.roundRect(pill_x, top - 30, pill_w, 24, 12, stroke=1, fill=1)
+        canvas.setFillColor(WEATHER_AMBER)
+        canvas.setFont(SANS_BOLD, 7.4)
+        canvas.drawCentredString(pill_x + pill_w / 2, top - 15.5, pill_text)
+        canvas.setFillColor(TEXT_MUTED)
+        canvas.setFont(SANS, 6.4)
+        canvas.drawCentredString(pill_x + pill_w / 2, top - 24.5, pill_sub)
+    else:
+        label = section_label or "FLIGHT BRIEFING"
+        canvas.setFillColor(section_colour or ACCENT)
+        canvas.setFont(SANS_BOLD, 9.6)
+        canvas.drawRightString(width - MARGIN, top - 27, label.upper())
     if page_number > 1:
         # Boss, 19 Aug video: "back to overview must be on top, nice and
         # big" - larger type, taller pill, top-aligned with the section title.
         back_text = "BACK TO OVERVIEW"
         back_w = pdfmetrics.stringWidth(back_text, SANS_BOLD, T_SMALL) + 28
         back_x = width - MARGIN - back_w
-        back_y = top - 76
+        back_y = top - 72
         canvas.setFillColor(ELEVATED)
         canvas.setStrokeColor(ACCENT)
         canvas.setLineWidth(1.1)
@@ -274,6 +314,27 @@ def draw_page_chrome(
     canvas.setStrokeColor(BORDER)
     canvas.setLineWidth(0.8)
     canvas.line(MARGIN, top - 48, width - MARGIN, top - 48)
+
+    tabs_offset = 0.0
+    if show_tabs:
+        tabs_offset = 20.0
+        tab_y = top - 64
+        tab_x = MARGIN
+        for label, bookmark in REV3_TABS:
+            tab_w = pdfmetrics.stringWidth(label, SANS_BOLD, T_MICRO)
+            active = bookmark == "sec_overview" and page_number == 1
+            canvas.setFillColor(TEXT if active else TEXT_MUTED)
+            canvas.setFont(SANS_BOLD, T_MICRO)
+            canvas.drawString(tab_x, tab_y, label)
+            if active:
+                canvas.setStrokeColor(ACCENT)
+                canvas.setLineWidth(1.6)
+                canvas.line(tab_x, tab_y - 4, tab_x + tab_w, tab_y - 4)
+            canvas.linkRect("", bookmark, (tab_x - 4, tab_y - 6, tab_x + tab_w + 4, tab_y + 10), relative=0, thickness=0)
+            tab_x += tab_w + 26
+        canvas.setFillColor(TEXT)
+        canvas.setFont(SANS_BOLD, T_MICRO)
+        canvas.drawRightString(width - MARGIN, tab_y, f"FLIGHT BRIEFING | PAGE {page_number} OF {page_count}")
 
     # Footer.
     canvas.setFillColor(TEXT_MUTED)
@@ -308,7 +369,8 @@ def draw_page_chrome(
         canvas, MARGIN + 34, 21, source_line[:180], SANS, T_MICRO,
         width - 2 * MARGIN - 34, TEXT_MUTED,
     )
-    return top - 56
+    # Pages after the dashboard reserve room for the enlarged back pill.
+    return top - (56 if page_number == 1 else 100) - tabs_offset
 
 
 def draw_section_title(canvas, y: float, text: str) -> float:
@@ -637,9 +699,11 @@ def draw_overview_page(
         page_number=page_number,
         page_count=page_count,
         source_line="CFP P1 master context + deterministic analysis",
+        show_tabs=True,
     )
     canvas.bookmarkPage("sec_overview")
-    y = draw_section_title(canvas, content_top, "Flight Overview")
+    # REV3: the tab strip is the page label - no separate big title row.
+    y = content_top - 2
 
     full_w = width - 2 * MARGIN
     departure_panel = briefing.get("departure") or {}
@@ -2170,7 +2234,9 @@ def draw_alternates_page(
         briefing.get("edto") or {},
         flight.get("fuel_summary") or {},
     )
-    summary_rows = edto_rows[:-1]
+    # Every operational row prints here now that the old time-gates page is
+    # folded away - the parity gate checks each one verbatim.
+    summary_rows = edto_rows
     summary_h = min(150.0, 18.0 + len(summary_rows) * 12.0)
     source_classification = _edto_source_classification(flight)
     crop = crop_source_region(
@@ -2680,6 +2746,141 @@ def draw_comms_page(
 # ---------------------------------------------------------------------------
 
 
+def draw_analysis_page(
+    canvas,
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    findings: list[dict[str, Any]],
+    *,
+    page_number: int,
+    page_count: int,
+) -> None:
+    """REV3 page 2 - CRITICAL ANALYSIS: the decision timeline over six prose
+    verdict cards, every sentence composed from the same view the other
+    surfaces print."""
+    width, height = PAGE_SIZE
+    content_top = draw_page_chrome(
+        canvas, flight,
+        page_number=page_number, page_count=page_count,
+        source_line="CFP-derived deterministic verdicts | no unsupported hazard inference",
+        section_label="CRITICAL ANALYSIS", section_colour=ACCENT,
+    )
+    canvas.bookmarkPage("sec_analysis")
+    canvas.bookmarkPage("sec_time")
+    y = content_top - 4
+
+    # FLIGHT-PHASE DECISION TIMELINE band.
+    strip_h = 64.0
+    inner = panel(canvas, MARGIN, y - strip_h, width - 2 * MARGIN, strip_h,
+                  title="FLIGHT-PHASE DECISION TIMELINE", accent=PANEL, title_colour=TEXT)
+    _timeline(canvas, MARGIN + 20, y - strip_h + 14, width - 2 * MARGIN - 40,
+              _route_anchor_entries(flight, briefing))
+    y -= strip_h + 12
+
+    fuel_summary = flight.get("fuel_summary") or {}
+    masses = fuel_summary.get("masses_kg") or {}
+    performance = flight.get("performance") or {}
+    rows_data = fuel_summary.get("rows") or {}
+    edto_view = briefing.get("edto") or {}
+    hazards = briefing.get("hazards") or {}
+    cards = hazards.get("sigmet_cards") or []
+    ledger_rows = hazards.get("coverage_ledger") or []
+    deferred = flight.get("deferred_items") or []
+    departure_panel = briefing.get("departure") or {}
+    destination_panel = briefing.get("destination") or {}
+    alternates = flight.get("alternates") or []
+
+    controlling = performance.get("controlling_rtow_kg")
+    ptow = masses.get("ptow")
+    margin_kg = (controlling - ptow) if controlling and ptow else None
+    tanks = (rows_data.get("fuel_in_tanks") or {}).get("fuel_kg")
+    reqmt = (rows_data.get("flt_plan_reqmt") or {}).get("fuel_kg")
+    excess = (rows_data.get("excess_fuel") or {}).get("fuel_kg")
+    perf_text = " ".join(part for part in (
+        f"RTOW {controlling:,} kg." if controlling else "RTOW not derived - review CFP performance page.",
+        f"PTOW {ptow:,} kg gives {margin_kg:,} kg margin." if margin_kg is not None else None,
+        (
+            f"Fuel in tanks {'equals' if tanks == reqmt else 'exceeds'} the {reqmt:,} kg flight-plan requirement; "
+            f"excess fuel is {excess or 0:,} kg."
+            if tanks is not None and reqmt is not None else None
+        ),
+        f"A 1,000 kg ZFW change moves burn {flight.get('zfw_change_burn_kg_per_1000')} kg." if flight.get("zfw_change_burn_kg_per_1000") else None,
+    ) if part)
+
+    refs = [
+        f"{item.get('item_type')} {item.get('reference')}"
+        if str(item.get('reference') or '').strip() not in ('', 'UNSPECIFIED')
+        else str(item.get('item_type') or '')
+        for item in deferred
+    ]
+    seen_refs: list[str] = []
+    for ref in refs:
+        if ref and ref not in seen_refs:
+            seen_refs.append(ref)
+    cddl_text = (
+        f"CFP page 1 carries {len(deferred)} technical item{'s' if len(deferred) != 1 else ''}: "
+        f"{', '.join(seen_refs[:6])}. Execution remarks stay with the printed source; missing "
+        "seal dimensions or identity are never guessed when determining any penalty."
+        if deferred else "No deferred technical item is printed on CFP page 1."
+    )
+
+    edto_rows = {row.get("label"): row.get("value") for row in edto_view.get("operational_rows") or []}
+    edto_text = " · ".join(part for part in (
+        str(edto_rows.get("SECTOR 1") or edto_rows.get("ENTRY / EXIT") or ""),
+        str(edto_rows.get("EDTO ALTN") or ""),
+        str(edto_rows.get("FUEL") or ""),
+    ) if part) or "No EDTO facts were derived from this CFP - review page 1 directly."
+
+    hazard_bits = []
+    for card in cards[:3]:
+        hazard_bits.append(f"{card.get('name')}: {card.get('screening')}")
+    gaps = [row.get("label") for row in ledger_rows if str(row.get("status")) == "unavailable"]
+    if gaps:
+        hazard_bits.append(f"{'/'.join(gaps)} carry no data in this CFP - coverage gaps, not NIL findings.")
+    hazards_text = " ".join(hazard_bits) or "No enroute SIGMET is printed in this CFP."
+
+    primary_alternate = alternates[0] if alternates else {}
+    airports_text = " ".join(part for part in (
+        f"{theme.airport_code_label(departure_panel.get('icao') or flight.get('departure'))}: RWY {departure_panel.get('runway')}." if departure_panel.get("runway") else None,
+        f"{theme.airport_code_label(destination_panel.get('icao') or flight.get('destination'))}: RWY {destination_panel.get('runway')}." if destination_panel.get("runway") else None,
+        (
+            f"{primary_alternate.get('airport')} is the CFP preferred alternate"
+            + (f" on RWY {primary_alternate.get('runway')}" if primary_alternate.get("runway") else "")
+            + (f" ({primary_alternate.get('approach')})." if primary_alternate.get("approach") else ".")
+            if primary_alternate else None
+        ),
+    ) if part) or "Airport basis requires review - see the airports page."
+
+    terrain_text = str((briefing.get("terrain") or {}).get("summary") or "")
+    depress_findings = [f for f in findings if f.get("engine") == "depressurisation"]
+    if depress_findings:
+        terrain_text += ". " + str(depress_findings[0].get("summary") or "")
+
+    cells = (
+        ("PERFORMANCE / FUEL", DEPARTURE, perf_text),
+        ("CDDL / CDL", WEATHER_AMBER, cddl_text),
+        ("EDTO / ENROUTE AIRPORT", EDTO_GREEN, edto_text),
+        ("OPERATIONAL HAZARDS", WEATHER_AMBER, hazards_text),
+        ("AIRPORTS / ALTERNATE", DESTINATION, airports_text),
+        ("HIGH TERRAIN / VWS", TERRAIN_ORANGE, terrain_text),
+    )
+    col_w = (width - 2 * MARGIN - 14) / 2
+    card_h = (y - 34 - 2 * 10) / 3
+    for index, (title, accent, text) in enumerate(cells):
+        col = index % 2
+        row = index // 2
+        cx = MARGIN + col * (col_w + 14)
+        cy = y - (row + 1) * card_h - row * 10
+        inner = rev3_card(canvas, cx, cy, col_w, card_h, title=title, accent=accent)
+        ix, iy, iw, ih = inner
+        line_y = cy + card_h - 34
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, T_SMALL)
+        for line in _wrap(text, SANS, T_SMALL, iw)[:6]:
+            canvas.drawString(ix, line_y, line)
+            line_y -= T_SMALL + 3.2
+
+
 def render_combined_briefing(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -2719,9 +2920,13 @@ def render_combined_briefing(
         for index in range(0, len(deferred_groups), MEL_CDL_GROUPS_PER_PAGE)
     ] or [[]]
     mel_page_count = len(deferred_pages)
-    page_count = 8 + mel_page_count + len(chart_images)
+    # REV3 canon order (boss, 20 Aug): dashboard, critical analysis, CDDL/CDL,
+    # EDTO, airports, weather, terrain - the tab strip's seven sections. The
+    # old time-gates, performance and comms pages fold into pages 1, 2 and 4;
+    # profile chart annexes follow the terrain page when charts are served.
+    page_count = 6 + mel_page_count + len(chart_images)
     profile_page_numbers = {
-        str(image.get("chart_number")): 9 + mel_page_count + index
+        str(image.get("chart_number")): 7 + mel_page_count + index
         for index, image in enumerate(chart_images)
     }
 
@@ -2732,19 +2937,12 @@ def render_combined_briefing(
 
     draw_overview_page(canvas, flight, briefing, findings, page_number=1, page_count=page_count)
     canvas.showPage()
-    draw_time_gates_page(canvas, flight, briefing, findings, page_number=2, page_count=page_count)
-    canvas.showPage()
-    draw_terrain_page(
-        canvas, flight, briefing, findings, chart_images,
-        page_number=3, page_count=page_count, profile_page_numbers=profile_page_numbers,
-    )
-    canvas.showPage()
-    draw_performance_page(canvas, flight, briefing, findings, page_number=4, page_count=page_count)
+    draw_analysis_page(canvas, flight, briefing, findings, page_number=2, page_count=page_count)
     canvas.showPage()
     for index, deferred_page in enumerate(deferred_pages):
         draw_mel_cdl_page(
             canvas, flight, briefing, findings,
-            page_number=5 + index,
+            page_number=3 + index,
             page_count=page_count,
             source_pdf_path=source_pdf_path,
             deferred_items=deferred_page,
@@ -2752,7 +2950,7 @@ def render_combined_briefing(
             section_page_count=mel_page_count,
         )
         canvas.showPage()
-    alternates_page_number = 5 + mel_page_count
+    alternates_page_number = 3 + mel_page_count
     draw_alternates_page(
         canvas, flight, briefing, findings,
         page_number=alternates_page_number,
@@ -2776,13 +2974,10 @@ def render_combined_briefing(
         source_pdf_path=source_pdf_path,
     )
     canvas.showPage()
-    draw_comms_page(
-        canvas,
-        flight,
-        briefing,
-        findings,
+    draw_terrain_page(
+        canvas, flight, briefing, findings, chart_images,
         page_number=alternates_page_number + 3,
-        page_count=page_count,
+        page_count=page_count, profile_page_numbers=profile_page_numbers,
     )
     canvas.showPage()
     for index, image in enumerate(chart_images):
