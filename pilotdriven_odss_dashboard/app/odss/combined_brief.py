@@ -2649,17 +2649,14 @@ def draw_hazard_page(
     )
     row_y -= 13
     vaa_review = flight.get("vaa_review") or {}
-    vaac_ledger = vaa_review.get("vaac_centre_ledger") or []
-    vaac_total = len(vaac_ledger) or 9
-    vaac_reached = sum(
-        1 for item in vaac_ledger
-        if item.get("status") in {"available", "partial"}
-    )
+    # Verbatim from the briefing view - the tally and centre strings are
+    # composed once in build_briefing_view for every surface.
+    vaac_reach = (briefing.get("hazards") or {}).get("vaac_reach") or {}
     for label, status in (
         ("SIGMET REVIEW", str(((flight.get("sigmet_review") or {}).get("status")) or "no data in CFP")),
         ("VA REVIEW", str(vaa_review.get("status") or "no data in CFP")),
         ("TC REVIEW", str(((flight.get("tropical_cyclone_review") or {}).get("status")) or "no data in CFP")),
-        ("VAAC CENTRES", f"{vaac_reached}/{vaac_total} reached"),
+        ("VAAC CENTRES", str(vaac_reach.get("summary") or "0/9 reached")),
     ):
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont(SANS, T_MICRO)
@@ -2668,17 +2665,11 @@ def draw_hazard_page(
         canvas.setFont(SANS_BOLD, T_MICRO)
         _draw_string_fitted(canvas, MARGIN + 110, row_y, status.replace("_", " "), SANS_BOLD, T_MICRO, half_w - 140, WEATHER_AMBER)
         row_y -= 11
-    status_copy = {
-        "available": "reached",
-        "partial": "partial",
-        "unavailable": "unavailable",
-        "not_mounted": "not mounted",
-    }
-    for start_index in range(0, len(vaac_ledger), 3):
+    vaac_centres = vaac_reach.get("centres") or []
+    for start_index in range(0, len(vaac_centres), 3):
         centre_line = " | ".join(
-            f"{str(item.get('centre') or 'UNKNOWN').upper()}: "
-            f"{status_copy.get(str(item.get('status') or '').lower(), 'unavailable')}"
-            for item in vaac_ledger[start_index:start_index + 3]
+            f"{item.get('centre')}: {item.get('status')}"
+            for item in vaac_centres[start_index:start_index + 3]
         )
         if row_y < ledger_top - ledger_h + 12:
             break

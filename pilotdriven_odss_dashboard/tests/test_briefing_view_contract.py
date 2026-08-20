@@ -268,6 +268,33 @@ def test_coverage_ledger_marks_absent_sections_unavailable() -> None:
     assert ledger["VA SIGMET"] == "held"
 
 
+def test_vaac_reach_is_composed_in_the_view_for_every_surface() -> None:
+    # The tally and per-centre strings were once arithmetic inside the PDF
+    # renderer, so the dashboard never showed them (deploy #20 comparison).
+    flight = _flight(LOG_PAGE_LOW)
+    flight["vaa_review"] = {
+        "status": "review_required",
+        "vaac_centre_ledger": [
+            {"centre": "Anchorage", "status": "available"},
+            {"centre": "Darwin", "status": "partial"},
+            {"centre": "Tokyo", "status": "available"},
+            {"centre": "London", "status": "unavailable"},
+            {"centre": "Wellington", "status": "not_mounted"},
+        ],
+    }
+    view = build_briefing_view(flight, [], [])
+    reach = view["hazards"]["vaac_reach"]
+    assert reach["summary"] == "3/5 reached"
+    assert reach["centres"][0] == {"centre": "ANCHORAGE", "status": "reached"}
+    assert reach["centres"][1] == {"centre": "DARWIN", "status": "partial"}
+    assert reach["centres"][4] == {"centre": "WELLINGTON", "status": "not mounted"}
+
+    flight["vaa_review"] = {}
+    view = build_briefing_view(flight, [], [])
+    # No direct-feed ledger held: the tally states the full responsible set.
+    assert view["hazards"]["vaac_reach"] == {"summary": "0/9 reached", "centres": []}
+
+
 def test_no_va_records_mean_no_advisories() -> None:
     flight = _flight(LOG_PAGE_LOW)
     flight["weather"] = []

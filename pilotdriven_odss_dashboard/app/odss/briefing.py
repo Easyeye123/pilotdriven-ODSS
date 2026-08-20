@@ -1182,6 +1182,33 @@ def _weather_coverage_ledger(flight: dict[str, Any]) -> list[dict[str, str]]:
     return rows
 
 
+def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
+    """Direct-VAAC reach, composed once for every surface.
+
+    The tally and the per-centre strings were previously arithmetic inside
+    the PDF renderer, so the dashboard never showed them; both surfaces now
+    print these composed values verbatim."""
+    ledger = (flight.get("vaa_review") or {}).get("vaac_centre_ledger") or []
+    status_copy = {
+        "available": "reached",
+        "partial": "partial",
+        "unavailable": "unavailable",
+        "not_mounted": "not mounted",
+    }
+    centres = [
+        {
+            "centre": str(item.get("centre") or "UNKNOWN").upper(),
+            "status": status_copy.get(str(item.get("status") or "").lower(), "unavailable"),
+        }
+        for item in ledger
+    ]
+    reached = sum(1 for item in ledger if item.get("status") in {"available", "partial"})
+    return {
+        "summary": f"{reached}/{len(ledger) or 9} reached",
+        "centres": centres,
+    }
+
+
 def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
     """One REV3-style verdict card per enroute SIGMET in the CFP.
 
@@ -1728,6 +1755,7 @@ def build_briefing_view(
         "hazards": {
             "sigmet_cards": _sigmet_screening_cards(flight),
             "coverage_ledger": _weather_coverage_ledger(flight),
+            "vaac_reach": _vaac_reach_summary(flight),
         },
         "vaa": {
             "cfp_advisories": _va_cfp_advisories(flight),
