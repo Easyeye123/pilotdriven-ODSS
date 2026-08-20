@@ -287,6 +287,149 @@ def inspect_deferred_contract(
     }
 
 
+# --------------------------------------------------------------------------
+# Parsed-fact coverage: every leaf value the parser extracted from the CFP
+# must appear in the rendered briefing, or sit here with a written reason.
+# The gate derives from the data itself - a new parser field fails every
+# corpus case until it is rendered or waived, so a fact can never again be
+# parsed and silently dropped (the way the EDTO minima was).
+# --------------------------------------------------------------------------
+
+FACT_ROOTS = (
+    "edto",
+    "fuel",
+    "fuel_summary",
+    "masses",
+    "performance",
+    "alternates",
+    "deferred_items",
+)
+
+FACT_SCALARS = (
+    "captain",
+    "registration",
+    "aircraft_type",
+    "route_text",
+    "planned_level_profile",
+    "ground_distance_nm",
+    "air_distance_nm",
+    "cost_index",
+    "departure_runway",
+    "destination_runway",
+    "edto_rvsm",
+)
+
+# Field-path waivers, never per-flight. Each names WHY the fact class does
+# not print verbatim; the REV3 canon (SQ214_19AUGE2026 REV3) is the ruling
+# document for "not in canon" entries.
+FACT_WAIVERS: dict[str, str] = {
+    "edto.sectors[].entry.latitude": "rendered as map geometry, not numerals",
+    "edto.sectors[].entry.longitude": "rendered as map geometry, not numerals",
+    "edto.sectors[].exit.latitude": "rendered as map geometry, not numerals",
+    "edto.sectors[].exit.longitude": "rendered as map geometry, not numerals",
+    "edto.sectors[].etps[].latitude": "rendered as map geometry, not numerals",
+    "edto.sectors[].etps[].longitude": "rendered as map geometry, not numerals",
+    "edto.sectors[].etps[].actm_minutes": "per-ETP times render as map anchors; sector entry/exit ACTM print",
+    "edto.sectors[].etp_actm_minutes[]": "per-ETP times render as map anchors; sector entry/exit ACTM print",
+    "edto.etp_actm_minutes[]": "per-ETP times render as map anchors; sector entry/exit ACTM print",
+    "edto.sectors[].entry.name": "internal sector-point naming (ENTRY1/EXIT1)",
+    "edto.sectors[].exit.name": "internal sector-point naming (ENTRY1/EXIT1)",
+    "edto.assessment.status": "audit evidence trail; drives the printed EDTO source sentence",
+    "edto.assessment.evidence[].source": "audit evidence trail",
+    "edto.assessment.evidence[].document_id": "audit evidence trail",
+    "edto.assessment.evidence[].reason_code": "audit evidence trail",
+    "edto.airports[].period_start_utc": "prints via the composed '19 AUG 1142Z - 19 AUG 1350Z' period string",
+    "edto.airports[].period_end_utc": "prints via the composed period string",
+    "fuel_summary.checks[].name": "ladder cross-check machinery; a failed check prints the amber review sentence",
+    "fuel_summary.checks[].passed": "ladder cross-check machinery",
+    "fuel_summary.checks[].lhs": "ladder cross-check machinery",
+    "fuel_summary.checks[].rhs": "ladder cross-check machinery",
+    "fuel_summary.state": "prints only when not verified, as the amber review sentence",
+    "fuel_summary.discrepancies[]": "an unverified ladder prints the amber review sentence pointing at the source page",
+    "fuel_summary.rows.fuel_in_tanks.time_minutes": "TANKS row prints kg in-tanks/excess per the REV3 canon",
+    "fuel_summary.rows.excess_fuel.time_minutes": "TANKS row prints kg in-tanks/excess per the REV3 canon",
+    "fuel_summary.rows.dest_hold_top_up.time_minutes": "top-up rows print kg; the canon ladder prints '0 / 0' without a time",
+    "fuel_summary.rows.edto_top_up.time_minutes": "top-up rows print kg; the canon ladder prints '0 / 0' without a time",
+    "fuel_summary.excess_breakdown[].label": "the excess composition sentence prints the dominant contributors",
+    "fuel_summary.excess_breakdown[].fuel_kg": "the excess composition sentence prints the dominant contributors",
+    "fuel.planned_destination_fuel_kg": "not in the REV3 canon fuel ladder",
+    "performance.eosid": "not in the REV3 canon (candidate addition, David to rule)",
+    "performance.thrust_setting": "not in the REV3 canon",
+    "performance.packs_on": "not in the REV3 canon",
+    "performance.anti_ice_on": "not in the REV3 canon",
+    "performance.runway_condition": "not in the REV3 canon",
+    "performance.qnh_hpa": "not in the REV3 canon as a dedicated field",
+    "performance.wind": "not in the REV3 canon as a dedicated field",
+    "performance.obstacle_rtow_kg": "not in the REV3 canon; the governing RTOW limit prints",
+    "performance.structural_rtow_kg": "not in the REV3 canon; the governing RTOW limit prints",
+    "performance.landing_rtow_kg": "not in the REV3 canon; the governing RTOW limit prints",
+    "performance.maximum_fuel_available_kg": "not in the REV3 canon",
+    "deferred_items[].company_remark": "not in the REV3 canon MEL table (title, reference and limitation print)",
+    "edto_rvsm": "prints as the 'EDTO / RVSM' capability chip",
+}
+
+
+def _iter_fact_leaves(node: Any, path: str = "") -> Any:
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield from _iter_fact_leaves(value, f"{path}.{key}" if path else str(key))
+    elif isinstance(node, list):
+        for item in node:
+            yield from _iter_fact_leaves(item, path + "[]")
+    elif node not in (None, "", [], {}) and not isinstance(node, bool):
+        yield path, node
+
+
+def _fact_forms(path: str, value: Any) -> list[str]:
+    text = str(value).strip().upper()
+    forms = [text]
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and float(value) == int(value):
+        number = int(value)
+        forms.append(f"{number:,}")
+        if ("minutes" in path or "actm" in path) and 0 <= number < 6000:
+            forms.append(f"{number // 60:02d}.{number % 60:02d}")
+            forms.append(f"{number // 60}:{number % 60:02d}")
+    if path == "registration" and "-" not in text and len(text) > 4:
+        forms.append(f"{text[:2]}-{text[2:]}")
+    return [form for form in forms if len(form) >= 3]
+
+
+def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict[str, Any]:
+    """Every parsed CFP fact prints, or carries a written waiver."""
+    text = " ".join(output_text.upper().split())
+    text_packed = text.replace(" ", "")
+    missing: list[str] = []
+    checked = 0
+    for root in FACT_ROOTS:
+        leaves = list(_iter_fact_leaves(flight.get(root), root))
+        for path, value in leaves:
+            if path in FACT_WAIVERS:
+                continue
+            checked += 1
+            forms = _fact_forms(path, value)
+            if not forms:
+                continue
+            if any(form in text for form in forms):
+                continue
+            if any(len(form) >= 24 and form.replace(" ", "") in text_packed for form in forms):
+                continue
+            missing.append(f"{path} = {str(value)[:60]!r}")
+    for key in FACT_SCALARS:
+        value = flight.get(key)
+        if value in (None, "") or key in FACT_WAIVERS:
+            continue
+        checked += 1
+        forms = _fact_forms(key, value)
+        if not forms:
+            continue
+        if any(form in text for form in forms):
+            continue
+        if any(len(form) >= 24 and form.replace(" ", "") in text_packed for form in forms):
+            continue
+        missing.append(f"{key} = {str(value)[:60]!r}")
+    return {"valid": not missing, "checked": checked, "missing": missing}
+
+
 def check_cross_surface_parity(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -447,6 +590,12 @@ def run_case(
     if not parity["valid"]:
         raise AssertionError(
             f"{case['case_id']} cross-surface parity failed: {parity['failures']}."
+        )
+    fact_coverage = check_parsed_fact_coverage(flight, output_text)
+    if not fact_coverage["valid"]:
+        raise AssertionError(
+            f"{case['case_id']} parsed facts never printed and carry no waiver: "
+            f"{fact_coverage['missing']}."
         )
     return {
         "case_id": case["case_id"],

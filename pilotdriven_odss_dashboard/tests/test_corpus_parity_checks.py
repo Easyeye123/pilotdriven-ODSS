@@ -152,3 +152,64 @@ def test_missing_derived_screening_line_fails() -> None:
         flight, [], [], named + "\nClosest approach 60 NM near ALPHA; ash layer SFC/FL070"
     )
     assert result_ok["valid"], result_ok["failures"]
+
+
+def test_parsed_fact_coverage_catches_a_dropped_fact() -> None:
+    # The exact regression class this gate exists for: the parser held the
+    # EDTO minima but no surface printed it (deploys #1-#19).
+    from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
+
+    flight = {
+        "edto": {"airports": [{"airport": "WADD", "runway": "27", "approach": "CAT1DME", "minima": "453FT/1900M"}]},
+        "captain": "CHAN K B DAVID",
+        "registration": "9VSHB",
+        "route_text": "YPPH/21 DCT AVNEX Q11 TESAT",
+        "cost_index": 70,
+    }
+    text_with = "WADD/27 | CAT1DME | 453FT/1900M CHAN K B DAVID 9V-SHB YPPH/21 DCT AVNEX Q11 TESAT"
+    ok = check_parsed_fact_coverage(flight, text_with)
+    assert ok["valid"], ok["missing"]
+
+    text_without = text_with.replace("453FT/1900M", "")
+    bad = check_parsed_fact_coverage(flight, text_without)
+    assert not bad["valid"]
+    assert any("minima" in item for item in bad["missing"])
+
+
+def test_parsed_fact_coverage_normalises_times_wraps_and_registrations() -> None:
+    from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
+
+    flight = {
+        "fuel_summary": {"rows": {"burnoff": {"fuel_kg": 28711, "time_minutes": 298}}},
+        "registration": "9VSHY",
+        "planned_level_profile": "SIN/340/GUGIT/360/IGONA/380/LEMOD/380/DOH",
+    }
+    # burnoff prints as 28,711/4:58; the registration prints hyphenated; the
+    # profile wraps across lines (a space appears mid-chain in extracted text).
+    text = "BURNOFF 28,711/4:58 REG 9V-SHY SIN/340/GUGIT/360/ IGONA/380/LEMOD/380/DOH"
+    result = check_parsed_fact_coverage(flight, text)
+    assert result["valid"], result["missing"]
+
+
+def test_every_fact_waiver_carries_a_reason() -> None:
+    from scripts.run_private_cfp_corpus import FACT_WAIVERS
+
+    for path, reason in FACT_WAIVERS.items():
+        assert len(reason.strip()) >= 15, f"waiver for {path} needs a real reason"
+
+
+def test_pdf_renderer_raw_flight_reads_only_shrink() -> None:
+    # Renderer purity: content composed from raw `flight` data inside the PDF
+    # renderer is invisible to the dashboard (the VAAC reach leaked this way,
+    # deploy #20). New content goes through build_briefing_view, where every
+    # surface inherits it - so this count may fall but never rise.
+    import re
+    from pathlib import Path
+
+    source = Path("app/odss/combined_brief.py").read_text(encoding="utf-8")
+    count = len(re.findall(r"flight\.get\(|flight\[", source))
+    assert count <= 83, (
+        f"combined_brief.py now reads raw flight data {count} times (baseline 83). "
+        "Compose the new content in build_briefing_view instead, so the dashboard "
+        "prints it too."
+    )

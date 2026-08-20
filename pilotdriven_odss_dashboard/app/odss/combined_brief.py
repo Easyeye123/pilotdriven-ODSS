@@ -965,33 +965,54 @@ def draw_overview_page(
     row_y3 -= 10
     canvas.setFillColor(TEXT_SECONDARY)
     canvas.setFont(MONO, T_MICRO)
-    for wrapped in _wrap(str(flight.get("route_text") or "Route text not held."), MONO, T_MICRO, text_w)[:3]:
+    route_lines, profile_lines, route_overflows = _overview_route_layout(flight)
+    for wrapped in route_lines[:2]:
         canvas.drawString(cx0, row_y3, wrapped)
         row_y3 -= 9.4
+    if len(route_lines) == 3:
+        canvas.drawString(cx0, row_y3, route_lines[2])
+        row_y3 -= 9.4
+    elif len(route_lines) > 3:
+        # Never cut the route silently: the compact row keeps whole tokens
+        # and points at the verbatim block on the airports page.
+        pointer = "» FULL ROUTE: AIRPORTS PAGE"
+        pointer_w = pdfmetrics.stringWidth(pointer, SANS_BOLD, T_MICRO)
+        remainder = " ".join(route_lines[2:])
+        shown = _wrap(remainder, MONO, T_MICRO, text_w - pointer_w - 8)[0]
+        canvas.drawString(cx0, row_y3, shown)
+        canvas.setFillColor(ACCENT)
+        canvas.setFont(SANS_BOLD, T_MICRO)
+        canvas.drawString(cx0 + text_w - pointer_w, row_y3, pointer)
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(MONO, T_MICRO)
+        row_y3 -= 9.4
     row_y3 -= 3
-    profile = str(flight.get("planned_level_profile") or "").strip()
-    if profile:
+    if profile_lines:
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont(SANS, T_MICRO)
         canvas.drawString(cx0, row_y3, "PLANNED LEVEL PROFILE")
         row_y3 -= 10
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(MONO, T_MICRO)
-        # The profile is one unbroken FIX/LEVEL token chain - word wrapping
-        # cannot split it (SQ322's ran under the map), so break on slashes.
-        profile_lines: list[str] = []
-        current = ""
-        for segment in profile.split("/"):
-            candidate = f"{current}/{segment}" if current else segment
-            if pdfmetrics.stringWidth(candidate + "/", MONO, T_MICRO) > text_w and current:
-                profile_lines.append(current + "/")
-                current = segment
-            else:
-                current = candidate
-        if current:
-            profile_lines.append(current)
-        for line in profile_lines[:2]:
+        for line in profile_lines[:1]:
             canvas.drawString(cx0, row_y3, line)
+            row_y3 -= 9.4
+        if len(profile_lines) == 2:
+            canvas.drawString(cx0, row_y3, profile_lines[1])
+            row_y3 -= 9.4
+        elif len(profile_lines) > 2:
+            pointer = "» FULL: AIRPORTS PAGE"
+            pointer_w = pdfmetrics.stringWidth(pointer, SANS_BOLD, T_MICRO)
+            # The chain has no spaces, so trim at slash boundaries to fit.
+            shown = "".join(profile_lines[1:])
+            while "/" in shown and pdfmetrics.stringWidth(shown, MONO, T_MICRO) > text_w - pointer_w - 8:
+                shown = shown[:-1].rsplit("/", 1)[0] + "/"
+            canvas.drawString(cx0, row_y3, shown)
+            canvas.setFillColor(ACCENT)
+            canvas.setFont(SANS_BOLD, T_MICRO)
+            canvas.drawString(cx0 + text_w - pointer_w, row_y3, pointer)
+            canvas.setFillColor(TEXT_SECONDARY)
+            canvas.setFont(MONO, T_MICRO)
             row_y3 -= 9.4
     ground = fuel_summary.get("ground_miles_nm")
     air = fuel_summary.get("air_miles_nm")
@@ -1128,6 +1149,7 @@ def draw_overview_page(
         ("BURNOFF", timed("burnoff")),
         ("STAT CONT", timed("stat_cont")),
         ("ALTN", timed("altn_fuel")),
+        ("ALTN HOLD", timed("altn_hold")),
         ("TAXI", f"{fuel_summary.get('taxi_fuel_kg'):,}" if fuel_summary.get("taxi_fuel_kg") else "--"),
         ("FPL REQMT", timed("flt_plan_reqmt")),
         ("TANKS", f"{(rows_data.get('fuel_in_tanks') or {}).get('fuel_kg') or 0:,}/{(rows_data.get('excess_fuel') or {}).get('fuel_kg') or 0:,}"),
@@ -1459,6 +1481,39 @@ def _kv_card(canvas, x, y, w, h, *, title, accent, rows, open_target=None):
         row_y -= row_gap
     if open_target:
         open_link(canvas, x + w - 10, y + 8, label="OPEN", accent=accent, destination=open_target)
+
+
+def _overview_route_layout(flight: dict[str, Any]) -> tuple[list[str], list[str], bool]:
+    """Route/profile lines exactly as the dashboard column wraps them.
+
+    The dashboard page and the airports page both derive from this one
+    layout, so the dashboard's continuation pointer and the airports-page
+    verbatim block can never disagree about whether the compact row held
+    the whole route. Routes were silently cut at three lines before this
+    (SQ23's 545-character route printed 28%)."""
+    width, _ = PAGE_SIZE
+    full_w = width - 2 * MARGIN
+    side_w = full_w * 0.215
+    centre_w = full_w - 2 * (side_w + 10)
+    text_w = centre_w * 0.55
+    route_lines = _wrap(
+        str(flight.get("route_text") or "Route text not held."), MONO, T_MICRO, text_w
+    )
+    profile = str(flight.get("planned_level_profile") or "").strip()
+    # The profile is one unbroken FIX/LEVEL token chain - word wrapping
+    # cannot split it (SQ322's ran under the map), so break on slashes.
+    profile_lines: list[str] = []
+    current = ""
+    for segment in profile.split("/"):
+        candidate = f"{current}/{segment}" if current else segment
+        if pdfmetrics.stringWidth(candidate + "/", MONO, T_MICRO) > text_w and current:
+            profile_lines.append(current + "/")
+            current = segment
+        else:
+            current = candidate
+    if current:
+        profile_lines.append(current)
+    return route_lines, profile_lines, len(route_lines) > 3 or len(profile_lines) > 2
 
 
 def _wrap(text: str, font: str, size: float, max_width: float) -> list[str]:
@@ -2532,6 +2587,49 @@ def draw_airports_page(
     canvas.setFillColor(TEXT_SECONDARY)
     canvas.setFont(SANS, T_SMALL)
     canvas.drawString(MARGIN + 110, rule_y + 9, "Promote only restrictions intersecting the flight window, planned procedure, assigned stand or cleared taxi route.")
+
+    _, _, route_overflows = _overview_route_layout(flight)
+    if route_overflows:
+        # The dashboard's compact column could not hold the whole route, so
+        # this page prints it verbatim - a route is never cut silently.
+        full_route_lines = _wrap(
+            str(flight.get("route_text") or ""), MONO, T_MICRO, full_w - 28
+        )
+        profile = str(flight.get("planned_level_profile") or "").strip()
+        full_profile_lines: list[str] = []
+        current = ""
+        for segment in profile.split("/"):
+            candidate = f"{current}/{segment}" if current else segment
+            if pdfmetrics.stringWidth(candidate + "/", MONO, T_MICRO) > full_w - 28 and current:
+                full_profile_lines.append(current + "/")
+                current = segment
+            else:
+                current = candidate
+        if current:
+            full_profile_lines.append(current)
+        line_count = len(full_route_lines) + len(full_profile_lines)
+        block_h = 34 + line_count * 9.4 + (12 if full_profile_lines else 0)
+        block_top = rule_y - 10
+        if block_top - block_h >= 30:
+            panel(canvas, MARGIN, block_top - block_h, full_w, block_h,
+                  title="CFP ROUTE AND LEVEL PROFILE - VERBATIM", accent=ACCENT)
+            line_y = block_top - 30
+            canvas.setFillColor(TEXT_SECONDARY)
+            canvas.setFont(MONO, T_MICRO)
+            for line in full_route_lines:
+                canvas.drawString(MARGIN + 14, line_y, line)
+                line_y -= 9.4
+            if full_profile_lines:
+                line_y -= 3
+                canvas.setFillColor(TEXT_MUTED)
+                canvas.setFont(SANS, T_MICRO)
+                canvas.drawString(MARGIN + 14, line_y, "PLANNED LEVEL PROFILE")
+                line_y -= 10
+                canvas.setFillColor(TEXT_SECONDARY)
+                canvas.setFont(MONO, T_MICRO)
+                for line in full_profile_lines:
+                    canvas.drawString(MARGIN + 14, line_y, line)
+                    line_y -= 9.4
 
 
 # ---------------------------------------------------------------------------
