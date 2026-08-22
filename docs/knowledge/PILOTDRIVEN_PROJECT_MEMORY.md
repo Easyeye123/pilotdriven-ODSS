@@ -1,8 +1,8 @@
 # PilotDriven / ODSS Durable Project Memory
 
 **Status:** Standing project knowledge  
-**Version:** 1.0  
-**Effective:** 24 July 2026  
+**Version:** 1.1  
+**Effective:** 28 July 2026  
 **Purpose:** Preserve approved product decisions, operational-analysis lessons and known failure modes across development sessions.
 
 This file is durable project documentation. It records agreed behaviour and lessons for the PilotDriven and ODSS repositories. It does not replace current company manuals, State AIP, NOTAM, meteorological products or approved operational documents.
@@ -247,24 +247,34 @@ Examples:
 - If the controlled index is not mounted, show `controlled source not mounted`; do not invent a result.
 - Do not show an empty MEL/CDL/CDDL section when no item exists.
 
-## 9. Terrain / depressurisation memory
+## 9. High Terrain Exposure / depressurisation memory
 
-Use the LIDO asterisk as the primary high-MSA trigger, including `100*`.
+The standing automatic trigger is **MSA strictly greater than `100*`**.
 
-For each continuous starred-MSA region:
+- The Lido asterisk is retained as source metadata and field-validation context.
+- An exact `100*` means 10,000 ft and is the event boundary; it is not a qualifying `MSA >100*` waypoint.
+- The first qualifying waypoint begins the exposure.
+- The first subsequent waypoint at or below `100*` ends the exposure and breaks the event.
+- Isolated events remain separate after any threshold break.
+- Do not interpolate a continuous mountain profile from discrete CFP values.
 
-1. include the waypoint preceding the first starred waypoint;
+For each continuous `>100*` region:
+
+1. retain the waypoint preceding the first qualifying waypoint as commencement context;
 2. identify the full route/airway sequence;
-3. match endpoints, direction and aircraft effectivity;
-4. propose the minimal approved profile chain;
-5. retain critical points and diversion references; and
-6. suppress nested profiles that add no route coverage from the pilot summary.
+3. retain the first, last, drop and maximum-MSA waypoint with ACTM and coordinates;
+4. match endpoints, direction and aircraft effectivity;
+5. propose the minimal approved profile chain;
+6. retain critical points and diversion references; and
+7. suppress nested profiles that add no route coverage from the pilot summary.
 
-SQ24 regression expectation:
+SQ24 regression expectation remains:
 
 - Profile 11-4 · HAMND–TED;
 - Profile 11-37 · TED–62N20/62N120W;
 - shorter nested subprofile retained only in audit data.
+
+The approved chart coverage and the actual discrete `>100*` exposure period must be shown separately where their endpoints differ.
 
 ## 10. NOTAM and airport-geometry memory
 
@@ -323,14 +333,34 @@ Every result must expose:
 
 External LLM content is visibly secondary and cannot override company guidance.
 
-## 13. Testing memory
+## 13. Briefing publication baseline
+
+The accepted publication baseline is the authoritative-source-first SQ23 Level 1/Level 2 package reviewed on 28 July 2026.
+
+- Level 1 and Level 2 Page 1 titles include flight, route, month/year, aircraft type and registration.
+- Aircraft type and registration remain visible on every page.
+- Scheduled UTC departure/arrival, block time and local times with UTC offsets are included.
+- Block time is scheduled arrival minus scheduled departure, not airborne EET.
+- Detailed content is enlarged by 2 pt from the superseded compact baseline, with a normal 7 pt minimum for table/card detail.
+- Table headings and body text are vertically centred using actual cell bounds and font metrics.
+- Row heights are content-aware with balanced top/bottom padding.
+- Clipping, overflow, duplicate layers or a source strip covering the final row fail release.
+- Every source chip/link resolves to the intended authoritative paragraph or page.
+
+Detailed rules are in `docs/protocols/ODSS_BRIEFING_PUBLICATION_PROTOCOL_V1_2.md`.
+
+## 14. Testing memory
 
 Add regression coverage for:
 
 - three-page Level 1 output;
 - no generic status/source-gate content;
 - departure/destination colour separation;
-- no text collisions or clipping;
+- required flight/month/aircraft identity in the report header;
+- correct block-time and local-time basis;
+- minimum readable detailed fonts;
+- vertical middle alignment in tables;
+- content-aware rows and no clipping/duplicate overlays;
 - conditional collapse of empty sections;
 - missing volcanic-ash data treated as unavailable;
 - advisory supersession and next-advisory logic;
@@ -338,11 +368,13 @@ Add regression coverage for:
 - delay/ATOT recalculation;
 - EDTO/diversion ash review;
 - CDL registration effectivity;
-- starred-MSA profile-chain selection;
-- map geometry confidence and unmapped fallback; and
+- strict `MSA >100*` segmentation and exact-100 boundary handling;
+- depressurisation-profile-chain selection;
+- map geometry confidence and unmapped fallback;
+- live source-link integrity; and
 - no client-side deterministic aviation calculation.
 
-## 14. Updating this memory
+## 15. Updating this memory
 
 Update this file only when a project decision or repeated failure mode has been reviewed and accepted.
 

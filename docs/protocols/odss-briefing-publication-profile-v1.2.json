@@ -1,0 +1,57 @@
+{
+  "protocol_version": "1.2.0",
+  "effective_date": "2026-07-28",
+  "accepted_visual_baseline": "SQ23 Level 1 and Level 2 authoritative-source-first package with enlarged detailed text and vertically centred table cells",
+  "foundational_principle": "Authoritative source first; AI organises and connects evidence but is never the primary operational authority.",
+  "header": {
+    "levels": [1, 2],
+    "required_page_1_fields": [
+      "flight_number",
+      "route",
+      "month_year",
+      "aircraft_type",
+      "registration",
+      "scheduled_departure_utc",
+      "scheduled_arrival_utc",
+      "block_time",
+      "departure_local_time",
+      "departure_utc_offset",
+      "arrival_local_time",
+      "arrival_utc_offset"
+    ],
+    "aircraft_identity_repeated_on_every_page": true,
+    "block_time_basis": "scheduled_arrival_minus_scheduled_departure",
+    "local_time_basis": "airport_local_with_utc_offset"
+  },
+  "publication_profile": {
+    "page_format": "A4 landscape",
+    "detail_font_increment_pt": 2,
+    "minimum_table_body_font_size_pt": 7,
+    "minimum_card_detail_font_size_pt": 7,
+    "table_cell_vertical_alignment": "middle",
+    "table_row_height_policy": "content-aware",
+    "cell_padding_policy": "balanced",
+    "text_overflow_policy": "fail",
+    "duplicate_text_layers": false
+  },
+  "high_terrain_exposure": {
+    "trigger": "MSA strictly greater than 100*",
+    "exactly_100_star_qualifies": false,
+    "break_condition": "first waypoint at or below 100*",
+    "isolated_events_remain_separate": true,
+    "continuous_mountain_interpolation": false
+  },
+  "release_checks": [
+    "spacing",
+    "hierarchy",
+    "alignment",
+    "readability",
+    "typography",
+    "table_cell_alignment",
+    "text_clipping",
+    "header_identity",
+    "graphic_accuracy",
+    "duplication",
+    "source_link_integrity"
+  ]
+}

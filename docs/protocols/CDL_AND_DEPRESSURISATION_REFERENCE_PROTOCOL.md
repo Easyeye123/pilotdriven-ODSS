@@ -4,6 +4,8 @@
 
 Standing implementation and briefing protocol.
 
+**High-MSA trigger amended by PilotDriven/ODSS Briefing Publication Protocol v1.2, effective 28 July 2026.** Any earlier instruction treating an exact `100*` as a qualifying event is superseded.
+
 ## Controlled documents
 
 ODSS uses the following operator-controlled A350 sources when their private structured indexes are mounted:
@@ -64,21 +66,21 @@ PilotDriven owns authentication, tenant access, private-document storage, naviga
 
 ### Trigger
 
-A waypoint belongs to a high-MSA event when:
+A waypoint belongs to a High Terrain Exposure event only when the parsed MSA is **strictly greater than 100 hundreds of feet**.
 
-- the CFP marks its MSA with an asterisk; or
-- the parsed MSA is strictly greater than 100 hundreds of feet.
-
-An asterisk is the primary Lido signal. `100*` must not be discarded merely because its numeric value equals 10,000 ft.
+The Lido asterisk remains source metadata and helps verify that the field has been interpreted correctly, but it does not override the numeric threshold. An exact `100*` represents 10,000 ft and is the boundary; it is **not** a qualifying `MSA >100*` event.
 
 ### Event boundaries
 
 For each continuous event:
 
-1. The waypoint immediately preceding the first starred/high-MSA waypoint is the event commencement context.
-2. The final starred/high-MSA waypoint is the event end.
-3. Retain the first, last and maximum-MSA waypoint, ACTM and coordinates.
-4. Do not merge separated high-MSA regions merely because they occur in the same FIR.
+1. The first waypoint whose MSA is strictly greater than `100*` is the exposure start.
+2. The first subsequent waypoint whose MSA is at or below `100*` is the drop/boundary waypoint.
+3. The waypoint immediately preceding the first high-MSA waypoint is retained as commencement context.
+4. Retain the first, last and maximum-MSA waypoint, ACTM and coordinates.
+5. A waypoint at exactly `100*` breaks the event.
+6. Do not merge separated high-MSA regions merely because they occur in the same FIR or profile chart.
+7. Do not interpolate a continuous terrain profile from discrete CFP MSA values.
 
 ### Profile matching
 
@@ -100,22 +102,23 @@ For each selected profile show only:
 
 - profile number;
 - route segment and airway sequence;
-- applicable ACTM interval;
+- actual High Terrain Exposure ACTM interval;
 - maximum MSA and waypoint;
 - critical point and ACTM when present;
 - profile issue/effective date;
+- coverage or unresolved status; and
 - any urgent route-specific action.
 
 Keep chart body text, complete provenance and matching diagnostics in expandable detail or the audit record.
 
 ## SQ24 regression case
 
-For the filed WSSS–KJFK route using A350-941 registration 9V-SGE, the starred MSA sequence begins at TED after the preceding waypoint HAMND and continues through GKN, ORT, 63N30 and 62N20.
+For the filed WSSS–KJFK route using A350-941 registration 9V-SGE, the qualifying MSA sequence begins at TED after the preceding waypoint HAMND and continues through GKN and ORT. Subsequent qualifying route sections are segmented according to the first waypoint at or below the threshold; an exact `100*`, if present, is a boundary rather than part of an event.
 
-The minimal applicable profile chain is:
+The minimal applicable profile chain remains:
 
-1. **11-4 — HAMND to TED, DCT; CP HAMND.** Covers the commencement leg into the starred-MSA region.
-2. **11-37 — TED to 62N20, J511/J124/DCT; CP ORT.** Covers the continuous high-MSA route through the Canadian entry sector.
+1. **11-4 — HAMND to TED, DCT; CP HAMND.** Covers the commencement leg into the high-MSA region.
+2. **11-37 — TED to 62N20, J511/J124/DCT; CP ORT.** Provides the approved route profile coverage for the later route portion, subject to the actual discrete High Terrain Exposure intervals being shown separately.
 
 Profile **11-3 — 63N140W to 62N120W, DCT; CP 63N140W** is an exact nested subprofile within the latter portion. It may remain in audit detail, but it must not be added to the primary brief when 11-37 already covers the same route legs.
 
@@ -130,9 +133,11 @@ Automated tests must cover:
 - effectivity conflict handling;
 - controlled-index-not-mounted handling;
 - structured CDL penalties and source pages;
-- asterisk-driven MSA detection at `100*`;
+- exact `100*` excluded from High Terrain Exposure;
+- `100*` breaking two otherwise adjacent `>100*` events;
+- numeric MSA strictly greater than 100 qualifying even when the parser does not retain the asterisk;
 - route direction and airway sequence;
 - a two-profile chain sharing a boundary/critical context;
 - nested-profile suppression;
-- SQ24 selection of 11-4 and 11-37 only;
+- SQ24 selection of 11-4 and 11-37 only; and
 - a high-MSA event with no complete profile coverage.
