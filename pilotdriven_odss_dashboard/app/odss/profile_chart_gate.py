@@ -182,6 +182,12 @@ def validate_depressurisation_profile_charts(
                 ),
             })
 
+        # The combined Flight Briefing has no "Level N" page: its embedding
+        # proof is the combined_*_embedded flags and the crop box checked
+        # above (publication protocol v1.3). The legacy level reports keep
+        # their page-target requirement.
+        if mode in {"combined", "flight-briefing"}:
+            continue
         report_page_field = f"level{level}_report_page"
         report_page = artifact.get(report_page_field)
         if (
