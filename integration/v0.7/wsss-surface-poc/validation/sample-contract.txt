@@ -1,0 +1,1 @@
+Wrote /home/runner/work/pilotdriven-ODSS/pilotdriven-ODSS/integration/v0.7/wsss-surface-poc/fixtures/wsss_surface_sample_contract.json with 0 overlay features

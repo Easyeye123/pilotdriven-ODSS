@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ODSS WSSS Surface NOTAM POC</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="/static/surface.css">
+</head>
+<body>
+  <header>
+    <div>
+      <strong>PILOTDRIVEN · ODSS</strong>
+      <span>WSSS Surface NOTAM proof of concept</span>
+    </div>
+    <div class="badges">
+      <span class="badge warning">Briefing orientation — not for navigation</span>
+      <span class="badge">© OpenStreetMap contributors</span>
+    </div>
+  </header>
+  <main>
+    <aside>
+      <h1>Taxiway closure resolver</h1>
+      <label for="notam">ICAO NOTAM</label>
+      <textarea id="notam">A0783/25 NOTAMN
+Q) WSJC/QMXLC/IV/BO/A/000/999/0122N10359E005
+A) WSSS B) 2503041800 C) 2503041900
+E) FLW TWY CLSD:
+1. TXL R7 BTN TWY R AND TXL R4, INCLUDING JUNCTION OF TXL R7/TXL R5
+2. TXL R5 BTN TXL R7 AND TWY R8</textarea>
+      <div class="row">
+        <label>Briefing UTC<input id="briefing-time" type="datetime-local" value="2025-03-04T18:30"></label>
+        <label>Aircraft code<select id="aircraft-code"><option value="">—</option><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option></select></label>
+      </div>
+      <button id="resolve">Resolve and map</button>
+      <p id="status" role="status"></p>
+      <section id="findings"></section>
+      <details>
+        <summary>Safety boundary</summary>
+        <p>The official NOTAM determines operational status. The versioned OpenStreetMap snapshot supplies candidate geometry only. Unresolved objects remain text-only.</p>
+      </details>
+    </aside>
+    <section class="map-shell">
+      <div id="map"></div>
+      <div class="legend">
+        <span><i class="taxiway"></i> Taxiway</span>
+        <span><i class="taxilane"></i> Taxilane</span>
+        <span><i class="runway"></i> Runway</span>
+        <span><i class="closed"></i> Closed</span>
+        <span><i class="restricted"></i> Restricted</span>
+      </div>
+    </section>
+  </main>
+  <script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+  <script src="/static/surface.js"></script>
+</body>
+</html>

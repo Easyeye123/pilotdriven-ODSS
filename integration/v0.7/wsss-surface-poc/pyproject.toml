@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pilotdriven-odss-wsss-surface-poc"
+version = "0.7.0"
+description = "Deterministic WSSS NOTAM-to-OpenStreetMap airport-surface proof of concept"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "networkx>=3.2,<4",
+  "pydantic>=2.7,<3",
+  "pyproj>=3.6,<4",
+  "shapely>=2.0,<3",
+  "uvicorn[standard]>=0.30,<1",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["."]
