@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.odss.report_quality import (
     ReportQualityError,
     assert_report_quality,
+    validate_combined_briefing_pdf,
     validate_report_pdf,
 )
 from app.odss.operational_brief import (
@@ -106,6 +107,229 @@ def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:
         item.code == "LEVEL_1_PAGE_CONTRACT"
         for item in exc_info.value.violations
     )
+
+
+def _combined_pages(*middle: str) -> list[str]:
+    return [
+        "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS",
+        "FLIGHT BRIEFING\nDECISION ANALYSIS\nFLIGHT-PHASE DECISION TIMELINE",
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL",
+        *[f"FLIGHT BRIEFING\n{text}" for text in middle],
+        "FLIGHT BRIEFING\nHIGH TERRAIN EXPOSURE AND DEPRESSURISATION",
+    ]
+
+
+def test_combined_quality_gate_accepts_ordered_section_continuations(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-continuations.pdf"
+    page_texts = _combined_pages(
+        "EDTO / ENROUTE AIRPORTS",
+        "EDTO / ENROUTE AIRPORTS - CONTINUED (2/2)",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "AIRPORTS / NOTAM APPLICABILITY - CONTINUED (2/2)",
+        "OPERATIONAL HAZARD ASSESSMENT",
+        "OPERATIONAL HAZARD ASSESSMENT - CONTINUED (2/2)",
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is True
+    assert result["violations"] == []
+
+
+def test_combined_quality_gate_accepts_critical_analysis_continuation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-analysis-continuation.pdf"
+    page_texts = _combined_pages(
+        "EDTO / ENROUTE AIRPORTS",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    page_texts.insert(
+        2,
+        "FLIGHT BRIEFING\nDECISION ANALYSIS - CONTINUED (2/2)\nFIR / NEXT CONTACT",
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is True
+    assert result["violations"] == []
+
+
+def test_combined_quality_gate_rejects_duplicate_analysis_primary(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-duplicate-analysis-primary.pdf"
+    page_texts = _combined_pages(
+        "EDTO / ENROUTE AIRPORTS",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    page_texts.insert(
+        2,
+        "FLIGHT BRIEFING\nDECISION ANALYSIS\nFIR / NEXT CONTACT",
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        item.code == "COMBINED_DUPLICATE_PRIMARY"
+        for item in result["violations"]
+    )
+
+
+def test_combined_quality_gate_rejects_wrong_continuation_order(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-wrong-order.pdf"
+    page_texts = _combined_pages(
+        "EDTO / ENROUTE AIRPORTS",
+        "OPERATIONAL HAZARD ASSESSMENT",
+        "AIRPORTS / NOTAM APPLICABILITY",
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(item.code == "COMBINED_PAGE_STRUCTURE" for item in result["violations"])
+
+
+def test_combined_quality_gate_rejects_duplicate_section_primary(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-duplicate-primary.pdf"
+    page_texts = _combined_pages(
+        "EDTO / ENROUTE AIRPORTS",
+        "EDTO / ENROUTE AIRPORTS",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(item.code == "COMBINED_DUPLICATE_PRIMARY" for item in result["violations"])
+
+
+def test_combined_quality_gate_accepts_terrain_continuation_before_profiles(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-terrain-continuation.pdf"
+    page_texts = _combined_pages(
+        "EDTO / ENROUTE AIRPORTS",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    page_texts.extend((
+        "FLIGHT BRIEFING\nHIGH TERRAIN EXPOSURE AND DEPRESSURISATION "
+        "- CONTINUED (2/2)\nALL TERRAIN EVENTS / UNMATCHED EXPOSURES",
+        "FLIGHT BRIEFING\nDEPRESSURISATION PROFILE SOURCE CHART",
+    ))
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is True
+    assert result["violations"] == []
+
+
+def test_combined_quality_gate_rejects_duplicate_terrain_primary(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-duplicate-terrain-primary.pdf"
+    page_texts = _combined_pages(
+        "EDTO / ENROUTE AIRPORTS",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    page_texts.append(
+        "FLIGHT BRIEFING\nHIGH TERRAIN EXPOSURE AND DEPRESSURISATION\n"
+        "ALL TERRAIN EVENTS / UNMATCHED EXPOSURES"
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        item.code == "COMBINED_DUPLICATE_PRIMARY"
+        for item in result["violations"]
+    )
+
+
+def test_combined_quality_gate_rejects_terrain_continuation_after_profile(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-late-terrain-continuation.pdf"
+    page_texts = _combined_pages(
+        "EDTO / ENROUTE AIRPORTS",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    page_texts.extend((
+        "FLIGHT BRIEFING\nDEPRESSURISATION PROFILE SOURCE CHART",
+        "FLIGHT BRIEFING\nHIGH TERRAIN EXPOSURE AND DEPRESSURISATION "
+        "- CONTINUED (2/2)\nALL TERRAIN EVENTS / UNMATCHED EXPOSURES",
+    ))
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        item.code == "COMBINED_PROFILE_STRUCTURE"
+        for item in result["violations"]
+    )
+
+
+def test_combined_quality_gate_rejects_standalone_retired_layout_label(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-retired-layout-label.pdf"
+    page_texts = _combined_pages(
+        "EDTO / ENROUTE AIRPORTS",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    page_texts[0] += "\nLEVEL 2"
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        item.code == "COMBINED_RETIRED_LABEL"
+        for item in result["violations"]
+    )
+
+
+def test_combined_quality_gate_allows_level_text_inside_source_fact(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-source-level-text.pdf"
+    page_texts = _combined_pages(
+        "EDTO / ENROUTE AIRPORTS",
+        (
+            "AIRPORTS / NOTAM APPLICABILITY\n"
+            "ILS RWY 08R DOWNGRADED TO CAT I, LEVEL 2 "
+            "(ICAO CLASSIFICATION I/E/2)."
+        ),
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is True
+    assert result["violations"] == []
 
 
 @pytest.mark.parametrize(

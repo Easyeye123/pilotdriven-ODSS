@@ -7,13 +7,17 @@ chart unavailable" while the chart sat inside the pilot's own upload.
 
 This module finds that appendix in ANY package (no fixed page numbers): a
 candidate page is one whose extractable text is near-empty while a substantial
-image fills it. Each candidate is then classified by the same governed Bedrock
-Claude profile the platform already uses for surface extraction, which reads
-the chart's own printed identity — kind, issuer, WMO heading, validity — off
-the raster. Classification is additive and fail-closed:
+image fills it. Every candidate is held; classification is attempted within a
+bounded work budget by the same governed Bedrock Claude profile the platform
+already uses for surface extraction, which reads the chart's own printed
+identity — kind, issuer, WMO heading, validity — off the raster. Classification
+is additive and fail-closed:
 
 - A page the model cannot classify (or Bedrock being disabled or unreachable)
   is still HELD, as ``unclassified``; AI failure never drops evidence.
+- If a package exceeds the bounded classification capacity, every page remains
+  held and the manifest explicitly requires manual review; it never presents a
+  silently partial classification as complete.
 - Identity fields the model could not read stay null and the entry is marked
   unverified; nothing is inferred from filenames or page positions.
 - The held artifact is the page of the uploaded package itself, addressed by
@@ -23,10 +27,17 @@ the raster. Classification is additive and fail-closed:
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    TimeoutError as FuturesTimeoutError,
+    as_completed,
+)
 from datetime import datetime, timezone
 from hashlib import sha256
 import os
+import re
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -37,8 +48,38 @@ from pypdf import PdfReader
 CHART_KINDS = ("sigwx_high_level", "sigwx_mid_level", "wind_temperature", "other")
 _MAX_TEXT_CHARS = 200
 _MIN_IMAGE_BYTES = 30 * 1024
-_MAX_HELD_CHARTS = 40
+_MAX_CLASSIFIED_CHARTS = 40
 _TOOL_NAME = "record_chart_classification"
+_OCR_ENGINE = "tesseract"
+_OCR_ROUTE = re.compile(
+    r"\((?P<context>[A-Z]{3,5})\)\s*"
+    r"(?P<flight>[A-Z]{2,3}\s*\d{2,4})\s*:\s*"
+    r"(?P<departure>[A-Z]{3})\s*(?:-|=)+>\s*(?P<destination>[A-Z]{3})\b",
+    re.IGNORECASE,
+)
+_OCR_LEVELS = re.compile(
+    r"\bFL\s*(?P<lower>\d{2,3})\s*-\s*(?:FL\s*)?(?P<upper>\d{2,3})\b",
+    re.IGNORECASE,
+)
+_OCR_VALID = re.compile(
+    r"\bVALID\s*(?P<hour>\d{2})\s*UTC\s*"
+    r"(?P<day>\d{1,2})\s*(?P<month>[A-Z]{3})\s*(?P<year>\d{4})\b",
+    re.IGNORECASE,
+)
+_MONTHS = {
+    "JAN": 1,
+    "FEB": 2,
+    "MAR": 3,
+    "APR": 4,
+    "MAY": 5,
+    "JUN": 6,
+    "JUL": 7,
+    "AUG": 8,
+    "SEP": 9,
+    "OCT": 10,
+    "NOV": 11,
+    "DEC": 12,
+}
 
 _PROMPT = (
     "This image is one full page from an airline flight-briefing package. "
@@ -91,6 +132,155 @@ def _classification_enabled() -> bool:
     if flag in {"disabled", "off", "none", "false"}:
         return False
     return bool(_model_id())
+
+
+def _ocr_enabled() -> bool:
+    flag = os.environ.get("ODSS_WEATHER_CHART_OCR", "auto").strip().lower()
+    if flag in {"disabled", "off", "none", "false"}:
+        return False
+    return shutil.which(_OCR_ENGINE) is not None
+
+
+def _ocr_timeout_seconds() -> float:
+    raw = os.environ.get("ODSS_WEATHER_CHART_OCR_TIMEOUT_SECONDS", "20").strip()
+    try:
+        return min(60.0, max(2.0, float(raw)))
+    except ValueError:
+        return 20.0
+
+
+def _ocr_budget_seconds() -> float:
+    raw = os.environ.get("ODSS_WEATHER_CHART_OCR_BUDGET_SECONDS", "45").strip()
+    try:
+        return min(180.0, max(2.0, float(raw)))
+    except ValueError:
+        return 45.0
+
+
+def _ocr_workers() -> int:
+    raw = os.environ.get("ODSS_WEATHER_CHART_OCR_WORKERS", "4").strip()
+    try:
+        return min(8, max(1, int(raw)))
+    except ValueError:
+        return 4
+
+
+def _limited_ocr_distance(observed: str, expected: str) -> int:
+    """Return edit distance for short printed labels without sample aliases."""
+    previous = list(range(len(expected) + 1))
+    for row, observed_char in enumerate(observed, start=1):
+        current = [row]
+        for column, expected_char in enumerate(expected, start=1):
+            current.append(min(
+                current[-1] + 1,
+                previous[column] + 1,
+                previous[column - 1] + (observed_char != expected_char),
+            ))
+        previous = current
+    return previous[-1]
+
+
+def _has_fixed_time_chart_title(text: str) -> bool:
+    """Match ordered title words with a small, generic OCR-error budget."""
+    expected = ("FIXED", "TIME", "PROGNOSTIC", "CHART")
+    glyphs = str.maketrans({"0": "O", "1": "I", "5": "S", "8": "B"})
+    for line in str(text or "").upper().splitlines():
+        words = [
+            token.translate(glyphs)
+            for token in re.findall(r"[A-Z0-9]+", line)
+        ]
+        for start in range(0, max(0, len(words) - len(expected) + 1)):
+            candidate = words[start:start + len(expected)]
+            if all(
+                _limited_ocr_distance(observed, target)
+                <= (2 if len(target) >= 5 else 1)
+                for observed, target in zip(candidate, expected)
+            ):
+                return True
+    return False
+
+
+def parse_chart_ocr_identity(text: str) -> dict[str, Any] | None:
+    """Parse a route-specific fixed-time chart identity from printed OCR.
+
+    All four independent printed patterns are mandatory: chart title, route,
+    flight-level band and UTC validity.  No filename, page number or appendix
+    position participates in classification.
+    """
+    normalized = str(text or "").replace("→", "->").replace("⇒", "=>")
+    route = _OCR_ROUTE.search(normalized)
+    levels = _OCR_LEVELS.search(normalized)
+    validity = _OCR_VALID.search(normalized)
+    if not all((route, levels, validity)) or not _has_fixed_time_chart_title(normalized):
+        return None
+    if _limited_ocr_distance(route.group("context").upper(), "ENRT") > 1:
+        return None
+    lower = int(levels.group("lower"))
+    upper = int(levels.group("upper"))
+    month = _MONTHS.get(validity.group("month").upper())
+    if month is None or not (100 <= lower < upper <= 700):
+        return None
+    try:
+        valid_time = datetime(
+            int(validity.group("year")),
+            month,
+            int(validity.group("day")),
+            int(validity.group("hour")),
+            tzinfo=timezone.utc,
+        )
+    except ValueError:
+        return None
+    return {
+        "status": "printed",
+        "source": "tesseract_ocr",
+        "flight_number": re.sub(r"\s+", "", route.group("flight").upper()),
+        "departure_iata": route.group("departure").upper(),
+        "destination_iata": route.group("destination").upper(),
+        "valid_time_utc": valid_time.isoformat(),
+        "flight_levels": f"FL{lower}-FL{upper}",
+        "chart_kind": (
+            "sigwx_high_level" if lower >= 250 else "sigwx_mid_level"
+        ),
+        "title": "FIXED TIME PROGNOSTIC CHART",
+        "evidence": "printed-title-route-levels-validity",
+    }
+
+
+def _ocr_chart_image(
+    image: bytes,
+    deadline: float | None = None,
+) -> dict[str, Any]:
+    if not _ocr_enabled():
+        return {"ocr_status": "unavailable"}
+    timeout = _ocr_timeout_seconds()
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return {"ocr_status": "budget-exhausted"}
+        timeout = min(timeout, max(0.1, remaining))
+    try:
+        completed = subprocess.run(
+            [_OCR_ENGINE, "stdin", "stdout", "-l", "eng", "--psm", "11"],
+            input=image,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+            env={**os.environ, "OMP_THREAD_LIMIT": "1"},
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ocr_status": f"error:{type(exc).__name__}"}
+    if completed.returncode != 0:
+        return {"ocr_status": f"error:exit_{completed.returncode}"}
+    text = completed.stdout.decode("utf-8", errors="replace")
+    identity = parse_chart_ocr_identity(text)
+    result: dict[str, Any] = {
+        "ocr_status": "parsed" if identity else "unclassified",
+        "ocr_text_sha256": sha256(text.encode("utf-8")).hexdigest(),
+    }
+    if identity:
+        result["route_context"] = identity
+    return result
 
 
 def _ai_budget_seconds() -> float:
@@ -146,8 +336,6 @@ def detect_chart_appendix(pdf_path: str | Path) -> list[dict[str, Any]]:
             "image_bytes": len(data),
             "media_type": media,
         })
-        if len(candidates) >= _MAX_HELD_CHARTS:
-            break
     return candidates
 
 
@@ -212,8 +400,40 @@ def _label(entry: dict[str, Any]) -> str:
     return f"Briefing chart p{entry['page_number']}"
 
 
+def _apply_ai_classification(
+    entry: dict[str, Any],
+    classification: dict[str, Any],
+) -> None:
+    """Keep Bedrock additive when deterministic printed evidence exists."""
+    if entry.get("route_context"):
+        entry["ai_classification"] = dict(classification)
+        if classification.get("classification_status") == "classified":
+            for key in ("issuer", "wmo_heading", "confidence"):
+                if classification.get(key) and not entry.get(key):
+                    entry[key] = classification[key]
+        return
+    entry.update(classification)
+
+
+def _apply_ocr_classification(
+    entry: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    entry.update(result)
+    route_context = entry.get("route_context") or {}
+    if route_context:
+        entry.update({
+            "kind": route_context["chart_kind"],
+            "classification_status": "ocr-classified",
+            "valid_time_utc": route_context["valid_time_utc"],
+            "flight_levels": route_context["flight_levels"],
+            "title": route_context["title"],
+            "confidence": "deterministic-printed-pattern",
+        })
+
+
 def build_weather_chart_manifest(pdf_path: str | Path) -> dict[str, Any]:
-    """Detect, classify and pin the package's weather charts.
+    """Detect, OCR-classify and pin the package's weather charts.
 
     Always returns a manifest; classification problems degrade individual
     entries to ``unclassified`` rather than losing the held page.
@@ -242,7 +462,68 @@ def build_weather_chart_manifest(pdf_path: str | Path) -> dict[str, Any]:
             "source": "uploaded_package",
         })
 
-    if charts and _classification_enabled():
+    classification_charts = charts[:_MAX_CLASSIFIED_CHARTS]
+    deferred_charts = charts[_MAX_CLASSIFIED_CHARTS:]
+    for entry in deferred_charts:
+        entry["ocr_status"] = "not-run:classification-cap"
+        entry["classification_skip_reason"] = "classification-cap-exceeded"
+
+    ocr_available = _ocr_enabled()
+    ocr_budget = _ocr_budget_seconds()
+    ocr_workers = _ocr_workers()
+    if classification_charts and ocr_available:
+        try:
+            reader = PdfReader(str(pdf_path))
+            deadline = time.monotonic() + ocr_budget
+            futures = {}
+            applied_futures = set()
+            with ThreadPoolExecutor(max_workers=ocr_workers) as pool:
+                for entry in classification_charts:
+                    image = largest_page_image(
+                        reader.pages[entry["page_number"] - 1]
+                    )
+                    if image is None:
+                        entry["ocr_status"] = "error:image_unreadable"
+                        continue
+                    futures[pool.submit(
+                        _ocr_chart_image,
+                        image,
+                        deadline,
+                    )] = entry
+                try:
+                    for future in as_completed(
+                        futures,
+                        timeout=max(0.1, deadline - time.monotonic() + 0.25),
+                    ):
+                        entry = futures[future]
+                        try:
+                            _apply_ocr_classification(entry, future.result())
+                            applied_futures.add(future)
+                        except Exception as exc:
+                            entry["ocr_status"] = f"error:{type(exc).__name__}"
+                            applied_futures.add(future)
+                except FuturesTimeoutError:
+                    pass
+                for future, entry in futures.items():
+                    if future in applied_futures:
+                        continue
+                    if future.done():
+                        try:
+                            _apply_ocr_classification(entry, future.result())
+                        except Exception as exc:
+                            entry["ocr_status"] = f"error:{type(exc).__name__}"
+                    else:
+                        future.cancel()
+                        entry["ocr_status"] = "budget-exhausted"
+        except Exception as exc:
+            for entry in classification_charts:
+                if not entry.get("ocr_status"):
+                    entry["ocr_status"] = f"error:{type(exc).__name__}"
+    else:
+        for entry in classification_charts:
+            entry["ocr_status"] = "unavailable"
+
+    if classification_charts and _classification_enabled():
         model_id = _model_id()
         budget = _ai_budget_seconds()
         deadline = time.monotonic() + budget
@@ -251,10 +532,13 @@ def build_weather_chart_manifest(pdf_path: str | Path) -> dict[str, Any]:
             reader = PdfReader(str(pdf_path))
             with ThreadPoolExecutor(max_workers=4) as pool:
                 futures = {}
-                for entry in charts:
+                for entry in classification_charts:
                     image = largest_page_image(reader.pages[entry["page_number"] - 1])
                     if image is None:
-                        entry["classification_status"] = "error:image_unreadable"
+                        _apply_ai_classification(
+                            entry,
+                            {"classification_status": "error:image_unreadable"},
+                        )
                         continue
                     futures[pool.submit(
                         _classify_one, client, model_id, image, entry["media_type"]
@@ -265,31 +549,78 @@ def build_weather_chart_manifest(pdf_path: str | Path) -> dict[str, Any]:
                     if remaining <= 0:
                         break
                     try:
-                        entry.update(future.result())
+                        _apply_ai_classification(entry, future.result())
                     except Exception as exc:  # fail-closed per page
-                        entry["classification_status"] = (
-                            f"error:{type(exc).__name__}:{str(exc)[:120]}"
+                        failure = f"error:{type(exc).__name__}:{str(exc)[:120]}"
+                        _apply_ai_classification(
+                            entry,
+                            {"classification_status": failure},
                         )
         except Exception as exc:
-            for entry in charts:
-                if entry["classification_status"] == "unclassified":
-                    entry["classification_status"] = (
-                        f"error:{type(exc).__name__}:{str(exc)[:120]}"
-                    )
+            for entry in classification_charts:
+                _apply_ai_classification(
+                    entry,
+                    {
+                        "classification_status": (
+                            f"error:{type(exc).__name__}:{str(exc)[:120]}"
+                        )
+                    },
+                )
 
     for entry in charts:
-        if entry["classification_status"] != "classified":
+        route_context = entry.get("route_context") or {}
+        if (
+            entry["classification_status"] != "classified"
+            and entry["classification_status"] != "ocr-classified"
+        ):
             entry["kind"] = "unclassified"
         entry["verified"] = bool(
-            entry["classification_status"] == "classified"
-            and entry.get("kind") in ("sigwx_high_level", "sigwx_mid_level", "wind_temperature")
-            and entry.get("valid_time_utc")
+            (
+                entry["classification_status"] == "classified"
+                and entry.get("kind")
+                in ("sigwx_high_level", "sigwx_mid_level", "wind_temperature")
+                and entry.get("valid_time_utc")
+            )
+            or (
+                entry["classification_status"] == "ocr-classified"
+                and route_context.get("status") == "printed"
+                and route_context.get("chart_kind")
+                in ("sigwx_high_level", "sigwx_mid_level")
+                and route_context.get("valid_time_utc")
+            )
         )
         entry["label"] = _label(entry)
 
+    classification_incomplete = bool(deferred_charts)
     return {
-        "status": "held" if charts else "none_detected",
+        "status": (
+            "manual-review-required"
+            if classification_incomplete
+            else "held"
+            if charts
+            else "none_detected"
+        ),
+        "reason": (
+            f"{len(charts)} held chart pages exceed the bounded "
+            f"{_MAX_CLASSIFIED_CHARTS}-page classification capacity; "
+            "all pages remain held and manual review is required."
+            if classification_incomplete
+            else None
+        ),
         "generated_at_utc": generated_at,
+        "coverage": {
+            "held_chart_count": len(charts),
+            "classification_capacity": _MAX_CLASSIFIED_CHARTS,
+            "classification_work_count": len(classification_charts),
+            "unprocessed_chart_count": len(deferred_charts),
+            "classification_incomplete": classification_incomplete,
+        },
+        "ocr": {
+            "enabled": ocr_available,
+            "engine": _OCR_ENGINE if ocr_available else None,
+            "budget_seconds": ocr_budget,
+            "workers": ocr_workers,
+        },
         "classifier": {
             "enabled": _classification_enabled(),
             "model_id": _model_id() or None,
@@ -304,4 +635,5 @@ __all__ = [
     "detect_chart_appendix",
     "extract_chart_image",
     "largest_page_image",
+    "parse_chart_ocr_identity",
 ]

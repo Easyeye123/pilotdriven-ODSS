@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "gate": "rev3-raster-pixel-equality",
+  "case_id": "SQ214-PER-SIN-19AUG-REV3",
+  "reference_asset": {
+    "filename": "SQ214_REV3_reference.pdf",
+    "sha256": "b02b0b36dad91d57790b34754668d077b1163744ba7221cbac0f099e5d3f68bc"
+  },
+  "renderer": {
+    "library": "PyMuPDF",
+    "binding_version": "1.28.0",
+    "mupdf_version": "1.29.0",
+    "scale": 1.0,
+    "colorspace": "DeviceRGB",
+    "alpha": false,
+    "annotations": true
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "width_points": 841.8897705078125,
+      "height_points": 595.2755737304688,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "565af2dcbf547b2f5761041ed1ae51d258cdb3a169e85a8378cf7f4a6d11919d"
+    },
+    {
+      "page_number": 2,
+      "width_points": 841.8897705078125,
+      "height_points": 595.2755737304688,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "b1d6bc9e16b0bf0d7067205f7820ddbe64fde61c37ac1753cfac54bdbb9d3e00"
+    },
+    {
+      "page_number": 3,
+      "width_points": 841.8897705078125,
+      "height_points": 595.2755737304688,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "6056836867d392d5c33d3d21a11ca76d8b2ba6ef5cc299f7cbdaa8092080515d"
+    },
+    {
+      "page_number": 4,
+      "width_points": 841.8897705078125,
+      "height_points": 595.2755737304688,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "e850877fccc18e1febf3b1daf80581f7a0779467e90a4c62bfca30a1213c3f39"
+    },
+    {
+      "page_number": 5,
+      "width_points": 841.8897705078125,
+      "height_points": 595.2755737304688,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "686d62128802ba9cf0b17adb2c9004ddd03610e48b96c5756dce5b1879473928"
+    },
+    {
+      "page_number": 6,
+      "width_points": 841.8897705078125,
+      "height_points": 595.2755737304688,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "88bb7ce3f485e69be9a49fe10eddeed5dd0d7524a26046a283dc078bc851060f"
+    },
+    {
+      "page_number": 7,
+      "width_points": 841.8897705078125,
+      "height_points": 595.2755737304688,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "7521daef4a4164628753d1a7524edd89d3235827f930ea57a0dc48a8cd479047"
+    }
+  ],
+  "thresholds": {
+    "max_changed_pixel_ratio": 0.0,
+    "max_mean_absolute_error": 0.0,
+    "max_channel_delta": 0
+  }
+}

@@ -184,29 +184,55 @@ def _detect_sections(pages: list[str]) -> dict[str, tuple[int, int]]:
 
 
 def _parse_deferred_items(page1: str) -> list[dict[str, Any]]:
+    # Boss's 21 Aug 2026 SQ910 CFP printed four declaration shapes on one
+    # block: "CC MEL 25-20-50A", bare "BB CDDL" (no reference), "AA IFEDDL"
+    # and "DD IN SIA/00-017 R1" (engineering information notice). Every
+    # prefixed declaration is a first-class item under the CFP's own word —
+    # never "UNCLASSIFIED"/"UNSPECIFIED", and never folded into the previous
+    # item's remark (that is how the ENG 2 fan-cowl notice vanished).
     items: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     for line in page1.splitlines():
         stripped = line.strip()
-        match = re.match(r"^(AA|BB|CC|DD|EE)\s+(CDDL|CDL|MEL)(?:\s+([0-9A-Z-]+))?", stripped)
-        unclassified = re.fullmatch(r"AA\s+IFEDDL", stripped)
+        match = re.match(
+            # Reference and trailing description are both optional, and the
+            # description may follow with or without a dash ("CC MEL PREAMBLE
+            # SECTION MEL AND CMS REV 18NOV 25" — SQ366 4 Aug shape).
+            r"^(AA|BB|CC|DD|EE)\s+(CDDL|CDL|MEL)"
+            r"(?:\s+([0-9A-Z-]+))?(?:\s*-\s*(.*\S)|\s+(\S.*\S|\S))?\s*$",
+            stripped,
+        )
+        ifeddl = re.fullmatch(r"(AA|BB|CC|DD|EE)\s+IFEDDL", stripped)
+        notice = re.fullmatch(r"(AA|BB|CC|DD|EE)\s+IN\s+([0-9A-Z/-]+(?:\s+R\d+)?)", stripped)
         if match:
             if current:
                 items.append(current)
             current = {
-                "reference": match.group(3) or "UNSPECIFIED",
-                "description": "",
+                "reference": match.group(3) or None,
+                "description": (match.group(4) or match.group(5) or "").strip(),
                 "item_type": match.group(2),
+                "source_declaration": stripped,
                 "company_remark": None,
             }
             continue
-        if unclassified:
+        if ifeddl:
             if current:
                 items.append(current)
             current = {
                 "reference": None,
                 "description": "",
-                "item_type": "UNCLASSIFIED",
+                "item_type": "IFEDDL",
+                "source_declaration": stripped,
+                "company_remark": None,
+            }
+            continue
+        if notice:
+            if current:
+                items.append(current)
+            current = {
+                "reference": notice.group(2),
+                "description": "",
+                "item_type": "IN",
                 "source_declaration": stripped,
                 "company_remark": None,
             }
@@ -492,6 +518,17 @@ _COORDINATE_LINE = re.compile(
 # the same per-1000kg figure, so the first burn value wins.
 _ZFW_BURN_RE = re.compile(
     r"ZFW\s+CHANGE\s+(?:/\s*)?[PM]?1000KG\s+BURN\s+(?:ADD|LESS|MORE)\s+0*(?P<kg>\d+)\s*KG"
+)
+_ZFW_DUAL_SENSITIVITY_RE = re.compile(
+    r"ZFW\s+CHANGE\s+P1000KG\s+BURN\s+ADD\s+0*(?P<add_kg>\d+)\s*KG"
+    r"\s*/\s*M1000KG\s+BURN\s+LESS\s+0*(?P<less_kg>\d+)\s*KG",
+    re.IGNORECASE,
+)
+_LOWER_CRUISE_SENSITIVITY_RE = re.compile(
+    r"(?P<offset_ft>\d+)\s*FT\s+BELOW\s+AT\s+CI(?P<cost_index>\d+)"
+    r"\s+BURN\s+ADD\s+0*(?P<burn_add_kg>\d+)\s*KG"
+    r"\s*/\s*TIME\s+(?P<time>\d{1,2}\.\d{2})",
+    re.IGNORECASE,
 )
 # "CAPT CHAN K B DAVID" at end of the plan line; the signature placeholder
 # "CAPT(SIGN) ..." never matches because no whitespace follows CAPT.
@@ -997,6 +1034,12 @@ def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
         "taxi_fuel_kg": taxi_kg,
         "masses_kg": masses,
         "excess_breakdown": breakdown,
+        # "4.TANKER 18847KG RTN SECTOR REQ 23324KG" — the CFP names the
+        # tankering purpose and the return-sector requirement; the report
+        # writes it in those words (boss, 21 Aug 2026 fuel video).
+        "tanker_return_sector_req_kg": _int_group(
+            text, r"TANKER\s+0*\d+KG\s+RTN\s+SECTOR\s+REQ\s+0*(\d+)KG"
+        ),
         "checks": checks,
         "discrepancies": discrepancies,
     }
@@ -1162,9 +1205,15 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         has_timing_data=bool(entry_match and exit_match),
     )
     level_match = re.search(r"^[A-Z]{3}/\d{3}(?:/.*)$", page1, re.MULTILINE)
+    route_identifier_match = re.search(
+        r"\bRTE\s+NO\s+(?P<route_identifier>\S+)",
+        page1,
+    )
     aircraft_match = re.search(r"RTE NO\s+\S+\s+(?P<aircraft>[A-Z0-9-]+)", page1)
     captain_match = _CAPTAIN_RE.search(page1)
     zfw_burn_match = _ZFW_BURN_RE.search(page1)
+    zfw_dual_match = _ZFW_DUAL_SENSITIVITY_RE.search(page1)
+    lower_cruise_match = _LOWER_CRUISE_SENSITIVITY_RE.search(page1)
     flight = {
         "document_id": source_name,
         "source_evidence": {
@@ -1196,6 +1245,8 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "captain": captain_match.group("name").strip() if captain_match else None,
         "departure": departure,
         "destination": destination,
+        "departure_iata": identity.group("dep_iata"),
+        "destination_iata": identity.group("dest_iata"),
         "departure_runway": route_line.group("dep_rwy") if route_line else None,
         "destination_runway": destination_line.group("dest_rwy") if destination_line else None,
         "sid": sid,
@@ -1213,11 +1264,55 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "route_text": route_text,
         "route_waypoints": waypoints,
         "planned_level_profile": level_match.group(0).strip() if level_match else None,
+        "route_identifier": (
+            route_identifier_match.group("route_identifier")
+            if route_identifier_match
+            else None
+        ),
+        # "PLAN 3" — the route/plan version the boss asked for by name
+        # (21 Aug: "important is the route ID and the route version").
+        "plan_number": _first_group(page1, r"^\s*PLAN\s+(\d+)\s*$"),
         "cost_index": _int_group(page1, r"CRUISE CI\s+(\d+)"),
+        "apd_percent": (
+            float(apd_match.group(1))
+            if (apd_match := re.search(
+                r"\bAPD\s+(\d+(?:\.\d+)?)\s*PCT\b",
+                page1,
+            ))
+            else None
+        ),
         # The printed planning sensitivity, carried for the report's
         # sensitivities table; _ZFW_BURN_RE covers both LIDO line shapes.
         "zfw_change_burn_kg_per_1000": (
             int(zfw_burn_match.group("kg")) if zfw_burn_match else None
+        ),
+        "zfw_change_burn_add_kg_per_1000": (
+            int(zfw_dual_match.group("add_kg"))
+            if zfw_dual_match
+            else int(zfw_burn_match.group("kg"))
+            if zfw_burn_match
+            else None
+        ),
+        "zfw_change_burn_less_kg_per_1000": (
+            int(zfw_dual_match.group("less_kg")) if zfw_dual_match else None
+        ),
+        "lower_cruise_sensitivity": (
+            {
+                "offset_ft": int(lower_cruise_match.group("offset_ft")),
+                "cost_index": int(lower_cruise_match.group("cost_index")),
+                "burn_add_kg": int(lower_cruise_match.group("burn_add_kg")),
+                # Preserve the CFP's printed sensitivity token instead of
+                # interpreting it as an ACTM clock.  LIDO's public material
+                # does not define this field's unit, and the briefing only
+                # needs to reproduce the source-backed delta faithfully.
+                "time_token": lower_cruise_match.group("time"),
+                "time_display": (
+                    f"{int(lower_cruise_match.group('time').split('.')[0])}:"
+                    f"{lower_cruise_match.group('time').split('.')[1]}"
+                ),
+            }
+            if lower_cruise_match
+            else None
         ),
         "edto_rvsm": "EDTO/RVSM" if "EDTO/RVSM" in page1 else None,
         "bobcat": bobcat,
@@ -1254,6 +1349,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
             "sectors": edto_sectors,
             "airports": edto_airports,
         },
+        "fuel_enroute_airports": [],
         "notams": [],
         "weather": [],
     }

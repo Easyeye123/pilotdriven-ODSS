@@ -93,8 +93,10 @@ def test_combined_briefing_uses_the_combined_publication_contract(tmp_path):
 
     result = validate_combined_briefing_pdf(output)
     assert result["valid"] is True
-    # REV3 canon: seven sections.
-    assert result["page_count"] == 7
+    # REV3 canon keeps seven named primary sections. Complete operational
+    # records continue on measured pages instead of being truncated to force
+    # every flight into seven physical sheets.
+    assert result["page_count"] >= 7
     assert result["violations"] == []
 
 
@@ -154,26 +156,33 @@ def test_short_authoritative_source_crop_does_not_stretch_card_to_footer(tmp_pat
         source_pdf_path=str(source),
     )
 
+    # 21 Aug 2026: the compact p3 replaced the single full-width crop card
+    # with the per-declaration source-panel mosaic — each declaration crops
+    # its own printed CFP region inside a bounded panel, so a short source
+    # can no longer stretch a card to the footer. The panel title carries
+    # the declaration's own words, never an UNSPECIFIED placeholder.
     with fitz.open(output) as document:
-        mel_page = document[2]
-        title_box = mel_page.search_for("CROPPED CFP DECLARATION - NOT THE APPROVED REMEDY")[0]
+        mel_page = next(
+            page
+            for page in document
+            if "MEL 25-20-50A - NON-ESSENTIAL EQUIPMENT AND FURNISHINGS"
+            in page.get_text().upper()
+        )
+        title_box = mel_page.search_for("MEL 25-20-50A - Non-essential equipment and furnishings")[0]
         enclosing_panels = [
             drawing["rect"]
             for drawing in mel_page.get_drawings()
             if drawing["type"] == "fs"
-            and drawing["rect"].width > 700
-            and abs(drawing["rect"].x0 - combined_brief_margin) < 0.1
+            and drawing["rect"].width > 150
             and drawing["rect"].y0 <= title_box.y0
             and drawing["rect"].y1 >= title_box.y1
         ]
-
-        assert len(enclosing_panels) == 1
-        assert 90 <= enclosing_panels[0].height < 180
+        assert enclosing_panels, "declaration source panel missing"
+        assert all(rect.height < 400 for rect in enclosing_panels)
         assert mel_page.get_images(full=True)
         assert abs(mel_page.rect.width - 841.89) < 0.1
         assert abs(mel_page.rect.height - 595.28) < 0.1
-        assert "CFP REMARK - NOT THE APPROVED MEL REMEDY" in mel_page.get_text()
-        assert "OPEN EXACT MEL ITEM / REMEDY >" in mel_page.get_text()
+        assert "UNSPECIFIED" not in mel_page.get_text()
 
 
 def test_time_gate_cards_use_a_content_filling_mosaic_without_three_empty_columns():

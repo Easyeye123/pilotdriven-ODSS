@@ -28,6 +28,7 @@ try:
         findings,
         warnings,
         timing_view=None,
+        weather_charts=None,
     ):
         """Use the saved ATOT/waypoint-ATA view when a caller omits it."""
         selected_timing = timing_view if timing_view is not None else flight.get("timing_view")
@@ -36,6 +37,7 @@ try:
             findings,
             warnings,
             selected_timing,
+            weather_charts,
         )
 
     _briefing.build_briefing_view = _build_briefing_view_with_saved_clock

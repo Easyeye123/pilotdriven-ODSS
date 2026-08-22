@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.odss.parser import (
     _CAPTAIN_RE,
     _ZFW_BURN_RE,
+    _parse_deferred_items,
     _waypoint_log_start,
     parse_lido,
 )
@@ -33,6 +34,7 @@ def _cfp_pages_with_log_from(log_index: int) -> list[str]:
         "9VAAA SQ999 SIN/BKK ETD 0250 01AUG26\n"
         "SCHED DEP 0250 UTC SCHED ARR 0520 UTC\n"
         "RTE NO 001            A350-941 MH  CAPT TESTA B C\n"
+        "FLT RULES: EDTO/RVSM CRUISE CI 73 APD 1.8 PCT\n"
         "WSSS/20C\n"
         "DCT PKP DCT ALPHA DCT BRAVO\n"
         "VTBS/19L\n"
@@ -46,6 +48,7 @@ def _cfp_pages_with_log_from(log_index: int) -> list[str]:
         "PTOW 200000\n"
         "PLWT 190000\n"
         "ZFW CHANGE P1000KG BURN ADD   96KG / M1000KG BURN LESS  96 KG\n"
+        "2000 FT BELOW AT CI70 BURN ADD 632KG / TIME 04.52\n"
         "APPROVED/ACCEPTED BY CAPT(SIGN) .....................\n"
     )
     pages = [page1]
@@ -114,3 +117,86 @@ def test_parse_lido_carries_captain_and_zfw_fields() -> None:
     flight = parse_lido(_cfp_pages_with_log_from(5), "fields.pdf")
     assert flight["captain"] == "TESTA B C"
     assert flight["zfw_change_burn_kg_per_1000"] == 96
+    assert flight["zfw_change_burn_add_kg_per_1000"] == 96
+    assert flight["zfw_change_burn_less_kg_per_1000"] == 96
+    assert flight["lower_cruise_sensitivity"] == {
+        "offset_ft": 2000,
+        "cost_index": 70,
+        "burn_add_kg": 632,
+        "time_token": "04.52",
+        "time_display": "4:52",
+    }
+
+
+def test_parse_lido_carries_route_identifier_and_apd_from_page_one() -> None:
+    flight = parse_lido(_cfp_pages_with_log_from(5), "overview-fields.pdf")
+
+    assert flight["route_identifier"] == "001"
+    assert flight["edto_rvsm"] == "EDTO/RVSM"
+    assert flight["cost_index"] == 73
+    assert flight["apd_percent"] == 1.8
+
+
+SQ910_DECLARATION_BLOCK = (
+    "AA IFEDDL\n"
+    "   SEAT IFE (YCL), AUDIO JACK, NO AUDIO\n"
+    "   41E, 57A X CLASS B\n"
+    "BB CDDL\n"
+    "   TRASH COMPACTOR 212 NO POWER\n"
+    "   TO UPLIFT TRASH BAGS\n"
+    "CC MEL 25-20-50A\n"
+    "   D4L GALLEY CHILLER NO.1 RED LIGHT BLINKING\n"
+    "   TO UPLIFT DRY ICE\n"
+    "DD IN SIA/00-017 R1\n"
+    "   ENG 2 FAN COWLS LATCH ACCESS PANEL AFT-MOST LATCH IS LOOSE.\n"
+    "   HST APPLIED, CONDITION TO BE CHECKED PRIOR EVERY DEPARTURE\n"
+    "   TO APPLY WHENEVER NECESSARY\n"
+)
+
+
+def test_sq910_four_shape_declaration_block_parses_as_first_class_items() -> None:
+    # Boss, 21 Aug 2026 SQ910 CFP page 1 verbatim. Prod printed
+    # "UNCLASSIFIED; CDDL UNSPECIFIED" and folded the DD IN engineering
+    # notice (ENG 2 fan cowl latch - his GPT's MAJOR release gate) into the
+    # MEL item's remark. Every declaration survives under the CFP's own word.
+    pages = _cfp_pages_with_log_from(2)
+    pages[0] = pages[0].replace(
+        "RTE NO 001",
+        SQ910_DECLARATION_BLOCK + "PLAN 3\nRTE NO 001",
+    )
+    result = parse_lido(pages, "SQ910.pdf")
+    items = result["deferred_items"]
+    assert [item["item_type"] for item in items] == ["IFEDDL", "CDDL", "MEL", "IN"]
+    assert items[0]["reference"] is None
+    assert items[0]["description"] == "SEAT IFE (YCL), AUDIO JACK, NO AUDIO"
+    assert items[0]["company_remark"] == "41E, 57A X CLASS B"
+    assert items[1]["reference"] is None
+    assert items[1]["description"] == "TRASH COMPACTOR 212 NO POWER"
+    assert items[1]["company_remark"] == "TO UPLIFT TRASH BAGS"
+    assert items[2]["reference"] == "25-20-50A"
+    assert items[2]["description"] == "D4L GALLEY CHILLER NO.1 RED LIGHT BLINKING"
+    assert items[2]["company_remark"] == "TO UPLIFT DRY ICE"
+    assert items[3]["reference"] == "SIA/00-017 R1"
+    assert items[3]["description"] == "ENG 2 FAN COWLS LATCH ACCESS PANEL AFT-MOST LATCH IS LOOSE."
+    assert (
+        items[3]["company_remark"]
+        == "HST APPLIED, CONDITION TO BE CHECKED PRIOR EVERY DEPARTURE TO APPLY WHENEVER NECESSARY"
+    )
+
+
+def test_prefixed_declaration_with_undashed_trailing_text_is_kept() -> None:
+    # SQ366 4 Aug CFP prints "CC MEL PREAMBLE SECTION MEL AND CMS REV 18NOV 25"
+    # — no dash between reference and trailing words. The line stays a
+    # first-class item with the trailing words as its description.
+    items = _parse_deferred_items(
+        "SUMMARY STANDARD CFP\n"
+        "AA MEL 29-10-03A - RESERVOIR AIR BLEED VALVE\n"
+        "CC MEL PREAMBLE SECTION MEL AND CMS REV 18NOV 25 \n"
+        "PLAN 2\n"
+    )
+    assert [(item["item_type"], item["reference"]) for item in items] == [
+        ("MEL", "29-10-03A"),
+        ("MEL", "PREAMBLE"),
+    ]
+    assert items[0]["description"] == "RESERVOIR AIR BLEED VALVE"
+    assert items[1]["description"] == "SECTION MEL AND CMS REV 18NOV 25"

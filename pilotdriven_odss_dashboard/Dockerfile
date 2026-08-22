@@ -17,6 +17,7 @@ RUN apt-get update \
         ca-certificates \
         python3 \
         python3-venv \
+        tesseract-ocr \
     && python3 -m venv /opt/venv \
     && rm -rf /var/lib/apt/lists/*
 

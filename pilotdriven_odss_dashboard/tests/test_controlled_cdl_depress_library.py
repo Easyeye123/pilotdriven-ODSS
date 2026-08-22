@@ -107,6 +107,7 @@ def test_page1_parser_recognises_upper_block_cdl_reference() -> None:
             "reference": "28-01",
             "description": "FUEL JETTISON TUBES MISSING",
             "item_type": "CDL",
+            "source_declaration": "AA CDL 28-01",
             "company_remark": "BOTH TUBES REMOVED",
         }
     ]

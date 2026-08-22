@@ -16,10 +16,12 @@ from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 
+from . import brief_theme as theme
 from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
-from .engines import detect_terrain_events
-from .pilot_briefing import prepare_pilot_findings
+from .deferred_dispatch import build_deferred_dispatch_gates
+from .engines import detect_terrain_events, detect_vws_events
+from .pilot_briefing import prepare_pilot_findings, select_pertinent_notams
 from .report_sections import level2_page
 
 
@@ -234,6 +236,607 @@ def _airport_panel(
         "runway": runway or "Review actual runway",
         "weather": weather,
         "considerations": _notam_cards(findings, role),
+    }
+
+
+def _station_source_weather(
+    flight: dict[str, Any],
+    location: str,
+    record_type: str,
+) -> dict[str, Any] | None:
+    for record in flight.get("weather") or []:
+        if (
+            str(record.get("location") or "").upper() == location
+            and record.get("record_type") == record_type
+            and str(record.get("text") or "").strip()
+        ):
+            return {
+                "record_type": record_type,
+                "text": str(record["text"]).strip(),
+                "source_page": record.get("source_page"),
+                "source_role": record.get("source_role"),
+            }
+    return None
+
+
+_COMPACT_ENROUTE_FAMILY_ORDER = {
+    "airport_closure": 0,
+    "approach_navaid": 1,
+    "information_service": 2,
+    "runway_closure": 3,
+    "runway_restriction": 4,
+    "taxiway": 5,
+    "apron_stand": 6,
+    "obstacle": 7,
+    "other": 8,
+}
+_COMPACT_PRIMARY_FAMILY_ORDER = {
+    "airport_closure": 0,
+    "runway_closure": 1,
+    "approach_navaid": 2,
+    "runway_restriction": 3,
+    "taxiway": 4,
+    "apron_stand": 5,
+    "information_service": 6,
+    "obstacle": 7,
+    "other": 8,
+}
+
+_RUNWAY_TOKEN = re.compile(r"\b(?:RWY\s*)?(\d{2}[LCR]?)\b")
+_RUNWAY_CLOSURE_SCHEDULE = re.compile(
+    r"\bRWY\s+(?P<runways>\d{2}[LCR]?(?:/\d{2}[LCR]?)?)\s+"
+    r"WILL\s+BE\s+CLSD\s+BTN\s+"
+    r"(?P<start>\d{4})(?:UTC)?\s+TO\s+"
+    r"(?P<end>\d{4})(?:UTC)?\s+EV\s+"
+    r"(?P<weekdays>(?:MON|TUE|WED|THU|FRI|SAT|SUN)"
+    r"(?:\s+AND\s+(?:MON|TUE|WED|THU|FRI|SAT|SUN))*)\s+"
+    r"FM\s+(?P<valid_from>\d{2}[A-Z]{3}\d{2})\s+"
+    r"TO\s+(?P<valid_to>\d{2}[A-Z]{3}\d{2})\b",
+    re.IGNORECASE,
+)
+_WEEKDAY_INDEX = {
+    "MON": 0,
+    "TUE": 1,
+    "WED": 2,
+    "THU": 3,
+    "FRI": 4,
+    "SAT": 5,
+    "SUN": 6,
+}
+
+
+def _runway_designators(value: Any) -> set[str]:
+    return {
+        match.group(1).upper()
+        for match in _RUNWAY_TOKEN.finditer(str(value or "").upper())
+    }
+
+
+def _planned_runways(specification: dict[str, Any]) -> set[str]:
+    return {
+        runway
+        for row in specification.get("operational_rows") or []
+        for runway in _runway_designators(row.get("runway"))
+    }
+
+
+def _reference_time_for_roles(
+    flight: dict[str, Any],
+    role_keys: set[str],
+    selected_notams: list[dict[str, Any]],
+) -> datetime | None:
+    if "departure" in role_keys:
+        return _parse_utc(flight.get("scheduled_departure_utc"))
+    if "destination" in role_keys:
+        return _parse_utc(flight.get("scheduled_arrival_utc"))
+    for item in selected_notams:
+        start = _parse_utc(item.get("window_start_utc"))
+        end = _parse_utc(item.get("window_end_utc"))
+        if start and end:
+            return start + (end - start) / 2
+    return None
+
+
+def _compact_runway_schedule_text(
+    item: dict[str, Any],
+    *,
+    role: str,
+    planned_runways: set[str],
+    reference_time: datetime | None,
+) -> str | None:
+    """Summarise an explicit source schedule for the planned runway.
+
+    The source can carry multiple dated runway regimes in one AIP supplement.
+    A regime is used only when its printed date range, weekday and runway all
+    match the current flight.  Anything ambiguous falls back to the existing
+    shared review wording.
+    """
+    if not planned_runways or reference_time is None:
+        return None
+    raw = " ".join(str(item.get("item_e_text") or "").upper().split())
+    for match in _RUNWAY_CLOSURE_SCHEDULE.finditer(raw):
+        schedule_runways = _runway_designators(match.group("runways"))
+        if not schedule_runways & planned_runways:
+            continue
+        try:
+            valid_from = datetime.strptime(
+                match.group("valid_from").upper(), "%d%b%y"
+            ).date()
+            valid_to = datetime.strptime(
+                match.group("valid_to").upper(), "%d%b%y"
+            ).date()
+        except ValueError:
+            continue
+        if not valid_from <= reference_time.date() <= valid_to:
+            continue
+        weekdays = {
+            _WEEKDAY_INDEX[token]
+            for token in re.findall(
+                r"MON|TUE|WED|THU|FRI|SAT|SUN",
+                match.group("weekdays").upper(),
+            )
+        }
+        if reference_time.weekday() not in weekdays:
+            continue
+        start_text = match.group("start")
+        end_text = match.group("end")
+        start_hour, start_minute = int(start_text[:2]), int(start_text[2:])
+        end_hour, end_minute = int(end_text[:2]), int(end_text[2:])
+        if start_hour > 23 or end_hour > 23 or start_minute > 59 or end_minute > 59:
+            continue
+        closure_start = reference_time.replace(
+            hour=start_hour, minute=start_minute, second=0, microsecond=0
+        )
+        closure_end = reference_time.replace(
+            hour=end_hour, minute=end_minute, second=0, microsecond=0
+        )
+        if closure_end <= closure_start:
+            closure_end += timedelta(days=1)
+        runway_label = match.group("runways").upper()
+        reference_label = "ETA" if role == "destination" else (
+            "ETD" if role == "departure" else "REFERENCE"
+        )
+        reference_display = reference_time.strftime("%H%MZ")
+        if reference_time < closure_start:
+            delta_minutes = int((closure_start - reference_time).total_seconds() // 60)
+            return (
+                f"RWY {runway_label} closes {start_text}-{end_text}Z; "
+                f"{reference_label} {reference_display} precedes closure by "
+                f"{delta_minutes // 60}h{delta_minutes % 60:02d}."
+            )
+        if reference_time < closure_end:
+            return (
+                f"RWY {runway_label} closes {start_text}-{end_text}Z; "
+                f"{reference_label} {reference_display} is within the closure."
+            )
+        delta_minutes = int((reference_time - closure_end).total_seconds() // 60)
+        return (
+            f"RWY {runway_label} closure {start_text}-{end_text}Z ends "
+            f"{delta_minutes // 60}h{delta_minutes % 60:02d} before "
+            f"{reference_label} {reference_display}."
+        )
+    return None
+
+
+def _compact_notam_family(item: dict[str, Any]) -> str:
+    kind = str(item.get("pertinence_kind") or "")
+    raw = str(item.get("item_e_text") or "").upper()
+    if kind == "airport_closure":
+        return "airport_closure"
+    if "ATIS" in raw:
+        return "information_service"
+    if kind in {
+        "approach_navaid_closure",
+        "runway_approach_restriction",
+        "obstacle",
+    } and re.search(
+        r"\b(?:ILS|LOC|LOCALISER|GP|GLIDEPATH|VOR|NDB|DME)\b",
+        raw,
+    ):
+        return "approach_navaid"
+    if kind == "approach_navaid_closure" or (
+        kind == "runway_approach_restriction"
+        and re.search(r"\b(?:ILS|LOC|LOCALISER|GP|GLIDEPATH|VOR|NDB|DME)\b", raw)
+    ):
+        return "approach_navaid"
+    if kind == "runway_approach_restriction":
+        return "runway_restriction"
+    if kind == "runway_closure":
+        return "runway_closure"
+    if kind == "runway_lighting_restriction":
+        return "runway_restriction"
+    if kind in {"taxiway_closure", "taxiway_restriction"}:
+        return "taxiway"
+    if kind == "apron_stand_closure":
+        return "apron_stand"
+    if kind == "obstacle":
+        return "obstacle"
+    return "other"
+
+
+def _compact_notam_text(
+    item: dict[str, Any],
+    family: str,
+    *,
+    role: str,
+    planned_runways: set[str],
+    reference_time: datetime | None,
+) -> str:
+    """One source-bounded line; fall back to the shared engine summary."""
+    raw = " ".join(str(item.get("item_e_text") or "").split())
+    upper = raw.upper()
+    schedule_text = _compact_runway_schedule_text(
+        item,
+        role=role,
+        planned_runways=planned_runways,
+        reference_time=reference_time,
+    )
+    if schedule_text:
+        return schedule_text
+    unavailable = bool(
+        re.search(
+            r"\b(?:U/S|UNSERVICEAB(?:LE|ILITY)|NOT\s+AVBL|NOT\s+AVAILABLE)\b",
+            upper,
+        )
+    )
+    if family == "approach_navaid" and unavailable:
+        runway = re.search(r"\bRWY\s*(\d{1,2}[LCR]?)\b", upper)
+        if "ILS" in upper and re.search(r"\bGP\b", upper):
+            suffix = f" RWY{runway.group(1)}" if runway else ""
+            return f"ILS/GP{suffix} unavailable."
+    if family == "approach_navaid":
+        localiser = re.search(
+            r"\bLOC\s+'?(?P<ident>[A-Z0-9]+)'?\s+"
+            r"(?P<frequency>\d{3}\.\d)\s+RWY\s*(?P<runway>\d{1,2}[LCR]?)\b",
+            upper,
+        )
+        if localiser and re.search(r"\b(?:INTRP|INTERRUPT|OSCILLAT)", upper):
+            cause = " due crane operations" if "CRANE" in upper else ""
+            return (
+                f"LOC {localiser.group('ident')} {localiser.group('frequency')} "
+                f"RWY{localiser.group('runway')} subject to interruption / "
+                f"possible signal oscillation{cause}; runway is not reported closed."
+            )
+    if family == "information_service" and "D-ATIS" in upper:
+        if "LIMITED TRIAL" in upper and "VOICE ATIS" in upper:
+            return "D-ATIS limited trial; voice ATIS remains primary."
+        if unavailable:
+            return "D-ATIS unavailable."
+    return str(item.get("summary") or raw or "Operational notice - review source.")
+
+
+def _compact_notam_lines(
+    selected_notams: list[dict[str, Any]],
+    role: str,
+    *,
+    limit: int = 2,
+    planned_runways: set[str] | None = None,
+    reference_time: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Pick category-diverse compact lines; full notices remain untouched.
+
+    EDTO/fuel-enroute cards prefer persistent approach/navaid and information-
+    service facts over repeated scheduled surface notices. Primary-airport
+    cards retain runway-first ordering. At most one notice per semantic family
+    is shown; deterministic ID ordering breaks equal-rank ties.
+    """
+    family_order = (
+        _COMPACT_ENROUTE_FAMILY_ORDER
+        if role in {"EDTO", "fuel enroute airport"}
+        else _COMPACT_PRIMARY_FAMILY_ORDER
+    )
+    runway_basis = set(planned_runways or set())
+    ranked = []
+    for position, item in enumerate(selected_notams):
+        raw = str(item.get("item_e_text") or "").upper()
+        if role == "destination" and re.search(r"\bFLIGHTS?\s+DEPARTING\b", raw):
+            continue
+        if role == "departure" and re.search(r"\bFLIGHTS?\s+ARRIVING\b", raw):
+            continue
+        family = _compact_notam_family(item)
+        operational_runways = (
+            _runway_designators(raw)
+            if family in {
+                "approach_navaid",
+                "runway_closure",
+                "runway_restriction",
+            }
+            else set()
+        )
+        ranked.append((
+            0 if operational_runways & runway_basis else 1,
+            family_order[family],
+            int(item.get("pertinence_rank") or 99),
+            -_SEVERITY_RANK.get(str(item.get("severity") or "information"), 0),
+            str(item.get("notam_id") or ""),
+            position,
+            family,
+            operational_runways,
+            item,
+        ))
+    lines: list[dict[str, Any]] = []
+    seen_family_runways: dict[str, set[str]] = {}
+    for _, _, _, _, _, _, family, item_runways, item in sorted(ranked):
+        if family in seen_family_runways:
+            distinct_critical_runway = bool(
+                str(item.get("severity") or "") == "critical"
+                and item_runways
+                and not item_runways.issubset(seen_family_runways[family])
+            )
+            if not distinct_critical_runway:
+                continue
+        seen_family_runways.setdefault(family, set()).update(item_runways)
+        lines.append({
+            "kind": "notam",
+            "label": item.get("notam_id") or "NOTAM",
+            "text": _compact_notam_text(
+                item,
+                family,
+                role=role,
+                planned_runways=runway_basis,
+                reference_time=reference_time,
+            ),
+            "notam_id": item.get("notam_id"),
+            "source_page": item.get("source_page"),
+            "signal_family": family,
+        })
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _airport_operational_panels(
+    flight: dict[str, Any],
+    findings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """The selected source-fact contract shared by dashboard and PDF.
+
+    Each station gets exact CFP METAR/TAF records and a deterministic set of
+    time-applicable NOTAM findings. A station used in more than one planning
+    role remains one panel with ordered ``roles`` and combined planning rows.
+    The notices carry item-E text and source evidence, not renderer-only copy.
+    """
+    specifications: list[dict[str, Any]] = []
+
+    def add(
+        role: str,
+        role_key: str,
+        airport: Any,
+        operational_row: dict[str, Any],
+        *,
+        iata: Any = None,
+        name: Any = None,
+        source_pages: list[int] | None = None,
+    ) -> None:
+        location = str(airport or "").strip().upper()
+        if not location:
+            return
+        existing = next(
+            (
+                item
+                for item in specifications
+                if item["icao"] == location
+            ),
+            None,
+        )
+        if existing is None:
+            existing = {
+                "icao": location,
+                "iata": iata,
+                "name": str(name or ""),
+                "role": role,
+                "role_key": role_key,
+                "roles": [],
+                "role_keys": [],
+                "operational_rows": [],
+                "declared_source_pages": list(source_pages or []),
+            }
+            specifications.append(existing)
+        elif iata and not existing.get("iata"):
+            existing["iata"] = iata
+        if name and not existing.get("name"):
+            existing["name"] = str(name)
+        if role not in existing["roles"]:
+            existing["roles"].append(role)
+            existing["role_keys"].append(role_key)
+        existing["declared_source_pages"] = sorted({
+            *(
+                page
+                for page in existing["declared_source_pages"]
+                if isinstance(page, int)
+            ),
+            *(
+                page
+                for page in (source_pages or [])
+                if isinstance(page, int)
+            ),
+        })
+        existing["operational_rows"].append({
+            **dict(operational_row),
+            "planning_role": role,
+            "planning_role_key": role_key,
+        })
+
+    add(
+        "departure",
+        "departure",
+        flight.get("departure"),
+        {"runway": flight.get("departure_runway")},
+    )
+    add(
+        "destination",
+        "destination",
+        flight.get("destination"),
+        {"runway": flight.get("destination_runway")},
+    )
+    for alternate in flight.get("alternates") or []:
+        add(
+            "destination alternate",
+            "alternate",
+            alternate.get("airport"),
+            alternate,
+        )
+    for edto_airport in (flight.get("edto") or {}).get("airports") or []:
+        add("EDTO", "edto", edto_airport.get("airport"), edto_airport)
+    for station in flight.get("fuel_enroute_airports") or []:
+        add(
+            "fuel enroute airport",
+            "fuel_enroute_airport",
+            station.get("airport"),
+            {"role": station.get("role") or "fuel_enroute_airport"},
+            iata=station.get("iata"),
+            name=station.get("name"),
+            source_pages=[
+                page
+                for page in station.get("source_pages") or []
+                if isinstance(page, int)
+            ],
+        )
+
+    panels: list[dict[str, Any]] = []
+    for specification in specifications:
+        location = specification["icao"]
+        roles = set(specification["roles"])
+        applicable_findings = [
+            item
+            for item in findings
+            if item.get("engine") == "notam"
+            and str((item.get("data") or {}).get("location") or "").upper()
+            == location
+            and (item.get("data") or {}).get("role") in roles
+        ]
+        selected_findings = select_pertinent_notams(
+            applicable_findings,
+            # Engine findings are already inside the checked B/C/D window.
+            # Keep every deduplicated applicable notice for the detail/
+            # continuation surfaces; only card_summary_lines is compact.
+            limit=len(applicable_findings),
+        )
+        selected_notams = []
+        for item in selected_findings:
+            data = item.get("data") or {}
+            selected_notams.append({
+                "notam_id": data.get("notam_id"),
+                "summary": item.get("summary"),
+                "item_e_text": data.get("raw_text"),
+                "valid_from_utc": data.get("valid_from_utc"),
+                "valid_to_utc": data.get("valid_to_utc"),
+                "schedule": data.get("schedule"),
+                "source_page": data.get("source_page"),
+                "source_role": data.get("source_role"),
+                "role": data.get("role"),
+                "pertinence_rank": data.get("pertinence_rank"),
+                "pertinence_kind": data.get("pertinence_kind"),
+                "applicability": data.get("applicability"),
+                "window_start_utc": data.get("window_start_utc"),
+                "window_end_utc": data.get("window_end_utc"),
+                "severity": item.get("severity"),
+            })
+        metar = _station_source_weather(flight, location, "METAR")
+        taf = _station_source_weather(flight, location, "TAF")
+        card_summary_lines = [
+            {
+                "kind": "weather",
+                "label": record_type,
+                "text": record["text"],
+                "source_page": record.get("source_page"),
+            }
+            for record_type, record in (("METAR", metar), ("TAF", taf))
+            if record is not None
+        ]
+        compact_role = (
+            "EDTO"
+            if roles & {"EDTO", "fuel enroute airport"}
+            else specification["role"]
+        )
+        card_summary_lines.extend(
+            _compact_notam_lines(
+                selected_notams,
+                compact_role,
+                planned_runways=_planned_runways(specification),
+                reference_time=_reference_time_for_roles(
+                    flight,
+                    set(specification["role_keys"]),
+                    selected_notams,
+                ),
+            )
+        )
+        source_pages = {
+            page
+            for page in specification["declared_source_pages"]
+            if isinstance(page, int)
+        }
+        source_pages.update(
+            record.get("source_page")
+            for record in (metar, taf)
+            if record is not None and isinstance(record.get("source_page"), int)
+        )
+        source_pages.update(
+            item.get("source_page")
+            for item in selected_notams
+            if isinstance(item.get("source_page"), int)
+        )
+        panels.append({
+            **specification,
+            "weather": {"metar": metar, "taf": taf},
+            "selected_notams": selected_notams,
+            "card_summary_lines": card_summary_lines,
+            "source_pages": sorted(source_pages),
+        })
+        panels[-1].pop("declared_source_pages", None)
+    return panels
+
+
+def _performance_publication(flight: dict[str, Any]) -> dict[str, Any]:
+    """One RTOW selection and margin contract for every publishing surface."""
+    performance = flight.get("performance") or {}
+    masses = flight.get("masses") or {}
+    definitions = (
+        ("performance", "RTOW PERF", "obstacle_rtow_kg"),
+        ("landing", "RTOW LAND", "landing_rtow_kg"),
+        ("structural", "RTOW STRUCT", "structural_rtow_kg"),
+        ("cfp_controlling", "CFP RTOW", "controlling_rtow_kg"),
+    )
+    candidates = [
+        {
+            "key": key,
+            "label": label,
+            "source_field": source_field,
+            "limit_kg": int(performance[source_field]),
+        }
+        for key, label, source_field in definitions
+        if performance.get(source_field) is not None
+    ]
+    selected = min(
+        (candidate["limit_kg"] for candidate in candidates),
+        default=None,
+    )
+    for candidate in candidates:
+        candidate["selected"] = candidate["limit_kg"] == selected
+    ptow = masses.get("planned_takeoff_weight_kg")
+    ptow = int(ptow) if ptow is not None else None
+    margin = selected - ptow if selected is not None and ptow is not None else None
+    if selected is None or ptow is None:
+        status = "manual-review-required"
+    elif margin < 0:
+        status = "limit-exceeded"
+    else:
+        status = "within-limit"
+    return {
+        "status": status,
+        "basis": (
+            "selected_rtow_kg = minimum available parsed CFP RTOW candidate; "
+            "margin_kg = selected_rtow_kg - ptow_kg."
+        ),
+        "ptow_kg": ptow,
+        "candidate_limits": candidates,
+        "selected_rtow_kg": selected,
+        "selected_candidate_keys": [
+            candidate["key"]
+            for candidate in candidates
+            if candidate["selected"]
+        ],
+        "margin_kg": margin,
     }
 
 
@@ -790,10 +1393,10 @@ def _communication_timeline(
             {
                 "time": event.get("utc_clock") or event.get("utc_display") or "--",
                 "actm": event.get("actm") or "--.--",
-                "event": _shorten(event.get("label"), 46),
-                "detail": _shorten(event.get("details"), 58),
+                "event": str(event.get("label") or ""),
+                "detail": str(event.get("details") or ""),
             }
-            for event in (timing_view.get("early_calls") or [])[:5]
+            for event in (timing_view.get("early_calls") or [])
         ]
 
     timeline = []
@@ -804,10 +1407,10 @@ def _communication_timeline(
         timeline.append({
             "time": f"ACTM {format_actm(actm)}" if actm is not None else "ACTM --.--",
             "actm": format_actm(actm),
-            "event": _shorten(item.get("title"), 46),
-            "detail": _shorten(item.get("summary"), 58),
+            "event": str(item.get("title") or ""),
+            "detail": str(item.get("summary") or ""),
         })
-    return timeline[:5]
+    return timeline
 
 
 def _enroute_weather_cards(findings: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -1127,10 +1730,45 @@ def _clock_from_actm(flight: dict[str, Any], actm: float | None) -> datetime | N
     return base + timedelta(minutes=float(actm))
 
 
-def _terrain_summary(terrain_events: list[dict[str, Any]]) -> str:
-    """One terrain sentence, now naming the window (REV3: 'IMABA 117* to
-    HLM 124*, maximum 124* at HLM'). The names come from the same event the
-    page renders, so no surface can call it 'event 1' while another names it."""
+def _validated_profile_coverage(
+    terrain_events: list[dict[str, Any]],
+    findings: list[dict[str, Any]],
+) -> tuple[int, int]:
+    """Return how many current terrain windows have a controlled match.
+
+    A depressurisation result belongs to a particular detected terrain event.
+    Requiring that identity prevents a complete-but-stale result from another
+    route window from making the current briefing appear fully matched.  A
+    duplicate finding for one event also counts only once.
+    """
+    event_ids = {
+        str(event.get("terrain_event_id") or "").strip()
+        for event in terrain_events
+        if str(event.get("terrain_event_id") or "").strip()
+    }
+    matched_event_ids = {
+        str((item.get("data") or {}).get("terrain_event_id") or "").strip()
+        for item in findings
+        if item.get("engine") == "depressurisation"
+        and bool((item.get("data") or {}).get("chart_number"))
+        and (item.get("data") or {}).get("coverage_complete") is True
+        and (item.get("data") or {}).get("reference_status")
+        == "controlled-index-loaded"
+        and str((item.get("data") or {}).get("terrain_event_id") or "").strip()
+        in event_ids
+    }
+    return len(matched_event_ids), len(terrain_events)
+
+
+def _terrain_summary(
+    terrain_events: list[dict[str, Any]],
+    findings: list[dict[str, Any]],
+) -> str:
+    """Compose one source-backed terrain sentence naming every active window.
+
+    Names and values come from the same detected events the page renders, so
+    surfaces cannot disagree or substitute route-specific wording.
+    """
     if not terrain_events:
         return "No strict MSA >100* window detected"
     spans: list[str] = []
@@ -1156,7 +1794,19 @@ def _terrain_summary(terrain_events: list[dict[str, Any]]) -> str:
     label = f"{len(terrain_events)} MSA >100* window{'s' if len(terrain_events) != 1 else ''}"
     if spans:
         label += f" ({'; '.join(spans)})"
-    return f"{label}; profile match on the terrain page"
+    match_count, event_count = _validated_profile_coverage(terrain_events, findings)
+    if match_count == event_count:
+        return (
+            f"{label}; {match_count}/{event_count} terrain windows have "
+            "validated profile matches on the terrain page"
+        )
+    unmatched_count = event_count - match_count
+    return (
+        f"{label}; {match_count}/{event_count} terrain windows have validated "
+        "profile matches - manual review required for "
+        f"{unmatched_count} unmatched terrain "
+        f"window{'s' if unmatched_count != 1 else ''}"
+    )
 
 
 def _weather_coverage_ledger(flight: dict[str, Any]) -> list[dict[str, str]]:
@@ -1182,6 +1832,236 @@ def _weather_coverage_ledger(flight: dict[str, Any]) -> list[dict[str, str]]:
     return rows
 
 
+_WEATHER_CHART_KINDS = {
+    "sigwx_high_level",
+    "sigwx_mid_level",
+    "wind_temperature",
+}
+_WEATHER_CHART_SHARED_FIELDS = (
+    "chart_number",
+    "page_number",
+    "kind",
+    "issuer",
+    "wmo_heading",
+    "valid_time_utc",
+    "flight_levels",
+    "title",
+    "confidence",
+    "label",
+    "image_sha256",
+    "source",
+)
+_WEATHER_CHART_WINDOW_TOLERANCE = timedelta(0)
+
+
+def _weather_chart_selection(
+    weather_charts: dict[str, Any] | None,
+    flight: dict[str, Any],
+) -> dict[str, Any]:
+    """Project only explicitly governed route-context chart matches.
+
+    Detection and visual classification alone do not prove that a fixed-time
+    product covers this flight's route. A future governed matcher may attach
+    ``route_context={status: "matched", governed: true, basis: "..."}`` to a
+    classified chart. Until that explicit evidence exists, the held source
+    pages remain in the raw manifest but the shared briefing selects none.
+    """
+    charts = list((weather_charts or {}).get("charts") or [])
+    coverage = (weather_charts or {}).get("coverage") or {}
+    if (
+        isinstance(coverage, dict)
+        and coverage.get("classification_incomplete") is True
+    ):
+        held_count = int(coverage.get("held_chart_count") or len(charts))
+        capacity = int(coverage.get("classification_capacity") or 0)
+        return {
+            "status": "manual-review-required",
+            "reason": (
+                f"Chart classification coverage is incomplete: {held_count} "
+                f"held pages exceed the {capacity}-page analysis capacity; "
+                "all held pages remain available for manual review."
+            ),
+            "selected_charts": [],
+            "raw_chart_count": len(charts),
+            "classification_incomplete": True,
+        }
+    departure_utc = _parse_utc(flight.get("scheduled_departure_utc"))
+    arrival_utc = _parse_utc(flight.get("scheduled_arrival_utc"))
+    midpoint = (
+        departure_utc + (arrival_utc - departure_utc) / 2
+        if departure_utc and arrival_utc
+        else None
+    )
+
+    def flight_key(value: Any) -> str:
+        # Carrier-code aliases need their own governed operator registry.
+        # Until one is supplied, compare only the exact printed identifier;
+        # silently translating one airline's ICAO code would be a
+        # sample-specific publication rule.
+        return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+
+    governed_matches: list[
+        tuple[tuple[Any, ...], tuple[str, str], dict[str, Any]]
+    ] = []
+    outside_matches: list[tuple[float, str]] = []
+    for chart in charts:
+        if not isinstance(chart, dict):
+            continue
+        route_context = chart.get("route_context") or {}
+        if not isinstance(route_context, dict) or chart.get("verified") is not True:
+            continue
+        governed_context: dict[str, Any] | None = None
+        if (
+            chart.get("classification_status") == "classified"
+            and chart.get("kind") in _WEATHER_CHART_KINDS
+            and route_context.get("status") == "matched"
+            and route_context.get("governed") is True
+            and str(route_context.get("basis") or "").strip()
+        ):
+            governed_context = {
+                **route_context,
+                "status": "matched",
+                "governed": True,
+                "basis": str(route_context["basis"]).strip(),
+            }
+        elif (
+            chart.get("classification_status") == "ocr-classified"
+            and route_context.get("status") == "printed"
+            and route_context.get("source") == "tesseract_ocr"
+            and route_context.get("chart_kind")
+            in {"sigwx_high_level", "sigwx_mid_level"}
+            and flight_key(route_context.get("flight_number"))
+            == flight_key(flight.get("flight_number"))
+            and str(route_context.get("departure_iata") or "").upper()
+            == str(flight.get("departure_iata") or "").upper()
+            and str(route_context.get("destination_iata") or "").upper()
+            == str(flight.get("destination_iata") or "").upper()
+        ):
+            governed_context = {
+                **route_context,
+                "status": "matched",
+                "governed": True,
+                "basis": (
+                    "Printed chart flight and route identity match the CFP; "
+                    "validity ranked against the CFP flight window."
+                ),
+            }
+        if governed_context is None:
+            continue
+        valid_time = _parse_utc(
+            governed_context.get("valid_time_utc")
+            or chart.get("valid_time_utc")
+        )
+        if valid_time is None:
+            continue
+        inside_window = bool(
+            departure_utc
+            and arrival_utc
+            and departure_utc - _WEATHER_CHART_WINDOW_TOLERANCE
+            <= valid_time
+            <= arrival_utc + _WEATHER_CHART_WINDOW_TOLERANCE
+        )
+        if inside_window and midpoint:
+            distance = abs((valid_time - midpoint).total_seconds())
+        elif departure_utc and arrival_utc:
+            distance = min(
+                abs((valid_time - departure_utc).total_seconds()),
+                abs((valid_time - arrival_utc).total_seconds()),
+            )
+        else:
+            distance = 0.0
+        if not inside_window:
+            if departure_utc and valid_time < departure_utc:
+                outside_matches.append((
+                    abs((departure_utc - valid_time).total_seconds()),
+                    "before-departure",
+                ))
+            elif arrival_utc and valid_time > arrival_utc:
+                outside_matches.append((
+                    abs((valid_time - arrival_utc).total_seconds()),
+                    "after-arrival",
+                ))
+            continue
+        projection = {
+            key: chart.get(key)
+            for key in _WEATHER_CHART_SHARED_FIELDS
+            if key in chart
+        }
+        projection["route_context"] = governed_context
+        product_kind = str(chart.get("kind") or "").strip().lower()
+        raw_levels = str(
+            governed_context.get("flight_levels")
+            or chart.get("flight_levels")
+            or ""
+        )
+        level_numbers = re.findall(r"\d{2,3}", raw_levels)
+        level_family = (
+            "-".join(str(int(value)) for value in level_numbers)
+            if level_numbers
+            else re.sub(r"[^A-Z0-9]+", "", raw_levels.upper()) or "UNSPECIFIED"
+        )
+        governed_matches.append((
+            (
+                0 if inside_window else 1,
+                distance,
+                int(chart.get("page_number") or 0),
+                int(chart.get("chart_number") or 0),
+            ),
+            (product_kind, level_family),
+            projection,
+        ))
+    governed_matches.sort(key=lambda item: item[0])
+    if governed_matches:
+        selected_charts: list[dict[str, Any]] = []
+        selected_families: set[tuple[str, str]] = set()
+        for _, family, projection in governed_matches:
+            if family in selected_families:
+                continue
+            selected_families.add(family)
+            selected_charts.append(projection)
+        return {
+            "status": "selected",
+            "reason": (
+                "Governed route-context chart selected inside the CFP flight window."
+                if len(selected_charts) == 1
+                else (
+                    "Nearest governed route-context chart selected inside the CFP "
+                    "flight window for each distinct product and flight-level family."
+                )
+            ),
+            "selected_charts": selected_charts,
+            "raw_chart_count": len(charts),
+        }
+    if outside_matches:
+        delta_seconds, relation = min(outside_matches, key=lambda item: item[0])
+        delta_minutes = int(delta_seconds // 60)
+        return {
+            "status": "manual-review-required",
+            "reason": (
+                "No governed route-context chart is valid inside the CFP "
+                f"flight window; closest printed validity is {delta_minutes} "
+                f"minutes {relation.replace('-', ' ')}."
+            ),
+            "selected_charts": [],
+            "raw_chart_count": len(charts),
+            "closest_validity_delta_minutes": delta_minutes,
+            "closest_validity_relation": relation,
+        }
+    if charts:
+        return {
+            "status": "manual-review-required",
+            "reason": "No governed route-context classification is available.",
+            "selected_charts": [],
+            "raw_chart_count": len(charts),
+        }
+    return {
+        "status": "unavailable",
+        "reason": "No weather-chart appendix was detected in the uploaded package.",
+        "selected_charts": [],
+        "raw_chart_count": 0,
+    }
+
+
 def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
     """Direct-VAAC reach, composed once for every surface.
 
@@ -1203,9 +2083,69 @@ def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
         for item in ledger
     ]
     reached = sum(1 for item in ledger if item.get("status") in {"available", "partial"})
+
+    # The responsible centres for THIS route, from the ICAO Doc 9766 Part 2
+    # areas (boss, 21 Aug: "there's a VAAC ... in Manila? ... don't see any
+    # [checking]"). Fail-closed: unsettled route geometry flags a review
+    # instead of naming a centre it cannot prove.
+    from .vaac_areas import responsible_vaac_centres
+
+    waypoints = flight.get("route_waypoints") or []
+    route_points = [
+        (waypoint.get("latitude"), waypoint.get("longitude"))
+        for waypoint in waypoints
+        if isinstance(waypoint.get("latitude"), (int, float))
+        and isinstance(waypoint.get("longitude"), (int, float))
+    ]
+    route_firs = [
+        waypoint.get("fir_boundary")
+        for waypoint in waypoints
+        if waypoint.get("fir_boundary")
+    ]
+    responsibility = responsible_vaac_centres(route_points, route_firs)
+    reached_names = {
+        str(item.get("centre") or "").upper()
+        for item in ledger
+        if item.get("status") in {"available", "partial"}
+    }
+    responsible_rows = [
+        {"centre": centre, "reached": centre in reached_names}
+        for centre in responsibility["centres"]
+    ]
+    if not route_points:
+        responsible_line = (
+            "Responsible VAAC for this route is unresolved - no route "
+            "coordinates are held; review coverage directly."
+        )
+    elif responsible_rows:
+        named = ", ".join(row["centre"] for row in responsible_rows)
+        missing = [row["centre"] for row in responsible_rows if not row["reached"]]
+        responsible_line = (
+            f"Responsible for this route: {named}"
+            + (
+                " - all reached"
+                if not missing
+                else f" - NOT reached: {', '.join(missing)} (review gap)"
+            )
+            + (
+                "; boundary segments need review"
+                if responsibility["review_required"]
+                else ""
+            )
+        )
+    else:
+        responsible_line = (
+            "Responsible VAAC for this route could not be settled from the "
+            "Doc 9766 areas - review coverage directly."
+        )
+
     return {
         "summary": f"{reached}/{len(ledger) or 9} reached",
         "centres": centres,
+        "responsible": responsible_rows,
+        "responsible_line": responsible_line,
+        "responsible_review_required": bool(responsibility["review_required"]) or not responsible_rows,
+        "responsible_source": responsibility["source"],
     }
 
 
@@ -1526,12 +2466,333 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
     return advisories
 
 
+def _overview_forecast_at_reference(
+    findings: list[dict[str, Any]],
+    *,
+    location: str,
+    phase: str,
+) -> dict[str, Any] | None:
+    """Return the engine-decoded conditions for one flight reference time.
+
+    This deliberately does not parse raw METAR/TAF text. The weather engine
+    owns time applicability; publishing surfaces receive its bounded result.
+    """
+    candidates = []
+    for item in findings:
+        data = item.get("data") or {}
+        if (
+            item.get("engine") == "weather"
+            and str(data.get("location") or "").upper() == location.upper()
+            and str(data.get("phase") or "").casefold() == phase.casefold()
+            and str(data.get("applicable_conditions") or "").strip()
+        ):
+            candidates.append(data)
+    if not candidates:
+        return None
+    # A TAF group is the engine's forecast-at-reference result. Retain input
+    # ordering as the deterministic tie-break when multiple windows exist.
+    selected = next(
+        (
+            item
+            for item in candidates
+            if "TAF" in {
+                str(record_type or "").upper()
+                for record_type in item.get("record_types") or []
+            }
+        ),
+        candidates[0],
+    )
+    return {
+        "applicable_conditions": str(selected["applicable_conditions"]).strip(),
+        "utc_window": selected.get("utc_window"),
+        "timing": selected.get("timing"),
+        "window_status": selected.get("window_status"),
+        "source_references": list(selected.get("source_references") or []),
+    }
+
+
+def _overview_primary_highlight(
+    panels: list[dict[str, Any]],
+    *,
+    role_key: str,
+) -> dict[str, Any] | None:
+    panel = next(
+        (
+            item
+            for item in panels
+            if role_key in (item.get("role_keys") or [])
+        ),
+        None,
+    )
+    if panel is None:
+        return None
+    family_order = (
+        {
+            "approach_navaid": 0,
+            "runway_closure": 1,
+            "runway_restriction": 2,
+        }
+        if role_key == "departure"
+        else {
+            "runway_closure": 0,
+            "runway_restriction": 1,
+            "approach_navaid": 2,
+        }
+    )
+    notices = [
+        line
+        for line in panel.get("card_summary_lines") or []
+        if line.get("kind") == "notam" and str(line.get("text") or "").strip()
+    ]
+    if not notices:
+        return None
+    _, selected = min(
+        enumerate(notices),
+        key=lambda pair: (
+            family_order.get(str(pair[1].get("signal_family") or ""), 99),
+            pair[0],
+        ),
+    )
+    return {
+        "text": str(selected["text"]).strip(),
+        "signal_family": selected.get("signal_family"),
+        "notam_id": selected.get("notam_id"),
+        "source_page": selected.get("source_page"),
+    }
+
+
+def _overview_plan(runway: Any, procedure: Any) -> dict[str, Any]:
+    runway_text = str(runway or "").strip() or None
+    procedure_text = str(procedure or "").strip() or None
+    display = " / ".join(
+        part
+        for part in (
+            f"RWY {runway_text}" if runway_text else None,
+            procedure_text,
+        )
+        if part
+    )
+    return {
+        "runway": runway_text,
+        "procedure": procedure_text,
+        "display": display or "--",
+    }
+
+
+def _overview_schedule(value: Any, actm_minutes: int) -> dict[str, Any]:
+    raw = str(value or "").strip() or None
+    return {
+        "scheduled_utc": raw,
+        "display_utc": _display_utc(raw),
+        "actm_minutes": actm_minutes,
+    }
+
+
+def _overview_anchor(
+    *,
+    kind: str,
+    label: str,
+    detail: str,
+    actm_minutes: int,
+    departure_utc: datetime | None,
+    exact_utc: datetime | None = None,
+) -> dict[str, Any]:
+    moment = exact_utc
+    if moment is None and departure_utc is not None:
+        moment = departure_utc + timedelta(minutes=actm_minutes)
+    return {
+        "kind": kind,
+        "label": label,
+        "detail": detail,
+        "actm_minutes": actm_minutes,
+        "actm_display": format_actm(actm_minutes),
+        "utc": moment.isoformat() if moment else None,
+        "utc_display": moment.strftime("%H%MZ") if moment else "--",
+    }
+
+
+def _overview_projection(
+    flight: dict[str, Any],
+    source_findings: list[dict[str, Any]],
+    airport_operational_panels: list[dict[str, Any]],
+    terrain_events: list[dict[str, Any]],
+    final_actm: int,
+) -> dict[str, Any]:
+    """Shared, source-backed contract for the compact route overview."""
+    chips: list[dict[str, Any]] = []
+
+    def add_chip(key: str, label: str, value: Any, source_field: str) -> None:
+        if value is None or value == "":
+            return
+        chips.append({
+            "key": key,
+            "label": label,
+            "value": value,
+            "source_field": source_field,
+        })
+
+    route_identifier = str(flight.get("route_identifier") or "").strip()
+    add_chip(
+        "route_identifier",
+        route_identifier,
+        route_identifier,
+        "route_identifier",
+    )
+    edto_rvsm = str(flight.get("edto_rvsm") or "").strip()
+    add_chip("edto_rvsm", edto_rvsm, edto_rvsm, "edto_rvsm")
+    cost_index = flight.get("cost_index")
+    add_chip("cost_index", f"CI {cost_index}", cost_index, "cost_index")
+    apd_percent = flight.get("apd_percent")
+    add_chip(
+        "apd_percent",
+        f"APD {apd_percent}%",
+        apd_percent,
+        "apd_percent",
+    )
+
+    departure_icao = str(flight.get("departure") or "").upper()
+    destination_icao = str(flight.get("destination") or "").upper()
+    departure_utc = _parse_utc(flight.get("scheduled_departure_utc"))
+    arrival_utc = _parse_utc(flight.get("scheduled_arrival_utc"))
+
+    departure = {
+        "icao": departure_icao,
+        "iata": flight.get("departure_iata"),
+        "plan": _overview_plan(flight.get("departure_runway"), flight.get("sid")),
+        "schedule": _overview_schedule(flight.get("scheduled_departure_utc"), 0),
+        "forecast_at_reference": _overview_forecast_at_reference(
+            source_findings,
+            location=departure_icao,
+            phase="Departure",
+        ),
+        "primary_operational_highlight": _overview_primary_highlight(
+            airport_operational_panels,
+            role_key="departure",
+        ),
+    }
+    destination = {
+        "icao": destination_icao,
+        "iata": flight.get("destination_iata"),
+        "plan": _overview_plan(
+            flight.get("destination_runway"),
+            flight.get("star"),
+        ),
+        "schedule": _overview_schedule(
+            flight.get("scheduled_arrival_utc"),
+            final_actm,
+        ),
+        "forecast_at_reference": _overview_forecast_at_reference(
+            source_findings,
+            location=destination_icao,
+            phase="Destination",
+        ),
+        "primary_operational_highlight": _overview_primary_highlight(
+            airport_operational_panels,
+            role_key="destination",
+        ),
+    }
+
+    timeline = [
+        _overview_anchor(
+            kind="departure",
+            label="DEP",
+            detail=departure_icao or "--",
+            actm_minutes=0,
+            departure_utc=departure_utc,
+            exact_utc=departure_utc,
+        )
+    ]
+    edto = flight.get("edto") or {}
+    sectors = edto_sectors(edto)
+    edto_entry = (
+        sectors[0].get("entry_actm_minutes")
+        if sectors
+        else edto.get("entry_actm_minutes")
+    )
+    if edto_entry is not None:
+        timeline.append(_overview_anchor(
+            kind="edto",
+            label="EDTO",
+            detail="ENTRY",
+            actm_minutes=int(edto_entry),
+            departure_utc=departure_utc,
+        ))
+
+    vws_events = detect_vws_events(flight.get("route_waypoints") or [])
+    if vws_events:
+        vws_point = vws_events[0].get("first_high") or {}
+        # When the very same point is already a strict-terrain anchor, the
+        # compact timeline avoids printing two labels at one position.
+        if int(vws_point.get("msa_hundreds_ft") or 0) <= 100:
+            vws_actm = vws_point.get("actm_minutes")
+            if vws_actm is not None:
+                timeline.append(_overview_anchor(
+                    kind="vws",
+                    label=str(vws_point.get("name") or "VWS").lstrip("-"),
+                    detail=f"VWS {int(vws_point.get('vws') or 0):03d}",
+                    actm_minutes=int(vws_actm),
+                    departure_utc=departure_utc,
+                ))
+
+    for event in terrain_events:
+        first = event.get("first_high") or {}
+        last = event.get("last_high") or first
+        event_actm = first.get("actm_minutes")
+        if event_actm is None:
+            continue
+        first_name = str(first.get("name") or "TERRAIN").lstrip("-")
+        last_name = str(last.get("name") or first_name).lstrip("-")
+
+        def msa_text(point: dict[str, Any]) -> str:
+            value = point.get("msa_hundreds_ft")
+            if value is None:
+                return "---"
+            suffix = "*" if point.get("msa_asterisk") else ""
+            return f"{int(value):03d}{suffix}"
+
+        timeline.append(_overview_anchor(
+            kind="terrain",
+            label=(first_name if first_name == last_name else f"{first_name}-{last_name}"),
+            detail=(
+                msa_text(first)
+                if first_name == last_name
+                else f"{msa_text(first)}-{msa_text(last)}"
+            ),
+            actm_minutes=int(event_actm),
+            departure_utc=departure_utc,
+        ))
+
+    timeline.append(_overview_anchor(
+        kind="arrival",
+        label="ARR",
+        detail=destination_icao or "--",
+        actm_minutes=final_actm,
+        departure_utc=departure_utc,
+        exact_utc=arrival_utc,
+    ))
+    timeline.sort(key=lambda item: (
+        item["actm_minutes"],
+        {"departure": 0, "edto": 1, "vws": 2, "terrain": 3, "arrival": 4}.get(
+            item["kind"],
+            99,
+        ),
+    ))
+    return {
+        "chips": chips,
+        "departure": departure,
+        "destination": destination,
+        "timeline": timeline,
+    }
+
+
 def build_briefing_view(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
     warnings: list[str],
     timing_view: dict[str, Any] | None = None,
+    weather_charts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    source_findings = list(findings)
     findings = prepare_pilot_findings(findings, notam_limit=24)
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in findings:
@@ -1560,6 +2821,10 @@ def build_briefing_view(
         str(flight.get("destination") or "----"),
         "destination",
         flight.get("destination_runway"),
+    )
+    airport_operational_panels = _airport_operational_panels(
+        flight,
+        source_findings,
     )
 
     critical_airport_notams = [
@@ -1728,8 +2993,46 @@ def build_briefing_view(
         # report's "CFP PAGE 1 - FLIGHT PLAN" panel reads this and must render
         # a review flag whenever state is not "verified".
         "fuel_summary": flight.get("fuel_summary"),
+        # One flight-identity block for every surface (boss, 21 Aug: "I need
+        # the route ID and the route version"). Composed here so the PDF's
+        # FLIGHT BASIS card and the web dashboard print the same facts —
+        # renderer-side raw reads are the leak the corpus gate forbids.
+        "flight_identity": {
+            "aircraft_type": flight.get("aircraft_type"),
+            "registration": theme.normalized_registration(flight.get("registration")),
+            "captain": flight.get("captain"),
+            "ofp": flight.get("ofp_identifier"),
+            "route_id": flight.get("route_identifier"),
+            "plan_number": flight.get("plan_number"),
+            "etd_hhmm": theme.utc_hhmm(flight.get("scheduled_departure_utc")).rstrip("Z"),
+            "eta_hhmm": theme.utc_hhmm(flight.get("scheduled_arrival_utc")).rstrip("Z"),
+            "block": str(theme.block_time_label(flight) or "").replace("BLOCK ", "") or None,
+            "rules": flight.get("edto_rvsm"),
+            "cost_index": flight.get("cost_index"),
+            "apd_percent": flight.get("apd_percent"),
+        },
+        "performance_publication": _performance_publication(flight),
+        # Compact dispatch confirmation gates are a source-preserving shared
+        # view. Raw deferred_items remain untouched for the deterministic
+        # engines and detailed report rows.
+        "deferred_dispatch_gates": build_deferred_dispatch_gates(
+            flight.get("deferred_items") or []
+        ),
         "departure": departure_panel,
         "destination": destination_panel,
+        "airport_operational_panels": airport_operational_panels,
+        "fuel_enroute_airports": [
+            panel
+            for panel in airport_operational_panels
+            if "fuel_enroute_airport" in panel["role_keys"]
+        ],
+        "overview": _overview_projection(
+            flight,
+            source_findings,
+            airport_operational_panels,
+            terrain_events,
+            final_actm,
+        ),
         "route_map": route_map,
         "route_svg": render_route_svg(route_map),
         # The one terrain opinion every surface prints. Events come from the
@@ -1737,7 +3040,7 @@ def build_briefing_view(
         # here exactly once so overview, dashboard and PDF cannot disagree.
         "terrain": {
             "events": terrain_events,
-            "summary": _terrain_summary(terrain_events),
+            "summary": _terrain_summary(terrain_events, findings),
         },
         "exception_cards": exception_cards,
         "communications": _communication_timeline(findings, timing_view),
@@ -1756,6 +3059,10 @@ def build_briefing_view(
             "sigmet_cards": _sigmet_screening_cards(flight),
             "coverage_ledger": _weather_coverage_ledger(flight),
             "vaac_reach": _vaac_reach_summary(flight),
+            "weather_chart_selection": _weather_chart_selection(
+                weather_charts,
+                flight,
+            ),
         },
         "vaa": {
             "cfp_advisories": _va_cfp_advisories(flight),

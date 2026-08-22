@@ -56,6 +56,7 @@ def test_sq338_page_one_mel_continuations_are_preserved() -> None:
             "reference": "21-60-08A",
             "description": "ECAM COND BULK CARGO HEATER FAULT X PERFORMANCE [P]",
             "item_type": "MEL",
+            "source_declaration": "AA MEL 21-60-08A",
             "company_remark": (
                 "CARRIAGE OF TEMP SENSITIVE CARGO IN BULK CGO COMPT "
                 "IS NOT ALLOWED"
@@ -78,11 +79,13 @@ def test_sia722_aa_ifeddl_is_preserved_without_mel_cdl_or_cddl_classification() 
         )
     )
 
+    # 21 Aug 2026 (SQ910 round): the CFP's own IFEDDL word is the type —
+    # the internal "UNCLASSIFIED" label never reaches a pilot surface.
     assert _parse_deferred_items(page_one) == [
         {
             "reference": None,
             "description": "CONNECTIVITY, WIFI INTERNET",
-            "item_type": "UNCLASSIFIED",
+            "item_type": "IFEDDL",
             "source_declaration": "AA IFEDDL",
             "company_remark": (
                 "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT"

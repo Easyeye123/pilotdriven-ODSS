@@ -499,6 +499,8 @@ def _notam_role_window(
     location: str,
     alternate_airports: set[str],
     edto_periods: dict[str, tuple[datetime, datetime]],
+    fuel_enroute_airports: set[str] | None = None,
+    source_role: str | None = None,
 ) -> tuple[str, datetime, datetime]:
     departure_utc = datetime.fromisoformat(flight["scheduled_departure_utc"])
     arrival_utc = datetime.fromisoformat(flight["scheduled_arrival_utc"])
@@ -512,11 +514,33 @@ def _notam_role_window(
         return "departure", departure_utc - departure_margin, departure_utc + departure_margin
     if location == flight["destination"]:
         return "destination", arrival_utc - arrival_margin, arrival_utc + arrival_margin
+    is_fuel_enroute = (
+        source_role == "fuel_enroute_airport"
+        or location in (fuel_enroute_airports or set())
+    )
+    windows: list[tuple[datetime, datetime]] = []
+    if is_fuel_enroute:
+        windows.append((departure_utc, arrival_utc))
     if location in alternate_airports:
-        return "destination alternate", arrival_utc - arrival_margin, arrival_utc + arrival_margin
+        windows.append((
+            arrival_utc - arrival_margin,
+            arrival_utc + arrival_margin,
+        ))
     if location in edto_periods:
-        starts_at, ends_at = edto_periods[location]
-        return "EDTO", starts_at, ends_at
+        windows.append(edto_periods[location])
+    if windows:
+        role = (
+            "fuel enroute airport"
+            if is_fuel_enroute
+            else "destination alternate"
+            if location in alternate_airports
+            else "EDTO"
+        )
+        return (
+            role,
+            min(window[0] for window in windows),
+            max(window[1] for window in windows),
+        )
     return "informational", departure_utc, arrival_utc
 
 
@@ -580,6 +604,8 @@ def _weather_role_window(
     location: str,
     alternate_airports: set[str],
     edto_periods: dict[str, tuple[datetime, datetime]],
+    fuel_enroute_airports: set[str] | None = None,
+    source_role: str | None = None,
 ) -> tuple[str, datetime, datetime]:
     departure_utc = datetime.fromisoformat(flight["scheduled_departure_utc"])
     arrival_utc = datetime.fromisoformat(flight["scheduled_arrival_utc"])
@@ -590,11 +616,30 @@ def _weather_role_window(
         return "Departure", departure_utc - before, departure_utc + after
     if location == flight["destination"]:
         return "Destination", arrival_utc - before, arrival_utc + after
+    is_fuel_enroute = (
+        source_role == "fuel_enroute_airport"
+        or location in (fuel_enroute_airports or set())
+    )
+    windows: list[tuple[datetime, datetime]] = []
+    if is_fuel_enroute:
+        windows.append((departure_utc, arrival_utc))
     if location in alternate_airports:
-        return "Destination alternate", arrival_utc - before, arrival_utc + after
+        windows.append((arrival_utc - before, arrival_utc + after))
     if location in edto_periods:
-        starts_at, ends_at = edto_periods[location]
-        return "EDTO", starts_at, ends_at
+        windows.append(edto_periods[location])
+    if windows:
+        phase = (
+            "Fuel enroute airport"
+            if is_fuel_enroute
+            else "Destination alternate"
+            if location in alternate_airports
+            else "EDTO"
+        )
+        return (
+            phase,
+            min(window[0] for window in windows),
+            max(window[1] for window in windows),
+        )
     return "Enroute", departure_utc, arrival_utc
 
 
@@ -1533,8 +1578,24 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         ))
 
     for item in flight["deferred_items"]:
-        if item["item_type"] == "UNCLASSIFIED":
-            declaration = str(item.get("source_declaration") or "UNCLASSIFIED DEFERRED DECLARATION")
+        if item["item_type"] in {"UNCLASSIFIED", "IFEDDL", "IN"}:
+            # The CFP's own vocabulary names the block (boss, 21 Aug 2026:
+            # "UNCLASSIFIED" never reaches the pilot). The exact printed text
+            # is the whole held fact; no remedy or instruction is inferred.
+            declaration = str(item.get("source_declaration") or "DEFERRED DECLARATION")
+            kind_sentence = {
+                "IFEDDL": (
+                    "IFE deferred defect list declaration carried verbatim from CFP page 1; "
+                    "no remedy or dispatch instruction is inferred."
+                ),
+                "IN": (
+                    "Engineering information notice carried verbatim from CFP page 1; "
+                    "no remedy or dispatch instruction is inferred beyond the printed text."
+                ),
+            }.get(item["item_type"], (
+                "Unclassified CFP deferred declaration; acronym meaning is not inferred "
+                "and it is not classified as MEL, CDL or CDDL."
+            ))
             details = [item.get("description") or "No following CFP text parsed."]
             if item.get("company_remark"):
                 details.append(item["company_remark"])
@@ -1542,13 +1603,10 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "deferred_declaration",
                 "unknown",
                 declaration,
-                (
-                    "Unclassified CFP deferred declaration; acronym meaning is not inferred "
-                    "and it is not classified as MEL, CDL or CDDL."
-                ),
+                kind_sentence,
                 details,
                 {
-                    "classification": "unclassified",
+                    "classification": item["item_type"].lower(),
                     "source_references": [
                         _cfp_source_reference(
                             flight,
@@ -1801,6 +1859,11 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         )
 
     alternate_airports = {a["airport"] for a in flight["alternates"]}
+    fuel_enroute_airports = {
+        str(item.get("airport") or "").upper()
+        for item in flight.get("fuel_enroute_airports") or []
+        if str(item.get("airport") or "").strip()
+    }
     edto_airports = {a["airport"] for a in flight["edto"]["airports"]}
     edto_periods: dict[str, tuple[datetime, datetime]] = {}
     for airport in flight["edto"]["airports"]:
@@ -1822,6 +1885,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             location,
             alternate_airports,
             edto_periods,
+            fuel_enroute_airports,
+            str(record.get("source_role") or "") or None,
         )
         raw_text = str(record["text"])
         upper = raw_text.upper()
@@ -1872,6 +1937,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "valid_to_utc": record.get("valid_to_utc"),
             "retrieved_at_utc": record.get("retrieved_at_utc"),
             "source_page": record.get("source_page"),
+            "source_role": record.get("source_role"),
             "phase": phase,
             "window_start_utc": window_start.isoformat(),
             "window_end_utc": window_end.isoformat(),
@@ -2093,6 +2159,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             location,
             alternate_airports,
             edto_periods,
+            fuel_enroute_airports,
+            str(record.get("source_role") or "") or None,
         )
         valid_from = datetime.fromisoformat(record["valid_from_utc"])
         valid_to = (
@@ -2119,6 +2187,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "valid_to_utc": record.get("valid_to_utc"),
             "schedule": record.get("schedule"),
             "source_page": record.get("source_page"),
+            "source_role": record.get("source_role"),
             "role": role,
             "window_start_utc": window_start.isoformat(),
             "window_end_utc": window_end.isoformat(),
@@ -2161,7 +2230,10 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             str(record["category"]),
         )
         severity = (
-            "critical"
+            "information"
+            if int(record.get("priority_score") or 0) == 0
+            and applicability == "active"
+            else "critical"
             if role in {"departure", "destination"} and pertinence_rank <= 2
             else "warning"
         )
@@ -2192,6 +2264,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             details,
             {
                 "role": role,
+                "source_role": record.get("source_role"),
                 "location": location,
                 "notam_id": record["notam_id"],
                 "category": record["category"],
@@ -2204,6 +2277,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "schedule": schedule,
                 "valid_from_utc": record["valid_from_utc"],
                 "valid_to_utc": record.get("valid_to_utc"),
+                "source_page": record.get("source_page"),
                 "window_start_utc": window_start.isoformat(),
                 "window_end_utc": window_end.isoformat(),
                 "stateAtReference": state_at_reference,

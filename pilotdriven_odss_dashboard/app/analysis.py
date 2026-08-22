@@ -130,11 +130,16 @@ def run_odss_analysis(
         findings.append(timing_finding(timing_view))
     assign_finding_ids(findings)
 
+    # Hold the package's raster weather appendix before composing the shared
+    # briefing. The projection stays fail-closed until a classified chart also
+    # carries explicit governed route-context evidence.
+    weather_charts = build_weather_chart_manifest(file_path)
     briefing_view = build_briefing_view(
         flight,
         findings,
         warnings,
         timing_view,
+        weather_charts,
     )
 
     grouped_raw: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -160,11 +165,6 @@ def run_odss_analysis(
         map_contract = build_map_contract(flight, findings, MapSettings.from_env())
     except ValueError as exc:
         warnings.append(f"Map contract unavailable: {exc}")
-
-    # The package's own weather charts (SIGWX, wind/temp) are raster pages the
-    # text pipeline cannot see. They are detected, AI-classified and pinned
-    # here so the briefing can hold what the pilot actually uploaded.
-    weather_charts = build_weather_chart_manifest(file_path)
 
     payload = {
         "schema_version": "0.6.1",

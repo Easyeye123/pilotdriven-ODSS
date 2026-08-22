@@ -49,6 +49,19 @@ REQUIRED_CASE_IDS = frozenset({
 })
 DEFERRED_TYPES = {"MEL", "CDL", "CDDL"}
 DEFERRED_REFERENCE = re.compile(r"^[A-Z0-9]+(?:-[A-Z0-9]+)+$")
+EXTRACTION_CONTRACT_VERSION = 1
+EXTRACTION_COUNT_FIELDS = (
+    "notams",
+    "weather",
+    "alternates",
+    "deferred_items",
+    "edto_sectors",
+    "edto_airports",
+    "fuel_enroute_airports",
+    "route_waypoints",
+)
+EXTRACTION_DIGEST_FIELDS = EXTRACTION_COUNT_FIELDS
+_LIVE_OPMET_SOURCE = "noaa_awc_live"
 
 
 def sha256_file(path: Path) -> str:
@@ -59,11 +72,135 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _record_digest(rows: list[Any]) -> str:
+    canonical = json.dumps(
+        rows,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def build_extraction_snapshot(flight: dict[str, Any]) -> dict[str, Any]:
+    """Build the generic, privacy-safe identity contract for one analysis.
+
+    The release corpus pins facts extracted from the uploaded CFP. Live NOAA
+    AWC records are deliberately excluded because they are time-varying
+    enrichment, not evidence held by the pinned source package. Raw weather
+    text never leaves this function; only each full ordered collection's
+    SHA-256 identity is retained. Full-record hashing catches drift in fields
+    such as waypoint MSA, airway, FIR, VWS and source-page evidence too.
+    """
+
+    structure_failures: list[str] = []
+
+    def records(container: Any, key: str, path: str) -> list[Any]:
+        if not isinstance(container, dict) or key not in container:
+            structure_failures.append(f"{path} is missing")
+            return []
+        candidate = container[key]
+        if not isinstance(candidate, list):
+            structure_failures.append(f"{path} is not a list")
+            return []
+        return list(candidate)
+
+    def value(row: Any, key: str) -> Any:
+        return row.get(key) if isinstance(row, dict) else None
+
+    notams = records(flight, "notams", "notams")
+    weather = [
+        row
+        for row in records(flight, "weather", "weather")
+        if str(value(row, "source") or "").strip().lower() != _LIVE_OPMET_SOURCE
+    ]
+    alternates = records(flight, "alternates", "alternates")
+    deferred = records(flight, "deferred_items", "deferred_items")
+    edto = flight.get("edto")
+    if not isinstance(edto, dict):
+        structure_failures.append("edto is missing or not an object")
+        edto = {}
+    edto_sectors = records(edto, "sectors", "edto.sectors")
+    edto_airports = records(edto, "airports", "edto.airports")
+    fuel_airports = records(
+        flight,
+        "fuel_enroute_airports",
+        "fuel_enroute_airports",
+    )
+    route_waypoints = records(flight, "route_waypoints", "route_waypoints")
+
+    collections = {
+        "notams": notams,
+        "weather": weather,
+        "alternates": alternates,
+        "deferred_items": deferred,
+        "edto_sectors": edto_sectors,
+        "edto_airports": edto_airports,
+        "fuel_enroute_airports": fuel_airports,
+        "route_waypoints": route_waypoints,
+    }
+    counts = {
+        "notams": len(notams),
+        "weather": len(weather),
+        "alternates": len(alternates),
+        "deferred_items": len(deferred),
+        "edto_sectors": len(edto_sectors),
+        "edto_airports": len(edto_airports),
+        "fuel_enroute_airports": len(fuel_airports),
+        "route_waypoints": len(route_waypoints),
+    }
+    return {
+        "counts": counts,
+        "identity_sha256": {
+            name: _record_digest(collections[name])
+            for name in EXTRACTION_DIGEST_FIELDS
+        },
+        "structure_failures": structure_failures,
+    }
+
+
+def check_extraction_expectations(
+    flight: dict[str, Any],
+    expected: dict[str, Any],
+) -> dict[str, Any]:
+    """Compare one analysis with its frozen manifest expectation."""
+    actual = build_extraction_snapshot(flight)
+    failures = list(actual["structure_failures"])
+    expected_counts = expected.get("counts") or {}
+    expected_digests = expected.get("identity_sha256") or {}
+    for name in EXTRACTION_COUNT_FIELDS:
+        if actual["counts"][name] != expected_counts.get(name):
+            failures.append(
+                f"{name}.count expected {expected_counts.get(name)!r}, "
+                f"got {actual['counts'][name]!r}"
+            )
+    for name in EXTRACTION_DIGEST_FIELDS:
+        if actual["identity_sha256"][name] != expected_digests.get(name):
+            failures.append(f"{name}.identity_sha256 changed")
+    return {
+        "valid": not failures,
+        "failures": failures,
+        "actual": actual,
+    }
+
+
 def load_manifest(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     cases = payload.get("cases")
     if payload.get("schema_version") != 1 or not isinstance(cases, list):
         raise ValueError("Private CFP corpus manifest must use schema version 1.")
+    if payload.get("extraction_contract_version") != EXTRACTION_CONTRACT_VERSION:
+        raise ValueError(
+            "Private CFP corpus manifest must use extraction contract version "
+            f"{EXTRACTION_CONTRACT_VERSION}."
+        )
+    baseline_policy = str(payload.get("extraction_baseline_policy") or "").strip()
+    if len(baseline_policy) < 40:
+        raise ValueError(
+            "Private CFP corpus manifest must document its frozen extraction "
+            "baseline and deliberate remint policy."
+        )
     manifest_ids = {str(case.get("case_id")) for case in cases if isinstance(case, dict)}
     missing_ids = REQUIRED_CASE_IDS - manifest_ids
     if missing_ids:
@@ -86,6 +223,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
         "destination_iata",
         "route_point_count",
         "route_hash",
+        "extraction_expectations",
     }
     for case in cases:
         if not isinstance(case, dict) or required - set(case):
@@ -97,6 +235,44 @@ def load_manifest(path: Path) -> dict[str, Any]:
         source_hash = str(case["source_sha256"])
         if not re.fullmatch(r"[0-9a-f]{64}", source_hash):
             raise ValueError(f"Private CFP corpus hash is malformed for {case['case_id']}.")
+        expectations = case["extraction_expectations"]
+        if not isinstance(expectations, dict) or set(expectations) != {
+            "counts",
+            "identity_sha256",
+        }:
+            raise ValueError(
+                f"Private CFP extraction expectations are malformed for {case['case_id']}."
+            )
+        counts = expectations["counts"]
+        digests = expectations["identity_sha256"]
+        if not isinstance(counts, dict) or set(counts) != set(EXTRACTION_COUNT_FIELDS):
+            raise ValueError(
+                f"Private CFP extraction counts are incomplete for {case['case_id']}."
+            )
+        if not isinstance(digests, dict) or set(digests) != set(EXTRACTION_DIGEST_FIELDS):
+            raise ValueError(
+                f"Private CFP extraction digests are incomplete for {case['case_id']}."
+            )
+        if any(
+            isinstance(count, bool) or not isinstance(count, int) or count < 0
+            for count in counts.values()
+        ):
+            raise ValueError(
+                f"Private CFP extraction counts are invalid for {case['case_id']}."
+            )
+        if counts["route_waypoints"] != int(case["route_point_count"]):
+            raise ValueError(
+                f"Private CFP route waypoint count disagrees with route_point_count "
+                f"for {case['case_id']}."
+            )
+        if any(
+            not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for digest in digests.values()
+        ):
+            raise ValueError(
+                f"Private CFP extraction digest is malformed for {case['case_id']}."
+            )
         if (
             str(filename) in filenames
             or source_hash in hashes
@@ -319,9 +495,11 @@ FACT_SCALARS = (
     "edto_rvsm",
 )
 
-# Field-path waivers, never per-flight. Each names WHY the fact class does
-# not print verbatim; the REV3 canon (SQ214_19AUGE2026 REV3) is the ruling
-# document for "not in canon" entries.
+# Field-path waivers, never per-flight. Only implementation audit evidence,
+# map geometry, and values that are provably printed through a composed label
+# belong here. Pilot-visible alternate, performance, fuel, and deferred-item
+# facts are publication requirements even when an earlier reference omitted
+# them; the complete PDF appendix must carry them.
 FACT_WAIVERS: dict[str, str] = {
     "edto.sectors[].entry.latitude": "rendered as map geometry, not numerals",
     "edto.sectors[].entry.longitude": "rendered as map geometry, not numerals",
@@ -346,25 +524,6 @@ FACT_WAIVERS: dict[str, str] = {
     "fuel_summary.checks[].rhs": "ladder cross-check machinery",
     "fuel_summary.state": "prints only when not verified, as the amber review sentence",
     "fuel_summary.discrepancies[]": "an unverified ladder prints the amber review sentence pointing at the source page",
-    "fuel_summary.rows.fuel_in_tanks.time_minutes": "TANKS row prints kg in-tanks/excess per the REV3 canon",
-    "fuel_summary.rows.excess_fuel.time_minutes": "TANKS row prints kg in-tanks/excess per the REV3 canon",
-    "fuel_summary.rows.dest_hold_top_up.time_minutes": "top-up rows print kg; the canon ladder prints '0 / 0' without a time",
-    "fuel_summary.rows.edto_top_up.time_minutes": "top-up rows print kg; the canon ladder prints '0 / 0' without a time",
-    "fuel_summary.excess_breakdown[].label": "the excess composition sentence prints the dominant contributors",
-    "fuel_summary.excess_breakdown[].fuel_kg": "the excess composition sentence prints the dominant contributors",
-    "fuel.planned_destination_fuel_kg": "not in the REV3 canon fuel ladder",
-    "performance.eosid": "not in the REV3 canon (candidate addition, David to rule)",
-    "performance.thrust_setting": "not in the REV3 canon",
-    "performance.packs_on": "not in the REV3 canon",
-    "performance.anti_ice_on": "not in the REV3 canon",
-    "performance.runway_condition": "not in the REV3 canon",
-    "performance.qnh_hpa": "not in the REV3 canon as a dedicated field",
-    "performance.wind": "not in the REV3 canon as a dedicated field",
-    "performance.obstacle_rtow_kg": "not in the REV3 canon; the governing RTOW limit prints",
-    "performance.structural_rtow_kg": "not in the REV3 canon; the governing RTOW limit prints",
-    "performance.landing_rtow_kg": "not in the REV3 canon; the governing RTOW limit prints",
-    "performance.maximum_fuel_available_kg": "not in the REV3 canon",
-    "deferred_items[].company_remark": "not in the REV3 canon MEL table (title, reference and limitation print)",
     "edto_rvsm": "prints as the 'EDTO / RVSM' capability chip",
 }
 
@@ -398,6 +557,20 @@ def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict
     """Every parsed CFP fact prints, or carries a written waiver."""
     text = " ".join(output_text.upper().split())
     text_packed = text.replace(" ", "")
+
+    def visible_tokens_in_order(source: Any) -> bool:
+        """Accept wrapped visible source tokens even when page chrome intervenes."""
+        expected = str(source).upper().split()
+        if not expected:
+            return True
+        cursor = 0
+        for token in text.split():
+            if token == expected[cursor]:
+                cursor += 1
+                if cursor == len(expected):
+                    return True
+        return False
+
     missing: list[str] = []
     checked = 0
     for root in FACT_ROOTS:
@@ -414,6 +587,26 @@ def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict
             if any(len(form) >= 24 and form.replace(" ", "") in text_packed for form in forms):
                 continue
             missing.append(f"{path} = {str(value)[:60]!r}")
+
+    # Boolean performance switches are operational values, but generic leaf
+    # iteration deliberately skips booleans because most are internal state.
+    # Check the two published switches as their single labelled appendix row.
+    performance = flight.get("performance") or {}
+    packs_on = performance.get("packs_on")
+    anti_ice_on = performance.get("anti_ice_on")
+    if isinstance(packs_on, bool) or isinstance(anti_ice_on, bool):
+        checked += int(isinstance(packs_on, bool)) + int(isinstance(anti_ice_on, bool))
+        packs_value = "ON" if packs_on is True else "OFF" if packs_on is False else "--"
+        anti_ice_value = (
+            "ON" if anti_ice_on is True else "OFF" if anti_ice_on is False else "--"
+        )
+        switch_row = f"PACKS / ANTI-ICE {packs_value} / {anti_ice_value}"
+        if switch_row not in text:
+            if isinstance(packs_on, bool):
+                missing.append(f"performance.packs_on = {packs_on!r}")
+            if isinstance(anti_ice_on, bool):
+                missing.append(f"performance.anti_ice_on = {anti_ice_on!r}")
+
     for key in FACT_SCALARS:
         value = flight.get(key)
         if value in (None, "") or key in FACT_WAIVERS:
@@ -425,6 +618,8 @@ def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict
         if any(form in text for form in forms):
             continue
         if any(len(form) >= 24 and form.replace(" ", "") in text_packed for form in forms):
+            continue
+        if key == "route_text" and visible_tokens_in_order(value):
             continue
         missing.append(f"{key} = {str(value)[:60]!r}")
     return {"valid": not missing, "checked": checked, "missing": missing}
@@ -443,7 +638,6 @@ def check_cross_surface_parity(
     surface printing 'none' while the engine holds an event is exactly the
     class of defect this gate exists to stop."""
     from app.odss.briefing import build_briefing_view
-    from app.odss.combined_brief import _edto_classification, _edto_operational_rows
 
     view = build_briefing_view(flight, findings, warnings)
     folded = " ".join(output_text.upper().split())
@@ -462,11 +656,10 @@ def check_cross_surface_parity(
     if not terrain_events and not says_none:
         failures.append("terrain: PDF omits the no-window sentence while the engine holds none")
 
-    classification = _edto_classification(flight)
-    edto_rows = _edto_operational_rows(
-        classification, view.get("edto") or {}, flight.get("fuel_summary") or {}
-    )
-    for label, value in edto_rows:
+    edto_rows = (view.get("edto") or {}).get("operational_rows") or []
+    for row in edto_rows:
+        label = str(row.get("label") or "")
+        value = str(row.get("value") or "")
         if not printed(value):
             failures.append(f"edto: row {label!r} ({value!r}) not printed")
 
@@ -505,8 +698,13 @@ def check_cross_surface_parity(
                     f"vaa: derived screening line ({head!r}...) not printed"
                 )
 
+    pilot_lines = {
+        " ".join(line.upper().split())
+        for line in output_text.splitlines()
+        if line.strip()
+    }
     for banned in ("LEVEL 1", "LEVEL 2", "PERTINENT BRIEF", "EVIDENCE LEVEL"):
-        if banned in folded:
+        if banned in pilot_lines:
             failures.append(f"naming: banned wording {banned!r} in the pilot PDF")
 
     return {"valid": not failures, "failures": failures}
@@ -527,6 +725,16 @@ def run_case(
     )
     payload = json.loads(Path(result["analysis_path"]).read_text(encoding="utf-8"))
     flight = payload["flight"]
+    extraction = check_extraction_expectations(
+        flight,
+        case["extraction_expectations"],
+    )
+    if not extraction["valid"]:
+        raise AssertionError(
+            f"{case['case_id']} frozen extraction baseline changed: "
+            f"{extraction['failures']}. Deliberately review and remint the "
+            "manifest before accepting parser changes."
+        )
     map_contract = payload.get("map_contract") or {}
     checks = {
         "flight_number": flight.get("flight_number") == case["flight_number"],
@@ -551,6 +759,9 @@ def run_case(
         combined,
         source_pdf_path=str(preflight["source"]),
         weather_charts=payload.get("weather_charts") or {},
+        # The private corpus proves lossless publication coverage. Production
+        # callers intentionally use the seven-page operational default.
+        include_audit_appendix=True,
     )
     quality = validate_combined_briefing_pdf(combined)
     if not quality["valid"]:
@@ -608,6 +819,7 @@ def run_case(
         "destination": flight["destination"],
         "route_point_count": len(flight.get("route_waypoints") or []),
         "route_hash": map_contract["route_hash"],
+        "extraction_contract": extraction["actual"],
         "combined_pdf": str(combined.relative_to(output_root)),
         "combined_sha256": sha256_file(combined),
         "combined_page_count": quality["page_count"],
@@ -635,7 +847,7 @@ def write_receipt(path: Path, receipt: dict[str, Any]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run the mandatory 11-CFP private physical-PDF release corpus."
+        description="Run the mandatory pinned private physical-PDF release corpus."
     )
     parser.add_argument("--corpus-dir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)

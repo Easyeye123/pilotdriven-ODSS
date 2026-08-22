@@ -461,3 +461,35 @@ def test_awc_sigmet_only_does_not_claim_complete_vaac_coverage(monkeypatch) -> N
         review["coverage_ledger"]["responsible_vaac_advisory_and_vag"]["available"]
         is False
     )
+
+
+
+def test_vaac_reach_summary_names_the_responsible_centres() -> None:
+    # Boss, 21 Aug: "there's a VAAC ... in Manila? ... don't see any
+    # [checking]" — the reach summary leads with the centres Doc 9766 makes
+    # responsible for this route, and says whether each was reached.
+    from app.odss.briefing import _vaac_reach_summary
+
+    flight = {
+        "route_waypoints": [
+            {"name": "WSSS", "latitude": 1.3, "longitude": 103.9, "fir_boundary": None},
+            {"name": "-RPHI", "latitude": 12.0, "longitude": 118.0, "fir_boundary": "RPHI"},
+            {"name": "RPLL", "latitude": 14.5, "longitude": 121.0, "fir_boundary": None},
+        ],
+        "vaa_review": {
+            "vaac_centre_ledger": [
+                {"centre": "TOKYO", "status": "available", "advisory_count": 1},
+                {"centre": "DARWIN", "status": "available", "advisory_count": 0},
+                {"centre": "ANCHORAGE", "status": "available", "advisory_count": 0},
+                {"centre": "LONDON", "status": "not_mounted", "advisory_count": 0},
+            ]
+        },
+    }
+    summary = _vaac_reach_summary(flight)
+    assert summary["responsible"] == [
+        {"centre": "DARWIN", "reached": True},
+        {"centre": "TOKYO", "reached": True},
+    ]
+    assert summary["responsible_source"]["document"].startswith("ICAO Doc 9766")
+    assert "Responsible for this route: DARWIN, TOKYO" in summary["responsible_line"]
+    assert summary["responsible_review_required"] is False

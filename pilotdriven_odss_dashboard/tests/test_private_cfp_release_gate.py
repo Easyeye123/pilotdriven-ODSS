@@ -43,7 +43,8 @@ def test_manifest_is_plain_json_and_contains_no_private_pdf_bytes():
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
     assert payload["schema_version"] == 1
-    assert MANIFEST.stat().st_size < 20_000
+    assert payload["extraction_contract_version"] == 1
+    assert MANIFEST.stat().st_size < 64_000
 
 
 def test_odss_runtime_image_is_reachable_only_through_the_full_pytest_stage():
@@ -51,6 +52,18 @@ def test_odss_runtime_image_is_reachable_only_through_the_full_pytest_stage():
 
     assert "RUN python -m pytest -q" in dockerfile
     assert "COPY --from=test /tmp/odss-tests-passed" in dockerfile
+
+
+def test_private_corpus_explicitly_requests_the_lossless_audit_publication():
+    """The pilot download defaults to seven pages; only the completeness
+    corpus opts into every measured continuation page."""
+    runner = (ROOT / "scripts" / "run_private_cfp_corpus.py").read_text(
+        encoding="utf-8"
+    )
+    production = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+
+    assert "include_audit_appendix=True" in runner
+    assert "include_audit_appendix=True" not in production
 
 
 def test_physical_scanner_accepts_a_readable_non_overlapping_page(tmp_path):

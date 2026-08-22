@@ -88,17 +88,24 @@ _LEVEL_2_FAIL_CLOSED_ADVISORY_RESULTS = (
 # REV3 canon contract (boss, 20 Aug: "this format, this content, this
 # look"): seven fixed sections in the tab-strip order - the old time-gates,
 # performance and comms pages fold into pages 1, 2 and 4.
+# 21 Aug amendments from the SQ910 round: the PRIORITY strip is removed
+# ("don't waste words like this - remove all this") and the analysis page
+# label follows his GPT reference's "DECISION ANALYSIS".
 _COMBINED_FIXED_PREFIX = (
-    ("CFP P1 - ROUTE / LEVELS", "PRIORITY"),
-    ("CRITICAL ANALYSIS", "FLIGHT-PHASE DECISION TIMELINE"),
+    ("CFP P1 - ROUTE / LEVELS",),
+)
+_COMBINED_ANALYSIS_MARKERS = (
+    "DECISION ANALYSIS",
+    "FLIGHT-PHASE DECISION TIMELINE",
 )
 _COMBINED_MEL_TITLE = "MEL/CDL AND CDDL"
-_COMBINED_FIXED_SUFFIX = (
-    ("DESTINATION ALTERNATES",),
-    ("AIRPORT AND NOTAM APPLICABILITY",),
+_COMBINED_CONTINUABLE_SECTIONS = (
+    ("EDTO / ENROUTE AIRPORTS",),
+    ("AIRPORTS / NOTAM APPLICABILITY",),
     ("OPERATIONAL HAZARD ASSESSMENT",),
-    ("HIGH TERRAIN EXPOSURE AND DEPRESSURISATION",),
 )
+_COMBINED_TERRAIN_MARKERS = ("HIGH TERRAIN EXPOSURE AND DEPRESSURISATION",)
+_COMBINED_CONTINUATION_MARKER = "CONTINUED ("
 _COMBINED_PROFILE_TITLE = "DEPRESSURISATION PROFILE"
 _COMBINED_RETIRED_LABELS = (
     "LEVEL 1",
@@ -175,8 +182,13 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 f"Flight Briefing contains prohibited internal wording matched by {pattern.pattern}.",
             ))
     folded_text = pilot_text.upper()
+    pilot_lines = {
+        " ".join(line.upper().split())
+        for line in pilot_text.splitlines()
+        if line.strip()
+    }
     for label in _COMBINED_RETIRED_LABELS:
-        if label in folded_text:
+        if label in pilot_lines:
             violations.append(ReportQualityViolation(
                 "COMBINED_RETIRED_LABEL",
                 f"Flight Briefing contains retired pilot-facing label: {label}.",
@@ -195,6 +207,40 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 ))
 
         cursor = len(_COMBINED_FIXED_PREFIX)
+        if cursor >= page_count or not all(
+            marker in extracted_pages[cursor].upper()
+            for marker in _COMBINED_ANALYSIS_MARKERS
+        ):
+            violations.append(ReportQualityViolation(
+                "COMBINED_PAGE_STRUCTURE",
+                (
+                    f"Flight Briefing page {cursor + 1} must contain "
+                    f"{', '.join(_COMBINED_ANALYSIS_MARKERS)}."
+                ),
+            ))
+        else:
+            if _COMBINED_CONTINUATION_MARKER in extracted_pages[cursor].upper():
+                violations.append(ReportQualityViolation(
+                    "COMBINED_CONTINUATION_ORDER",
+                    "DECISION ANALYSIS must have exactly one primary page first.",
+                ))
+            cursor += 1
+            while (
+                cursor < page_count
+                and "DECISION ANALYSIS" in extracted_pages[cursor].upper()
+            ):
+                continuation_text = extracted_pages[cursor].upper()
+                if _COMBINED_CONTINUATION_MARKER not in continuation_text:
+                    violations.append(ReportQualityViolation(
+                        "COMBINED_DUPLICATE_PRIMARY",
+                        (
+                            f"Flight Briefing page {cursor + 1} repeats the "
+                            "DECISION ANALYSIS primary page instead of "
+                            "declaring a continuation."
+                        ),
+                    ))
+                cursor += 1
+
         mel_pages = 0
         while cursor < page_count and _COMBINED_MEL_TITLE in extracted_pages[cursor].upper():
             mel_pages += 1
@@ -205,7 +251,7 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 "Flight Briefing must contain at least one MEL/CDL and CDDL page.",
             ))
 
-        for required_markers in _COMBINED_FIXED_SUFFIX:
+        for required_markers in _COMBINED_CONTINUABLE_SECTIONS:
             if cursor >= page_count or not all(
                 marker in extracted_pages[cursor].upper()
                 for marker in required_markers
@@ -217,7 +263,67 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                         f"{', '.join(required_markers)}."
                     ),
                 ))
+                continue
+            primary_text = extracted_pages[cursor].upper()
+            if _COMBINED_CONTINUATION_MARKER in primary_text:
+                violations.append(ReportQualityViolation(
+                    "COMBINED_CONTINUATION_ORDER",
+                    (
+                        f"Flight Briefing page {cursor + 1} starts "
+                        f"{', '.join(required_markers)} as a continuation; "
+                        "the section must have exactly one primary page first."
+                    ),
+                ))
             cursor += 1
+            while cursor < page_count and all(
+                marker in extracted_pages[cursor].upper()
+                for marker in required_markers
+            ):
+                continuation_text = extracted_pages[cursor].upper()
+                if _COMBINED_CONTINUATION_MARKER not in continuation_text:
+                    violations.append(ReportQualityViolation(
+                        "COMBINED_DUPLICATE_PRIMARY",
+                        (
+                            f"Flight Briefing page {cursor + 1} repeats the "
+                            f"{', '.join(required_markers)} primary page instead "
+                            "of declaring a continuation."
+                        ),
+                    ))
+                cursor += 1
+
+        if cursor >= page_count or not all(
+            marker in extracted_pages[cursor].upper()
+            for marker in _COMBINED_TERRAIN_MARKERS
+        ):
+            violations.append(ReportQualityViolation(
+                "COMBINED_PAGE_STRUCTURE",
+                (
+                    f"Flight Briefing page {cursor + 1} must contain "
+                    f"{', '.join(_COMBINED_TERRAIN_MARKERS)}."
+                ),
+            ))
+        else:
+            if _COMBINED_CONTINUATION_MARKER in extracted_pages[cursor].upper():
+                violations.append(ReportQualityViolation(
+                    "COMBINED_CONTINUATION_ORDER",
+                    "The terrain section must have exactly one primary page first.",
+                ))
+            cursor += 1
+            while cursor < page_count and all(
+                marker in extracted_pages[cursor].upper()
+                for marker in _COMBINED_TERRAIN_MARKERS
+            ):
+                continuation_text = extracted_pages[cursor].upper()
+                if _COMBINED_CONTINUATION_MARKER not in continuation_text:
+                    violations.append(ReportQualityViolation(
+                        "COMBINED_DUPLICATE_PRIMARY",
+                        (
+                            f"Flight Briefing page {cursor + 1} repeats the "
+                            "terrain primary page instead of declaring a "
+                            "continuation."
+                        ),
+                    ))
+                cursor += 1
 
         while cursor < page_count:
             if _COMBINED_PROFILE_TITLE not in extracted_pages[cursor].upper():

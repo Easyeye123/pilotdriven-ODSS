@@ -1,7 +1,16 @@
 from __future__ import annotations
 
-from app.odss.briefing import build_briefing_view
-from app.odss.combined_brief import _edto_classification, _edto_operational_rows
+from copy import deepcopy
+import json
+from pathlib import Path
+
+import pytest
+
+from app.odss.briefing import (
+    _edto_classification,
+    _edto_operational_rows,
+    build_briefing_view,
+)
 from app.odss.parser import parse_lido
 from scripts.run_private_cfp_corpus import check_cross_surface_parity
 
@@ -114,10 +123,23 @@ def test_excess_item_without_kg_fails() -> None:
 
 def test_banned_wording_fails() -> None:
     flight = _flight(LOG_PAGE_LOW)
-    text = _passing_text(flight) + "\nLEVEL 2 - PROFILE MATCH"
+    text = _passing_text(flight) + "\nLEVEL 2"
     result = check_cross_surface_parity(flight, [], [], text)
     assert not result["valid"]
     assert any("naming" in failure for failure in result["failures"])
+
+
+def test_level_wording_inside_source_fact_is_not_a_retired_layout_label() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    text = (
+        _passing_text(flight)
+        + "\nILS RWY 08R DOWNGRADED TO CAT I, LEVEL 2 "
+        "(ICAO CLASSIFICATION I/E/2)."
+    )
+
+    result = check_cross_surface_parity(flight, [], [], text)
+
+    assert result["valid"], result["failures"]
 
 
 def test_unnamed_volcanic_ash_fails() -> None:
@@ -152,6 +174,191 @@ def test_missing_derived_screening_line_fails() -> None:
         flight, [], [], named + "\nClosest approach 60 NM near ALPHA; ash layer SFC/FL070"
     )
     assert result_ok["valid"], result_ok["failures"]
+
+
+def _extraction_flight() -> dict:
+    return {
+        "notams": [
+            {"location": "WSSS", "notam_id": "A0001/26"},
+            {"location": "WSSS", "notam_id": "A0002/26"},
+            {"location": "WMKK", "notam_id": "A0003/26"},
+        ],
+        "weather": [
+            {
+                "record_type": "METAR",
+                "location": "WSSS",
+                "source_page": 10,
+                "text": "SA SOURCE ONE",
+            },
+            {
+                "record_type": "TAF",
+                "location": "WSSS",
+                "source_page": 11,
+                "text": "FT SOURCE TWO",
+            },
+            {
+                "record_type": "SIGMET",
+                "location": "WSJC",
+                "source_page": 12,
+                "text": "WS SOURCE THREE",
+            },
+            {
+                "record_type": "METAR",
+                "location": "WSSS",
+                "source_page": None,
+                "text": "LIVE RECORD MUST NOT ENTER THE PIN",
+                "source": "noaa_awc_live",
+            },
+        ],
+        "alternates": [
+            {"airport": "WSAP"},
+            {"airport": "WMKK"},
+            {"airport": "WIII"},
+        ],
+        "deferred_items": [
+            {"item_type": "MEL", "reference": "21-01-01"},
+            {"item_type": "CDL", "reference": "32-02-02"},
+            {"item_type": "MEL", "reference": "34-03-03"},
+        ],
+        "edto": {
+            "sectors": [{"number": 1}, {"number": 2}, {"number": 3}],
+            "airports": [
+                {"airport": "WADD"},
+                {"airport": "WIII"},
+                {"airport": "VYYY"},
+            ],
+        },
+        "fuel_enroute_airports": [
+            {"airport": "WIII"},
+            {"airport": "WADD"},
+            {"airport": "VYYY"},
+        ],
+        "route_waypoints": [
+            {"name": "ALPHA", "airway_in": "DCT", "msa_hundreds_ft": 30},
+            {"name": "BRAVO", "airway_in": "A1", "msa_hundreds_ft": 40},
+            {"name": "CHARLIE", "airway_in": "B2", "msa_hundreds_ft": 50},
+        ],
+    }
+
+
+def _extraction_expectation(flight: dict) -> dict:
+    from scripts.run_private_cfp_corpus import build_extraction_snapshot
+
+    snapshot = build_extraction_snapshot(flight)
+    assert snapshot["structure_failures"] == []
+    return {
+        "counts": snapshot["counts"],
+        "identity_sha256": snapshot["identity_sha256"],
+    }
+
+
+def test_extraction_digest_has_a_fixed_canonical_json_vector() -> None:
+    from scripts.run_private_cfp_corpus import _record_digest
+
+    assert _record_digest([{"b": 2, "a": 1}]) == (
+        "44c7deead2ed8313d29655e45c0d1469419213c93d9f44d66da7c7afe46e74e3"
+    )
+
+
+def test_extraction_weather_pin_excludes_live_noaa_awc() -> None:
+    from scripts.run_private_cfp_corpus import build_extraction_snapshot
+
+    with_live = _extraction_flight()
+    without_live = deepcopy(with_live)
+    without_live["weather"].pop()
+
+    assert build_extraction_snapshot(with_live) == build_extraction_snapshot(without_live)
+    assert build_extraction_snapshot(with_live)["counts"]["weather"] == 3
+
+
+@pytest.mark.parametrize(
+    ("container", "field", "failure_path"),
+    [
+        ("flight", "notams", "notams"),
+        ("flight", "weather", "weather"),
+        ("flight", "alternates", "alternates"),
+        ("flight", "deferred_items", "deferred_items"),
+        ("edto", "sectors", "edto.sectors"),
+        ("edto", "airports", "edto.airports"),
+        ("flight", "fuel_enroute_airports", "fuel_enroute_airports"),
+        ("flight", "route_waypoints", "route_waypoints"),
+    ],
+)
+def test_extraction_contract_rejects_a_missing_whole_domain(
+    container: str,
+    field: str,
+    failure_path: str,
+) -> None:
+    from scripts.run_private_cfp_corpus import check_extraction_expectations
+
+    flight = _extraction_flight()
+    expected = _extraction_expectation(flight)
+    changed = deepcopy(flight)
+    target = changed if container == "flight" else changed["edto"]
+    del target[field]
+
+    result = check_extraction_expectations(changed, expected)
+
+    assert result["valid"] is False
+    assert f"{failure_path} is missing" in result["failures"]
+
+
+def test_extraction_contract_rejects_removed_middle_row_and_duplicate_replacement() -> None:
+    from scripts.run_private_cfp_corpus import check_extraction_expectations
+
+    flight = _extraction_flight()
+    expected = _extraction_expectation(flight)
+    changed = deepcopy(flight)
+    changed["notams"].pop(1)
+    changed["notams"].append(deepcopy(changed["notams"][-1]))
+
+    result = check_extraction_expectations(changed, expected)
+
+    assert result["valid"] is False
+    assert not any("notams.count" in failure for failure in result["failures"])
+    assert "notams.identity_sha256 changed" in result["failures"]
+
+
+def test_extraction_contract_hashes_weather_raw_text_without_storing_it() -> None:
+    from scripts.run_private_cfp_corpus import check_extraction_expectations
+
+    flight = _extraction_flight()
+    expected = _extraction_expectation(flight)
+    changed = deepcopy(flight)
+    changed["weather"][1]["text"] = "FT SOURCE TWO CHANGED"
+
+    result = check_extraction_expectations(changed, expected)
+
+    assert result["valid"] is False
+    assert result["failures"] == ["weather.identity_sha256 changed"]
+
+
+def test_extraction_contract_hashes_full_waypoint_record_not_only_route_identity() -> None:
+    from scripts.run_private_cfp_corpus import check_extraction_expectations
+
+    flight = _extraction_flight()
+    expected = _extraction_expectation(flight)
+    changed = deepcopy(flight)
+    changed["route_waypoints"][1]["msa_hundreds_ft"] = 41
+
+    result = check_extraction_expectations(changed, expected)
+
+    assert result["valid"] is False
+    assert result["failures"] == ["route_waypoints.identity_sha256 changed"]
+
+
+def test_manifest_requires_static_extraction_expectations_for_every_case(
+    tmp_path: Path,
+) -> None:
+    from scripts.run_private_cfp_corpus import DEFAULT_MANIFEST, load_manifest
+
+    payload = json.loads(DEFAULT_MANIFEST.read_text(encoding="utf-8"))
+    payload["cases"][0].pop("extraction_expectations")
+    malformed = tmp_path / "missing-extraction-expectations.json"
+    malformed.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="case is incomplete"):
+        load_manifest(malformed)
 
 
 def test_parsed_fact_coverage_catches_a_dropped_fact() -> None:
@@ -191,11 +398,127 @@ def test_parsed_fact_coverage_normalises_times_wraps_and_registrations() -> None
     assert result["valid"], result["missing"]
 
 
-def test_every_fact_waiver_carries_a_reason() -> None:
+def test_long_route_fact_accepts_visible_ordered_tokens_across_page_chrome() -> None:
+    from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
+
+    route_tokens = [f"RTE{index:03d}" for index in range(1, 81)]
+    flight = {"route_text": " ".join(route_tokens)}
+    visible_text = (
+        "CFP ROUTE "
+        + " ".join(route_tokens[:40])
+        + " PAGE 2 OF 2 AIRPORTS CONTINUED SOURCE "
+        + " ".join(route_tokens[40:])
+    )
+
+    passed = check_parsed_fact_coverage(flight, visible_text)
+    assert passed["valid"], passed["missing"]
+
+    missing_token = visible_text.replace("RTE057", "MISSING", 1)
+    failed = check_parsed_fact_coverage(flight, missing_token)
+    assert not failed["valid"]
+    assert any("route_text" in item for item in failed["missing"])
+
+
+def test_fact_waivers_are_explained_and_limited_to_non_operational_metadata() -> None:
     from scripts.run_private_cfp_corpus import FACT_WAIVERS
 
     for path, reason in FACT_WAIVERS.items():
         assert len(reason.strip()) >= 15, f"waiver for {path} needs a real reason"
+        assert not path.startswith(("alternates", "performance.", "fuel.", "deferred_items[]")), (
+            f"pilot-visible operational fact cannot be waived: {path}"
+        )
+        assert not path.startswith("fuel_summary.rows."), (
+            f"pilot-visible fuel row cannot be waived: {path}"
+        )
+        assert not path.startswith("fuel_summary.excess_breakdown"), (
+            f"pilot-visible excess-fuel fact cannot be waived: {path}"
+        )
+
+
+def test_pdf_fact_coverage_requires_every_alternate() -> None:
+    from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
+
+    flight = {
+        "alternates": [
+            {"airport": "WSAP", "runway": "20", "approach": "CAT1DME", "minima": "3000FT/5000M"},
+            {"airport": "WMKK", "runway": "14L", "approach": "LOCDME", "minima": "446FT/1400M"},
+        ],
+    }
+    preferred_only = "WSAP RWY 20 CAT1DME 3000FT/5000M"
+    result = check_parsed_fact_coverage(flight, preferred_only)
+    assert not result["valid"]
+    assert any("WMKK" in item for item in result["missing"])
+
+    complete = check_parsed_fact_coverage(
+        flight,
+        preferred_only + " WMKK RWY 14L LOCDME 446FT/1400M",
+    )
+    assert complete["valid"], complete["missing"]
+
+
+def test_pdf_fact_coverage_rejects_performance_fuel_and_deferred_omissions() -> None:
+    from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
+
+    flight = {
+        "performance": {
+            "runway": "20C",
+            "runway_condition": "DRY",
+            "thrust_setting": "TOGA/FLEX(STD)",
+            "qnh_hpa": 1021,
+            "wind": "180/10KT",
+            "packs_on": True,
+            "anti_ice_on": False,
+            "eosid": "STRAIGHT OUT",
+            "obstacle_rtow_kg": 297400,
+            "landing_rtow_kg": 312027,
+            "structural_rtow_kg": 280000,
+            "maximum_fuel_available_kg": 50000,
+        },
+        "fuel": {"planned_destination_fuel_kg": 9316},
+        "fuel_summary": {
+            "rows": {
+                "fuel_in_tanks": {"time_minutes": 320, "fuel_kg": 45000},
+                "excess_fuel": {"time_minutes": 45, "fuel_kg": 3000},
+                "dest_hold_top_up": {"time_minutes": 30, "fuel_kg": 1000},
+                "edto_top_up": {"time_minutes": 15, "fuel_kg": 500},
+            },
+            "excess_breakdown": [{"label": "POLICY", "fuel_kg": 1500}],
+        },
+        "deferred_items": [{
+            "item_type": "MEL",
+            "reference": "21-01-01",
+            "description": "PACK FLOW CONTROL VALVE INOPERATIVE",
+            "company_remark": "APPLY THE CFP OPERATING RESTRICTION",
+        }],
+    }
+    complete_text = " ".join([
+        "RWY 20C DRY TOGA/FLEX(STD) QNH 1021 WIND 180/10KT",
+        "PACKS / ANTI-ICE ON / OFF EOSID STRAIGHT OUT",
+        "RTOW PERF 297,400 RTOW LAND 312,027 RTOW STRUCT 280,000 MAX FUEL 50,000",
+        "PLANNED DESTINATION FUEL 9,316",
+        "FUEL IN TANKS 45,000 05.20 EXCESS 3,000 00.45",
+        "DEST HOLD TOP UP 1,000 00.30 EDTO TOP UP 500 00.15",
+        "EXCESS ALLOCATION POLICY 1,500",
+        "MEL 21-01-01 PACK FLOW CONTROL VALVE INOPERATIVE",
+        "APPLY THE CFP OPERATING RESTRICTION",
+    ])
+
+    complete = check_parsed_fact_coverage(flight, complete_text)
+    assert complete["valid"], complete["missing"]
+
+    omissions = [
+        ("STRAIGHT OUT", "performance.eosid"),
+        ("297,400", "performance.obstacle_rtow_kg"),
+        ("PACKS / ANTI-ICE ON / OFF", "performance.packs_on"),
+        ("9,316", "fuel.planned_destination_fuel_kg"),
+        ("POLICY", "fuel_summary.excess_breakdown[].label"),
+        ("APPLY THE CFP OPERATING RESTRICTION", "deferred_items[].company_remark"),
+    ]
+    for token, expected_path in omissions:
+        incomplete = complete_text.replace(token, "", 1)
+        result = check_parsed_fact_coverage(flight, incomplete)
+        assert not result["valid"], f"omitting {expected_path} must fail PDF coverage"
+        assert any(expected_path in item for item in result["missing"]), result["missing"]
 
 
 def test_pdf_renderer_raw_flight_reads_only_shrink() -> None:
