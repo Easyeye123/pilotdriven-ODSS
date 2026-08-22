@@ -21,6 +21,16 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _crop_box_valid(value: Any) -> bool:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return False
+    try:
+        x0, y0, x1, y1 = (float(item) for item in value)
+    except (TypeError, ValueError):
+        return False
+    return x1 > x0 and y1 > y0
+
+
 def _matched_profile_numbers(findings: list[dict[str, Any]]) -> list[str]:
     """Return each proposed approved profile number once, in report order."""
     numbers: list[str] = []
@@ -68,15 +78,23 @@ def build_profile_chart_artifact_contracts(
 def validate_depressurisation_profile_charts(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
-    level: int,
+    level: int | str,
 ) -> list[dict[str, str]]:
     """Fail closed when an approved profile is named but its chart is not published.
 
-    Level 1 must contain a validated decision-support analysis chart tied to the
-    approved source chart. Level 2 must contain the complete authoritative source
-    chart page. A profile identifier, source chip or hyperlink alone is not enough.
+    Legacy Level 1 requires the flight-specific analysis chart. Legacy Level 2
+    requires the complete authoritative chart page. The current combined Flight
+    Briefing requires both the flight-specific analysis and a tightly cropped
+    authoritative source chart with its crop box and provenance.
+
+    A profile identifier, source chip or hyperlink alone is never sufficient.
     """
-    if level not in {1, 2}:
+    mode: str
+    if isinstance(level, str):
+        mode = level.strip().casefold().replace("_", "-")
+    else:
+        mode = str(level)
+    if mode not in {"1", "2", "combined", "flight-briefing"}:
         return []
 
     profile_numbers = _matched_profile_numbers(findings)
@@ -91,11 +109,15 @@ def validate_depressurisation_profile_charts(
     }
 
     violations: list[dict[str, str]] = []
-    embedded_field = (
-        "level1_analysis_chart_embedded"
-        if level == 1
-        else "level2_full_source_chart_embedded"
-    )
+    if mode == "1":
+        embedded_fields = ("level1_analysis_chart_embedded",)
+    elif mode == "2":
+        embedded_fields = ("level2_full_source_chart_embedded",)
+    else:
+        embedded_fields = (
+            "combined_analysis_chart_embedded",
+            "combined_cropped_source_chart_embedded",
+        )
 
     for chart_number in profile_numbers:
         artifact = artifacts_by_number.get(chart_number)
@@ -136,13 +158,27 @@ def validate_depressurisation_profile_charts(
                     "message": f"Profile {chart_number} requires {field}=true.",
                 })
 
-        if artifact.get(embedded_field) is not True:
+        for embedded_field in embedded_fields:
+            if artifact.get(embedded_field) is not True:
+                violations.append({
+                    "code": "DEPRESSURISATION_PROFILE_CHART_MISSING_FROM_REPORT",
+                    "location": f"{location}.{embedded_field}",
+                    "message": (
+                        f"Profile {chart_number} must be visibly embedded for report "
+                        f"mode {mode}; a profile number or source link alone is not a "
+                        "compliant release."
+                    ),
+                })
+
+        if mode in {"combined", "flight-briefing"} and not _crop_box_valid(
+            artifact.get("crop_box")
+        ):
             violations.append({
-                "code": "DEPRESSURISATION_PROFILE_CHART_MISSING_FROM_REPORT",
-                "location": f"{location}.{embedded_field}",
+                "code": "DEPRESSURISATION_PROFILE_CROP_BOX_INVALID",
+                "location": f"{location}.crop_box",
                 "message": (
-                    f"Profile {chart_number} must be visibly embedded in Level {level}; "
-                    "a profile number or source link alone is not a compliant release."
+                    f"Profile {chart_number} requires a valid cropped source-chart box "
+                    "for the combined Flight Briefing."
                 ),
             })
 
