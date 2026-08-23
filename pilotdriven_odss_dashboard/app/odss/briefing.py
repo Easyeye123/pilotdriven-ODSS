@@ -793,16 +793,71 @@ def _actm_clock(value: Any) -> str:
     return f"{int(match.group(1)):02d}:{match.group(2)}" if match else ""
 
 
+def _destination_actm(flight: dict[str, Any]) -> int | None:
+    """Return ACTM only from a waypoint that is the filed destination."""
+    destination = str(flight.get("destination") or "").lstrip("-").upper()
+    if not destination:
+        return None
+    candidates: list[int] = []
+    for waypoint in flight.get("route_waypoints") or []:
+        name = str(waypoint.get("name") or "").lstrip("-").upper()
+        if name != destination:
+            continue
+        try:
+            actm = int(waypoint.get("actm_minutes"))
+        except (TypeError, ValueError):
+            continue
+        if actm >= 0:
+            candidates.append(actm)
+    return max(candidates) if candidates else None
+
+
+def _actual_arrival_hhmm(
+    timing_view: dict[str, Any] | None,
+    destination_actm: int | None,
+) -> str | None:
+    """Return ATOT + ACTM only when destination ACTM is explicitly held."""
+    if not timing_view or destination_actm is None:
+        return None
+    for waypoint in reversed(list(timing_view.get("waypoints") or [])):
+        try:
+            waypoint_actm = int(waypoint.get("actm_minutes"))
+        except (TypeError, ValueError):
+            continue
+        clock = str(waypoint.get("utc_clock") or "").strip().upper()
+        if waypoint_actm == destination_actm and re.fullmatch(r"\d{4}Z", clock):
+            return clock[:-1]
+    actual_takeoff = _parse_utc(timing_view.get("actual_takeoff_utc"))
+    if actual_takeoff is None:
+        return None
+    return (actual_takeoff + timedelta(minutes=destination_actm)).strftime("%H%M")
+
+
 def _arrival_basis_line(
     etd_hhmm: Any,
     eta_hhmm: Any,
     block: Any,
     eet_actm: Any,
+    *,
+    actual_takeoff_hhmm: str | None = None,
+    calculated_eta_hhmm: str | None = None,
 ) -> str:
-    """What the scheduled arrival rests on (boss, 21 Aug: "is it based on the
-    flight time?"): STD plus the schedule, and the filed EET."""
+    """State calculated ETA separately from the CFP schedule."""
     etd = str(etd_hhmm or "").strip()
+    eta = str(eta_hhmm or "").strip()
     eet = _actm_clock(eet_actm)
+    atot = str(actual_takeoff_hhmm or "").strip()
+    calculated_eta = str(calculated_eta_hhmm or "").strip()
+    if atot and calculated_eta:
+        basis = f"ATOT {atot} + " + (f"filed EET {eet}" if eet else "CFP ACTM")
+        if eta:
+            basis += f" · scheduled STA {eta}Z"
+        return basis
+    if atot:
+        basis = f"ATOT {atot} held; destination ACTM unavailable"
+        if eta:
+            basis += f" · scheduled STA {eta}Z"
+        return basis
     parts: list[str] = []
     if etd:
         parts.append(f"STD {etd}Z" + (f" + SCHED {block}" if block else ""))
@@ -814,17 +869,33 @@ def _arrival_basis_line(
 def _timeline_basis_line(
     etd_hhmm: Any,
     eta_hhmm: Any,
+    block: Any,
     eet_actm: Any,
     actual_takeoff_hhmm: str | None,
+    calculated_eta_hhmm: str | None,
 ) -> str:
-    """The decision timeline names its clock basis instead of implying one."""
+    """Name the decision clock basis without mixing schedule and actual time."""
     etd = str(etd_hhmm or "").strip() or "--"
     eta = str(eta_hhmm or "").strip() or "--"
     eet = _actm_clock(eet_actm) or "--"
-    filed = f"Filed EET {eet} from STD {etd}Z gives nominal {eta}Z arrival."
-    if actual_takeoff_hhmm:
-        return f"Clocks from actual take-off {actual_takeoff_hhmm} + CFP ACTM. {filed}"
-    return f"Elapsed ACTM shown; absolute clocks depend on actual take-off. {filed}"
+    schedule = str(block or "").strip() or "--"
+    atot = str(actual_takeoff_hhmm or "").strip()
+    calculated_eta = str(calculated_eta_hhmm or "").strip()
+    if atot and calculated_eta:
+        return (
+            f"ATOT {atot} + CFP ACTM drives clocks; calculated ETA "
+            f"{calculated_eta}Z from filed EET {eet}. Schedule: STD {etd}Z / "
+            f"STA {eta}Z ({schedule})."
+        )
+    if atot:
+        return (
+            f"ATOT {atot} held; destination ACTM unavailable, so no calculated "
+            f"ETA is published. Schedule: STD {etd}Z / STA {eta}Z ({schedule})."
+        )
+    return (
+        f"Schedule: STD {etd}Z / STA {eta}Z ({schedule}). Filed EET {eet}; "
+        "enter ATOT/ATA for calculated UTC clocks."
+    )
 
 
 def _performance_publication(flight: dict[str, Any]) -> dict[str, Any]:
@@ -1436,8 +1507,14 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
             canvas.drawRightString(tx, ty, label)
         occupied.append(box)
     canvas.setFillColor(colors.HexColor("#8396AB"))
-    canvas.setFont(SANS, map_note_size)
-    canvas.drawString(x + 5, y + 4, str(route_map.get("note") or ""))
+    note = str(route_map.get("note") or "")
+    note_lines = note.split("; ", 1)
+    for index, line in enumerate(reversed(note_lines)):
+        line_width = pdfmetrics.stringWidth(line, SANS, map_note_size)
+        if line_width > width - 10:
+            raise ValueError("Route-map source note exceeds the readable caption width")
+        canvas.setFont(SANS, map_note_size)
+        canvas.drawString(x + 5, y + 4 + index * 8.4, line)
     canvas.restoreState()
 
 
@@ -2653,12 +2730,12 @@ def _overview_anchor(
     kind: str,
     label: str,
     detail: str,
-    actm_minutes: int,
+    actm_minutes: int | None,
     departure_utc: datetime | None,
     exact_utc: datetime | None = None,
 ) -> dict[str, Any]:
     moment = exact_utc
-    if moment is None and departure_utc is not None:
+    if moment is None and departure_utc is not None and actm_minutes is not None:
         moment = departure_utc + timedelta(minutes=actm_minutes)
     return {
         "kind": kind,
@@ -2677,6 +2754,8 @@ def _overview_projection(
     airport_operational_panels: list[dict[str, Any]],
     terrain_events: list[dict[str, Any]],
     final_actm: int,
+    destination_actm: int | None,
+    timing_view: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Shared, source-backed contract for the compact route overview."""
     chips: list[dict[str, Any]] = []
@@ -2733,6 +2812,19 @@ def _overview_projection(
     destination_icao = str(flight.get("destination") or "").upper()
     departure_utc = _parse_utc(flight.get("scheduled_departure_utc"))
     arrival_utc = _parse_utc(flight.get("scheduled_arrival_utc"))
+    actual_departure_utc = (
+        _parse_utc(timing_view.get("actual_takeoff_utc"))
+        if timing_view
+        else None
+    )
+    timeline_departure_utc = actual_departure_utc or departure_utc
+    timeline_arrival_utc = (
+        timeline_departure_utc + timedelta(minutes=destination_actm)
+        if actual_departure_utc is not None
+        and timeline_departure_utc is not None
+        and destination_actm is not None
+        else (arrival_utc if actual_departure_utc is None else None)
+    )
 
     departure = {
         "icao": departure_icao,
@@ -2758,7 +2850,7 @@ def _overview_projection(
         ),
         "schedule": _overview_schedule(
             flight.get("scheduled_arrival_utc"),
-            final_actm,
+            destination_actm if destination_actm is not None else final_actm,
         ),
         "forecast_at_reference": _overview_forecast_at_reference(
             source_findings,
@@ -2777,8 +2869,8 @@ def _overview_projection(
             label="DEP",
             detail=departure_icao or "--",
             actm_minutes=0,
-            departure_utc=departure_utc,
-            exact_utc=departure_utc,
+            departure_utc=timeline_departure_utc,
+            exact_utc=timeline_departure_utc,
         )
     ]
     edto = flight.get("edto") or {}
@@ -2794,7 +2886,7 @@ def _overview_projection(
             label="EDTO",
             detail="ENTRY",
             actm_minutes=int(edto_entry),
-            departure_utc=departure_utc,
+            departure_utc=timeline_departure_utc,
         ))
 
     vws_events = detect_vws_events(flight.get("route_waypoints") or [])
@@ -2810,7 +2902,7 @@ def _overview_projection(
                     label=str(vws_point.get("name") or "VWS").lstrip("-"),
                     detail=f"VWS {int(vws_point.get('vws') or 0):03d}",
                     actm_minutes=int(vws_actm),
-                    departure_utc=departure_utc,
+                    departure_utc=timeline_departure_utc,
                 ))
 
     for event in terrain_events:
@@ -2838,19 +2930,20 @@ def _overview_projection(
                 else f"{msa_text(first)}-{msa_text(last)}"
             ),
             actm_minutes=int(event_actm),
-            departure_utc=departure_utc,
+            departure_utc=timeline_departure_utc,
         ))
 
     timeline.append(_overview_anchor(
         kind="arrival",
         label="ARR",
         detail=destination_icao or "--",
-        actm_minutes=final_actm,
-        departure_utc=departure_utc,
-        exact_utc=arrival_utc,
+        actm_minutes=destination_actm,
+        departure_utc=timeline_departure_utc,
+        exact_utc=timeline_arrival_utc,
     ))
     timeline.sort(key=lambda item: (
-        item["actm_minutes"],
+        item["actm_minutes"] is None,
+        item["actm_minutes"] if item["actm_minutes"] is not None else 0,
         {"departure": 0, "edto": 1, "vws": 2, "terrain": 3, "arrival": 4}.get(
             item["kind"],
             99,
@@ -2881,6 +2974,7 @@ def build_briefing_view(
     waypoints = flight.get("route_waypoints") or []
     terrain_events = detect_terrain_events(waypoints)
     final_actm = max((int(item.get("actm_minutes")) for item in waypoints if item.get("actm_minutes") is not None), default=0)
+    destination_actm = _destination_actm(flight)
     firs = [str(item.get("fir_boundary")) for item in waypoints if item.get("fir_boundary")]
     unique_firs = list(dict.fromkeys(firs))
     masses = flight.get("masses") or {}
@@ -3023,6 +3117,27 @@ def build_briefing_view(
 
     scheduled_departure = _parse_utc(flight.get("scheduled_departure_utc"))
     scheduled_arrival = _parse_utc(flight.get("scheduled_arrival_utc"))
+    scheduled_etd_hhmm = theme.utc_hhmm(
+        flight.get("scheduled_departure_utc")
+    ).rstrip("Z")
+    scheduled_eta_hhmm = theme.utc_hhmm(
+        flight.get("scheduled_arrival_utc")
+    ).rstrip("Z")
+    schedule_block = (
+        str(theme.block_time_label(flight) or "").replace("BLOCK ", "") or None
+    )
+    actual_takeoff_hhmm = (
+        theme.utc_hhmm(timing_view.get("actual_takeoff_utc"))
+        if timing_view and timing_view.get("actual_takeoff_utc")
+        else None
+    )
+    calculated_eta_hhmm = _actual_arrival_hhmm(timing_view, destination_actm)
+    destination_eet_display = format_actm(destination_actm)
+    eta_status = (
+        "calculated"
+        if calculated_eta_hhmm
+        else ("unavailable" if actual_takeoff_hhmm else "scheduled")
+    )
     generated_at = datetime.now(timezone.utc)
     return {
         "status": "REVIEW REQUIRED" if needs_review else "BRIEFING COMPLETE",
@@ -3035,7 +3150,7 @@ def build_briefing_view(
         "flight_date": flight.get("flight_date") or "--",
         "metrics": {
             "distance": f"{int(flight.get('ground_distance_nm') or 0):,} NM" if flight.get("ground_distance_nm") else "-- NM",
-            "eet": format_actm(final_actm),
+            "eet": destination_eet_display,
             "fir_count": len(unique_firs),
             "etd": scheduled_departure.strftime("%d %b %H%MZ").upper() if scheduled_departure else "--",
             "eta": scheduled_arrival.strftime("%d %b %H%MZ").upper() if scheduled_arrival else "--",
@@ -3051,7 +3166,15 @@ def build_briefing_view(
             "cruise": _cruise_summary(flight.get("planned_level_profile")),
             "captain": flight.get("captain"),
             "alternate": (alternates[0].get("airport") if alternates else "--"),
-            "clock_basis": "ATOT + CFP ACTM" if timing_view else "CFP ACTM only",
+            "clock_basis": (
+                "ATOT + CFP ACTM (destination held)"
+                if calculated_eta_hhmm
+                else (
+                    "ATOT + CFP ACTM: destination ACTM unavailable"
+                    if actual_takeoff_hhmm
+                    else "CFP ACTM only"
+                )
+            ),
             "atot": (
                 str(timing_view.get("actual_takeoff_display") or "").strip()
                 if timing_view
@@ -3083,27 +3206,34 @@ def build_briefing_view(
             "ofp": flight.get("ofp_identifier"),
             "route_id": flight.get("route_identifier"),
             "plan_number": flight.get("plan_number"),
-            "etd_hhmm": theme.utc_hhmm(flight.get("scheduled_departure_utc")).rstrip("Z"),
-            "eta_hhmm": theme.utc_hhmm(flight.get("scheduled_arrival_utc")).rstrip("Z"),
-            "block": str(theme.block_time_label(flight) or "").replace("BLOCK ", "") or None,
+            "etd_hhmm": scheduled_etd_hhmm,
+            "eta_hhmm": (
+                calculated_eta_hhmm
+                if calculated_eta_hhmm
+                else ("--" if actual_takeoff_hhmm else scheduled_eta_hhmm)
+            ),
+            "eta_status": eta_status,
+            "scheduled_eta_hhmm": scheduled_eta_hhmm,
+            "actual_takeoff_hhmm": actual_takeoff_hhmm,
+            "block": schedule_block,
             "rules": flight.get("edto_rvsm"),
             "cost_index": flight.get("cost_index"),
             "apd_percent": flight.get("apd_percent"),
             "arrival_basis": _arrival_basis_line(
-                theme.utc_hhmm(flight.get("scheduled_departure_utc")).rstrip("Z"),
-                theme.utc_hhmm(flight.get("scheduled_arrival_utc")).rstrip("Z"),
-                str(theme.block_time_label(flight) or "").replace("BLOCK ", "") or None,
-                format_actm(final_actm),
+                scheduled_etd_hhmm,
+                scheduled_eta_hhmm,
+                schedule_block,
+                destination_eet_display,
+                actual_takeoff_hhmm=actual_takeoff_hhmm,
+                calculated_eta_hhmm=calculated_eta_hhmm,
             ),
             "timeline_basis": _timeline_basis_line(
-                theme.utc_hhmm(flight.get("scheduled_departure_utc")).rstrip("Z"),
-                theme.utc_hhmm(flight.get("scheduled_arrival_utc")).rstrip("Z"),
-                format_actm(final_actm),
-                (
-                    theme.utc_hhmm(timing_view.get("actual_takeoff_utc"))
-                    if timing_view and timing_view.get("actual_takeoff_utc")
-                    else None
-                ),
+                scheduled_etd_hhmm,
+                scheduled_eta_hhmm,
+                schedule_block,
+                destination_eet_display,
+                actual_takeoff_hhmm,
+                calculated_eta_hhmm,
             ),
         },
         "performance_publication": _performance_publication(flight),
@@ -3127,6 +3257,8 @@ def build_briefing_view(
             airport_operational_panels,
             terrain_events,
             final_actm,
+            destination_actm,
+            timing_view,
         ),
         "route_map": route_map,
         "route_svg": render_route_svg(route_map),

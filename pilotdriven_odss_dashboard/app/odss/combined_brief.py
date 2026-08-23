@@ -152,7 +152,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-flow-round-v8"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-atot-parity-v9"
 
 
 _FIT_FLOOR = T_MICRO
@@ -250,9 +250,9 @@ def draw_logo(canvas, x: float, y: float, height: float = 14.0, wordmark: bool =
 
 def _header_times(flight: dict[str, Any]) -> tuple[str, str]:
     utc_line = (
-        "UTC DEP "
+        "UTC STD "
         + theme.utc_hhmm(flight.get("scheduled_departure_utc"))
-        + " -> ARR "
+        + " -> STA "
         + theme.utc_hhmm(flight.get("scheduled_arrival_utc"))
     )
     departure_segment = theme.local_time_segment(
@@ -267,6 +267,14 @@ def _header_times(flight: dict[str, Any]) -> tuple[str, str]:
         else "LT UNAVAILABLE - REVIEW"
     )
     return utc_line, local_line
+
+
+def _eta_display(value: Any) -> str:
+    """Render a calculated/scheduled ETA clock without decorating missing data."""
+    held = str(value or "").strip().upper()
+    if not re.fullmatch(r"\d{4}Z?", held):
+        return "ETA --"
+    return f"ETA {held}" if held.endswith("Z") else f"ETA {held}Z"
 
 
 REV3_TABS = (
@@ -352,10 +360,10 @@ def draw_page_chrome(
         canvas.setFont(SANS_BOLD, 8.6)
         canvas.drawString(370, top - 13, theme.header_date_label(flight))
         # REV3 page 1: one compact mono schedule line.
-        etd_eta = utc_line.replace("UTC DEP", "ETD").replace("-> ARR", "|  ETA")
+        schedule_line = utc_line.replace("UTC ", "")
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(MONO, 6.5)
-        canvas.drawString(370, top - 25, f"{etd_eta}  |  {block_label or ''}".strip(" |"))
+        canvas.drawString(370, top - 25, f"{schedule_line}  |  {block_label or ''}".strip(" |"))
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont(SANS, 5.8)
         canvas.drawString(548, top - 11, "AIRCRAFT / REG")
@@ -413,8 +421,10 @@ def draw_page_chrome(
             > utc_available_width
         ):
             utc_display = (
-                utc_line.replace("UTC DEP ", "")
-                .replace("-> ARR ", " -> ")
+                "STD/STA "
+                + theme.utc_hhmm(flight.get("scheduled_departure_utc"))
+                + "/"
+                + theme.utc_hhmm(flight.get("scheduled_arrival_utc"))
             )
         utc_size = 8.5
         while (
@@ -1079,7 +1089,7 @@ def draw_overview_page(
     # — remove all this"); the reclaimed band goes to the content cards.
     row_gap = 10.0
     bottom = 30.0
-    row2_h = 207.0
+    row2_h = 202.0
     row1_h = y - bottom - row2_h - row_gap
     # REV3 keeps the airport cards compact and gives the filed route the
     # majority of the row. Destination is slightly wider because alternate
@@ -1385,7 +1395,7 @@ def draw_overview_page(
     eta_label = str(identity.get("eta_hhmm") or "").strip()
     canvas.setFillColor(TEXT)
     canvas.setFont(MONO_BOLD, 9.6)
-    canvas.drawString(ix2, row_y2, f"ETA {eta_label}Z" if eta_label else "ETA --")
+    canvas.drawString(ix2, row_y2, _eta_display(eta_label))
     row_y2 -= 10
     canvas.setFillColor(TEXT_SECONDARY)
     canvas.setFont(SANS, 7.2)
@@ -1472,7 +1482,9 @@ def draw_overview_page(
                          title="CFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY",
                          accent=ACCENT, title_colour=None)
     cx0 = centre_inner[0]
-    text_w = centre_w * 0.69
+    # Preserve the card's existing right margin while keeping the route-map
+    # source caption at the report's readable 7.2-point floor.
+    text_w = centre_w * 0.69 - 11.0
     map_w = centre_w - text_w - 34
     row_y3 = row1_top - 28
     shared_chips = list(overview.get("chips") or [])
@@ -2209,20 +2221,54 @@ def _route_anchor_entries(flight: dict[str, Any], briefing: dict[str, Any]) -> l
                 "actm": waypoint.get("actm_minutes"),
             })
 
-    last = waypoints[-1]
-    arrival_time = theme.utc_hhmm(flight.get("scheduled_arrival_utc"))
-    if arrival_time == "-":
-        arrival_time = _clock_at(flight, last.get("actm_minutes"))
+    destination = str(
+        ((briefing.get("overview") or {}).get("destination") or {}).get("icao")
+        or ""
+    ).lstrip("-").upper()
+    destination_waypoints = [
+        waypoint
+        for waypoint in waypoints
+        if str(waypoint.get("name") or "").lstrip("-").upper() == destination
+    ]
+    last = (
+        max(
+            destination_waypoints,
+            key=lambda waypoint: int(waypoint.get("actm_minutes") or 0),
+        )
+        if destination_waypoints
+        else None
+    )
+    identity = briefing.get("flight_identity") or {}
+    if identity.get("actual_takeoff_hhmm"):
+        eta_hhmm = str(identity.get("eta_hhmm") or "").strip().upper()
+        if identity.get("eta_status") == "unavailable" or last is None:
+            arrival_time = "--"
+        elif re.fullmatch(r"\d{4}Z?", eta_hhmm):
+            arrival_time = (
+                eta_hhmm if eta_hhmm.endswith("Z") else f"{eta_hhmm}Z"
+            )
+        else:
+            arrival_time = _clock_at(flight, last.get("actm_minutes"))
+    else:
+        arrival_time = theme.utc_hhmm(flight.get("scheduled_arrival_utc"))
     entries.append({
         "time": arrival_time,
-        "label": str(
-            last.get("name") or flight.get("destination") or "ARR"
-        ).lstrip("-"),
+        "label": destination or str(flight.get("destination") or "ARR").lstrip("-"),
         "sub": "",
         "accent": DESTINATION,
-        "actm": last.get("actm_minutes"),
+        "actm": last.get("actm_minutes") if last else None,
     })
-    entries.sort(key=lambda item: item.get("actm") if item.get("actm") is not None else 0)
+    final_sort_actm = max(
+        (int(waypoint.get("actm_minutes") or 0) for waypoint in waypoints),
+        default=0,
+    )
+    entries.sort(
+        key=lambda item: (
+            item.get("actm")
+            if item.get("actm") is not None
+            else final_sort_actm + 1
+        )
+    )
     return entries
 
 
@@ -3068,7 +3114,7 @@ def _station_card_lines(panel_data: dict[str, Any]) -> list[tuple[str, str]]:
                 str(operational.get("approach") or "").strip() or None,
                 str(operational.get("minima") or "").strip() or None,
                 f"{operational.get('distance_nm')} NM" if operational.get("distance_nm") else None,
-                format_actm(operational.get("time_minutes"))
+                format_actm(operational.get("time_minutes")).replace(".", ":")
                 if operational.get("time_minutes") is not None else None,
                 f"{operational.get('fuel_kg'):,} kg" if operational.get("fuel_kg") else None,
                 " - ".join(
@@ -4964,7 +5010,7 @@ def draw_hazard_page(
     content_top = draw_page_chrome(
         canvas, flight,
         page_number=page_number, page_count=page_count,
-        source_line="CFP weather snapshot | held SIGMET/VAA reviews | package WAFC fixed-time charts",
+        source_line="CFP weather snapshot | SIGMET / volcanic-ash review | package WAFC charts",
         section_label=(
             "OPERATIONAL HAZARD ASSESSMENT"
             + _continuation_suffix(section_page_number, section_page_count)
@@ -5967,12 +6013,18 @@ def draw_operational_mel_cdl_page(
     source_bottom = 46.0
     source_h = source_top - source_bottom
     if source_overflow_count:
+        declaration_label = (
+            "SOURCE DECLARATION"
+            if source_overflow_count == 1
+            else "SOURCE DECLARATIONS"
+        )
+        declaration_verb = "REMAINS" if source_overflow_count == 1 else "REMAIN"
         canvas.setFillColor(WEATHER_AMBER)
         canvas.setFont(SANS_BOLD, T_MICRO)
         canvas.drawRightString(
             gate_x + gate_w,
             gate_y - 12.0,
-            f"+{source_overflow_count} SOURCE DECLARATIONS REMAIN IN DASHBOARD",
+            f"+{source_overflow_count} {declaration_label} {declaration_verb} IN DASHBOARD",
         )
     gap = 12.0
     if len(source_items) == 1:
@@ -6306,8 +6358,8 @@ def draw_operational_hazard_page(
             value
             for value in (
                 "CFP weather snapshot",
-                "held SIGMET/VAA reviews",
-                "package WAFC fixed-time charts",
+                "SIGMET / volcanic-ash review",
+                "package WAFC charts",
                 compact_overflow_note,
             )
             if value
@@ -6380,7 +6432,11 @@ def draw_operational_hazard_page(
             )
         card_y -= sigmet_h + card_gap
     chart = (list(wafc_charts or []) or [None])[0]
-    selection_status = str(weather_chart_selection.get("status") or "review required").replace("_", " ")
+    selection_status = (
+        str(weather_chart_selection.get("status") or "review required")
+        .replace("_", " ")
+        .replace("-", " ")
+    )
     selection_reason = str(weather_chart_selection.get("reason") or "")
     selected_label = str((chart or {}).get("label") or "")
     wafc_y = card_y + sigmet_h - wafc_h
@@ -6401,6 +6457,12 @@ def draw_operational_hazard_page(
         f"{row.get('label')}: {row.get('status')}" for row in ledger_rows
     )
     vaac_summary = str((hazards.get("vaac_reach") or {}).get("summary") or "")
+    vaac_summary_match = re.fullmatch(r"(\d+)/(\d+) reached", vaac_summary)
+    if vaac_summary_match:
+        vaac_summary = (
+            "Weather sources reached: "
+            f"{vaac_summary_match.group(1)} of {vaac_summary_match.group(2)}."
+        )
     vaac_detail = " | ".join(list(vaac_lines or [])[:2])
     # The Doc 9766 route-responsibility sentence leads the coverage story
     # (boss, 21 Aug: "there's a VAAC ... in Manila?") - the same composed
@@ -6418,7 +6480,12 @@ def draw_operational_hazard_page(
         body=" ".join(
             part
             for part in (
-                responsible_line,
+                (
+                    responsible_line
+                    if not responsible_line
+                    or responsible_line.endswith((".", "!", "?"))
+                    else f"{responsible_line}."
+                ),
                 "These are source-coverage gaps, not NIL findings.",
                 vaac_summary,
                 vaac_detail,
@@ -6539,7 +6606,7 @@ def draw_operational_terrain_page(
     canvas.rect(x, top - band_h, left_w, band_h / 2, stroke=0, fill=1)
     canvas.setFillColor(_page_colour(canvas, "bg", BG))
     canvas.setFont(SANS_BOLD, 9.4)
-    canvas.drawString(x + 12, top - 14.5, "STRICT MSA >100* EVENT")
+    canvas.drawString(x + 12, top - 14.5, "STRICT MSA >100* ROUTE CHECK")
     table_x = x + 12.0
     row_y = top - 43.0
     headers = (("POINT", 0), ("ACTM / UTC", 86), ("MSA", 177), ("VWS", 242))
@@ -6575,6 +6642,17 @@ def draw_operational_terrain_page(
         canvas.setFont(MONO, 8.0)
         canvas.drawString(table_x + 242, row_y, vws)
         row_y -= 34.0
+    if not point_rows:
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, 8.4)
+        for line in _wrap(
+            "No strict MSA >100* route window was detected.",
+            SANS,
+            8.4,
+            left_w - 24,
+        ):
+            canvas.drawString(table_x, row_y, line)
+            row_y -= 11.0
 
     matched = _matched_profiles(findings)
     status_y = bottom
@@ -6605,8 +6683,10 @@ def draw_operational_terrain_page(
     else:
         canvas.setFillColor(WEATHER_AMBER)
         canvas.setFont(SANS_BOLD, 12.0)
-        canvas.drawString(ix, status_y + status_h - 47, "NO CONTROLLED PROFILE SERVED")
-        body = str((briefing.get("terrain") or {}).get("summary") or "")
+        canvas.drawString(ix, status_y + status_h - 47, "NO MATCHED CONTROLLED PROFILE")
+        body = str((briefing.get("terrain") or {}).get("summary") or "").strip()
+        if body and not body.endswith((".", "!", "?")):
+            body += "."
         body += " Exact endpoint/airway source validation remains required; no nearby chart is substituted."
     row_y = status_y + status_h - 68.0
     canvas.setFillColor(TEXT_SECONDARY)
@@ -6971,7 +7051,7 @@ def render_combined_briefing(
             panels=airport_page["panels"],
             compact_overflow_note=compact_note(
                 airport_overflow_count,
-                "airport/NOTAM audit row",
+                "airport/NOTAM record",
             ),
         )
         canvas.addOutlineEntry("Airports / NOTAM", "sec_airports", level=0)
@@ -6989,7 +7069,7 @@ def render_combined_briefing(
             wafc_charts=hazard_page["wafc_charts"],
             compact_overflow_note=compact_note(
                 hazard_overflow_count,
-                "hazard audit row",
+                "hazard record",
             ),
         )
         canvas.addOutlineEntry("Operational Hazards", "sec_hazard", level=0)

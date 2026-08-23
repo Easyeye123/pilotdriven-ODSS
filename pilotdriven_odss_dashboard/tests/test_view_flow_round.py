@@ -11,6 +11,7 @@ from generate_visual_samples import sample_findings, sample_flight
 
 from app.odss.briefing import _arrival_basis_line, _performance_publication, build_briefing_view
 from app.odss.parser import parse_page1_fuel_summary
+from app.odss.timing import build_timing_view
 
 
 SQ910_PAGE1 = (
@@ -54,6 +55,111 @@ def test_arrival_basis_line_names_std_schedule_and_filed_eet():
     assert _arrival_basis_line("", "", None, "--.--") == "Scheduled arrival per CFP page 1"
 
 
+def test_actual_takeoff_drives_report_eta_without_erasing_the_schedule():
+    flight = sample_flight()
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    timing = build_timing_view(
+        flight,
+        findings,
+        "2026-07-16T09:52:00+00:00",
+    )
+
+    view = build_briefing_view(
+        flight,
+        findings,
+        [],
+        timing_view=timing,
+    )
+    identity = view["flight_identity"]
+
+    assert identity["eta_hhmm"] == "2159"
+    assert identity["scheduled_eta_hhmm"] == "2240"
+    assert identity["arrival_basis"] == (
+        "ATOT 0952Z + filed EET 12:07 · scheduled STA 2240Z"
+    )
+    assert identity["timeline_basis"] == (
+        "ATOT 0952Z + CFP ACTM drives clocks; calculated ETA 2159Z from "
+        "filed EET 12:07. Schedule: STD 0945Z / STA 2240Z (12:55)."
+    )
+    assert [
+        view["overview"]["timeline"][0]["utc_display"],
+        view["overview"]["timeline"][-1]["utc_display"],
+    ] == ["0952Z", "2159Z"]
+
+
+def test_actual_takeoff_does_not_invent_an_eta_without_destination_actm():
+    flight = sample_flight()
+    flight["route_waypoints"] = [
+        {"name": flight["departure"], "actm_minutes": 0},
+    ]
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    timing = build_timing_view(
+        flight,
+        findings,
+        "2026-07-16T09:52:00+00:00",
+    )
+
+    view = build_briefing_view(
+        flight,
+        findings,
+        [],
+        timing_view=timing,
+    )
+    identity = view["flight_identity"]
+
+    assert identity["eta_hhmm"] == "--"
+    assert identity["eta_status"] == "unavailable"
+    assert identity["scheduled_eta_hhmm"] == "2240"
+    assert identity["arrival_basis"] == (
+        "ATOT 0952Z held; destination ACTM unavailable · scheduled STA 2240Z"
+    )
+    assert view["metrics"]["eet"] == "--.--"
+    assert view["overview"]["timeline"][0]["utc_display"] == "0952Z"
+    assert view["overview"]["timeline"][-1]["utc_display"] == "--"
+
+
+def test_actual_takeoff_does_not_treat_a_positive_enroute_actm_as_arrival():
+    flight = sample_flight()
+    flight["route_waypoints"] = [
+        {"name": flight["departure"], "actm_minutes": 0},
+        {"name": "TOD", "actm_minutes": 699},
+    ]
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    timing = build_timing_view(
+        flight,
+        findings,
+        "2026-07-16T09:52:00+00:00",
+    )
+
+    view = build_briefing_view(
+        flight,
+        findings,
+        [],
+        timing_view=timing,
+    )
+
+    assert view["flight_identity"]["eta_hhmm"] == "--"
+    assert view["flight_identity"]["eta_status"] == "unavailable"
+    assert view["metrics"]["eet"] == "--.--"
+    arrival = view["overview"]["timeline"][-1]
+    assert arrival["kind"] == "arrival"
+    assert arrival["detail"] == flight["destination"]
+    assert arrival["actm_minutes"] is None
+    assert arrival["utc_display"] == "--"
+
+
 def test_overview_chips_carry_route_version_and_cruise_component():
     flight = sample_flight()
     flight["route_identifier"] = "SINMNL60"
@@ -67,4 +173,6 @@ def test_overview_chips_carry_route_version_and_cruise_component():
     identity = view["flight_identity"]
     assert identity["arrival_basis"].startswith("STD 0945Z")
     assert "filed EET" in identity["arrival_basis"]
-    assert "Filed EET" in identity["timeline_basis"] and "from STD 0945Z" in identity["timeline_basis"]
+    assert "Schedule: STD 0945Z / STA 2240Z (12:55)" in identity["timeline_basis"]
+    assert "Filed EET 12:07" in identity["timeline_basis"]
+    assert "gives nominal" not in identity["timeline_basis"]

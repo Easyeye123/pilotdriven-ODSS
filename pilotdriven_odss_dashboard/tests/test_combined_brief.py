@@ -26,6 +26,7 @@ from app.odss.combined_brief import (
     WEATHER_AMBER,
     _performance_margin_presentation,
     _performance_selected_presentation,
+    _eta_display,
     _route_anchor_entries,
     _terrain_table_points,
     crop_source_region,
@@ -50,6 +51,13 @@ SQ23_PAGE1 = (
     "PTOW 280000                     EXCESS FUEL  00.30  003000\n"
     "PLWT 172973                   FUEL IN TANKS  20.00  118274\n"
 )
+
+
+def test_eta_display_keeps_missing_destination_timing_unavailable():
+    assert _eta_display("0416") == "ETA 0416Z"
+    assert _eta_display("0416Z") == "ETA 0416Z"
+    assert _eta_display("--") == "ETA --"
+    assert _eta_display(None) == "ETA --"
 
 
 @pytest.fixture()
@@ -307,8 +315,9 @@ def test_compact_pdf_marks_high_cardinality_content_that_remains_in_dashboard(tm
     document = fitz.open(output)
     assert len(document) == 7
     assert "+1 IN DASHBOARD" in document[2].get_text()
+    assert "+2 SOURCE DECLARATIONS REMAIN IN DASHBOARD" in document[2].get_text()
     assert "additional EDTO/enroute cards remain in dashboard" in document[3].get_text()
-    assert "additional airport/NOTAM audit rows remain in dashboard" in document[4].get_text()
+    assert "additional airport/NOTAM records remain in dashboard" in document[4].get_text()
 
 
 def test_the_naming_rule_holds_everywhere(rendered):
@@ -1180,6 +1189,8 @@ def test_long_route_and_level_profile_continue_verbatim_on_airport_pages(
 def test_route_timeline_uses_governed_roles_not_arbitrary_fir_points():
     flight = {
         "scheduled_departure_utc": "2026-08-01T10:00:00+00:00",
+        "scheduled_arrival_utc": "2026-08-01T13:00:00+00:00",
+        "actual_takeoff_utc": "2026-08-01T10:05:00+00:00",
         "departure": "AAAA",
         "destination": "BBBB",
         "route_waypoints": [
@@ -1195,6 +1206,8 @@ def test_route_timeline_uses_governed_roles_not_arbitrary_fir_points():
         },
     }
     briefing = {
+        "flight_identity": {"actual_takeoff_hhmm": "1005Z"},
+        "overview": {"destination": {"icao": "BBBB"}},
         "hazards": {
             "sigmet_cards": [{
                 "sigmet_id": "WX1",
@@ -1234,6 +1247,38 @@ def test_route_timeline_uses_governed_roles_not_arbitrary_fir_points():
         "BBBB",
     ]
     assert all(entry["label"] != "FIRX" for entry in entries)
+    assert entries[-1]["time"] == "1305Z"
+
+
+def test_route_timeline_does_not_publish_an_enroute_point_as_arrival():
+    flight = {
+        "scheduled_departure_utc": "2026-08-01T10:00:00+00:00",
+        "scheduled_arrival_utc": "2026-08-01T13:00:00+00:00",
+        "actual_takeoff_utc": "2026-08-01T10:05:00+00:00",
+        "departure": "AAAA",
+        "destination": "BBBB",
+        "route_waypoints": [
+            {"name": "AAAA", "actm_minutes": 0},
+            {"name": "TOD", "actm_minutes": 155},
+        ],
+    }
+    briefing = {
+        "flight_identity": {
+            "actual_takeoff_hhmm": "1005Z",
+            "eta_hhmm": "--",
+            "eta_status": "unavailable",
+        },
+        "overview": {"destination": {"icao": "BBBB"}},
+        "hazards": {"sigmet_cards": []},
+        "terrain": {"events": []},
+    }
+
+    entries = _route_anchor_entries(flight, briefing)
+
+    assert entries[-1]["label"] == "BBBB"
+    assert entries[-1]["time"] == "--"
+    assert entries[-1]["actm"] is None
+    assert all(entry["label"] != "TOD" for entry in entries)
 
 
 def test_terrain_table_keeps_one_filed_point_after_threshold_drop():
@@ -2294,16 +2339,25 @@ def test_page_one_carries_the_performance_card_in_place_of_flight_basis(rendered
 def test_destination_card_states_the_arrival_basis(rendered):
     # Boss, 21 Aug (R2-14): "is it based on the flight time?... too small".
     first = rendered[0].get_text()
-    assert "ETA 2240Z" in first
-    assert "STD 0945Z" in first
+    assert "ETA 2159Z" in first
+    assert "STD 0945Z -> STA 2240Z" in first
+    assert "scheduled STA 2240Z" in first
     assert "filed EET" in first
+    assert "ETA 2240Z" not in first
 
 
 def test_decision_timeline_states_its_clock_basis(rendered):
     second = rendered[1].get_text()
-    assert "Filed EET" in second and "from STD 0945Z" in second
-    # The fixture applies an actual take-off, so the clocks say so.
-    assert "actual take-off 0952Z" in second
+    assert "0952Z" in second and "2159Z" in second
+    assert "ATOT 0952Z + CFP ACTM drives clocks" in second
+    assert "calculated ETA 2159Z from filed EET 12:07" in second
+    assert "STD 0945Z / STA 2240Z (12:55)" in second
+    assert "from STD 0945Z gives nominal 2240Z" not in second
+
+
+def test_long_section_header_keeps_the_schedule_labels(rendered):
+    terrain = rendered[6].get_text()
+    assert "STD/STA 0945Z/2240Z" in terrain
 
 
 def test_pertinent_notam_lines_follow_the_panel_and_skip_the_highlight():

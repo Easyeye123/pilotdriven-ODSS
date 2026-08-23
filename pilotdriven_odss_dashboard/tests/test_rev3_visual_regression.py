@@ -207,12 +207,12 @@ def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
     # 41 page entries of geometry + checksums only; far below any size that could embed the PDF.
     assert PINNED_MANIFEST.stat().st_size < 16_000
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference_v7.pdf",
-        "sha256": "dba0f288f88a5e76a51c6cec3fe8aa1073be7978476b62fa560252cd529d434e",
+        "filename": "SQ214_REV3_reference_v8.pdf",
+        "sha256": "a4774fc03edc544399167beee267ace95bce1710ee6d262ebc8e5228bed3970a",
     }
     assert len(payload["pages"]) == 41
-    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-23-flow-round-v8"
-    assert "make it smaller" in payload["provenance"]["approval_basis"]
+    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-23-atot-parity-v9"
+    assert "ATOT/ETA parity" in payload["provenance"]["approval_basis"]
     assert payload["thresholds"] == {
         "max_changed_pixel_ratio": 0.0,
         "max_mean_absolute_error": 0.0,
