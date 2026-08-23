@@ -183,6 +183,60 @@ def _detect_sections(pages: list[str]) -> dict[str, tuple[int, int]]:
     }
 
 
+_INTAM_HEADER = re.compile(
+    r"^\s*(?P<priority>\d+)\.\s*(?P<category>[A-Z]+)\s+"
+    r"(?P<identity>.+?)\s+(?P<date>\d{6,8})\s*$"
+)
+
+
+def _parse_intam_records(
+    pages: list[str],
+    bounds: tuple[int, int] | None,
+) -> list[dict[str, Any]]:
+    """Hold bounded INTAM identities/headlines without relevance inference.
+
+    The company-bulletin appendix is source evidence, not a clearance engine.
+    Each printed record retains its complete header, headline and physical CFP
+    page. Body prose stays in the uploaded source package for governed review.
+    """
+    if bounds is None:
+        return []
+    start, end = bounds
+    records: list[dict[str, Any]] = []
+    for page_index in range(start, end):
+        lines = pages[page_index].splitlines()
+        for line_index, line in enumerate(lines):
+            match = _INTAM_HEADER.match(line)
+            if not match:
+                continue
+            headline_lines: list[str] = []
+            for candidate in lines[line_index + 1:]:
+                stripped = candidate.strip()
+                if not stripped:
+                    if headline_lines:
+                        break
+                    continue
+                if (
+                    _INTAM_HEADER.match(stripped)
+                    or re.fullmatch(r"[-=]{3,}", stripped)
+                    or stripped.startswith(("SIA ", "Page "))
+                ):
+                    break
+                headline_lines.append(stripped)
+                if len(headline_lines) >= 4:
+                    break
+            records.append({
+                "priority": int(match.group("priority")),
+                "category": match.group("category"),
+                "identity": match.group("identity").strip(),
+                "date_token": match.group("date"),
+                "header": " ".join(line.split()),
+                "headline": " ".join(headline_lines),
+                "source_page": page_index + 1,
+            })
+    return records
+
+
 def _parse_deferred_items(page1: str) -> list[dict[str, Any]]:
     # Boss's 21 Aug 2026 SQ910 CFP printed four declaration shapes on one
     # block: "CC MEL 25-20-50A", bare "BB CDDL" (no reference), "AA IFEDDL"
@@ -1008,6 +1062,17 @@ def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
             tolerance=1,
         )
 
+    takeoff_fuel_kg = (
+        kg("fuel_in_tanks") - taxi_kg
+        if kg("fuel_in_tanks") is not None and taxi_kg is not None
+        else None
+    )
+    landing_fuel_kg = (
+        takeoff_fuel_kg - kg("burnoff")
+        if takeoff_fuel_kg is not None and kg("burnoff") is not None
+        else None
+    )
+
     return {
         "state": "verified" if not discrepancies else "review_required",
         # Lido prints both "SUMMARY NON EDTO CFP" and "SUMMARY STANDARD
@@ -1032,6 +1097,13 @@ def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
         ),
         "rows": rows,
         "taxi_fuel_kg": taxi_kg,
+        # Direct arithmetic from the printed page-1 rows. These are labelled
+        # as derived on every publishing surface; they are not extra source
+        # lines and cannot be mistaken for a revised fuel plan.
+        "derived_fuel_kg": {
+            "takeoff": takeoff_fuel_kg,
+            "landing": landing_fuel_kg,
+        },
         "masses_kg": masses,
         "excess_breakdown": breakdown,
         # "4.TANKER 18847KG RTN SECTOR REQ 23324KG" — the CFP names the
@@ -1214,6 +1286,12 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     zfw_burn_match = _ZFW_BURN_RE.search(page1)
     zfw_dual_match = _ZFW_DUAL_SENSITIVITY_RE.search(page1)
     lower_cruise_match = _LOWER_CRUISE_SENSITIVITY_RE.search(page1)
+    intam_records = _parse_intam_records(pages, sections.get("intam"))
+    intam_source_pages = sorted({
+        int(record["source_page"])
+        for record in intam_records
+        if isinstance(record.get("source_page"), int)
+    })
     flight = {
         "document_id": source_name,
         "source_evidence": {
@@ -1226,6 +1304,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
                 if edto_page_index is not None
                 else None
             ),
+            "intam_pages": intam_source_pages,
         },
         "flight_number": identity.group("flight"),
         "flight_date": identity.group("date"),
@@ -1317,6 +1396,9 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "edto_rvsm": "EDTO/RVSM" if "EDTO/RVSM" in page1 else None,
         "bobcat": bobcat,
         "deferred_items": _parse_deferred_items(page1),
+        # Lossless bounded company-bulletin identities. No route relevance,
+        # applicability or operational conclusion is inferred here.
+        "intam_records": intam_records,
         "alternates": _parse_alternates(cfp_pages),
         "performance": performance,
         "fuel": fuel,
@@ -1352,6 +1434,9 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "fuel_enroute_airports": [],
         "notams": [],
         "weather": [],
+        # Named VAA notice blocks are source-held separately from VA SIGMET
+        # weather products; enrichment fills this without conflating them.
+        "volcanic_advisories": [],
     }
     enrich_weather(flight, pages)
     enrich_notams(flight, pages)

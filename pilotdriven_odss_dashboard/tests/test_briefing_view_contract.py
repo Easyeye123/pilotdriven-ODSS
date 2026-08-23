@@ -201,6 +201,7 @@ def test_shared_weather_chart_selection_holds_unclassified_pages_for_review() ->
         "reason": "No governed route-context classification is available.",
         "selected_charts": [],
         "raw_chart_count": 10,
+        "held_pages": list(range(31, 41)),
     }
 
 
@@ -853,10 +854,25 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
     flight_before = deepcopy(flight)
     findings_before = deepcopy(findings)
 
-    overview = build_briefing_view(flight, findings, [])["overview"]
+    view = build_briefing_view(flight, findings, [])
+    overview = view["overview"]
 
     assert flight == flight_before
     assert findings == findings_before
+    departure_panel = next(
+        panel
+        for panel in view["airport_operational_panels"]
+        if "departure" in set(panel.get("role_keys") or [])
+    )
+    departure_relations = {
+        line["notam_id"]: line
+        for line in departure_panel["card_summary_lines"]
+        if line.get("kind") == "notam"
+    }
+    assert departure_relations["A1001/26"]["different_runway"] is True
+    assert departure_relations["A1001/26"]["planned_match"] is False
+    assert departure_relations["A1002/26"]["different_runway"] is False
+    assert departure_relations["A1002/26"]["planned_match"] is True
     assert [(chip["key"], chip["label"]) for chip in overview["chips"]] == [
         ("route_identifier", "GENERIC7"),
         ("edto_rvsm", "EDTO/RVSM"),
@@ -888,10 +904,10 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
     assert departure_highlight["source_page"] == 22
     destination_highlight = overview["destination"]["primary_operational_highlight"]
     assert destination_highlight == {
-        "text": "Planned runway closes after arrival.",
-        "signal_family": "runway_closure",
-        "notam_id": "B2001/26",
-        "source_page": 31,
+        "text": "ILS/GP RWY35 unavailable.",
+        "signal_family": "approach_navaid",
+        "notam_id": "B2002/26",
+        "source_page": 32,
     }
     assert [anchor["kind"] for anchor in overview["timeline"]] == [
         "departure",
@@ -904,6 +920,60 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
     assert overview["timeline"][2]["detail"] == "VWS 005"
     assert overview["timeline"][3]["label"] == "HIGH1-HIGH2"
     assert overview["timeline"][3]["detail"] == "111*-124*"
+
+
+def test_cfp_weather_count_excludes_live_enrichment_without_source_pages() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["weather"] = [
+        {
+            "location": flight["departure"],
+            "record_type": "METAR",
+            "text": "METAR LIVE ENRICHMENT",
+            "source": "noaa_awc_live",
+            "provider": "noaa-awc-data-api",
+            "source_page": None,
+        },
+        {
+            "location": flight["departure"],
+            "record_type": "METAR",
+            "text": "SA 010200 17008KT 9999 FEW020",
+            "source_page": 14,
+        },
+        {
+            "location": flight["departure"],
+            "record_type": "TAF",
+            "text": "FT 010100 0102/0208 17008KT 9999 FEW020",
+            "source_page": 14,
+        },
+    ]
+
+    view = build_briefing_view(flight, [], [])
+
+    assert view["cfp_weather"] == {
+        "record_count": 2,
+        "source_pages": [14],
+    }
+    cfp_assurance = next(
+        row
+        for row in view["source_assurance"]
+        if row["source"] == "CFP WEATHER"
+    )
+    assert cfp_assurance == {
+        "source": "CFP WEATHER",
+        "status": "HELD",
+        "detail": "2 parsed bulletin record(s).",
+    }
+    departure_panel = next(
+        panel
+        for panel in view["airport_operational_panels"]
+        if "departure" in set(panel.get("role_keys") or [])
+    )
+    assert departure_panel["weather"]["metar"] == {
+        "record_type": "METAR",
+        "text": "SA 010200 17008KT 9999 FEW020",
+        "source_page": 14,
+        "source_role": None,
+    }
 
 
 def test_shared_performance_publication_owns_rtow_selection_and_margin() -> None:

@@ -63,7 +63,7 @@ def test_private_corpus_checks_lossless_and_operational_publications():
 
     assert "include_audit_appendix=True" in runner
     assert "include_audit_appendix=False" in runner
-    assert "_Operational_7_Page.pdf" in runner
+    assert "_Operational_Flight_Briefing.pdf" in runner
     assert "include_audit_appendix=True" not in production
 
 

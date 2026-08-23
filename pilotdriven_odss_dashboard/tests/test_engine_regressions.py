@@ -20,6 +20,7 @@ from app.odss.engines import (
 from app.odss.enrichment import (
     _notice_score,
     _parse_airport_notams,
+    _parse_cfp_volcano_advisories,
     _parse_notam_datetime,
     _record_source_page,
 )
@@ -1623,3 +1624,38 @@ N03 10.0 E105 40.0 090
     # ACTM 00.15 after CTOT 2205Z is 2220Z, five minutes after the allocated CTO.
     assert "2220Z" in summary, "the computed crossing time must be printed"
     assert "+5 min" in summary
+
+
+def test_cfp_volcano_advisories_stop_at_page_separators_and_next_fir() -> None:
+    page = """
+            VAA TAAL
+--------------------
+1B4233/26                 VALID: 20-AUG-26 0115 - 21-AUG-26 0100 EST
+  TAAL VOLCANO ON ALERT LVL 1.
+  FLT OPS ARE ADZ TO AVOID FLY CLOSE TO THE VOLCANO.
+  F) SFC G) FL110
+===================================================
+AREA ENROUTE DESTINATION - DESTINATION ALTERNATE(S)
+===================================================
+            VAA KANLAON
+-----------------------
+1B4236/26                 VALID: 20-AUG-26 0140 - 20-AUG-26 2124 EST
+  ERUPTION OF VOLCANO KANLAON.
+  SOURCE OF INFO: PHIVOLCS VONA
+  F) SFC G) FL110
+RCAA        TAIPEI FIR
+----------------------
+1A600/26                  VALID: 16-MAR-26 0000 - 31-MAR-27 2359 EST
+  UNRELATED AIR TRAFFIC FLOW MANAGEMENT NOTICE.
+"""
+
+    advisories = _parse_cfp_volcano_advisories(
+        [page],
+        datetime(2026, 8, 20, tzinfo=UTC),
+    )
+
+    assert [item["volcano"] for item in advisories] == ["TAAL", "KANLAON"]
+    assert "FLT OPS ARE ADZ" in advisories[0]["text"]
+    assert "=" not in advisories[0]["text"]
+    assert "RCAA" not in advisories[1]["text"]
+    assert "AIR TRAFFIC FLOW" not in advisories[1]["text"]

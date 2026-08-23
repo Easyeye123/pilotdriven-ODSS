@@ -107,6 +107,24 @@ _COMBINED_CONTINUABLE_SECTIONS = (
 _COMBINED_TERRAIN_MARKERS = ("HIGH TERRAIN EXPOSURE AND DEPRESSURISATION",)
 _COMBINED_CONTINUATION_MARKER = "CONTINUED ("
 _COMBINED_PROFILE_TITLE = "DEPRESSURISATION PROFILE"
+_COMBINED_BOSS_FLOW_PAGES = (
+    (
+        "CFP P1 - ROUTE / LEVELS",
+        "PHASE ACTION",
+        "STRIP",
+        "PERFORMANCE",
+        "FUEL",
+        "STATUS",
+        "WEATHER",
+        "ALTERNATES",
+    ),
+    ("DECISION ANALYSIS", "FLIGHT-PHASE DECISION TIMELINE", "SOURCE"),
+    ("PERFORMANCE / FUEL / STATUS", "RECONCILIATION / RELEASE REVIEW"),
+    ("MEL/CDL AND CDDL", "SOURCE DECLARATION"),
+    ("AIRPORTS / ALTERNATES", "DESTINATION ALTERNATE ASSESSMENT MATRIX"),
+    ("WEATHER / ROUTE HAZARDS", "NAMED CFP VOLCANO ADVISORIES"),
+    ("ENROUTE / ASSURANCE", "NUMBERED RELEASE GATES", "SOURCE ASSURANCE"),
+)
 _COMBINED_RETIRED_LABELS = (
     "LEVEL 1",
     "LEVEL 2",
@@ -193,6 +211,43 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 "COMBINED_RETIRED_LABEL",
                 f"Flight Briefing contains retired pilot-facing label: {label}.",
             ))
+
+    is_boss_flow = (
+        page_count >= len(_COMBINED_BOSS_FLOW_PAGES)
+        and "PERFORMANCE / FUEL / STATUS" in extracted_pages[2].upper()
+    )
+    if is_boss_flow:
+        for page_index, required_markers in enumerate(_COMBINED_BOSS_FLOW_PAGES):
+            page_text = extracted_pages[page_index].upper()
+            missing = [
+                marker for marker in required_markers if marker not in page_text
+            ]
+            if missing:
+                violations.append(ReportQualityViolation(
+                    "COMBINED_BOSS_FLOW_STRUCTURE",
+                    (
+                        f"Flight Briefing page {page_index + 1} is missing "
+                        f"{', '.join(missing)}."
+                    ),
+                ))
+        for page_index in range(len(_COMBINED_BOSS_FLOW_PAGES), page_count):
+            page_text = extracted_pages[page_index].upper()
+            if not (
+                all(marker in page_text for marker in _COMBINED_TERRAIN_MARKERS)
+                or _COMBINED_PROFILE_TITLE in page_text
+            ):
+                violations.append(ReportQualityViolation(
+                    "COMBINED_CONDITIONAL_TERRAIN_STRUCTURE",
+                    (
+                        f"Flight Briefing page {page_index + 1} must be an "
+                        "actual terrain/profile evidence page."
+                    ),
+                ))
+        return {
+            "valid": not violations,
+            "page_count": page_count,
+            "violations": violations,
+        }
 
     if page_count >= 4:
         for page_index, required_markers in enumerate(_COMBINED_FIXED_PREFIX):

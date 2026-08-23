@@ -234,6 +234,8 @@ def test_fuel_enroute_role_reaches_analysis_and_shared_briefing_view() -> None:
             "notam_id": "SX74/25",
             "source_page": 4,
             "signal_family": "approach_navaid",
+            "planned_match": None,
+            "different_runway": False,
         },
         {
             "kind": "notam",
@@ -242,6 +244,8 @@ def test_fuel_enroute_role_reaches_analysis_and_shared_briefing_view() -> None:
             "notam_id": "1A2574/26",
             "source_page": 4,
             "signal_family": "information_service",
+            "planned_match": None,
+            "different_runway": False,
         },
     ]
     assert [

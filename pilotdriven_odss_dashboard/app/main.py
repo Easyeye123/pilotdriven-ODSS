@@ -62,7 +62,7 @@ from .odss.profile_chart_delivery import (
     render_held_profile_chart_page,
 )
 from .odss.combined_brief import (
-    COMBINED_BRIEFING_SCHEMA_VERSION,
+    combined_briefing_cache_token,
     combined_briefing_filename,
     render_combined_briefing,
 )
@@ -2367,12 +2367,10 @@ def get_service_combined_report(request: Request, analysis_id: str):
             )
         except (OSError, ValueError):
             analysis_flight["fuel_summary"] = None
-    token = sha256(
-        (
-            f"{analysis_path.stat().st_mtime_ns}:{flight['id']}:"
-            f"{COMBINED_BRIEFING_SCHEMA_VERSION}"
-        ).encode("utf-8")
-    ).hexdigest()[:16]
+    token = combined_briefing_cache_token(
+        analysis_path.stat().st_mtime_ns,
+        flight["id"],
+    )
     cache_path = REPORT_DIR / f"flight_{flight['id']}_combined_{token}.pdf"
     if not cache_path.exists():
         staging = cache_path.with_suffix(".tmp")

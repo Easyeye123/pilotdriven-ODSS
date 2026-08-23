@@ -4,6 +4,7 @@ from app.odss.parser import (
     _CAPTAIN_RE,
     _ZFW_BURN_RE,
     _parse_deferred_items,
+    _parse_intam_records,
     _waypoint_log_start,
     parse_lido,
 )
@@ -200,3 +201,40 @@ def test_prefixed_declaration_with_undashed_trailing_text_is_kept() -> None:
     ]
     assert items[0]["description"] == "RESERVOIR AIR BLEED VALVE"
     assert items[1]["description"] == "SECTION MEL AND CMS REV 18NOV 25"
+
+
+def test_intam_projection_holds_headers_headlines_and_physical_pages() -> None:
+    pages = [
+        "SUMMARY CFP",
+        (
+            "INTAM\n\n1.OPS A350-606 260321\n"
+            "SYSTEM RESETS (UPDATED 06APR2026)\n\nBODY TEXT\n"
+        ),
+        (
+            "2. SEC SSC 04/2026 010426\n"
+            "SSE MNL SECURITY STATUS\n\nSTATUS : AMBER\n"
+        ),
+    ]
+
+    records = _parse_intam_records(pages, (1, 3))
+
+    assert records == [
+        {
+            "priority": 1,
+            "category": "OPS",
+            "identity": "A350-606",
+            "date_token": "260321",
+            "header": "1.OPS A350-606 260321",
+            "headline": "SYSTEM RESETS (UPDATED 06APR2026)",
+            "source_page": 2,
+        },
+        {
+            "priority": 2,
+            "category": "SEC",
+            "identity": "SSC 04/2026",
+            "date_token": "010426",
+            "header": "2. SEC SSC 04/2026 010426",
+            "headline": "SSE MNL SECURITY STATUS",
+            "source_page": 3,
+        },
+    ]

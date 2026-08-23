@@ -62,6 +62,19 @@ EXTRACTION_COUNT_FIELDS = (
 )
 EXTRACTION_DIGEST_FIELDS = EXTRACTION_COUNT_FIELDS
 _LIVE_OPMET_SOURCE = "noaa_awc_live"
+_BOSS_FLOW_SOURCE_EXPECTATIONS = {
+    "SQ910-SIN-MNL-21AUG": {
+        "intam_count": 21,
+        "intam_pages": list(range(39, 46)),
+        "weather_chart_pages": list(range(46, 58)),
+        "fir_boundaries": [
+            ("WIIF", 3, 7),
+            ("WSJC", 14, 7),
+            ("WSJC", 56, 7),
+            ("RPHI", 121, 8),
+        ],
+    },
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -183,6 +196,59 @@ def check_extraction_expectations(
         "failures": failures,
         "actual": actual,
     }
+
+
+def check_boss_flow_source_expectations(
+    case_id: str,
+    flight: dict[str, Any],
+    weather_charts: dict[str, Any],
+) -> list[str]:
+    """Pin boss-reviewed package facts outside the generic corpus digest."""
+    expected = _BOSS_FLOW_SOURCE_EXPECTATIONS.get(case_id)
+    if not expected:
+        return []
+    failures: list[str] = []
+    intam_records = list(flight.get("intam_records") or [])
+    intam_pages = sorted({
+        int(row["source_page"])
+        for row in intam_records
+        if isinstance(row, dict) and isinstance(row.get("source_page"), int)
+    })
+    chart_pages = [
+        int(row["page_number"])
+        for row in weather_charts.get("charts") or []
+        if isinstance(row, dict) and isinstance(row.get("page_number"), int)
+    ]
+    fir_boundaries = [
+        (
+            str(row.get("fir_boundary") or ""),
+            int(row.get("actm_minutes")),
+            int(row.get("source_page")),
+        )
+        for row in flight.get("route_waypoints") or []
+        if isinstance(row, dict)
+        and row.get("fir_boundary")
+        and isinstance(row.get("actm_minutes"), int)
+        and isinstance(row.get("source_page"), int)
+    ]
+    if len(intam_records) != expected["intam_count"]:
+        failures.append(
+            f"INTAM count expected {expected['intam_count']}, got {len(intam_records)}"
+        )
+    if intam_pages != expected["intam_pages"]:
+        failures.append(
+            f"INTAM pages expected {expected['intam_pages']}, got {intam_pages}"
+        )
+    if chart_pages != expected["weather_chart_pages"]:
+        failures.append(
+            "weather chart pages expected "
+            f"{expected['weather_chart_pages']}, got {chart_pages}"
+        )
+    if fir_boundaries != expected["fir_boundaries"]:
+        failures.append(
+            f"FIR boundaries expected {expected['fir_boundaries']}, got {fir_boundaries}"
+        )
+    return failures
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
@@ -630,6 +696,8 @@ def check_cross_surface_parity(
     findings: list[dict[str, Any]],
     warnings: list[str],
     output_text: str,
+    *,
+    unit_output_text: str | None = None,
 ) -> dict[str, Any]:
     """Parsed fact = printed fact, for the facts a captain reads first.
 
@@ -641,10 +709,66 @@ def check_cross_surface_parity(
 
     view = build_briefing_view(flight, findings, warnings)
     folded = " ".join(output_text.upper().split())
+    unit_rows = tuple(
+        " ".join(line.upper().split())
+        for line in (
+            unit_output_text if unit_output_text is not None else output_text
+        ).splitlines()
+        if line.strip()
+    )
     failures: list[str] = []
 
     def printed(text: str) -> bool:
         return " ".join(str(text).upper().split()) in folded
+
+    def printed_mass(label: Any, fuel_kg: Any) -> bool:
+        """Match the bounded fuel-row forms emitted by the PDF renderer.
+
+        Rows may be direct (``POLICY 1,500 kg``) or include the renderer's
+        separator and ACTM column (``TANKER · 03:16 | 18,847 kg``).  The
+        amount and explicit kg unit remain mandatory; arbitrary intervening
+        prose is deliberately not accepted.
+        """
+        normalized_label = " ".join(str(label).upper().split())
+        amount = f"{int(fuel_kg):,}"
+        plain_forms = {
+            f"{normalized_label} {amount} KG",
+            f"{normalized_label} +{amount} KG",
+        }
+        direct_row = re.compile(
+            rf"^{re.escape(normalized_label)}\s*[·:]\s*"
+            rf"(?:\d{{1,2}}[:.]\d{{2}}\s*\|\s*)?"
+            rf"\+?{re.escape(amount)}\s+KG"
+            rf"(?:\s*\|\s*RETURN SECTOR REQ"
+            rf"(?:\s+\d{{1,3}}(?:,\d{{3}})*\s+KG)?)?$"
+        )
+        expected_allocation_forms = {
+            f"{normalized_label} {amount} KG",
+            f"{normalized_label} +{amount} KG",
+        }
+        for row in unit_rows:
+            if row in plain_forms or direct_row.fullmatch(row):
+                return True
+            allocation = re.fullmatch(
+                r"ALLOCATION\s*[·:]\s*(?P<body>.+)",
+                row,
+            )
+            if not allocation:
+                continue
+            body = re.sub(
+                r"\s*\|\s*RETURN SECTOR REQ"
+                r"(?:\s+\d{1,3}(?:,\d{3})*\s+KG)?$",
+                "",
+                allocation.group("body"),
+            )
+            components = {
+                component.strip()
+                for component in re.split(r"\s+\+\s+", body)
+                if component.strip()
+            }
+            if components & expected_allocation_forms:
+                return True
+        return False
 
     terrain_events = (view.get("terrain") or {}).get("events") or []
     says_none = "NO STRICT MSA" in folded
@@ -674,7 +798,7 @@ def check_cross_surface_parity(
 
     for item in (flight.get("fuel_summary") or {}).get("excess_breakdown") or []:
         if item.get("fuel_kg"):
-            if not printed(f"{item['label']} {item['fuel_kg']:,} kg"):
+            if not printed_mass(item.get("label"), item.get("fuel_kg")):
                 failures.append(
                     f"units: excess item {item['label']!r} not printed with kg"
                 )
@@ -735,6 +859,16 @@ def run_case(
             f"{extraction['failures']}. Deliberately review and remint the "
             "manifest before accepting parser changes."
         )
+    boss_flow_source_failures = check_boss_flow_source_expectations(
+        str(case["case_id"]),
+        flight,
+        payload.get("weather_charts") or {},
+    )
+    if boss_flow_source_failures:
+        raise AssertionError(
+            f"{case['case_id']} boss-flow source evidence changed: "
+            f"{boss_flow_source_failures}."
+        )
     map_contract = payload.get("map_contract") or {}
     checks = {
         "flight_number": flight.get("flight_number") == case["flight_number"],
@@ -776,12 +910,13 @@ def run_case(
         )
 
     # The lossless appendix above proves parsed-fact coverage, while pilots
-    # download the compact seven-page document.  Render and scan that exact
+    # download the compact operational document. Render and scan that exact
     # production shape too: appendix-only QA cannot detect a compact-card
-    # layout that drops or cuts a selected source sentence.
+    # layout that drops or cuts a selected source sentence. Seven pages are
+    # the baseline; real terrain/profile evidence may append pages.
     # Keep this name distinct from the lossless ``*_Flight_Briefing.pdf``
     # suffix consumed by the dashboard/PDF fact-parity harness below.
-    operational = case_root / f"{case['case_id']}_Operational_7_Page.pdf"
+    operational = case_root / f"{case['case_id']}_Operational_Flight_Briefing.pdf"
     render_combined_briefing(
         flight,
         payload["findings"],
@@ -792,14 +927,14 @@ def run_case(
         include_audit_appendix=False,
     )
     operational_quality = validate_combined_briefing_pdf(operational)
-    if not operational_quality["valid"] or operational_quality["page_count"] != 7:
+    if not operational_quality["valid"] or operational_quality["page_count"] < 7:
         messages = [
             item.message
             for item in operational_quality["violations"]
         ]
-        if operational_quality["page_count"] != 7:
+        if operational_quality["page_count"] < 7:
             messages.append(
-                "Production Flight Briefing must contain exactly 7 pages; "
+                "Production Flight Briefing must contain at least 7 pages; "
                 f"generated {operational_quality['page_count']}."
             )
         raise AssertionError(
@@ -814,9 +949,11 @@ def run_case(
         )
     with fitz.open(combined) as document:
         output_text = "\n".join(page.get_text() for page in document).upper()
+    with fitz.open(operational) as document:
+        operational_text = "\n".join(page.get_text() for page in document).upper()
     required_text = (
         "FLIGHT BRIEFING",
-        "CFP P1 - MASS / FUEL",
+        "PHASE ACTION",
         f"{case['departure_iata']} / {case['departure']}",
         f"{case['destination_iata']} / {case['destination']}",
     )
@@ -835,6 +972,7 @@ def run_case(
         payload["findings"],
         payload.get("view", {}).get("warnings") or [],
         output_text,
+        unit_output_text=operational_text,
     )
     if not parity["valid"]:
         raise AssertionError(
