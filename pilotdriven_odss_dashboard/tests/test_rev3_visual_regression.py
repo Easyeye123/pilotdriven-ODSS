@@ -204,12 +204,15 @@ def test_wrong_private_reference_hash_fails_before_comparison(tmp_path: Path) ->
 def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
     payload = json.loads(PINNED_MANIFEST.read_text(encoding="utf-8"))
 
-    assert PINNED_MANIFEST.stat().st_size < 10_000
+    # 41 page entries of geometry + checksums only; far below any size that could embed the PDF.
+    assert PINNED_MANIFEST.stat().st_size < 16_000
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference.pdf",
-        "sha256": "b02b0b36dad91d57790b34754668d077b1163744ba7221cbac0f099e5d3f68bc",
+        "filename": "SQ214_REV3_reference_v5.pdf",
+        "sha256": "73475f4cffa301a77d7a4130353c3031e5764feb5dd96ed60f3e707fe84d6079",
     }
-    assert len(payload["pages"]) == 7
+    assert len(payload["pages"]) == 41
+    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-21-sq910-round-v5"
+    assert "20-21 Aug 2026" in payload["provenance"]["approval_basis"]
     assert payload["thresholds"] == {
         "max_changed_pixel_ratio": 0.0,
         "max_mean_absolute_error": 0.0,
@@ -241,3 +244,77 @@ def test_sq214_rev3_private_exact_visual_reference(tmp_path: Path) -> None:
 
     assert completed.returncode == 0, completed.stdout + completed.stderr + receipt_text
     assert json.loads(receipt_text)["status"] == "passed"
+
+
+MINT_SCRIPT = ROOT / "scripts" / "mint_rev3_visual_reference.py"
+
+
+def _run_mint(*, reference: Path, manifest: Path, extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
+    command = [
+        sys.executable,
+        str(MINT_SCRIPT),
+        "--reference",
+        str(reference),
+        "--manifest",
+        str(manifest),
+        "--case-id",
+        "SYNTHETIC-REV3",
+        "--approval-basis",
+        "synthetic test approval",
+    ]
+    command.extend(extra or [])
+    return subprocess.run(command, cwd=ROOT, check=False, capture_output=True, text=True)
+
+
+def test_mint_script_writes_a_manifest_the_gate_accepts_for_its_own_reference(tmp_path: Path) -> None:
+    reference = tmp_path / "approved-reference.pdf"
+    _create_pdf(reference, "APPROVED")
+    manifest = tmp_path / "minted-manifest.json"
+
+    minted = _run_mint(reference=reference, manifest=manifest)
+
+    assert minted.returncode == 0, minted.stdout + minted.stderr
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert payload["gate"] == "rev3-raster-pixel-equality"
+    assert payload["case_id"] == "SYNTHETIC-REV3"
+    assert payload["reference_asset"] == {
+        "filename": "approved-reference.pdf",
+        "sha256": _sha256(reference),
+    }
+    assert payload["renderer"]["binding_version"] == str(fitz.VersionBind)
+    assert payload["renderer"]["mupdf_version"] == str(fitz.mupdf_version)
+    assert len(payload["pages"]) == 1
+    assert payload["pages"][0]["page_number"] == 1
+    assert len(payload["pages"][0]["reference_raster_sha256"]) == 64
+    assert payload["thresholds"] == {
+        "max_changed_pixel_ratio": 0.0,
+        "max_mean_absolute_error": 0.0,
+        "max_channel_delta": 0,
+    }
+    assert payload["provenance"]["approval_basis"] == "synthetic test approval"
+    assert payload["provenance"]["minted_on"]
+    # The manifest must not embed the private asset itself.
+    assert manifest.stat().st_size < 4_000
+
+    receipt = tmp_path / "self-receipt.json"
+    completed = _run_gate(reference=reference, candidate=reference, manifest=manifest, receipt=receipt)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert json.loads(receipt.read_text(encoding="utf-8"))["status"] == "passed"
+
+    other = tmp_path / "other.pdf"
+    _create_pdf(other, "DIFFERENT")
+    other_receipt = tmp_path / "other-receipt.json"
+    rejected = _run_gate(reference=reference, candidate=other, manifest=manifest, receipt=other_receipt)
+    assert rejected.returncode == 1
+    assert json.loads(other_receipt.read_text(encoding="utf-8"))["status"] == "failed"
+
+
+def test_mint_script_refuses_a_missing_reference(tmp_path: Path) -> None:
+    manifest = tmp_path / "never-written.json"
+
+    minted = _run_mint(reference=tmp_path / "missing.pdf", manifest=manifest)
+
+    assert minted.returncode == 1
+    assert not manifest.exists()
+    assert "PDF not found" in minted.stdout + minted.stderr

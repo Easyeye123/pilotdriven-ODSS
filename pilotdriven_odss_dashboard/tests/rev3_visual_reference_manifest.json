@@ -3,8 +3,8 @@
   "gate": "rev3-raster-pixel-equality",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
-    "filename": "SQ214_REV3_reference.pdf",
-    "sha256": "b02b0b36dad91d57790b34754668d077b1163744ba7221cbac0f099e5d3f68bc"
+    "filename": "SQ214_REV3_reference_v5.pdf",
+    "sha256": "73475f4cffa301a77d7a4130353c3031e5764feb5dd96ed60f3e707fe84d6079"
   },
   "renderer": {
     "library": "PyMuPDF",
@@ -18,64 +18,341 @@
   "pages": [
     {
       "page_number": 1,
-      "width_points": 841.8897705078125,
-      "height_points": 595.2755737304688,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "565af2dcbf547b2f5761041ed1ae51d258cdb3a169e85a8378cf7f4a6d11919d"
+      "reference_raster_sha256": "cac02b5d7e15215d6cace93a4748ad64703cc6ee852f508a592eb7df995823d1"
     },
     {
       "page_number": 2,
-      "width_points": 841.8897705078125,
-      "height_points": 595.2755737304688,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "b1d6bc9e16b0bf0d7067205f7820ddbe64fde61c37ac1753cfac54bdbb9d3e00"
+      "reference_raster_sha256": "473c9a030193a83a82d21282f65672e48617ca9041c96fa0e2850e180884645c"
     },
     {
       "page_number": 3,
-      "width_points": 841.8897705078125,
-      "height_points": 595.2755737304688,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "6056836867d392d5c33d3d21a11ca76d8b2ba6ef5cc299f7cbdaa8092080515d"
+      "reference_raster_sha256": "29e1251bf0f796979af36a6d2b57beef719ae35076c74d65c76411211e6645ec"
     },
     {
       "page_number": 4,
-      "width_points": 841.8897705078125,
-      "height_points": 595.2755737304688,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "e850877fccc18e1febf3b1daf80581f7a0779467e90a4c62bfca30a1213c3f39"
+      "reference_raster_sha256": "ec6fb3b2c4c0a419c4a6e276da4c93a8441e5bad91abb1ea6ec89ff7998d8b90"
     },
     {
       "page_number": 5,
-      "width_points": 841.8897705078125,
-      "height_points": 595.2755737304688,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "686d62128802ba9cf0b17adb2c9004ddd03610e48b96c5756dce5b1879473928"
+      "reference_raster_sha256": "e0c4ab2fb99858db884a94c52e78398d1fcc77177ce6ba9b48412a5669fc25e1"
     },
     {
       "page_number": 6,
-      "width_points": 841.8897705078125,
-      "height_points": 595.2755737304688,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "88bb7ce3f485e69be9a49fe10eddeed5dd0d7524a26046a283dc078bc851060f"
+      "reference_raster_sha256": "ca148be9d3ba58b503876232451da986d626ef714fcc07fcdbf7d1338859d97e"
     },
     {
       "page_number": 7,
-      "width_points": 841.8897705078125,
-      "height_points": 595.2755737304688,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "7521daef4a4164628753d1a7524edd89d3235827f930ea57a0dc48a8cd479047"
+      "reference_raster_sha256": "cd2aeebd032cacb19dedf735f1093972077043ca84eeb740d8172cf34b8f0d08"
+    },
+    {
+      "page_number": 8,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "f192e06640e93631fae7b2f1c01ea385b22c1d084ee0f1e6fe09f08442e3fbc6"
+    },
+    {
+      "page_number": 9,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "d91e73cb8b3f37270b707d968790908cf0e88d3dde5b99ec75bccb0e6423049b"
+    },
+    {
+      "page_number": 10,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "feb69a11ee6f37ceff4355e7eb78fa55deba825a6c024d82a533efdb3ea3d33d"
+    },
+    {
+      "page_number": 11,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "ef012035325c61c47b53460158375144f06aaabe3b02c3019a2197581ed1d43a"
+    },
+    {
+      "page_number": 12,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "638eb85f5d7469f9c32380cd31ca1636e5f60d83f42ea423f6ab3ba31a5b8686"
+    },
+    {
+      "page_number": 13,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "8b82c1836b76446c31080168cfb68872a1d9d5d5276cce4976f0239162096c57"
+    },
+    {
+      "page_number": 14,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "44d22c8fddae16f77246e469d51b6c6a92494021717a991634f340c7c4524631"
+    },
+    {
+      "page_number": 15,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "556f01fc843a7482aa4b989dc8ab10222edac7c528b2bd44a1738628b9c409e5"
+    },
+    {
+      "page_number": 16,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "e0ab6a71a29c8aa5b23743400427d670fc7bde8bf28d92bcdf8ababe3845dee2"
+    },
+    {
+      "page_number": 17,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "c0b3cb2374117cf679a39ce2220d874cf140a316c7c4e7db4e9c5dff14f015dc"
+    },
+    {
+      "page_number": 18,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "b0c22aefced7ed88cc7c3156fcca5741acce9d2281f103b3fc540ac1cf7412bf"
+    },
+    {
+      "page_number": 19,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "ad8114ad3aa6bee8055130977433399755b2540328ce4d9d7e3df592745191c1"
+    },
+    {
+      "page_number": 20,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "cb6d27798d6282fd7a621afdbbc207007e592bbbeeb2c9ab361354a487d45df6"
+    },
+    {
+      "page_number": 21,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "73e635d4d0d243e829d981217e32b6bff335ca8361cbcb16afd2261757cc2883"
+    },
+    {
+      "page_number": 22,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "cd37814af861e2edd5b5df46685032e2639ad290f3ec0055682e64f746e66068"
+    },
+    {
+      "page_number": 23,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "e8802ae6d7a1325c7b4418a0248bf10f4b907adf3f112e391348dbf1738fe55f"
+    },
+    {
+      "page_number": 24,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "4166f18e76b2e5a24d24a174d85f497abfa5f7fd3719778aa060eb534c263761"
+    },
+    {
+      "page_number": 25,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "e3cc05346d41c0ff5b5d21a5fd09de27fc3ee9e7a765a2bdbd4e07b1939aafe4"
+    },
+    {
+      "page_number": 26,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "f056c51fa54846ce89fff4c1b4ab7c8d5c8d7810947b12d4344d54bd478942e1"
+    },
+    {
+      "page_number": 27,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "62e290a78ba3d005023c9e043db26caa5d02d105d74b412819f2a385b13b89bc"
+    },
+    {
+      "page_number": 28,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "890213d6080ad45244a2e2a23fbe7add6cc1609579495c2ed72e0884490e60d4"
+    },
+    {
+      "page_number": 29,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "abde4157c38d00eb6c264eec9c708a8f8d1452e3151fc969d2d6148b9a71803a"
+    },
+    {
+      "page_number": 30,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "7b020dde7063f5633e363d966a34f089a0b675dba42e25370fcec0739a577eed"
+    },
+    {
+      "page_number": 31,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "a2d0d6204b07454be36bf3df06eaacedeb7e81c2b6bebc989172ec5bca2e00ba"
+    },
+    {
+      "page_number": 32,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "0a8cd8367818b4583cc58761d1e4b07cc3d1fdcb9515424f0ea37251123b722d"
+    },
+    {
+      "page_number": 33,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "3545f0fb07d42fbc17dbe4bb32f0ee225c20d35914d13821018995c1dd6f0aee"
+    },
+    {
+      "page_number": 34,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "251c9a40ea3e3876cd9c6dd96f3a6cedc822def6952f4bcc902f0da4513ba147"
+    },
+    {
+      "page_number": 35,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "a641dc18bded0651af3adb3d854e62109985379c1846e53918a63f6a49fd5065"
+    },
+    {
+      "page_number": 36,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "98940454f8115b1370c6226886b57a3547cfb257645d8d3de70919ac3293562c"
+    },
+    {
+      "page_number": 37,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "20d3adcde21b12d2d15c23e4cfdcd436defd6dee27091896c45b680ce3da39cf"
+    },
+    {
+      "page_number": 38,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "09efd2de8bf094938868925bfc348f4ae69c15bb2acb18c7ecb388cd84625593"
+    },
+    {
+      "page_number": 39,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "4a15bcecb7ed215e33558377f154599aa4497597092289b7e7a3e4630f69ab33"
+    },
+    {
+      "page_number": 40,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "5609310806c361343e80bc83b7a059ecf226eaa1278ff161abc0b34671fb308d"
+    },
+    {
+      "page_number": 41,
+      "width_points": 841.889771,
+      "height_points": 595.275574,
+      "width_pixels": 842,
+      "height_pixels": 596,
+      "reference_raster_sha256": "42ce3c70e7bfa1151c3f2fc3de5ed7908e41f80955c8ecdbfb547a6d3a953ab0"
     }
   ],
   "thresholds": {
     "max_changed_pixel_ratio": 0.0,
     "max_mean_absolute_error": 0.0,
     "max_channel_delta": 0
+  },
+  "provenance": {
+    "minted_on": "2026-08-23",
+    "approval_basis": "Boss punch-list rulings of 20-21 Aug 2026 (SQ910 round: STATUS tab, EDTO suppressed on non-EDTO, PRIORITY strip removed, DECISION ANALYSIS, raw METAR/TAF cards, TANKER rows). All 41 pages of the SQ214-PER-SIN-19AUG corpus render inspected page by page on 23 Aug 2026 before minting. Supersedes the 7-page pypdf REV3 artefact b02b0b36, which never matched the 41-page combined briefing candidate the release gate compares.",
+    "combined_briefing_schema_version": "2026-08-21-sq910-round-v5"
   }
 }
