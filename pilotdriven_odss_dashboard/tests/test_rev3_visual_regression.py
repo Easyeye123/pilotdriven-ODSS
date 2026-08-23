@@ -207,11 +207,11 @@ def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
     # 41 page entries of geometry + checksums only; far below any size that could embed the PDF.
     assert PINNED_MANIFEST.stat().st_size < 16_000
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference_v5.pdf",
-        "sha256": "73475f4cffa301a77d7a4130353c3031e5764feb5dd96ed60f3e707fe84d6079",
+        "filename": "SQ214_REV3_reference_v6.pdf",
+        "sha256": "4397ed3f32c1c6a4cf5cea4f58978ff2309f391294b7d97dffbec34e4d7f5986",
     }
     assert len(payload["pages"]) == 41
-    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-21-sq910-round-v5"
+    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-23-flow-round-v6"
     assert "20-21 Aug 2026" in payload["provenance"]["approval_basis"]
     assert payload["thresholds"] == {
         "max_changed_pixel_ratio": 0.0,

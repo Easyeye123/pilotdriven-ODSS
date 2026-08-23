@@ -10,13 +10,13 @@ For example, if one card moves by one pixel on page 4, the command exits `1` and
 
 ## Current approved reference
 
-`SQ214_REV3_reference_v5.pdf` — the SQ214-PER-SIN-19AUG corpus render under
-`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-21-sq910-round-v5"`, minted on
-23 Aug 2026 after the boss's 20–21 Aug 2026 punch-list rulings (STATUS tab,
-EDTO suppressed on non-EDTO flights, PRIORITY strip removed, DECISION ANALYSIS,
-raw METAR/TAF cards, TANKER rows). It supersedes the original 7-page pypdf REV3
-artefact (`b02b0b36…`), which could never match the 41-page combined briefing
-the release gate actually compares.
+`SQ214_REV3_reference_v6.pdf` — the SQ214-PER-SIN-19AUG corpus render under
+`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-flow-round-v6"`, minted on
+23 Aug 2026 after the flow round (page-1 PERFORMANCE card, pertinent NOTAM
+lines, ETA basis line, route-version / NON-EDTO / CRZ chips, page-2 clock-basis
+sentence). It supersedes v5 (`73475f4c…`, the 20–21 Aug punch-list skin) and
+the original 7-page pypdf REV3 artefact (`b02b0b36…`), which could never match
+the combined briefing the release gate actually compares.
 
 The deploy and release-gate scripts read the reference path from
 `PILOTDRIVEN_REV3_REFERENCE_PDF`; the filename must equal the one pinned in the
@@ -44,7 +44,7 @@ cd pilotdriven_odss_dashboard
 python -m pip install -r requirements.txt
 cd ..
 
-export ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v5.pdf
+export ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v6.pdf
 export ODSS_REV3_VISUAL_CANDIDATE_PDF=/private/output/SQ214-PER-SIN-19AUG/SQ214-PER-SIN-19AUG_Flight_Briefing.pdf
 
 python pilotdriven_odss_dashboard/scripts/check_rev3_visual_regression.py \
@@ -59,7 +59,7 @@ Exit `0` means exact equality. Exit `1` means the reference preflight failed, th
 The same check is available as an opt-in test:
 
 ```bash
-ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v5.pdf \
+ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v6.pdf \
 ODSS_REV3_VISUAL_CANDIDATE_PDF=/private/output/SQ214-PER-SIN-19AUG/SQ214-PER-SIN-19AUG_Flight_Briefing.pdf \
 python -m pytest -q pilotdriven_odss_dashboard/tests/test_rev3_visual_regression.py
 ```

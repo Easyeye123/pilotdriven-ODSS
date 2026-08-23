@@ -3,8 +3,8 @@
   "gate": "rev3-raster-pixel-equality",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
-    "filename": "SQ214_REV3_reference_v5.pdf",
-    "sha256": "73475f4cffa301a77d7a4130353c3031e5764feb5dd96ed60f3e707fe84d6079"
+    "filename": "SQ214_REV3_reference_v6.pdf",
+    "sha256": "4397ed3f32c1c6a4cf5cea4f58978ff2309f391294b7d97dffbec34e4d7f5986"
   },
   "renderer": {
     "library": "PyMuPDF",
@@ -22,7 +22,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "cac02b5d7e15215d6cace93a4748ad64703cc6ee852f508a592eb7df995823d1"
+      "reference_raster_sha256": "75d9180139b72bfcebd9964b20c8431aaadf9e61a5f74cdd19b153b1ec681ca2"
     },
     {
       "page_number": 2,
@@ -30,7 +30,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "473c9a030193a83a82d21282f65672e48617ca9041c96fa0e2850e180884645c"
+      "reference_raster_sha256": "82c7cb253db786ee19819c1859b8eb8047d9895ab7e884c9fc63d0cf6d3f36dd"
     },
     {
       "page_number": 3,
@@ -38,7 +38,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "29e1251bf0f796979af36a6d2b57beef719ae35076c74d65c76411211e6645ec"
+      "reference_raster_sha256": "9335baa70269b0436a2c0a1e67e3345d2c6849e59584217782d1dde45b8a21be"
     },
     {
       "page_number": 4,
@@ -46,7 +46,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "ec6fb3b2c4c0a419c4a6e276da4c93a8441e5bad91abb1ea6ec89ff7998d8b90"
+      "reference_raster_sha256": "169b66dfacce1c01e9cfcfd9d7e7e897f61bc49d7f0c4d079658083b06fef36d"
     },
     {
       "page_number": 5,
@@ -54,7 +54,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "e0c4ab2fb99858db884a94c52e78398d1fcc77177ce6ba9b48412a5669fc25e1"
+      "reference_raster_sha256": "88652a5313ec04b174fda04b4c8c31ab6ec850ca23c53f25350f95c825568202"
     },
     {
       "page_number": 6,
@@ -62,7 +62,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "ca148be9d3ba58b503876232451da986d626ef714fcc07fcdbf7d1338859d97e"
+      "reference_raster_sha256": "51428af515b836dffa7a45abbea6ca5bff71d8c7ea69f76081f78a7db964b91e"
     },
     {
       "page_number": 7,
@@ -70,7 +70,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "cd2aeebd032cacb19dedf735f1093972077043ca84eeb740d8172cf34b8f0d08"
+      "reference_raster_sha256": "a29fb2017c0b3ec7e7bcbdb257ffc89f603cdc570e83f2e477d3030d25c13c6f"
     },
     {
       "page_number": 8,
@@ -78,7 +78,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "f192e06640e93631fae7b2f1c01ea385b22c1d084ee0f1e6fe09f08442e3fbc6"
+      "reference_raster_sha256": "95d38eed396e0c3b3aa15bc597f7a9f1124e82319cfd9033483c93f27ce6c3e2"
     },
     {
       "page_number": 9,
@@ -352,7 +352,7 @@
   },
   "provenance": {
     "minted_on": "2026-08-23",
-    "approval_basis": "Boss punch-list rulings of 20-21 Aug 2026 (SQ910 round: STATUS tab, EDTO suppressed on non-EDTO, PRIORITY strip removed, DECISION ANALYSIS, raw METAR/TAF cards, TANKER rows). All 41 pages of the SQ214-PER-SIN-19AUG corpus render inspected page by page on 23 Aug 2026 before minting. Supersedes the 7-page pypdf REV3 artefact b02b0b36, which never matched the 41-page combined briefing candidate the release gate compares.",
-    "combined_briefing_schema_version": "2026-08-21-sq910-round-v5"
+    "approval_basis": "Boss punch-list rulings 20-21 Aug 2026 plus David's 23 Aug 'do it completely' order (flow round: p1 PERFORMANCE card, pertinent NOTAM lines, ETA basis, route-version/NON-EDTO/CRZ chips, p2 clock-basis sentence). SQ214-PER-SIN-19AUG corpus render under schema 2026-08-23-flow-round-v6, pages inspected before minting; supersedes the v5 reference 73475f4c.",
+    "combined_briefing_schema_version": "2026-08-23-flow-round-v6"
   }
 }
