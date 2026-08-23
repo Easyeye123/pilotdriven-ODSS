@@ -1182,7 +1182,7 @@ def test_level1_and_level2_publish_exact_cfp_mel_with_review_status(
         assert "Approved MEL source review required" in normalized
 
 
-def test_level1_and_level2_publish_sia722_ifeddl_as_unclassified_source_text(
+def test_level1_and_level2_publish_sia722_ifeddl_as_review_required_source_text(
     tmp_path: Path,
 ) -> None:
     flight = _flight()
@@ -1207,11 +1207,13 @@ def test_level1_and_level2_publish_sia722_ifeddl_as_unclassified_source_text(
                 "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT"
             ),
             "source_status": (
-                "Unclassified CFP deferred declaration; acronym meaning is not inferred "
-                "and it is not classified as MEL, CDL or CDDL."
+                "CFP deferred declaration requires review; acronym meaning is not "
+                "inferred and no MEL, CDL or CDDL classification is asserted."
             ),
         }
     ]
+    assert "UNCLASSIFIED" not in " ".join(rows[0].values()).upper()
+    assert "UNSPECIFIED" not in " ".join(rows[0].values()).upper()
 
     for level in (1, 2):
         path = tmp_path / f"ifeddl-level-{level}.pdf"
@@ -1229,6 +1231,41 @@ def test_level1_and_level2_publish_sia722_ifeddl_as_unclassified_source_text(
         assert "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT" in normalized
         assert "acronym meaning is not inferred" in normalized
         assert "MEL AA IFEDDL" not in normalized
+        assert "UNCLASSIFIED" not in normalized.upper()
+        assert "UNSPECIFIED" not in normalized.upper()
+
+
+def test_legacy_internal_deferred_markers_are_not_published() -> None:
+    flight = _flight()
+    raw_item = {
+        "item_type": "UNCLASSIFIED",
+        "source_declaration": "UNCLASSIFIED UNSPECIFIED",
+        "reference": "UNSPECIFIED",
+        "description": "SOURCE TEXT REQUIRES REVIEW",
+    }
+    flight["deferred_items"] = [raw_item]
+
+    rows = deferred_item_report_rows(flight, [])
+
+    assert rows[0]["label"] == "DEFERRED ITEM - REVIEW REQUIRED"
+    pilot_projection = " ".join(rows[0].values()).upper()
+    assert "UNCLASSIFIED" not in pilot_projection
+    assert "UNSPECIFIED" not in pilot_projection
+    assert raw_item["item_type"] == "UNCLASSIFIED"
+    assert raw_item["reference"] == "UNSPECIFIED"
+
+
+def test_meaningful_source_declaration_is_not_silently_rewritten() -> None:
+    flight = _flight()
+    flight["deferred_items"] = [{
+        "item_type": "UNCLASSIFIED",
+        "source_declaration": "AA UNKNOWN SYSTEM",
+        "description": "SOURCE TEXT REQUIRES REVIEW",
+    }]
+
+    rows = deferred_item_report_rows(flight, [])
+
+    assert rows[0]["label"] == "AA UNKNOWN SYSTEM"
 
 
 def test_active_level1_cover_draws_governed_surface_vector_overlays(

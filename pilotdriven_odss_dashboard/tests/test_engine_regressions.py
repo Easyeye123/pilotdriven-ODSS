@@ -114,8 +114,8 @@ def test_sia722_aa_ifeddl_never_enters_the_mel_cdl_or_cddl_engines() -> None:
     )
     assert declaration["title"] == "AA IFEDDL"
     assert declaration["summary"] == (
-        "Unclassified CFP deferred declaration; acronym meaning is not inferred "
-        "and it is not classified as MEL, CDL or CDDL."
+        "CFP deferred declaration requires review; acronym meaning is not "
+        "inferred and no MEL, CDL or CDDL classification is asserted."
     )
     assert declaration["details"] == [
         "CONNECTIVITY, WIFI INTERNET",
@@ -124,6 +124,28 @@ def test_sia722_aa_ifeddl_never_enters_the_mel_cdl_or_cddl_engines() -> None:
     assert not any(
         item["engine"] in {"mel", "cdl", "cddl"} for item in findings
     )
+
+
+def test_internal_only_deferred_declaration_is_not_published_by_analysis() -> None:
+    flight = _flight()
+    raw_item = {
+        "item_type": "UNCLASSIFIED",
+        "reference": "UNSPECIFIED",
+        "source_declaration": "UNCLASSIFIED UNSPECIFIED",
+        "description": "SOURCE TEXT REQUIRES REVIEW",
+    }
+    flight["deferred_items"] = [raw_item]
+
+    findings, _ = analyse(flight)
+    declaration = next(
+        item for item in findings if item["engine"] == "deferred_declaration"
+    )
+    pilot_projection = " ".join(
+        [declaration["title"], declaration["summary"], *declaration["details"]]
+    ).upper()
+    assert "UNCLASSIFIED" not in pilot_projection
+    assert "UNSPECIFIED" not in pilot_projection
+    assert raw_item["source_declaration"] == "UNCLASSIFIED UNSPECIFIED"
 
 
 def test_normalized_source_locator_finds_record_page_without_flight_specific_rules() -> None:

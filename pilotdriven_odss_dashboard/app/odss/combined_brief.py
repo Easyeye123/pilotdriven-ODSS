@@ -33,6 +33,11 @@ from .briefing import (
     _edto_gate_sentence,
 )
 from .constants import format_actm
+from .deferred_dispatch import (
+    deferred_item_type_for_display,
+    deferred_reference_for_display,
+    deferred_source_declaration_for_display,
+)
 
 PAGE_SIZE = landscape(A4)
 
@@ -147,7 +152,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-flow-round-v7"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-flow-round-v8"
 
 
 _FIT_FLOOR = T_MICRO
@@ -498,13 +503,50 @@ def draw_page_chrome(
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS, 7.4)
         canvas.drawRightString(width - MARGIN, height - 74.5, f"Page {page_number} of {page_count}")
-        # The web dashboard owns the visible back control.  Keep PDF
-        # navigation on the existing logo hit area without adding chrome that
-        # is absent from the approved print reference.
+        # Keep the approved return affordance visible but compact (boss,
+        # 21 Aug: "back to overview is good"; "button [is] a bit too big").
+        # It sits below the logo, clear of the BLOCK / identity columns.
+        return_text = "BACK TO OVERVIEW"
+        return_text_size = 7.2
+        return_h = 16.0
+        return_w = (
+            pdfmetrics.stringWidth(
+                return_text,
+                SANS_BOLD,
+                return_text_size,
+            )
+            + 18.0
+        )
+        return_x = MARGIN
+        return_y = height - 82.0
+        canvas.setStrokeColor(_page_colour(canvas, "border", BORDER))
+        canvas.setLineWidth(0.7)
+        canvas.setFillColor(_page_colour(canvas, "panel", PANEL))
+        canvas.roundRect(
+            return_x,
+            return_y,
+            return_w,
+            return_h,
+            return_h / 2,
+            stroke=1,
+            fill=1,
+        )
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS_BOLD, return_text_size)
+        canvas.drawCentredString(
+            return_x + return_w / 2,
+            return_y + 5.2,
+            return_text,
+        )
         canvas.linkRect(
             "",
             "sec_overview",
-            (MARGIN, height - 66, MARGIN + 120, height - 26),
+            (
+                return_x,
+                return_y,
+                return_x + return_w,
+                return_y + return_h,
+            ),
             relative=0,
             thickness=0,
         )
@@ -738,7 +780,7 @@ def governed_deferred_source_target(
     and opens its cited page.
     """
     item_type = str(item.get("item_type") or "").strip().upper()
-    reference = str(item.get("reference") or "").strip().upper()
+    reference = deferred_reference_for_display(item.get("reference"))
     if item_type not in {"MEL", "CDL", "CDDL"} or not re.fullmatch(
         r"[A-Z0-9][A-Z0-9._/-]{0,79}", reference
     ):
@@ -778,7 +820,7 @@ def _group_deferred_items(flight: dict[str, Any]) -> list[dict[str, Any]]:
     for index, source in enumerate(flight.get("deferred_items") or []):
         item = dict(source)
         item_type = str(item.get("item_type") or "ITEM").strip().upper()
-        reference = str(item.get("reference") or "").strip().upper()
+        reference = deferred_reference_for_display(item.get("reference"))
         key: tuple[str, str] | tuple[str, int] = (
             (item_type, reference) if reference else ("__ROW__", index)
         )
@@ -816,8 +858,8 @@ def _gate_lines(
         "; ".join(
             " · ".join(part for part in (
                 " ".join(p for p in (
-                    str(item.get("item_type") or "").strip(),
-                    str(item.get("reference") or "").strip(),
+                    deferred_item_type_for_display(item.get("item_type")),
+                    deferred_reference_for_display(item.get("reference")),
                 ) if p),
                 str(item.get("description") or "").strip() or None,
             ) if part)
@@ -980,6 +1022,10 @@ def draw_overview_page(
         show_tabs=True,
     )
     canvas.bookmarkPage("sec_overview")
+    # The p2 PERFORMANCE / FUEL decision card returns to the page-1 summary
+    # rather than linking to its own page. Keep a distinct destination name
+    # so the physical navigation contract remains explicit and testable.
+    canvas.bookmarkPage("sec_performance_summary")
     # REV3: the tab strip is the page label - no separate big title row.
     y = content_top - 2
 
@@ -1854,11 +1900,11 @@ def draw_overview_page(
     ]
     listed = publication_rows or deferred_gates or [
         {
-            "title": str(item.get("item_type") or "ITEM"),
+            "title": deferred_item_type_for_display(item.get("item_type")),
             "references": [
-                item.get("reference")
+                deferred_reference_for_display(item.get("reference"))
             ]
-            if item.get("reference") not in {None, "", "UNSPECIFIED"}
+            if deferred_reference_for_display(item.get("reference"))
             else [],
             "summary": str(
                 item.get("company_remark") or item.get("description") or ""
@@ -2506,14 +2552,23 @@ def _deferred_detail_pages(
 ) -> list[dict[str, Any]]:
     rows: list[tuple[str, str]] = []
     for index, item in enumerate(flight.get("deferred_items") or [], start=1):
+        source_declaration = deferred_source_declaration_for_display(
+            item.get("source_declaration")
+        )
+        item_type = deferred_item_type_for_display(item.get("item_type"))
+        reference = deferred_reference_for_display(item.get("reference"))
         identity = " | ".join(
             part
             for part in (
-                str(item.get("item_type") or "ITEM"),
+                (
+                    source_declaration
+                    if item_type == "DEFERRED ITEM" and source_declaration
+                    else item_type
+                ),
                 # A bare declaration ("BB CDDL") has no printed reference;
                 # say so instead of the internal "UNSPECIFIED" word
                 # (boss, 21 Aug: "UNCLASSIFIED; CDDL UNSPECIFIED").
-                str(item.get("reference") or "no printed reference"),
+                reference or "no printed reference",
             )
             if part
         )
@@ -2536,8 +2591,18 @@ def _deferred_detail_pages(
             "company_remark",
             "penalty",
             "source_page",
+            "source_declaration",
         }
         for key, value in item.items():
+            if key == "source_declaration":
+                if source_declaration:
+                    rows.extend(
+                        _flatten_detail_rows(
+                            f"ITEM {index}.{key}",
+                            source_declaration,
+                        )
+                    )
+                continue
             if key not in known:
                 rows.extend(
                     _flatten_detail_rows(f"ITEM {index}.{key}", value)
@@ -4293,9 +4358,17 @@ def draw_mel_cdl_page(
             canvas.setFont(SANS_BOLD, T_SMALL)
             canvas.drawString(inner[0], card_top - card_h / 2 - 8, "No MEL, CDL or CDDL item is listed on CFP page 1.")
             break
-        item_type = str(item.get("item_type") or "ITEM")
-        reference = str(item.get("reference") or "")
-        title = f"{item_type} {reference}".strip()
+        raw_item_type = str(item.get("item_type") or "").strip().upper()
+        item_type = deferred_item_type_for_display(raw_item_type)
+        reference = deferred_reference_for_display(item.get("reference"))
+        declaration = deferred_source_declaration_for_display(
+            item.get("source_declaration")
+        )
+        title = (
+            declaration
+            if item_type == "DEFERRED ITEM" and declaration
+            else " ".join(value for value in (item_type, reference) if value)
+        ) or "DEFERRED ITEM - REVIEW REQUIRED"
         inner = panel(canvas, cx, card_bottom, card_w, card_h, title=title, accent=accents[index % 4], title_colour=BG if accents[index % 4] in (EDTO_GREEN, COMMS_TEAL, WEATHER_AMBER) else colors.white)
         ix, iy, iw, ih = inner
         headline = str(item.get("description") or "").strip().upper() or "SEE CROPPED SOURCE BELOW"
@@ -4303,14 +4376,24 @@ def draw_mel_cdl_page(
         canvas.setFont(MONO_BOLD, 9.0)
         _draw_string_fitted(canvas, ix, card_top - 34, headline[:64], MONO_BOLD, 9.0, iw, TEXT)
         remark = str(item.get("company_remark") or "").strip()
-        body = (
-            f"CFP REMARK - NOT THE APPROVED {item_type} REMEDY: {remark}"
-            if remark
-            else (
-                f"CFP declaration only. The approved {item_type} remedy must be read "
-                "from the exact governed item."
+        if raw_item_type not in {"", "UNCLASSIFIED", "UNSPECIFIED", "UNKNOWN"}:
+            body = (
+                f"CFP REMARK - NOT THE APPROVED {raw_item_type} REMEDY: {remark}"
+                if remark
+                else (
+                    f"CFP declaration only. The approved {raw_item_type} remedy must be read "
+                    "from the exact governed item."
+                )
             )
-        )
+        else:
+            body = (
+                f"CFP DECLARATION - REVIEW REQUIRED: {remark}"
+                if remark
+                else (
+                    "CFP declaration requires review; no MEL, CDL or CDDL "
+                    "classification or remedy is inferred."
+                )
+            )
         # Body lines stop where the bottom-anchored penalty line begins -
         # the count comes from the card geometry so no width or wording can
         # push a line into it (the full remark is always in the crop below).
@@ -4324,7 +4407,7 @@ def draw_mel_cdl_page(
             row_y -= body_step
         penalty = str(item.get("penalty") or "").strip()
         source_target = governed_deferred_source_target(flight, item)
-        source_label = f"OPEN EXACT {item_type} ITEM / REMEDY >" if source_target else ""
+        source_label = f"OPEN EXACT {raw_item_type} ITEM / REMEDY >" if source_target else ""
         source_width = (
             pdfmetrics.stringWidth(source_label, SANS_BOLD, T_MICRO)
             if source_label
@@ -5420,9 +5503,14 @@ def draw_analysis_page(
     ) if part)
 
     refs = [
-        f"{item.get('item_type')} {item.get('reference')}"
-        if str(item.get('reference') or '').strip() not in ('', 'UNSPECIFIED')
-        else str(item.get('item_type') or '')
+        " ".join(
+            part
+            for part in (
+                deferred_item_type_for_display(item.get("item_type")),
+                deferred_reference_for_display(item.get("reference")),
+            )
+            if part
+        )
         for item in deferred
     ]
     seen_refs: list[str] = []
@@ -5499,7 +5587,7 @@ def draw_analysis_page(
     # click this — something to give more information... we can click all
     # this, that'll be good").
     cell_bookmarks = {
-        "PERFORMANCE / FUEL": "sec_analysis",
+        "PERFORMANCE / FUEL": "sec_performance_summary",
         "CDDL / CDL": "sec_mel_cdl",
         "EDTO / ENROUTE AIRPORT": "sec_alternates",
         "CLASSIFICATION": "sec_alternates",
@@ -5622,10 +5710,10 @@ def _draw_operational_deferred_source_panel(
     include_governed_link: bool = False,
 ) -> None:
     """Draw one data-driven source panel in the compact REV3 p3 mosaic."""
-    item_type = str(item.get("item_type") or "ITEM").upper()
+    item_type = deferred_item_type_for_display(item.get("item_type"))
     # A bare declaration has no printed reference; the title simply omits it
     # (boss, 21 Aug: no UNSPECIFIED placeholder words on the pilot surface).
-    reference = str(item.get("reference") or "").upper()
+    reference = deferred_reference_for_display(item.get("reference"))
     description = str(item.get("description") or "CFP DECLARATION").strip()
     title = " - ".join(part for part in (
         " ".join(p for p in (item_type, reference) if p),
@@ -5795,9 +5883,16 @@ def draw_operational_mel_cdl_page(
             canvas.line(column_x, gate_y + 9, column_x, gate_top - band_h - 8)
         gate_title = str(item.get("title") or "").strip().upper()
         if not gate_title:
-            item_type = str(item.get("item_type") or "ITEM").upper()
-            reference = str(item.get("reference") or "UNSPECIFIED").upper()
-            gate_title = f"{item_type} {reference}"
+            item_type = deferred_item_type_for_display(item.get("item_type"))
+            reference = deferred_reference_for_display(item.get("reference"))
+            declaration = deferred_source_declaration_for_display(
+                item.get("source_declaration")
+            ).upper()
+            gate_title = declaration or " ".join(
+                value for value in (item_type, reference) if value
+            )
+            if not gate_title:
+                gate_title = "DEFERRED ITEM REVIEW REQUIRED"
         canvas.setFillColor(TEXT)
         canvas.setFont(SANS_BOLD, 8.8)
         _draw_string_fitted(

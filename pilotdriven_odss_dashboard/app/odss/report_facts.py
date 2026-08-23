@@ -5,6 +5,11 @@ import re
 from typing import Any, Iterable
 
 from .constants import format_actm
+from .deferred_dispatch import (
+    deferred_item_type_for_display,
+    deferred_reference_for_display,
+    deferred_source_declaration_for_display,
+)
 
 
 _NAT_SEGMENT = re.compile(
@@ -223,12 +228,12 @@ def deferred_item_report_rows(
             continue
         item_type = _clean(source_item.get("item_type"), "DEFERRED").upper()
         if item_type == "UNCLASSIFIED":
+            source_declaration = deferred_source_declaration_for_display(
+                source_item.get("source_declaration")
+            )
             rows.append(
                 {
-                    "label": _clean(
-                        source_item.get("source_declaration"),
-                        "UNCLASSIFIED DEFERRED DECLARATION",
-                    ),
+                    "label": source_declaration or "DEFERRED ITEM - REVIEW REQUIRED",
                     "description": _clean(
                         source_item.get("description"),
                         "Following CFP text was not parsed.",
@@ -238,15 +243,15 @@ def deferred_item_report_rows(
                         "No further CFP text was parsed.",
                     ),
                     "source_status": (
-                        "Unclassified CFP deferred declaration; acronym meaning is not inferred "
-                        "and it is not classified as MEL, CDL or CDDL."
+                        "CFP deferred declaration requires review; acronym meaning is not "
+                        "inferred and no MEL, CDL or CDDL classification is asserted."
                     ),
                 }
             )
             if limit is not None and len(rows) >= limit:
                 break
             continue
-        reference = _clean(source_item.get("reference"), "UNSPECIFIED").upper()
+        reference = deferred_reference_for_display(source_item.get("reference"))
         expected_engine = {
             "MEL": "mel",
             "CDL": "cdl",
@@ -257,6 +262,7 @@ def deferred_item_report_rows(
                 item
                 for item in finding_list
                 if item.get("engine") == expected_engine
+                and reference
                 and reference in _clean(item.get("title")).upper()
             ),
             None,
@@ -272,7 +278,14 @@ def deferred_item_report_rows(
             source_status = summary
         rows.append(
             {
-                "label": f"{item_type} {reference}",
+                "label": " ".join(
+                    value
+                    for value in (
+                        deferred_item_type_for_display(item_type),
+                        reference,
+                    )
+                    if value
+                ),
                 "description": _clean(
                     source_item.get("description"),
                     "Description was not parsed from CFP Page 1.",

@@ -139,10 +139,106 @@ def test_compact_dispatch_gates_use_the_shared_source_projection(tmp_path):
     assert page_text.count("CTRL / SYSB") == 1
     assert page_text.count("CDL 20-20 / 30-30") == 1
     assert "CDL 10-10" in page_text
+    assert "UNSPECIFIED" not in page_text
+    assert "UNCLASSIFIED" not in page_text
     assert not any(
         "governed-deferred-reference" in str(link.get("uri") or "")
         for link in document[2].get_links()
     )
+
+
+def test_compact_sq910_four_shape_declarations_never_publish_placeholders(
+    tmp_path,
+):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["deferred_items"] = [
+        {
+            "item_type": "IFEDDL",
+            "reference": None,
+            "source_declaration": "AA IFEDDL",
+            "description": "SEAT IFE (YCL), AUDIO JACK, NO AUDIO",
+            "company_remark": "41E, 57A X CLASS B",
+        },
+        {
+            "item_type": "CDDL",
+            "reference": None,
+            "source_declaration": "BB CDDL",
+            "description": "TRASH COMPACTOR 212 NO POWER",
+            "company_remark": "TO UPLIFT TRASH BAGS",
+        },
+        {
+            "item_type": "MEL",
+            "reference": "25-20-50A",
+            "source_declaration": "CC MEL 25-20-50A",
+            "description": "D4L GALLEY CHILLER NO.1 RED LIGHT BLINKING",
+            "company_remark": "TO UPLIFT DRY ICE",
+        },
+        {
+            "item_type": "IN",
+            "reference": "SIA/00-017 R1",
+            "source_declaration": "DD IN SIA/00-017 R1",
+            "description": (
+                "ENG 2 FAN COWLS LATCH ACCESS PANEL AFT-MOST LATCH IS LOOSE"
+            ),
+            "company_remark": (
+                "HST APPLIED, CONDITION TO BE CHECKED PRIOR EVERY DEPARTURE"
+            ),
+        },
+    ]
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    output = tmp_path / "sq910-four-shape-declarations.pdf"
+
+    render_combined_briefing(flight, findings, [], output)
+
+    page_text = fitz.open(output)[2].get_text().upper()
+    for expected in (
+        "SEAT IFE",
+        "TRASH COMPACTOR",
+        "MEL 25-20-50A",
+        "IN SIA/00-017 R1",
+    ):
+        assert expected in page_text
+    assert "UNSPECIFIED" not in page_text
+    assert "UNCLASSIFIED" not in page_text
+
+
+def test_compact_overview_never_publishes_legacy_deferred_markers(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    raw_item = {
+        "item_type": "UNCLASSIFIED",
+        "reference": "UNSPECIFIED",
+        "description": "LEGACY SOURCE TEXT REQUIRES REVIEW",
+    }
+    flight["deferred_items"] = [raw_item]
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    output = tmp_path / "legacy-deferred-markers.pdf"
+
+    render_combined_briefing(
+        flight,
+        findings,
+        [],
+        output,
+        include_audit_appendix=True,
+    )
+
+    document_text = "\n".join(
+        page.get_text() for page in fitz.open(output)
+    ).upper()
+    assert "DEFERRED ITEM" in document_text
+    assert "UNCLASSIFIED" not in document_text
+    assert "UNSPECIFIED" not in document_text
+    assert raw_item["item_type"] == "UNCLASSIFIED"
+    assert raw_item["reference"] == "UNSPECIFIED"
 
 
 def test_overview_destination_schedule_uses_the_cfp_arrival_not_last_waypoint(tmp_path):
@@ -552,14 +648,57 @@ def test_rendered_report_content_never_shrinks_below_the_readable_floor(rendered
 
 
 def test_every_detail_page_has_a_real_overview_return_link(rendered):
-    assert all("BACK TO OVERVIEW" not in page.get_text() for page in rendered)
     for page in rendered[1:]:
-        links = page.get_links()
-        assert any(
-            (link.get("kind") == fitz.LINK_GOTO and link.get("page") == 0)
-            or (link.get("kind") == fitz.LINK_NAMED and link.get("page") == "1")
-            for link in links
+        labels = page.search_for("BACK TO OVERVIEW")
+        assert len(labels) == 1
+        label = labels[0]
+        return_link = next(
+            link
+            for link in page.get_links()
+            if (
+                (link.get("kind") == fitz.LINK_GOTO and link.get("page") == 0)
+                or (
+                    link.get("kind") == fitz.LINK_NAMED
+                    and link.get("page") == "1"
+                )
+            )
+            and not (fitz.Rect(link["from"]) & label).is_empty
         )
+        hit_area = fitz.Rect(return_link["from"])
+        assert hit_area.width <= 110
+        assert hit_area.height <= 20
+
+
+def test_decision_analysis_cards_link_to_their_intended_pages(rendered):
+    page = rendered[1]
+    expected_pages = {
+        "PERFORMANCE / FUEL": 0,
+        "CDDL / CDL": 2,
+        "EDTO / ENROUTE AIRPORT": 3,
+        "OPERATIONAL HAZARDS": 5,
+        "AIRPORTS / ALTERNATE": 4,
+        "HIGH TERRAIN / VWS": 6,
+    }
+
+    def target_page(link):
+        if link.get("kind") == fitz.LINK_GOTO:
+            return link.get("page")
+        if link.get("kind") == fitz.LINK_NAMED:
+            named_page = str(link.get("page") or "")
+            return int(named_page) - 1 if named_page.isdigit() else None
+        return None
+
+    for title, expected_page in expected_pages.items():
+        title_boxes = page.search_for(title)
+        assert title_boxes, f"missing decision card title: {title}"
+        title_box = title_boxes[0]
+        card_links = [
+            link
+            for link in page.get_links()
+            if not (fitz.Rect(link["from"]) & title_box).is_empty
+        ]
+        assert len(card_links) == 1, title
+        assert target_page(card_links[0]) == expected_page, title
 
 
 def test_overview_return_link_does_not_cover_header_identity(rendered):

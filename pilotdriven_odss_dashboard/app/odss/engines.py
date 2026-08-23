@@ -25,6 +25,11 @@ from .controlled_library import (
     aircraft_effectivity_tokens,
     select_cdl_variants,
 )
+from .deferred_dispatch import (
+    deferred_item_type_for_display,
+    deferred_reference_for_display,
+    deferred_source_declaration_for_display,
+)
 from .pilot_briefing import (
     concise_weather_finding,
     notam_pertinence,
@@ -1582,7 +1587,16 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             # The CFP's own vocabulary names the block (boss, 21 Aug 2026:
             # "UNCLASSIFIED" never reaches the pilot). The exact printed text
             # is the whole held fact; no remedy or instruction is inferred.
-            declaration = str(item.get("source_declaration") or "DEFERRED DECLARATION")
+            declaration = deferred_source_declaration_for_display(
+                item.get("source_declaration")
+            ) or " ".join(
+                value
+                for value in (
+                    deferred_item_type_for_display(item.get("item_type")),
+                    deferred_reference_for_display(item.get("reference")),
+                )
+                if value
+            )
             kind_sentence = {
                 "IFEDDL": (
                     "IFE deferred defect list declaration carried verbatim from CFP page 1; "
@@ -1593,8 +1607,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                     "no remedy or dispatch instruction is inferred beyond the printed text."
                 ),
             }.get(item["item_type"], (
-                "Unclassified CFP deferred declaration; acronym meaning is not inferred "
-                "and it is not classified as MEL, CDL or CDDL."
+                "CFP deferred declaration requires review; acronym meaning is not "
+                "inferred and no MEL, CDL or CDDL classification is asserted."
             ))
             details = [item.get("description") or "No following CFP text parsed."]
             if item.get("company_remark"):

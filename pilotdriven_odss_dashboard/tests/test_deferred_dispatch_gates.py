@@ -116,6 +116,74 @@ def test_unnumbered_cddl_uses_only_source_bounded_uplift_reference() -> None:
     assert gates[0]["publication_rows"][0]["reference"] == "212"
 
 
+def test_bare_cddl_without_subject_uses_its_printed_declaration_not_placeholder() -> None:
+    gates = build_deferred_dispatch_gates([{
+        "item_type": "CDDL",
+        "reference": "UNSPECIFIED",
+        "source_declaration": "BB CDDL",
+        "description": "",
+        "company_remark": "",
+    }])
+
+    assert gates[0]["title"] == "BB CDDL"
+    assert gates[0]["publication_rows"][0]["title"] == "CDDL"
+    assert "UNSPECIFIED" not in str(gates[0])
+
+
+def test_internal_only_unknown_declaration_never_becomes_a_pilot_gate() -> None:
+    assert build_deferred_dispatch_gates([{
+        "item_type": "UNCLASSIFIED",
+        "reference": "UNSPECIFIED",
+        "description": "",
+        "company_remark": "",
+    }]) == []
+
+    gates = build_deferred_dispatch_gates([{
+        "item_type": "UNCLASSIFIED",
+        "reference": "IFEDDL",
+        "description": "SEAT IFE AUDIO UNAVAILABLE",
+        "company_remark": "",
+    }])
+    assert gates[0]["title"] == "DEFERRED ITEM IFEDDL"
+    pilot_projection = {
+        "title": gates[0]["title"],
+        "summary": gates[0]["summary"],
+        "references": gates[0]["references"],
+        "publication_rows": gates[0]["publication_rows"],
+    }
+    assert "UNCLASSIFIED" not in str(pilot_projection)
+    assert "UNSPECIFIED" not in str(pilot_projection)
+
+
+def test_explicit_internal_declaration_never_becomes_a_pilot_gate_title() -> None:
+    assert build_deferred_dispatch_gates([{
+        "item_type": "UNCLASSIFIED",
+        "reference": "UNSPECIFIED",
+        "source_declaration": "UNCLASSIFIED UNSPECIFIED",
+        "description": "",
+        "company_remark": "",
+    }]) == []
+
+    raw_item = {
+        "item_type": "UNCLASSIFIED",
+        "reference": "UNSPECIFIED",
+        "source_declaration": "AA UNCLASSIFIED UNSPECIFIED",
+        "description": "SEAT IFE AUDIO UNAVAILABLE",
+        "company_remark": "",
+    }
+    gates = build_deferred_dispatch_gates([raw_item])
+    pilot_projection = {
+        "title": gates[0]["title"],
+        "summary": gates[0]["summary"],
+        "references": gates[0]["references"],
+        "publication_rows": gates[0]["publication_rows"],
+    }
+    assert "UNCLASSIFIED" not in str(pilot_projection)
+    assert "UNSPECIFIED" not in str(pilot_projection)
+    assert gates[0]["title"] != "AA"
+    assert raw_item["source_declaration"] == "AA UNCLASSIFIED UNSPECIFIED"
+
+
 def test_ambiguous_uppercase_prose_is_not_promoted_to_a_source_gate() -> None:
     deferred_items = [{
         "item_type": "MEL",
