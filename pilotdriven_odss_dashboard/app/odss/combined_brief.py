@@ -8217,15 +8217,25 @@ def draw_operational_hazard_page(
                 stroke=1,
                 fill=0,
             )
-            title = " · ".join(
-                part
-                for part in (
-                    str(advisory.get("volcano") or "VOLCANO ADVISORY"),
-                    str(advisory.get("notam_id") or ""),
+            advisory_kind = str(
+                advisory.get("advisory_kind") or ""
+            ).strip().upper()
+            title = (
+                str(
+                    advisory.get("name") or "VOLCANIC ASH ADVISORY"
+                ).strip()
+                if advisory_kind == "VA_SIGMET"
+                else " · ".join(
+                    part
+                    for part in (
+                        str(advisory.get("volcano") or "VOLCANO ADVISORY"),
+                        str(advisory.get("notam_id") or ""),
+                    )
+                    if part
                 )
-                if part
             )
             source_text = str(advisory.get("text") or "").strip()
+            derived_text = str(advisory.get("derived") or "").strip()
             meta = " · ".join(
                 part
                 for part in (
@@ -8236,8 +8246,33 @@ def draw_operational_hazard_page(
                 if part
             )
             title_lines = _wrap(title, SANS_BOLD, T_SMALL, cell_w - 16.0)
-            detail = " · ".join(part for part in (meta, source_text) if part)
-            detail_lines = _wrap(detail, SANS, T_SMALL, cell_w - 16.0)
+            applicability = (
+                f"APPLICABILITY · {derived_text}"
+                if derived_text
+                else "APPLICABILITY · Shared derived sentence unavailable; review required."
+            )
+            applicability_lines = _wrap(
+                applicability,
+                SANS,
+                T_SMALL,
+                cell_w - 16.0,
+            )
+            meta_lines = _wrap(
+                meta or "SOURCE PAGE / VALIDITY · Unavailable in shared advisory.",
+                SANS,
+                T_SMALL,
+                cell_w - 16.0,
+            )
+            source_lines = _wrap(
+                (
+                    f"SOURCE TEXT · {source_text}"
+                    if source_text
+                    else "SOURCE TEXT · Not held in shared advisory."
+                ),
+                SANS,
+                T_SMALL,
+                cell_w - 16.0,
+            )
             available_detail_lines = max(
                 0,
                 int(
@@ -8251,20 +8286,34 @@ def draw_operational_hazard_page(
                 ),
             )
             continuation = None
-            if len(detail_lines) > available_detail_lines:
-                continuation = "CONTINUED: OPEN FULL SOURCE RECORD IN DASHBOARD"
-                available_detail_lines = max(0, available_detail_lines - 1)
-                detail_lines = detail_lines[:available_detail_lines]
+            required_lines = len(applicability_lines) + len(meta_lines)
+            if required_lines >= available_detail_lines:
+                raise ValueError(
+                    "Operational VAA applicability/source metadata exceeds readable capacity."
+                )
+            source_capacity = available_detail_lines - required_lines
+            if len(source_lines) > source_capacity:
+                continuation = "CONTINUED · FULL SOURCE IN DASHBOARD"
+                source_capacity -= 1
+                if source_capacity < 1:
+                    raise ValueError(
+                        "Operational VAA card cannot hold a source excerpt and continuation."
+                    )
+                source_lines = source_lines[:source_capacity]
             canvas.setFillColor(WEATHER_AMBER)
             canvas.setFont(SANS_BOLD, T_SMALL)
             line_y = cell_top - 14.0
             for line in title_lines:
                 canvas.drawString(cell_x + 8.0, line_y, line)
                 line_y -= 10.2
-            canvas.setFillColor(TEXT_SECONDARY)
+            canvas.setFillColor(TEXT)
             canvas.setFont(SANS, T_SMALL)
             line_y -= 2.8
-            for line in detail_lines:
+            for line in applicability_lines:
+                canvas.drawString(cell_x + 8.0, line_y, line)
+                line_y -= 10.2
+            canvas.setFillColor(TEXT_SECONDARY)
+            for line in meta_lines + source_lines:
                 canvas.drawString(cell_x + 8.0, line_y, line)
                 line_y -= 10.2
             if continuation:

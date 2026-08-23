@@ -325,10 +325,66 @@ def test_missing_derived_screening_line_fails() -> None:
     result = check_cross_surface_parity(flight, [], [], named)
     assert not result["valid"]
     assert any("derived" in failure for failure in result["failures"])
+    derived = next(
+        item["derived"]
+        for item in build_briefing_view(flight, [], [])["vaa"]["cfp_advisories"]
+        if item.get("advisory_kind") == "VA_SIGMET"
+    )
     result_ok = check_cross_surface_parity(
-        flight, [], [], named + "\nClosest approach 60 NM near ALPHA; ash layer SFC/FL070"
+        flight,
+        [],
+        [],
+        named + "\n" + derived,
     )
     assert result_ok["valid"], result_ok["failures"]
+
+
+def test_cfp_vaa_parity_uses_operational_atomic_identity_and_derived_line() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["volcanic_advisories"] = [{
+        "volcano": "MAYON",
+        "notam_id": "1B4235/26",
+        "text": "MAYON VOLCANO ON ALERT LEVEL 2.",
+        "source_page": 34,
+    }]
+    audit_text = (
+        _passing_text(flight)
+        + "\nCFP VOLCANO ADVISORY · MAYON · 1B4235/26"
+    )
+    derived = (
+        "Source-held CFP notice; operational applicability remains "
+        "a crew/dispatch review."
+    )
+    operational_text = f"MAYON · 1B4235/26\n{derived}"
+
+    passed = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        audit_text,
+        unit_output_text=operational_text,
+    )
+    assert passed["valid"], passed["failures"]
+
+    missing_identity = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        audit_text,
+        unit_output_text=f"MAYON\n{derived}",
+    )
+    assert not missing_identity["valid"]
+    assert any("advisory identity" in row for row in missing_identity["failures"])
+
+    missing_derived = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        audit_text,
+        unit_output_text="MAYON · 1B4235/26",
+    )
+    assert not missing_derived["valid"]
+    assert any("derived applicability" in row for row in missing_derived["failures"])
 
 
 def _extraction_flight() -> dict:
@@ -551,6 +607,42 @@ def test_parsed_fact_coverage_normalises_times_wraps_and_registrations() -> None
     text = "BURNOFF 28,711/4:58 REG 9V-SHY SIN/340/GUGIT/360/ IGONA/380/LEMOD/380/DOH"
     result = check_parsed_fact_coverage(flight, text)
     assert result["valid"], result["missing"]
+
+
+def test_parsed_fact_coverage_accepts_a_fact_on_either_pdf_surface() -> None:
+    from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
+
+    flight = {
+        "fuel_summary": {
+            "derived_fuel_kg": {"takeoff": 43_291, "landing": 23_924},
+        },
+    }
+    audit_text = "FROZEN AUDIT FUEL TABLE"
+    operational_text = "DERIVED T/O FUEL 43,291 KG / LDG FUEL 23,924 KG"
+
+    paired = check_parsed_fact_coverage(
+        flight,
+        audit_text,
+        operational_output_text=operational_text,
+    )
+    assert paired["valid"], paired["missing"]
+
+    audit_only = check_parsed_fact_coverage(flight, audit_text)
+    assert not audit_only["valid"]
+    assert any(
+        "derived_fuel_kg.takeoff" in row for row in audit_only["missing"]
+    )
+
+    missing_from_both = check_parsed_fact_coverage(
+        flight,
+        "FROZEN AUDIT T/O FUEL 43,291 KG",
+        operational_output_text="OPERATIONAL FUEL TABLE",
+    )
+    assert not missing_from_both["valid"]
+    assert any(
+        "derived_fuel_kg.landing" in row
+        for row in missing_from_both["missing"]
+    )
 
 
 def test_long_route_fact_accepts_visible_ordered_tokens_across_page_chrome() -> None:

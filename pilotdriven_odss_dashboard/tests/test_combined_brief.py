@@ -3062,6 +3062,174 @@ def test_all_terrain_events_and_full_vaa_source_text_reach_pdf(
     assert physical["valid"], physical["violations"]
 
 
+def test_operational_vaa_cards_print_shared_applicability_before_source_excerpt(
+    tmp_path,
+    monkeypatch,
+):
+    from app.odss import briefing as briefing_module
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    real_build = briefing_module.build_briefing_view
+
+    def four_advisory_view(
+        flight, findings, warnings, timing_view=None, weather_charts=None
+    ):
+        view = real_build(
+            flight,
+            findings,
+            warnings,
+            timing_view=timing_view,
+            weather_charts=weather_charts,
+        )
+        view["vaa"]["cfp_advisories"] = [
+            {
+                "name": f"CFP VOLCANO ADVISORY · TESTVOLCANO-{index}",
+                "volcano": f"TESTVOLCANO-{index}",
+                "notam_id": f"1A900{index}/26",
+                "valid_from": f"20 AUG 01{index}0Z",
+                "valid_to": "21 AUG 0100Z",
+                "derived": (
+                    f"Source-held CFP notice {index}; operational applicability "
+                    "remains a crew/dispatch review."
+                ),
+                "text": (
+                    f"SOURCE-START-{index} "
+                    + "complete source advisory wording " * 18
+                    + f"SOURCE-END-{index}"
+                ),
+                "source_page": 40 + index,
+            }
+            for index in range(1, 5)
+        ]
+        return view
+
+    monkeypatch.setattr(
+        briefing_module,
+        "build_briefing_view",
+        four_advisory_view,
+    )
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "operational-vaa-applicability.pdf"
+
+    render_combined_briefing(flight, findings, [], out)
+
+    page = fitz.open(out)[5]
+    text = " ".join(page.get_text().split())
+    for index in range(1, 5):
+        title = f"TESTVOLCANO-{index} · 1A900{index}/26"
+        applicability = (
+            f"Source-held CFP notice {index}; operational applicability remains "
+            "a crew/dispatch review."
+        )
+        assert title in text
+        assert applicability in text
+        assert f"SOURCE p{40 + index}" in text
+        assert f"20 AUG 01{index}0Z" in text
+        assert "21 AUG 0100Z" in text
+        assert f"SOURCE-START-{index}" in text
+        title_position = text.index(title)
+        applicability_position = text.index(applicability, title_position)
+        source_position = text.index("SOURCE TEXT ·", applicability_position)
+        assert title_position < applicability_position < source_position
+    assert "SOURCE-END-1" not in text
+    assert "CONTINUED · FULL SOURCE IN DASHBOARD" in text
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+    assert physical["pages"][5]["visible_overlap_count"] == 0
+
+
+def test_operational_vaa_cards_keep_full_va_sigmet_name_beside_cfp_notices(
+    tmp_path,
+    monkeypatch,
+):
+    from app.odss import briefing as briefing_module
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    real_build = briefing_module.build_briefing_view
+    full_sigmet_name = "VOLCANIC ASH · MT KRAKATAU · WIIF WV SIGMET 18"
+
+    def mixed_advisory_view(
+        flight, findings, warnings, timing_view=None, weather_charts=None
+    ):
+        view = real_build(
+            flight,
+            findings,
+            warnings,
+            timing_view=timing_view,
+            weather_charts=weather_charts,
+        )
+        notices = [
+            {
+                "name": (
+                    f"CFP VOLCANO ADVISORY · TESTVOLCANO-{index} · "
+                    f"1A910{index}/26"
+                ),
+                "advisory_kind": "CFP_VAA_NOTICE",
+                "volcano": f"TESTVOLCANO-{index}",
+                "notam_id": f"1A910{index}/26",
+                "valid_from": f"20 AUG 01{index}0Z",
+                "valid_to": "21 AUG 0100Z",
+                "derived": (
+                    "Source-held CFP notice; operational applicability remains "
+                    "a crew/dispatch review."
+                ),
+                "text": f"SOURCE CFP NOTICE {index} REQUIRES REVIEW.",
+                "source_page": 40 + index,
+            }
+            for index in range(1, 4)
+        ]
+        notices.append({
+            "name": full_sigmet_name,
+            "advisory_kind": "VA_SIGMET",
+            "valid_from": "20 AUG 0200Z",
+            "valid_to": "20 AUG 0800Z",
+            "derived": (
+                "VA SIGMET source-held; route applicability remains a "
+                "crew/dispatch review."
+            ),
+            "text": "SOURCE VA SIGMET ASH CLOUD POSITION AND FORECAST HELD.",
+            "source_page": 44,
+        })
+        view["vaa"]["cfp_advisories"] = notices
+        return view
+
+    monkeypatch.setattr(
+        briefing_module,
+        "build_briefing_view",
+        mixed_advisory_view,
+    )
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "operational-mixed-vaa.pdf"
+
+    render_combined_briefing(flight, findings, [], out)
+
+    page = fitz.open(out)[5]
+    text = " ".join(page.get_text().split())
+    assert full_sigmet_name in text
+    assert "VA SIGMET source-held; route applicability remains a crew/dispatch review." in text
+    for index in range(1, 4):
+        assert f"TESTVOLCANO-{index} · 1A910{index}/26" in text
+        assert (
+            f"CFP VOLCANO ADVISORY · TESTVOLCANO-{index} · 1A910{index}/26"
+            not in text
+        )
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+    assert physical["pages"][5]["visible_overlap_count"] == 0
+
+
 def test_dual_role_station_is_selected_once_per_pdf_section(tmp_path):
     flight = sample_flight()
     flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)

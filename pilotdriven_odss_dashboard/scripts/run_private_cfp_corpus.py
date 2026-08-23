@@ -652,12 +652,34 @@ def _fact_forms(path: str, value: Any) -> list[str]:
     return [form for form in forms if len(form) >= 3]
 
 
-def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict[str, Any]:
-    """Every parsed CFP fact prints, or carries a written waiver."""
-    text = " ".join(output_text.upper().split())
-    text_packed = text.replace(" ", "")
+def check_parsed_fact_coverage(
+    flight: dict[str, Any],
+    output_text: str,
+    *,
+    operational_output_text: str | None = None,
+) -> dict[str, Any]:
+    """Every parsed CFP fact prints on either publication, or is waived.
 
-    def visible_tokens_in_order(source: Any) -> bool:
+    The audit PDF is the lossless/frozen compatibility publication and the
+    operational PDF is the current pilot download. One parsed fact needs to
+    be complete on at least one surface; it does not have to be duplicated in
+    both, and tokens from two surfaces are never spliced into false evidence.
+    """
+    texts = [" ".join(output_text.upper().split())]
+    if operational_output_text is not None:
+        texts.append(" ".join(operational_output_text.upper().split()))
+    packed_texts = [text.replace(" ", "") for text in texts]
+
+    def forms_visible(forms: list[str]) -> bool:
+        if any(form in text for text in texts for form in forms):
+            return True
+        return any(
+            len(form) >= 24 and form.replace(" ", "") in packed
+            for packed in packed_texts
+            for form in forms
+        )
+
+    def visible_tokens_in_order(source: Any, text: str) -> bool:
         """Accept wrapped visible source tokens even when page chrome intervenes."""
         expected = str(source).upper().split()
         if not expected:
@@ -681,9 +703,7 @@ def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict
             forms = _fact_forms(path, value)
             if not forms:
                 continue
-            if any(form in text for form in forms):
-                continue
-            if any(len(form) >= 24 and form.replace(" ", "") in text_packed for form in forms):
+            if forms_visible(forms):
                 continue
             missing.append(f"{path} = {str(value)[:60]!r}")
 
@@ -700,7 +720,7 @@ def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict
             "ON" if anti_ice_on is True else "OFF" if anti_ice_on is False else "--"
         )
         switch_row = f"PACKS / ANTI-ICE {packs_value} / {anti_ice_value}"
-        if switch_row not in text:
+        if not any(switch_row in text for text in texts):
             if isinstance(packs_on, bool):
                 missing.append(f"performance.packs_on = {packs_on!r}")
             if isinstance(anti_ice_on, bool):
@@ -714,11 +734,11 @@ def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict
         forms = _fact_forms(key, value)
         if not forms:
             continue
-        if any(form in text for form in forms):
+        if forms_visible(forms):
             continue
-        if any(len(form) >= 24 and form.replace(" ", "") in text_packed for form in forms):
-            continue
-        if key == "route_text" and visible_tokens_in_order(value):
+        if key == "route_text" and any(
+            visible_tokens_in_order(value, text) for text in texts
+        ):
             continue
         missing.append(f"{key} = {str(value)[:60]!r}")
     return {"valid": not missing, "checked": checked, "missing": missing}
@@ -742,6 +762,13 @@ def check_cross_surface_parity(
 
     view = build_briefing_view(flight, findings, warnings)
     folded = " ".join(output_text.upper().split())
+    operational_folded = " ".join(
+        (
+            unit_output_text
+            if unit_output_text is not None
+            else output_text
+        ).upper().split()
+    )
     unit_rows = tuple(
         " ".join(line.upper().split())
         for line in (
@@ -753,6 +780,9 @@ def check_cross_surface_parity(
 
     def printed(text: str) -> bool:
         return " ".join(str(text).upper().split()) in folded
+
+    def operational_printed(text: str) -> bool:
+        return " ".join(str(text).upper().split()) in operational_folded
 
     def printed_mass(label: Any, fuel_kg: Any) -> bool:
         """Match the bounded fuel-row forms emitted by the PDF renderer.
@@ -842,18 +872,38 @@ def check_cross_surface_parity(
         record.get("record_type") == "VA_SIGMET"
         for record in flight.get("weather") or []
     )
-    if has_va and "VOLCANIC ASH" not in folded:
-        failures.append("vaa: CFP carries a VA SIGMET but the briefing never says VOLCANIC ASH")
+    if has_va and "VOLCANIC ASH" not in operational_folded:
+        failures.append(
+            "vaa: CFP carries a VA SIGMET but the operational briefing never "
+            "says VOLCANIC ASH"
+        )
     for advisory in (view.get("vaa") or {}).get("cfp_advisories") or []:
-        if advisory.get("name") and not printed(advisory["name"]):
-            failures.append(f"vaa: advisory name {advisory['name']!r} not printed")
-        derived = str(advisory.get("derived") or "").strip()
-        if derived:
-            head = " ".join(derived.split()[:4])
-            if not printed(head):
-                failures.append(
-                    f"vaa: derived screening line ({head!r}...) not printed"
+        if advisory.get("advisory_kind") == "CFP_VAA_NOTICE":
+            identity = " · ".join(
+                value
+                for value in (
+                    str(advisory.get("volcano") or "").strip(),
+                    str(advisory.get("notam_id") or "").strip(),
                 )
+                if value
+            )
+            if identity and not operational_printed(identity):
+                failures.append(
+                    f"vaa: advisory identity {identity!r} not printed atomically "
+                    "on the operational surface"
+                )
+        elif advisory.get("name") and not operational_printed(advisory["name"]):
+            failures.append(
+                f"vaa: advisory name {advisory['name']!r} not printed on the "
+                "operational surface"
+            )
+        derived = str(advisory.get("derived") or "").strip()
+        if derived and not operational_printed(derived):
+            head = " ".join(derived.split()[:4])
+            failures.append(
+                f"vaa: derived applicability line ({head!r}...) not printed "
+                "on the operational surface"
+            )
 
     pilot_lines = {
         " ".join(line.upper().split())
@@ -1009,7 +1059,11 @@ def run_case(
         raise AssertionError(
             f"{case['case_id']} cross-surface parity failed: {parity['failures']}."
         )
-    fact_coverage = check_parsed_fact_coverage(flight, output_text)
+    fact_coverage = check_parsed_fact_coverage(
+        flight,
+        output_text,
+        operational_output_text=operational_text,
+    )
     if not fact_coverage["valid"]:
         raise AssertionError(
             f"{case['case_id']} parsed facts never printed and carry no waiver: "
