@@ -2058,3 +2058,50 @@ def test_tankering_excess_is_written_as_tankering(tmp_path):
     assert "tankering" in analysis
     assert "return sector" in analysis
     assert "23,324" in analysis
+
+
+# --- 23 Aug 2026: page-1 PERFORMANCE card, pertinent NOTAMs, arrival basis ---
+
+
+def test_page_one_carries_the_performance_card_in_place_of_flight_basis(rendered):
+    # Boss, 21 Aug (R2-9): "add PERFORMANCE card to p1 (GPT layout)". The
+    # flight-basis facts already live in the header, chips and footer.
+    first = rendered[0].get_text()
+    assert "CFP P1 - PERFORMANCE" in first
+    assert "CFP P1 - FLIGHT BASIS" not in first
+    assert "LIMIT" in first
+    assert "EOSID" in first
+
+
+def test_destination_card_states_the_arrival_basis(rendered):
+    # Boss, 21 Aug (R2-14): "is it based on the flight time?... too small".
+    first = rendered[0].get_text()
+    assert "ETA 2240Z" in first
+    assert "STD 0945Z" in first
+    assert "filed EET" in first
+
+
+def test_decision_timeline_states_its_clock_basis(rendered):
+    second = rendered[1].get_text()
+    assert "Filed EET" in second and "from STD 0945Z" in second
+    # The fixture applies an actual take-off, so the clocks say so.
+    assert "actual take-off 0952Z" in second
+
+
+def test_pertinent_notam_lines_follow_the_panel_and_skip_the_highlight():
+    from app.odss.combined_brief import _pertinent_notam_lines
+
+    panel = {
+        "card_summary_lines": [
+            {"kind": "weather", "label": "METAR", "text": "SA 201900 11004KT 9999"},
+            {"kind": "notam", "label": "SX120/25", "notam_id": "SX120/25", "text": "RWY 02C/20C closes 1730-2130Z; ETD 0050Z precedes closure by 16h40."},
+            {"kind": "notam", "label": "SX97/26", "notam_id": "SX97/26", "text": "Rwy 02C/20C restriction applies during the applicable departure window."},
+            {"kind": "notam", "label": "SX98/26", "notam_id": "SX98/26", "text": "Twy W9 closed."},
+        ]
+    }
+    lines = _pertinent_notam_lines(panel, skip_notam_id="SX120/25", limit=2)
+    assert lines == [
+        "SX97/26 Rwy 02C/20C restriction applies during the applicable departure window.",
+        "SX98/26 Twy W9 closed.",
+    ]
+    assert _pertinent_notam_lines({}, skip_notam_id=None, limit=2) == []

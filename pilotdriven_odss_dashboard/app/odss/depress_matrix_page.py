@@ -395,7 +395,7 @@ def draw_source_chart_page(
         height - bar_height + 6,
         " | ".join(
             (
-                "PILOTDRIVEN ODSS",
+                "PILOTDRIVEN",
                 theme.display_flight_number(flight),
                 (
                     f"{flight.get('aircraft_type') or ''} "

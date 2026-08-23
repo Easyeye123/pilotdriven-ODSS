@@ -274,7 +274,7 @@ def _hazard_review_findings(
                 details.append(
                     f"Centre-track screening: {closest.get('distance_nm')} NM from "
                     f"{closest.get('route_from')}-{closest.get('route_to')} at "
-                    f"{closest.get('time_utc')}; ODSS interpolation, not an official "
+                    f"{closest.get('time_utc')}; deterministic interpolation, not an official "
                     "hazard boundary."
                 )
         if track_context.get("status") == "review_required":

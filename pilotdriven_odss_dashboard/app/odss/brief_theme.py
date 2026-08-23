@@ -370,7 +370,7 @@ def draw_footer(
         " | ".join(
             value
             for value in (
-                "PILOTDRIVEN ODSS",
+                "PILOTDRIVEN",
                 display_flight_number(flight),
                 f"CFP OFP {ofp_label(flight)}",
                 (

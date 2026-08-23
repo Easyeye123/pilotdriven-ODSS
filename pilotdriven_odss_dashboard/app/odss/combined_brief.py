@@ -146,7 +146,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-21-sq910-round-v5"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-flow-round-v6"
 
 
 _FIT_FLOOR = T_MICRO
@@ -932,6 +932,30 @@ def _fuel_panel_rows(fuel_summary: dict[str, Any]) -> list[tuple[str, str]]:
     ]
 
 
+def _pertinent_notam_lines(
+    panel: dict[str, Any] | None,
+    *,
+    skip_notam_id: str | None,
+    limit: int,
+) -> list[str]:
+    """The airport panel's pertinent NOTAM summary lines (id + wording with
+    its times), skipping the one already printed as the card highlight."""
+    lines: list[str] = []
+    for entry in (panel or {}).get("card_summary_lines") or []:
+        if str(entry.get("kind") or "") != "notam":
+            continue
+        notam_id = str(entry.get("notam_id") or entry.get("label") or "").strip()
+        if skip_notam_id and notam_id == skip_notam_id:
+            continue
+        text = str(entry.get("text") or "").strip()
+        if not text:
+            continue
+        lines.append(f"{notam_id} {text}".strip())
+        if len(lines) >= limit:
+            break
+    return lines
+
+
 def draw_overview_page(
     canvas,
     flight: dict[str, Any],
@@ -969,6 +993,40 @@ def draw_overview_page(
     overview = briefing.get("overview") or {}
     overview_departure = overview.get("departure") or {}
     overview_destination = overview.get("destination") or {}
+    identity = briefing.get("flight_identity") or {}
+    airport_panels = briefing.get("airport_operational_panels") or []
+
+    def panel_for(role: str, icao: str) -> dict[str, Any]:
+        for candidate in airport_panels:
+            if role in (candidate.get("role_keys") or [candidate.get("role_key"), candidate.get("role")]):
+                return candidate
+        for candidate in airport_panels:
+            if str(candidate.get("icao") or "").upper() == icao.upper():
+                return candidate
+        return {}
+
+    def draw_pertinent(x: float, row_y: float, width: float, floor_y: float, lines: list[str]) -> float:
+        # Pertinent NOTAMs with their times fill the card's empty space
+        # (boss, 21 Aug R2-9); each line stops at the card floor, never over it.
+        # Needs the label plus at least one wrapped line above the floor;
+        # a label with nothing under it is worse than the empty space.
+        if not lines or row_y - 24 < floor_y:
+            return row_y
+        row_y -= 5
+        canvas.setFillColor(WEATHER_AMBER)
+        canvas.setFont(SANS_BOLD, T_MICRO)
+        canvas.drawString(x, row_y, "PERTINENT")
+        row_y -= 9
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, 7.2)
+        for line in lines:
+            for wrapped in _wrap(line, SANS, 7.2, width)[:2]:
+                if row_y - 8.6 < floor_y:
+                    return row_y
+                canvas.drawString(x, row_y, wrapped)
+                row_y -= 8.6
+            row_y -= 1.5
+        return row_y
 
     # The PRIORITY strip is gone (boss, 21 Aug: "don't waste words like this
     # — remove all this"); the reclaimed band goes to the content cards.
@@ -1203,6 +1261,17 @@ def draw_overview_page(
         )[:4]:
             canvas.drawString(ix, row_y, wrapped)
             row_y -= 9.4
+    row_y = draw_pertinent(
+        ix,
+        row_y,
+        departure_w - 28,
+        row1_top - row1_h + 6,
+        _pertinent_notam_lines(
+            panel_for("departure", str(overview_departure.get("icao") or departure_panel.get("icao") or "")),
+            skip_notam_id=str((overview_departure.get("primary_operational_highlight") or {}).get("notam_id") or "") or None,
+            limit=2,
+        ),
+    )
     primary_alternate = alternates[0] if alternates else {}
     dest_inner = panel(
         canvas,
@@ -1263,7 +1332,20 @@ def draw_overview_page(
             theme.utc_hhmm(flight.get("scheduled_arrival_utc")) or "--",
         ),
     )
-    row_y2 -= 16
+    # The arrival line states its basis and reads larger (boss, 21 Aug
+    # R2-14: "is it based on the flight time?... too small").
+    row_y2 -= 14
+    eta_label = str(identity.get("eta_hhmm") or "").strip()
+    canvas.setFillColor(TEXT)
+    canvas.setFont(MONO_BOLD, 9.6)
+    canvas.drawString(ix2, row_y2, f"ETA {eta_label}Z" if eta_label else "ETA --")
+    row_y2 -= 10
+    canvas.setFillColor(TEXT_SECONDARY)
+    canvas.setFont(SANS, 7.2)
+    for wrapped in _wrap(str(identity.get("arrival_basis") or ""), SANS, 7.2, destination_w - 28)[:2]:
+        canvas.drawString(ix2, row_y2, wrapped)
+        row_y2 -= 9.0
+    row_y2 -= 6
     row_y2, dest_bulletins_drawn = draw_card_bulletins(destination_panel, ix2, row_y2, destination_w - 28, row1_top - row1_h)
     forecast2 = compact_forecast(overview_destination)
     if not dest_bulletins_drawn:
@@ -1305,6 +1387,17 @@ def draw_overview_page(
         )[:3]:
             canvas.drawString(ix2, row_y2, wrapped)
             row_y2 -= 9.4
+    row_y2 = draw_pertinent(
+        ix2,
+        row_y2,
+        destination_w - 28,
+        row1_top - row1_h + 40,
+        _pertinent_notam_lines(
+            panel_for("destination", destination_icao),
+            skip_notam_id=str((overview_destination.get("primary_operational_highlight") or {}).get("notam_id") or "") or None,
+            limit=2,
+        ),
+    )
     row_y2 -= 4
     canvas.setFillColor(WEATHER_AMBER)
     canvas.setFont(SANS_BOLD, T_MICRO)
@@ -1571,52 +1664,71 @@ def draw_overview_page(
     tech_w = full_w - basis_w - fuel_w - 20
     fuel_x = MARGIN + basis_w + 10
     tech_x = fuel_x + fuel_w + 10
-    basis_inner = panel(canvas, MARGIN, row2_top - row2_h, basis_w, row2_h,
-                        title="CFP P1 - FLIGHT BASIS", accent=DASH_BLUE, title_colour=None)
-    ix = basis_inner[0]
-    # Identity facts come from the shared view (corpus gate: renderer-side
-    # raw flight reads are invisible to the dashboard), composed once in
-    # build_briefing_view for every surface.
-    identity = briefing.get("flight_identity") or {}
-    departure_hhmm = str(identity.get("etd_hhmm") or "")
-    arrival_hhmm = str(identity.get("eta_hhmm") or "")
-    block_value = str(identity.get("block") or "--")
-    route_identifier = str(identity.get("route_id") or "--")
-    plan_number = str(identity.get("plan_number") or "").strip()
-    # Compact plan marker ("SINMNL60 P3") so the narrow FLIGHT BASIS value
-    # column never ellipsises the route identity.
-    route_id_value = (
-        f"{route_identifier} P{plan_number}" if plan_number else route_identifier
+    # PERFORMANCE replaces the FLIGHT BASIS card (boss, 21 Aug R2-9: "add
+    # PERFORMANCE card to p1"); the basis facts already ride in the header,
+    # the route chips and the footer. Every figure is the shared publication.
+    performance_publication = _shared_performance_publication(briefing)
+    performance_inputs = performance_publication.get("inputs") or {}
+    perf_inner = panel(canvas, MARGIN, row2_top - row2_h, basis_w, row2_h,
+                       title="CFP P1 - PERFORMANCE", accent=DASH_BLUE, title_colour=None)
+    ix = perf_inner[0]
+    selected_keys = [str(key) for key in performance_publication.get("selected_candidate_keys") or []]
+    limit_names = {
+        "landing": "LANDING",
+        "performance": "PERF / OBSTACLE",
+        "structural": "STRUCTURAL",
+        "cfp_controlling": "CFP RTOW",
+    }
+    limit_label = next(
+        (limit_names[key] for key in selected_keys if key != "cfp_controlling" and key in limit_names),
+        next((limit_names[key] for key in selected_keys if key in limit_names), "--"),
     )
-    rules_label = (
-        "NON-EDTO"
-        if str(fuel_summary.get("source_classification") or "").upper()
-        == "STANDARD"
-        else str(
-            identity.get("rules")
-            or fuel_summary.get("source_classification")
-            or "--"
-        )
-    )
-    rules_ci_apd = " / ".join((
-        rules_label,
-        str(identity.get("cost_index") if identity.get("cost_index") is not None else "--"),
+    perf_ptow = performance_publication.get("ptow_kg")
+    perf_rtow = performance_publication.get("selected_rtow_kg")
+    perf_margin = performance_publication.get("margin_kg")
+    flap_setting = performance_inputs.get("flap_setting")
+    switch = lambda value: "ON" if value is True else "OFF" if value is False else "--"
+    max_fuel = performance_inputs.get("maximum_fuel_available_kg")
+    perf_rows = [
+        ("PTOW", f"{perf_ptow:,} KG" if perf_ptow is not None else "--"),
+        ("RTOW", f"{perf_rtow:,} KG" if perf_rtow is not None else "--"),
+        ("MARGIN", (f"+{perf_margin:,} KG" if perf_margin >= 0 else f"{perf_margin:,} KG") if perf_margin is not None else "--"),
+        ("LIMIT", limit_label),
+        ("RWY / COND", f"{performance_inputs.get('runway') or '--'} / {performance_inputs.get('runway_condition') or '--'}"),
+        ("CONFIG", " / ".join(part for part in (
+            "OPT CONF" if flap_setting is None else f"FLAPS {flap_setting}",
+            str(performance_inputs.get("thrust_setting") or ""),
+        ) if part)),
+        ("PACKS / A-ICE", f"{switch(performance_inputs.get('packs_on'))} / {switch(performance_inputs.get('anti_ice_on'))}"),
+        ("TEMP / QNH", " / ".join((
+            f"{performance_inputs.get('temperature_c')} C" if performance_inputs.get("temperature_c") is not None else "--",
+            f"{performance_inputs.get('qnh_hpa')} HPA" if performance_inputs.get("qnh_hpa") is not None else "--",
+        ))),
+        ("EOSID", str(performance_inputs.get("eosid") or "--")),
+    ]
+    if max_fuel is not None:
+        perf_rows.append(("MAX FUEL", f"{max_fuel:,} KG"))
+    kv_rows(ix, row2_top - 28, basis_w - 28, perf_rows, mono_value=False,
+            value_offset=58.0, font_size=7.4, fit_floor=7.15,
+            dynamic_value_offset=True)
+    perf_status = str(performance_publication.get("status") or "")
+    canvas.setFillColor(DASH_GREEN if perf_status == "within-limit" else DASH_ORANGE)
+    canvas.setFont(SANS_BOLD, 7.2)
+    _draw_string_fitted(
+        canvas,
+        ix,
+        row2_top - row2_h + 10,
         (
-            f"{identity.get('apd_percent')}%"
-            if identity.get("apd_percent") is not None
-            else "--"
+            f"RTOW within limit - {limit_label} controls."
+            if perf_status == "within-limit"
+            else "RTOW review - " + perf_status.replace("-", " ") + "."
         ),
-    ))
-    kv_rows(ix, row2_top - 28, basis_w - 28, (
-        ("AIRCRAFT/REG", f"{identity.get('aircraft_type') or '--'} / {identity.get('registration') or '--'}"),
-        ("OFP / ROUTE ID", f"{identity.get('ofp') or '--'} / {route_id_value}"),
-        ("CAPTAIN", str(identity.get("captain") or "--")),
-        ("ETD / ETA / BLOCK", f"{departure_hhmm} / {arrival_hhmm} / {block_value}"),
-        ("RULES / CI / APD", rules_ci_apd),
-        ("GND / AIR NM", f"{ground or '--'} / {air or '--'}"),
-        ("CRZ COMP", f"M{abs(fuel_summary.get('cruise_wind_component_kt'))}" if (fuel_summary.get("cruise_wind_component_kt") or 0) < 0 else f"P{fuel_summary.get('cruise_wind_component_kt')}" if fuel_summary.get("cruise_wind_component_kt") is not None else "--"),
-    ), mono_value=False, value_offset=58.0, font_size=7.2, fit_floor=7.0,
-       dynamic_value_offset=True)
+        SANS_BOLD,
+        7.2,
+        basis_w - 28,
+        DASH_GREEN if perf_status == "within-limit" else DASH_ORANGE,
+        floor=7.15,
+    )
 
     fuel_inner = panel(canvas, fuel_x, row2_top - row2_h, fuel_w, row2_h,
                        title="CFP P1 - MASS / FUEL", accent=DASH_GREEN, title_colour=None)
@@ -5157,11 +5269,20 @@ def draw_analysis_page(
 
     # FLIGHT-PHASE DECISION TIMELINE band - REV3 measured: a slim strip
     # hugging the header rule.
-    strip_h = 56.0
+    strip_h = 66.0
     inner = panel(canvas, MARGIN, y - strip_h, width - 2 * MARGIN, strip_h,
                   title="FLIGHT-PHASE DECISION TIMELINE", accent=PANEL, title_colour=TEXT)
-    _timeline(canvas, MARGIN + 25, y - strip_h + 11, width - 2 * MARGIN - 50,
+    _timeline(canvas, MARGIN + 25, y - strip_h + 21, width - 2 * MARGIN - 50,
               _route_anchor_entries(flight, briefing))
+    # The timeline names its clock basis (boss, 21 Aug R2-14) — composed once
+    # in the view so the dashboard and the PDF say the same sentence.
+    canvas.setFillColor(TEXT_MUTED)
+    canvas.setFont(SANS, 7.2)
+    canvas.drawString(
+        inner[0],
+        y - strip_h + 7,
+        str((briefing.get("flight_identity") or {}).get("timeline_basis") or ""),
+    )
     y -= strip_h + 16
 
     fuel_summary = flight.get("fuel_summary") or {}

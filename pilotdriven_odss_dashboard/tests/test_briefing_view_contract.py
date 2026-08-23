@@ -860,6 +860,8 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
     assert [(chip["key"], chip["label"]) for chip in overview["chips"]] == [
         ("route_identifier", "GENERIC7"),
         ("edto_rvsm", "EDTO/RVSM"),
+        # SUMMARY STANDARD CFP states its classification as a chip (23 Aug).
+        ("classification", "NON-EDTO"),
         ("cost_index", "CI 42"),
         ("apd_percent", "APD 1.7%"),
     ]

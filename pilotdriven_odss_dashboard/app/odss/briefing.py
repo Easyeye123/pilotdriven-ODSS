@@ -196,7 +196,7 @@ def _notam_cards(findings: list[dict[str, Any]], role: str, limit: int = 4) -> l
     if not cards:
         cards.append({
             "kind": "Pertinent review",
-            "text": "No airport-specific ODSS NOTAM finding selected for this operating window.",
+            "text": "No airport-specific NOTAM finding selected for this operating window.",
             "severity": "information",
         })
     return cards
@@ -787,6 +787,46 @@ def _airport_operational_panels(
     return panels
 
 
+def _actm_clock(value: Any) -> str:
+    """CFP ACTM ("03.21" / "03:21") as a clock string; empty when not held."""
+    match = re.fullmatch(r"(\d{1,2})[.:](\d{2})", str(value or "").strip())
+    return f"{int(match.group(1)):02d}:{match.group(2)}" if match else ""
+
+
+def _arrival_basis_line(
+    etd_hhmm: Any,
+    eta_hhmm: Any,
+    block: Any,
+    eet_actm: Any,
+) -> str:
+    """What the scheduled arrival rests on (boss, 21 Aug: "is it based on the
+    flight time?"): STD plus the schedule, and the filed EET."""
+    etd = str(etd_hhmm or "").strip()
+    eet = _actm_clock(eet_actm)
+    parts: list[str] = []
+    if etd:
+        parts.append(f"STD {etd}Z" + (f" + SCHED {block}" if block else ""))
+    if eet:
+        parts.append(f"filed EET {eet}")
+    return " · ".join(parts) or "Scheduled arrival per CFP page 1"
+
+
+def _timeline_basis_line(
+    etd_hhmm: Any,
+    eta_hhmm: Any,
+    eet_actm: Any,
+    actual_takeoff_hhmm: str | None,
+) -> str:
+    """The decision timeline names its clock basis instead of implying one."""
+    etd = str(etd_hhmm or "").strip() or "--"
+    eta = str(eta_hhmm or "").strip() or "--"
+    eet = _actm_clock(eet_actm) or "--"
+    filed = f"Filed EET {eet} from STD {etd}Z gives nominal {eta}Z arrival."
+    if actual_takeoff_hhmm:
+        return f"Clocks from actual take-off {actual_takeoff_hhmm} + CFP ACTM. {filed}"
+    return f"Elapsed ACTM shown; absolute clocks depend on actual take-off. {filed}"
+
+
 def _performance_publication(flight: dict[str, Any]) -> dict[str, Any]:
     """One RTOW selection and margin contract for every publishing surface."""
     performance = flight.get("performance") or {}
@@ -829,6 +869,23 @@ def _performance_publication(flight: dict[str, Any]) -> dict[str, Any]:
             "margin_kg = selected_rtow_kg - ptow_kg."
         ),
         "ptow_kg": ptow,
+        # The CFP performance inputs behind the selection, published once so
+        # the page-1 PERFORMANCE card and the dashboard print the same basis.
+        "inputs": {
+            key: performance.get(key)
+            for key in (
+                "runway",
+                "runway_condition",
+                "thrust_setting",
+                "flap_setting",
+                "temperature_c",
+                "qnh_hpa",
+                "packs_on",
+                "anti_ice_on",
+                "eosid",
+                "maximum_fuel_available_kg",
+            )
+        },
         "candidate_limits": candidates,
         "selected_rtow_kg": selected,
         "selected_candidate_keys": [
@@ -2414,7 +2471,7 @@ def _va_derived_screening(
     tail = official_note or "official VAAC confirmation unavailable."
     return (
         f"Closest approach {round(best_nm)} NM {place}{timing}; ash layer {layer}; "
-        f"planned {levels}. ODSS screening of the CFP advisory polygon - {tail}"
+        f"planned {levels}. Flight-analysis screening of the CFP advisory polygon - {tail}"
     )
 
 
@@ -2632,14 +2689,25 @@ def _overview_projection(
         })
 
     route_identifier = str(flight.get("route_identifier") or "").strip()
+    plan_number = str(flight.get("plan_number") or "").strip()
+    # Route ID with its version (boss, 21 Aug: "I need the route ID and the
+    # route version") — the chip every surface prints.
     add_chip(
         "route_identifier",
-        route_identifier,
+        f"{route_identifier} P{plan_number}" if route_identifier and plan_number else route_identifier,
         route_identifier,
         "route_identifier",
     )
     edto_rvsm = str(flight.get("edto_rvsm") or "").strip()
     add_chip("edto_rvsm", edto_rvsm, edto_rvsm, "edto_rvsm")
+    # A STANDARD CFP states its classification in the CFP's own word and the
+    # pilot's (boss, 21 Aug: no EDTO noise on a non-EDTO flight) — printed as
+    # a chip so page 1 and the dashboard keep the label the card used to carry.
+    source_classification = str(
+        (flight.get("fuel_summary") or {}).get("source_classification") or ""
+    ).strip().upper()
+    if source_classification == "STANDARD":
+        add_chip("classification", "NON-EDTO", "STANDARD", "fuel_summary.source_classification")
     cost_index = flight.get("cost_index")
     add_chip("cost_index", f"CI {cost_index}", cost_index, "cost_index")
     apd_percent = flight.get("apd_percent")
@@ -2649,6 +2717,14 @@ def _overview_projection(
         apd_percent,
         "apd_percent",
     )
+    cruise_wind = (flight.get("fuel_summary") or {}).get("cruise_wind_component_kt")
+    if cruise_wind is not None:
+        add_chip(
+            "cruise_wind_component",
+            f"CRZ {'M' if cruise_wind < 0 else 'P'}{abs(int(cruise_wind))}",
+            cruise_wind,
+            "fuel_summary.cruise_wind_component_kt",
+        )
 
     departure_icao = str(flight.get("departure") or "").upper()
     destination_icao = str(flight.get("destination") or "").upper()
@@ -3010,6 +3086,22 @@ def build_briefing_view(
             "rules": flight.get("edto_rvsm"),
             "cost_index": flight.get("cost_index"),
             "apd_percent": flight.get("apd_percent"),
+            "arrival_basis": _arrival_basis_line(
+                theme.utc_hhmm(flight.get("scheduled_departure_utc")).rstrip("Z"),
+                theme.utc_hhmm(flight.get("scheduled_arrival_utc")).rstrip("Z"),
+                str(theme.block_time_label(flight) or "").replace("BLOCK ", "") or None,
+                format_actm(final_actm),
+            ),
+            "timeline_basis": _timeline_basis_line(
+                theme.utc_hhmm(flight.get("scheduled_departure_utc")).rstrip("Z"),
+                theme.utc_hhmm(flight.get("scheduled_arrival_utc")).rstrip("Z"),
+                format_actm(final_actm),
+                (
+                    theme.utc_hhmm(timing_view.get("actual_takeoff_utc"))
+                    if timing_view and timing_view.get("actual_takeoff_utc")
+                    else None
+                ),
+            ),
         },
         "performance_publication": _performance_publication(flight),
         # Compact dispatch confirmation gates are a source-preserving shared
