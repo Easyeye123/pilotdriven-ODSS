@@ -34,7 +34,7 @@ def test_performance_publication_carries_the_cfp_inputs():
     flight = sample_flight()
     flight["performance"] = {
         "runway": "20C", "runway_condition": "DRY", "thrust_setting": "FULL", "flap_setting": 2,
-        "temperature_c": 32, "qnh_hpa": None, "packs_on": True, "anti_ice_on": False,
+        "temperature_c": 32, "qnh_hpa": None, "wind": "050/03KT", "packs_on": True, "anti_ice_on": False,
         "eosid": "STRAIGHT OUT", "landing_rtow_kg": 224367, "structural_rtow_kg": 250000,
         "maximum_fuel_available_kg": 36420,
     }
@@ -42,7 +42,7 @@ def test_performance_publication_carries_the_cfp_inputs():
     publication = _performance_publication(flight)
     assert publication["inputs"] == {
         "runway": "20C", "runway_condition": "DRY", "thrust_setting": "FULL", "flap_setting": 2,
-        "temperature_c": 32, "qnh_hpa": None, "packs_on": True, "anti_ice_on": False,
+        "temperature_c": 32, "qnh_hpa": None, "wind": "050/03KT", "packs_on": True, "anti_ice_on": False,
         "eosid": "STRAIGHT OUT", "maximum_fuel_available_kg": 36420,
     }
     assert publication["selected_candidate_keys"] == ["landing"]
@@ -170,9 +170,37 @@ def test_overview_chips_carry_route_version_and_cruise_component():
     labels = [chip["label"] for chip in view["overview"]["chips"]]
     assert "SINMNL60 P3" in labels
     assert "CRZ M12" in labels
+    assert "NON-EDTO" in labels
     identity = view["flight_identity"]
     assert identity["arrival_basis"].startswith("STD 0945Z")
     assert "filed EET" in identity["arrival_basis"]
     assert "Schedule: STD 0945Z / STA 2240Z (12:55)" in identity["timeline_basis"]
     assert "Filed EET 12:07" in identity["timeline_basis"]
     assert "gives nominal" not in identity["timeline_basis"]
+
+
+def test_overview_chip_keeps_explicit_non_edto_and_edto_classifications():
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+
+    non_edto = sample_flight()
+    non_edto["edto_rvsm"] = None
+    non_edto["fuel_summary"] = parse_page1_fuel_summary(SQ910_PAGE1)
+    non_edto["fuel_summary"]["source_classification"] = "NON EDTO"
+    non_edto["fuel_summary"]["classification"] = "NON EDTO"
+    non_edto_labels = [
+        chip["label"]
+        for chip in build_briefing_view(non_edto, findings, [])["overview"]["chips"]
+    ]
+    assert "NON-EDTO" in non_edto_labels
+
+    edto = sample_flight()
+    edto["edto_rvsm"] = None
+    edto["fuel_summary"] = {
+        "source_classification": "EDTO",
+        "classification": "EDTO",
+    }
+    edto_labels = [
+        chip["label"]
+        for chip in build_briefing_view(edto, findings, [])["overview"]["chips"]
+    ]
+    assert "EDTO" in edto_labels

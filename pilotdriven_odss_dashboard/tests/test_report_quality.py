@@ -119,6 +119,123 @@ def _combined_pages(*middle: str) -> list[str]:
     ]
 
 
+def test_combined_quality_gate_accepts_lossless_eosid_continuation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-eosid-continuation.pdf"
+    page_texts = [
+        (
+            "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS\nPHASE ACTION\nSTRIP\n"
+            "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
+        ),
+        (
+            "FLIGHT BRIEFING\nDECISION ANALYSIS\n"
+            "FLIGHT-PHASE DECISION TIMELINE\nSOURCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nPERFORMANCE / FUEL / STATUS\n"
+            "RECONCILIATION / RELEASE REVIEW\n"
+            "EOSID LOSSLESS CONTINUATION: 1 PAGE START P4"
+        ),
+        (
+            "FLIGHT BRIEFING\nEOSID / ESCAPE ROUTING\n"
+            "LOSSLESS CONTINUATION 1/1"
+        ),
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL\nSOURCE DECLARATION",
+        (
+            "FLIGHT BRIEFING\nAIRPORTS / ALTERNATES\n"
+            "DESTINATION ALTERNATE ASSESSMENT MATRIX"
+        ),
+        (
+            "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
+            "NAMED CFP VOLCANO ADVISORIES"
+        ),
+        (
+            "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
+            "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+    ]
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is True
+    assert result["violations"] == []
+
+
+@pytest.mark.parametrize(
+    ("declaration", "continuations"),
+    [
+        (
+            "EOSID LOSSLESS CONTINUATION: 2 PAGES START P4",
+            ["LOSSLESS CONTINUATION 2/2"],
+        ),
+        (
+            "EOSID LOSSLESS CONTINUATION: 2 PAGES START P4",
+            ["LOSSLESS CONTINUATION 1/2", "LOSSLESS CONTINUATION 1/2"],
+        ),
+        (
+            "EOSID LOSSLESS CONTINUATION: 2 PAGES START P4",
+            ["LOSSLESS CONTINUATION 1/2", "LOSSLESS CONTINUATION 2/3"],
+        ),
+        ("", ["LOSSLESS CONTINUATION 1/1"]),
+    ],
+    ids=[
+        "missing-first-page",
+        "duplicate-index",
+        "inconsistent-total",
+        "undeclared-continuation",
+    ],
+)
+def test_combined_quality_gate_rejects_broken_eosid_continuation_sequence(
+    tmp_path: Path,
+    declaration: str,
+    continuations: list[str],
+) -> None:
+    path = tmp_path / "combined-broken-eosid-continuation.pdf"
+    page_texts = [
+        (
+            "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS\nPHASE ACTION\nSTRIP\n"
+            "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
+        ),
+        (
+            "FLIGHT BRIEFING\nDECISION ANALYSIS\n"
+            "FLIGHT-PHASE DECISION TIMELINE\nSOURCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nPERFORMANCE / FUEL / STATUS\n"
+            "RECONCILIATION / RELEASE REVIEW\n"
+            + declaration
+        ),
+        *[
+            "FLIGHT BRIEFING\nEOSID / ESCAPE ROUTING\n" + continuation
+            for continuation in continuations
+        ],
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL\nSOURCE DECLARATION",
+        (
+            "FLIGHT BRIEFING\nAIRPORTS / ALTERNATES\n"
+            "DESTINATION ALTERNATE ASSESSMENT MATRIX"
+        ),
+        (
+            "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
+            "NAMED CFP VOLCANO ADVISORIES"
+        ),
+        (
+            "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
+            "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+    ]
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        violation.code == "COMBINED_EOSID_CONTINUATION_STRUCTURE"
+        for violation in result["violations"]
+    )
+
+
 def test_combined_quality_gate_accepts_ordered_section_continuations(
     tmp_path: Path,
 ) -> None:

@@ -85,6 +85,36 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def build_analysis_receipt_binding(
+    analysis_path: Path,
+    output_root: Path,
+) -> dict[str, str]:
+    """Bind the exact analysis consumed by the publication parity gate.
+
+    Resolving both paths before calculating the relative name prevents an
+    analysis symlink from certifying bytes outside this corpus run.  A missing
+    or out-of-root artifact is a release failure, not an optional receipt.
+    """
+
+    resolved_root = output_root.resolve(strict=True)
+    resolved_analysis = analysis_path.resolve(strict=True)
+    if not resolved_analysis.is_file():
+        raise AssertionError(
+            f"Analysis artifact is not a regular file: {resolved_analysis}."
+        )
+    try:
+        relative_path = resolved_analysis.relative_to(resolved_root)
+    except ValueError as exc:
+        raise AssertionError(
+            "Analysis artifact must be contained by the private corpus output: "
+            f"{resolved_analysis}."
+        ) from exc
+    return {
+        "analysis_json": relative_path.as_posix(),
+        "analysis_sha256": sha256_file(resolved_analysis),
+    }
+
+
 def _record_digest(rows: list[Any]) -> str:
     canonical = json.dumps(
         rows,
@@ -930,7 +960,8 @@ def run_case(
         case_root / "legacy-reports",
         flight_id,
     )
-    payload = json.loads(Path(result["analysis_path"]).read_text(encoding="utf-8"))
+    analysis_path = Path(result["analysis_path"])
+    payload = json.loads(analysis_path.read_text(encoding="utf-8"))
     flight = payload["flight"]
     extraction = check_extraction_expectations(
         flight,
@@ -1081,6 +1112,7 @@ def run_case(
         "route_point_count": len(flight.get("route_waypoints") or []),
         "route_hash": map_contract["route_hash"],
         "extraction_contract": extraction["actual"],
+        **build_analysis_receipt_binding(analysis_path, output_root),
         "combined_pdf": str(combined.relative_to(output_root)),
         "combined_sha256": sha256_file(combined),
         "combined_page_count": quality["page_count"],
@@ -1138,7 +1170,7 @@ def main() -> int:
     output_root.mkdir(parents=True, exist_ok=True)
     receipt_path = output_root / "private-cfp-corpus-receipt.json"
     receipt: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "gate": "private-cfp-physical-pdf",
         "status": "failed",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),

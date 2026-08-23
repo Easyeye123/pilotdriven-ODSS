@@ -138,6 +138,24 @@ def test_parse_lido_carries_route_identifier_and_apd_from_page_one() -> None:
     assert flight["apd_percent"] == 1.8
 
 
+def test_parse_lido_preserves_intermediate_mnps_in_printed_flight_rules() -> None:
+    pages = _cfp_pages_with_log_from(5)
+    pages[0] = pages[0].replace("EDTO/RVSM", "EDTO/MNPS/RVSM")
+
+    flight = parse_lido(pages, "mnps-rules.pdf")
+
+    assert flight["edto_rvsm"] == "EDTO/MNPS/RVSM"
+
+
+def test_parse_lido_preserves_single_printed_rvsm_flight_rule() -> None:
+    pages = _cfp_pages_with_log_from(5)
+    pages[0] = pages[0].replace("EDTO/RVSM", "RVSM")
+
+    flight = parse_lido(pages, "non-edto-rvsm-rules.pdf")
+
+    assert flight["edto_rvsm"] == "RVSM"
+
+
 SQ910_DECLARATION_BLOCK = (
     "AA IFEDDL\n"
     "   SEAT IFE (YCL), AUDIO JACK, NO AUDIO\n"

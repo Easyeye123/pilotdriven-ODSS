@@ -155,7 +155,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-24-boss-flow-v18"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-24-boss-flow-v22"
 
 
 def combined_briefing_cache_token(
@@ -1039,6 +1039,15 @@ def _fuel_panel_rows(fuel_summary: dict[str, Any]) -> list[tuple[str, str]]:
             row_label,
             f"{row_value} | RETURN SECTOR REQ {int(return_sector_req):,} kg",
         )
+    positive_top_ups = []
+    for key, label in (
+        ("dest_hold_top_up", "DEST HOLD TOP-UP"),
+        ("edto_top_up", "EDTO TOP-UP"),
+    ):
+        row = rows.get(key) or {}
+        fuel_kg = row.get("fuel_kg")
+        if fuel_kg is not None and int(fuel_kg) > 0:
+            positive_top_ups.append((label, timed(key)))
     return [
         ("GROUND", f"{ground:,} NM" if ground else "--"),
         ("BURNOFF / STAT CONT", f"{timed('burnoff')} / {timed('stat_cont')}"),
@@ -1049,6 +1058,7 @@ def _fuel_panel_rows(fuel_summary: dict[str, Any]) -> list[tuple[str, str]]:
             if fuel_summary.get("taxi_fuel_kg") is not None
             else "--",
         ),
+        *positive_top_ups,
         ("FPL REQ", timed("flt_plan_reqmt")),
         ("FUEL IN TANKS", timed("fuel_in_tanks")),
         (
@@ -1095,6 +1105,7 @@ def _draw_overview_summary_row(
     height: float,
     body_size: float = T_SMALL,
     compact: bool = False,
+    section_page_numbers: dict[str, int] | None = None,
 ) -> None:
     """Five evidence-linked summaries plus the shared phase/action strip."""
     performance = _shared_performance_publication(briefing)
@@ -1107,6 +1118,9 @@ def _draw_overview_summary_row(
     }
     advisories = list((briefing.get("vaa") or {}).get("cfp_advisories") or [])
     alternates = list(flight.get("alternates") or [])
+    section_pages = section_page_numbers or {}
+    mel_page_number = int(section_pages.get("mel_cdl") or 4)
+    airports_page_number = int(section_pages.get("airports") or 5)
 
     def kg(key: str) -> str:
         value = (fuel_rows.get(key) or {}).get("fuel_kg")
@@ -1135,7 +1149,7 @@ def _draw_overview_summary_row(
             for gate in briefing.get("deferred_dispatch_gates") or []
             if str(gate.get("overview_summary") or "").strip()
         ),
-        "Exact evidence on page 4",
+        f"Exact evidence on page {mel_page_number}",
     )
     cards = (
         ("PERFORMANCE", DASH_BLUE, "sec_performance", [
@@ -1160,7 +1174,7 @@ def _draw_overview_summary_row(
         ("ALTERNATES", DASH_PURPLE, "sec_airports", [
             f"Preferred {preferred}",
             f"{len(alternates)} alternate(s) held",
-            "Full matrix on page 5",
+            f"Full matrix on page {airports_page_number}",
         ]),
     )
     gap = 8.0
@@ -1628,6 +1642,7 @@ def draw_overview_page(
     page_number: int,
     page_count: int,
     operational_readable: bool = False,
+    section_page_numbers: dict[str, int] | None = None,
 ) -> None:
     """REV3 canon dashboard (boss, 20 Aug: "this format, this content, this
     look"): airport cards flanking the CFP P1 route/levels panel with the
@@ -1636,12 +1651,27 @@ def draw_overview_page(
     width, height = PAGE_SIZE
     body_size = T_SMALL if operational_readable else T_MICRO
     body_leading = 10.6 if operational_readable else 9.4
+    section_pages = section_page_numbers or {}
+    airports_page_number = int(section_pages.get("airports") or 5)
+    route_token_count = len(str(flight.get("route_text") or "").split())
+    profile_token_count = len(
+        [
+            token
+            for token in str(flight.get("planned_level_profile") or "").split("/")
+            if token
+        ]
+    )
+    source_parts = ["CFP P1 master context + deterministic analysis"]
+    if operational_readable and route_token_count > 8:
+        source_parts.append("FULL ROUTE: DASHBOARD")
+    if operational_readable and profile_token_count > 4:
+        source_parts.append("FULL: DASHBOARD")
     content_top = draw_page_chrome(
         canvas,
         flight,
         page_number=page_number,
         page_count=page_count,
-        source_line="CFP P1 master context + deterministic analysis",
+        source_line=" | ".join(source_parts),
         show_tabs=True,
     )
     canvas.bookmarkPage("sec_overview")
@@ -1665,6 +1695,70 @@ def draw_overview_page(
     overview_destination = overview.get("destination") or {}
     identity = briefing.get("flight_identity") or {}
     airport_panels = briefing.get("airport_operational_panels") or []
+    primary_alternate = alternates[0] if alternates else {}
+    dense_operational_row2_h = 132.0
+    regular_operational_row2_h = 152.0
+    operational_alternate_leading = 9.4
+
+    def preferred_alternate_projection(
+        body_width: float,
+        font_size: float,
+        *,
+        split_long_plan: bool,
+    ) -> dict[str, Any]:
+        """Compose the Page-1 alternate once for sizing and final drawing."""
+        summary_alternate = fuel_summary.get("alternate") or {}
+        altn_rows_data = fuel_summary.get("rows") or {}
+        altn_fuel = (altn_rows_data.get("altn_fuel") or {}).get("fuel_kg")
+        altn_time = (altn_rows_data.get("altn_fuel") or {}).get("time_minutes")
+        alternate_identity = theme.airport_code_label(
+            primary_alternate.get("airport") or summary_alternate.get("icao")
+        )
+        alternate_identity_line = alternate_identity.replace(" / ", "/")
+        if primary_alternate.get("runway"):
+            alternate_identity_line += f"/{primary_alternate.get('runway')}"
+        alternate_approach = str(primary_alternate.get("approach") or "").strip()
+        alternate_fuel_line = " · ".join(
+            part
+            for part in (
+                f"{primary_alternate.get('distance_nm')} NM"
+                if primary_alternate.get("distance_nm")
+                else None,
+                format_actm(altn_time).replace(".", ":")
+                if altn_time is not None
+                else None,
+                f"{altn_fuel:,} kg" if altn_fuel is not None else None,
+            )
+            if part
+        )
+        combined_plan_line = " · ".join(
+            part for part in (alternate_identity_line, alternate_approach) if part
+        )
+        rows = [combined_plan_line, alternate_fuel_line]
+        if (
+            split_long_plan
+            and alternate_approach
+            and pdfmetrics.stringWidth(
+                combined_plan_line,
+                SANS,
+                font_size,
+            ) > body_width
+        ):
+            rows = [
+                alternate_identity_line,
+                alternate_approach,
+                alternate_fuel_line,
+            ]
+        return {
+            "identity": alternate_identity,
+            "identity_line": alternate_identity_line,
+            "approach": alternate_approach,
+            "fuel_line": alternate_fuel_line,
+            "fuel_kg": altn_fuel,
+            "time_minutes": altn_time,
+            "rows": [row for row in rows if row]
+            or ["Alternate planning data requires review."],
+        }
 
     def bulletin_line_demand(
         panel_data: dict[str, Any],
@@ -1686,9 +1780,108 @@ def draw_overview_page(
         operational_readable
         and bulletin_line_demand(departure_panel, full_w * 0.20 - 28.0) > 8
     )
+
+    def regular_destination_layout_overflows() -> bool:
+        """Preflight the full destination card against regular geometry.
+
+        Bulletin-only density missed SQ223: its METAR/TAF used seven lines,
+        but the selected approach warning plus the three-row alternate plan
+        pushed the card below its floor.  Mirror every mandatory vertical
+        debit here so Page 1 selects its wider/taller geometry before ink is
+        placed.  Applicable-NOTAM receipts are excluded because their drawer
+        already owns a reserved lane above the alternate block.
+        """
+        font_size = T_SMALL
+        leading = 10.6
+        body_width = full_w * 0.23 - 28.0
+        row_y = y - 30.0
+        row_y -= 30.0  # destination identity to PLAN / SCHEDULE
+        row_y -= leading  # plan value
+        row_y -= leading  # schedule value
+        row_y -= 14.0  # ETA label
+        row_y -= 12.0  # gap from ETA label to arrival basis
+        row_y -= len(
+            _wrap(
+                str(identity.get("arrival_basis") or ""),
+                SANS,
+                font_size,
+                body_width,
+            )
+        ) * leading
+        row_y -= 6.0
+
+        weather = destination_panel.get("weather") or {}
+        drew_bulletin = False
+        for kind in ("metar", "taf"):
+            value = (
+                str(weather.get(kind) or "").strip().splitlines()[0]
+                if weather.get(kind)
+                else ""
+            )
+            if not value:
+                continue
+            drew_bulletin = True
+            row_y -= leading  # bulletin label
+            row_y -= len(_wrap(value, MONO, font_size, body_width)) * leading
+            row_y -= 5.0
+        if not drew_bulletin:
+            row_y -= leading  # FORECAST AT ETA label
+            forecast = str(
+                (
+                    overview_destination.get("forecast_at_reference") or {}
+                ).get("applicable_conditions")
+                or ""
+            ).strip()
+            if not forecast:
+                fallback = str(
+                    weather.get("primary")
+                    or weather.get("secondary")
+                    or weather.get("summary")
+                    or weather.get("detail")
+                    or "Weather review on the hazard assessment page."
+                )
+                head, _, _ = fallback.partition(". ")
+                forecast = head + "." if not head.endswith(".") else head
+            row_y -= len(_wrap(forecast, SANS, font_size, body_width)) * leading
+
+        highlight_text = str(
+            (
+                overview_destination.get("primary_operational_highlight") or {}
+            ).get("text")
+            or ""
+        ).strip()
+        if highlight_text:
+            row_y -= 5.0
+            row_y -= leading  # operational-highlight label
+            row_y -= len(
+                _wrap(highlight_text, SANS, font_size, body_width)
+            ) * leading
+
+        alternate_rows = preferred_alternate_projection(
+            body_width,
+            font_size,
+            split_long_plan=True,
+        )["rows"]
+        # The lower-row height fixes the regular row-1 bottom at y=192 and
+        # the alternate's readable floor at y=186. Account for the four-point
+        # label gap and every lossless alternate row.
+        alternate_floor = 30.0 + regular_operational_row2_h + 4.0
+        required_row_y = (
+            alternate_floor
+            + 4.0
+            + len(alternate_rows) * operational_alternate_leading
+        )
+        return row_y < required_row_y
+
     dense_destination_layout = bool(
         operational_readable
-        and bulletin_line_demand(destination_panel, full_w * 0.23 - 28.0) > 8
+        and (
+            bulletin_line_demand(
+                destination_panel,
+                full_w * 0.23 - 28.0,
+            ) > 8
+            or regular_destination_layout_overflows()
+        )
     )
     dense_airport_layout = dense_departure_layout or dense_destination_layout
     if dense_airport_layout:
@@ -1805,7 +1998,7 @@ def draw_overview_page(
                 identifier = str(line).split(maxsplit=1)[0]
                 prepared_lines.extend(
                     _wrap(
-                        f"{identifier} - OPEN P5",
+                        f"{identifier} - OPEN P{airports_page_number}",
                         SANS,
                         body_size,
                         width,
@@ -1848,9 +2041,9 @@ def draw_overview_page(
     row_gap = 10.0
     bottom = 30.0
     row2_h = (
-        132.0
+        dense_operational_row2_h
         if dense_airport_layout
-        else 152.0
+        else regular_operational_row2_h
         if operational_readable
         else 202.0
     )
@@ -2117,7 +2310,6 @@ def draw_overview_page(
             limit=2,
         ),
     )
-    primary_alternate = alternates[0] if alternates else {}
     dest_inner = panel(
         canvas,
         right_x,
@@ -2252,7 +2444,10 @@ def draw_overview_page(
         ix2,
         row_y2,
         destination_w - 28,
-        row1_top - row1_h + 40,
+        # Reserve the full three-line preferred-alternate plan below the
+        # applicable-NOTAM links. Dense destination cards keep identifiers
+        # with OPEN Pn receipts instead of consuming the alternate block.
+        row1_top - row1_h + (84 if operational_readable else 40),
         _pertinent_notam_lines(
             panel_for("destination", destination_icao),
             skip_notam_id=str((overview_destination.get("primary_operational_highlight") or {}).get("notam_id") or "") or None,
@@ -2263,32 +2458,60 @@ def draw_overview_page(
     canvas.setFillColor(WEATHER_AMBER)
     canvas.setFont(SANS_BOLD, body_size)
     canvas.drawString(ix2, row_y2, "PREFERRED ALTERNATE")
-    row_y2 -= body_leading if operational_readable else 10.0
-    summary_alternate = fuel_summary.get("alternate") or {}
-    altn_rows_data = fuel_summary.get("rows") or {}
-    altn_fuel = (altn_rows_data.get("altn_fuel") or {}).get("fuel_kg")
-    altn_time = (altn_rows_data.get("altn_fuel") or {}).get("time_minutes")
-    altn_line = " | ".join(part for part in (
-        f"{theme.airport_code_label(primary_alternate.get('airport') or summary_alternate.get('icao'))}"
-        f"{'/' + str(primary_alternate.get('runway')) if primary_alternate.get('runway') else ''}",
-        str(primary_alternate.get("approach") or "") or None,
-        f"{primary_alternate.get('distance_nm')} NM" if primary_alternate.get("distance_nm") else None,
-        format_actm(altn_time).replace(".", ":") if altn_time is not None else None,
-        f"{altn_fuel:,} kg" if altn_fuel is not None else None,
-    ) if part)
-    canvas.setFillColor(TEXT_SECONDARY)
-    canvas.setFont(MONO, body_size)
-    alternate_lines = _wrap(
-        altn_line or "Alternate planning data requires review.",
-        MONO,
-        body_size,
-        destination_w - 28,
+    alternate_leading = (
+        operational_alternate_leading if operational_readable else 10.0
     )
-    if not operational_readable:
-        alternate_lines = alternate_lines[:2]
-    for wrapped in alternate_lines:
-        canvas.drawString(ix2, row_y2, wrapped)
-        row_y2 -= body_leading
+    row_y2 -= alternate_leading
+    alternate_projection = preferred_alternate_projection(
+        destination_w - 28,
+        body_size,
+        split_long_plan=operational_readable,
+    )
+    alternate_identity = alternate_projection["identity"]
+    alternate_approach = alternate_projection["approach"]
+    altn_fuel = alternate_projection["fuel_kg"]
+    altn_time = alternate_projection["time_minutes"]
+    alternate_rows = alternate_projection["rows"]
+    canvas.setFillColor(TEXT_SECONDARY)
+    if operational_readable:
+        canvas.setFont(SANS, body_size)
+        alternate_floor = row1_top - row1_h - row_gap + 4.0
+        if row_y2 - (len(alternate_rows) - 1) * alternate_leading < alternate_floor:
+            raise ValueError("Page-1 preferred alternate exceeds readable capacity.")
+        for row in alternate_rows:
+            draw_p1_fitted(
+                ix2,
+                row_y2,
+                row,
+                SANS,
+                body_size,
+                destination_w - 28,
+                TEXT_SECONDARY,
+            )
+            row_y2 -= alternate_leading
+    else:
+        canvas.setFont(MONO, body_size)
+        altn_line = " | ".join(part for part in (
+            f"{alternate_identity}"
+            f"{'/' + str(primary_alternate.get('runway')) if primary_alternate.get('runway') else ''}",
+            alternate_approach or None,
+            f"{primary_alternate.get('distance_nm')} NM"
+            if primary_alternate.get("distance_nm")
+            else None,
+            format_actm(altn_time).replace(".", ":")
+            if altn_time is not None
+            else None,
+            f"{altn_fuel:,} kg" if altn_fuel is not None else None,
+        ) if part)
+        alternate_lines = _wrap(
+            altn_line or "Alternate planning data requires review.",
+            MONO,
+            body_size,
+            destination_w - 28,
+        )
+        for wrapped in alternate_lines[:2]:
+            canvas.drawString(ix2, row_y2, wrapped)
+            row_y2 -= body_leading
 
     centre_inner = panel(canvas, centre_x, row1_top - row1_h, centre_w, row1_h,
                          title="CFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY",
@@ -2331,6 +2554,8 @@ def draw_overview_page(
         ]
     )
     chip_x = cx0
+    chip_row_y = row_y3
+    chip_right = cx0 + text_w
     for chip in chips:
         chip_label = chip["label"]
         chip_colour = {
@@ -2340,15 +2565,20 @@ def draw_overview_page(
             "apd_percent": DASH_ORANGE,
         }.get(chip.get("key"), ACCENT)
         chip_w = pdfmetrics.stringWidth(chip_label, SANS_BOLD, body_size) + 14
+        if operational_readable and chip_w > text_w:
+            raise ValueError(f"Overview chip exceeds the readable route column: {chip_label}")
+        if operational_readable and chip_x > cx0 and chip_x + chip_w > chip_right:
+            chip_x = cx0
+            chip_row_y -= 18.0 if operational_readable else 16.0
         canvas.setStrokeColor(chip_colour)
         canvas.setLineWidth(0.8)
         chip_h = 14.0 if operational_readable else 12.5
-        canvas.roundRect(chip_x, row_y3 - 4, chip_w, chip_h, 6.2, stroke=1, fill=0)
+        canvas.roundRect(chip_x, chip_row_y - 4, chip_w, chip_h, 6.2, stroke=1, fill=0)
         canvas.setFillColor(chip_colour)
         canvas.setFont(SANS_BOLD, body_size)
-        canvas.drawCentredString(chip_x + chip_w / 2, row_y3, chip_label)
+        canvas.drawCentredString(chip_x + chip_w / 2, chip_row_y, chip_label)
         chip_x += chip_w + 6
-    row_y3 -= 18 if operational_readable else 16
+    row_y3 = chip_row_y - (18 if operational_readable else 16)
     canvas.setFillColor(TEXT_MUTED)
     canvas.setFont(SANS, body_size)
     canvas.drawString(cx0, row_y3, "CFP ROUTE")
@@ -2371,9 +2601,14 @@ def draw_overview_page(
         canvas.drawString(cx0, row_y3, route_lines[2])
         row_y3 -= body_leading
     elif len(route_lines) > 3:
-        # Never cut the route silently: the compact row keeps whole tokens
-        # and points at the verbatim block on the airports page.
-        pointer = "» FULL ROUTE: AIRPORTS PAGE"
+        # Never cut the route silently. The frozen audit package carries the
+        # verbatim continuation on its airports pages; the bounded operational
+        # download points to the dashboard, where the full route is retained.
+        pointer = (
+            "» FULL ROUTE: DASHBOARD"
+            if operational_readable
+            else "» FULL ROUTE: AIRPORTS PAGE"
+        )
         pointer_w = pdfmetrics.stringWidth(pointer, SANS_BOLD, body_size)
         remainder = " ".join(route_lines[2:])
         shown = _wrap(remainder, MONO, body_size, text_w - pointer_w - 8)[0]
@@ -2399,7 +2634,11 @@ def draw_overview_page(
             canvas.drawString(cx0, row_y3, profile_lines[1])
             row_y3 -= body_leading
         elif len(profile_lines) > 2:
-            pointer = "» FULL: AIRPORTS PAGE"
+            pointer = (
+                "» FULL: DASHBOARD"
+                if operational_readable
+                else "» FULL: AIRPORTS PAGE"
+            )
             pointer_w = pdfmetrics.stringWidth(pointer, SANS_BOLD, body_size)
             # The chain has no spaces, so trim at slash boundaries to fit.
             shown = "".join(profile_lines[1:])
@@ -2431,11 +2670,30 @@ def draw_overview_page(
         canvas.drawString(cx0, row_y3, "EDTO")
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(MONO, body_size)
+        edto_top_up = (
+            ((fuel_summary.get("rows") or {}).get("edto_top_up") or {}).get(
+                "fuel_kg"
+            )
+            if operational_readable
+            else (edto_view.get("fuel") or {}).get("top_up_kg") or 0
+        )
         edto_line = " ".join(part for part in (
             f"{airport.get('airport')} RWY{airport.get('runway')}",
             str(airport.get("approach") or ""),
             str(airport.get("minima") or ""),
-            "| TOP-UP 0 KG" if not (edto_view.get("fuel") or {}).get("top_up_kg") else None,
+            (
+                f"| TOP-UP {int(edto_top_up):,} KG"
+                if edto_top_up is not None
+                else "| TOP-UP UNAVAILABLE"
+            ),
+            (
+                "| "
+                + f"{len(edto_view.get('sectors') or [])} SECTOR"
+                + ("S" if len(edto_view.get("sectors") or []) != 1 else "")
+                + f" / {len(airports_view)} ALTN | FULL EDTO: DASHBOARD"
+                if operational_readable
+                else None
+            ),
         ) if part)
         if operational_readable:
             row_y3 = draw_p1_wrapped_fact(
@@ -2616,6 +2874,7 @@ def draw_overview_page(
             height=row2_h,
             body_size=body_size,
             compact=dense_airport_layout,
+            section_page_numbers=section_pages,
         )
     else:
         _draw_audit_rev3_v8_overview_summary_row(
@@ -3106,6 +3365,60 @@ def _wrap(text: str, font: str, size: float, max_width: float) -> list[str]:
             line = word
         else:
             line = candidate
+    if line:
+        lines.append(line)
+    return lines
+
+
+def _wrap_lossless_text(
+    text: str,
+    font: str,
+    size: float,
+    max_width: float,
+) -> list[str]:
+    """Wrap source prose while also containing an over-width source token.
+
+    The global wrapper intentionally preserves historical report geometry and
+    must not change.  EOSID is unbounded source prose, however, and a single
+    long token must not escape the page.  This local variant splits only that
+    visually impossible token; joining the rendered fragments without layout
+    whitespace reproduces it byte-for-byte.
+    """
+    if max_width <= 0:
+        raise ValueError("Lossless text wrapper requires positive width.")
+    lines: list[str] = []
+    line = ""
+    for word in str(text).split():
+        candidate = f"{line} {word}".strip()
+        if pdfmetrics.stringWidth(candidate, font, size) <= max_width:
+            line = candidate
+            continue
+        if line:
+            lines.append(line)
+            line = ""
+        if pdfmetrics.stringWidth(word, font, size) <= max_width:
+            line = word
+            continue
+        chunks: list[str] = []
+        chunk = ""
+        for character in word:
+            candidate_chunk = chunk + character
+            if (
+                chunk
+                and pdfmetrics.stringWidth(
+                    candidate_chunk,
+                    font,
+                    size,
+                ) > max_width
+            ):
+                chunks.append(chunk)
+                chunk = character
+            else:
+                chunk = candidate_chunk
+        if chunk:
+            chunks.append(chunk)
+        lines.extend(chunks[:-1])
+        line = chunks[-1] if chunks else ""
     if line:
         lines.append(line)
     return lines
@@ -4316,7 +4629,11 @@ def _operational_route_fir_card_summary(
     the remaining lines to the largest whole FIR prefix plus its explicit
     dashboard/audit receipt.
     """
-    route_summary = str(route_airspace.get("card_summary") or "").strip()
+    route_summary = str(
+        route_airspace.get("card_summary")
+        or route_airspace.get("release_detail")
+        or "No bounded route-airspace notice is held in this parsed view."
+    ).strip()
     missing_fir_summary = (
         "No early-contact row is held in the briefing view; current governed "
         "procedures remain required."
@@ -6287,6 +6604,8 @@ def draw_hazard_page(
             kind_label = str(
                 chart.get("kind") or "chart"
             ).replace("_", " ").upper()
+            # The lossless/audit profile is pixel-pinned to the approved REV3
+            # source label. The operational PDF below uses ``display_label``.
             shared_label = str(chart.get("label") or "").strip()
             chart_label = shared_label or " | ".join(
                 part for part in (kind_label, valid) if part
@@ -7097,6 +7416,116 @@ def _draw_operational_deferred_source_panel(
         )
 
 
+def _operational_performance_layout(
+    briefing: dict[str, Any],
+) -> dict[str, Any]:
+    """Measure EOSID and reconciliation before either is put on the page."""
+    width, height = PAGE_SIZE
+    full_w = width - 2 * MARGIN
+    reconciliation_plans: list[dict[str, Any]] = []
+    label_width = 244.0
+    detail_width = full_w - 20.0 - label_width - 8.0
+    for row in briefing.get("performance_reconciliation") or []:
+        label = f"{row.get('status') or 'REVIEW'} · {row.get('label') or 'CHECK'}"
+        label_lines = _wrap(
+            label,
+            SANS_BOLD,
+            T_SMALL,
+            label_width - 8.0,
+        )
+        detail_lines = _wrap(
+            str(row.get("detail") or "Review required."),
+            SANS,
+            T_SMALL,
+            detail_width,
+        )
+        source_lines = _wrap(
+            "SOURCE · "
+            + str(row.get("source_reference") or "Source unavailable"),
+            SANS,
+            T_SMALL,
+            detail_width,
+        )
+        reconciliation_plans.append({
+            "row": row,
+            "label_lines": label_lines,
+            "detail_lines": detail_lines,
+            "source_lines": source_lines,
+            "required_height": max(
+                len(label_lines),
+                len(detail_lines) + len(source_lines),
+            )
+            * 10.2
+            + 8.0,
+        })
+
+    performance = _shared_performance_publication(briefing)
+    inputs = performance.get("inputs") or {}
+    eosid = str(inputs.get("eosid") or "").strip()
+    eosid_lines = _wrap_lossless_text(
+        eosid,
+        SANS,
+        T_SMALL,
+        full_w - 20.0,
+    )
+    eosid_line_height = 10.4
+    eosid_panel_height = (
+        38.0 + len(eosid_lines) * eosid_line_height
+        if eosid_lines
+        else 0.0
+    )
+
+    # These are the exact coordinates used by page 3 below.  The
+    # reconciliation title/bottom margins consume 45pt around its measured
+    # rows; using that exact reserve prevents a later render-time surprise.
+    content_top = height - 94.0
+    card_y = content_top - 8.0 - 214.0
+    base_recon_top = card_y - 14.0
+    recon_bottom = 46.0
+    reconciliation_min_height = 45.0 + sum(
+        float(plan["required_height"])
+        for plan in reconciliation_plans
+    )
+    eosid_gap = 8.0
+    inline_eosid = bool(eosid_lines) and (
+        eosid_panel_height
+        + eosid_gap
+        + reconciliation_min_height
+        <= base_recon_top - recon_bottom
+    )
+
+    continuation_top = content_top - 8.0
+    continuation_first_baseline = continuation_top - 34.0
+    continuation_floor = recon_bottom + 12.0
+    continuation_capacity = max(
+        1,
+        int(
+            (continuation_first_baseline - continuation_floor)
+            // eosid_line_height
+        )
+        + 1,
+    )
+    continuation_pages = (
+        []
+        if inline_eosid or not eosid_lines
+        else [
+            eosid_lines[index : index + continuation_capacity]
+            for index in range(0, len(eosid_lines), continuation_capacity)
+        ]
+    )
+    return {
+        "eosid": eosid,
+        "eosid_lines": eosid_lines,
+        "eosid_line_height": eosid_line_height,
+        "eosid_panel_height": eosid_panel_height,
+        "eosid_gap": eosid_gap,
+        "inline_eosid": inline_eosid,
+        "continuation_pages": continuation_pages,
+        "reconciliation_plans": reconciliation_plans,
+        "reconciliation_min_height": reconciliation_min_height,
+    }
+
+
 def draw_operational_performance_page(
     canvas,
     flight: dict[str, Any],
@@ -7104,15 +7533,32 @@ def draw_operational_performance_page(
     *,
     page_number: int,
     page_count: int,
+    layout: dict[str, Any] | None = None,
 ) -> None:
     """Compact performance, fuel and status evidence with reconciliation."""
+    layout = layout or _operational_performance_layout(briefing)
+    continuation_pages = list(layout.get("continuation_pages") or [])
+    source_parts = [
+        "CFP performance/mass inputs",
+        "page-1 fuel arithmetic",
+        "deferred declaration summary",
+    ]
+    if continuation_pages:
+        continuation_label = (
+            "page" if len(continuation_pages) == 1 else "pages"
+        )
+        source_parts.append(
+            "EOSID lossless continuation: "
+            f"{len(continuation_pages)} {continuation_label} "
+            f"start p{page_number + 1}"
+        )
     width, _ = PAGE_SIZE
     content_top = draw_page_chrome(
         canvas,
         flight,
         page_number=page_number,
         page_count=page_count,
-        source_line="CFP performance/mass inputs | page-1 fuel arithmetic | deferred declaration summary",
+        source_line=" | ".join(source_parts),
         section_label="PERFORMANCE / FUEL / STATUS",
         section_colour=DEPARTURE,
     )
@@ -7126,6 +7572,9 @@ def draw_operational_performance_page(
     performance = _shared_performance_publication(briefing)
     inputs = performance.get("inputs") or {}
     fuel_summary = flight.get("fuel_summary") or {}
+    departure_airport = str(
+        (briefing.get("departure") or {}).get("icao") or ""
+    ).strip()
 
     def draw_rows(
         inner: tuple[float, float, float, float],
@@ -7133,33 +7582,107 @@ def draw_operational_performance_page(
         *,
         row_top: float,
         floor: float,
+        dense_labels: set[str] | None = None,
     ) -> None:
         row_y = row_top
         for label, value in rows:
-            lines = _wrap(f"{label} · {value}", SANS, T_SMALL, inner[2])
-            if row_y - len(lines) * 10.4 < floor:
+            dense = label in (dense_labels or set())
+            font_size = T_MICRO if dense else T_SMALL
+            leading = 9.2 if dense else 10.4
+            row_gap = 1.4 if dense else 3.0
+            lines = _wrap(f"{label} · {value}", SANS, font_size, inner[2])
+            if row_y - len(lines) * leading < floor:
                 raise ValueError(
                     f"Performance summary row {label} exceeds readable capacity."
                 )
             canvas.setFillColor(TEXT_SECONDARY)
-            canvas.setFont(SANS, T_SMALL)
+            canvas.setFont(SANS, font_size)
             for line in lines:
                 canvas.drawString(inner[0], row_y, line)
-                row_y -= 10.4
-            row_y -= 3.0
+                row_y -= leading
+            row_y -= row_gap
 
     selected_rtow = performance.get("selected_rtow_kg")
     ptow = performance.get("ptow_kg")
     margin = performance.get("margin_kg")
+    candidate_limits = [
+        candidate
+        for candidate in performance.get("candidate_limits") or []
+        if candidate.get("limit_kg") is not None
+    ]
+    candidate_labels = {
+        str(candidate.get("label") or candidate.get("key") or "LIMIT")
+        for candidate in candidate_limits
+    }
+    known_conditions = " | ".join(
+        value
+        for value in (
+            f"TEMP {inputs.get('temperature_c')}C"
+            if inputs.get("temperature_c") is not None
+            else None,
+            f"QNH {inputs.get('qnh_hpa')}"
+            if inputs.get("qnh_hpa") is not None
+            else None,
+            f"WIND {inputs.get('wind')}"
+            if inputs.get("wind") not in (None, "")
+            else None,
+        )
+        if value
+    )
+    systems = " | ".join(
+        value
+        for value in (
+            f"PACKS {'ON' if inputs.get('packs_on') else 'OFF'}"
+            if inputs.get("packs_on") is not None
+            else None,
+            f"ANTI-ICE {'ON' if inputs.get('anti_ice_on') else 'OFF'}"
+            if inputs.get("anti_ice_on") is not None
+            else None,
+        )
+        if value
+    )
     performance_rows = [
         ("STATUS", str(performance.get("status") or "review required").replace("-", " ").upper()),
         ("SELECTED RTOW", f"{selected_rtow:,} kg" if selected_rtow is not None else "unavailable"),
         ("PTOW", f"{ptow:,} kg" if ptow is not None else "unavailable"),
         ("MARGIN", f"{margin:+,} kg" if margin is not None else "unavailable"),
-        ("RUNWAY / CONDITION", f"{inputs.get('runway') or '--'} / {inputs.get('runway_condition') or '--'}"),
-        ("THRUST / FLAPS", f"{inputs.get('thrust_setting') or '--'} / {inputs.get('flap_setting') if inputs.get('flap_setting') is not None else '--'}"),
-        ("MAX FUEL AVAILABLE", f"{int(inputs['maximum_fuel_available_kg']):,} kg" if inputs.get("maximum_fuel_available_kg") is not None else "unavailable"),
     ]
+    # Keep every candidate label and value on its own physical line.  A single
+    # pipe-delimited sentence can wrap between the three page columns, causing
+    # PDF extraction to separate a label from its value even though it looks
+    # adjacent on screen.  Individual bound rows remain readable and auditable.
+    performance_rows.extend(
+        (
+            str(candidate.get("label") or candidate.get("key") or "LIMIT"),
+            f"{int(candidate['limit_kg']):,} kg",
+        )
+        for candidate in candidate_limits
+    )
+    performance_rows.extend([
+        (
+            "RUNWAY / CONDITION",
+            " ".join(
+                part
+                for part in (
+                    departure_airport,
+                    str(inputs.get("runway") or "--").strip(),
+                )
+                if part
+            )
+            + f" / {inputs.get('runway_condition') or '--'}",
+        ),
+        ("THRUST / FLAPS", f"{inputs.get('thrust_setting') or '--'} / {inputs.get('flap_setting') if inputs.get('flap_setting') is not None else '--'}"),
+    ])
+    if known_conditions:
+        performance_rows.append(("CONDITIONS", known_conditions))
+    if systems:
+        performance_rows.append(("SYSTEMS", systems))
+    performance_rows.append((
+        "MAX FUEL AVAILABLE",
+        f"{int(inputs['maximum_fuel_available_kg']):,} kg"
+        if inputs.get("maximum_fuel_available_kg") is not None
+        else "unavailable",
+    ))
     perf_inner = panel(
         canvas,
         MARGIN,
@@ -7175,6 +7698,7 @@ def draw_operational_performance_page(
         performance_rows,
         row_top=top - 34.0,
         floor=card_y + 12.0,
+        dense_labels=candidate_labels,
     )
 
     fuel_inner = panel(
@@ -7230,11 +7754,42 @@ def draw_operational_performance_page(
     )
     canvas.setFillColor(ACCENT)
     canvas.setFont(SANS_BOLD, T_SMALL)
-    canvas.drawString(status_inner[0], card_y + 12.0, "OPEN EXACT EVIDENCE ON PAGE 4 >")
+    canvas.drawString(
+        status_inner[0],
+        card_y + 12.0,
+        "OPEN EXACT EVIDENCE ON PAGE "
+        f"{page_number + len(continuation_pages) + 1} >",
+    )
 
-    reconciliation = list(briefing.get("performance_reconciliation") or [])
     recon_top = card_y - 14.0
     recon_bottom = 46.0
+    if layout.get("inline_eosid"):
+        # EOSID is source prose, not a bounded performance token.  Keep the
+        # compact numeric card stable and give the complete escape routing a
+        # measured, full-width continuation area instead of truncating it or
+        # failing when a valid CFP sentence wraps in the narrow column.
+        eosid_lines = list(layout.get("eosid_lines") or [])
+        eosid_line_height = float(layout["eosid_line_height"])
+        eosid_height = float(layout["eosid_panel_height"])
+        eosid_bottom = recon_top - eosid_height
+        eosid_inner = panel(
+            canvas,
+            MARGIN,
+            eosid_bottom,
+            full_w,
+            eosid_height,
+            title="EOSID / ESCAPE ROUTING CONTINUATION",
+            accent=DEPARTURE,
+            title_colour=None,
+        )
+        eosid_y = recon_top - 34.0
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, T_SMALL)
+        for line in eosid_lines:
+            canvas.drawString(eosid_inner[0], eosid_y, line)
+            eosid_y -= eosid_line_height
+        recon_top = eosid_bottom - float(layout["eosid_gap"])
+
     recon_inner = panel(
         canvas,
         MARGIN,
@@ -7246,27 +7801,13 @@ def draw_operational_performance_page(
         title_colour=None,
     )
     row_y = recon_top - 35.0
-    for row in reconciliation:
-        label = f"{row.get('status') or 'REVIEW'} · {row.get('label') or 'CHECK'}"
+    for plan in layout.get("reconciliation_plans") or []:
+        row = plan["row"]
         label_width = 244.0
-        detail_width = recon_inner[2] - label_width - 8.0
-        label_lines = _wrap(label, SANS_BOLD, T_SMALL, label_width - 8.0)
-        detail_lines = _wrap(
-            str(row.get("detail") or "Review required."),
-            SANS,
-            T_SMALL,
-            detail_width,
-        )
-        source_lines = _wrap(
-            "SOURCE · " + str(row.get("source_reference") or "Source unavailable"),
-            SANS,
-            T_SMALL,
-            detail_width,
-        )
-        required_h = max(
-            len(label_lines),
-            len(detail_lines) + len(source_lines),
-        ) * 10.2 + 8.0
+        label_lines = plan["label_lines"]
+        detail_lines = plan["detail_lines"]
+        source_lines = plan["source_lines"]
+        required_h = float(plan["required_height"])
         if row_y - required_h < recon_bottom + 10.0:
             raise ValueError("Performance reconciliation exceeds readable capacity.")
         canvas.setFillColor(
@@ -7293,6 +7834,63 @@ def draw_operational_performance_page(
             canvas.drawString(detail_x, detail_y, line)
             detail_y -= 10.2
         row_y -= required_h
+
+
+def draw_operational_eosid_continuation_page(
+    canvas,
+    flight: dict[str, Any],
+    lines: list[str],
+    *,
+    page_number: int,
+    page_count: int,
+    continuation_number: int,
+    continuation_count: int,
+) -> None:
+    """Print a lossless EOSID continuation when page 3 cannot hold it."""
+    if not lines:
+        raise ValueError("EOSID continuation page cannot be empty.")
+    width, _ = PAGE_SIZE
+    content_top = draw_page_chrome(
+        canvas,
+        flight,
+        page_number=page_number,
+        page_count=page_count,
+        source_line=(
+            "CFP performance EOSID | lossless continuation "
+            f"{continuation_number}/{continuation_count}"
+        ),
+        section_label="EOSID / ESCAPE ROUTING",
+        section_colour=DEPARTURE,
+    )
+    bookmark = f"sec_performance_eosid_{continuation_number}"
+    canvas.bookmarkPage(bookmark)
+    full_w = width - 2 * MARGIN
+    panel_top = content_top - 8.0
+    panel_bottom = 46.0
+    inner = panel(
+        canvas,
+        MARGIN,
+        panel_bottom,
+        full_w,
+        panel_top - panel_bottom,
+        title=(
+            "EOSID / ESCAPE ROUTING · CONTINUATION "
+            f"{continuation_number}/{continuation_count}"
+        ),
+        accent=DEPARTURE,
+        title_colour=None,
+    )
+    line_height = 10.4
+    row_y = panel_top - 34.0
+    canvas.setFillColor(TEXT_SECONDARY)
+    canvas.setFont(SANS, T_SMALL)
+    for line in lines:
+        if pdfmetrics.stringWidth(line, SANS, T_SMALL) > inner[2] + 0.01:
+            raise ValueError("EOSID continuation line exceeds readable width.")
+        if row_y < panel_bottom + 12.0:
+            raise ValueError("EOSID continuation page exceeds readable capacity.")
+        canvas.drawString(inner[0], row_y, line)
+        row_y -= line_height
 
 
 def draw_operational_mel_cdl_page(
@@ -7452,35 +8050,34 @@ def draw_operational_mel_cdl_page(
         for segment in gate.get("source_segments") or []:
             reference = str(segment.get("reference") or "").strip().upper()
             item_type = str(segment.get("item_type") or "").strip().upper()
+            declaration_kind = str(
+                segment.get("declaration_kind") or ""
+            ).strip().upper()
             # Every declaration on the block earns a source panel — the
             # 21 Aug CFP printed a bare CDDL, an IFEDDL and an engineering
             # IN notice alongside the MEL, and the boss's reference shows
             # all of them (only unparseable rows stay out).
-            if item_type not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN"}:
+            if (
+                item_type not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN"}
+                and declaration_kind not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN"}
+            ):
                 continue
+            display_item_type = (
+                declaration_kind
+                if item_type == "OPERATIONAL_RESTRICTION" and declaration_kind
+                else item_type
+            )
             source_index = segment.get("source_item_index")
-            deferred_raw = flight.get("deferred_items") or []
-            raw_source = (
-                deferred_raw[source_index]
-                if isinstance(source_index, int)
-                and 0 <= source_index < len(deferred_raw)
-                else {}
-            )
-            next_declaration = (
-                str((deferred_raw[source_index + 1] or {}).get("source_declaration") or "").strip()
-                if isinstance(source_index, int)
-                and 0 <= source_index + 1 < len(deferred_raw)
-                else ""
-            )
             source_items.append({
                 "source_item_index": source_index,
-                "item_type": item_type,
+                "source_segment_index": segment.get("source_segment_index"),
+                "item_type": display_item_type,
                 "reference": reference,
                 "description": segment.get("description"),
                 "company_remark": segment.get("restriction"),
-                "source_page": raw_source.get("source_page"),
-                "source_declaration": raw_source.get("source_declaration"),
-                "crop_end_needle": next_declaration or "PLAN",
+                "source_page": segment.get("source_page"),
+                "source_declaration": segment.get("source_declaration"),
+                "crop_end_needle": segment.get("crop_end_needle") or "PLAN",
             })
     source_items.sort(
         key=lambda item: (
@@ -7488,17 +8085,50 @@ def draw_operational_mel_cdl_page(
             item.get("source_item_index")
             if isinstance(item.get("source_item_index"), int)
             else 999,
+            item.get("source_segment_index")
+            if isinstance(item.get("source_segment_index"), int)
+            else 999,
         )
     )
     source_overflow_count = max(0, len(source_items) - 4)
     source_items = source_items[:4]
     if not source_items:
         source_items = deferred[:4]
-    if not source_items:
-        source_items = visible_gates[:1]
     source_top = gate_y - (24.0 if source_overflow_count else 14.0)
     source_bottom = 46.0
     source_h = source_top - source_bottom
+    if not source_items:
+        source_inner = panel(
+            canvas,
+            gate_x,
+            source_bottom,
+            gate_w,
+            source_h,
+            title="SOURCE DECLARATION STATUS",
+            accent=COMMS_TEAL,
+            title_colour=None,
+        )
+        canvas.setFillColor(EDTO_GREEN)
+        canvas.setFont(SANS_BOLD, 13.0)
+        canvas.drawString(
+            source_inner[0],
+            source_top - 48.0,
+            "NO DEFERRED DECLARATION PRINTED",
+        )
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, T_SMALL)
+        status_lines = _wrap(
+            "No MEL, CDL, CDDL, IFEDDL or engineering deferred declaration "
+            "is printed on CFP page 1. No governed remedy link applies.",
+            SANS,
+            T_SMALL,
+            source_inner[2],
+        )
+        row_y = source_top - 70.0
+        for line in status_lines:
+            canvas.drawString(source_inner[0], row_y, line)
+            row_y -= 10.2
+        return
     if source_overflow_count:
         declaration_label = (
             "SOURCE DECLARATION"
@@ -7726,6 +8356,7 @@ def draw_operational_airports_page(
     page_number: int,
     page_count: int,
     panels: list[dict[str, Any]],
+    edto_view: dict[str, Any],
     compact_overflow_note: str | None = None,
 ) -> None:
     """Combined departure/destination evidence and full alternate matrix."""
@@ -7785,7 +8416,7 @@ def draw_operational_airports_page(
             and str(line.get("kind") or "").lower() == "notam"
         ][:3]
         rows = [
-            f"PLAN · RWY {plan.get('runway') or '--'}",
+            f"PLAN · {icao} RWY {plan.get('runway') or '--'}",
             "WEATHER SOURCE · "
             + " / ".join(
                 f"{kind.upper()} {'HELD' if weather.get(kind) else 'UNAVAILABLE'}"
@@ -7855,17 +8486,53 @@ def draw_operational_airports_page(
         DESTINATION,
     )
 
+    primary_airports = {
+        str(flight.get("departure") or "").strip().upper(),
+        str(flight.get("destination") or "").strip().upper(),
+    }
+    primary_airports.discard("")
+    secondary_airport_count = sum(
+        1
+        for panel_data in panels or []
+        if str(panel_data.get("icao") or "").strip().upper()
+        not in primary_airports
+    )
+    alternate_overflow_count = max(0, len(alternates) - len(displayed_alternates))
+    matrix_title = "DESTINATION ALTERNATE ASSESSMENT MATRIX"
+    if alternate_overflow_count:
+        matrix_title += f" · +{alternate_overflow_count} ALTERNATES IN DASHBOARD"
+    if secondary_airport_count:
+        airport_label = "AIRPORT" if secondary_airport_count == 1 else "AIRPORTS"
+        matrix_title += (
+            f" · {secondary_airport_count} SECONDARY {airport_label} · "
+            "FULL SELECTED DETAIL REMAINS IN DASHBOARD"
+        )
     inner = panel(
         canvas,
         MARGIN,
         matrix_bottom,
         full_w,
         matrix_h,
-        title="DESTINATION ALTERNATE ASSESSMENT MATRIX",
+        title=matrix_title,
         accent=WEATHER_AMBER,
         title_colour=None,
     )
     header_y = matrix_top - 36.0
+    edto_airports = list(edto_view.get("airports") or [])
+    if edto_airports:
+        sector_count = len(edto_view.get("sectors") or [])
+        canvas.setFillColor(EDTO_GREEN)
+        canvas.setFont(MONO_BOLD, T_SMALL)
+        canvas.drawString(
+            inner[0],
+            header_y,
+            (
+                f"EDTO CONTINUATION · {sector_count} "
+                f"SECTOR{'S' if sector_count != 1 else ''} / "
+                f"{len(edto_airports)} ALTN / FULL EDTO: DASHBOARD"
+            ),
+        )
+        header_y -= 14.0
     columns = (
         (inner[0], 126.0, "ROLE / AIRPORT"),
         (inner[0] + 132.0, 235.0, "PLAN"),
@@ -7981,7 +8648,11 @@ def _draw_operational_wafc_source(
     width: float,
     height: float,
 ) -> None:
-    title = str((chart or {}).get("label") or "WAFC ROUTE CHART - SOURCE CONTEXT")
+    title = str(
+        (chart or {}).get("display_label")
+        or (chart or {}).get("label")
+        or "WAFC ROUTE CHART - SOURCE CONTEXT"
+    )
     inner = panel(
         canvas,
         x,
@@ -8100,22 +8771,17 @@ def draw_operational_hazard_page(
         f"Departure {flight.get('departure') or '--'} and destination "
         f"{flight.get('destination') or '--'} source bulletins remain in the airport view."
     )
-    sigmet_body = (
-        " | ".join(
-            f"{card.get('name') or 'SIGMET'}: {card.get('disposition') or 'REVIEW'}"
-            for card in list(sigmet_cards or [])[:2]
-        )
-        or "No enroute SIGMET record is printed in this CFP weather package."
-    )
+    sigmet_body = "No enroute SIGMET record is printed in this CFP weather package."
     ledger = " | ".join(
         f"{row.get('label')}: {row.get('status')}" for row in coverage_rows
     )
+    ledger_sentence = f"{ledger}." if ledger else ""
     responsible = str((hazards.get("vaac_reach") or {}).get("responsible_line") or "")
     coverage_body = " ".join(
         part
         for part in (
-            ledger,
-            "Unavailable coverage is a source gap, not a NIL finding.",
+            ledger_sentence,
+            "Coverage gaps are source gaps, not NIL findings.",
             responsible,
         )
         if part
@@ -8137,14 +8803,37 @@ def draw_operational_hazard_page(
             accent=accent,
             title_colour=None,
         )
-        lines = _wrap(body, SANS, T_SMALL, inner[2])
+        styled_lines: list[tuple[str, bool]] = []
+        if title == "ENROUTE SIGMET SCREENING" and sigmet_cards:
+            for card in list(sigmet_cards)[:2]:
+                name = str(card.get("name") or "SIGMET").strip()
+                styled_lines.extend(
+                    (line, True)
+                    for line in _wrap(name, SANS_BOLD, T_SMALL, inner[2])
+                )
+                disposition = (
+                    "DISPOSITION · "
+                    + str(card.get("disposition") or "REVIEW").strip().upper()
+                )
+                if pdfmetrics.stringWidth(
+                    disposition, SANS_BOLD, T_SMALL
+                ) > inner[2]:
+                    raise ValueError(
+                        "SIGMET disposition exceeds readable summary width."
+                    )
+                styled_lines.append((disposition, True))
+        else:
+            styled_lines = [
+                (line, False)
+                for line in _wrap(body, SANS, T_SMALL, inner[2])
+            ]
         available_lines = int((card_h - 43.0) // 10.2)
-        if len(lines) > available_lines:
+        if len(styled_lines) > available_lines:
             raise ValueError(f"Weather summary card {title} exceeds readable capacity.")
         row_y = top - 35.0
         canvas.setFillColor(TEXT_SECONDARY)
-        canvas.setFont(SANS, T_SMALL)
-        for line in lines:
+        for line, bold in styled_lines:
+            canvas.setFont(SANS_BOLD if bold else SANS, T_SMALL)
             canvas.drawString(inner[0], row_y, line)
             row_y -= 10.2
         card_x += card_w + gap
@@ -8413,7 +9102,7 @@ def draw_operational_hazard_page(
             f"HELD - {raw_chart_count} raster chart page(s) - "
             f"{_cfp_page_reference(held_chart_pages)}. "
             + (
-                "Governed route-context selection is held in the dashboard."
+                "Full selected chart: dashboard."
                 if wafc_charts or selected_charts
                 else (
                     "Route relevance/classification review required; no chart "
@@ -8432,11 +9121,39 @@ def draw_operational_hazard_page(
                 "UNAVAILABLE - weather-chart detection did not establish "
                 "appendix presence. Review the uploaded CFP; absence is not inferred."
             )
-    chart_lines = _wrap(chart_status, SANS, T_SMALL, chart_inner[2])
+    selected_label_lines: list[str] = []
+    for chart in selected_charts:
+        selected_label = str(
+            chart.get("display_label") or chart.get("label") or ""
+        ).strip() or " | ".join(
+            part
+            for part in (
+                str(chart.get("kind") or "chart").replace("_", " ").upper(),
+                str(chart.get("valid_time_utc") or chart.get("wmo_heading") or "").strip(),
+            )
+            if part
+        )
+        selected_label_lines.extend(
+            _wrap(
+                f"SELECTED · {selected_label}",
+                SANS_BOLD,
+                T_SMALL,
+                chart_inner[2],
+            )
+        )
+    chart_lines = [
+        *((line, True) for line in selected_label_lines),
+        *((line, False) for line in _wrap(chart_status, SANS, T_SMALL, chart_inner[2])),
+    ]
+    available_chart_lines = int((source_h - 43.0) // 10.2)
+    if len(chart_lines) > available_chart_lines:
+        raise ValueError(
+            "Weather-chart selection/status exceeds readable operational capacity."
+        )
     canvas.setFillColor(TEXT_SECONDARY)
-    canvas.setFont(SANS, T_SMALL)
     chart_y = source_bottom + source_h - 36.0
-    for line in chart_lines:
+    for line, bold in chart_lines:
+        canvas.setFont(SANS_BOLD if bold else SANS, T_SMALL)
         canvas.drawString(chart_inner[0], chart_y, line)
         chart_y -= 10.2
 
@@ -8540,7 +9257,12 @@ def draw_operational_enroute_assurance_page(
     # The baseline keeps six-point section gaps.  A rare third wrapped gate
     # line borrows at most three points from each adjacent gap before taking
     # any space from the already-full source-assurance panel.
-    gates = list(briefing.get("release_gates") or [])[:5]
+    gates = list(briefing.get("release_gates") or [])
+    if len(gates) > 5:
+        raise ValueError(
+            "Operational briefing cannot publish more than five release gates "
+            "without an explicit continuation receipt."
+        )
     gate_rows: list[tuple[dict[str, Any], list[str], float]] = []
     detail_width = full_w - 20.0 - 210.0
     for gate in gates:
@@ -8622,14 +9344,23 @@ def draw_operational_enroute_assurance_page(
     row_y = assurance_top - 35.0
     source_row_leading = 14.0
     if assurance:
+        source_assurance = assurance
+        total_row_count = len(source_assurance)
         available_row_span = row_y - (assurance_bottom + 10.0)
         maximum_row_count = int(available_row_span // 10.2)
         if maximum_row_count < 1:
             raise ValueError("Source assurance exceeds readable capacity.")
-        if len(assurance) > maximum_row_count:
-            total_row_count = len(assurance)
+        complete_receipt = {
+            "source": "SOURCE LEDGER",
+            "status": "COMPLETE",
+            "detail": (
+                f"All {total_row_count} source-assurance rows shown; full rows "
+                "remain in dashboard and lossless audit briefing."
+            ),
+        }
+        if len(source_assurance) + 1 > maximum_row_count:
             visible_row_count = max(0, maximum_row_count - 1)
-            assurance = assurance[:visible_row_count] + [{
+            assurance = source_assurance[:visible_row_count] + [{
                 "source": "SOURCE LEDGER",
                 "status": "BOUNDED",
                 "detail": (
@@ -8638,6 +9369,8 @@ def draw_operational_enroute_assurance_page(
                     "lossless audit briefing."
                 ),
             }]
+        else:
+            assurance = source_assurance + [complete_receipt]
         source_row_leading = min(
             source_row_leading,
             available_row_span / len(assurance),
@@ -8752,7 +9485,9 @@ def draw_operational_terrain_page(
         canvas.setFillColor(WEATHER_AMBER if vws not in {"--", "001", "002", "003", "004"} else TEXT_SECONDARY)
         canvas.setFont(MONO, 8.0)
         canvas.drawString(table_x + 242, row_y, vws)
-        row_y -= 34.0
+        # Seven route-context rows fit this fixed panel at a readable 8 pt.
+        # The former 34 pt pitch painted row seven under the status panel.
+        row_y -= 28.0
     if not point_rows:
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS, 8.4)
@@ -9303,11 +10038,28 @@ def render_combined_briefing(
     if not include_audit_appendix:
         # The operational baseline is seven readable pages. Terrain/profile
         # evidence is appended only when an actual event or controlled chart
-        # is held; an empty no-event terrain page is never manufactured.
+        # is held; an empty no-event terrain page is never manufactured. An
+        # unusually long EOSID adds only the measured continuation pages
+        # required to retain its full source text.
         has_terrain_annex = bool(
             (briefing.get("terrain") or {}).get("events") or chart_images
         )
-        operational_page_count = 7 + int(has_terrain_annex)
+        performance_layout = _operational_performance_layout(briefing)
+        eosid_continuation_pages = list(
+            performance_layout.get("continuation_pages") or []
+        )
+        eosid_continuation_count = len(eosid_continuation_pages)
+        operational_page_count = (
+            7
+            + int(has_terrain_annex)
+            + eosid_continuation_count
+        )
+        operational_section_pages = {
+            "mel_cdl": 4 + eosid_continuation_count,
+            "airports": 5 + eosid_continuation_count,
+            "hazards": 6 + eosid_continuation_count,
+            "enroute": 7 + eosid_continuation_count,
+        }
         deferred_page = deferred_pages[0] if deferred_pages else []
         hazard_page = (
             hazard_pages[0]
@@ -9361,7 +10113,10 @@ def render_combined_briefing(
         terrain_overflow_count = max(
             0,
             len((briefing.get("terrain") or {}).get("events") or []) - 2,
-        ) + max(0, len(chart_images) - 1)
+        ) + max(0, len(chart_images) - 1) + max(
+            0,
+            len(_terrain_table_points(flight, briefing)) - 7,
+        )
 
         draw_overview_page(
             canvas,
@@ -9371,6 +10126,7 @@ def render_combined_briefing(
             page_number=1,
             page_count=operational_page_count,
             operational_readable=True,
+            section_page_numbers=operational_section_pages,
         )
         canvas.addOutlineEntry("Flight Overview", "sec_overview", level=0)
         canvas.showPage()
@@ -9395,19 +10151,39 @@ def render_combined_briefing(
             briefing,
             page_number=3,
             page_count=operational_page_count,
+            layout=performance_layout,
         )
         canvas.addOutlineEntry(
             "Performance / Fuel / Status",
             "sec_performance",
             level=0,
         )
+        for index, eosid_lines in enumerate(
+            eosid_continuation_pages,
+            start=1,
+        ):
+            canvas.showPage()
+            draw_operational_eosid_continuation_page(
+                canvas,
+                flight,
+                eosid_lines,
+                page_number=3 + index,
+                page_count=operational_page_count,
+                continuation_number=index,
+                continuation_count=eosid_continuation_count,
+            )
+            canvas.addOutlineEntry(
+                f"EOSID / Escape Routing {index}/{eosid_continuation_count}",
+                f"sec_performance_eosid_{index}",
+                level=0,
+            )
         canvas.showPage()
         draw_operational_mel_cdl_page(
             canvas,
             flight,
             briefing,
             findings,
-            page_number=4,
+            page_number=4 + eosid_continuation_count,
             page_count=operational_page_count,
             source_pdf_path=source_pdf_path,
             deferred_items=deferred_page,
@@ -9417,9 +10193,10 @@ def render_combined_briefing(
         draw_operational_airports_page(
             canvas,
             flight,
-            page_number=5,
+            page_number=5 + eosid_continuation_count,
             page_count=operational_page_count,
             panels=list(briefing.get("airport_operational_panels") or []),
+            edto_view=dict(briefing.get("edto") or {}),
             compact_overflow_note=compact_note(
                 airport_overflow_count,
                 "airport/NOTAM record",
@@ -9432,10 +10209,10 @@ def render_combined_briefing(
             flight,
             briefing,
             weather_chart_selection=weather_chart_selection,
-            page_number=6,
+            page_number=6 + eosid_continuation_count,
             page_count=operational_page_count,
             source_pdf_path=source_pdf_path,
-            sigmet_cards=hazard_page["sigmet_cards"],
+            sigmet_cards=list(hazards.get("sigmet_cards") or [])[:2],
             vaac_lines=hazard_page["vaac_lines"],
             wafc_charts=hazard_page["wafc_charts"],
             compact_overflow_note=compact_note(
@@ -9449,7 +10226,7 @@ def render_combined_briefing(
             canvas,
             flight,
             briefing,
-            page_number=7,
+            page_number=7 + eosid_continuation_count,
             page_count=operational_page_count,
             has_terrain_annex=has_terrain_annex,
         )
@@ -9462,7 +10239,7 @@ def render_combined_briefing(
                 briefing,
                 findings,
                 chart_images,
-                page_number=8,
+                page_number=8 + eosid_continuation_count,
                 page_count=operational_page_count,
                 compact_overflow_note=compact_note(
                     terrain_overflow_count,

@@ -263,6 +263,7 @@ def test_printed_chart_selection_matches_identity_and_nearest_flight_validity() 
             "kind": "sigwx_high_level",
             "valid_time_utc": valid_time,
             "flight_levels": "FL250-FL600",
+            "label": f"SIGWX · FL250-FL600 · valid {valid_time}",
             "source": "uploaded_package",
             "route_context": {
                 "status": "printed",
@@ -296,11 +297,17 @@ def test_printed_chart_selection_matches_identity_and_nearest_flight_validity() 
     assert selection["status"] == "selected"
     assert selection["raw_chart_count"] == 3
     assert [item["page_number"] for item in selection["selected_charts"]] == [47]
-    context = selection["selected_charts"][0]["route_context"]
+    selected = selection["selected_charts"][0]
+    context = selected["route_context"]
     assert context["status"] == "matched"
     assert context["governed"] is True
     assert context["flight_number"] == "SQ999"
     assert "validity ranked against the CFP flight window" in context["basis"]
+    assert selected["valid_time_utc"] == "2026-08-01T04:00:00+00:00"
+    assert selected["valid_time_display"] == "01 AUG 0400Z"
+    assert selected["display_label"] == "SIGWX · FL250-FL600 · valid 01 AUG 0400Z"
+    assert manifest["charts"][2].get("display_label") is None
+    assert manifest["charts"][2]["label"].endswith("2026-08-01T04:00:00+00:00")
 
 
 def test_printed_chart_selection_does_not_invent_carrier_code_aliases() -> None:
@@ -707,7 +714,9 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
         "sid": "ALFA2",
         "star": "BRAVO1",
         "route_identifier": "GENERIC7",
-        "edto_rvsm": "EDTO/RVSM",
+        # This fixture is a SUMMARY STANDARD CFP whose separate FLT RULES
+        # token is RVSM. Both source facts must survive as distinct chips.
+        "edto_rvsm": "RVSM",
         "cost_index": 42,
         "apd_percent": 1.7,
         "route_waypoints": [
@@ -875,7 +884,7 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
     assert departure_relations["A1002/26"]["planned_match"] is True
     assert [(chip["key"], chip["label"]) for chip in overview["chips"]] == [
         ("route_identifier", "GENERIC7"),
-        ("edto_rvsm", "EDTO/RVSM"),
+        ("edto_rvsm", "RVSM"),
         # SUMMARY STANDARD CFP states its classification as a chip (23 Aug).
         ("classification", "NON-EDTO"),
         ("cost_index", "CI 42"),

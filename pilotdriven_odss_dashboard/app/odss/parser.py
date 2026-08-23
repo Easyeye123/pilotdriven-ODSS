@@ -1124,6 +1124,16 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     cfp_start, cfp_end = sections["cfp"]
     cfp_pages = pages[cfp_start:cfp_end]
     page1 = cfp_pages[0]
+    flight_rules_match = re.search(
+        r"\bFLT\s+RULES\s*:\s*(?P<rules>[A-Z0-9]+(?:\s*/\s*[A-Z0-9]+)*)",
+        page1,
+        re.IGNORECASE,
+    )
+    printed_flight_rules = (
+        re.sub(r"\s*/\s*", "/", flight_rules_match.group("rules")).upper()
+        if flight_rules_match
+        else ""
+    )
     identity = re.search(
         r"(?P<reg>[A-Z0-9-]{4,10})\s+(?P<flight>[A-Z]{2,3}\d{2,4})\s+"
         r"(?P<dep_iata>[A-Z]{3})/(?P<dest_iata>[A-Z]{3})\s+ETD\s+"
@@ -1393,7 +1403,11 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
             if lower_cruise_match
             else None
         ),
-        "edto_rvsm": "EDTO/RVSM" if "EDTO/RVSM" in page1 else None,
+        # Preserve the complete printed FLT RULES token. Real CFPs can print a
+        # single RVSM token as well as EDTO/RVSM or EDTO/MNPS/RVSM. The legacy
+        # key is retained for API compatibility, but no rule is inferred or
+        # discarded based on the route's EDTO classification.
+        "edto_rvsm": printed_flight_rules or None,
         "bobcat": bobcat,
         "deferred_items": _parse_deferred_items(page1),
         # Lossless bounded company-bulletin identities. No route relevance,

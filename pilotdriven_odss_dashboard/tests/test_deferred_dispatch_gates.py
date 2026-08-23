@@ -202,6 +202,38 @@ def test_ambiguous_uppercase_prose_is_not_promoted_to_a_source_gate() -> None:
     )
 
 
+def test_source_segments_carry_crop_provenance_into_the_shared_view() -> None:
+    deferred_items = [{
+        "item_type": "CDL",
+        "reference": "10-10",
+        "source_declaration": "AA CDL 10-10",
+        "source_page": 1,
+        "description": "FORWARD SEAL DAMAGED",
+        "company_remark": "ZZ IN OPS/42 R3 BOTH CTRL REMOVED",
+    }, {
+        "item_type": "MEL",
+        "reference": "20-20",
+        "source_declaration": "BB MEL 20-20",
+        "source_page": 2,
+        "description": "AFT SYSTEM INOPERATIVE",
+        "company_remark": "",
+    }]
+
+    segments = split_deferred_source_segments(deferred_items)
+
+    first_item_segments = [
+        segment
+        for segment in segments
+        if segment["source_item_index"] == 0
+    ]
+    assert {segment["source_page"] for segment in first_item_segments} == {1}
+    assert {
+        segment["crop_end_needle"] for segment in first_item_segments
+    } == {"BB MEL 20-20"}
+    assert segments[-1]["source_page"] == 2
+    assert segments[-1]["crop_end_needle"] == "PLAN"
+
+
 def test_briefing_exposes_projection_without_replacing_raw_deferred_items() -> None:
     flight = _parsed_flight()
     flight["deferred_items"] = [{

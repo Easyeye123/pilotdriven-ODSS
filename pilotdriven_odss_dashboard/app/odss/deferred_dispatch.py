@@ -165,8 +165,17 @@ def split_deferred_source_segments(
     an index/field trail back to the raw item.
     """
     segments: list[dict[str, Any]] = []
-    for source_item_index, source in enumerate(deferred_items or []):
+    sources = list(deferred_items or [])
+    for source_item_index, source in enumerate(sources):
         item = dict(source)
+        next_declaration = (
+            deferred_source_declaration_for_display(
+                sources[source_item_index + 1].get("source_declaration")
+            )
+            if source_item_index + 1 < len(sources)
+            else ""
+        )
+        source_page = item.get("source_page")
         description = _clean(item.get("description"))
         company_remark = _clean(item.get("company_remark"))
         markers = _accepted_markers(company_remark)
@@ -185,6 +194,8 @@ def split_deferred_source_segments(
                 "source_field": f"deferred_items[{source_item_index}]",
                 "source_token": None,
                 "source_declaration": _main_declaration(item),
+                "source_page": source_page,
+                "crop_end_needle": next_declaration or "PLAN",
                 "declaration_kind": item_type,
                 "item_type": item_type,
                 "reference": reference,
@@ -221,6 +232,8 @@ def split_deferred_source_segments(
                 ),
                 "source_token": marker.group("token"),
                 "source_declaration": declaration,
+                "source_page": source_page,
+                "crop_end_needle": next_declaration or "PLAN",
                 "declaration_kind": (
                     deferred_kind or marker.group("operational_kind")
                 ),

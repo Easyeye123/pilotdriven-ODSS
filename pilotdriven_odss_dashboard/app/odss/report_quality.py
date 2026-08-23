@@ -125,6 +125,18 @@ _COMBINED_BOSS_FLOW_PAGES = (
     ("WEATHER / ROUTE HAZARDS", "NAMED CFP VOLCANO ADVISORIES"),
     ("ENROUTE / ASSURANCE", "NUMBERED RELEASE GATES", "SOURCE ASSURANCE"),
 )
+_COMBINED_EOSID_CONTINUATION_MARKERS = (
+    "EOSID / ESCAPE ROUTING",
+    "LOSSLESS CONTINUATION",
+)
+_COMBINED_EOSID_DECLARATION = re.compile(
+    r"EOSID LOSSLESS CONTINUATION\s*:\s*(?P<count>\d+)\s+PAGES?\s+STARTS?\s+P(?P<page>\d+)",
+    re.IGNORECASE,
+)
+_COMBINED_EOSID_PAGE = re.compile(
+    r"LOSSLESS CONTINUATION\s+(?P<index>\d+)\s*/\s*(?P<count>\d+)",
+    re.IGNORECASE,
+)
 _COMBINED_RETIRED_LABELS = (
     "LEVEL 1",
     "LEVEL 2",
@@ -217,8 +229,12 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
         and "PERFORMANCE / FUEL / STATUS" in extracted_pages[2].upper()
     )
     if is_boss_flow:
-        for page_index, required_markers in enumerate(_COMBINED_BOSS_FLOW_PAGES):
-            page_text = extracted_pages[page_index].upper()
+        # Pages 1-3 are fixed. A source EOSID that cannot share page 3 may
+        # add measured continuation pages here; the remaining boss-flow pages
+        # keep their order and are validated from the resulting cursor.
+        cursor = 0
+        for required_markers in _COMBINED_BOSS_FLOW_PAGES[:3]:
+            page_text = extracted_pages[cursor].upper()
             missing = [
                 marker for marker in required_markers if marker not in page_text
             ]
@@ -226,11 +242,85 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 violations.append(ReportQualityViolation(
                     "COMBINED_BOSS_FLOW_STRUCTURE",
                     (
-                        f"Flight Briefing page {page_index + 1} is missing "
+                        f"Flight Briefing page {cursor + 1} is missing "
                         f"{', '.join(missing)}."
                     ),
                 ))
-        for page_index in range(len(_COMBINED_BOSS_FLOW_PAGES), page_count):
+            cursor += 1
+        eosid_declaration = _COMBINED_EOSID_DECLARATION.search(
+            extracted_pages[2]
+        )
+        eosid_continuations: list[tuple[int, int]] = []
+        while cursor < page_count:
+            continuation_text = extracted_pages[cursor]
+            continuation_upper = continuation_text.upper()
+            continuation_match = _COMBINED_EOSID_PAGE.search(
+                continuation_text
+            )
+            if not (
+                continuation_match
+                and all(
+                    marker in continuation_upper
+                    for marker in _COMBINED_EOSID_CONTINUATION_MARKERS
+                )
+            ):
+                break
+            eosid_continuations.append((
+                int(continuation_match.group("index")),
+                int(continuation_match.group("count")),
+            ))
+            cursor += 1
+        eosid_structure_valid = True
+        if eosid_continuations:
+            declared_count = (
+                int(eosid_declaration.group("count"))
+                if eosid_declaration
+                else 0
+            )
+            declared_start = (
+                int(eosid_declaration.group("page"))
+                if eosid_declaration
+                else 0
+            )
+            observed_indices = [index for index, _ in eosid_continuations]
+            observed_counts = {count for _, count in eosid_continuations}
+            eosid_structure_valid = bool(
+                eosid_declaration
+                and declared_start == 4
+                and declared_count == len(eosid_continuations)
+                and observed_indices
+                == list(range(1, declared_count + 1))
+                and observed_counts == {declared_count}
+            )
+        elif eosid_declaration:
+            eosid_structure_valid = False
+        if not eosid_structure_valid:
+            violations.append(ReportQualityViolation(
+                "COMBINED_EOSID_CONTINUATION_STRUCTURE",
+                (
+                    "EOSID continuation pages must be declared on page 3 "
+                    "and form one complete ordered 1/N through N/N sequence."
+                ),
+            ))
+        for required_markers in _COMBINED_BOSS_FLOW_PAGES[3:]:
+            page_text = (
+                extracted_pages[cursor].upper()
+                if cursor < page_count
+                else ""
+            )
+            missing = [
+                marker for marker in required_markers if marker not in page_text
+            ]
+            if missing:
+                violations.append(ReportQualityViolation(
+                    "COMBINED_BOSS_FLOW_STRUCTURE",
+                    (
+                        f"Flight Briefing page {cursor + 1} is missing "
+                        f"{', '.join(missing)}."
+                    ),
+                ))
+            cursor += 1
+        for page_index in range(cursor, page_count):
             page_text = extracted_pages[page_index].upper()
             if not (
                 all(marker in page_text for marker in _COMBINED_TERRAIN_MARKERS)

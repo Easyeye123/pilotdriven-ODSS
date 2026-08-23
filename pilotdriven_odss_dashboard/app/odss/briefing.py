@@ -1066,6 +1066,7 @@ def _performance_publication(flight: dict[str, Any]) -> dict[str, Any]:
                 "flap_setting",
                 "temperature_c",
                 "qnh_hpa",
+                "wind",
                 "packs_on",
                 "anti_ice_on",
                 "eosid",
@@ -2187,6 +2188,38 @@ _WEATHER_CHART_SHARED_FIELDS = (
 )
 _WEATHER_CHART_WINDOW_TOLERANCE = timedelta(0)
 
+_ISO_UTC_DISPLAY_TOKEN = re.compile(
+    r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}"
+    r"(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})\b"
+)
+
+
+def _weather_chart_display_label(
+    chart: dict[str, Any],
+    *,
+    valid_time: datetime,
+) -> tuple[str, str]:
+    """Derive cockpit-readable text while preserving raw source fields."""
+    validity = valid_time.strftime("%d %b %H%MZ").upper()
+    source_label = str(chart.get("label") or "").strip()
+    if source_label:
+        display_label = _ISO_UTC_DISPLAY_TOKEN.sub(
+            lambda match: _display_utc(match.group(0)),
+            source_label,
+        )
+    else:
+        kind = str(chart.get("kind") or "chart").strip().lower()
+        kind_label = (
+            "SIGWX"
+            if kind.startswith("sigwx")
+            else kind.replace("_", " ").upper()
+        )
+        levels = str(chart.get("flight_levels") or "").strip()
+        display_label = " · ".join(
+            part for part in (kind_label, levels, f"VALID {validity}") if part
+        )
+    return display_label, validity
+
 
 def _weather_chart_selection(
     weather_charts: dict[str, Any] | None,
@@ -2331,6 +2364,12 @@ def _weather_chart_selection(
             if key in chart
         }
         projection["route_context"] = governed_context
+        display_label, valid_time_display = _weather_chart_display_label(
+            chart,
+            valid_time=valid_time,
+        )
+        projection["display_label"] = display_label
+        projection["valid_time_display"] = valid_time_display
         product_kind = str(chart.get("kind") or "").strip().lower()
         raw_levels = str(
             governed_context.get("flight_levels")
@@ -3034,14 +3073,28 @@ def _overview_projection(
     )
     edto_rvsm = str(flight.get("edto_rvsm") or "").strip()
     add_chip("edto_rvsm", edto_rvsm, edto_rvsm, "edto_rvsm")
-    # A STANDARD CFP states its classification in the CFP's own word and the
-    # pilot's (boss, 21 Aug: no EDTO noise on a non-EDTO flight) — printed as
-    # a chip so page 1 and the dashboard keep the label the card used to carry.
+    # Keep the page-1 CFP classification independent from its printed FLT
+    # RULES token. A STANDARD/NON EDTO flight can still print RVSM; those are
+    # two different source facts and both must remain visible. Older EDTO
+    # packages can omit EDTO from the separate rule token, so retain that
+    # classification fallback without duplicating an already printed EDTO.
     source_classification = str(
         (flight.get("fuel_summary") or {}).get("source_classification") or ""
     ).strip().upper()
-    if source_classification == "STANDARD":
-        add_chip("classification", "NON-EDTO", "STANDARD", "fuel_summary.source_classification")
+    if source_classification in {"STANDARD", "NON EDTO"}:
+        add_chip(
+            "classification",
+            "NON-EDTO",
+            source_classification,
+            "fuel_summary.source_classification",
+        )
+    elif source_classification == "EDTO" and "EDTO" not in edto_rvsm.upper():
+        add_chip(
+            "classification",
+            "EDTO",
+            source_classification,
+            "fuel_summary.source_classification",
+        )
     cost_index = flight.get("cost_index")
     add_chip("cost_index", f"CI {cost_index}", cost_index, "cost_index")
     apd_percent = flight.get("apd_percent")
