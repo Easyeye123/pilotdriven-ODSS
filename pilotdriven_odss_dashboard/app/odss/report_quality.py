@@ -100,7 +100,7 @@ _COMBINED_ANALYSIS_MARKERS = (
 )
 _COMBINED_MEL_TITLE = "MEL/CDL AND CDDL"
 _COMBINED_CONTINUABLE_SECTIONS = (
-    ("EDTO / ENROUTE AIRPORTS",),
+    ("EDTO / ENROUTE AIRPORTS", "DESTINATION ALTERNATES"),
     ("AIRPORTS / NOTAM APPLICABILITY",),
     ("OPERATIONAL HAZARD ASSESSMENT",),
 )
@@ -251,33 +251,42 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 "Flight Briefing must contain at least one MEL/CDL and CDDL page.",
             ))
 
-        for required_markers in _COMBINED_CONTINUABLE_SECTIONS:
-            if cursor >= page_count or not all(
-                marker in extracted_pages[cursor].upper()
-                for marker in required_markers
-            ):
+        for accepted_markers in _COMBINED_CONTINUABLE_SECTIONS:
+            primary_text = (
+                extracted_pages[cursor].upper()
+                if cursor < page_count
+                else ""
+            )
+            section_marker = next(
+                (
+                    marker
+                    for marker in accepted_markers
+                    if marker in primary_text
+                ),
+                None,
+            )
+            if section_marker is None:
                 violations.append(ReportQualityViolation(
                     "COMBINED_PAGE_STRUCTURE",
                     (
                         f"Flight Briefing page {cursor + 1} must contain "
-                        f"{', '.join(required_markers)}."
+                        f"{' or '.join(accepted_markers)}."
                     ),
                 ))
                 continue
-            primary_text = extracted_pages[cursor].upper()
             if _COMBINED_CONTINUATION_MARKER in primary_text:
                 violations.append(ReportQualityViolation(
                     "COMBINED_CONTINUATION_ORDER",
                     (
                         f"Flight Briefing page {cursor + 1} starts "
-                        f"{', '.join(required_markers)} as a continuation; "
+                        f"{section_marker} as a continuation; "
                         "the section must have exactly one primary page first."
                     ),
                 ))
             cursor += 1
-            while cursor < page_count and all(
-                marker in extracted_pages[cursor].upper()
-                for marker in required_markers
+            while (
+                cursor < page_count
+                and section_marker in extracted_pages[cursor].upper()
             ):
                 continuation_text = extracted_pages[cursor].upper()
                 if _COMBINED_CONTINUATION_MARKER not in continuation_text:
@@ -285,7 +294,7 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                         "COMBINED_DUPLICATE_PRIMARY",
                         (
                             f"Flight Briefing page {cursor + 1} repeats the "
-                            f"{', '.join(required_markers)} primary page instead "
+                            f"{section_marker} primary page instead "
                             "of declaring a continuation."
                         ),
                     ))

@@ -352,7 +352,7 @@
   },
   "provenance": {
     "minted_on": "2026-08-23",
-    "approval_basis": "Boss punch-list rulings 20-21 Aug 2026 plus David's 23 Aug 'do it completely' order (flow round: p1 PERFORMANCE card, pertinent NOTAM lines, ETA basis, route-version/NON-EDTO/CRZ chips, p2 clock-basis sentence). SQ214-PER-SIN-19AUG corpus render under schema 2026-08-23-flow-round-v6, pages inspected before minting; supersedes the v5 reference 73475f4c.",
-    "combined_briefing_schema_version": "2026-08-23-flow-round-v6"
+    "approval_basis": "Boss punch-list rulings 20-21 Aug 2026 plus David's 23 Aug 'do it completely' order (flow round: p1 PERFORMANCE card, pertinent NOTAM lines, ETA basis, route-version/NON-EDTO/CRZ chips, p2 clock-basis sentence). SQ214-PER-SIN-19AUG corpus render under schema 2026-08-23-flow-round-v7; the conditional non-EDTO naming change leaves this EDTO reference raster unchanged. Pages inspected before minting; supersedes the v5 reference 73475f4c.",
+    "combined_briefing_schema_version": "2026-08-23-flow-round-v7"
   }
 }

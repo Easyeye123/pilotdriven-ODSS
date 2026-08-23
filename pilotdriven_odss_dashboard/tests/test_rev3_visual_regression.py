@@ -211,7 +211,7 @@ def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
         "sha256": "4397ed3f32c1c6a4cf5cea4f58978ff2309f391294b7d97dffbec34e4d7f5986",
     }
     assert len(payload["pages"]) == 41
-    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-23-flow-round-v6"
+    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-23-flow-round-v7"
     assert "20-21 Aug 2026" in payload["provenance"]["approval_basis"]
     assert payload["thresholds"] == {
         "max_changed_pixel_ratio": 0.0,

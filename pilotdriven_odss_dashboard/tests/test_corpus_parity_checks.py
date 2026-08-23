@@ -76,6 +76,31 @@ def test_complete_output_passes() -> None:
         assert result["valid"], result["failures"]
 
 
+def test_edto_operational_rows_retain_real_edto_sector_and_fuel_facts() -> None:
+    rows = _edto_operational_rows(
+        "EDTO",
+        {
+            "assessment": {"status": "verified"},
+            "sectors": [{
+                "number": 1,
+                "entry": "01.00",
+                "exit": "02.00",
+                "etps": ["01.30"],
+                "etp_count": 1,
+            }],
+            "airports": [],
+        },
+        {
+            "source_classification": "EDTO",
+            "rows": {"edto_top_up": {"fuel_kg": 1_200}},
+        },
+    )
+
+    labels = [label for label, _ in rows]
+    assert labels == ["CLASSIFICATION", "SECTOR 1", "ETPS 1", "FUEL", "GATE"]
+    assert ("FUEL", "EDTO top-up 1,200 kg.") in rows
+
+
 def test_terrain_contradiction_fails() -> None:
     flight = _flight(LOG_PAGE_HIGH)
     text = _passing_text(flight) + "\nNo strict MSA >100* window detected"

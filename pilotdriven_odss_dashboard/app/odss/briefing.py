@@ -1592,6 +1592,9 @@ def _edto_operational_rows(
     rows: list[tuple[str, str]] = [("CLASSIFICATION", (
         source_sentence
     ))]
+    if classification.startswith("NON"):
+        rows.append(("GATE", _edto_gate_sentence(edto_view)))
+        return rows
     sectors = edto_view.get("sectors") or []
     for index, sector in enumerate(sectors, start=1):
         number = sector.get("number") or index

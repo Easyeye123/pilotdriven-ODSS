@@ -139,6 +139,44 @@ def test_combined_quality_gate_accepts_ordered_section_continuations(
     assert result["violations"] == []
 
 
+def test_combined_quality_gate_accepts_non_edto_destination_alternates_section(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-non-edto.pdf"
+    page_texts = _combined_pages(
+        "DESTINATION ALTERNATES",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is True
+    assert result["violations"] == []
+
+
+def test_combined_quality_gate_rejects_mixed_alternate_section_continuations(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-mixed-alternate-sections.pdf"
+    page_texts = _combined_pages(
+        "DESTINATION ALTERNATES",
+        "EDTO / ENROUTE AIRPORTS - CONTINUED (2/2)",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        violation.code == "COMBINED_PAGE_STRUCTURE"
+        for violation in result["violations"]
+    )
+
+
 def test_combined_quality_gate_accepts_critical_analysis_continuation(
     tmp_path: Path,
 ) -> None:

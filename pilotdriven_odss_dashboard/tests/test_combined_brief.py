@@ -89,7 +89,7 @@ def test_renders_the_full_section_set(rendered):
 def test_compact_pdf_has_seven_real_outline_entries(rendered):
     assert [row[1] for row in rendered.get_toc()] == [
         "Flight Overview",
-        "Critical Analysis",
+        "Decision Analysis",
         "CDDL / CDL",
         "EDTO / Enroute Airports",
         "Airports / NOTAM",
@@ -580,11 +580,17 @@ def test_edto_gate_label_agrees_with_the_cfp_classification(rendered):
     first = rendered[0].get_text()
     assert "EDTO" in first
     assert "NON-EDTO" not in first
+    assert "DEST/EDTO TOP-UP" in first
     assert any(
         "CFP page 1: SUMMARY EDTO CFP." in page.get_text()
         for page in rendered
         if "EDTO / ENROUTE AIRPORTS" in page.get_text()
     )
+    edto_page = rendered[3].get_text()
+    assert "EDTO / ENROUTE AIRPORTS" in edto_page
+    assert "EDTO BOUNDARY / STATUS" in edto_page
+    assert "CFP EDTO TABLE" in edto_page
+    assert "DESTINATION ALTERNATES" not in edto_page
 
 
 def test_edto_page_prints_the_parsed_entry_and_exit(rendered):
@@ -831,7 +837,18 @@ def test_missing_classification_never_defaults_to_edto(tmp_path):
     assert "SUMMARY EDTO CFP" not in text
 
 
-def test_standard_cfp_keeps_its_printed_label_and_is_non_edto(tmp_path):
+def test_standard_cfp_keeps_its_printed_label_and_is_non_edto(tmp_path, monkeypatch):
+    from app.odss import combined_brief as combined_brief_module
+
+    real_panel = combined_brief_module.panel
+    classification_panels = []
+
+    def traced_panel(canvas, x, y, w, h, **kwargs):
+        if kwargs.get("title") == "CLASSIFICATION":
+            classification_panels.append((w, h))
+        return real_panel(canvas, x, y, w, h, **kwargs)
+
+    monkeypatch.setattr(combined_brief_module, "panel", traced_panel)
     flight = sample_flight()
     standard_page1 = SQ23_PAGE1.replace("SUMMARY EDTO CFP", "SUMMARY STANDARD CFP")
     flight["fuel_summary"] = parse_page1_fuel_summary(standard_page1)
@@ -843,11 +860,37 @@ def test_standard_cfp_keeps_its_printed_label_and_is_non_edto(tmp_path):
     findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
     out = tmp_path / "standard-non-edto.pdf"
     render_combined_briefing(flight, findings, [], out)
-    text = "\n".join(page.get_text() for page in fitz.open(out))
+    document = fitz.open(out)
+    text = "\n".join(page.get_text() for page in document)
+    page4 = document[3].get_text()
+    toc = [row[1] for row in document.get_toc()]
 
     assert "SUMMARY STANDARD CFP (non-EDTO)" in text
     assert "SUMMARY EDTO CFP" not in text
     assert "NON-EDTO" in text
+    assert "DEST HOLD TOP-UP" in document[0].get_text()
+    assert "DEST/EDTO TOP-UP" not in document[0].get_text()
+    assert "DESTINATION ALTERNATES" in page4
+    assert "CLASSIFICATION" in page4
+    assert "CFP ALTERNATE PLANNING" in page4
+    for retired in (
+        "EDTO / ENROUTE AIRPORTS",
+        "EDTO BOUNDARY / STATUS",
+        "CFP EDTO TABLE",
+        "ENTRY ACTM",
+        "EXIT ACTM",
+        "EDTO TOP-UP",
+        "EDTO ALTERNATE SECTOR",
+    ):
+        assert retired not in page4
+    assert toc[1] == "Decision Analysis"
+    assert toc[3] == "Destination Alternates"
+    assert "EDTO / Enroute Airports" not in toc
+    assert classification_panels == [(
+        pytest.approx(combined_brief_module.PAGE_SIZE[0] - 2 * combined_brief_module.MARGIN),
+        pytest.approx(combined_brief_module.NON_EDTO_CLASSIFICATION_CARD_HEIGHT),
+    )]
+    assert classification_panels[0][1] < combined_brief_module.EDTO_CARD_HEIGHT
 
 
 def test_airport_identity_places_iata_beside_icao(rendered):
@@ -1517,6 +1560,42 @@ def test_hazard_page_states_the_direct_vaac_centre_coverage(tmp_path):
     hazard = "\n".join(page.get_text() for page in fitz.open(out))
     assert "VAAC CENTRES" in hazard
     assert "0/9 reached" in hazard
+
+
+def test_hazard_page_prints_one_honest_fallback_when_no_sigmet_cards_exist(
+    tmp_path,
+    monkeypatch,
+):
+    from app.odss import briefing as briefing_module
+
+    real_build = briefing_module.build_briefing_view
+
+    def no_sigmet_view(
+        flight, findings, warnings, timing_view=None, weather_charts=None
+    ):
+        view = real_build(
+            flight,
+            findings,
+            warnings,
+            timing_view=timing_view,
+            weather_charts=weather_charts,
+        )
+        view["hazards"]["sigmet_cards"] = []
+        return view
+
+    monkeypatch.setattr(briefing_module, "build_briefing_view", no_sigmet_view)
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "one-sigmet-fallback.pdf"
+
+    render_combined_briefing(flight, findings, [], out)
+
+    hazard = fitz.open(out)[5].get_text()
+    assert hazard.count("ENROUTE SIGMET") == 1
+    assert hazard.count(
+        "No enroute SIGMET is printed in this CFP weather package."
+    ) == 1
 
 
 def test_hazard_page_names_each_vaac_centre_and_truth_state(tmp_path):

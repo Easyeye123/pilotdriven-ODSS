@@ -127,6 +127,7 @@ MEL_CDL_GROUPS_PER_PAGE = 4
 # them gets a deterministic continuation page in the same section.
 EDTO_CARDS_PER_PAGE = 3
 EDTO_CARD_HEIGHT = 178.0
+NON_EDTO_CLASSIFICATION_CARD_HEIGHT = 78.0
 AIRPORT_OPERATIONAL_PANELS_PER_PAGE = 5
 AIRPORT_ROUTE_PROFILE_ROWS_PER_PAGE = 38
 STATION_CARD_LINE_HEIGHT = 9.5
@@ -146,7 +147,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-flow-round-v6"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-flow-round-v7"
 
 
 _FIT_FLOOR = T_MICRO
@@ -1786,17 +1787,20 @@ def draw_overview_page(
             return "--"
         clock = f"{int(minutes) // 60}:{int(minutes) % 60:02d}" if minutes is not None else "-"
         return f"{fuel_kg:,}/{clock}"
+    destination_top_up = (rows_data.get("dest_hold_top_up") or {}).get("fuel_kg") or 0
+    edto_top_up = (rows_data.get("edto_top_up") or {}).get("fuel_kg") or 0
+    top_up_row = (
+        ("DEST HOLD TOP-UP", f"{destination_top_up:,}")
+        if _edto_classification(flight).startswith("NON")
+        else ("DEST/EDTO TOP-UP", f"{destination_top_up:,} / {edto_top_up:,}")
+    )
     fuel_rows = [
         ("BURNOFF", timed("burnoff")),
         ("STAT CONT", timed("stat_cont")),
         ("ALTN", timed("altn_fuel")),
         ("ALTN HOLD", timed("altn_hold")),
         ("TAXI", f"{fuel_summary.get('taxi_fuel_kg'):,}" if fuel_summary.get("taxi_fuel_kg") else "--"),
-        (
-            "DEST/EDTO TOP-UP",
-            f"{(rows_data.get('dest_hold_top_up') or {}).get('fuel_kg') or 0:,} / "
-            f"{(rows_data.get('edto_top_up') or {}).get('fuel_kg') or 0:,}",
-        ),
+        top_up_row,
         ("FPL REQMT", timed("flt_plan_reqmt")),
         ("TANKS", f"{(rows_data.get('fuel_in_tanks') or {}).get('fuel_kg') or 0:,}/{(rows_data.get('excess_fuel') or {}).get('fuel_kg') or 0:,}"),
     ]
@@ -2929,6 +2933,7 @@ def _edto_status_cards(
     *,
     inner_width: float,
     card_height: float,
+    included_labels: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Paginate every shared EDTO row by the card's measured text height."""
     available_height = card_height - 37.0
@@ -2947,6 +2952,8 @@ def _edto_status_cards(
 
     fragments: list[tuple[str, list[str], float]] = []
     for label, value in _shared_edto_operational_rows(briefing):
+        if included_labels is not None and label.strip().upper() not in included_labels:
+            continue
         lines = _wrap(value, SANS, T_SMALL, inner_width) or [""]
         required = row_height(lines)
         if required <= available_height:
@@ -2966,6 +2973,9 @@ def _edto_status_cards(
                 selected,
                 row_height(selected),
             ))
+
+    if included_labels is not None and not fragments:
+        raise ValueError("Shared non-EDTO classification rows are empty")
 
     cards: list[dict[str, Any]] = []
     current: list[tuple[str, list[str]]] = []
@@ -4428,22 +4438,40 @@ def draw_alternates_page(
 ) -> None:
     width, height = PAGE_SIZE
     classification = _edto_classification(flight)
+    non_edto = classification.startswith("NON")
     classification_label = classification or "EDTO REVIEW"
+    section_label = (
+        "DESTINATION ALTERNATES"
+        if non_edto
+        else "EDTO / ENROUTE AIRPORTS"
+    )
     content_top = draw_page_chrome(
         canvas, flight,
         page_number=page_number, page_count=page_count,
         source_line=" | ".join(
             value
             for value in (
-                "CFP EDTO table",
-                f"{classification_label} status",
-                "selected enroute-airport source facts",
+                (
+                    "CFP alternate-planning summary"
+                    if non_edto
+                    else "CFP EDTO table"
+                ),
+                (
+                    f"{classification_label} classification"
+                    if non_edto
+                    else f"{classification_label} status"
+                ),
+                (
+                    "selected destination-alternate source facts"
+                    if non_edto
+                    else "selected enroute-airport source facts"
+                ),
                 compact_overflow_note,
             )
             if value
         ),
         section_label=(
-            "EDTO / ENROUTE AIRPORTS"
+            section_label
             + _continuation_suffix(section_page_number, section_page_count)
         ),
         section_colour=EDTO_GREEN,
@@ -4454,16 +4482,25 @@ def draw_alternates_page(
 
     full_w = width - 2 * MARGIN
     card_gap = 10.0
-    card_w = (full_w - 2 * card_gap) / EDTO_CARDS_PER_PAGE
+    cards_per_page = 1 if non_edto else EDTO_CARDS_PER_PAGE
+    card_w = (
+        full_w
+        if non_edto
+        else (full_w - 2 * card_gap) / EDTO_CARDS_PER_PAGE
+    )
     # Shared cards are already compact, source-derived publication summaries.
     # The canonical three-card row therefore keeps the measured shallow
     # geometry; higher-cardinality content continues instead of stretching
     # this primary page and shrinking the authoritative source crop.
-    card_h = EDTO_CARD_HEIGHT
+    card_h = (
+        NON_EDTO_CLASSIFICATION_CARD_HEIGHT
+        if non_edto
+        else EDTO_CARD_HEIGHT
+    )
     card_bottom = y - card_h
     page_cards = list(cards or [])
-    if len(page_cards) > EDTO_CARDS_PER_PAGE:
-        raise ValueError("EDTO page received more cards than its readable capacity")
+    if len(page_cards) > cards_per_page:
+        raise ValueError("Classification page received more cards than its readable capacity")
     accents = (EDTO_GREEN, DESTINATION, COMMS_TEAL)
     for index, card in enumerate(page_cards):
         card_x = MARGIN + index * (card_w + card_gap)
@@ -4479,9 +4516,17 @@ def draw_alternates_page(
             )
             continue
         title = (
-            "EDTO BOUNDARY / STATUS"
-            if section_page_number == 1 and index == 0
-            else "EDTO STATUS CONTINUED"
+            (
+                "CLASSIFICATION"
+                if section_page_number == 1 and index == 0
+                else "CLASSIFICATION CONTINUED"
+            )
+            if non_edto
+            else (
+                "EDTO BOUNDARY / STATUS"
+                if section_page_number == 1 and index == 0
+                else "EDTO STATUS CONTINUED"
+            )
         )
         inner = panel(
             canvas,
@@ -4505,7 +4550,7 @@ def draw_alternates_page(
             required_height = (1 if inline else 1 + len(lines)) * 9.8 + 1.2
             if row_y - required_height < iy:
                 raise ValueError(
-                    "EDTO status card exceeds readable capacity; continue its "
+                    "Classification card exceeds readable capacity; continue its "
                     "shared rows instead of drawing below the card."
                 )
             canvas.setFillColor(EDTO_GREEN if label == "CLASSIFICATION" else TEXT_MUTED)
@@ -4533,7 +4578,7 @@ def draw_alternates_page(
             card_bottom,
             full_w,
             card_h,
-            title=f"{classification_label} STATUS",
+            title=("CLASSIFICATION" if non_edto else f"{classification_label} STATUS"),
             accent=WEATHER_AMBER,
             title_colour=None,
         )
@@ -4541,48 +4586,77 @@ def draw_alternates_page(
             canvas,
             inner[0],
             inner[1] + inner[3] / 2,
-            "No parsed EDTO or selected enroute-airport facts are held - review the CFP.",
+            (
+                "No parsed classification or destination-alternate facts are held - review the CFP."
+                if non_edto
+                else "No parsed EDTO or selected enroute-airport facts are held - review the CFP."
+            ),
         )
 
-    # The boss's REV3 page puts the exact airline EDTO source beneath the
-    # three selected cards.  Continuations repeat the governed crop so no
-    # operational row is separated from its controlling source context.
+    # Put the exact airline source beneath the selected cards. Continuations
+    # repeat the governed crop so no operational row is separated from its
+    # controlling source context.
     source_top = card_bottom - 10
     source_h = source_top - 30
-    source_classification = _edto_source_classification(flight)
-    edto_source_pages = [
-        item.get("source_page")
-        for item in ((briefing.get("edto") or {}).get("assessment") or {}).get(
-            "evidence", []
+    if non_edto:
+        crop = crop_source_region(
+            source_pdf_path,
+            needle="FLT PLANNING ALTN SUMMARY",
+            end_needle="EXCESS FUEL REASON",
+            page_hint=1,
+            pad_y=8,
+            full_width=True,
+        ) or crop_source_region(
+            source_pdf_path,
+            needle="ALTN/RWY",
+            page_hint=1,
+            pad_y=14,
+            full_width=True,
         )
-        if isinstance(item, dict) and isinstance(item.get("source_page"), int)
-    ]
-    crop = crop_source_region(
-        source_pdf_path,
-        needle="EDTO INFORMATION",
-        page_hint=0,
-        source_pages=edto_source_pages,
-        pad_y=90,
-        full_width=True,
-    ) or crop_source_region(
-        source_pdf_path,
-        needle=(
-            f"SUMMARY {source_classification} CFP"
-            if source_classification
-            else "SUMMARY EDTO CFP"
-        ),
-        page_hint=0,
-        source_pages=edto_source_pages,
-        pad_y=8,
-        full_width=True,
-    )
+        source_title = "CFP ALTERNATE PLANNING - CROPPED RELEVANT SECTION"
+        missing_source = (
+            "Alternate-planning source section unavailable for cropping - "
+            "review the uploaded CFP."
+        )
+    else:
+        source_classification = _edto_source_classification(flight)
+        edto_source_pages = [
+            item.get("source_page")
+            for item in ((briefing.get("edto") or {}).get("assessment") or {}).get(
+                "evidence", []
+            )
+            if isinstance(item, dict) and isinstance(item.get("source_page"), int)
+        ]
+        crop = crop_source_region(
+            source_pdf_path,
+            needle="EDTO INFORMATION",
+            page_hint=0,
+            source_pages=edto_source_pages,
+            pad_y=90,
+            full_width=True,
+        ) or crop_source_region(
+            source_pdf_path,
+            needle=(
+                f"SUMMARY {source_classification} CFP"
+                if source_classification
+                else "SUMMARY EDTO CFP"
+            ),
+            page_hint=0,
+            source_pages=edto_source_pages,
+            pad_y=8,
+            full_width=True,
+        )
+        source_title = "CFP EDTO TABLE - CROPPED RELEVANT SECTION"
+        missing_source = (
+            "EDTO source section unavailable for cropping - review the uploaded CFP."
+        )
     inner = panel(
         canvas,
         MARGIN,
         30,
         full_w,
         source_h,
-        title="CFP EDTO TABLE - CROPPED RELEVANT SECTION",
+        title=source_title,
         accent=EDTO_GREEN,
         title_colour=None,
     )
@@ -4594,7 +4668,7 @@ def draw_alternates_page(
         iy + 4,
         iw,
         ih - 8,
-        missing_text="EDTO source section unavailable for cropping - review the uploaded CFP.",
+        missing_text=missing_source,
         fill_sheet=True,
         fit_to_panel=True,
     )
@@ -6159,10 +6233,16 @@ def draw_operational_hazard_page(
     card_gap = 10.0
     sigmet_h = 92.0
     wafc_h = 78.0
-    coverage_h = available_h - 2 * sigmet_h - wafc_h - 3 * card_gap
-    card_y = top - sigmet_h
     cards = list(sigmet_cards or [])[:2]
-    for index in range(2):
+    sigmet_slot_count = max(1, len(cards))
+    coverage_h = (
+        available_h
+        - sigmet_slot_count * sigmet_h
+        - wafc_h
+        - (sigmet_slot_count + 1) * card_gap
+    )
+    card_y = top - sigmet_h
+    for index in range(sigmet_slot_count):
         if index < len(cards):
             card = cards[index]
             title = str(card.get("name") or "SIGMET")
@@ -6548,15 +6628,30 @@ def render_combined_briefing(
     deferred_detail_pages = _deferred_detail_pages(flight)
     mel_page_count = len(deferred_pages) + len(deferred_detail_pages)
     full_w = PAGE_SIZE[0] - 2 * MARGIN
-    edto_card_w = (full_w - 2 * 10.0) / EDTO_CARDS_PER_PAGE
-    edto_card_h = EDTO_CARD_HEIGHT
+    non_edto = _edto_classification(flight).startswith("NON")
+    edto_cards_per_page = 1 if non_edto else EDTO_CARDS_PER_PAGE
+    edto_card_w = (
+        full_w
+        if non_edto
+        else (full_w - 2 * 10.0) / EDTO_CARDS_PER_PAGE
+    )
+    edto_card_h = (
+        NON_EDTO_CLASSIFICATION_CARD_HEIGHT
+        if non_edto
+        else EDTO_CARD_HEIGHT
+    )
     edto_cards = [
         *_edto_status_cards(
             briefing,
             inner_width=edto_card_w - 20,
             card_height=edto_card_h,
+            included_labels=(
+                {"CLASSIFICATION", "GATE"}
+                if non_edto
+                else None
+            ),
         ),
-        *(
+        *([] if non_edto else (
             fragment
             for panel_data in _edto_and_fuel_panels(briefing)
             for fragment in _station_card_fragments(
@@ -6564,9 +6659,9 @@ def render_combined_briefing(
                 card_width=edto_card_w,
                 card_height=edto_card_h,
             )
-        ),
+        )),
     ]
-    edto_pages = _chunked(edto_cards, EDTO_CARDS_PER_PAGE)
+    edto_pages = _chunked(edto_cards, edto_cards_per_page)
     airport_pages = _airport_operational_pages(briefing)
     airport_pages.extend(
         {"panels": [], "route_profile_rows": rows}
@@ -6735,7 +6830,7 @@ def render_combined_briefing(
                 "communication row",
             ),
         )
-        canvas.addOutlineEntry("Critical Analysis", "sec_analysis", level=0)
+        canvas.addOutlineEntry("Decision Analysis", "sec_analysis", level=0)
         canvas.showPage()
         draw_operational_mel_cdl_page(
             canvas,
@@ -6763,7 +6858,15 @@ def render_combined_briefing(
                 "EDTO/enroute card",
             ),
         )
-        canvas.addOutlineEntry("EDTO / Enroute Airports", "sec_alternates", level=0)
+        canvas.addOutlineEntry(
+            (
+                "Destination Alternates"
+                if _edto_classification(flight).startswith("NON")
+                else "EDTO / Enroute Airports"
+            ),
+            "sec_alternates",
+            level=0,
+        )
         canvas.showPage()
         draw_operational_airports_page(
             canvas,

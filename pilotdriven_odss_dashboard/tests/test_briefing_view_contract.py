@@ -996,7 +996,7 @@ def test_edto_operational_rows_are_part_of_the_view() -> None:
     rows = view["edto"]["operational_rows"]
     assert rows and rows[0]["label"] == "CLASSIFICATION"
     labels = [row["label"] for row in rows]
-    assert "GATE" in labels and "FUEL" in labels
+    assert labels == ["CLASSIFICATION", "GATE"]
     assert all(isinstance(row["value"], str) and row["value"] for row in rows)
 
 
