@@ -320,6 +320,265 @@ def test_compact_pdf_marks_high_cardinality_content_that_remains_in_dashboard(tm
     assert "additional airport/NOTAM records remain in dashboard" in document[4].get_text()
 
 
+def test_compact_airport_lower_cards_keep_every_selected_source_fact(
+    tmp_path,
+    monkeypatch,
+):
+    from copy import deepcopy
+
+    from app.odss import briefing as briefing_module
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    real_build = briefing_module.build_briefing_view
+
+    def lower_card_view(
+        flight, findings, warnings, timing_view=None, weather_charts=None
+    ):
+        view = real_build(
+            flight,
+            findings,
+            warnings,
+            timing_view=timing_view,
+            weather_charts=weather_charts,
+        )
+        panels = list(view["airport_operational_panels"])
+        edto_panel = next(
+            panel
+            for panel in panels
+            if "edto" in set(panel.get("role_keys") or [])
+        )
+        edto_panel["card_summary_lines"] = [
+            {
+                "kind": "metar",
+                "label": "METAR",
+                "text": (
+                    "SA 201900 10005KT 060V130 9999 -RA FEW010 BKN018 "
+                    "BKN025 26/25 Q1005 NOSIG RMK A2968="
+                ),
+            },
+            {
+                "kind": "taf",
+                "label": "TAF",
+                "text": (
+                    "FT 201700 2018/2124 06005KT 7000 FEW010 BKN032 BKN060 "
+                    "TEMPO 2018/2024 11007KT 4000 SHRA FEW008 FEW012CB "
+                    "BKN017 BKN040 TEMPO 2100/2104 2000 +TSRA"
+                ),
+            },
+            {
+                "kind": "notam",
+                "text": "Runway restriction applies during the selected window.",
+            },
+            {
+                "kind": "notam",
+                "text": "LOWER-FOUR-FINAL selected source fact remains complete.",
+            },
+        ]
+
+        alternate = deepcopy(
+            next(
+                panel
+                for panel in panels
+                if "alternate" in set(panel.get("role_keys") or [])
+            )
+        )
+        alternate.update({
+            "icao": "VHHH",
+            "role_key": "alternate",
+            "role_keys": ["alternate"],
+            "role": "preferred alternate",
+            "roles": ["preferred alternate"],
+            "operational_rows": [{
+                "runway": "07R",
+                "approach": "CAT1DME",
+                "minima": "588FT/2000M",
+                "distance_nm": 657,
+                "time_minutes": 104,
+                "fuel_kg": 9059,
+            }],
+            "card_summary_lines": [
+                {
+                    "kind": "metar",
+                    "label": "METAR",
+                    "text": (
+                        "SA 201900 12008KT 9999 FEW020 SCT040 29/25 Q1007 "
+                        "NOSIG RMK A2974="
+                    ),
+                },
+                {
+                    "kind": "taf",
+                    "label": "TAF",
+                    "text": (
+                        "FT 201700 2018/2124 12010KT 9999 FEW020 SCT040 "
+                        "TEMPO 2018/2024 5000 SHRA FEW012CB BKN020 "
+                        "TEMPO 2100/2104 2500 +TSRA SCT008CB BKN015"
+                    ),
+                },
+                {
+                    "kind": "notam",
+                    "text": "Approach restriction applies during the selected window.",
+                },
+                {
+                    "kind": "notam",
+                    "text": "LOWER-FIVE-FINAL selected source fact remains complete.",
+                },
+            ],
+        })
+        panels.append(alternate)
+        view["airport_operational_panels"] = panels
+        return view
+
+    monkeypatch.setattr(
+        briefing_module,
+        "build_briefing_view",
+        lower_card_view,
+    )
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    output = tmp_path / "compact-lower-airport-cards.pdf"
+
+    render_combined_briefing(flight, findings, [], output)
+
+    document = fitz.open(output)
+    airport_text = " ".join(document[4].get_text().split())
+    assert len(document) == 7
+    assert "LOWER-FOUR-FINAL selected source fact remains complete." in airport_text
+    assert "LOWER-FIVE-FINAL selected source fact remains complete." in airport_text
+    physical = scan_physical_pdf(output)
+    assert physical["valid"], physical["violations"]
+
+
+def test_compact_airport_single_row_keeps_measured_source_facts(
+    tmp_path,
+    monkeypatch,
+):
+    from app.odss import briefing as briefing_module
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    real_build = briefing_module.build_briefing_view
+
+    def single_row_view(
+        flight, findings, warnings, timing_view=None, weather_charts=None
+    ):
+        view = real_build(
+            flight,
+            findings,
+            warnings,
+            timing_view=timing_view,
+            weather_charts=weather_charts,
+        )
+        panels = [
+            panel
+            for panel in view["airport_operational_panels"]
+            if not set(panel.get("role_keys") or [])
+            & {"edto", "fuel_enroute_airport"}
+        ]
+        alternate = next(
+            panel
+            for panel in panels
+            if "alternate" in set(panel.get("role_keys") or [])
+        )
+        alternate["card_summary_lines"] = [
+            {
+                "kind": "notam",
+                "text": (
+                    "SINGLE-ROW-FINAL selected source fact remains complete "
+                    "after measured card placement."
+                ),
+            },
+        ]
+        view["airport_operational_panels"] = panels
+        return view
+
+    monkeypatch.setattr(
+        briefing_module,
+        "build_briefing_view",
+        single_row_view,
+    )
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    output = tmp_path / "compact-single-row-airport-cards.pdf"
+
+    render_combined_briefing(flight, findings, [], output)
+
+    document = fitz.open(output)
+    airport_text = " ".join(document[4].get_text().split())
+    assert len(document) == 7
+    assert (
+        "SINGLE-ROW-FINAL selected source fact remains complete after "
+        "measured card placement."
+    ) in airport_text
+    physical = scan_physical_pdf(output)
+    assert physical["valid"], physical["violations"]
+
+
+def test_compact_airport_card_fails_closed_before_truncating_source_facts(
+    tmp_path,
+    monkeypatch,
+):
+    from app.odss import briefing as briefing_module
+
+    real_build = briefing_module.build_briefing_view
+
+    def over_capacity_view(
+        flight, findings, warnings, timing_view=None, weather_charts=None
+    ):
+        view = real_build(
+            flight,
+            findings,
+            warnings,
+            timing_view=timing_view,
+            weather_charts=weather_charts,
+        )
+        lower_panel = next(
+            panel
+            for panel in view["airport_operational_panels"]
+            if "edto" in set(panel.get("role_keys") or [])
+        )
+        lower_panel["card_summary_lines"] = [
+            {
+                "kind": "notam",
+                "text": (
+                    f"OVER-CAPACITY-{index:02d} "
+                    + "complete selected source wording " * 12
+                ),
+            }
+            for index in range(1, 13)
+        ]
+        return view
+
+    monkeypatch.setattr(
+        briefing_module,
+        "build_briefing_view",
+        over_capacity_view,
+    )
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+
+    with pytest.raises(ValueError, match="selected source facts must not be truncated"):
+        render_combined_briefing(
+            flight,
+            findings,
+            [],
+            tmp_path / "over-capacity-compact-airport-card.pdf",
+        )
+
+
 def test_the_naming_rule_holds_everywhere(rendered):
     # Boss instruction 2: no Level 1, Level 2, Pertinent brief or Evidence
     # level anywhere in the pilot-facing document.

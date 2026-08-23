@@ -54,15 +54,16 @@ def test_odss_runtime_image_is_reachable_only_through_the_full_pytest_stage():
     assert "COPY --from=test /tmp/odss-tests-passed" in dockerfile
 
 
-def test_private_corpus_explicitly_requests_the_lossless_audit_publication():
-    """The pilot download defaults to seven pages; only the completeness
-    corpus opts into every measured continuation page."""
+def test_private_corpus_checks_lossless_and_operational_publications():
+    """The corpus proves both complete facts and the seven-page download."""
     runner = (ROOT / "scripts" / "run_private_cfp_corpus.py").read_text(
         encoding="utf-8"
     )
     production = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
     assert "include_audit_appendix=True" in runner
+    assert "include_audit_appendix=False" in runner
+    assert "_Operational_7_Page.pdf" in runner
     assert "include_audit_appendix=True" not in production
 
 

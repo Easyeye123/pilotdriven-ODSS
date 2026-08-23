@@ -136,6 +136,8 @@ NON_EDTO_CLASSIFICATION_CARD_HEIGHT = 78.0
 AIRPORT_OPERATIONAL_PANELS_PER_PAGE = 5
 AIRPORT_ROUTE_PROFILE_ROWS_PER_PAGE = 38
 STATION_CARD_LINE_HEIGHT = 9.5
+OPERATIONAL_AIRPORT_CARD_CHROME_HEIGHT = 51.0
+OPERATIONAL_AIRPORT_ROW_GAP = 3.0
 ANALYSIS_COMMUNICATION_LINE_HEIGHT = 10.5
 ANALYSIS_COMMUNICATION_ROW_GAP = 8.0
 # Conservative usable height inside a DECISION ANALYSIS continuation panel.
@@ -152,7 +154,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-atot-parity-v9"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-airport-card-v10"
 
 
 _FIT_FLOOR = T_MICRO
@@ -6073,6 +6075,72 @@ def _operational_airport_role(panel_data: dict[str, Any]) -> str:
     return str(panel_data.get("role") or "AIRPORT").upper()
 
 
+def _operational_airport_card_segments(
+    panel_data: dict[str, Any],
+    *,
+    width: float,
+    filled_title: bool,
+) -> list[tuple[str, float, float, Any, list[str]]]:
+    """Measure the exact wrapped baselines used by a compact airport card."""
+    rows = _station_card_lines(panel_data)
+    inner_w = width - 24.0
+    plan_row = rows[0] if rows and rows[0][0] == "PLAN" else None
+    remaining = rows[1:] if plan_row else rows
+    segments: list[tuple[str, float, float, Any, list[str]]] = []
+    if plan_row:
+        headline_size = 12.0 if filled_title else 9.4
+        segments.append((
+            SANS,
+            headline_size,
+            12.0 if filled_title else 10.5,
+            TEXT,
+            _wrap(
+                str(plan_row[1]).replace(" | ", " / "),
+                SANS,
+                headline_size,
+                inner_w,
+            ) or [""],
+        ))
+    for label, value in remaining:
+        label_text = f"{label}: " if label else ""
+        segments.append((
+            SANS,
+            T_SMALL,
+            9.5,
+            TEXT_SECONDARY,
+            _wrap(
+                label_text + str(value),
+                SANS,
+                T_SMALL,
+                inner_w,
+            ) or [""],
+        ))
+    return segments
+
+
+def _operational_airport_card_source_height(
+    panel_data: dict[str, Any],
+    *,
+    width: float,
+    filled_title: bool,
+) -> float:
+    segments = _operational_airport_card_segments(
+        panel_data,
+        width=width,
+        filled_title=filled_title,
+    )
+    return _operational_airport_segments_height(segments)
+
+
+def _operational_airport_segments_height(
+    segments: list[tuple[str, float, float, Any, list[str]]],
+) -> float:
+    return sum(
+        line_height * len(lines)
+        for _, _, line_height, _, lines in segments
+    ) + OPERATIONAL_AIRPORT_ROW_GAP * max(0, len(segments) - 1)
+
+
 def _draw_operational_airport_card(
     canvas,
     panel_data: dict[str, Any],
@@ -6113,41 +6181,41 @@ def _draw_operational_airport_card(
         width - 22,
         title_colour,
     )
-    rows = _station_card_lines(panel_data)
     row_y = y + height - title_h - 18.0
-    inner_w = width - 24.0
-    plan_row = rows[0] if rows and rows[0][0] == "PLAN" else None
-    remaining = rows[1:] if plan_row else rows
-    if plan_row:
-        headline = str(plan_row[1]).replace(" | ", " / ")
-        canvas.setFillColor(TEXT)
-        canvas.setFont(SANS, 12.0 if filled_title else 9.4)
-        for line in _wrap(
-            headline,
-            SANS,
-            12.0 if filled_title else 9.4,
-            inner_w,
-        )[:2]:
-            canvas.drawString(x + 12, row_y, line)
-            row_y -= 14.0 if filled_title else 11.5
-        row_y -= 4.0
+    # Plan every wrapped baseline before drawing.  The former compact-card
+    # loop returned as soon as it reached the floor, which could leave a
+    # NOTAM sentence visibly cut in half while still producing a valid PDF.
+    # A selected source fact must either fit in full or fail publication.
+    segments = _operational_airport_card_segments(
+        panel_data,
+        width=width,
+        filled_title=filled_title,
+    )
+    required_height = _operational_airport_segments_height(segments)
     floor_y = y + 12.0
-    for label, value in remaining:
-        label_text = f"{label}: " if label else ""
-        lines = _wrap(
-            label_text + str(value),
-            SANS,
-            T_SMALL,
-            inner_w,
+    available_height = row_y - floor_y
+    if required_height > available_height + 0.01:
+        raise ValueError(
+            f"Compact airport-role card {icao}/{_operational_airport_role(panel_data)} "
+            f"requires {required_height:.1f} pt but only "
+            f"{available_height:.1f} pt is available; selected source facts "
+            "must not be truncated."
         )
+
+    for segment_index, (
+        font_name,
+        font_size,
+        line_height,
+        colour,
+        lines,
+    ) in enumerate(segments):
+        canvas.setFillColor(colour)
+        canvas.setFont(font_name, font_size)
         for line in lines:
-            if row_y < floor_y:
-                return
-            canvas.setFillColor(TEXT_SECONDARY)
-            canvas.setFont(SANS, T_SMALL)
             canvas.drawString(x + 12, row_y, line)
-            row_y -= 11.0
-        row_y -= 5.0
+            row_y -= line_height
+        if segment_index < len(segments) - 1:
+            row_y -= OPERATIONAL_AIRPORT_ROW_GAP
 
 
 def draw_operational_airports_page(
@@ -6191,13 +6259,57 @@ def draw_operational_airports_page(
         )
         return
     full_w = width - 2 * MARGIN
-    gap = 26.0
-    top_h = 260.0
-    lower_h = 116.0
-    top_y = content_top - top_h - 5.0
-    lower_y = top_y - gap - lower_h
+    # Measure both rows from their exact wrapped facts, then share any spare
+    # space.  The old fixed 260/116 split left unused room above while
+    # silently starving the lower cards; one equal fixed height in turn could
+    # starve a dense destination card on a different CFP.
+    gap = 16.0
     top_w = (full_w - 2 * gap) / 3.0
     lower_w = (full_w - gap) / 2.0
+    top_panels = page_panels[:3]
+    lower_panels = page_panels[3:]
+    top_required_h = max(
+        _operational_airport_card_source_height(
+            panel_data,
+            width=top_w,
+            filled_title=True,
+        ) + OPERATIONAL_AIRPORT_CARD_CHROME_HEIGHT
+        for panel_data in top_panels
+    )
+    content_bottom = 48.0
+    content_edge = content_top - 5.0
+    if lower_panels:
+        lower_required_h = max(
+            _operational_airport_card_source_height(
+                panel_data,
+                width=lower_w,
+                filled_title=False,
+            ) + OPERATIONAL_AIRPORT_CARD_CHROME_HEIGHT
+            for panel_data in lower_panels
+        )
+        available_cards_h = content_edge - content_bottom - gap
+        required_cards_h = top_required_h + lower_required_h
+        if required_cards_h > available_cards_h + 0.01:
+            raise ValueError(
+                "Compact airport page cannot fit every selected source fact; "
+                "selected source facts must not be truncated."
+            )
+        spare_h = available_cards_h - required_cards_h
+        top_h = top_required_h + spare_h / 2.0
+        lower_h = lower_required_h + spare_h / 2.0
+        lower_y = content_bottom
+        top_y = lower_y + lower_h + gap
+    else:
+        available_top_h = content_edge - content_bottom
+        if top_required_h > available_top_h + 0.01:
+            raise ValueError(
+                "Compact airport page cannot fit every selected source fact; "
+                "selected source facts must not be truncated."
+            )
+        top_h = max(200.0, top_required_h)
+        lower_h = 0.0
+        top_y = content_edge - top_h
+        lower_y = content_bottom
     accents = (DEPARTURE, DESTINATION, WEATHER_AMBER, EDTO_GREEN, SECTION_BLUE)
     for index, panel_data in enumerate(page_panels):
         if index < 3:

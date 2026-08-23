@@ -774,6 +774,44 @@ def run_case(
         raise AssertionError(
             f"{case['case_id']} physical PDF failed: {physical['violations'][:3]}."
         )
+
+    # The lossless appendix above proves parsed-fact coverage, while pilots
+    # download the compact seven-page document.  Render and scan that exact
+    # production shape too: appendix-only QA cannot detect a compact-card
+    # layout that drops or cuts a selected source sentence.
+    # Keep this name distinct from the lossless ``*_Flight_Briefing.pdf``
+    # suffix consumed by the dashboard/PDF fact-parity harness below.
+    operational = case_root / f"{case['case_id']}_Operational_7_Page.pdf"
+    render_combined_briefing(
+        flight,
+        payload["findings"],
+        payload.get("view", {}).get("warnings") or [],
+        operational,
+        source_pdf_path=str(preflight["source"]),
+        weather_charts=payload.get("weather_charts") or {},
+        include_audit_appendix=False,
+    )
+    operational_quality = validate_combined_briefing_pdf(operational)
+    if not operational_quality["valid"] or operational_quality["page_count"] != 7:
+        messages = [
+            item.message
+            for item in operational_quality["violations"]
+        ]
+        if operational_quality["page_count"] != 7:
+            messages.append(
+                "Production Flight Briefing must contain exactly 7 pages; "
+                f"generated {operational_quality['page_count']}."
+            )
+        raise AssertionError(
+            f"{case['case_id']} operational report quality failed: "
+            + "; ".join(messages)
+        )
+    operational_physical = scan_physical_pdf(operational)
+    if not operational_physical["valid"]:
+        raise AssertionError(
+            f"{case['case_id']} operational physical PDF failed: "
+            f"{operational_physical['violations'][:3]}."
+        )
     with fitz.open(combined) as document:
         output_text = "\n".join(page.get_text() for page in document).upper()
     required_text = (
@@ -823,6 +861,9 @@ def run_case(
         "combined_pdf": str(combined.relative_to(output_root)),
         "combined_sha256": sha256_file(combined),
         "combined_page_count": quality["page_count"],
+        "operational_pdf": str(operational.relative_to(output_root)),
+        "operational_sha256": sha256_file(operational),
+        "operational_page_count": operational_quality["page_count"],
         "physical_pdf": {
             "page_count": physical["page_count"],
             "outside_text_box_count": sum(
@@ -834,6 +875,22 @@ def run_case(
             "blank_or_flat_page_count": sum(
                 not page["raster_has_contrast"] or page["text_characters"] < 50
                 for page in physical["pages"]
+            ),
+        },
+        "operational_physical_pdf": {
+            "page_count": operational_physical["page_count"],
+            "outside_text_box_count": sum(
+                page["outside_text_box_count"]
+                for page in operational_physical["pages"]
+            ),
+            "visible_overlap_count": sum(
+                page["visible_overlap_count"]
+                for page in operational_physical["pages"]
+            ),
+            "blank_or_flat_page_count": sum(
+                not page["raster_has_contrast"]
+                or page["text_characters"] < 50
+                for page in operational_physical["pages"]
             ),
         },
         "deferred_contract": deferred,
