@@ -251,6 +251,39 @@ def check_boss_flow_source_expectations(
     return failures
 
 
+def check_required_publication_markers(
+    case: dict[str, Any],
+    audit_text: str,
+    operational_text: str,
+) -> list[str]:
+    """Check markers on the publication surface that owns each contract.
+
+    The lossless audit publication intentionally preserves the frozen REV3-v8
+    page-one layout, while the pilot download owns the current seven-page
+    boss flow and its PHASE ACTION strip.  Requiring an operational-only label
+    from the audit PDF makes a valid pair fail after both files render cleanly.
+    """
+    common = (
+        "FLIGHT BRIEFING",
+        f"{case['departure_iata']} / {case['departure']}",
+        f"{case['destination_iata']} / {case['destination']}",
+    )
+    required_by_surface = {
+        "audit": common,
+        "operational": (*common, "PHASE ACTION"),
+    }
+    text_by_surface = {
+        "audit": audit_text.upper(),
+        "operational": operational_text.upper(),
+    }
+    return [
+        f"{surface}: {marker}"
+        for surface, markers in required_by_surface.items()
+        for marker in markers
+        if marker.upper() not in text_by_surface[surface]
+    ]
+
+
 def load_manifest(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     cases = payload.get("cases")
@@ -951,13 +984,11 @@ def run_case(
         output_text = "\n".join(page.get_text() for page in document).upper()
     with fitz.open(operational) as document:
         operational_text = "\n".join(page.get_text() for page in document).upper()
-    required_text = (
-        "FLIGHT BRIEFING",
-        "PHASE ACTION",
-        f"{case['departure_iata']} / {case['departure']}",
-        f"{case['destination_iata']} / {case['destination']}",
+    missing_text = check_required_publication_markers(
+        case,
+        output_text,
+        operational_text,
     )
-    missing_text = [marker for marker in required_text if marker.upper() not in output_text]
     if missing_text:
         raise AssertionError(
             f"{case['case_id']} output is missing required text: {missing_text}."

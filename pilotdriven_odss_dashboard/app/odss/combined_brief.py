@@ -4300,6 +4300,160 @@ def _operational_fir_boundary_summary(
     raise ValueError("FIR boundary held receipt exceeds readable capacity.")
 
 
+def _operational_route_fir_card_summary(
+    route_airspace: dict[str, Any],
+    fir_boundary_summary: str,
+    *,
+    text_width: float,
+    max_lines: int,
+) -> str:
+    """Fit the two independently lossless route receipts into one card.
+
+    The shared route-airspace summary and FIR summary can each fit on their
+    own while overflowing when concatenated.  Preserve the normal projection
+    whenever it fits.  On dense routes, keep the held count/pages, the first
+    source-held military identifier, and every non-inference guard, then give
+    the remaining lines to the largest whole FIR prefix plus its explicit
+    dashboard/audit receipt.
+    """
+    route_summary = str(route_airspace.get("card_summary") or "").strip()
+    missing_fir_summary = (
+        "No early-contact row is held in the briefing view; current governed "
+        "procedures remain required."
+    )
+    fir_summary = str(fir_boundary_summary or "").strip()
+    fir_body = (
+        _operational_fir_boundary_summary(
+            fir_summary,
+            text_width=text_width,
+            max_lines=max_lines,
+        )
+        if fir_summary
+        else missing_fir_summary
+    )
+    normal = " ".join(
+        value for value in (route_summary, fir_body) if value
+    )
+    if len(_wrap(normal, SANS, T_SMALL, text_width)) <= max_lines:
+        return normal
+
+    record_count = int(route_airspace.get("record_count") or 0)
+    source_page_text = str(
+        route_airspace.get("source_page_text") or "CFP pages unavailable"
+    ).strip()
+    military_record = route_airspace.get("military_source_record") or {}
+    military_id = (
+        str(military_record.get("notam_id") or "").strip()
+        if isinstance(military_record, dict)
+        else ""
+    )
+    compact_route_parts = [
+        f"{record_count} route-airspace notice(s) held - {source_page_text}."
+    ]
+    if military_id:
+        compact_route_parts.append(f"Military-training {military_id} held.")
+    compact_route_parts.append(
+        "Route/level applicability, intersection or ATC-clearance effect not "
+        "inferred. Full held records: dashboard."
+    )
+    compact_route = " ".join(compact_route_parts)
+
+    if not fir_summary:
+        compact = f"{compact_route} {missing_fir_summary}"
+        if len(_wrap(compact, SANS, T_SMALL, text_width)) <= max_lines:
+            return compact
+        raise ValueError("Route-airspace/FIR held receipt exceeds readable capacity.")
+
+    for fir_line_budget in range(max_lines - 1, 0, -1):
+        try:
+            compact_fir = _operational_fir_boundary_summary(
+                fir_summary,
+                text_width=text_width,
+                max_lines=fir_line_budget,
+            )
+        except ValueError:
+            continue
+        compact = f"{compact_route} {compact_fir}"
+        if len(_wrap(compact, SANS, T_SMALL, text_width)) <= max_lines:
+            return compact
+    raise ValueError("Route-airspace/FIR held receipt exceeds readable capacity.")
+
+
+def _operational_intam_card_summary(
+    intam: dict[str, Any],
+    *,
+    text_width: float,
+    max_lines: int,
+) -> str:
+    """Keep whole source-order INTAM examples inside the operational card."""
+    record_count = int(intam.get("record_count") or 0)
+    source_pages = [
+        int(page)
+        for page in intam.get("source_pages") or []
+        if isinstance(page, int)
+    ]
+    base = (
+        f"HELD - {record_count} records - {_cfp_page_reference(source_pages)}. "
+        "Structured headers, headlines and source pages are available; "
+        "applicability/relevance is not inferred."
+        if record_count
+        else (
+            "No structured company bulletin/INTAM record is held in the parsed "
+            "briefing view. Review governed company channels; unavailable is not NIL."
+        )
+    )
+    queue = [
+        record
+        for record in intam.get("review_queue") or []
+        if isinstance(record, dict)
+    ]
+
+    def queue_item(record: dict[str, Any]) -> str:
+        return " ".join(
+            part
+            for part in (
+                f"p{record.get('source_page')}"
+                if isinstance(record.get("source_page"), int)
+                else None,
+                str(record.get("category") or "").strip() or None,
+                str(record.get("identity") or "").strip() or None,
+                "-",
+                str(record.get("headline") or "").strip() or None,
+            )
+            if part
+        )
+
+    queue_items = [queue_item(record) for record in queue]
+    normal = base
+    if queue_items:
+        normal += " REVIEW QUEUE - NOT RELEVANCE-SELECTED: " + " | ".join(
+            queue_items
+        )
+    if len(_wrap(normal, SANS, T_SMALL, text_width)) <= max_lines:
+        return normal
+    if not record_count or not queue_items:
+        raise ValueError("Company bulletin/INTAM receipt exceeds readable capacity.")
+
+    compact_base = (
+        f"HELD - {record_count} records - {_cfp_page_reference(source_pages)}. "
+        "Applicability/relevance is not inferred. REVIEW QUEUE - NOT "
+        "RELEVANCE-SELECTED:"
+    )
+    for visible_count in range(len(queue_items), -1, -1):
+        visible = " | ".join(queue_items[:visible_count])
+        receipt = (
+            f"Showing {visible_count} of {len(queue_items)} held review-queue "
+            f"examples from {record_count} source records; full held records remain "
+            "in dashboard and lossless audit briefing."
+        )
+        compact = " ".join(
+            value for value in (compact_base, visible, receipt) if value
+        )
+        if len(_wrap(compact, SANS, T_SMALL, text_width)) <= max_lines:
+            return compact
+    raise ValueError("Company bulletin/INTAM receipt exceeds readable capacity.")
+
+
 def _operational_terrain_summary(
     terrain: dict[str, Any],
     *,
@@ -8281,61 +8435,19 @@ def draw_operational_enroute_assurance_page(
         briefing.get("fir_boundary_summary") or ""
     ).strip()
     terrain = briefing.get("terrain") or {}
-    fir_body = (
-        _operational_fir_boundary_summary(
-            fir_boundary_summary,
-            text_width=card_widths[0] - 20.0,
-            max_lines=available_lines,
-        )
-        if fir_boundary_summary
-        else "No early-contact row is held in the briefing view; current governed procedures remain required."
-    )
     route_airspace = briefing.get("route_airspace") or {}
-    route_airspace_summary = str(
-        route_airspace.get("card_summary") or ""
-    ).strip()
-    communication_body = " ".join(
-        value for value in (route_airspace_summary, fir_body) if value
+    communication_body = _operational_route_fir_card_summary(
+        route_airspace,
+        fir_boundary_summary,
+        text_width=card_widths[0] - 20.0,
+        max_lines=available_lines,
     )
     intam = briefing.get("intam") or {}
-    intam_count = int(intam.get("record_count") or 0)
-    intam_pages = [
-        int(page)
-        for page in intam.get("source_pages") or []
-        if isinstance(page, int)
-    ]
-    intam_body = (
-        f"HELD - {intam_count} records - {_cfp_page_reference(intam_pages)}. "
-        "Structured headers, headlines and source pages are available; "
-        "applicability/relevance is not inferred."
-        if intam_count
-        else (
-            "No structured company bulletin/INTAM record is held in the parsed "
-            "briefing view. Review governed company channels; unavailable is not NIL."
-        )
+    intam_body = _operational_intam_card_summary(
+        intam,
+        text_width=card_widths[1] - 20.0,
+        max_lines=available_lines,
     )
-    intam_queue = [
-        record
-        for record in intam.get("review_queue") or []
-        if isinstance(record, dict)
-    ]
-    if intam_queue:
-        intam_body += " REVIEW QUEUE - NOT RELEVANCE-SELECTED: " + " | ".join(
-            " ".join(
-                part
-                for part in (
-                    f"p{record.get('source_page')}"
-                    if isinstance(record.get("source_page"), int)
-                    else None,
-                    str(record.get("category") or "").strip() or None,
-                    str(record.get("identity") or "").strip() or None,
-                    "-",
-                    str(record.get("headline") or "").strip() or None,
-                )
-                if part
-            )
-            for record in intam_queue
-        )
     terrain_body = _operational_terrain_summary(
         terrain,
         has_terrain_annex=has_terrain_annex,
@@ -8462,6 +8574,21 @@ def draw_operational_enroute_assurance_page(
     source_row_leading = 14.0
     if assurance:
         available_row_span = row_y - (assurance_bottom + 10.0)
+        maximum_row_count = int(available_row_span // 10.2)
+        if maximum_row_count < 1:
+            raise ValueError("Source assurance exceeds readable capacity.")
+        if len(assurance) > maximum_row_count:
+            total_row_count = len(assurance)
+            visible_row_count = max(0, maximum_row_count - 1)
+            assurance = assurance[:visible_row_count] + [{
+                "source": "SOURCE LEDGER",
+                "status": "BOUNDED",
+                "detail": (
+                    f"Showing {visible_row_count} of {total_row_count} "
+                    "source-assurance rows; full rows remain in dashboard and "
+                    "lossless audit briefing."
+                ),
+            }]
         source_row_leading = min(
             source_row_leading,
             available_row_span / len(assurance),

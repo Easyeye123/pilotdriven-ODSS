@@ -36,6 +36,7 @@ from app.odss.combined_brief import (
     combined_briefing_cache_token,
     crop_source_region,
     draw_analysis_page,
+    draw_operational_enroute_assurance_page,
     governed_deferred_source_target,
     render_combined_briefing,
 )
@@ -1522,6 +1523,126 @@ def test_compact_fir_and_terrain_receipts_are_whole_and_explicit():
     assert "manual review required for 4 unmatched terrain windows" in compact_terrain
     assert "Full governed terrain/profile evidence follows this page" in compact_terrain
     assert terrain["summary"] == terrain_summary
+
+
+def test_enroute_card_compacts_route_and_long_fir_receipts_without_hiding_sources(
+    tmp_path,
+):
+    from reportlab.pdfgen import canvas as reportlab_canvas
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    fir_suffix = (
+        ". Contact procedure/frequency unavailable; no lead or frequency "
+        "is inferred."
+    )
+    fir_summary = " | ".join(
+        f"F{index:03d} +{index:02d}:00 (CFP p{7 + index // 4})"
+        for index in range(1, 32)
+    ) + fir_suffix
+    route_airspace = {
+        "record_count": 16,
+        "source_page_text": "CFP pp75-98",
+        "military_source_record": {"notam_id": "1A2118/26"},
+        "card_summary": (
+            "ROUTE AIRSPACE · REVIEW · 16 source notice(s) · CFP pp75-98. "
+            "Military-training record 1A2118/26 is source-held. Route/level "
+            "applicability and any ATC-clearance effect are not inferred; full "
+            "held records remain in the dashboard."
+        ),
+    }
+    briefing = {
+        "communications": [],
+        "fir_boundary_summary": fir_summary,
+        "route_airspace": route_airspace,
+        "intam": {
+            "record_count": 21,
+            "source_pages": list(range(39, 46)),
+            "review_queue": [
+                {
+                    "source_page": 39 + index,
+                    "category": f"CATEGORY-{index}",
+                    "identity": f"HELD-{index}",
+                    "headline": (
+                        "Source-held bulletin headline requiring governed review "
+                        f"number {index}"
+                    ),
+                }
+                for index in range(1, 9)
+            ],
+        },
+        "terrain": {
+            "summary": (
+                "No MSA >100* event is present in the shared route/profile "
+                "analysis; this is not a terrain-clearance finding."
+            ),
+            "events": [],
+        },
+        "release_gates": [
+            {
+                "label": f"GATE-{index}",
+                "status": "OPEN",
+                "detail": (
+                    " ".join(
+                        ["SOURCE-HELD CONTROLLED STATUS REVIEW REQUIRED"] * 12
+                    )
+                    if index == 2
+                    else " ".join(
+                        ["Source-held release evidence requires review"] * 4
+                    )
+                ),
+            }
+            for index in range(1, 6)
+        ],
+        "source_assurance": [
+            {
+                "source": f"SOURCE-{index}",
+                "status": "HELD",
+                "detail": f"Bounded source receipt {index}.",
+            }
+            for index in range(1, 8)
+        ],
+    }
+    out = tmp_path / "long-route-airspace-fir.pdf"
+    pdf = reportlab_canvas.Canvas(str(out), pagesize=(841.89, 595.28))
+    pdf.bookmarkPage("sec_overview")
+
+    draw_operational_enroute_assurance_page(
+        pdf,
+        sample_flight(),
+        briefing,
+        page_number=7,
+        page_count=7,
+        has_terrain_annex=False,
+    )
+    pdf.showPage()
+    pdf.save()
+
+    page = fitz.open(out)[0]
+    text = " ".join(page.get_text().split())
+    assert "16 route-airspace notice(s) held - CFP pp75-98" in text
+    assert "Military-training 1A2118/26 held" in text
+    assert "Showing " in text
+    assert "of 31 FIR boundary groups" in text
+    assert "F001 +01:00 (CFP p7)" in text
+    assert "F031 +31:00" not in text
+    assert "full boundary rows remain in dashboard and lossless audit briefing" in text
+    assert "Contact procedure/frequency unavailable" in text
+    assert "HELD - 21 records - CFP pp39-45" in text
+    assert "REVIEW QUEUE - NOT RELEVANCE-SELECTED" in text
+    assert "HELD-1" in text
+    assert "HELD-8" not in text
+    assert "held review-queue examples from 21 source records" in text
+    assert "full held records remain in dashboard and lossless audit briefing" in text
+    assurance_receipt = re.search(
+        r"Showing ([1-6]) of 7 source-assurance rows",
+        text,
+    )
+    assert assurance_receipt
+    assert "SOURCE-1 · HELD" in text
+    assert "SOURCE-7 · HELD" not in text
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+    assert physical["pages"][0]["visible_overlap_count"] == 0
 
 
 def test_lossless_hazard_plan_moves_sigmet_after_full_named_advisories():

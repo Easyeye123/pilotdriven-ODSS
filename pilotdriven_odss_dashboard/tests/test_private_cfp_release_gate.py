@@ -9,6 +9,7 @@ import fitz
 
 from scripts.run_private_cfp_corpus import (
     REQUIRED_CASE_IDS,
+    check_required_publication_markers,
     load_manifest,
     scan_physical_pdf,
 )
@@ -65,6 +66,32 @@ def test_private_corpus_checks_lossless_and_operational_publications():
     assert "include_audit_appendix=False" in runner
     assert "_Operational_Flight_Briefing.pdf" in runner
     assert "include_audit_appendix=True" not in production
+
+
+def test_required_markers_are_checked_on_the_surface_that_owns_them():
+    case = {
+        "departure_iata": "SIN",
+        "departure": "WSSS",
+        "destination_iata": "PER",
+        "destination": "YPPH",
+    }
+    common = "FLIGHT BRIEFING SIN / WSSS PER / YPPH"
+
+    assert check_required_publication_markers(
+        case,
+        audit_text=common,
+        operational_text=f"{common} PHASE ACTION",
+    ) == []
+    assert check_required_publication_markers(
+        case,
+        audit_text=common,
+        operational_text=common,
+    ) == ["operational: PHASE ACTION"]
+    assert check_required_publication_markers(
+        case,
+        audit_text="FLIGHT BRIEFING SIN / WSSS",
+        operational_text=f"{common} PHASE ACTION",
+    ) == ["audit: PER / YPPH"]
 
 
 def test_physical_scanner_accepts_a_readable_non_overlapping_page(tmp_path):
