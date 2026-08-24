@@ -125,7 +125,7 @@ def test_combined_quality_gate_accepts_lossless_eosid_continuation(
     path = tmp_path / "combined-eosid-continuation.pdf"
     page_texts = [
         (
-            "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS\nPHASE ACTION\nSTRIP\n"
+            "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
             "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
         ),
         (
@@ -195,7 +195,7 @@ def test_combined_quality_gate_rejects_broken_eosid_continuation_sequence(
     path = tmp_path / "combined-broken-eosid-continuation.pdf"
     page_texts = [
         (
-            "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS\nPHASE ACTION\nSTRIP\n"
+            "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
             "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
         ),
         (

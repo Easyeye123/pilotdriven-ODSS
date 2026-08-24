@@ -31,7 +31,11 @@ from app.odss.combined_brief import (
     _performance_selected_presentation,
     _eta_display,
     _hazard_page_plans,
+    _operational_alternate_constraint_assessment,
+    _operational_alternate_forecast,
     _operational_fir_boundary_summary,
+    _operational_priority_source_summary,
+    _operational_phase_actions,
     _operational_terrain_summary,
     _route_anchor_entries,
     _terrain_table_points,
@@ -70,6 +74,393 @@ def test_eta_display_keeps_missing_destination_timing_unavailable():
     assert _eta_display(None) == "ETA --"
 
 
+def test_phase_actions_use_actual_phases_and_source_safe_headlines():
+    flight = sample_flight()
+    flight["deferred_items"] = [{"item_type": "IN"}]
+    briefing = {
+        "fuel_summary": {"state": "verified"},
+        "performance_publication": {
+            "status": "within-limit",
+            "candidate_limits": [],
+            "margin_kg": 11_376,
+        },
+        "performance_reconciliation": [
+            {"label": "PERFORMANCE MAX FUEL / TANKS", "status": "OPEN"}
+        ],
+        "deferred_dispatch_gates": [
+            {"overview_summary": "ENG 2 LATCH · CHECK EACH DEPARTURE"}
+        ],
+        "route_airspace": {
+            "record_count": 1,
+            "military_source_record": {
+                "text": "MIL TRAINING; AFFECTED TRAFFIC SUBJECT TO ATC CLR"
+            },
+            "applicability_inferred": False,
+        },
+        "overview": {
+            "destination": {
+                "primary_operational_highlight": {
+                    "text": (
+                        "ILS RWY 24 unavailable during the applicable "
+                        "destination window."
+                    ),
+                    "notam_id": "1B3881/26",
+                }
+            }
+        },
+        "terrain": {"events": []},
+        "hazards": {
+            "sigmet_cards": [],
+            "coverage_ledger": [
+                {"label": "AIRMET", "status": "unavailable"},
+                {"label": "TC SIGMET", "status": "unavailable"},
+                {"label": "VA SIGMET", "status": "unavailable"},
+            ],
+        },
+    }
+
+    actions = _operational_phase_actions(flight, briefing)
+
+    assert [action["phase"] for action in actions] == [
+        "RELEASE",
+        "BEFORE PUSH",
+        "ROUTE",
+        "ARRIVAL",
+        "WEATHER",
+    ]
+    assert [action["headline"] for action in actions] == [
+        "FUEL-LINE RECONCILE",
+        "ENG 2 LATCH - CHECK EACH DEPARTURE",
+        "ATC / MIL ACTIVITY HELD - REVIEW APPLICABILITY",
+        "ILS RWY 24 UNAVAILABLE - REVIEW ARRIVAL PLAN",
+        "AIRMET / TC / VA: NO DATA - COVERAGE GAP",
+    ]
+    assert [action["target"] for action in actions] == [
+        "sec_performance",
+        "sec_mel_cdl",
+        "sec_enroute",
+        "sec_airports",
+        "sec_hazard",
+    ]
+    assert "INTERSECT" not in actions[2]["headline"]
+
+
+def test_phase_actions_fail_closed_when_governed_evidence_is_absent():
+    actions = _operational_phase_actions(
+        {
+            "fuel_summary": {"state": "verified"},
+            "deferred_items": [],
+        },
+        {},
+    )
+
+    assert [action["headline"] for action in actions] == [
+        "FUEL EVIDENCE UNAVAILABLE",
+        "DEFERRED EVIDENCE UNAVAILABLE",
+        "ROUTE EVIDENCE UNAVAILABLE",
+        "ARRIVAL PLAN PENDING ANALYSIS",
+        "WEATHER COVERAGE UNAVAILABLE",
+    ]
+    assert all(action["accent"] == WEATHER_AMBER for action in actions)
+
+
+@pytest.mark.parametrize("state", ["unverified", "review_required"])
+def test_phase_actions_reconcile_a_valid_nonverified_fuel_state(state):
+    actions = _operational_phase_actions(
+        {},
+        {
+            "fuel_summary": {"state": state},
+            "performance_publication": {},
+            "performance_reconciliation": [
+                {"label": "PAGE-1 FUEL ARITHMETIC", "status": "REVIEW"},
+            ],
+        },
+    )
+
+    assert actions[0]["headline"] == "FUEL-LINE RECONCILE"
+    assert actions[0]["accent"] == CRITICAL
+
+
+def test_phase_actions_fail_closed_for_malformed_optional_evidence():
+    actions = _operational_phase_actions(
+        {},
+        {
+            "fuel_summary": [],
+            "performance_publication": [],
+            "performance_reconciliation": {},
+            "deferred_dispatch_gates": {},
+            "hazards": [],
+            "route_airspace": [],
+            "terrain": "not-a-mapping",
+            "overview": [],
+        },
+    )
+
+    assert [action["headline"] for action in actions] == [
+        "FUEL EVIDENCE UNAVAILABLE",
+        "DEFERRED EVIDENCE UNAVAILABLE",
+        "ROUTE EVIDENCE UNAVAILABLE",
+        "ARRIVAL PLAN PENDING ANALYSIS",
+        "WEATHER COVERAGE UNAVAILABLE",
+    ]
+    assert all(action["accent"] == WEATHER_AMBER for action in actions)
+
+
+@pytest.mark.parametrize("record_count", [-1, 1.5, "2", True, float("nan")])
+def test_phase_actions_reject_malformed_rows_and_route_counts(record_count):
+    actions = _operational_phase_actions(
+        {},
+        {
+            "fuel_summary": {"state": "verified"},
+            "performance_publication": {
+                "status": "within-limit",
+                "margin_kg": 500,
+            },
+            "performance_reconciliation": [],
+            "deferred_dispatch_gates": [
+                {"title": "MEL 00-00-00"},
+                "malformed-row",
+            ],
+            "hazards": {
+                "sigmet_cards": [
+                    {"disposition": "PROMOTED", "sigmet_id": "TEST"},
+                    "malformed-row",
+                ],
+                "coverage_ledger": [
+                    {"label": "VA SIGMET", "status": "available"},
+                    "malformed-row",
+                ],
+            },
+            "route_airspace": {"record_count": record_count},
+            "terrain": {"events": [{}, "malformed-row"]},
+            "overview": {"destination": {"plan": {"display": "RWY 24"}}},
+        },
+    )
+
+    assert actions[1]["headline"] == "DEFERRED EVIDENCE UNAVAILABLE"
+    assert actions[2]["headline"] == "ROUTE EVIDENCE UNAVAILABLE"
+    assert actions[4]["headline"] == "WEATHER COVERAGE UNAVAILABLE"
+    assert actions[1]["accent"] == WEATHER_AMBER
+    assert actions[2]["accent"] == WEATHER_AMBER
+    assert actions[4]["accent"] == WEATHER_AMBER
+
+
+def test_phase_actions_fail_closed_for_malformed_performance_and_coverage_rows():
+    base = {
+        "fuel_summary": {"state": "verified"},
+        "performance_publication": {
+            "status": "within-limit",
+            "margin_kg": 500,
+        },
+        "deferred_dispatch_gates": [],
+        "hazards": {
+            "sigmet_cards": [],
+            "coverage_ledger": [{}],
+        },
+        "route_airspace": {"record_count": 0},
+        "terrain": {"events": []},
+        "overview": {"destination": {"plan": {"display": "RWY 24"}}},
+    }
+
+    malformed = _operational_phase_actions(
+        {},
+        {**base, "performance_reconciliation": [None]},
+    )
+    assert malformed[0]["headline"] == "PERFORMANCE EVIDENCE UNAVAILABLE"
+    assert malformed[0]["accent"] == WEATHER_AMBER
+    assert malformed[4]["headline"] == "WEATHER COVERAGE UNAVAILABLE"
+    assert malformed[4]["accent"] == WEATHER_AMBER
+
+    explicit_open = _operational_phase_actions(
+        {},
+        {
+            **base,
+            "performance_reconciliation": [
+                {"label": "PERFORMANCE MAX FUEL / TANKS", "status": "OPEN"},
+                None,
+            ],
+        },
+    )
+    assert explicit_open[0]["headline"] == "FUEL-LINE RECONCILE"
+    assert explicit_open[0]["accent"] == CRITICAL
+
+
+@pytest.mark.parametrize(
+    ("partial_view", "headline"),
+    [
+        (
+            {"hazards": {"sigmet_cards": [{"disposition": "PROMOTED", "sigmet_id": "WSJC SIGMET 1"}]}},
+            "WSJC SIGMET 1 - PROMOTED ENROUTE HAZARD",
+        ),
+        (
+            {"route_airspace": {"military_source_record": {"text": "MIL TRAINING SUBJECT TO ATC CLR"}}},
+            "ATC / MIL ACTIVITY HELD - REVIEW APPLICABILITY",
+        ),
+        (
+            {"terrain": {"events": [{}]}},
+            "1 HIGH-MSA WINDOW - TERRAIN REVIEW",
+        ),
+        (
+            {"route_airspace": {"record_count": 2}},
+            "2 ROUTE-AIRSPACE RECORDS - APPLICABILITY REVIEW",
+        ),
+    ],
+)
+def test_phase_actions_keep_known_route_positives_when_other_sets_are_absent(
+    partial_view,
+    headline,
+):
+    actions = _operational_phase_actions({}, partial_view)
+
+    assert actions[2]["headline"] == headline
+    assert actions[2]["accent"] == WEATHER_AMBER
+
+
+def test_phase_actions_allow_green_only_for_complete_governed_evidence():
+    actions = _operational_phase_actions(
+        {},
+        {
+            "fuel_summary": {"state": "verified"},
+            "performance_publication": {
+                "status": "within-limit",
+                "margin_kg": 500,
+            },
+            "performance_reconciliation": [
+                {"label": "PAGE-1 FUEL ARITHMETIC", "status": "VERIFIED"},
+            ],
+            "deferred_dispatch_gates": [],
+            "hazards": {
+                "sigmet_cards": [],
+                "coverage_ledger": [
+                    {"label": "AIRMET", "status": "held"},
+                    {"label": "TC SIGMET", "status": "held"},
+                    {"label": "VA SIGMET", "status": "held"},
+                ],
+            },
+            "route_airspace": {"record_count": 0},
+            "terrain": {"events": []},
+            "overview": {
+                "destination": {"plan": {"display": "RWY 24"}},
+            },
+        },
+    )
+
+    assert [action["headline"] for action in actions] == [
+        "RTOW MARGIN +500 KG",
+        "NO DEFERRED ITEM",
+        "NO PROMOTED ENROUTE HAZARD",
+        "RWY 24",
+        "OFFICIAL PRODUCTS REVIEWED",
+    ]
+    assert actions[0]["accent"] == EDTO_GREEN
+    assert actions[1]["accent"] == EDTO_GREEN
+    assert actions[2]["accent"] == EDTO_GREEN
+    assert actions[4]["accent"] == EDTO_GREEN
+
+
+def test_alternate_projection_prints_source_forecast_and_bounded_assessment():
+    alternate_row = {
+        "forecast": {
+            "status": "held",
+            "selection_basis": "taf",
+            "record_type": "TAF",
+            "source_page": 14,
+            "text": "FT 201700 2018/2124 18006KT 9999 SCT020",
+        },
+        "constraint": {
+            "status": "held",
+            "selection_basis": "planned_runway_match",
+            "notam_id": "1B3711/26",
+            "text": "ILS RWY 02 unavailable during the applicable alternate window.",
+            "source_page": 24,
+            "planned_match": True,
+            "applicability_inferred": False,
+        },
+        "assessment": {
+            "status": "review_required",
+            "source_status": "held",
+            "text": "REVIEW - source held; suitability not concluded.",
+            "suitability_concluded": False,
+        },
+    }
+
+    forecast = _operational_alternate_forecast(
+        alternate_row,
+        text_width=185.0,
+        max_lines=4,
+    )
+    assessment = _operational_alternate_constraint_assessment(
+        alternate_row,
+        text_width=180.0,
+        max_lines=4,
+    )
+
+    assert forecast.startswith("TAF CFP p14 | FT 201700")
+    assert "1B3711/26 CFP p24" in assessment
+    assert "suitability not concluded" in assessment
+
+
+def test_priority_source_summary_requires_held_action_prose_and_no_relevance_claim():
+    intam = {
+        "record_count": 21,
+        "source_pages": list(range(38, 45)),
+        "operational_priority_rows": [
+            {
+                "source_reference": "CFP p32 / 1A1891/26",
+                "summary": (
+                    "The limited trial is initiated at ATC request; the pilot "
+                    "initiates AFN logon; the Jakarta FIR AFN address is WIIF."
+                ),
+                "relevance_inferred": False,
+                "applicability_inferred": False,
+            },
+            {
+                "source_reference": "CFP p44 / ALL FLEETS-9116",
+                "summary": (
+                    "The source bulletin lists WSJC (Singapore FIR, South China "
+                    "Sea) among FIRs reporting GNSS/GPS interference."
+                ),
+                "relevance_inferred": False,
+                "applicability_inferred": False,
+            },
+            {
+                "source_reference": "CFP p39 / ALL FLEETS-8919",
+                "summary": (
+                    "Reduce taxi speed appropriately and be ready to respond "
+                    "promptly to the marshaller."
+                ),
+                "relevance_inferred": False,
+                "applicability_inferred": False,
+            },
+            {
+                "source_reference": "CFP p41 / A350-822",
+                "summary": (
+                    "The FlySmart sign/signed button is absent; continue signing "
+                    "the OFP in PilotSign per the source SOP."
+                ),
+                "relevance_inferred": False,
+                "applicability_inferred": False,
+            },
+        ],
+    }
+
+    summary = _operational_priority_source_summary(
+        intam,
+        text_width=355.0,
+        max_lines=9,
+    )
+
+    assert summary is not None
+    assert "HELD 21 RECORDS" in summary
+    assert "CFP pp38-44" in summary
+    assert "NOT RELEVANCE-SELECTED" in summary
+    assert "applicability not inferred" in summary
+    assert "AFN address is WIIF" in summary
+    assert "WSJC (Singapore FIR, South China Sea)" in summary
+    assert "respond promptly to the marshaller" in summary
+    assert "signing the OFP in PilotSign per the source SOP" in summary
+
+
 @pytest.fixture()
 def rendered(tmp_path):
     flight = sample_flight()
@@ -94,7 +485,8 @@ def test_renders_the_full_section_set(rendered):
     assert "CFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY" in first
     for card in ("PERFORMANCE", "FUEL", "STATUS", "WEATHER", "ALTERNATES"):
         assert card in first
-    assert "PHASE ACTION" in first
+    for phase in ("RELEASE", "BEFORE PUSH", "ROUTE", "ARRIVAL", "WEATHER"):
+        assert phase in first
     assert "Tanks 118,274 kg" in first.replace(" ", ",")
     titles = "\n".join(rendered[n].get_text() for n in range(len(rendered)))
     for expected in (
@@ -630,6 +1022,35 @@ def test_compact_airport_single_alternate_row_keeps_honest_source_status(
                 ),
             },
         ]
+        alternate_row = next(
+            row
+            for row in view["alternate_assessment_rows"]
+            if row["airport"] == alternate["icao"]
+        )
+        alternate_row["constraint"] = {
+            "status": "held",
+            "selection_basis": "first_source_held",
+            "notam_id": "NOTICE",
+            "source_icao": alternate["icao"],
+            "source_role": "destination alternate",
+            "source_page": None,
+            "source_reference": "SOURCE PAGE UNAVAILABLE",
+            "text": (
+                "SINGLE-ROW-FINAL selected source fact remains complete "
+                "after measured card placement."
+            ),
+            "planned_match": None,
+            "different_runway": None,
+            "applicability_inferred": False,
+        }
+        alternate_row["assessment"] = {
+            "status": "review_required",
+            "source_status": "partial",
+            "text": (
+                "REVIEW - source partially held; suitability not concluded."
+            ),
+            "suitability_concluded": False,
+        }
         view["airport_operational_panels"] = panels
         return view
 
@@ -653,7 +1074,10 @@ def test_compact_airport_single_alternate_row_keeps_honest_source_status(
     airport_text = " ".join(document[4].get_text().split())
     assert len(document) == 8
     assert "PREFERRED · WSAP" in airport_text
-    assert "METAR UNAVAILABLE · TAF UNAVAILABLE · 0 NOTICE(S)" in airport_text
+    assert "FORECAST UNAVAILABLE - review current controlled weather" in airport_text
+    assert "SINGLE-ROW-FINAL selected source fact remains complete" in airport_text
+    assert "source partially held" in airport_text
+    assert "suitability not concluded" in airport_text
     physical = scan_physical_pdf(output)
     assert physical["valid"], physical["violations"]
 
@@ -811,18 +1235,18 @@ def test_compact_station_summary_shows_three_shared_notices_with_sources(
     render_combined_briefing(flight, findings, [], output)
 
     page_text = " ".join(fitz.open(output)[4].get_text().split())
-    assert "APPLICABLE NOTICES · 17 held, 3 shown" in page_text
-    assert "APPLICABLE NOTICES · 35 held, 3 shown" in page_text
+    assert "APPLICABLE NOTICES · 17 held, 2 shown" in page_text
+    assert "APPLICABLE NOTICES · 35 held, 2 shown" in page_text
     for notice_id, source_page in (
         ("SX120/25", 16),
         ("SX97/26", 18),
-        ("SX98/26", 16),
         ("1B3881/26", 22),
         ("1B2938/26", 22),
-        ("1B4113/26", 22),
     ):
         assert notice_id in page_text
         assert f"SOURCE CFP p{source_page}" in page_text
+    assert "SX98/26" not in page_text
+    assert "1B4113/26" not in page_text
     assert "FIRST ·" not in page_text
 
 
@@ -879,7 +1303,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
         "destination": ["WSSS"],
         "sourcePage": ["1"],
     }
-    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-08-24-boss-flow-v22"
+    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-08-24-boss-flow-v25"
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
         7,
@@ -1996,6 +2420,32 @@ def test_compact_fir_and_terrain_receipts_are_whole_and_explicit():
     assert terrain["summary"] == terrain_summary
 
 
+def test_compact_fir_preserves_current_jakarta_guard_and_a_whole_prefix():
+    guard = (
+        ". Boundary clocks are source-held. Jakarta CPDLC/AFN procedure is "
+        "source-held separately; frequency/lead are unavailable and "
+        "applicability is not inferred."
+    )
+    fir_summary = " | ".join(
+        f"F{index:03d} +{index:02d}:00 (CFP p{7 + index // 4})"
+        for index in range(1, 32)
+    ) + guard
+
+    compact = _operational_fir_boundary_summary(
+        fir_summary,
+        text_width=200.0,
+        max_lines=9,
+    )
+
+    assert compact.endswith(guard)
+    assert "Showing " in compact
+    assert "/31 FIR boundary groups" in compact
+    assert "dashboard/lossless audit briefing" in compact
+    assert "F001 +01:00 (CFP p7)" in compact
+    assert "F031 +31:00" not in compact
+    assert "compact summary exceeds" not in compact
+
+
 def test_enroute_card_compacts_route_and_long_fir_receipts_without_hiding_sources(
     tmp_path,
 ):
@@ -2116,6 +2566,112 @@ def test_enroute_card_compacts_route_and_long_fir_receipts_without_hiding_source
     assert physical["pages"][0]["visible_overlap_count"] == 0
 
 
+def test_enroute_page_keeps_current_fir_guard_and_sq910_priority_receipt(
+    tmp_path,
+):
+    from reportlab.pdfgen import canvas as reportlab_canvas
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    fir_guard = (
+        ". Boundary clocks are source-held. Jakarta CPDLC/AFN procedure is "
+        "source-held separately; frequency/lead are unavailable and "
+        "applicability is not inferred."
+    )
+    briefing = {
+        "communications": [],
+        "fir_boundary_summary": " | ".join(
+            f"F{index:03d} +{index:02d}:00 (CFP p{7 + index // 4})"
+            for index in range(1, 32)
+        ) + fir_guard,
+        "route_airspace": {
+            "record_count": 1,
+            "source_page_text": "CFP p33",
+            "card_summary": "1 route notice held.",
+        },
+        "intam": {
+            "record_count": 21,
+            "source_pages": list(range(38, 45)),
+            "operational_priority_rows": [
+                {
+                    "source_reference": "CFP p32 / 1A1891/26",
+                    "summary": (
+                        "The limited trial is initiated at ATC request; the pilot "
+                        "initiates AFN logon; the Jakarta FIR AFN address is WIIF."
+                    ),
+                    "relevance_inferred": False,
+                    "applicability_inferred": False,
+                },
+                {
+                    "source_reference": "CFP p39 / ALL FLEETS-8919",
+                    "summary": (
+                        "Reduce taxi speed appropriately and be ready to respond "
+                        "promptly to the marshaller."
+                    ),
+                    "relevance_inferred": False,
+                    "applicability_inferred": False,
+                },
+                {
+                    "source_reference": "CFP p41 / A350-822",
+                    "summary": (
+                        "The FlySmart sign/signed button is absent; continue "
+                        "signing the OFP in PilotSign per the source SOP."
+                    ),
+                    "relevance_inferred": False,
+                    "applicability_inferred": False,
+                },
+                {
+                    "source_reference": "CFP p44 / ALL FLEETS-9116",
+                    "summary": (
+                        "The source bulletin lists WSJC (Singapore FIR, South "
+                        "China Sea) among FIRs reporting GNSS/GPS interference."
+                    ),
+                    "relevance_inferred": False,
+                    "applicability_inferred": False,
+                },
+            ],
+        },
+        "terrain": {
+            "summary": (
+                "No MSA >100* event is present in the shared route/profile "
+                "analysis; this is not a terrain-clearance finding."
+            ),
+            "events": [],
+        },
+        "release_gates": [],
+        "source_assurance": [],
+    }
+    out = tmp_path / "current-fir-sq910-priority.pdf"
+    pdf = reportlab_canvas.Canvas(str(out), pagesize=(841.89, 595.28))
+    pdf.bookmarkPage("sec_overview")
+    draw_operational_enroute_assurance_page(
+        pdf,
+        sample_flight(),
+        briefing,
+        page_number=7,
+        page_count=7,
+        has_terrain_annex=False,
+    )
+    pdf.showPage()
+    pdf.save()
+
+    text = " ".join(fitz.open(out)[0].get_text().split())
+    assert "Showing 0/31 FIR boundary groups" in text
+    assert "Boundary clocks are source-held" in text
+    assert "Jakarta CPDLC/AFN procedure is source-held separately" in text
+    assert "frequency/lead are unavailable" in text
+    assert "applicability is not inferred" in text
+    assert "FIR boundary detail is held" not in text
+    assert "SOURCE-HELD / NOT RELEVANCE-SELECTED" in text
+    assert "HELD 21 RECORDS CFP pp38-44" in text
+    assert "AFN address is WIIF" in text
+    assert "respond promptly to the marshaller" in text
+    assert "signing the OFP in PilotSign per the source SOP" in text
+    assert "WSJC (Singapore FIR, South China Sea)" in text
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+    assert physical["pages"][0]["visible_overlap_count"] == 0
+
+
 def test_enroute_page_prints_complete_source_ledger_when_all_rows_fit(tmp_path):
     from reportlab.pdfgen import canvas as reportlab_canvas
 
@@ -2124,7 +2680,14 @@ def test_enroute_page_prints_complete_source_ledger_when_all_rows_fit(tmp_path):
         "fir_boundary_summary": "",
         "route_airspace": {"record_count": 0},
         "intam": {"record_count": 0, "source_pages": [], "review_queue": []},
-        "terrain": {"summary": "No strict MSA >100* window detected", "events": []},
+        "terrain": {
+            "summary": (
+                "CFP route/profile trigger not evaluated: parsed route waypoint "
+                "MSA and planned VWS data unavailable. This is not a "
+                "terrain-clearance finding."
+            ),
+            "events": [],
+        },
         "release_gates": [{"label": "STATUS", "status": "REVIEW", "detail": "Confirm the held release status."}],
         "source_assurance": [
             {"source": "UPLOADED CFP", "status": "HELD", "detail": "test.pdf"},
@@ -2160,7 +2723,14 @@ def test_enroute_page_refuses_silent_release_gate_overflow(tmp_path):
         "fir_boundary_summary": "",
         "route_airspace": {"record_count": 0},
         "intam": {"record_count": 0, "source_pages": [], "review_queue": []},
-        "terrain": {"summary": "No strict MSA >100* window detected", "events": []},
+        "terrain": {
+            "summary": (
+                "CFP route/profile trigger not evaluated: parsed route waypoint "
+                "MSA and planned VWS data unavailable. This is not a "
+                "terrain-clearance finding."
+            ),
+            "events": [],
+        },
         "release_gates": [
             {"label": f"GATE-{index}", "status": "REVIEW", "detail": "Review required."}
             for index in range(6)
@@ -2224,7 +2794,10 @@ def test_compact_baseline_is_seven_pages_without_real_terrain_evidence(tmp_path)
     document = fitz.open(out)
     assert len(document) == 7
     assert [row[1] for row in document.get_toc()][-1] == "Enroute / Assurance"
-    assert "No strict MSA >100* window detected" in document[6].get_text()
+    expected = " ".join(
+        build_briefing_view(flight, findings, [])["terrain"]["summary"].split()
+    )
+    assert expected in " ".join(document[6].get_text().split())
 
 
 def test_weather_page_uses_readable_source_status_cards_not_tiny_crops(rendered):
@@ -3394,6 +3967,58 @@ def test_route_timeline_uses_governed_roles_not_arbitrary_fir_points():
     assert entries[-1]["time"] == "1305Z"
 
 
+def test_standard_cfp_timeline_keeps_source_planning_milestones_without_inference():
+    flight = {
+        "scheduled_departure_utc": "2026-08-21T00:50:00+00:00",
+        "scheduled_arrival_utc": "2026-08-21T04:45:00+00:00",
+        "departure": "WSSS",
+        "departure_iata": "SIN",
+        "destination": "RPLL",
+        "fuel_summary": {"source_classification": "STANDARD"},
+        "planned_level_profile": "SIN/360/VERIN/400/LAGOT/390",
+        "flight_planning_etps": [{
+            "label": "ETP A",
+            "from": "SIN",
+            "to": "MNL",
+            "distance_nm": 721,
+            "eet_token": "01.40",
+            "eet_minutes": 100,
+            "source_page": 10,
+        }],
+        "route_waypoints": [
+            {"name": "WSSS", "actm_minutes": 0},
+            {"name": "-WIIF", "fir_boundary": "WIIF", "actm_minutes": 3},
+            {"name": "-WSJC", "fir_boundary": "WSJC", "actm_minutes": 14},
+            {"name": "VERIN", "actm_minutes": 34},
+            {"name": "LAGOT", "actm_minutes": 88},
+            {"name": "-RPHI", "fir_boundary": "RPHI", "actm_minutes": 121},
+            {"name": "LUBAN", "actm_minutes": 174},
+            {"name": "TOD", "actm_minutes": 174},
+            {"name": "-WSJC", "fir_boundary": "WSJC", "actm_minutes": 190},
+            {"name": "RPLL", "actm_minutes": 201},
+        ],
+    }
+    briefing = build_briefing_view(flight, [], [])
+
+    entries = _route_anchor_entries(flight, briefing)
+
+    assert [entry["label"] for entry in entries] == [
+        "DEP",
+        "VERIN",
+        "LAGOT",
+        "ETP A",
+        "RPHI",
+        "LUBAN/TOD",
+        "RPLL",
+    ]
+    assert [entry["actm"] for entry in entries] == [0, 34, 88, 100, 121, 174, 201]
+    assert entries[1]["sub"] == "FL400 · ACTM 00:34"
+    assert entries[2]["sub"] == "FL390 · ACTM 01:28"
+    assert entries[3]["sub"] == "721 NM · EET 01:40"
+    assert entries[4]["sub"] == "FIR · ACTM 02:01"
+    assert entries[5]["sub"] == "ACTM 02:54"
+
+
 def test_route_timeline_does_not_publish_an_enroute_point_as_arrival():
     flight = {
         "scheduled_departure_utc": "2026-08-01T10:00:00+00:00",
@@ -4404,6 +5029,26 @@ def test_production_combined_renderer_has_no_reference_specific_hardcoding():
 def test_audit_rev3_v8_projection_isolates_operational_only_records():
     flight = sample_flight()
     briefing = {
+        "overview": {
+            "timeline": [
+                {"kind": "departure", "label": "DEP"},
+                {"kind": "level_change", "label": "VERIN"},
+                {"kind": "flight_planning_etp", "label": "ETP A"},
+                {"kind": "fir", "label": "RPHI"},
+                {"kind": "tod", "label": "LUBAN/TOD"},
+                {"kind": "arrival", "label": "ARR"},
+            ],
+        },
+        "performance_publication": {
+            "status": "within-limit",
+            "inputs": {
+                "runway": "20C",
+                "maximum_landing_weight_kg": 205_000,
+            },
+            "planning_sensitivity": {
+                "flight_planning_etps": [{"label": "ETP A"}],
+            },
+        },
         "communications": [
             {"record_kind": "fir_boundary_source", "event": "NEW FIR"},
             {"record_kind": "procedure", "event": "LEGACY CONTACT"},
@@ -4418,6 +5063,7 @@ def test_audit_rev3_v8_projection_isolates_operational_only_records():
             "rows": {"fuel_in_tanks": {"fuel_kg": 1000}},
             "derived_fuel_kg": {"taxi_to_landing": 900},
         },
+        "alternate_assessment_rows": [{"airport": "WMKK"}],
         "airport_operational_panels": [
             {
                 "role_key": "destination",
@@ -4468,6 +5114,14 @@ def test_audit_rev3_v8_projection_isolates_operational_only_records():
         "LEGACY SIGMET"
     ]
     assert "derived_fuel_kg" not in projected["fuel_summary"]
+    assert [
+        item["kind"] for item in projected["overview"]["timeline"]
+    ] == ["departure", "arrival"]
+    assert projected["performance_publication"]["inputs"] == {
+        "runway": "20C"
+    }
+    assert "planning_sensitivity" not in projected["performance_publication"]
+    assert "alternate_assessment_rows" not in projected
     projected_notams = [
         line["label"]
         for line in projected["airport_operational_panels"][0][
@@ -4477,7 +5131,15 @@ def test_audit_rev3_v8_projection_isolates_operational_only_records():
     ]
     assert projected_notams == ["SX120/25", "SX98/26"]
     assert len(briefing["communications"]) == 2
+    assert len(briefing["overview"]["timeline"]) == 6
+    assert (
+        briefing["performance_publication"]["inputs"][
+            "maximum_landing_weight_kg"
+        ]
+        == 205_000
+    )
     assert "derived_fuel_kg" in briefing["fuel_summary"]
+    assert briefing["alternate_assessment_rows"] == [{"airport": "WMKK"}]
     assert len(briefing["airport_operational_panels"][0]["card_summary_lines"]) == 4
 
 

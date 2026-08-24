@@ -46,10 +46,11 @@ REQUIRED_CASE_IDS = frozenset({
     "SQ34-SIN-SFO",
     "SQ365-FCO-SIN",
     "SQ214-PER-SIN-19AUG",
+    "SQ910-SIN-MNL-21AUG",
 })
 DEFERRED_TYPES = {"MEL", "CDL", "CDDL"}
 DEFERRED_REFERENCE = re.compile(r"^[A-Z0-9]+(?:-[A-Z0-9]+)+$")
-EXTRACTION_CONTRACT_VERSION = 1
+EXTRACTION_CONTRACT_VERSION = 2
 EXTRACTION_COUNT_FIELDS = (
     "notams",
     "weather",
@@ -59,6 +60,10 @@ EXTRACTION_COUNT_FIELDS = (
     "edto_airports",
     "fuel_enroute_airports",
     "route_waypoints",
+    "flight_planning_etps",
+    "intam_records",
+    "notam_procedure_records",
+    "planning_publication",
 )
 EXTRACTION_DIGEST_FIELDS = EXTRACTION_COUNT_FIELDS
 _LIVE_OPMET_SOURCE = "noaa_awc_live"
@@ -172,6 +177,42 @@ def build_extraction_snapshot(flight: dict[str, Any]) -> dict[str, Any]:
         "fuel_enroute_airports",
     )
     route_waypoints = records(flight, "route_waypoints", "route_waypoints")
+    flight_planning_etps = records(
+        flight,
+        "flight_planning_etps",
+        "flight_planning_etps",
+    )
+    intam_records = records(flight, "intam_records", "intam_records")
+    notam_procedure_records = records(
+        flight,
+        "notam_procedure_records",
+        "notam_procedure_records",
+    )
+
+    def required_value(key: str) -> Any:
+        if key not in flight:
+            structure_failures.append(f"{key} is missing")
+        return flight.get(key)
+
+    # These values publish as one governed planning block.  A singleton
+    # collection keeps the generic count/digest contract while pinning the
+    # complete nested fuel, performance/MLGW and sensitivity inputs.
+    planning_publication = [{
+        "performance": required_value("performance"),
+        "fuel_summary": required_value("fuel_summary"),
+        "zfw_change_burn_kg_per_1000": required_value(
+            "zfw_change_burn_kg_per_1000"
+        ),
+        "zfw_change_burn_add_kg_per_1000": required_value(
+            "zfw_change_burn_add_kg_per_1000"
+        ),
+        "zfw_change_burn_less_kg_per_1000": required_value(
+            "zfw_change_burn_less_kg_per_1000"
+        ),
+        "lower_cruise_sensitivity": required_value(
+            "lower_cruise_sensitivity"
+        ),
+    }]
 
     collections = {
         "notams": notams,
@@ -182,6 +223,10 @@ def build_extraction_snapshot(flight: dict[str, Any]) -> dict[str, Any]:
         "edto_airports": edto_airports,
         "fuel_enroute_airports": fuel_airports,
         "route_waypoints": route_waypoints,
+        "flight_planning_etps": flight_planning_etps,
+        "intam_records": intam_records,
+        "notam_procedure_records": notam_procedure_records,
+        "planning_publication": planning_publication,
     }
     counts = {
         "notams": len(notams),
@@ -192,6 +237,10 @@ def build_extraction_snapshot(flight: dict[str, Any]) -> dict[str, Any]:
         "edto_airports": len(edto_airports),
         "fuel_enroute_airports": len(fuel_airports),
         "route_waypoints": len(route_waypoints),
+        "flight_planning_etps": len(flight_planning_etps),
+        "intam_records": len(intam_records),
+        "notam_procedure_records": len(notam_procedure_records),
+        "planning_publication": len(planning_publication),
     }
     return {
         "counts": counts,
@@ -290,7 +339,7 @@ def check_required_publication_markers(
 
     The lossless audit publication intentionally preserves the frozen REV3-v8
     page-one layout, while the pilot download owns the current seven-page
-    boss flow and its PHASE ACTION strip.  Requiring an operational-only label
+    boss flow and its five-phase action strip. Requiring an operational-only label
     from the audit PDF makes a valid pair fail after both files render cleanly.
     """
     common = (
@@ -300,7 +349,14 @@ def check_required_publication_markers(
     )
     required_by_surface = {
         "audit": common,
-        "operational": (*common, "PHASE ACTION"),
+        "operational": (
+            *common,
+            "RELEASE",
+            "BEFORE PUSH",
+            "ROUTE",
+            "ARRIVAL",
+            "WEATHER",
+        ),
     }
     text_by_surface = {
         "audit": audit_text.upper(),
@@ -835,11 +891,20 @@ def check_cross_surface_parity(
             rf"(?:\s*\|\s*RETURN SECTOR REQ"
             rf"(?:\s+\d{{1,3}}(?:,\d{{3}})*\s+KG)?)?$"
         )
+        mel_zero_row = re.compile(
+            r"^MEL\s+EXCESS-FUEL\s*[·:]\s*0\s+KG$"
+        )
         expected_allocation_forms = {
             f"{normalized_label} {amount} KG",
             f"{normalized_label} +{amount} KG",
         }
         for row in unit_rows:
+            if (
+                normalized_label == "MEL"
+                and amount == "0"
+                and mel_zero_row.fullmatch(row)
+            ):
+                return True
             if row in plain_forms or direct_row.fullmatch(row):
                 return True
             allocation = re.fullmatch(
@@ -863,15 +928,23 @@ def check_cross_surface_parity(
                 return True
         return False
 
-    terrain_events = (view.get("terrain") or {}).get("events") or []
-    says_none = "NO STRICT MSA" in folded
-    if terrain_events and says_none:
+    terrain = view.get("terrain") or {}
+    terrain_events = terrain.get("events") or []
+    terrain_summary = str(terrain.get("summary") or "").strip()
+    says_no_trigger = (
+        "CFP ROUTE/PROFILE TRIGGER NOT ACTIVATED" in folded
+        or "NO STRICT MSA" in folded
+    )
+    if terrain_events and says_no_trigger:
         failures.append(
-            "terrain: PDF prints 'No strict MSA' while the engine holds "
+            "terrain: PDF prints a no-trigger result while the engine holds "
             f"{len(terrain_events)} event(s)"
         )
-    if not terrain_events and not says_none:
-        failures.append("terrain: PDF omits the no-window sentence while the engine holds none")
+    if not terrain_events and not printed(terrain_summary):
+        failures.append(
+            "terrain: PDF omits the bounded route/profile result while the "
+            "engine holds no trigger window"
+        )
 
     edto_rows = (view.get("edto") or {}).get("operational_rows") or []
     for row in edto_rows:
@@ -890,7 +963,9 @@ def check_cross_surface_parity(
                     failures.append(f"weather: {role} {kind} bulletin not printed")
 
     for item in (flight.get("fuel_summary") or {}).get("excess_breakdown") or []:
-        if item.get("fuel_kg"):
+        fuel_kg = item.get("fuel_kg")
+        label = str(item.get("label") or "").strip().upper()
+        if fuel_kg is not None and (fuel_kg != 0 or label == "MEL"):
             if not printed_mass(item.get("label"), item.get("fuel_kg")):
                 failures.append(
                     f"units: excess item {item['label']!r} not printed with kg"

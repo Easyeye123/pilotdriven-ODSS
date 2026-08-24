@@ -44,6 +44,7 @@ def test_performance_publication_carries_the_cfp_inputs():
         "runway": "20C", "runway_condition": "DRY", "thrust_setting": "FULL", "flap_setting": 2,
         "temperature_c": 32, "qnh_hpa": None, "wind": "050/03KT", "packs_on": True, "anti_ice_on": False,
         "eosid": "STRAIGHT OUT", "maximum_fuel_available_kg": 36420,
+        "maximum_landing_weight_kg": None,
     }
     assert publication["selected_candidate_keys"] == ["landing"]
     assert publication["margin_kg"] == 224367 - 212991

@@ -243,13 +243,37 @@ def _station_source_weather(
     flight: dict[str, Any],
     location: str,
     record_type: str,
+    *,
+    allowed_source_roles: set[str] | None = None,
 ) -> dict[str, Any] | None:
+    normalised_allowed_roles = {
+        re.sub(r"[_\s]+", " ", role.strip().lower())
+        for role in (allowed_source_roles or set())
+        if role.strip()
+    }
     for record in flight.get("weather") or []:
+        source_role = re.sub(
+            r"[_\s]+",
+            " ",
+            str(record.get("source_role") or "").strip().lower(),
+        )
         if (
             str(record.get("location") or "").upper() == location
             and record.get("record_type") == record_type
             and str(record.get("text") or "").strip()
             and isinstance(record.get("source_page"), int)
+            and not isinstance(record.get("source_page"), bool)
+            and int(record["source_page"]) > 0
+            # Untagged CFP weather belongs to the ordinary station bundle.
+            # Explicitly tagged weather may only cross into this projection
+            # when the caller names that role.  In particular, a fuel-enroute
+            # TAF must never become destination-alternate evidence merely
+            # because both planning roles use the same ICAO station.
+            and (
+                allowed_source_roles is None
+                or not source_role
+                or source_role in normalised_allowed_roles
+            )
         ):
             return {
                 "record_type": record_type,
@@ -671,6 +695,9 @@ def _compact_notam_lines(
             "text": display_text,
             "notam_id": item.get("notam_id"),
             "source_page": item.get("source_page"),
+            "source_role": item.get("source_role"),
+            "role": item.get("role"),
+            "applicability": item.get("applicability"),
             "signal_family": family,
             "planned_match": (
                 bool(item_runways & runway_basis)
@@ -902,6 +929,195 @@ def _airport_operational_panels(
     return panels
 
 
+def _alternate_assessment_rows(
+    flight: dict[str, Any],
+    airport_panels: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Bind each destination alternate to its own held source evidence.
+
+    The airport panels retain every selected source record for detailed review.
+    This projection selects the one compact forecast and one compact constraint
+    printed in the operational matrix.  Dashboard and PDF consume these same
+    rows so evidence from a neighbouring alternate cannot be borrowed.
+    """
+    panel_by_icao = {
+        str(panel.get("icao") or "").strip().upper(): panel
+        for panel in airport_panels
+        if isinstance(panel, dict)
+    }
+    projected: list[dict[str, Any]] = []
+    for index, alternate in enumerate(flight.get("alternates") or []):
+        if not isinstance(alternate, dict):
+            continue
+        airport = str(alternate.get("airport") or "").strip().upper()
+        panel = panel_by_icao.get(airport, {})
+        forecast_source = _station_source_weather(
+            flight,
+            airport,
+            "TAF",
+            allowed_source_roles={"destination alternate", "alternate"},
+        ) or _station_source_weather(
+            flight,
+            airport,
+            "METAR",
+            allowed_source_roles={"destination alternate", "alternate"},
+        )
+        if isinstance(forecast_source, dict) and str(
+            forecast_source.get("text") or ""
+        ).strip():
+            forecast = {
+                "status": "held",
+                "selection_basis": (
+                    "taf"
+                    if forecast_source.get("record_type") == "TAF"
+                    else "metar_fallback"
+                ),
+                "record_type": str(
+                    forecast_source.get("record_type")
+                    or "METAR"
+                ).upper(),
+                "source_icao": airport or None,
+                "source_role": forecast_source.get("source_role"),
+                "text": str(forecast_source.get("text") or "").strip(),
+                "source_page": forecast_source.get("source_page"),
+            }
+        else:
+            forecast = {
+                "status": "unavailable",
+                "selection_basis": "unavailable",
+                "record_type": None,
+                "source_icao": airport or None,
+                "source_role": None,
+                "text": (
+                    "FORECAST UNAVAILABLE - review current controlled weather."
+                ),
+                "source_page": None,
+            }
+
+        alternate_notams = [
+            item
+            for item in panel.get("selected_notams") or []
+            if isinstance(item, dict)
+            and re.sub(
+                r"[_\s]+",
+                " ",
+                str(item.get("role") or "").strip().lower(),
+            ) == "destination alternate"
+            and re.sub(
+                r"[_\s]+",
+                " ",
+                str(item.get("source_role") or "").strip().lower(),
+            ) in {"", "destination alternate", "alternate"}
+            and isinstance(item.get("source_page"), int)
+            and not isinstance(item.get("source_page"), bool)
+            and int(item["source_page"]) > 0
+        ]
+        notam_lines = _compact_notam_lines(
+            alternate_notams,
+            "destination alternate",
+            limit=2,
+            planned_runways=_runway_designators(alternate.get("runway")),
+            reference_time=_reference_time_for_roles(
+                flight,
+                {"alternate"},
+                alternate_notams,
+            ),
+        )
+        selected_constraint = next(
+            (
+                line
+                for line in notam_lines
+                if line.get("planned_match") is True
+            ),
+            notam_lines[0] if notam_lines else None,
+        )
+        if selected_constraint:
+            constraint = {
+                "status": "held",
+                "selection_basis": (
+                    "planned_runway_match"
+                    if selected_constraint.get("planned_match") is True
+                    else "first_source_held"
+                ),
+                "notam_id": str(
+                    selected_constraint.get("label")
+                    or selected_constraint.get("notam_id")
+                    or "NOTICE"
+                ),
+                "source_icao": airport or None,
+                "source_role": selected_constraint.get("source_role"),
+                "text": str(selected_constraint.get("text") or "").strip(),
+                "source_page": selected_constraint.get("source_page"),
+                "planned_match": selected_constraint.get("planned_match"),
+                "different_runway": selected_constraint.get(
+                    "different_runway"
+                ),
+                "applicability_inferred": False,
+            }
+        else:
+            constraint = {
+                "status": "unavailable",
+                "selection_basis": "unavailable",
+                "notam_id": None,
+                "source_icao": airport or None,
+                "source_role": None,
+                "text": (
+                    "CONSTRAINT UNAVAILABLE - review current controlled notices."
+                ),
+                "source_page": None,
+                "planned_match": None,
+                "different_runway": None,
+                "applicability_inferred": False,
+            }
+
+        for source in (forecast, constraint):
+            source_page = source.get("source_page")
+            source["source_reference"] = (
+                f"CFP p{int(source_page)}"
+                if isinstance(source_page, int)
+                else "SOURCE PAGE UNAVAILABLE"
+            )
+
+        held_count = sum(
+            source["status"] == "held" for source in (forecast, constraint)
+        )
+        if held_count == 2:
+            source_status = "held"
+        elif held_count:
+            source_status = "partial"
+        else:
+            source_status = "unavailable"
+        assessment = {
+            "status": "review_required",
+            "source_status": source_status,
+            "text": (
+                "REVIEW - source held; suitability not concluded."
+                if source_status == "held"
+                else (
+                    "REVIEW - source partially held; suitability not concluded."
+                    if source_status == "partial"
+                    else "REVIEW - source unavailable; suitability not concluded."
+                )
+            ),
+            "suitability_concluded": False,
+        }
+        projected.append({
+            "role": "preferred" if index == 0 else "alternate",
+            "is_preferred": index == 0,
+            "airport": airport or "----",
+            "runway": alternate.get("runway"),
+            "approach": alternate.get("approach"),
+            "minima": alternate.get("minima"),
+            "distance_nm": alternate.get("distance_nm"),
+            "time_minutes": alternate.get("time_minutes"),
+            "fuel_kg": alternate.get("fuel_kg"),
+            "forecast": forecast,
+            "constraint": constraint,
+            "assessment": assessment,
+        })
+    return projected
+
+
 def _actm_clock(value: Any) -> str:
     """CFP ACTM ("03.21" / "03:21") as a clock string; empty when not held."""
     match = re.fullmatch(r"(\d{1,2})[.:](\d{2})", str(value or "").strip())
@@ -1071,7 +1287,27 @@ def _performance_publication(flight: dict[str, Any]) -> dict[str, Any]:
                 "anti_ice_on",
                 "eosid",
                 "maximum_fuel_available_kg",
+                "maximum_landing_weight_kg",
             )
+        },
+        # Source-held planning sensitivities shared by dashboard and PDF.
+        # These are not performance calculations performed by ODSS; they are
+        # bounded projections of values printed in the uploaded CFP.
+        "planning_sensitivity": {
+            "zfw_change_burn_add_kg_per_1000": flight.get(
+                "zfw_change_burn_add_kg_per_1000"
+            ),
+            "zfw_change_burn_less_kg_per_1000": flight.get(
+                "zfw_change_burn_less_kg_per_1000"
+            ),
+            "lower_cruise_sensitivity": dict(
+                flight.get("lower_cruise_sensitivity") or {}
+            ),
+            "flight_planning_etps": [
+                dict(item)
+                for item in flight.get("flight_planning_etps") or []
+                if isinstance(item, dict)
+            ],
         },
         "candidate_limits": candidates,
         "selected_rtow_kg": selected,
@@ -1679,7 +1915,48 @@ def _fir_boundary_rows(flight: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def _fir_boundary_summary(rows: list[dict[str, Any]]) -> str:
+def _jakarta_cpdlc_procedure(
+    records: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Return only a traceable, explicitly non-applicable Jakarta procedure.
+
+    The concise projection is allowed only when the uploaded record itself
+    holds every procedure token.  A generic CPDLC mention or a missing source
+    page is not enough to create an operational action.
+    """
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        identity = str(record.get("notam_id") or "").strip()
+        source_page = record.get("source_page")
+        heading = " ".join(str(record.get("heading") or "").upper().split())
+        text = " ".join(str(record.get("text") or "").upper().split())
+        if (
+            identity
+            and isinstance(source_page, int)
+            and not isinstance(source_page, bool)
+            and source_page > 0
+            and str(record.get("applicability") or "").strip().lower()
+            == "not_inferred"
+            and "JAKARTA FIR" in heading
+            and all(
+                token in text
+                for token in (
+                    "ADS-C/CPDLC",
+                    "REQUESTED BY ATC",
+                    "AFN LOGON",
+                    "ADDRESS FOR JAKARTA FIR IS WIIF",
+                )
+            )
+        ):
+            return record
+    return None
+
+
+def _fir_boundary_summary(
+    rows: list[dict[str, Any]],
+    notam_procedure_records: list[dict[str, Any]] | None = None,
+) -> str:
     grouped: dict[str, dict[str, list[Any]]] = {}
     for row in rows:
         fir = str(row.get("event") or "").replace(" FIR boundary", "").strip()
@@ -1701,10 +1978,30 @@ def _fir_boundary_summary(rows: list[dict[str, Any]]) -> str:
             else "CFP page unavailable"
         )
         parts.append(f"{fir} {'/'.join(group['actm'])} ({page_text})")
+    jakarta_procedure = _jakarta_cpdlc_procedure(
+        notam_procedure_records or []
+    )
+    procedure_note = (
+        "Jakarta CPDLC/AFN procedure is source-held separately; "
+        "frequency/lead are unavailable and applicability is not inferred."
+        if jakarta_procedure
+        else None
+    )
     if not parts:
+        if procedure_note:
+            return (
+                "No FIR boundary ACTM row is held in the parsed CFP. "
+                + procedure_note
+            )
         return (
             "No FIR boundary ACTM row is held in the parsed CFP; contact "
             "procedure/frequency unavailable."
+        )
+    if procedure_note:
+        return (
+            " | ".join(parts)
+            + ". Boundary clocks are source-held. "
+            + procedure_note
         )
     return (
         " | ".join(parts)
@@ -2096,14 +2393,59 @@ def _validated_profile_coverage(
 def _terrain_summary(
     terrain_events: list[dict[str, Any]],
     findings: list[dict[str, Any]],
+    route_waypoints: list[dict[str, Any]] | None = None,
 ) -> str:
     """Compose one source-backed terrain sentence naming every active window.
 
     Names and values come from the same detected events the page renders, so
-    surfaces cannot disagree or substitute route-specific wording.
+    surfaces cannot disagree or substitute route-specific wording.  When no
+    high-MSA window is detected, publish the bounded CFP trigger result and
+    the available source maxima instead of exposing the engine's ``>100*``
+    shorthand.  Missing route values stay explicitly unavailable.
     """
     if not terrain_events:
-        return "No strict MSA >100* window detected"
+        waypoints = route_waypoints or []
+        msa_values = [
+            value
+            for waypoint in waypoints
+            if isinstance((value := waypoint.get("msa_hundreds_ft")), int)
+            and not isinstance(value, bool)
+            and value >= 0
+        ]
+        vws_values = [
+            value
+            for waypoint in waypoints
+            if isinstance((value := waypoint.get("vws")), int)
+            and not isinstance(value, bool)
+            and value >= 0
+        ]
+        maximum_msa = max(msa_values, default=None)
+        maximum_vws = max(vws_values, default=None)
+        vws_detail = (
+            f"maximum planned VWS {maximum_vws:03d}"
+            if maximum_vws is not None
+            else "planned VWS data unavailable"
+        )
+        if maximum_msa is None:
+            return (
+                "CFP route/profile trigger not evaluated: parsed route waypoint "
+                f"MSA data unavailable ({vws_detail}). This is only the bounded "
+                "CFP trigger result, not a terrain-clearance finding."
+            )
+        maximum_msa_ft = maximum_msa * 100
+        if maximum_msa > 100:
+            return (
+                "CFP route/profile trigger requires review: maximum CFP MSA "
+                f"{maximum_msa_ft:,} ft exceeds 10,000 ft, but no trigger window "
+                f"was produced ({vws_detail}). This is only the bounded CFP "
+                "trigger result, not a terrain-clearance finding."
+            )
+        return (
+            "CFP route/profile trigger not activated: no parsed route waypoint "
+            f"MSA exceeded 10,000 ft (maximum CFP MSA {maximum_msa_ft:,} ft; "
+            f"{vws_detail}). This is only the bounded CFP trigger result, not a "
+            "terrain-clearance finding."
+        )
     spans: list[str] = []
     for event in terrain_events:
         first = event.get("first_high") or {}
@@ -3178,6 +3520,135 @@ def _overview_projection(
             exact_utc=timeline_departure_utc,
         )
     ]
+    planning_etps = [
+        item
+        for item in flight.get("flight_planning_etps") or []
+        if isinstance(item, dict) and item.get("eet_minutes") is not None
+    ]
+    # The short ETP/level/FIR/TOD sequence is the source-backed compact mode
+    # for a flight explicitly declared STANDARD/NON EDTO.  EDTO CFPs also
+    # print planning ETP rows; those must not displace the governed EDTO entry,
+    # VWS or terrain anchors already selected for that flight.
+    source_planning_mode = bool(planning_etps) and source_classification in {
+        "STANDARD",
+        "NON EDTO",
+    }
+    if source_planning_mode:
+        route_waypoints = [
+            waypoint
+            for waypoint in flight.get("route_waypoints") or []
+            if waypoint.get("actm_minutes") is not None
+        ]
+        waypoint_by_name = {
+            str(waypoint.get("name") or "").lstrip("-").upper(): waypoint
+            for waypoint in route_waypoints
+            if str(waypoint.get("name") or "").strip()
+        }
+        profile_tokens = [
+            token.strip().upper()
+            for token in str(flight.get("planned_level_profile") or "").split("/")
+            if token.strip()
+        ]
+        departure_tokens = {
+            str(flight.get("departure") or "").upper(),
+            str(flight.get("departure_iata") or "").upper(),
+        }
+        level_change_count = 0
+        for index in range(0, len(profile_tokens) - 1, 2):
+            name, level = profile_tokens[index:index + 2]
+            if name in departure_tokens or not re.fullmatch(r"\d{3}", level):
+                continue
+            waypoint = waypoint_by_name.get(name)
+            if not waypoint:
+                continue
+            timeline.append(_overview_anchor(
+                kind="level_change",
+                label=name,
+                detail=f"FL{level}",
+                actm_minutes=int(waypoint["actm_minutes"]),
+                departure_utc=timeline_departure_utc,
+            ))
+            level_change_count += 1
+            if level_change_count >= 2:
+                break
+
+        etp = planning_etps[0]
+        etp_actm = int(etp["eet_minutes"])
+        etp_detail = " · ".join(
+            part
+            for part in (
+                f"{int(etp['distance_nm']):,} NM"
+                if etp.get("distance_nm") is not None
+                else None,
+                "EET " + str(
+                    etp.get("eet_token") or format_actm(etp_actm)
+                ).replace(".", ":"),
+            )
+            if part
+        )
+        timeline.append(_overview_anchor(
+            kind="flight_planning_etp",
+            label=str(etp.get("label") or "ETP").upper(),
+            detail=etp_detail,
+            actm_minutes=etp_actm,
+            departure_utc=timeline_departure_utc,
+        ))
+
+        # Choose the first filed FIR boundary at or after the planning ETP.
+        # Route order is the tie-breaker.  This is deterministic source
+        # selection; it neither invents a boundary nor promotes the route's
+        # final FIR merely because it happens to be last in the log.
+        fir_waypoint = next(
+            (
+                waypoint
+                for waypoint in route_waypoints
+                if waypoint.get("fir_boundary")
+                and int(waypoint["actm_minutes"]) >= etp_actm
+            ),
+            None,
+        )
+        if fir_waypoint:
+            timeline.append(_overview_anchor(
+                kind="fir",
+                label=str(fir_waypoint.get("fir_boundary") or "FIR").upper(),
+                detail="FIR",
+                actm_minutes=int(fir_waypoint["actm_minutes"]),
+                departure_utc=timeline_departure_utc,
+            ))
+
+        tod = next(
+            (
+                waypoint
+                for waypoint in reversed(route_waypoints)
+                if str(waypoint.get("name") or "").lstrip("-").upper() == "TOD"
+            ),
+            None,
+        )
+        if tod:
+            tod_actm = int(tod["actm_minutes"])
+            paired = next(
+                (
+                    waypoint
+                    for waypoint in reversed(route_waypoints)
+                    if waypoint is not tod
+                    and waypoint.get("actm_minutes") == tod_actm
+                    and not waypoint.get("fir_boundary")
+                    and str(waypoint.get("name") or "").lstrip("-").upper()
+                    not in {"TOC", "TOD"}
+                ),
+                None,
+            )
+            paired_name = str(
+                (paired or {}).get("name") or ""
+            ).lstrip("-").upper()
+            timeline.append(_overview_anchor(
+                kind="tod",
+                label=f"{paired_name}/TOD" if paired_name else "TOD",
+                detail="",
+                actm_minutes=tod_actm,
+                departure_utc=timeline_departure_utc,
+            ))
+
     edto = flight.get("edto") or {}
     sectors = edto_sectors(edto)
     edto_entry = (
@@ -3185,7 +3656,7 @@ def _overview_projection(
         if sectors
         else edto.get("entry_actm_minutes")
     )
-    if edto_entry is not None:
+    if edto_entry is not None and not source_planning_mode:
         timeline.append(_overview_anchor(
             kind="edto",
             label="EDTO",
@@ -3194,7 +3665,11 @@ def _overview_projection(
             departure_utc=timeline_departure_utc,
         ))
 
-    vws_events = detect_vws_events(flight.get("route_waypoints") or [])
+    vws_events = (
+        []
+        if source_planning_mode
+        else detect_vws_events(flight.get("route_waypoints") or [])
+    )
     if vws_events:
         vws_point = vws_events[0].get("first_high") or {}
         # When the very same point is already a strict-terrain anchor, the
@@ -3210,7 +3685,7 @@ def _overview_projection(
                     departure_utc=timeline_departure_utc,
                 ))
 
-    for event in terrain_events:
+    for event in ([] if source_planning_mode else terrain_events):
         first = event.get("first_high") or {}
         last = event.get("last_high") or first
         event_actm = first.get("actm_minutes")
@@ -4337,6 +4812,145 @@ def _intam_review_queue(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _source_category_review_queue(records, category_key="category")
 
 
+def _intam_operational_priority_rows(
+    intam_records: list[dict[str, Any]],
+    notam_procedure_records: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Project a few exact source-held actions without relevance inference.
+
+    Each row requires its complete source fingerprint in the uploaded record:
+    identity, physical page, headline/heading and the operative body tokens.
+    Missing source prose stays absent.  The fixed display order is only a
+    concise briefing aid and does not assert route or flight applicability.
+    """
+    records = [record for record in intam_records if isinstance(record, dict)]
+
+    def source_record(
+        *,
+        category: str,
+        headline_tokens: tuple[str, ...],
+        body_tokens: tuple[str, ...],
+    ) -> dict[str, Any] | None:
+        for record in records:
+            identity = str(record.get("identity") or "").strip()
+            source_page = record.get("source_page")
+            headline = " ".join(
+                str(record.get("headline") or "").upper().split()
+            )
+            body = " ".join(
+                str(record.get("body_text") or "").upper().split()
+            )
+            if (
+                identity
+                and isinstance(source_page, int)
+                and not isinstance(source_page, bool)
+                and source_page > 0
+                and str(record.get("category") or "").strip().upper()
+                == category
+                and all(token in headline for token in headline_tokens)
+                and all(token in body for token in body_tokens)
+            ):
+                return record
+        return None
+
+    def row(
+        *,
+        key: str,
+        title: str,
+        summary: str,
+        source_type: str,
+        record: dict[str, Any],
+        identity_key: str,
+    ) -> dict[str, Any]:
+        identity = str(record[identity_key]).strip()
+        source_page = int(record["source_page"])
+        return {
+            "key": key,
+            "title": title,
+            "summary": summary,
+            "source_type": source_type,
+            "source_identity": identity,
+            "source_page": source_page,
+            "source_reference": f"CFP p{source_page} / {identity}",
+            "status": "source-held; relevance not inferred",
+            "relevance_inferred": False,
+            "applicability_inferred": False,
+        }
+
+    projected: list[dict[str, Any]] = []
+    jakarta = _jakarta_cpdlc_procedure(notam_procedure_records or [])
+    if jakarta:
+        projected.append(row(
+            key="jakarta_cpdlc_trial",
+            title="JAKARTA ADS-C / CPDLC TRIAL",
+            summary=(
+                "The limited trial is initiated at ATC request; the pilot "
+                "initiates AFN logon; the Jakarta FIR AFN address is WIIF."
+            ),
+            source_type="NOTAM PROCEDURE",
+            record=jakarta,
+            identity_key="notam_id",
+        ))
+
+    parking = source_record(
+        category="AIRPORT",
+        headline_tokens=("RPLL", "OVERSHOOTING OF PARKING POSITION"),
+        body_tokens=(
+            "TAXI SPEED IS REDUCED APPROPRIATELY",
+            "REACT TO THE MARSHALLER INSTRUCTION PROMPTLY",
+        ),
+    )
+    if parking:
+        projected.append(row(
+            key="rpll_parking_overshoot",
+            title="RPLL PARKING OVERSHOOT",
+            summary=(
+                "Reduce taxi speed appropriately and be ready to respond "
+                "promptly to the marshaller."
+            ),
+            source_type="INTAM",
+            record=parking,
+            identity_key="identity",
+        ))
+
+    flysmart = source_record(
+        category="OPS",
+        headline_tokens=("ABSENT SIGN/SIGNED BUTTON", "FLYSMART"),
+        body_tokens=("CONTINUE TO SIGN THE OFP ON PILOTSIGN", "AS PER SOP"),
+    )
+    if flysmart:
+        projected.append(row(
+            key="flysmart_pilotsign",
+            title="FLYSMART / PILOTSIGN",
+            summary=(
+                "The FlySmart sign/signed button is absent; continue signing "
+                "the OFP in PilotSign per the source SOP."
+            ),
+            source_type="INTAM",
+            record=flysmart,
+            identity_key="identity",
+        ))
+
+    gnss = source_record(
+        category="SAFETY",
+        headline_tokens=("GNSS/GPS RADIO FREQUENCY INTERFERENCE",),
+        body_tokens=("WSJC", "CHINA SEA", "GNSS/GPS"),
+    )
+    if gnss:
+        projected.append(row(
+            key="gnss_rfi_wsjc_south_china_sea",
+            title="GNSS RFI / WSJC SOUTH CHINA SEA",
+            summary=(
+                "The source bulletin lists WSJC (Singapore FIR, South China "
+                "Sea) among FIRs reporting GNSS/GPS interference."
+            ),
+            source_type="INTAM",
+            record=gnss,
+            identity_key="identity",
+        ))
+    return projected
+
+
 def build_briefing_view(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -4379,6 +4993,10 @@ def build_briefing_view(
         flight,
         source_findings,
     )
+    alternate_assessment_rows = _alternate_assessment_rows(
+        flight,
+        airport_operational_panels,
+    )
 
     critical_airport_notams = [
         item
@@ -4414,6 +5032,12 @@ def build_briefing_view(
     needs_review = bool(
         warnings
         or edto_assessment["status"] == "review_required"
+        or any(
+            (row.get("assessment") or {}).get("status")
+            == "review_required"
+            for row in alternate_assessment_rows
+            if isinstance(row, dict)
+        )
         or any(
             item.get("severity") in {"warning", "critical", "unknown"}
             for item in findings
@@ -4550,9 +5174,19 @@ def build_briefing_view(
         for record in flight.get("intam_records") or []
         if isinstance(record, dict)
     ]
+    notam_procedure_records = [
+        dict(record)
+        for record in flight.get("notam_procedure_records") or []
+        if isinstance(record, dict)
+    ]
     intam_pages = sorted({
         int(record["source_page"])
         for record in intam_records
+        if isinstance(record.get("source_page"), int)
+    })
+    notam_procedure_pages = sorted({
+        int(record["source_page"])
+        for record in notam_procedure_records
         if isinstance(record.get("source_page"), int)
     })
     cfp_weather_records = _cfp_weather_records(flight)
@@ -4684,6 +5318,7 @@ def build_briefing_view(
         "departure": departure_panel,
         "destination": destination_panel,
         "airport_operational_panels": airport_operational_panels,
+        "alternate_assessment_rows": alternate_assessment_rows,
         "fuel_enroute_airports": [
             panel
             for panel in airport_operational_panels
@@ -4705,18 +5340,32 @@ def build_briefing_view(
         # here exactly once so overview, dashboard and PDF cannot disagree.
         "terrain": {
             "events": terrain_events,
-            "summary": _terrain_summary(terrain_events, findings),
+            "summary": _terrain_summary(terrain_events, findings, waypoints),
         },
         "exception_cards": exception_cards,
         "communications": communications,
         "fir_boundaries": fir_boundaries,
-        "fir_boundary_summary": _fir_boundary_summary(fir_boundaries),
+        "fir_boundary_summary": _fir_boundary_summary(
+            fir_boundaries,
+            notam_procedure_records,
+        ),
         "intam": {
             "status": "HELD" if intam_records else "NOT HELD",
             "record_count": len(intam_records),
             "source_pages": intam_pages,
             "records": intam_records,
+            # Procedure NOTAMs are a distinct source family, not INTAMs.  Keep
+            # them separately labelled while making the raw held text
+            # reachable from the same dashboard review queue promised by the
+            # compact operational PDF.
+            "procedure_record_count": len(notam_procedure_records),
+            "procedure_source_pages": notam_procedure_pages,
+            "procedure_records": notam_procedure_records,
             "review_queue": _intam_review_queue(intam_records),
+            "operational_priority_rows": _intam_operational_priority_rows(
+                intam_records,
+                notam_procedure_records,
+            ),
             "applicability": "not_inferred",
         },
         "route_airspace": route_airspace,

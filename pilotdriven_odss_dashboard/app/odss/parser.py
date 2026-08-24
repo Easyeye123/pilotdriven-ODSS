@@ -146,6 +146,10 @@ def _parse_performance(perf_text: str) -> dict[str, Any]:
             perf_text,
             r"RTOW\(LAND\)\s+(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>T)?\b",
         ),
+        "maximum_landing_weight_kg": _weight_group_kg(
+            perf_text,
+            r"\bMLGW\s+(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>T)?\b",
+        ),
         "structural_rtow_kg": _weight_group_kg(
             perf_text,
             r"RTOW\(STRUC\)\s+(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>T)?\b",
@@ -193,47 +197,152 @@ def _parse_intam_records(
     pages: list[str],
     bounds: tuple[int, int] | None,
 ) -> list[dict[str, Any]]:
-    """Hold bounded INTAM identities/headlines without relevance inference.
+    """Hold bounded INTAM records without relevance inference.
 
     The company-bulletin appendix is source evidence, not a clearance engine.
-    Each printed record retains its complete header, headline and physical CFP
-    page. Body prose stays in the uploaded source package for governed review.
+    Each printed record retains its complete header, headline, body text and
+    physical CFP page.  Body continuation across physical pages is preserved;
+    no renderer has to invent an action from a headline alone.
     """
     if bounds is None:
         return []
     start, end = bounds
     records: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    headline_lines: list[str] = []
+    body_lines: list[str] = []
+    headline_complete = False
+
+    def flush() -> None:
+        nonlocal current, headline_lines, body_lines, headline_complete
+        if current is not None:
+            records.append({
+                **current,
+                "headline": " ".join(headline_lines),
+                "body_text": " ".join(body_lines),
+            })
+        current = None
+        headline_lines = []
+        body_lines = []
+        headline_complete = False
+
+    for page_index in range(start, end):
+        lines = pages[page_index].splitlines()
+        for line in lines:
+            match = _INTAM_HEADER.match(line)
+            if match:
+                flush()
+                current = {
+                    "priority": int(match.group("priority")),
+                    "category": match.group("category"),
+                    "identity": match.group("identity").strip(),
+                    "date_token": match.group("date"),
+                    "header": " ".join(line.split()),
+                    "source_page": page_index + 1,
+                }
+                continue
+            if current is None:
+                continue
+            stripped = line.strip()
+            if not stripped:
+                if headline_lines:
+                    headline_complete = True
+                continue
+            if (
+                re.fullmatch(r"[-=]{3,}", stripped)
+                or stripped.startswith(("SIA ", "Page "))
+            ):
+                continue
+            normalized = " ".join(stripped.split())
+            if not headline_complete and len(headline_lines) < 4:
+                headline_lines.append(normalized)
+            else:
+                headline_complete = True
+                body_lines.append(normalized)
+    flush()
+    return records
+
+
+_NOTAM_PROCEDURE_HEADER = re.compile(
+    r"^\s*(?P<identity>[A-Z0-9]+/\d{2})\s+VALID:\s*(?P<validity>.+?)\s*$",
+    re.IGNORECASE,
+)
+_NOTAM_FIR_HEADING = re.compile(
+    r"^(?P<icao>[A-Z]{4})\s+(?P<name>[A-Z][A-Z0-9 /().,'-]*\bFIR)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _parse_notam_procedure_records(
+    pages: list[str],
+    bounds: tuple[int, int] | None,
+) -> list[dict[str, Any]]:
+    """Retain source NOTAM records that explicitly print datalink procedure.
+
+    Selection requires both a named FIR heading and printed
+    ``CPDLC``/``ADS-C`` tokens.  The record is not claimed route-applicable;
+    it is held for pilot review with its identity, section heading, physical
+    page and complete source prose.  Airport or generic section records never
+    inherit a previous FIR heading.
+    """
+    if bounds is None:
+        return []
+    start, end = bounds
+    records: list[dict[str, Any]] = []
+    heading: str | None = None
+    current: dict[str, Any] | None = None
+    body_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal current, body_lines
+        if current is not None:
+            body = " ".join(body_lines).strip()
+            if re.search(r"\b(?:CPDLC|ADS-C)\b", body, re.IGNORECASE):
+                records.append({
+                    **current,
+                    "text": body,
+                    "applicability": "not_inferred",
+                })
+        current = None
+        body_lines = []
+
     for page_index in range(start, end):
         lines = pages[page_index].splitlines()
         for line_index, line in enumerate(lines):
-            match = _INTAM_HEADER.match(line)
-            if not match:
+            stripped = line.strip()
+            underlined_heading = (
+                stripped
+                and line_index + 1 < len(lines)
+                and re.fullmatch(r"[-=]{3,}", lines[line_index + 1].strip())
+                and not _NOTAM_PROCEDURE_HEADER.match(stripped)
+            )
+            if underlined_heading:
+                flush()
+                heading = (
+                    " ".join(stripped.split())
+                    if _NOTAM_FIR_HEADING.fullmatch(stripped)
+                    else None
+                )
                 continue
-            headline_lines: list[str] = []
-            for candidate in lines[line_index + 1:]:
-                stripped = candidate.strip()
-                if not stripped:
-                    if headline_lines:
-                        break
-                    continue
-                if (
-                    _INTAM_HEADER.match(stripped)
-                    or re.fullmatch(r"[-=]{3,}", stripped)
-                    or stripped.startswith(("SIA ", "Page "))
-                ):
-                    break
-                headline_lines.append(stripped)
-                if len(headline_lines) >= 4:
-                    break
-            records.append({
-                "priority": int(match.group("priority")),
-                "category": match.group("category"),
-                "identity": match.group("identity").strip(),
-                "date_token": match.group("date"),
-                "header": " ".join(line.split()),
-                "headline": " ".join(headline_lines),
-                "source_page": page_index + 1,
-            })
+            declaration = _NOTAM_PROCEDURE_HEADER.match(stripped)
+            if declaration:
+                flush()
+                if heading is not None:
+                    current = {
+                        "notam_id": declaration.group("identity").upper(),
+                        "validity": " ".join(declaration.group("validity").split()),
+                        "heading": heading,
+                        "source_page": page_index + 1,
+                    }
+                continue
+            if (
+                current is not None
+                and stripped
+                and not re.fullmatch(r"[-=]{3,}", stripped)
+                and not stripped.startswith(("SIA ", "Page "))
+            ):
+                body_lines.append(" ".join(stripped.split()))
+    flush()
     return records
 
 
@@ -584,11 +693,46 @@ _LOWER_CRUISE_SENSITIVITY_RE = re.compile(
     r"\s*/\s*TIME\s+(?P<time>\d{1,2}\.\d{2})",
     re.IGNORECASE,
 )
+_FLIGHT_PLANNING_ETP_RE = re.compile(
+    r"\bETP\s*(?P<label>[A-Z0-9]+)\s+"
+    r"(?P<from>[A-Z]{3})\s*/\s*(?P<to>[A-Z]{3})\s+"
+    r"DIST\s+(?P<distance_nm>\d+)\s*NM\s+"
+    r"EET\s+(?P<eet>\d{1,2}\.\d{2})\b",
+    re.IGNORECASE,
+)
 # "CAPT CHAN K B DAVID" at end of the plan line; the signature placeholder
 # "CAPT(SIGN) ..." never matches because no whitespace follows CAPT.
 _CAPTAIN_RE = re.compile(r"\bCAPT\s+(?P<name>[A-Z][A-Z .'-]*[A-Z])\s*$", re.MULTILINE)
 
 _LEGACY_WAYPOINT_LOG_OFFSET = 6
+
+
+def _parse_flight_planning_etps(
+    cfp_pages: list[str],
+    *,
+    start_page_number: int,
+) -> list[dict[str, Any]]:
+    """Retain non-EDTO flight-planning ETP rows as source facts.
+
+    A standard CFP may print an ``ETPA ... DIST ... EET`` planning row even
+    when its EDTO assessment is correctly not applicable.  Keep that row
+    separate from the EDTO model so a renderer can show the source milestone
+    without changing the flight's EDTO classification.
+    """
+    rows: list[dict[str, Any]] = []
+    for page_offset, text in enumerate(cfp_pages):
+        for match in _FLIGHT_PLANNING_ETP_RE.finditer(text):
+            eet_token = match.group("eet")
+            rows.append({
+                "label": f"ETP {match.group('label').upper()}",
+                "from": match.group("from").upper(),
+                "to": match.group("to").upper(),
+                "distance_nm": int(match.group("distance_nm")),
+                "eet_token": eet_token,
+                "eet_minutes": actm_minutes(eet_token),
+                "source_page": start_page_number + page_offset,
+            })
+    return rows
 
 
 def _waypoint_log_start(cfp_pages: list[str]) -> int:
@@ -1296,7 +1440,15 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     zfw_burn_match = _ZFW_BURN_RE.search(page1)
     zfw_dual_match = _ZFW_DUAL_SENSITIVITY_RE.search(page1)
     lower_cruise_match = _LOWER_CRUISE_SENSITIVITY_RE.search(page1)
+    flight_planning_etps = _parse_flight_planning_etps(
+        cfp_pages,
+        start_page_number=cfp_start + 1,
+    )
     intam_records = _parse_intam_records(pages, sections.get("intam"))
+    notam_procedure_records = _parse_notam_procedure_records(
+        pages,
+        sections.get("notam"),
+    )
     intam_source_pages = sorted({
         int(record["source_page"])
         for record in intam_records
@@ -1403,6 +1555,9 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
             if lower_cruise_match
             else None
         ),
+        # Non-EDTO planning ETP rows are source-held milestones, not proof of
+        # an EDTO sector.  Keep them independent of ``flight.edto``.
+        "flight_planning_etps": flight_planning_etps,
         # Preserve the complete printed FLT RULES token. Real CFPs can print a
         # single RVSM token as well as EDTO/RVSM or EDTO/MNPS/RVSM. The legacy
         # key is retained for API compatibility, but no rule is inferred or
@@ -1413,6 +1568,9 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         # Lossless bounded company-bulletin identities. No route relevance,
         # applicability or operational conclusion is inferred here.
         "intam_records": intam_records,
+        # Source-held CPDLC/ADS-C procedure records. Presence does not prove
+        # route applicability; publishing surfaces retain that explicit gate.
+        "notam_procedure_records": notam_procedure_records,
         "alternates": _parse_alternates(cfp_pages),
         "performance": performance,
         "fuel": fuel,

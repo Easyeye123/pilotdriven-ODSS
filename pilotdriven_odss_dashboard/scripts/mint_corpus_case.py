@@ -28,6 +28,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.analysis import run_odss_analysis
+from run_private_cfp_corpus import (
+    EXTRACTION_CONTRACT_VERSION,
+    build_extraction_snapshot,
+)
 
 MANIFEST = ROOT / "tests" / "private_cfp_corpus_manifest.json"
 
@@ -51,6 +55,19 @@ def analyse(source: Path, flight_id: int) -> dict:
         return json.loads(Path(result["analysis_path"]).read_text(encoding="utf-8"))
 
 
+def extraction_expectations(flight: dict) -> dict:
+    snapshot = build_extraction_snapshot(flight)
+    if snapshot["structure_failures"]:
+        raise SystemExit(
+            "Cannot mint an incomplete extraction baseline: "
+            + "; ".join(snapshot["structure_failures"])
+        )
+    return {
+        "counts": snapshot["counts"],
+        "identity_sha256": snapshot["identity_sha256"],
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--corpus-dir", required=True, type=Path)
@@ -61,6 +78,7 @@ def main() -> None:
     args = parser.parse_args()
 
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    manifest["extraction_contract_version"] = EXTRACTION_CONTRACT_VERSION
     cases = manifest["cases"]
 
     if args.filename:
@@ -84,6 +102,7 @@ def main() -> None:
             "destination_iata": args.destination_iata,
             "route_point_count": len(flight.get("route_waypoints") or []),
             "route_hash": contract.get("route_hash"),
+            "extraction_expectations": extraction_expectations(flight),
         })
         print(f"appended {args.case_id}: {cases[-1]['route_point_count']} waypoints")
     else:
@@ -99,9 +118,10 @@ def main() -> None:
             )
             case["route_point_count"] = count
             case["route_hash"] = route_hash
+            case["extraction_expectations"] = extraction_expectations(flight)
             print(f"{'refreshed' if changed else 'unchanged'} {case['case_id']}: {count} waypoints")
 
-    MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    MANIFEST.write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
     print(f"manifest now holds {len(cases)} cases")
 
 

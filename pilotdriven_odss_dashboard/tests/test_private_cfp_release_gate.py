@@ -27,6 +27,11 @@ def test_private_release_manifest_holds_at_least_the_pinned_set():
     cases = payload["cases"]
 
     case_ids = {case["case_id"] for case in cases}
+    # This is the exact boss-reviewed HelpYou/briefing flow.  Keep the literal
+    # assertion as well as the generic subset check so a future edit cannot
+    # remove the case from both the manifest and REQUIRED_CASE_IDS unnoticed.
+    assert "SQ910-SIN-MNL-21AUG" in REQUIRED_CASE_IDS
+    assert "SQ910-SIN-MNL-21AUG" in case_ids
     assert REQUIRED_CASE_IDS <= case_ids
     assert len(case_ids) == len(cases), "case ids must be unique"
     assert len({case["filename"] for case in cases}) == len(cases)
@@ -44,7 +49,7 @@ def test_manifest_is_plain_json_and_contains_no_private_pdf_bytes():
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
     assert payload["schema_version"] == 1
-    assert payload["extraction_contract_version"] == 1
+    assert payload["extraction_contract_version"] == 2
     assert MANIFEST.stat().st_size < 64_000
 
 
@@ -76,22 +81,38 @@ def test_required_markers_are_checked_on_the_surface_that_owns_them():
         "destination": "YPPH",
     }
     common = "FLIGHT BRIEFING SIN / WSSS PER / YPPH"
+    phases = "RELEASE BEFORE PUSH ROUTE ARRIVAL WEATHER"
 
     assert check_required_publication_markers(
         case,
         audit_text=common,
-        operational_text=f"{common} PHASE ACTION",
+        operational_text=f"{common} {phases}",
     ) == []
     assert check_required_publication_markers(
         case,
         audit_text=common,
         operational_text=common,
-    ) == ["operational: PHASE ACTION"]
+    ) == [
+        "operational: RELEASE",
+        "operational: BEFORE PUSH",
+        "operational: ROUTE",
+        "operational: ARRIVAL",
+        "operational: WEATHER",
+    ]
     assert check_required_publication_markers(
         case,
         audit_text="FLIGHT BRIEFING SIN / WSSS",
-        operational_text=f"{common} PHASE ACTION",
+        operational_text=f"{common} {phases}",
     ) == ["audit: PER / YPPH"]
+
+    # The former category/status-only strip must not certify a production PDF.
+    assert "operational: BEFORE PUSH" in check_required_publication_markers(
+        case,
+        audit_text=common,
+        operational_text=(
+            f"{common} PERFORMANCE STATUS AIRPORTS WEATHER ROUTE OPEN REVIEW"
+        ),
+    )
 
 
 def test_physical_scanner_accepts_a_readable_non_overlapping_page(tmp_path):

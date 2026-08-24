@@ -110,8 +110,10 @@ _COMBINED_PROFILE_TITLE = "DEPRESSURISATION PROFILE"
 _COMBINED_BOSS_FLOW_PAGES = (
     (
         "CFP P1 - ROUTE / LEVELS",
-        "PHASE ACTION",
-        "STRIP",
+        "RELEASE",
+        "BEFORE PUSH",
+        "ROUTE",
+        "ARRIVAL",
         "PERFORMANCE",
         "FUEL",
         "STATUS",

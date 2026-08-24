@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "extraction_contract_version": 1,
+ "extraction_contract_version": 2,
  "description": "Private physical-PDF release corpus. Files remain outside git; exact hashes make the gate reproducible and fail closed.",
  "extraction_baseline_policy": "Frozen and reviewed from fresh current full-analysis outputs of the exact SHA-pinned sources with live NOAA AWC disabled. Counts and SHA-256 digests cover all full ordered deterministic records. Any parser change requires deliberate evidence review and explicit remint; the release runner never derives or blesses these values.",
  "cases": [
@@ -25,7 +25,11 @@
      "edto_sectors": 1,
      "edto_airports": 1,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 39
+     "route_waypoints": 39,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "2f35e6693251f393237b9f6275cd56cf503824b8b1545028fa067094e5748175",
@@ -35,7 +39,11 @@
      "edto_sectors": "acb73c0ea7e122dcb4674c256186b30d1ca4d431661eee6a8b53ccdbfa4b4d73",
      "edto_airports": "ebc205db3f05c7fbe07ebbd2e64d8410bc898711d9638772d9fc524c5e2c74e4",
      "fuel_enroute_airports": "59db7d337dccc8331aa924dfac93fdce2bc4060595b9239d368f6455e6fb8d87",
-     "route_waypoints": "db36152e3f1aa73c5d1f51e626cd08fb6b3b7483618c4eff19e48e2c5dcb3280"
+     "route_waypoints": "db36152e3f1aa73c5d1f51e626cd08fb6b3b7483618c4eff19e48e2c5dcb3280",
+     "flight_planning_etps": "aaecdfb584379fd1a3aafc81264646be44a6cde0dff98d34bccf5b9ceff72c64",
+     "intam_records": "dd4f7a08be7b2f5e06f2d67a43f4830c453ff8f4845b4a7fc3b66fecab53e174",
+     "notam_procedure_records": "0dcb1f1d458f267ca3230013e2b5a0c8ebfd749b57bd27305415cae18f743449",
+     "planning_publication": "cb80a5a82253bf902f6ddebdecbb6de9ec479efa01f35aba08a570a63dce1785"
     }
    }
   },
@@ -60,7 +68,11 @@
      "edto_sectors": 1,
      "edto_airports": 2,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 146
+     "route_waypoints": 146,
+     "flight_planning_etps": 1,
+     "intam_records": 25,
+     "notam_procedure_records": 4,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "8a52c2b905490e893537b907de147ea35e7e9a40339525f0a82362435e91630c",
@@ -70,7 +82,11 @@
      "edto_sectors": "381804694bf9dcbdf1e6abad6d2bc091ca3b0c6b2bf68dd5a19004aa35598426",
      "edto_airports": "6a55be0b1e5ad04b15638b830907a50909e9869bfe4782fb0ceab3967176d079",
      "fuel_enroute_airports": "6a2dbed52390b4a496f37ff0d450a27a8cc4e67242406d55745d4b22ffb78fa0",
-     "route_waypoints": "f3e0800a81011b4f2ad9ba41141f0c8c33204b2088ad72d15382bb816e961740"
+     "route_waypoints": "f3e0800a81011b4f2ad9ba41141f0c8c33204b2088ad72d15382bb816e961740",
+     "flight_planning_etps": "e5a4f69f2481b12d94f77f9ebba9a7b0f15834fafaddf01b497a42bc84664cbf",
+     "intam_records": "72ee05763a4c2534c3cccb578dab3b145f56b352b9ba441320c47d818136221d",
+     "notam_procedure_records": "303e6da110b7d2b4e8ee91037e261ae65247102f2683a4c3946fb491b84d4214",
+     "planning_publication": "f63a000023f3a7eb0afaa2428798ecdf6b05a7194ef65ae86f262daa0941f978"
     }
    }
   },
@@ -95,7 +111,11 @@
      "edto_sectors": 1,
      "edto_airports": 2,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 150
+     "route_waypoints": 150,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 4,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "5989a74ad95687411f7c34e313083983e01f94d5620c68fbf3e145b3188e4476",
@@ -105,7 +125,11 @@
      "edto_sectors": "1620ff3bdf564d303b6146e57e808317f9606f433dc6d4a39a764d31d9df9ae9",
      "edto_airports": "6dcd1d15fd65818a0559072cc78c0e2f759f518a517f2b50ea98ee548ea0c417",
      "fuel_enroute_airports": "f8b8a2b8de228247d9e0a919d13a6c3c716b5225d7c745a27e3d70daffdd4bde",
-     "route_waypoints": "44ff1d518a617c00dbda09f69f364654b544ff36bae4afa90bbdb09dd4a7a124"
+     "route_waypoints": "44ff1d518a617c00dbda09f69f364654b544ff36bae4afa90bbdb09dd4a7a124",
+     "flight_planning_etps": "4cf0397bf273f76cba282861907348cb695a30748a9b02d778e655ca56ee0844",
+     "intam_records": "d06bdb33f281385042f7b58ea777b88e73e10dde710048fe095a52c7eeb3b5a2",
+     "notam_procedure_records": "df40072236cac8efbbc3fb20e8f557a4d4ef06b248100013a3610ea6e0e9abb1",
+     "planning_publication": "d90b9e4f99fc1349706bef06748685e3105c650051673221734de9100061d39f"
     }
    }
   },
@@ -130,7 +154,11 @@
      "edto_sectors": 3,
      "edto_airports": 4,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 118
+     "route_waypoints": 118,
+     "flight_planning_etps": 1,
+     "intam_records": 24,
+     "notam_procedure_records": 8,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "802b9169ba2b378e91516a10ab85ec2fe34c0507a1ad08211c5a379691cf3172",
@@ -140,7 +168,11 @@
      "edto_sectors": "d6dcda71bed7681e3155966f1f237b0db2414118b788e0d1a344630712730a88",
      "edto_airports": "d7d102f47dccb9fee84ebe75ef9203c5a6eb309ec57f01dfcdf5bed4534e9c26",
      "fuel_enroute_airports": "959b2668d13b6cab6a541661e4cfdbb7647f1fb50c3fafe27252c90a6da1e7a3",
-     "route_waypoints": "3e434a6893583b69393d8191a7ce3167c165cfdc68de04294516e50f13048648"
+     "route_waypoints": "3e434a6893583b69393d8191a7ce3167c165cfdc68de04294516e50f13048648",
+     "flight_planning_etps": "357499099f6612be6f5fa6d02cdeaef37bd9358ce5277797b70cef0f3afff974",
+     "intam_records": "426c82d5c0f74c341ffdb0882d23e79944e6e2d66f484b67048fdfbb891a916e",
+     "notam_procedure_records": "29a0063d4c3305f8348c1fa003c8e920dc3e8a77d637daa45713e402f862f9e5",
+     "planning_publication": "8f2da52b8caed129ee7f54f0fc19582482dd4c46014f5326499dc98fff4351e8"
     }
    }
   },
@@ -165,7 +197,11 @@
      "edto_sectors": 1,
      "edto_airports": 1,
      "fuel_enroute_airports": 52,
-     "route_waypoints": 143
+     "route_waypoints": 143,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 8,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "1005eee2daaeeeb5080c1f1f5480fade9bbeaf028afffd2cb704f49dcc8b4e75",
@@ -175,7 +211,11 @@
      "edto_sectors": "2b3bd9e532a4c4ff8761c9e98d60cd33ba03a1bb18f07bd5d7e17ae48078c945",
      "edto_airports": "8025b688e14d257cbd84f8aceb9621b49ae80e11c8c19b403134f5a2240571bc",
      "fuel_enroute_airports": "3573788ff8e24e7d5bb68c7bdf91e1e05b00f7bfc82f8c63d9f479624d002bd2",
-     "route_waypoints": "4ddbb6361f37b2da373a76eb931b9473fa54c094329b69854dd02334860616c5"
+     "route_waypoints": "4ddbb6361f37b2da373a76eb931b9473fa54c094329b69854dd02334860616c5",
+     "flight_planning_etps": "8b464f682668d7b649467fce902930f2ed9c7ca0ef0fab3c60404cd5a3e18f5c",
+     "intam_records": "65ef8a0f126b707ec66023dd254bd80bffbeb42f483d2044a408840bd4b6b2e8",
+     "notam_procedure_records": "14466838735923a44343f188a70d4c672dcf388a630581195ac187d2c57ade72",
+     "planning_publication": "2516d996532e72f4fa82a55ca83e4b141d78e8d2fbe1634def5358e3f6533490"
     }
    }
   },
@@ -200,7 +240,11 @@
      "edto_sectors": 2,
      "edto_airports": 3,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 169
+     "route_waypoints": 169,
+     "flight_planning_etps": 1,
+     "intam_records": 28,
+     "notam_procedure_records": 4,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "74e0e21df17fb6e41e55f2ca839d89727022e6d5daecab878482265b0b1db7a5",
@@ -210,7 +254,11 @@
      "edto_sectors": "c755447ef1968a168a17d7c178648a773786368f1e5027cbff21f950286b2aa9",
      "edto_airports": "2df0af0da646f48449b79acf08ed4b42f41c067cd55b265e65b5ff543955cb5a",
      "fuel_enroute_airports": "961983ce7148ce2adff27486879055aa725faa8b9f4af14068565fd6434014d1",
-     "route_waypoints": "bb36bac2a262d2258aee9c75f734304eec938abf74ce265ae3c17bde75622850"
+     "route_waypoints": "bb36bac2a262d2258aee9c75f734304eec938abf74ce265ae3c17bde75622850",
+     "flight_planning_etps": "f27c5eb8e72c1f9af336566d068e3c4fcff94a1ef45364453bc27c89f240905b",
+     "intam_records": "a033de7f3bb34e55ca2b64e8561136f8e8302906bad0579d1e49037ad0ade326",
+     "notam_procedure_records": "f89630351472463d405aa702322e8aa91a990fbb56c6e11cf83d975bb42ec059",
+     "planning_publication": "884af2c66be6762af8d90b5ae54a1f031b58aa180ce281758ee32558a65da23a"
     }
    }
   },
@@ -235,7 +283,11 @@
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 150
+     "route_waypoints": 150,
+     "flight_planning_etps": 1,
+     "intam_records": 25,
+     "notam_procedure_records": 4,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "797cdf922a70442cc913e39a218040c3f2a2c18d88665e0b0ed37adbdf3172d7",
@@ -245,7 +297,11 @@
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "c33b764bc4473320ad2225f19f0a0d55301ed64751b134f731d8ed51639895a0",
-     "route_waypoints": "b56187828bd4d1182c7f176708e012d07591f7ba11ecc7dba490a5e4e55c126f"
+     "route_waypoints": "b56187828bd4d1182c7f176708e012d07591f7ba11ecc7dba490a5e4e55c126f",
+     "flight_planning_etps": "a30172ac419e5cee49fb5b7301e10992f8e6c52bc8f6cdb19ba8ecd41d4600b4",
+     "intam_records": "cab900f03ff720d466ef7708fb3ce1367d51ca19eef0476bd5caa64a3e84e68a",
+     "notam_procedure_records": "9b25d3d940be2b556f6542b24f425a18ef2923cbd6b8cb092a6f7ddc4f1584a0",
+     "planning_publication": "14ded3c0d9249c92da0718cc07a9448b04db8f39b17e0768e429f83816d2753d"
     }
    }
   },
@@ -270,7 +326,11 @@
      "edto_sectors": 1,
      "edto_airports": 3,
      "fuel_enroute_airports": 0,
-     "route_waypoints": 34
+     "route_waypoints": 34,
+     "flight_planning_etps": 1,
+     "intam_records": 26,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "83745381283da1b913f5253d2af892a43becc8bb0a80c59a4e5bb39965766daa",
@@ -280,7 +340,11 @@
      "edto_sectors": "9be0b9a6c6c63073d56b31c4e65d6ceb124545f75aae6a66f899a5da8cdf9acd",
      "edto_airports": "4975e31dff3fb7fd4c20921fd0e575fe1f7b836589101659c001c109c45246a4",
      "fuel_enroute_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-     "route_waypoints": "6b3af45ed7054b046091db4a0b509acc2fb6955a7f46c3e04dc7ea66464cb8e5"
+     "route_waypoints": "6b3af45ed7054b046091db4a0b509acc2fb6955a7f46c3e04dc7ea66464cb8e5",
+     "flight_planning_etps": "7ad1ccd21fa42498db94d7cfe38d45190e180120141c7c7a6c17e6f93eb789b7",
+     "intam_records": "1a3d6150908d3e99d9fa2f8fdc4565d14bb1579138d2643b036008516e5f8335",
+     "notam_procedure_records": "149f2cc3c64401187f310fed0705d73b6d844d1fe8e96c07cae6681f00f93211",
+     "planning_publication": "2e5cb2c0b2ca97415c2fccf2644c9a26fc4eba79c21beb794551d4c7d41eafb7"
     }
    }
   },
@@ -305,7 +369,11 @@
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 147
+     "route_waypoints": 147,
+     "flight_planning_etps": 1,
+     "intam_records": 25,
+     "notam_procedure_records": 4,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "f11b7f3e269fb86031700d77d6136a80145974f6f8cca73f5702c01aa3f70a40",
@@ -315,7 +383,11 @@
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "2e3c06c090256cd787470c9d8a3c56699c2ad8021b79b830ddf33659550f355e",
-     "route_waypoints": "959b6bd6aa163df5401e7fbb4e624f0fada4b125372ad0aa470132eb469181eb"
+     "route_waypoints": "959b6bd6aa163df5401e7fbb4e624f0fada4b125372ad0aa470132eb469181eb",
+     "flight_planning_etps": "e8e1a11d84ab102107d10636537058a7b9aee0dc65f20d7aefcbe35b3f3fcf1f",
+     "intam_records": "b64e24e8dbe14f9139a69655bd881a959f0aabb6b2abd15b3911ab3c4253fb72",
+     "notam_procedure_records": "8762207ba133873408533ec804ce887333be2e57c268aa2c99d86d5ff50690fb",
+     "planning_publication": "dd013743225e03af90f9a0a3a7174f72ac7a8ebb532276c517e0000d5e2109f3"
     }
    }
   },
@@ -340,7 +412,11 @@
      "edto_sectors": 2,
      "edto_airports": 4,
      "fuel_enroute_airports": 15,
-     "route_waypoints": 51
+     "route_waypoints": 51,
+     "flight_planning_etps": 1,
+     "intam_records": 22,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "68880895c4d9c19f41590ce850b6e4edd3d4cee05028a5e4f962a9b5f328c2cc",
@@ -350,7 +426,11 @@
      "edto_sectors": "49cd18d157e20010575aad82eb62152a43a7bc681843f53d807656aafc21178a",
      "edto_airports": "4b202d934f0630f352b4b96b22d49baeb40ed0e64d2d7d57f71b3d25e2ac546a",
      "fuel_enroute_airports": "a9267bdc48a38687c14f12f22c68478eac62eef276b13aa7297468a6f6fb684d",
-     "route_waypoints": "6807557227188f1e2cc0c4bf26ccad0f1120f90029af56d180a684ff03f566d1"
+     "route_waypoints": "6807557227188f1e2cc0c4bf26ccad0f1120f90029af56d180a684ff03f566d1",
+     "flight_planning_etps": "54482314069d3c3fa59f08cf34d7d53b5aa587d85b0c5860c56928045366653d",
+     "intam_records": "3beac5c403f08aaabb23cb4bbd5695f8c05d6901b46910961e0da225f9e364ee",
+     "notam_procedure_records": "2d6983b27b7b1879173afe43d272c051f1ef720a478a74eb9c921cb66238b296",
+     "planning_publication": "e853e73e1324214ef01165de6fad6435c4386e2de1cb4589e547bb299aa878d0"
     }
    }
   },
@@ -375,7 +455,11 @@
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 0,
-     "route_waypoints": 35
+     "route_waypoints": 35,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "32569fd13a00f777666c37ea955215965817e3b02c0f3636adf409a44a045e0a",
@@ -385,7 +469,11 @@
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-     "route_waypoints": "8990e9ddbc7aac0c90767ebe0c9167a381c704a0114dd7e93072cfca16fbdfad"
+     "route_waypoints": "8990e9ddbc7aac0c90767ebe0c9167a381c704a0114dd7e93072cfca16fbdfad",
+     "flight_planning_etps": "2dd51bbe50331b65900957e35d984187f3bf1fde2347691942ee8c2935e8010e",
+     "intam_records": "2b982bbd65edd31a015719a494c1a19c222400391cb3a62af5d2faf2cac4a97d",
+     "notam_procedure_records": "2d6983b27b7b1879173afe43d272c051f1ef720a478a74eb9c921cb66238b296",
+     "planning_publication": "29fcec825db19388ac200d01dce639ad11f727e0b2aab0c5c4249beb3f8a9ebf"
     }
    }
   },
@@ -410,7 +498,11 @@
      "edto_sectors": 1,
      "edto_airports": 1,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 35
+     "route_waypoints": 35,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "711972215a1c48561626f04100d90d2fb654fd8b72eac1b25fb4496414ef3bda",
@@ -420,7 +512,11 @@
      "edto_sectors": "5c4bc64224e6824ecfc969bb9ab88f2b49fab9dedf05f4cb6bb7b33aeb7fa154",
      "edto_airports": "a07ac79d69366853880b4da511d048505a1766d3a5b11c5435a759b67a7bcca1",
      "fuel_enroute_airports": "76c812382fbb2d17efad94f6b54708cfe8206f457200b07d259c01d016681571",
-     "route_waypoints": "77ea09a8a715a5c25ef66e8bbc3b71f6a90663d3be1cc021ed33b5e63124ac52"
+     "route_waypoints": "77ea09a8a715a5c25ef66e8bbc3b71f6a90663d3be1cc021ed33b5e63124ac52",
+     "flight_planning_etps": "bb08e0766ac9ef70c76b3483e522286a3f639f139180226255e39b4200467355",
+     "intam_records": "903bccad94d90d9638f5b0408e87d552137a9a47ff696e3a2f6e05489467df83",
+     "notam_procedure_records": "a4ac5e939cd635060aa50f5ec276d9ed3d9e252735206da7e5d5a0dc1700a834",
+     "planning_publication": "664862424c371478e0c6778cdb7947165f11ff1b4a993907199a4f5f0a0f8848"
     }
    }
   },
@@ -445,7 +541,11 @@
      "edto_sectors": 2,
      "edto_airports": 4,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 55
+     "route_waypoints": 55,
+     "flight_planning_etps": 1,
+     "intam_records": 22,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "01f8fa6049e7cbd5d993ed72dbface49d9dc927d87c1c838ebcb865a89b55ed2",
@@ -455,7 +555,11 @@
      "edto_sectors": "8414413547ba147f5d7bc8ad9ad76ac2e27b85cf7a4fc3c4b0d2e322cc7eb427",
      "edto_airports": "1000b49a1589c17258eb451ac2227f57a13871102b8f1787a67e11b317963781",
      "fuel_enroute_airports": "8544adf8b3606cd44d97b2256f78dbc8d440a51d5780ce5980ffc474a2de5135",
-     "route_waypoints": "b07641bd9f028b895aadb37a695bfded1b88c15e3022abb82f68009f814f5251"
+     "route_waypoints": "b07641bd9f028b895aadb37a695bfded1b88c15e3022abb82f68009f814f5251",
+     "flight_planning_etps": "034cb796ac91b3837c8f0190b5e283c2c2f56eab044d258631655bb20b0165af",
+     "intam_records": "48c69703cac36d0684269fba1c22ef601233b2dc93aad1047d417d6e44e03580",
+     "notam_procedure_records": "f3d94e937502334cf017a1038a370f3bea0613ba6d07c107737eee5733f5ba74",
+     "planning_publication": "03d4a5f8accf9390a464e04298571be35ab5b1f6c0040c46aae7b20015661f5b"
     }
    }
   },
@@ -480,7 +584,11 @@
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 43
+     "route_waypoints": 43,
+     "flight_planning_etps": 1,
+     "intam_records": 19,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "1c778ad3afe70cb91835bcb624185e3fe6b33ddeeb662c36ea8c15ae8bc49c98",
@@ -490,7 +598,11 @@
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "f4bf5868ca001263e6f0abd6d2bd33659bd292a4877f67d1fe330399e70a442a",
-     "route_waypoints": "1511ebff726efaa46de541a53cc490870ca0c0dfcbb19801ad58392c57529cba"
+     "route_waypoints": "1511ebff726efaa46de541a53cc490870ca0c0dfcbb19801ad58392c57529cba",
+     "flight_planning_etps": "11827c46cb95ccfb71914506062412159c0a5f03d381c866c291f77d9985ae91",
+     "intam_records": "452669c5f08cf3c325730be6edda0ca3bfe36b3c3d817802c9d787dd9edaa46b",
+     "notam_procedure_records": "18d9d40b6dd24db1b7b7495a6dc296d795741e42e901c6b0c1864dd0d3fbd5bc",
+     "planning_publication": "65ba7663c1f6fb295b7e1986f9817f6b45976fdc5ee459361d18825d79bd0a68"
     }
    }
   },
@@ -515,7 +627,11 @@
      "edto_sectors": 1,
      "edto_airports": 1,
      "fuel_enroute_airports": 7,
-     "route_waypoints": 32
+     "route_waypoints": 32,
+     "flight_planning_etps": 1,
+     "intam_records": 20,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "f1c9e07ea7d2ab655d855ec38bb122865642fce618e433a38684ad69708acf99",
@@ -525,7 +641,11 @@
      "edto_sectors": "b076275d82bd185e12557c97c9ccd6bd3994c58315c74eca8d544598b7de92db",
      "edto_airports": "101b3a09e104e26abb647bbaa6d6b39b9df946f825f56308721d8ef3603fec54",
      "fuel_enroute_airports": "81cd51ecbc4cfc764c692b87fab935f49710b1913c8a39b06db5933d1dc2447d",
-     "route_waypoints": "dff8403d0696f9ecc57de6e1ec4fb85d5376cd8c6b178007ea2376ded53cf31a"
+     "route_waypoints": "dff8403d0696f9ecc57de6e1ec4fb85d5376cd8c6b178007ea2376ded53cf31a",
+     "flight_planning_etps": "3e6a4e09001f23a5d8b3f573c5f24c6369b495e67c17e2e255ba43e7c4e1ba96",
+     "intam_records": "6daa20e7e8af9f03f5fe9dca04b506f5a8b0b7e596ec4f179239b8bb45fb24df",
+     "notam_procedure_records": "0dcb1f1d458f267ca3230013e2b5a0c8ebfd749b57bd27305415cae18f743449",
+     "planning_publication": "2f208f0056e00c944a3b17e079f6de2ed770aa3021ecb2928b8af1ee90fe4409"
     }
    }
   },
@@ -550,7 +670,11 @@
      "edto_sectors": 4,
      "edto_airports": 4,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 119
+     "route_waypoints": 119,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 6,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "9db5a225ad3067a81afd712759fde7a54bea86c2d9f9dca7b3b1026a7c2c04c2",
@@ -560,7 +684,11 @@
      "edto_sectors": "a6eabfd011b18999053a584de3560a4045a3ae8969627fcf17796249161e4b61",
      "edto_airports": "8bf49ca686c624003fa84f0941819d6a8758b11bf13e609d16b19bab6f7ed63c",
      "fuel_enroute_airports": "b72892505004f3a1cacac315e66d62ba83218f008824880a2bea6fc58f76dd68",
-     "route_waypoints": "9a5015618cc1be93dc076cd8535512e563ecc6cf2fdc3e95e5ccc1f855b647a3"
+     "route_waypoints": "9a5015618cc1be93dc076cd8535512e563ecc6cf2fdc3e95e5ccc1f855b647a3",
+     "flight_planning_etps": "07818955ea1662d41e9c1f117cae81847f3ff4e441a8a5ce80d6e934c953e4a7",
+     "intam_records": "3587e008c0aa57ae7264ae28788408903d78f79d12ebb2088b580fbc01b52c9f",
+     "notam_procedure_records": "81dea65f8288f235ea919df16815226ef0550e3696a73843ee9e34fed88f64fd",
+     "planning_publication": "01d35fdb52d1ddd9836a73d1cfbb14be38b27c2d7cdd5c0aa30a9193ae0ff0aa"
     }
    }
   },
@@ -585,7 +713,11 @@
      "edto_sectors": 1,
      "edto_airports": 2,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 149
+     "route_waypoints": 149,
+     "flight_planning_etps": 1,
+     "intam_records": 26,
+     "notam_procedure_records": 4,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "bfd1f229501c5ed3fe7076c435f04f5543649dd720b2548b5531348471e4851a",
@@ -595,7 +727,11 @@
      "edto_sectors": "1f0849d5c531418299185f59337467fafea4b7c9babde3228f342a06166b19cf",
      "edto_airports": "35e822be53fcb03ff8dd0fc1303339184218aa21e34f728ef2d941d76c6e0455",
      "fuel_enroute_airports": "c98081804bb027fb48564ef7087843ff2323384551b7a094af2a4726726a2007",
-     "route_waypoints": "a166f16ad9abc5717e241fcc901ffdbc4bb0b23effcb88e7ecc9867bb6f99d73"
+     "route_waypoints": "a166f16ad9abc5717e241fcc901ffdbc4bb0b23effcb88e7ecc9867bb6f99d73",
+     "flight_planning_etps": "6dacd8ccccc4f8ba17489bfb49bd7126563dd40979f9560f0fcf77ee9374bd09",
+     "intam_records": "ad53bc86d1c0da11b39e7defc5f034b1d4853ec3c1b835491e6d0af38ab367a9",
+     "notam_procedure_records": "5f15acc3bfb56c7ceff09e7908d9e8eecf5395ec796e3830fb51f5ae93d186fe",
+     "planning_publication": "bd4533ac57433e5f8d37980d489b24153e436f4aac4cf93c95c53b819e30c598"
     }
    }
   },
@@ -620,7 +756,11 @@
      "edto_sectors": 1,
      "edto_airports": 1,
      "fuel_enroute_airports": 2,
-     "route_waypoints": 134
+     "route_waypoints": 134,
+     "flight_planning_etps": 1,
+     "intam_records": 25,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "87dd6a23eca6c2f79182e203c5491e3b248fd65a99a416ac2d44d887dd266c2b",
@@ -630,7 +770,11 @@
      "edto_sectors": "0e910e5583d186fb8dda8cf09fe04b193cf0b10fb65bbd2f676934d112d0fe0f",
      "edto_airports": "c22dcf6f6a5f19dde3829e420cf040b2cc6db1280815eae76db53714594da95b",
      "fuel_enroute_airports": "7e514df64697e383c0cd73c06a876e45dc993d2efed230955fc644205c7dfd58",
-     "route_waypoints": "f7d221e8c1a7df77ca2522374edca8beed39101dc5c247f39a2ace2c26386c6c"
+     "route_waypoints": "f7d221e8c1a7df77ca2522374edca8beed39101dc5c247f39a2ace2c26386c6c",
+     "flight_planning_etps": "6351d9c813e999a5e0c59f871835152835e960f9405a20b984d433da90ab8ebb",
+     "intam_records": "3c40734c8e3187863b8a45c300f8c3968cdf7750a3ccdb7b8967693199d8e09e",
+     "notam_procedure_records": "11525e84826e5dacd2a0ae79886a283b0f7fc04874545d2640163deff7befcfa",
+     "planning_publication": "f4ede56a5a7e16a29e3d997cfeaaa518fd1d54963058351a6e8640ff8f59dc67"
     }
    }
   },
@@ -655,7 +799,11 @@
      "edto_sectors": 1,
      "edto_airports": 6,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 53
+     "route_waypoints": 53,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "81b8ad1c938cb9ce97910bbec0a5b1008bbbd6041d879be7014503b5d990c385",
@@ -665,7 +813,11 @@
      "edto_sectors": "f87001a3548ca118a90120ac0e5b3db37dfba6d5350b6be728483d87de5f540c",
      "edto_airports": "bf3826a9d44db40f43e063c70abaa49e229e3c169eef9533d178ac7e9ca8457a",
      "fuel_enroute_airports": "88a98bc60ab3fbf3374ca2e2658de75c9869732485129c68b46db5af1ecc0fe8",
-     "route_waypoints": "96fc23b81156d10c9238053abb0fa8994821cafd3a5dcfd6e30fae3a2f19ea25"
+     "route_waypoints": "96fc23b81156d10c9238053abb0fa8994821cafd3a5dcfd6e30fae3a2f19ea25",
+     "flight_planning_etps": "8d5ec37e52fef7de4cf22e165fbd677a636a782de7301e186e3c061d7c41f385",
+     "intam_records": "501199b1f7ccb336ef833c06431d745463c3592c7cd1679e86596de60e694fab",
+     "notam_procedure_records": "d0ac17138bbdacc4f1c4b36a4f028fb0d192cd70fa6123532f49e7559ee0b6b6",
+     "planning_publication": "6d5789c2fa4bf7b01d1c8b9728b85cc206326a419c275b846da635676c815eca"
     }
    }
   },
@@ -690,7 +842,11 @@
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 35,
-     "route_waypoints": 138
+     "route_waypoints": 138,
+     "flight_planning_etps": 1,
+     "intam_records": 26,
+     "notam_procedure_records": 2,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "300fb44417eb9a9e1eac54a44ba6a712c7b1dea4a52b193b6373ce6a2e2fc1c9",
@@ -700,7 +856,11 @@
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "16d9287b2e23d044c271b46866ed3734c7d33b2bbe12573e6bfaf0ce3859eae7",
-     "route_waypoints": "c04e537f591e22c73666a8d7dfa4f0013d1469b13b7054c7211e7468684c9889"
+     "route_waypoints": "c04e537f591e22c73666a8d7dfa4f0013d1469b13b7054c7211e7468684c9889",
+     "flight_planning_etps": "95561b4964d9dcd76c3e45132c9d0afc9303f2c7062151713684e7e1c04e128e",
+     "intam_records": "3457e705ab4f80b93e5d9ee1878b29b020fe4084d206418d834e5c886dd0362d",
+     "notam_procedure_records": "fed9ec750f428f746d362fe8bfe7a32f8e67dde3cb9c9309e7bbb5456164aba0",
+     "planning_publication": "a51db359217d8a87a027d0a1d326852cb9bd30308a8a9261ef82ced2eb8fb6d6"
     }
    }
   },
@@ -725,7 +885,11 @@
      "edto_sectors": 1,
      "edto_airports": 1,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 38
+     "route_waypoints": 38,
+     "flight_planning_etps": 1,
+     "intam_records": 20,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "59b3c0c1f81dfbef6b52d0130e5a49234c0e8194ebd1fe4cbc3a33899a9ab545",
@@ -735,7 +899,11 @@
      "edto_sectors": "a0619a9bfe00b2e1376842e8c3eed18af882b70fbb61c80bd9e03ed9cdd009aa",
      "edto_airports": "4a062bc81d5231de5229c470177582658ec22261491be633be6e0ebcef2058a4",
      "fuel_enroute_airports": "3a19aebfd2a206d2520b24cd475ab6a24b3c586f76ed6f2da0cadaec99520055",
-     "route_waypoints": "aa8113b5c1122d8d3ac9fc6df1e1fe3e0402a9752d0c51249e380d9a9a236f11"
+     "route_waypoints": "aa8113b5c1122d8d3ac9fc6df1e1fe3e0402a9752d0c51249e380d9a9a236f11",
+     "flight_planning_etps": "02066ab32e4248a3e7ee2da2966530d6e6db361fe9ffbc7f9b47db2fbdbef5e4",
+     "intam_records": "8d961c45b46b548e364c3ce54246c5ba79e0fd423b28ed2015d00d422ad30614",
+     "notam_procedure_records": "2d6983b27b7b1879173afe43d272c051f1ef720a478a74eb9c921cb66238b296",
+     "planning_publication": "d0c46c40879b4242f2d224fa241bee63cff282f621f51335fe2eec02122fee95"
     }
    }
   },
@@ -760,7 +928,11 @@
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 0,
-     "route_waypoints": 35
+     "route_waypoints": 35,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "dd2100d28ab4e31102e5b4e0d27e73627c4f04a8b5d03f2b274e974187f7d6ec",
@@ -770,7 +942,11 @@
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-     "route_waypoints": "11802e38c101e46d49ccd3bae838f162470d202370060592a7f63dd44ad70a50"
+     "route_waypoints": "11802e38c101e46d49ccd3bae838f162470d202370060592a7f63dd44ad70a50",
+     "flight_planning_etps": "0ac3590a4577b7def304d13a6493a64aa8527a1fac81723f2e3e81b72904ce24",
+     "intam_records": "7c6d7973a579d07c975eb76a7261cc8e54dcf2d946da53ba00d4a0c8830dec6b",
+     "notam_procedure_records": "2d6983b27b7b1879173afe43d272c051f1ef720a478a74eb9c921cb66238b296",
+     "planning_publication": "08f85e8bfc6ad5a9d9e2a681cbda11a95f6559b49f8e4f4caf3be3286135ed2c"
     }
    }
   }

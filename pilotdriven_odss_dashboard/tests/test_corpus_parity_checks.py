@@ -65,7 +65,9 @@ def _passing_text(flight: dict) -> str:
         if weather.get("taf"):
             parts.append(f"TAF {weather['taf']}")
     for item in (flight.get("fuel_summary") or {}).get("excess_breakdown") or []:
-        if item.get("fuel_kg"):
+        fuel_kg = item.get("fuel_kg")
+        label = str(item.get("label") or "").strip().upper()
+        if fuel_kg is not None and (fuel_kg != 0 or label == "MEL"):
             parts.append(f"{item['label']} {item['fuel_kg']:,} kg")
     return "\n".join(parts)
 
@@ -104,7 +106,11 @@ def test_edto_operational_rows_retain_real_edto_sector_and_fuel_facts() -> None:
 
 def test_terrain_contradiction_fails() -> None:
     flight = _flight(LOG_PAGE_HIGH)
-    text = _passing_text(flight) + "\nNo strict MSA >100* window detected"
+    text = (
+        _passing_text(flight)
+        + "\nCFP route/profile trigger not activated: no parsed route waypoint "
+        "MSA exceeded 10,000 ft."
+    )
     result = check_cross_surface_parity(flight, [], [], text)
     assert not result["valid"]
     assert any("terrain" in failure for failure in result["failures"])
@@ -112,7 +118,8 @@ def test_terrain_contradiction_fails() -> None:
 
 def test_missing_no_window_sentence_fails() -> None:
     flight = _flight(LOG_PAGE_LOW)
-    text = _passing_text(flight).replace("No strict MSA >100* window detected", "")
+    terrain_summary = build_briefing_view(flight, [], [])["terrain"]["summary"]
+    text = _passing_text(flight).replace(terrain_summary, "")
     result = check_cross_surface_parity(flight, [], [], text)
     assert not result["valid"]
     assert any("terrain" in failure for failure in result["failures"])
@@ -145,6 +152,71 @@ def test_excess_item_without_kg_fails() -> None:
     result = check_cross_surface_parity(flight, [], [], text)
     assert not result["valid"]
     assert any("units" in failure for failure in result["failures"])
+
+
+def test_zero_mass_excess_item_is_still_a_required_published_fact() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["fuel_summary"] = {
+        "excess_breakdown": [{"label": "MEL", "fuel_kg": 0}],
+        "rows": {},
+    }
+
+    missing = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        _passing_text(flight).replace("\nMEL 0 kg", ""),
+    )
+    held = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        _passing_text(flight),
+    )
+
+    assert not missing["valid"]
+    assert any("units" in failure for failure in missing["failures"])
+    assert held["valid"], held["failures"]
+
+
+def test_zero_mel_accepts_the_bounded_operational_excess_fuel_row() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["fuel_summary"] = {
+        "excess_breakdown": [{"label": "MEL", "fuel_kg": 0}],
+        "rows": {},
+    }
+    audit_text = _passing_text(flight).replace("\nMEL 0 kg", "")
+
+    result = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        audit_text,
+        unit_output_text="MEL EXCESS-FUEL · 0 kg",
+    )
+
+    assert result["valid"], result["failures"]
+
+
+def test_non_mel_zero_allocation_is_not_a_publication_requirement() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["fuel_summary"] = {
+        "excess_breakdown": [
+            {"label": "INTAM", "fuel_kg": 0},
+            {"label": "TANKER", "fuel_kg": 0},
+            {"label": "POLICY", "fuel_kg": 0},
+        ],
+        "rows": {},
+    }
+
+    result = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        _passing_text(flight),
+    )
+
+    assert result["valid"], result["failures"]
 
 
 @pytest.mark.parametrize(
@@ -449,6 +521,34 @@ def _extraction_flight() -> dict:
             {"name": "BRAVO", "airway_in": "A1", "msa_hundreds_ft": 40},
             {"name": "CHARLIE", "airway_in": "B2", "msa_hundreds_ft": 50},
         ],
+        "flight_planning_etps": [
+            {"label": "ETP A", "distance_nm": 721, "source_page": 10},
+        ],
+        "intam_records": [
+            {
+                "identity": "ALL FLEETS-TEST",
+                "body_text": "FULL SOURCE BODY",
+                "source_page": 39,
+            },
+        ],
+        "notam_procedure_records": [
+            {
+                "notam_id": "1A0001/26",
+                "text": "FULL PROCEDURE SOURCE",
+                "source_page": 32,
+            },
+        ],
+        "performance": {"maximum_landing_weight_kg": 205_000},
+        "fuel_summary": {
+            "excess_breakdown": [{"label": "MEL", "fuel_kg": 0}],
+        },
+        "zfw_change_burn_kg_per_1000": 69,
+        "zfw_change_burn_add_kg_per_1000": 69,
+        "zfw_change_burn_less_kg_per_1000": 73,
+        "lower_cruise_sensitivity": {
+            "offset_ft": 2_000,
+            "burn_add_kg": 398,
+        },
     }
 
 
@@ -493,6 +593,9 @@ def test_extraction_weather_pin_excludes_live_noaa_awc() -> None:
         ("edto", "airports", "edto.airports"),
         ("flight", "fuel_enroute_airports", "fuel_enroute_airports"),
         ("flight", "route_waypoints", "route_waypoints"),
+        ("flight", "flight_planning_etps", "flight_planning_etps"),
+        ("flight", "intam_records", "intam_records"),
+        ("flight", "notam_procedure_records", "notam_procedure_records"),
     ],
 )
 def test_extraction_contract_rejects_a_missing_whole_domain(
@@ -556,6 +659,73 @@ def test_extraction_contract_hashes_full_waypoint_record_not_only_route_identity
 
     assert result["valid"] is False
     assert result["failures"] == ["route_waypoints.identity_sha256 changed"]
+
+
+@pytest.mark.parametrize(
+    ("domain", "mutate"),
+    [
+        (
+            "flight_planning_etps",
+            lambda flight: flight["flight_planning_etps"][0].update(
+                distance_nm=720
+            ),
+        ),
+        (
+            "intam_records",
+            lambda flight: flight["intam_records"][0].update(
+                body_text="CHANGED SOURCE BODY"
+            ),
+        ),
+        (
+            "notam_procedure_records",
+            lambda flight: flight["notam_procedure_records"][0].update(
+                text="CHANGED PROCEDURE SOURCE"
+            ),
+        ),
+        (
+            "planning_publication",
+            lambda flight: flight["performance"].update(
+                maximum_landing_weight_kg=204_000
+            ),
+        ),
+        (
+            "planning_publication",
+            lambda flight: flight["lower_cruise_sensitivity"].update(
+                burn_add_kg=399
+            ),
+        ),
+    ],
+)
+def test_extraction_contract_pins_new_source_critical_domains(
+    domain: str,
+    mutate,
+) -> None:
+    from scripts.run_private_cfp_corpus import check_extraction_expectations
+
+    flight = _extraction_flight()
+    expected = _extraction_expectation(flight)
+    changed = deepcopy(flight)
+    mutate(changed)
+
+    result = check_extraction_expectations(changed, expected)
+
+    assert result["valid"] is False
+    assert f"{domain}.identity_sha256 changed" in result["failures"]
+
+
+def test_extraction_contract_rejects_missing_planning_publication_input() -> None:
+    from scripts.run_private_cfp_corpus import check_extraction_expectations
+
+    flight = _extraction_flight()
+    expected = _extraction_expectation(flight)
+    changed = deepcopy(flight)
+    del changed["performance"]
+
+    result = check_extraction_expectations(changed, expected)
+
+    assert result["valid"] is False
+    assert "performance is missing" in result["failures"]
+    assert "planning_publication.identity_sha256 changed" in result["failures"]
 
 
 def test_manifest_requires_static_extraction_expectations_for_every_case(
