@@ -218,6 +218,54 @@ def test_an_environment_label_cannot_claim_unimplemented_tca_coverage(monkeypatc
     assert ledger["configuration_status"] == "adapter_not_implemented"
 
 
+def test_wifs_tca_receipt_completes_responsible_centre_coverage(monkeypatch):
+    monkeypatch.setenv("ODSS_TCA_ADVISORY_SOURCE", "wifs-global")
+    snapshot = _snapshot([])
+    snapshot["provider"] = "noaa-awc-international-sigmet"
+    flight = _flight()
+
+    review = assess_tropical_cyclone(
+        flight,
+        [],
+        snapshot=snapshot,
+        direct_snapshot={
+            "status": "available",
+            "provider": "noaa-wifs-global-tca",
+            "coverage_status": "global_seven_tcac_tac_advisories",
+            "advisories": [],
+        },
+    )
+    ledger = review["coverage_ledger"]["responsible_tropical_cyclone_advisory"]
+
+    assert review["status"] == "not_applicable"
+    assert "direct_tca_advisory_source_not_mounted" not in review["reason_codes"]
+    assert ledger["available"] is True
+    assert ledger["provider"] == "noaa-wifs-global-tca"
+    assert ledger["configuration_status"] == "available"
+
+
+def test_unavailable_wifs_tca_receipt_remains_review_required(monkeypatch):
+    monkeypatch.setenv("ODSS_TCA_ADVISORY_SOURCE", "wifs-global")
+    snapshot = _snapshot([])
+    snapshot["provider"] = "noaa-awc-international-sigmet"
+    flight = _flight()
+
+    review = assess_tropical_cyclone(
+        flight,
+        [],
+        snapshot=snapshot,
+        direct_snapshot={
+            "status": "unavailable",
+            "provider": "noaa-wifs-global-tca",
+            "coverage_status": "not_configured",
+            "advisories": [],
+        },
+    )
+
+    assert review["status"] == "review_required"
+    assert "direct_tca_advisory_source_unavailable" in review["reason_codes"]
+
+
 def test_extracts_the_embedded_cfp_tropical_cyclone_statement():
     embedded = extract_embedded_tc([
         "TROPICAL CYCLONE SIGMETS:\nWTPQ31 RJTD TC TYPHOON NEAR 20N130E\nDESTINATION WEATHER",

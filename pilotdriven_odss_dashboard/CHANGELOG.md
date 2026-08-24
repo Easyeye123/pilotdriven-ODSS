@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added a bounded official Météo-France Toulouse VAAC VAA/VAG connector and an authenticated WIFS global TCA connector covering all seven ICAO TCACs.
+- Keeps direct advisory gaps fail-closed: TC track context never substitutes for TCA coverage, and missing WIFS credentials never become a NIL or all-clear result.
+
 ## 0.6.1 - route-aware volcanic-ash review
 
 - Added an auditable NOAA Aviation Weather Center international-SIGMET snapshot and route/time/planned-flight-level intersection engine for volcanic ash.

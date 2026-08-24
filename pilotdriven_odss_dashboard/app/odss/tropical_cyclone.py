@@ -98,6 +98,7 @@ def assess_tropical_cyclone(
     pages: list[str],
     *,
     snapshot: dict[str, Any] | None = None,
+    direct_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assess planned route against active tropical cyclone SIGMETs."""
     embedded = extract_embedded_tc(pages)
@@ -120,22 +121,40 @@ def assess_tropical_cyclone(
         "ODSS_TCA_ADVISORY_SOURCE",
         "",
     ).strip().lower()
-    # No direct responsible-centre TCA adapter is implemented yet. An
-    # environment label alone is not evidence that current TCA data was
-    # retrieved, parsed, and validated, so coverage must stay fail-closed.
-    direct_tca_mounted = False
+    if direct_snapshot is None and configured_tca_source == "wifs-global":
+        from .direct_tcac_wifs import live_wifs_global_tca_snapshot
+
+        direct_snapshot = live_wifs_global_tca_snapshot(flight)
+    direct_tca_reached = bool(
+        direct_snapshot
+        and direct_snapshot.get("status") in {"available", "partial"}
+    )
+    direct_tca_complete = bool(
+        direct_snapshot
+        and direct_snapshot.get("status") == "available"
+        and direct_snapshot.get("coverage_status") == "global_seven_tcac_tac_advisories"
+    )
+    review["direct_tca_snapshot"] = direct_snapshot
     review["coverage_ledger"] = {
         "active_tropical_cyclone_sigmet": {
             "available": snapshot.get("provider") == "noaa-awc-international-sigmet",
             "provider": snapshot.get("provider"),
         },
         "responsible_tropical_cyclone_advisory": {
-            "available": direct_tca_mounted,
-            "provider": None,
+            "available": direct_tca_complete,
+            "provider": (direct_snapshot or {}).get("provider"),
+            "coverage_status": (direct_snapshot or {}).get("coverage_status"),
+            "reached": direct_tca_reached,
             "configured_source": configured_tca_source or None,
             "configuration_status": (
                 "disabled"
                 if configured_tca_source in {"", "disabled", "off", "none"}
+                else "available"
+                if direct_tca_complete
+                else "partial"
+                if direct_tca_reached
+                else "unavailable"
+                if configured_tca_source == "wifs-global"
                 else "adapter_not_implemented"
             ),
             "review_required_when_missing": True,
@@ -143,11 +162,17 @@ def assess_tropical_cyclone(
     }
     if (
         snapshot.get("provider") == "noaa-awc-international-sigmet"
-        and not direct_tca_mounted
+        and not direct_tca_complete
     ):
+        if direct_tca_reached:
+            reason = "direct_tca_coverage_partial"
+        elif configured_tca_source == "wifs-global":
+            reason = "direct_tca_advisory_source_unavailable"
+        else:
+            reason = "direct_tca_advisory_source_not_mounted"
         review["reason_codes"] = sorted(set(
             (review.get("reason_codes") or [])
-            + ["direct_tca_advisory_source_not_mounted"]
+            + [reason]
         ))
         if review.get("status") == "not_applicable":
             review["status"] = "review_required"
