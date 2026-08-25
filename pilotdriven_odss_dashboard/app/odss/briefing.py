@@ -4742,11 +4742,19 @@ def _source_assurance_projection(
         "unavailable",
     )
     route_airspace = route_airspace or {}
+    flight_number = str(flight.get("flight_number") or "").strip().upper()
+    uploaded_ofp_detail = (
+        f"{flight_number} source package bound to this analysis."
+        if flight_number
+        else "Source package bound to this analysis."
+    )
     rows = [
         {
             "source": "UPLOADED OFP",
             "status": "HELD",
-            "detail": str(flight.get("document_id") or "Parsed flight-plan package"),
+            # The storage document_id can be an internal cfp_<uuid>.pdf name.
+            # It is useful for audit storage, but never for a pilot-facing PDF.
+            "detail": uploaded_ofp_detail,
         },
         {
             "source": "AIRPORT NOTICES",

@@ -79,6 +79,27 @@ def test_route_airspace_source_hold_is_bounded_and_does_not_infer_intersection()
     assert "applicability not inferred" in route_row["detail"]
 
 
+def test_source_assurance_hides_internal_cfp_storage_filename():
+    assurance = _source_assurance_projection(
+        {
+            "flight_number": "SQ482",
+            "document_id": "cfp_7838b1c95fe34b41ac226b5a991bc503.pdf",
+        },
+        [],
+        [],
+    )
+
+    uploaded_ofp = next(
+        row for row in assurance if row["source"] == "UPLOADED OFP"
+    )
+    assert uploaded_ofp == {
+        "source": "UPLOADED OFP",
+        "status": "HELD",
+        "detail": "SQ482 source package bound to this analysis.",
+    }
+    assert "cfp_" not in uploaded_ofp["detail"].lower()
+
+
 def test_page1_fuel_chain_and_derived_values_are_shared_and_reproducible():
     page1 = (
         "SINGAPORE AIRLINES - SUMMARY STANDARD CFP\n"
