@@ -56,7 +56,7 @@ def test_route_airspace_source_hold_is_bounded_and_does_not_infer_intersection()
     assert records[0]["activity_kind"] == "military_training"
     projection = _route_airspace_projection({"route_airspace_notices": records})
     assert projection["record_count"] == 1
-    assert projection["source_page_text"] == "CFP p2"
+    assert projection["source_page_text"] == "OFP p2"
     assert projection["applicability_inferred"] is False
     assert projection["military_source_record"]["notam_id"] == "1A1000/26"
     assert "Military-training record 1A1000/26 is source-held" in projection[
@@ -241,7 +241,7 @@ def test_route_airspace_review_replaces_unrelated_alternate_weather_card():
             "label": "Fuel reconciliation",
             "status": "OPEN",
             "detail": "Reconcile fuel.",
-            "source_reference": "CFP p1",
+            "source_reference": "OFP p1",
         }],
         deferred_gates=[{
             "title": "Engine latch",

@@ -1,7 +1,7 @@
 """Governed metadata for manually reviewed official aeronautical publications.
 
 The registry identifies and cites a reviewed publication; it never supplies
-operational facts that are absent from the current CFP finding or an attached
+operational facts that are absent from the current OFP finding or an attached
 verified snapshot.  Report renderers may therefore label source-backed detail
 without turning a publication ID into hidden flight-specific behaviour.
 """

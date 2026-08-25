@@ -424,7 +424,7 @@ def test_cfp_vaa_parity_uses_operational_atomic_identity_and_derived_line() -> N
         + "\nCFP VOLCANO ADVISORY · MAYON · 1B4235/26"
     )
     derived = (
-        "Source-held CFP notice; operational applicability remains "
+        "Source-held OFP notice; operational applicability remains "
         "a crew/dispatch review."
     )
     operational_text = f"MAYON · 1B4235/26\n{derived}"
@@ -821,7 +821,7 @@ def test_long_route_fact_accepts_visible_ordered_tokens_across_page_chrome() -> 
     route_tokens = [f"RTE{index:03d}" for index in range(1, 81)]
     flight = {"route_text": " ".join(route_tokens)}
     visible_text = (
-        "CFP ROUTE "
+        "OFP ROUTE "
         + " ".join(route_tokens[:40])
         + " PAGE 2 OF 2 AIRPORTS CONTINUED SOURCE "
         + " ".join(route_tokens[40:])
@@ -905,7 +905,7 @@ def test_pdf_fact_coverage_rejects_performance_fuel_and_deferred_omissions() -> 
             "item_type": "MEL",
             "reference": "21-01-01",
             "description": "PACK FLOW CONTROL VALVE INOPERATIVE",
-            "company_remark": "APPLY THE CFP OPERATING RESTRICTION",
+            "company_remark": "APPLY THE OFP OPERATING RESTRICTION",
         }],
     }
     complete_text = " ".join([
@@ -917,7 +917,7 @@ def test_pdf_fact_coverage_rejects_performance_fuel_and_deferred_omissions() -> 
         "DEST HOLD TOP UP 1,000 00.30 EDTO TOP UP 500 00.15",
         "EXCESS ALLOCATION POLICY 1,500",
         "MEL 21-01-01 PACK FLOW CONTROL VALVE INOPERATIVE",
-        "APPLY THE CFP OPERATING RESTRICTION",
+        "APPLY THE OFP OPERATING RESTRICTION",
     ])
 
     complete = check_parsed_fact_coverage(flight, complete_text)
@@ -929,7 +929,7 @@ def test_pdf_fact_coverage_rejects_performance_fuel_and_deferred_omissions() -> 
         ("PACKS / ANTI-ICE ON / OFF", "performance.packs_on"),
         ("9,316", "fuel.planned_destination_fuel_kg"),
         ("POLICY", "fuel_summary.excess_breakdown[].label"),
-        ("APPLY THE CFP OPERATING RESTRICTION", "deferred_items[].company_remark"),
+        ("APPLY THE OFP OPERATING RESTRICTION", "deferred_items[].company_remark"),
     ]
     for token, expected_path in omissions:
         incomplete = complete_text.replace(token, "", 1)

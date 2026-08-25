@@ -25,7 +25,7 @@ def _clean(value: Any, fallback: str = "") -> str:
 
 def _source_page(point: dict[str, Any]) -> str:
     page = point.get("source_page")
-    return f"CFP p. {page}" if isinstance(page, int) and page > 0 else "Uploaded CFP"
+    return f"OFP p. {page}" if isinstance(page, int) and page > 0 else "Uploaded OFP"
 
 
 def actual_timing_anchor(flight: dict[str, Any]) -> datetime | None:
@@ -83,7 +83,7 @@ def _named_point(
 
 
 def build_route_gate_rows(flight: dict[str, Any]) -> list[dict[str, str]]:
-    """Return CFP-grounded route gates without inventing procedures.
+    """Return OFP-grounded route gates without inventing procedures.
 
     The uploaded route can establish a named track segment, FIR boundary and
     crossing time. It cannot establish a current contact instruction or
@@ -131,7 +131,7 @@ def build_route_gate_rows(flight: dict[str, Any]) -> list[dict[str, str]]:
                 "time": time_label,
                 "result": f"NAT {track.upper()} route segment",
                 "status": "review_required",
-                "evidence": evidence or "Uploaded CFP",
+                "evidence": evidence or "Uploaded OFP",
             }
         )
 
@@ -214,9 +214,9 @@ def deferred_item_report_rows(
     *,
     limit: int | None = None,
 ) -> list[dict[str, str]]:
-    """Return CFP-declared deferred items with an honest source status.
+    """Return OFP-declared deferred items with an honest source status.
 
-    The declaration itself comes from CFP Page 1.  A model must never infer a
+    The declaration itself comes from OFP Page 1.  A model must never infer a
     missing MEL/CDL condition, so the row stays review-required unless the
     analysis already carries a governed-source result.
     """
@@ -236,14 +236,14 @@ def deferred_item_report_rows(
                     "label": source_declaration or "DEFERRED ITEM - REVIEW REQUIRED",
                     "description": _clean(
                         source_item.get("description"),
-                        "Following CFP text was not parsed.",
+                        "Following OFP text was not parsed.",
                     ),
                     "restriction": _clean(
                         source_item.get("company_remark"),
-                        "No further CFP text was parsed.",
+                        "No further OFP text was parsed.",
                     ),
                     "source_status": (
-                        "CFP deferred declaration requires review; acronym meaning is not "
+                        "OFP deferred declaration requires review; acronym meaning is not "
                         "inferred and no MEL, CDL or CDDL classification is asserted."
                     ),
                 }
@@ -288,11 +288,11 @@ def deferred_item_report_rows(
                 ),
                 "description": _clean(
                     source_item.get("description"),
-                    "Description was not parsed from CFP Page 1.",
+                    "Description was not parsed from OFP Page 1.",
                 ),
                 "restriction": _clean(
                     source_item.get("company_remark"),
-                    "No company restriction was parsed from CFP Page 1.",
+                    "No company restriction was parsed from OFP Page 1.",
                 ),
                 "source_status": source_status,
             }

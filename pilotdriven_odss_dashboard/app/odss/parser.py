@@ -21,7 +21,7 @@ def extract_pages(path: Path) -> list[str]:
         if document.page_count < 1:
             raise ValueError("PDF has no pages")
         if document.page_count > MAX_PDF_PAGES:
-            raise ValueError(f"PDF exceeds the {MAX_PDF_PAGES}-page CFP limit")
+            raise ValueError(f"PDF exceeds the {MAX_PDF_PAGES}-page OFP limit")
         return [page.get_text("text") for page in document]
     finally:
         document.close()
@@ -38,7 +38,7 @@ def validate_pdf(path: Path) -> None:
         if document.page_count < 1:
             raise ValueError("PDF has no pages")
         if document.page_count > MAX_PDF_PAGES:
-            raise ValueError(f"PDF exceeds the {MAX_PDF_PAGES}-page CFP limit")
+            raise ValueError(f"PDF exceeds the {MAX_PDF_PAGES}-page OFP limit")
         document.load_page(0)
     except ValueError:
         raise
@@ -1264,7 +1264,7 @@ def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
 def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     sections = _detect_sections(pages)
     if "cfp" not in sections:
-        raise ValueError("CFP section not detected")
+        raise ValueError("OFP section not detected")
     cfp_start, cfp_end = sections["cfp"]
     cfp_pages = pages[cfp_start:cfp_end]
     page1 = cfp_pages[0]
@@ -1373,7 +1373,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     }
     missing = [name for name, value in required.items() if value is None or value == []]
     if missing:
-        raise ValueError(f"Incomplete or unsupported Lido CFP; missing {', '.join(missing)}")
+        raise ValueError(f"Incomplete or unsupported Lido OFP; missing {', '.join(missing)}")
     fuel["planned_destination_fuel_kg"] = (
         masses["planned_landing_weight_kg"] - masses["planned_zfw_kg"]
     )

@@ -42,7 +42,7 @@ _CACHE_BY_HAZARD: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def extract_embedded_vaa(pages: list[str]) -> dict[str, Any]:
-    """Extract the CFP's volcanic-ash source statement without interpreting it."""
+    """Extract the OFP's volcanic-ash source statement without interpreting it."""
     for page_number, page in enumerate(pages, start=1):
         match = re.search(r"VOLCANIC\s+ASH\s+SIGMETS?\s*:", page, re.IGNORECASE)
         if not match:

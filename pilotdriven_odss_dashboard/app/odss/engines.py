@@ -69,8 +69,8 @@ def _cfp_source_reference(
 ) -> dict[str, Any]:
     return {
         "source_type": "uploaded_cfp",
-        "document_title": flight.get("document_id") or "Uploaded CFP",
-        "display_title": "Uploaded company CFP",
+        "document_title": flight.get("document_id") or "Uploaded OFP",
+        "display_title": "Uploaded company OFP",
         "pages": sorted(
             {
                 int(page)
@@ -340,9 +340,9 @@ def _hazard_review_findings(
             "Official-source coverage is incomplete for the flight window."
         ),
         "cfp_weather_data_unavailable": (
-            f"The CFP states that {hazard['cfp_phrase']} weather data is unavailable."
+            f"The OFP states that {hazard['cfp_phrase']} weather data is unavailable."
         ),
-        "route_geometry_unavailable": "The CFP route geometry is incomplete.",
+        "route_geometry_unavailable": "The OFP route geometry is incomplete.",
         "route_timing_unavailable": "The route timing anchor is unavailable.",
         "flight_level_unavailable": "The planned flight level could not be resolved.",
         "flight_level_change_unresolved": "A planned level-change waypoint could not be matched to the route.",
@@ -1328,7 +1328,7 @@ def effectivity_conflict(flight: dict[str, Any]) -> dict[str, Any] | None:
         for value in profile.get("effectivity", [])
         if value
     })
-    # Shown to a human, so the tail is displayed as the CFP wrote it when that
+    # Shown to a human, so the tail is displayed as the OFP wrote it when that
     # already carries a separator. normalized_registration only knows how to
     # punctuate one national format and would flatten the others.
     stated = str(registration or "").strip().upper()
@@ -1504,7 +1504,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     findings.append(finding(
         "page1",
         "information",
-        "CFP Page 1 organised control summary",
+        "OFP Page 1 organised control summary",
         f"{flight['flight_number']} {flight['departure']}-{flight['destination']}",
         [
             f"{flight['departure']}/{flight.get('departure_runway') or '-'} to "
@@ -1545,7 +1545,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         # The allocation itself belongs in the summary, not only in the evidence
         # list: the reports render a finding's summary line, so a bare delta left
         # the crossing time, level and CTOT out of the printed brief entirely.
-        # Every value here is read from the CFP or computed from it.
+        # Every value here is read from the OFP or computed from it.
         findings.append(finding(
             "bobcat",
             "critical" if difference not in (None, 0) else "warning" if difference is None else "information",
@@ -1559,12 +1559,12 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 else (
                     f"{allocation['waypoint']} FL{allocation['flight_level']}: "
                     f"allocated CTOT {ctot:%H%MZ}, CTO {cto:%H%MZ}; "
-                    "CFP waypoint ACTM not found, so no crossing time is computed."
+                    "OFP waypoint ACTM not found, so no crossing time is computed."
                 )
             ),
             [
                 f"Allocation CTOT {ctot:%H%MZ}; CTO {cto:%H%MZ}; FL{allocation['flight_level']}.",
-                f"CFP waypoint ACTM {format_actm(waypoint['actm_minutes']) if waypoint else 'not found'}.",
+                f"OFP waypoint ACTM {format_actm(waypoint['actm_minutes']) if waypoint else 'not found'}.",
                 "Treat the allocated CTO as controlling and recheck if take-off, route, level or speed changes.",
             ],
             {
@@ -1584,7 +1584,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
 
     for item in flight["deferred_items"]:
         if item["item_type"] in {"UNCLASSIFIED", "IFEDDL", "IN"}:
-            # The CFP's own vocabulary names the block (boss, 21 Aug 2026:
+            # The OFP's own vocabulary names the block (boss, 21 Aug 2026:
             # "UNCLASSIFIED" never reaches the pilot). The exact printed text
             # is the whole held fact; no remedy or instruction is inferred.
             declaration = deferred_source_declaration_for_display(
@@ -1599,18 +1599,18 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             )
             kind_sentence = {
                 "IFEDDL": (
-                    "IFE deferred defect list declaration carried verbatim from CFP page 1; "
+                    "IFE deferred defect list declaration carried verbatim from OFP page 1; "
                     "no remedy or dispatch instruction is inferred."
                 ),
                 "IN": (
-                    "Engineering information notice carried verbatim from CFP page 1; "
+                    "Engineering information notice carried verbatim from OFP page 1; "
                     "no remedy or dispatch instruction is inferred beyond the printed text."
                 ),
             }.get(item["item_type"], (
-                "CFP deferred declaration requires review; acronym meaning is not "
+                "OFP deferred declaration requires review; acronym meaning is not "
                 "inferred and no MEL, CDL or CDDL classification is asserted."
             ))
-            details = [item.get("description") or "No following CFP text parsed."]
+            details = [item.get("description") or "No following OFP text parsed."]
             if item.get("company_remark"):
                 details.append(item["company_remark"])
             findings.append(finding(
@@ -2077,7 +2077,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             if status == "no_significant_overlap":
                 data["flight_effect"] = (
                     "No adverse flight effect is indicated for this window by the "
-                    "CFP TAF; confirm the latest operational weather."
+                    "OFP TAF; confirm the latest operational weather."
                 )
             elif status == "review_required":
                 data["flight_effect"] = (
@@ -2406,7 +2406,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "FIR communication review required",
             "Current approved communication procedures are unavailable.",
             [
-                f"CFP route crosses {len(boundary_names)} FIR boundary or boundaries.",
+                f"OFP route crosses {len(boundary_names)} FIR boundary or boundaries.",
                 "Review current early-contact, frequency and reporting requirements.",
             ],
             {
@@ -2540,7 +2540,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             f"airways {', '.join(profile['airways']) or 'none listed'}.",
             f"Critical point {critical}"
             + (
-                f", CFP ACTM {format_actm(critical_wp['actm_minutes'])}."
+                f", OFP ACTM {format_actm(critical_wp['actm_minutes'])}."
                 if critical_wp
                 else "; ACTM not found."
             ),

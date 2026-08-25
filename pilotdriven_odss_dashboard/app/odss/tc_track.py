@@ -3,7 +3,7 @@
 Hong Kong Observatory publishes a public XML tropical-cyclone list and timed
 track points.  This module keeps only official timed points, interpolates
 between those points as a labelled ODSS screening estimate, and compares the
-estimated centre position with the time-matched CFP route.
+estimated centre position with the time-matched OFP route.
 
 The centre line is not a wind field, forecast cone, SIGMET, or operational
 impact boundary.  It therefore never creates a clear/affected verdict by

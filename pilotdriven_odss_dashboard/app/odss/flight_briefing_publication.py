@@ -415,14 +415,14 @@ def validate_flight_briefing_publication(
             violations,
             "FULL_CFP_APPENDED",
             "report.full_cfp_appended",
-            "The complete CFP must not be appended to the Flight Briefing.",
+            "The complete OFP must not be appended to the Flight Briefing.",
         )
     if report.get("full_cfp_embedded") is True:
         _violation(
             violations,
             "FULL_CFP_EMBEDDED",
             "report.full_cfp_embedded",
-            "The complete CFP must not be embedded in the Flight Briefing.",
+            "The complete OFP must not be embedded in the Flight Briefing.",
         )
     attachments = report.get("embedded_files") or []
     if any(
@@ -434,7 +434,7 @@ def validate_flight_briefing_publication(
             violations,
             "FULL_CFP_ATTACHMENT_PRESENT",
             "report.embedded_files",
-            "The complete CFP must not be attached to the primary report.",
+            "The complete OFP must not be attached to the primary report.",
         )
 
     if _text(page1.get("information_side")).casefold() != "left":
@@ -749,7 +749,7 @@ def validate_flight_briefing_publication(
             violations,
             "HAZARD_COVERAGE_MANIFEST_EMPTY",
             "hazard_assessment",
-            "Every CFP requires reviewed products or explicit coverage gaps.",
+            "Every OFP requires reviewed products or explicit coverage gaps.",
         )
     for index, gap in enumerate(gaps):
         if not isinstance(gap, dict) or not _text(gap.get("product_class")) or not _text(gap.get("reason")):

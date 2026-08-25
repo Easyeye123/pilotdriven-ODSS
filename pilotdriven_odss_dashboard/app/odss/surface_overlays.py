@@ -502,7 +502,7 @@ async def render_surface_static_map(
         "style": "Satellite",
         "image_path": str(destination),
         "media_type": media_type,
-        "label": "Amazon Location Satellite + validated CFP surface overlay",
+        "label": "Amazon Location Satellite + validated OFP surface overlay",
     }
 
 

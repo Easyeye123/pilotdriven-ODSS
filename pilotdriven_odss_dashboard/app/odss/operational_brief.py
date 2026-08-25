@@ -175,7 +175,7 @@ def _display_document_title(reference: dict[str, Any]) -> str:
     if not title:
         return _pilot_source_name(reference)
     if _INTERNAL_DOCUMENT_NAME.match(title):
-        return "Uploaded company CFP"
+        return "Uploaded company OFP"
     return title
 
 
@@ -218,9 +218,9 @@ def _source_label(finding: dict[str, Any]) -> str:
             if isinstance(value, int)
         ]
         return (
-            f"Evidence: Uploaded company CFP; {_page_label(pages)}."
+            f"Evidence: Uploaded company OFP; {_page_label(pages)}."
             if pages
-            else "Evidence: Uploaded company CFP."
+            else "Evidence: Uploaded company OFP."
         )
     reference = references[0]
     parts = [_display_document_title(reference)]
@@ -311,7 +311,7 @@ def _compact_source_label(finding: dict[str, Any]) -> str:
     for reference in references:
         source_type = str(reference.get("source_type") or "")
         if source_type == "uploaded_cfp":
-            label = "Uploaded CFP"
+            label = "Uploaded OFP"
         else:
             label = _pilot_source_name(reference)
             validity = [
@@ -334,7 +334,7 @@ def _compact_source_label(finding: dict[str, Any]) -> str:
             break
     if labels:
         return " / ".join(labels)
-    return "Uploaded CFP"
+    return "Uploaded OFP"
 
 
 def _first_sentence(value: Any, fallback: str = "Review required.") -> str:
@@ -491,7 +491,7 @@ def _draw_header(
         # right-hand section pill.
         atot_note = f"ATOT {atot} | CALC UTC"
     else:
-        atot_note = "CFP ACTM: NOT ACTUAL"
+        atot_note = "OFP ACTM: NOT ACTUAL"
     top = theme.draw_header(
         canvas,
         flight,
@@ -1042,7 +1042,7 @@ def _notam_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
                 r"\b\d*([A-Z]{1,3}\d{2,5}/\d{2})\b",
                 _text(item.get("title"), ""),
             )
-            notam_id = match.group(1) if match else "CFP NOTAM"
+            notam_id = match.group(1) if match else "OFP NOTAM"
         notam_id = normalize_notam_references(notam_id).upper()
         condition = pilot_notam_condition(_finding_summary(item))
         window = _text(
@@ -1100,7 +1100,7 @@ def _notam_rows(findings: list[dict[str, Any]]) -> list[list[str]]:
 def _notam_operational_detail_rows(
     findings: list[dict[str, Any]],
 ) -> list[list[str]]:
-    """Present structured CFP detail without re-reading or dumping raw text."""
+    """Present structured OFP detail without re-reading or dumping raw text."""
 
     rows: list[list[str]] = []
     for item in select_pertinent_notams(
@@ -1135,7 +1135,7 @@ def _notam_operational_detail_rows(
             reviewed_sections = set(publication.get("reviewed_sections") or [])
             validity_label = f"{publication.get('authority')}: {validity}"
         else:
-            validity_label = "CFP: " + _brief_utc_window(
+            validity_label = "OFP: " + _brief_utc_window(
                 data.get("valid_from_utc") or data.get("window_start_utc"),
                 data.get("valid_to_utc") or data.get("window_end_utc"),
             )
@@ -1148,7 +1148,7 @@ def _notam_operational_detail_rows(
                 detail_source += f" / section {section}"
             rows.append([
                 f"{station} / {notam_id}",
-                "Uploaded CFP raw text",
+                "Uploaded OFP raw text",
                 detail["label"],
                 validity_label,
                 detail_source,
@@ -1264,7 +1264,7 @@ def _edto_sector_airports(sector: dict[str, Any]) -> str:
             airport = _text(value, "")
             if airport and airport not in airports:
                 airports.append(airport)
-    return " / ".join(airports) or "CFP alternates"
+    return " / ".join(airports) or "OFP alternates"
 
 
 def _communications_rows(items: list[dict[str, Any]]) -> list[list[str]]:
@@ -1273,7 +1273,7 @@ def _communications_rows(items: list[dict[str, Any]]) -> list[list[str]]:
         data = item.get("data") or {}
         rows.append([
             _text(data.get("fir") or data.get("location"), _text(item.get("title"))),
-            _text(data.get("basis") or data.get("waypoint"), "CFP route"),
+            _text(data.get("basis") or data.get("waypoint"), "OFP route"),
             _text(data.get("actm") or data.get("utc_window"), "Time review required"),
             _finding_summary(item),
         ])
@@ -1320,7 +1320,7 @@ def _weather_rows(items: list[dict[str, Any]]) -> list[list[str]]:
                 "Checked windows" if index == 0 else "",
                 context,
                 (
-                    "No significant CFP forecast group overlapped."
+                    "No significant OFP forecast group overlapped."
                     if index == 0
                     else ""
                 ),
@@ -1329,7 +1329,7 @@ def _weather_rows(items: list[dict[str, Any]]) -> list[list[str]]:
                     if index == 0
                     else ""
                 ),
-                "Uploaded CFP" if index == 0 else "",
+                "Uploaded OFP" if index == 0 else "",
             ]
         )
     return rows
@@ -1423,9 +1423,9 @@ def _compact_advisory_source(item: dict[str, Any]) -> str:
     data = item.get("data") or {}
     if (
         str(data.get("status") or "").lower() == "review_required"
-        and source == "Uploaded CFP"
+        and source == "Uploaded OFP"
     ):
-        return "Uploaded CFP only"
+        return "Uploaded OFP only"
     return source
 
 
@@ -1559,7 +1559,7 @@ def _overview_rows(
             for index, sector in enumerate(sectors, start=1)
         )
     elif edto_assessment_status == "verified_not_applicable":
-        result = "NIL EDTO - explicitly verified not applicable in the uploaded CFP."
+        result = "NIL EDTO - explicitly verified not applicable in the uploaded OFP."
     else:
         result = "EDTO applicability is not explicitly verified - review required."
     # A verified NIL is published once on the dedicated EDTO-status page.
@@ -1776,7 +1776,7 @@ def _draw_terrain_profile(
     canvas.roundRect(x, y, width, height, 7, fill=1, stroke=1)
     canvas.setFillColor(_TEXT)
     canvas.setFont(theme.SANS_BOLD, theme.readable(6.5))
-    canvas.drawString(x + 3 * mm, y + height - 5 * mm, "CFP MSA PROFILE")
+    canvas.drawString(x + 3 * mm, y + height - 5 * mm, "OFP MSA PROFILE")
     chart_x = x + 7 * mm
     chart_y = y + 7 * mm
     chart_w = width - 12 * mm
@@ -1787,7 +1787,7 @@ def _draw_terrain_profile(
     if not points:
         canvas.setFillColor(_MUTED)
         canvas.setFont(theme.SANS, theme.readable(6))
-        canvas.drawCentredString(x + width / 2, y + height / 2, "No CFP MSA points available.")
+        canvas.drawCentredString(x + width / 2, y + height / 2, "No OFP MSA points available.")
         return
     min_t = min(int(item["actm_minutes"]) for item in points)
     max_t = max(int(item["actm_minutes"]) for item in points)
@@ -1843,7 +1843,7 @@ def _page_one(
         map_y,
         left_w,
         map_h,
-        f"{briefing['flight_number']} CFP ROUTE",
+        f"{briefing['flight_number']} OFP ROUTE",
     )
     body_x, body_y, body_w, body_h = _panel(
         canvas,
@@ -1957,7 +1957,7 @@ def _page_two(
             (
                 "EXCESS FUEL",
                 _mass(fuel.get("excess_fuel_kg")),
-                "CFP excess above required fuel",
+                "OFP excess above required fuel",
             ),
         ],
         margin,
@@ -2124,10 +2124,10 @@ def _page_two(
         for item in (flight.get("alternates") or [])
         if isinstance(item, dict) and item.get("airport")
     ) or "No destination alternate parsed"
-    sid = _text(flight.get("sid"), "SID not found in CFP - review required")
-    star = _text(flight.get("star"), "STAR not found in CFP - review required")
+    sid = _text(flight.get("sid"), "SID not found in OFP - review required")
+    star = _text(flight.get("star"), "STAR not found in OFP - review required")
     left_rows = [
-        ["RUNWAY / SID", f"{flight.get('departure_runway') or '--'} / {sid}", "Planned CFP basis"],
+        ["RUNWAY / SID", f"{flight.get('departure_runway') or '--'} / {sid}", "Planned OFP basis"],
         ["PERFORMANCE", performance_basis, "RTOW results shown above"],
         ["WEATHER", dep_weather, dep_weather_effect],
         ["PERTINENT NOTAMS", dep_notam, dep_notam_effect],
@@ -2138,12 +2138,12 @@ def _page_two(
         left_rows.append(
             [
                 item["label"],
-                f"{item['description']} / CFP restriction: {item['restriction']}",
+                f"{item['description']} / OFP restriction: {item['restriction']}",
                 item["source_status"],
             ]
         )
     right_rows = [
-        ["RUNWAY / STAR", f"{flight.get('destination_runway') or '--'} / {star}", "Planned CFP basis"],
+        ["RUNWAY / STAR", f"{flight.get('destination_runway') or '--'} / {star}", "Planned OFP basis"],
         ["WEATHER", dest_weather, dest_weather_effect],
         ["PERTINENT NOTAMS", dest_notam, dest_notam_effect],
         ["ALTERNATES", alternates, "Checked-period suitability required"],
@@ -2373,7 +2373,7 @@ def _page_aip_supplement_details(
         title="EVIDENCE BOUNDARY",
         accent=_HEADER,
         body=(
-            "Operational details are structured from the current uploaded CFP. "
+            "Operational details are structured from the current uploaded OFP. "
             "Reviewed-publication metadata labels verified authority, validity "
             "and sections; missing raw detail is never invented."
         ),
@@ -2417,7 +2417,7 @@ def _page_four(
             route_y,
             PAGE_SIZE[0] - 2 * margin,
             max(42 * mm, top - route_y),
-            f"{briefing['flight_number']} ROUTE / CFP COORDINATES",
+            f"{briefing['flight_number']} ROUTE / OFP COORDINATES",
         )
         _strip(
             canvas,
@@ -2427,12 +2427,12 @@ def _page_four(
             height=strip_h,
             title="EDTO STATUS",
             accent=_GREEN,
-            body="NIL EDTO - verified not applicable from the complete uploaded CFP.",
+            body="NIL EDTO - verified not applicable from the complete uploaded OFP.",
         )
         return
     if edto_assessment_status == "verified_not_applicable":
         sector_empty_text = (
-            "NIL EDTO - explicitly verified not applicable in the uploaded CFP."
+            "NIL EDTO - explicitly verified not applicable in the uploaded OFP."
         )
         airport_empty_text = sector_empty_text
     elif edto_assessment_status == "affected":
@@ -2503,7 +2503,7 @@ def _page_four(
                 (
                     _compact_source_label(weather_item)
                     if weather_item
-                    else "Uploaded CFP"
+                    else "Uploaded OFP"
                 ),
             ]
         )
@@ -2568,7 +2568,7 @@ def _page_four(
             map_y,
             PAGE_SIZE[0] - 2 * margin,
             map_h,
-            f"{briefing['flight_number']} EDTO ROUTE / CFP COORDINATES",
+            f"{briefing['flight_number']} EDTO ROUTE / OFP COORDINATES",
         )
 
     _draw_table(
@@ -2690,7 +2690,7 @@ def _page_five(
         rows=left_rows,
         accent=_CYAN,
         max_rows=10,
-        empty_text="No CFP route gate was extracted.",
+        empty_text="No OFP route gate was extracted.",
         fill_height=False,
         header_font_size=7.0,
     )
@@ -2704,18 +2704,18 @@ def _page_five(
         rows=right_rows,
         accent=_CYAN,
         max_rows=10,
-        empty_text="No additional CFP route gate was extracted.",
+        empty_text="No additional OFP route gate was extracted.",
         fill_height=False,
         header_font_size=7.0,
     )
     timing_status = (
         (
-            "ATOT + CFP ACTM anchors calculated UTC clocks; waypoint UTCs "
+            "ATOT + OFP ACTM anchors calculated UTC clocks; waypoint UTCs "
             "are calculated, not observed actuals."
         )
         if actual_timing_anchor(flight)
         else (
-            "CFP ACTM is accumulated/planned, not actual; ATOT/ATA required "
+            "OFP ACTM is accumulated/planned, not actual; ATOT/ATA required "
             "for UTC clocks."
         )
     )
@@ -2822,7 +2822,7 @@ def _page_six(
             chart_y,
             PAGE_SIZE[0] - 2 * margin,
             chart_h,
-            "CFP ROUTE / TERRAIN CONTEXT",
+            "OFP ROUTE / TERRAIN CONTEXT",
         )
     rows = _terrain_rows(
         flight,
@@ -2841,7 +2841,7 @@ def _page_six(
             ("REF", 0.05),
             ("ACTM", 0.12),
             ("UTC" if actual_timing_anchor(flight) else "UTC — NO ANCHOR", 0.18),
-            ("CFP ROUTE EXPOSURE", 0.18),
+            ("OFP ROUTE EXPOSURE", 0.18),
             ("DUR", 0.08),
             ("MAX", 0.13),
             ("PROFILE COVERAGE", 0.26),
@@ -2849,7 +2849,7 @@ def _page_six(
         rows=rows,
         accent=_AMBER,
         max_rows=6,
-        empty_text="No high-terrain exposure was extracted from CFP MSA points.",
+        empty_text="No high-terrain exposure was extracted from OFP MSA points.",
     )
     _strip(
         canvas,
@@ -2860,7 +2860,7 @@ def _page_six(
         title="BOUNDARY",
         accent=_AMBER,
         body=(
-            "Only validated CFP MSA points are shown. A profile is confirmed "
+            "Only validated OFP MSA points are shown. A profile is confirmed "
             "only from the approved controlled profile source; otherwise chart "
             "review is required."
         ),
@@ -3084,7 +3084,7 @@ def render_level2_visual(
 
     Page purposes are fixed publication structure. Flight-specific values,
     findings, map points, evidence and applicability remain deterministic
-    inputs from the uploaded CFP and approved source adapters.
+    inputs from the uploaded OFP and approved source adapters.
     """
 
     # Continuation planning measures text before the first page is drawn.

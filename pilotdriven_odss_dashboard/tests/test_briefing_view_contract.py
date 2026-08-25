@@ -58,9 +58,9 @@ def test_terrain_key_is_engine_backed_and_always_present() -> None:
     low = build_briefing_view(_flight(LOG_PAGE_LOW), [], [])
     assert low["terrain"]["events"] == []
     assert low["terrain"]["summary"] == (
-        "CFP route/profile trigger not activated: no parsed route waypoint MSA "
-        "exceeded 10,000 ft (maximum CFP MSA 5,600 ft; maximum planned VWS "
-        "005). This is only the bounded CFP trigger result, not a "
+        "OFP route/profile trigger not activated: no parsed route waypoint MSA "
+        "exceeded 10,000 ft (maximum OFP MSA 5,600 ft; maximum planned VWS "
+        "005). This is only the bounded OFP trigger result, not a "
         "terrain-clearance finding."
     )
     assert ">100*" not in low["terrain"]["summary"]
@@ -71,6 +71,86 @@ def test_terrain_summary_and_events_can_never_disagree() -> None:
     has_events = bool(view["terrain"]["events"])
     says_none = "trigger not activated" in view["terrain"]["summary"]
     assert has_events != says_none
+
+
+def test_vws_review_is_published_even_when_the_same_route_has_high_terrain() -> None:
+    """A terrain trigger must never hide the independently reviewed VWS result."""
+
+    view = build_briefing_view(_flight(LOG_PAGE_HIGH), [], [])
+
+    assert view["terrain"]["events"]
+    assert view["terrain"]["vws_review"] == {
+        "status": "review_required",
+        "threshold": ">004",
+        "event_count": 1,
+        "maximum": 5,
+        "maximum_display": "005",
+        "maximum_waypoint": "ALPHA",
+        "maximum_actm_minutes": 85,
+        "maximum_actm_display": "01.25",
+        "source_page": 7,
+        "summary": (
+            "VWS review: 1 planned >004 trigger window; maximum 005 at ALPHA "
+            "(ACTM 01.25, OFP p7) - review required."
+        ),
+    }
+
+
+def test_vws_review_publishes_a_bounded_no_trigger_result() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["route_waypoints"] = [
+        {
+            "name": "CRUISE",
+            "actm_minutes": 90,
+            "msa_hundreds_ft": 30,
+            "vws": 1,
+            "source_page": 7,
+        },
+        {
+            "name": "ARRIVAL",
+            "actm_minutes": 180,
+            "msa_hundreds_ft": 70,
+            "vws": 4,
+            "source_page": 8,
+        },
+    ]
+
+    review = build_briefing_view(flight, [], [])["terrain"]["vws_review"]
+
+    assert review["status"] == "reviewed_no_trigger"
+    assert review["event_count"] == 0
+    assert review["maximum"] == 4
+    assert review["maximum_waypoint"] == "ARRIVAL"
+    assert review["summary"] == (
+        "VWS review: no planned >004 trigger in the source-held route values; "
+        "maximum 004 at ARRIVAL (ACTM 03.00, OFP p8)."
+    )
+
+
+def test_vws_review_never_turns_missing_route_values_into_zero() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["route_waypoints"] = [{
+        "name": "SOURCE-GAP",
+        "actm_minutes": 90,
+        "msa_hundreds_ft": None,
+        "vws": None,
+        "source_page": 7,
+    }]
+
+    review = build_briefing_view(flight, [], [])["terrain"]["vws_review"]
+
+    assert review == {
+        "status": "unavailable",
+        "threshold": ">004",
+        "event_count": 0,
+        "maximum": None,
+        "maximum_display": None,
+        "maximum_waypoint": None,
+        "maximum_actm_minutes": None,
+        "maximum_actm_display": None,
+        "source_page": None,
+        "summary": "VWS review unavailable: no planned VWS value is held in the parsed OFP route.",
+    }
 
 
 def test_terrain_no_trigger_summary_reports_sq910_compatible_source_maxima() -> None:
@@ -94,7 +174,7 @@ def test_terrain_no_trigger_summary_reports_sq910_compatible_source_maxima() -> 
 
     assert view["terrain"]["events"] == []
     assert "trigger not activated" in view["terrain"]["summary"]
-    assert "maximum CFP MSA 7,000 ft" in view["terrain"]["summary"]
+    assert "maximum OFP MSA 7,000 ft" in view["terrain"]["summary"]
     assert "maximum planned VWS 004" in view["terrain"]["summary"]
     assert "not a terrain-clearance finding" in view["terrain"]["summary"]
 
@@ -116,7 +196,7 @@ def test_terrain_no_trigger_summary_does_not_invent_missing_source_maxima() -> N
     assert "trigger not evaluated" in view["terrain"]["summary"]
     assert "MSA data unavailable" in view["terrain"]["summary"]
     assert "planned VWS data unavailable" in view["terrain"]["summary"]
-    assert "maximum CFP MSA" not in view["terrain"]["summary"]
+    assert "maximum OFP MSA" not in view["terrain"]["summary"]
     assert "maximum planned VWS 000" not in view["terrain"]["summary"]
 
 
@@ -480,7 +560,7 @@ def test_printed_chart_selection_matches_identity_and_nearest_flight_validity() 
     assert context["status"] == "matched"
     assert context["governed"] is True
     assert context["flight_number"] == "SQ999"
-    assert "validity ranked against the CFP flight window" in context["basis"]
+    assert "validity ranked against the OFP flight window" in context["basis"]
     assert selected["valid_time_utc"] == "2026-08-01T04:00:00+00:00"
     assert selected["valid_time_display"] == "01 AUG 0400Z"
     assert selected["display_label"] == "SIGWX · FL250-FL600 · valid 01 AUG 0400Z"
@@ -884,14 +964,14 @@ def test_alternate_assessment_rows_bind_each_station_to_its_own_sources() -> Non
     assert rows[0]["forecast"]["source_icao"] == "WMKK"
     assert rows[0]["forecast"]["text"] == "TAF EXACT WMKK"
     assert rows[0]["forecast"]["source_page"] == 14
-    assert rows[0]["forecast"]["source_reference"] == "CFP p14"
+    assert rows[0]["forecast"]["source_reference"] == "OFP p14"
     assert rows[1]["forecast"]["text"] == "TAF EXACT WADD"
-    assert rows[1]["forecast"]["source_reference"] == "CFP p15"
+    assert rows[1]["forecast"]["source_reference"] == "OFP p15"
     assert rows[0]["constraint"]["notam_id"] == "A1/26"
-    assert rows[0]["constraint"]["source_reference"] == "CFP p24"
+    assert rows[0]["constraint"]["source_reference"] == "OFP p24"
     assert rows[0]["constraint"]["applicability_inferred"] is False
     assert rows[1]["constraint"]["notam_id"] == "B2/26"
-    assert rows[1]["constraint"]["source_reference"] == "CFP p25"
+    assert rows[1]["constraint"]["source_reference"] == "OFP p25"
     assert all(
         row["assessment"]["text"]
         == "REVIEW - source held; suitability not concluded."
@@ -1393,10 +1473,10 @@ def test_cfp_weather_count_excludes_live_enrichment_without_source_pages() -> No
     cfp_assurance = next(
         row
         for row in view["source_assurance"]
-        if row["source"] == "CFP WEATHER"
+        if row["source"] == "OFP WEATHER"
     )
     assert cfp_assurance == {
-        "source": "CFP WEATHER",
+        "source": "OFP WEATHER",
         "status": "HELD",
         "detail": "2 parsed bulletin record(s).",
     }

@@ -693,9 +693,9 @@ def _draw_route_evidence_chart(
     canvas.setFont(theme.SANS_BOLD, theme.readable(6.2))
     canvas.drawString(x + 3 * mm, y + height - 5.3 * mm, title[:58])
     note = (
-        "Geographic route strip - validated CFP MSA points only"
+        "Geographic route strip - validated OFP MSA points only"
         if mode == "terrain"
-        else "CFP route coordinates and EDTO times"
+        else "OFP route coordinates and EDTO times"
     )
     canvas.setFillColor(_MUTED)
     canvas.setFont(theme.SANS, theme.readable(4.5))
@@ -819,7 +819,7 @@ def _draw_route_evidence_chart(
 
 
 def _slot_allocation_line(flight: dict[str, Any]) -> str:
-    """One-line slot allocation from the CFP, or empty when none is held."""
+    """One-line slot allocation from the OFP, or empty when none is held."""
     allocation = flight.get("bobcat") or {}
     waypoint = str(allocation.get("waypoint") or "")
     if not waypoint:
@@ -1104,7 +1104,7 @@ def _airport_lines(
         window = overlay.get("window") or {}
         if window.get("startsAt") and window.get("endsAt"):
             lines.append(
-                "CFP NOTAM window: "
+                "OFP NOTAM window: "
                 f"{str(window['startsAt'])[11:16]}Z-"
                 f"{str(window['endsAt'])[11:16]}Z"
             )
@@ -1659,7 +1659,7 @@ def _draw_header(
     atot = metrics.get("atot")
     atot_note = None
     if atot:
-        # The full ATOT + CFP ACTM explanation remains in the timing panel.
+        # The full ATOT + OFP ACTM explanation remains in the timing panel.
         # Keep the repeated page header concise enough to clear its section
         # pill, matching the Level 2 header contract.
         atot_note = f"ATOT {atot} | CALC UTC"
@@ -1688,7 +1688,7 @@ def _draw_header(
 
 def _page_source_chips(flight: dict[str, Any], page_number: int) -> list[str]:
     if page_number == 1:
-        chips = ["CFP P1", "CFP PERF"]
+        chips = ["OFP P1", "OFP PERF"]
         for value in (flight.get("departure"), flight.get("destination")):
             if value:
                 chips.append(str(value))
@@ -1696,10 +1696,10 @@ def _page_source_chips(flight: dict[str, Any], page_number: int) -> list[str]:
             chips.append("BOBCAT")
         return chips
     if page_number == 2:
-        chips = ["CFP EDTO"]
+        chips = ["OFP EDTO"]
         if flight.get("deferred_items"):
             chips.append("DEFERRED DECLARATIONS")
-        chips.append("CFP WX")
+        chips.append("OFP WX")
         return chips
     return []
 
@@ -1879,7 +1879,7 @@ def _draw_cover_route_panel(
     canvas.drawString(
         x + 2.5 * mm,
         y + height - 5.5 * mm,
-        f"{briefing['flight_number']} CFP ROUTE - DECISION GATES",
+        f"{briefing['flight_number']} OFP ROUTE - DECISION GATES",
     )
     draw_route_map_pdf(
         canvas,
@@ -2144,7 +2144,7 @@ def _draw_cover(
             (
                 "EXCESS FUEL",
                 fuel_value,
-                "CFP excess above required fuel",
+                "OFP excess above required fuel",
                 _WEATHER,
             ),
             (
@@ -2238,7 +2238,7 @@ def _draw_operational_detail(
             f"{briefing['metrics']['clock_basis']} · "
             f"ATOT {briefing['metrics']['atot']}"
             if briefing["metrics"].get("atot")
-            else "CFP ACTM only · ATOT/ATA required for UTC clocks"
+            else "OFP ACTM only · ATOT/ATA required for UTC clocks"
         ),
         final_actm=final_actm,
         x=margin,
@@ -2261,7 +2261,7 @@ def _draw_operational_detail(
     )
     if edto_assessment_status == "verified_not_applicable":
         edto_sector_empty_text = (
-            "Complete company CFP checked; the single governed status is stated "
+            "Complete company OFP checked; the single governed status is stated "
             "in DATA COVERAGE."
         )
         edto_airport_empty_text = (
@@ -2339,7 +2339,7 @@ def _draw_operational_detail(
                 f"{weather_data.get('flight_effect') or 'pilot review required'}"
             )
         elif status == "no_significant_overlap":
-            weather_result = "No significant CFP forecast group overlaps the checked period."
+            weather_result = "No significant OFP forecast group overlaps the checked period."
         else:
             weather_result = "Weather coverage incomplete - review required."
         airport_rows.append(
@@ -2437,7 +2437,7 @@ def _draw_operational_detail(
         deferred = deferred_rows[0]
         deferred_lines = [
             f"{deferred['label']}: {deferred['description']}",
-            f"CFP restriction: {deferred['restriction']}",
+            f"OFP restriction: {deferred['restriction']}",
             deferred["source_status"],
         ]
         remaining = len(flight.get("deferred_items") or []) - 1
@@ -2524,7 +2524,7 @@ def _draw_operational_detail(
         nil_result = "NIL " + " / ".join(nil_labels)
         if nil_labels == ["EDTO"]:
             nil_result += (
-                " - verified not applicable from the complete uploaded CFP"
+                " - verified not applicable from the complete uploaded OFP"
             )
         elif "EDTO" in nil_labels:
             nil_result += " - each explicitly verified from its governed source"
@@ -2726,7 +2726,7 @@ def _draw_route_detail(
             chart_y,
             width - 2 * margin,
             chart_height,
-            "VALIDATED CFP MSA POINTS",
+            "VALIDATED OFP MSA POINTS",
             ["No high-terrain exposure window was extracted."],
             _TERRAIN,
             dark=True,
@@ -2781,13 +2781,13 @@ def _draw_route_detail(
             ("REF", 0.06),
             ("ACTM", 0.12),
             ("UTC" if actual_timing_anchor(flight) else "UTC — NO ANCHOR", 0.20),
-            ("CFP ROUTE EXPOSURE", 0.20),
+            ("OFP ROUTE EXPOSURE", 0.20),
             ("MAX MSA", 0.14),
             ("PROFILE / COVERAGE", 0.28),
         ],
         rows=terrain_rows,
         accent=_TERRAIN,
-        empty_text="No high-terrain exposure was extracted from CFP MSA points.",
+        empty_text="No high-terrain exposure was extracted from OFP MSA points.",
     )
     _draw_panel(
         canvas,
@@ -2799,13 +2799,13 @@ def _draw_route_detail(
         [
             (
                 (
-                    "Each window begins at the first validated CFP high-MSA trigger "
+                    "Each window begins at the first validated OFP high-MSA trigger "
                     "and ends at the first subsequent point where that trigger "
                     "clears. The geographic strip includes one preceding point for "
                     "route context. Any incomplete profile coverage remains review required."
                     if controlled_profile_index_loaded
                     else (
-                        "Each window begins at the first validated CFP high-MSA trigger "
+                        "Each window begins at the first validated OFP high-MSA trigger "
                         "and ends at the first subsequent point where that trigger "
                         "clears. The approved controlled profile index is not mounted, "
                         "so manual chart-index review is required."

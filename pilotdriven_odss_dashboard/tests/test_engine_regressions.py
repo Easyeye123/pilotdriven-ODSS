@@ -115,7 +115,7 @@ def test_sia722_aa_ifeddl_never_enters_the_mel_cdl_or_cddl_engines() -> None:
     )
     assert declaration["title"] == "AA IFEDDL"
     assert declaration["summary"] == (
-        "CFP deferred declaration requires review; acronym meaning is not "
+        "OFP deferred declaration requires review; acronym meaning is not "
         "inferred and no MEL, CDL or CDDL classification is asserted."
     )
     assert declaration["details"] == [
@@ -1236,7 +1236,7 @@ def test_incomplete_lido_pages_fail_before_zero_value_analysis() -> None:
             "SCHED DEP 1000 UTC SCHED ARR 1800 UTC",
         )
     )
-    with pytest.raises(ValueError, match="Incomplete or unsupported Lido CFP"):
+    with pytest.raises(ValueError, match="Incomplete or unsupported Lido OFP"):
         parse_lido([page], "partial.pdf")
 
 

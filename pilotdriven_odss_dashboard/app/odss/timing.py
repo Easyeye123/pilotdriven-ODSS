@@ -48,7 +48,7 @@ def find_route_waypoint(flight: dict[str, Any], name: str) -> dict[str, Any]:
         }
         if wanted in candidates:
             return waypoint
-    raise ValueError(f"Waypoint {wanted} was not found in the parsed CFP route")
+    raise ValueError(f"Waypoint {wanted} was not found in the parsed OFP route")
 
 
 def derive_timing_reference(
@@ -65,7 +65,7 @@ def derive_timing_reference(
         reference_actm = 0
     elif reference_type == "waypoint_ata":
         if not flight:
-            raise ValueError("Run the CFP analysis before using waypoint ATA mode")
+            raise ValueError("Run the OFP analysis before using waypoint ATA mode")
         waypoint = find_route_waypoint(flight, reference_waypoint or "")
         reference_actm = int(waypoint["actm_minutes"])
         actual_takeoff = reference - timedelta(minutes=reference_actm)
@@ -165,7 +165,7 @@ def build_timing_view(
             )
 
     events: list[dict[str, Any]] = [
-        _event(anchor, 0, "Actual takeoff / time-zero anchor", "takeoff", "UTC = ATOT + CFP ACTM."),
+        _event(anchor, 0, "Actual takeoff / time-zero anchor", "takeoff", "UTC = ATOT + OFP ACTM."),
     ]
 
     for finding in findings:
@@ -327,7 +327,7 @@ def build_timing_view(
         "scheduled_departure_utc": scheduled_departure.isoformat(),
         "schedule_difference_minutes": takeoff_difference,
         "reference": timing_reference,
-        "calculation_basis": "Calculated UTC = derived actual takeoff UTC + CFP ACTM.",
+        "calculation_basis": "Calculated UTC = derived actual takeoff UTC + OFP ACTM.",
         "events": events,
         "early_calls": early_calls,
         "fir_crossings": fir_crossings,

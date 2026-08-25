@@ -3,7 +3,7 @@
 The visual contract is the approved v1.3 reference brief set: condensed
 sans typography, deep-navy pages, a three-line flight header (date + BLOCK,
 UTC schedule, local times), per-page SOURCE chips and the
-``PILOTDRIVEN ODSS | <flight> | CFP OFP <id> | <type> <reg> | <date>``
+``PILOTDRIVEN ODSS | <flight> | OFP <id> | <type> <reg> | <date>``
 footer.
 """
 
@@ -205,7 +205,7 @@ def ofp_label(flight: dict[str, Any]) -> str:
 
 
 def display_flight_number(flight: dict[str, Any]) -> str:
-    """Prefer the CFP-declared operating designator (e.g. SQ352 over SIA352)."""
+    """Prefer the OFP-declared operating designator (e.g. SQ352 over SIA352)."""
     operating = str(flight.get("operating_flight_number") or "").strip()
     return operating or str(flight.get("flight_number") or "")
 
@@ -372,7 +372,7 @@ def draw_footer(
             for value in (
                 "PILOTDRIVEN",
                 display_flight_number(flight),
-                f"CFP OFP {ofp_label(flight)}",
+                f"OFP {ofp_label(flight)}",
                 (
                     f"{flight.get('aircraft_type') or ''} "
                     f"{normalized_registration(flight.get('registration'))}"

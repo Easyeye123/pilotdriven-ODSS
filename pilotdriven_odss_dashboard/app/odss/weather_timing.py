@@ -335,7 +335,7 @@ def summarize_taf_for_window(
             "status": "review_required",
             "applicable_conditions": applicable_conditions,
             "timing": (
-                f"The CFP TAF does not fully cover "
+                f"The OFP TAF does not fully cover "
                 f"{_short_range(window_start, window_end)}."
             ),
             "mechanism": "; ".join(mechanisms) or "None safely classified",
@@ -407,7 +407,7 @@ def summarize_taf_for_window(
         "timing": timing,
         "mechanism": "None in time-overlapping forecast groups",
         "window_status_text": (
-            "No significant weather group overlaps this window in the CFP forecast."
+            "No significant weather group overlaps this window in the OFP forecast."
         ),
     }
 

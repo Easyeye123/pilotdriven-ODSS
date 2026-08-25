@@ -91,7 +91,7 @@ def _shorten(value: str | None, limit: int = 120) -> str:
 
 def _cruise_summary(profile: str | None) -> str:
     if not profile:
-        return "See CFP"
+        return "See OFP"
     levels = []
     for match in re.finditer(r"/(\d{3})(?=/|$)", profile):
         level = match.group(1)
@@ -205,7 +205,7 @@ def _notam_cards(findings: list[dict[str, Any]], role: str, limit: int = 4) -> l
 def _station_weather_text(
     flight: dict[str, Any], location: str, record_type: str
 ) -> str | None:
-    """First CFP-embedded bulletin of the given type for a station.
+    """First OFP-embedded bulletin of the given type for a station.
 
     These are the raw METAR/TAF strings LIDO prints in the wx section; the
     panels carry them verbatim so every surface shows the actual groups, not
@@ -264,7 +264,7 @@ def _station_source_weather(
             and isinstance(record.get("source_page"), int)
             and not isinstance(record.get("source_page"), bool)
             and int(record["source_page"]) > 0
-            # Untagged CFP weather belongs to the ordinary station bundle.
+            # Untagged OFP weather belongs to the ordinary station bundle.
             # Explicitly tagged weather may only cross into this projection
             # when the caller names that role.  In particular, a fuel-enroute
             # TAF must never become destination-alternate evidence merely
@@ -285,7 +285,7 @@ def _station_source_weather(
 
 
 def _cfp_weather_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
-    """Weather records with direct uploaded-CFP page provenance only."""
+    """Weather records with direct uploaded-OFP page provenance only."""
     return [
         record
         for record in flight.get("weather") or []
@@ -721,7 +721,7 @@ def _airport_operational_panels(
 ) -> list[dict[str, Any]]:
     """The selected source-fact contract shared by dashboard and PDF.
 
-    Each station gets exact CFP METAR/TAF records and a deterministic set of
+    Each station gets exact OFP METAR/TAF records and a deterministic set of
     time-applicable NOTAM findings. A station used in more than one planning
     role remains one panel with ordered ``roles`` and combined planning rows.
     The notices carry item-E text and source evidence, not renderer-only copy.
@@ -1073,7 +1073,7 @@ def _alternate_assessment_rows(
         for source in (forecast, constraint):
             source_page = source.get("source_page")
             source["source_reference"] = (
-                f"CFP p{int(source_page)}"
+                f"OFP p{int(source_page)}"
                 if isinstance(source_page, int)
                 else "SOURCE PAGE UNAVAILABLE"
             )
@@ -1119,7 +1119,7 @@ def _alternate_assessment_rows(
 
 
 def _actm_clock(value: Any) -> str:
-    """CFP ACTM ("03.21" / "03:21") as a clock string; empty when not held."""
+    """OFP ACTM ("03.21" / "03:21") as a clock string; empty when not held."""
     match = re.fullmatch(r"(\d{1,2})[.:](\d{2})", str(value or "").strip())
     return f"{int(match.group(1)):02d}:{match.group(2)}" if match else ""
 
@@ -1173,14 +1173,14 @@ def _arrival_basis_line(
     actual_takeoff_hhmm: str | None = None,
     calculated_eta_hhmm: str | None = None,
 ) -> str:
-    """State calculated ETA separately from the CFP schedule."""
+    """State calculated ETA separately from the OFP schedule."""
     etd = str(etd_hhmm or "").strip()
     eta = str(eta_hhmm or "").strip()
     eet = _actm_clock(eet_actm)
     atot = str(actual_takeoff_hhmm or "").strip()
     calculated_eta = str(calculated_eta_hhmm or "").strip()
     if atot and calculated_eta:
-        basis = f"ATOT {atot} + " + (f"filed EET {eet}" if eet else "CFP ACTM")
+        basis = f"ATOT {atot} + " + (f"filed EET {eet}" if eet else "OFP ACTM")
         if eta:
             basis += f" · scheduled STA {eta}Z"
         return basis
@@ -1194,7 +1194,7 @@ def _arrival_basis_line(
         parts.append(f"STD {etd}Z" + (f" + SCHED {block}" if block else ""))
     if eet:
         parts.append(f"filed EET {eet}")
-    return " · ".join(parts) or "Scheduled arrival per CFP page 1"
+    return " · ".join(parts) or "Scheduled arrival per OFP page 1"
 
 
 def _timeline_basis_line(
@@ -1214,7 +1214,7 @@ def _timeline_basis_line(
     calculated_eta = str(calculated_eta_hhmm or "").strip()
     if atot and calculated_eta:
         return (
-            f"ATOT {atot} + CFP ACTM drives clocks; calculated ETA "
+            f"ATOT {atot} + OFP ACTM drives clocks; calculated ETA "
             f"{calculated_eta}Z from filed EET {eet}. Schedule: STD {etd}Z / "
             f"STA {eta}Z ({schedule})."
         )
@@ -1237,7 +1237,7 @@ def _performance_publication(flight: dict[str, Any]) -> dict[str, Any]:
         ("performance", "RTOW PERF", "obstacle_rtow_kg"),
         ("landing", "RTOW LAND", "landing_rtow_kg"),
         ("structural", "RTOW STRUCT", "structural_rtow_kg"),
-        ("cfp_controlling", "CFP RTOW", "controlling_rtow_kg"),
+        ("cfp_controlling", "OFP RTOW", "controlling_rtow_kg"),
     )
     candidates = [
         {
@@ -1267,11 +1267,11 @@ def _performance_publication(flight: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": status,
         "basis": (
-            "selected_rtow_kg = minimum available parsed CFP RTOW candidate; "
+            "selected_rtow_kg = minimum available parsed OFP RTOW candidate; "
             "margin_kg = selected_rtow_kg - ptow_kg."
         ),
         "ptow_kg": ptow,
-        # The CFP performance inputs behind the selection, published once so
+        # The OFP performance inputs behind the selection, published once so
         # the page-1 PERFORMANCE card and the dashboard print the same basis.
         "inputs": {
             key: performance.get(key)
@@ -1292,7 +1292,7 @@ def _performance_publication(flight: dict[str, Any]) -> dict[str, Any]:
         },
         # Source-held planning sensitivities shared by dashboard and PDF.
         # These are not performance calculations performed by ODSS; they are
-        # bounded projections of values printed in the uploaded CFP.
+        # bounded projections of values printed in the uploaded OFP.
         "planning_sensitivity": {
             "zfw_change_burn_add_kg_per_1000": flight.get(
                 "zfw_change_burn_add_kg_per_1000"
@@ -1443,7 +1443,7 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
             flight.get("tropical_cyclone_review") or {}
         ).get("status"),
         "note": (
-            "Filed route from CFP coordinates"
+            "Filed route from OFP coordinates"
             + (
                 "; active SIGMET geometry shown"
                 if hazard_features
@@ -1600,7 +1600,7 @@ def render_route_svg(route_map: dict[str, Any], width: int = 1200, height: int =
 
     polyline = " ".join(f"{point['x']:.1f},{height - point['y']:.1f}" for point in points)
     parts = [
-        f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="CFP route map">',
+        f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="OFP route map">',
         '<defs><linearGradient id="odssMapBg" x1="0" y1="0" x2="1" y2="1">'
         '<stop offset="0" stop-color="#07111f"/><stop offset="1" stop-color="#102843"/>'
         '</linearGradient></defs>',
@@ -1740,7 +1740,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
             canvas.setFont(SANS, map_note_size)
             label = _pilot_route_map_label(route_map.get("snapshot_label"))
             for index, line in enumerate(
-                reversed(wrap_note(f"{label} - Filed route from CFP coordinates"))
+                reversed(wrap_note(f"{label} - Filed route from OFP coordinates"))
             ):
                 canvas.drawString(x + 5, y + 4 + index * (map_note_size + 1.2), line)
             canvas.restoreState()
@@ -1889,7 +1889,7 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
 
 
 def _fir_boundary_rows(flight: dict[str, Any]) -> list[dict[str, Any]]:
-    """Lossless CFP FIR-boundary clocks; procedures remain a separate gap."""
+    """Lossless OFP FIR-boundary clocks; procedures remain a separate gap."""
     rows: list[dict[str, Any]] = []
     for waypoint in flight.get("route_waypoints") or []:
         fir = str(waypoint.get("fir_boundary") or "").strip().upper()
@@ -1898,13 +1898,13 @@ def _fir_boundary_rows(flight: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         source_page = waypoint.get("source_page")
         rows.append({
-            "time": "CFP BOUNDARY",
+            "time": "OFP BOUNDARY",
             "actm": f"+{format_actm(actm).replace('.', ':')}",
             "event": f"{fir} FIR boundary",
             "detail": " | ".join(
                 part
                 for part in (
-                    f"CFP p{source_page}" if isinstance(source_page, int) else None,
+                    f"OFP p{source_page}" if isinstance(source_page, int) else None,
                     "contact procedure/frequency unavailable",
                 )
                 if part
@@ -1971,11 +1971,11 @@ def _fir_boundary_summary(
     for fir, group in grouped.items():
         pages = sorted(set(group["pages"]))
         page_text = (
-            f"CFP p{pages[0]}"
+            f"OFP p{pages[0]}"
             if len(pages) == 1
-            else f"CFP pp{pages[0]}-{pages[-1]}"
+            else f"OFP pp{pages[0]}-{pages[-1]}"
             if pages
-            else "CFP page unavailable"
+            else "OFP page unavailable"
         )
         parts.append(f"{fir} {'/'.join(group['actm'])} ({page_text})")
     jakarta_procedure = _jakarta_cpdlc_procedure(
@@ -1990,11 +1990,11 @@ def _fir_boundary_summary(
     if not parts:
         if procedure_note:
             return (
-                "No FIR boundary ACTM row is held in the parsed CFP. "
+                "No FIR boundary ACTM row is held in the parsed OFP. "
                 + procedure_note
             )
         return (
-            "No FIR boundary ACTM row is held in the parsed CFP; contact "
+            "No FIR boundary ACTM row is held in the parsed OFP; contact "
             "procedure/frequency unavailable."
         )
     if procedure_note:
@@ -2150,14 +2150,19 @@ def _edto_operational_rows(
     edto_view: dict[str, Any],
     fuel_summary: dict[str, Any],
 ) -> list[tuple[str, str]]:
-    """Pilot-readable EDTO facts already parsed from the uploaded CFP."""
+    """Pilot-readable EDTO facts already parsed from the uploaded OFP."""
     source = str(fuel_summary.get("source_classification") or classification).strip().upper()
+    source_heading = {
+        "STANDARD": "SUMMARY STANDARD CFP",
+        "NON EDTO": "SUMMARY NON EDTO CFP",
+        "EDTO": "SUMMARY EDTO CFP",
+    }.get(source)
     source_sentence = (
-        "CFP page 1: SUMMARY STANDARD CFP (non-EDTO)."
+        f"OFP P1 source: {source_heading} (interpreted as non-EDTO)."
         if source == "STANDARD" and classification.startswith("NON")
-        else f"CFP page 1: SUMMARY {source} CFP."
-        if source
-        else "CFP classification requires review."
+        else f"OFP P1 source: {source_heading}."
+        if source_heading
+        else "OFP classification requires review."
     )
     rows: list[tuple[str, str]] = [("CLASSIFICATION", (
         source_sentence
@@ -2173,9 +2178,9 @@ def _edto_operational_rows(
         line = f"ENTRY ACTM {entry} | EXIT ACTM {exit_}"
         if entry == exit_ and entry != "--.--":
             # Canon wording (REV3 p4): a zero-duration boundary contact is a
-            # printed CFP fact, and it stays an EDTO flight.
+            # printed OFP fact, and it stays an EDTO flight.
             line += (
-                " - boundary-contact sector at CFP display resolution; "
+                " - boundary-contact sector at OFP display resolution; "
                 "retain the EDTO source status, do not reinterpret as non-EDTO"
             )
         rows.append((f"SECTOR {number}", line))
@@ -2399,7 +2404,7 @@ def _terrain_summary(
 
     Names and values come from the same detected events the page renders, so
     surfaces cannot disagree or substitute route-specific wording.  When no
-    high-MSA window is detected, publish the bounded CFP trigger result and
+    high-MSA window is detected, publish the bounded OFP trigger result and
     the available source maxima instead of exposing the engine's ``>100*``
     shorthand.  Missing route values stay explicitly unavailable.
     """
@@ -2428,22 +2433,22 @@ def _terrain_summary(
         )
         if maximum_msa is None:
             return (
-                "CFP route/profile trigger not evaluated: parsed route waypoint "
+                "OFP route/profile trigger not evaluated: parsed route waypoint "
                 f"MSA data unavailable ({vws_detail}). This is only the bounded "
-                "CFP trigger result, not a terrain-clearance finding."
+                "OFP trigger result, not a terrain-clearance finding."
             )
         maximum_msa_ft = maximum_msa * 100
         if maximum_msa > 100:
             return (
-                "CFP route/profile trigger requires review: maximum CFP MSA "
+                "OFP route/profile trigger requires review: maximum OFP MSA "
                 f"{maximum_msa_ft:,} ft exceeds 10,000 ft, but no trigger window "
-                f"was produced ({vws_detail}). This is only the bounded CFP "
+                f"was produced ({vws_detail}). This is only the bounded OFP "
                 "trigger result, not a terrain-clearance finding."
             )
         return (
-            "CFP route/profile trigger not activated: no parsed route waypoint "
-            f"MSA exceeded 10,000 ft (maximum CFP MSA {maximum_msa_ft:,} ft; "
-            f"{vws_detail}). This is only the bounded CFP trigger result, not a "
+            "OFP route/profile trigger not activated: no parsed route waypoint "
+            f"MSA exceeded 10,000 ft (maximum OFP MSA {maximum_msa_ft:,} ft; "
+            f"{vws_detail}). This is only the bounded OFP trigger result, not a "
             "terrain-clearance finding."
         )
     spans: list[str] = []
@@ -2484,10 +2489,103 @@ def _terrain_summary(
     )
 
 
-def _weather_coverage_ledger(flight: dict[str, Any]) -> list[dict[str, str]]:
-    """Which CFP weather sections carry data, as canon honesty tiles.
+def _vws_review(route_waypoints: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Publish the bounded OFP VWS review independently of terrain layout.
 
-    "unavailable" here means the CFP printed no data for the section - a
+    VWS is source-held route data, not model memory.  Keeping this as a
+    deterministic view invariant means a high-MSA event may share or replace a
+    compact timeline marker without ever hiding the VWS review itself.
+    """
+    waypoints = route_waypoints or []
+    held_points = [
+        waypoint
+        for waypoint in waypoints
+        if isinstance(waypoint.get("vws"), int)
+        and not isinstance(waypoint.get("vws"), bool)
+        and int(waypoint["vws"]) >= 0
+    ]
+    events = detect_vws_events(waypoints)
+    base: dict[str, Any] = {
+        "status": "unavailable",
+        "threshold": ">004",
+        "event_count": len(events),
+        "maximum": None,
+        "maximum_display": None,
+        "maximum_waypoint": None,
+        "maximum_actm_minutes": None,
+        "maximum_actm_display": None,
+        "source_page": None,
+        "summary": (
+            "VWS review unavailable: no planned VWS value is held in the "
+            "parsed OFP route."
+        ),
+    }
+    if not held_points:
+        return base
+
+    maximum_point = max(held_points, key=lambda waypoint: int(waypoint["vws"]))
+    maximum = int(maximum_point["vws"])
+    waypoint = str(maximum_point.get("name") or "").lstrip("-").strip() or None
+    raw_actm = maximum_point.get("actm_minutes")
+    actm = (
+        int(raw_actm)
+        if isinstance(raw_actm, int)
+        and not isinstance(raw_actm, bool)
+        and raw_actm >= 0
+        else None
+    )
+    raw_page = maximum_point.get("source_page")
+    source_page = (
+        int(raw_page)
+        if isinstance(raw_page, int)
+        and not isinstance(raw_page, bool)
+        and raw_page > 0
+        else None
+    )
+    maximum_text = f"maximum {maximum:03d}"
+    if waypoint:
+        maximum_text += f" at {waypoint}"
+    evidence = [
+        f"ACTM {format_actm(actm)}" if actm is not None else "",
+        f"OFP p{source_page}" if source_page is not None else "",
+    ]
+    evidence = [item for item in evidence if item]
+    if evidence:
+        maximum_text += f" ({', '.join(evidence)})"
+
+    event_count = len(events)
+    if event_count:
+        window_label = "window" if event_count == 1 else "windows"
+        status = "review_required"
+        summary = (
+            f"VWS review: {event_count} planned >004 trigger {window_label}; "
+            f"{maximum_text} - review required."
+        )
+    else:
+        status = "reviewed_no_trigger"
+        summary = (
+            "VWS review: no planned >004 trigger in the source-held route "
+            f"values; {maximum_text}."
+        )
+
+    return {
+        **base,
+        "status": status,
+        "event_count": event_count,
+        "maximum": maximum,
+        "maximum_display": f"{maximum:03d}",
+        "maximum_waypoint": waypoint,
+        "maximum_actm_minutes": actm,
+        "maximum_actm_display": format_actm(actm) if actm is not None else None,
+        "source_page": source_page,
+        "summary": summary,
+    }
+
+
+def _weather_coverage_ledger(flight: dict[str, Any]) -> list[dict[str, str]]:
+    """Which OFP weather sections carry data, as canon honesty tiles.
+
+    "unavailable" here means the OFP printed no data for the section - a
     source-coverage gap, never a NIL finding (REV3 coverage ledger)."""
     sections = flight.get("weather_section_availability") or {}
     rows = []
@@ -2660,8 +2758,8 @@ def _weather_chart_selection(
                 "status": "matched",
                 "governed": True,
                 "basis": (
-                    "Printed chart flight and route identity match the CFP; "
-                    "validity ranked against the CFP flight window."
+                    "Printed chart flight and route identity match the OFP; "
+                    "validity ranked against the OFP flight window."
                 ),
             }
         if governed_context is None:
@@ -2746,10 +2844,10 @@ def _weather_chart_selection(
         return {
             "status": "selected",
             "reason": (
-                "Governed route-context chart selected inside the CFP flight window."
+                "Governed route-context chart selected inside the OFP flight window."
                 if len(selected_charts) == 1
                 else (
-                    "Nearest governed route-context chart selected inside the CFP "
+                    "Nearest governed route-context chart selected inside the OFP "
                     "flight window for each distinct product and flight-level family."
                 )
             ),
@@ -2763,7 +2861,7 @@ def _weather_chart_selection(
         return {
             "status": "manual-review-required",
             "reason": (
-                "No governed route-context chart is valid inside the CFP "
+                "No governed route-context chart is valid inside the OFP "
                 f"flight window; closest printed validity is {delta_minutes} "
                 f"minutes {relation.replace('-', ' ')}."
             ),
@@ -2890,7 +2988,7 @@ def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
 
 
 def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
-    """One REV3-style verdict card per enroute SIGMET in the CFP.
+    """One REV3-style verdict card per enroute SIGMET in the OFP.
 
     Every disposition carries its deterministic reason; a SIGMET whose
     polygon cannot be read gets 'screening unavailable - review required',
@@ -2902,7 +3000,7 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
         if record.get("record_type") != "SIGMET":
             continue
         text = str(record.get("text") or "")
-        # A CFP FIR block can print several SIGMETs in one record.
+        # A OFP FIR block can print several SIGMETs in one record.
         pieces = re.split(r"(?=\bW[SVC]\s+SIGMET\s+\w+\s+VALID\b)", text)
         for piece in pieces:
             head = re.search(
@@ -2945,7 +3043,7 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
             if geometry is None:
                 card["disposition"] = "REVIEW REQUIRED"
                 card["screening"] = (
-                    "No readable polygon in the CFP record - deterministic "
+                    "No readable polygon in the OFP record - deterministic "
                     "screening unavailable; review the original SIGMET."
                 )
                 cards.append(card)
@@ -3035,7 +3133,7 @@ def _va_derived_screening(
     flight: dict[str, Any] | None = None,
     official_note: str | None = None,
 ) -> str | None:
-    """Closest-approach screening of the CFP's ash polygon against the route.
+    """Closest-approach screening of the OFP's ash polygon against the route.
 
     Pure derived facts (distance, layer, planned levels) with the same
     interpolation caveat the cyclone screening carries. Returns None when the
@@ -3109,7 +3207,7 @@ def _va_derived_screening(
     best_nm, place, passage_actm = best
 
     # Passage time against the SIGMET's own validity is derived, never
-    # asserted beyond the data: both clauses drop out when the CFP does not
+    # asserted beyond the data: both clauses drop out when the OFP does not
     # carry the inputs.
     timing = ""
     valid_to = re.search(r"\bVALID\s+\d{6}/(\d{2})(\d{2})(\d{2})", text)
@@ -3154,16 +3252,16 @@ def _va_derived_screening(
     tail = official_note or "official VAAC confirmation unavailable."
     return (
         f"Closest approach {round(best_nm)} NM {place}{timing}; ash layer {layer}; "
-        f"planned {levels}. Flight-analysis screening of the CFP advisory polygon - {tail}"
+        f"planned {levels}. Flight-analysis screening of the OFP advisory polygon - {tail}"
     )
 
 
 def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
-    """Named volcanic-ash advisories captured verbatim from the CFP.
+    """Named volcanic-ash advisories captured verbatim from the OFP.
 
     The name line is the label the 18 Aug defect was missing: the hazard is
     called VOLCANIC ASH with its volcano and SIGMET identity, never a generic
-    "1 CFP advisory"."""
+    "1 OFP advisory"."""
     advisories: list[dict[str, Any]] = []
     seen: set[str] = set()
     for advisory in flight.get("volcanic_advisories") or []:
@@ -3177,11 +3275,11 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
         advisories.append({
             "name": " · ".join(
                 part
-                for part in ("CFP VOLCANO ADVISORY", volcano, notam_id)
+                for part in ("OFP VOLCANO ADVISORY", volcano, notam_id)
                 if part
             ),
             "derived": (
-                "Source-held CFP notice; operational applicability remains "
+                "Source-held OFP notice; operational applicability remains "
                 "a crew/dispatch review."
             ),
             "text": text,
@@ -3199,7 +3297,7 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
         text = str(record.get("text") or "")
         key = " ".join(text.split())
         if key in seen:
-            # The CFP prints its wx list twice; one advisory, one card.
+            # The OFP prints its wx list twice; one advisory, one card.
             continue
         seen.add(key)
         volcano = re.search(r"VA ERUPTION\s+((?:MT|MOUNT)\s+[A-Z]+)", text)
@@ -3415,7 +3513,7 @@ def _overview_projection(
     )
     edto_rvsm = str(flight.get("edto_rvsm") or "").strip()
     add_chip("edto_rvsm", edto_rvsm, edto_rvsm, "edto_rvsm")
-    # Keep the page-1 CFP classification independent from its printed FLT
+    # Keep the page-1 OFP classification independent from its printed FLT
     # RULES token. A STANDARD/NON EDTO flight can still print RVSM; those are
     # two different source facts and both must remain visible. Older EDTO
     # packages can omit EDTO from the separate rule token, so retain that
@@ -3775,7 +3873,7 @@ def _finding_source_reference(item: dict[str, Any]) -> str:
         part
         for part in (
             notam_id or None,
-            f"CFP p{source_page}" if isinstance(source_page, int) else None,
+            f"OFP p{source_page}" if isinstance(source_page, int) else None,
             f"{str(item.get('engine') or 'analysis').upper()} deterministic assessment",
         )
         if part
@@ -3844,7 +3942,7 @@ def _decision_finding_projection(
             ),
             "source_reference": str(
                 performance_open.get("source_reference")
-                or "Uploaded CFP performance inputs"
+                or "Uploaded OFP performance inputs"
             ),
             "data": {"priority_score": 100},
         })
@@ -3870,7 +3968,7 @@ def _decision_finding_projection(
                 "polygon intersection is inferred."
             ),
             "source_reference": (
-                "Uploaded CFP · route-airspace notice package · "
+                "Uploaded OFP · route-airspace notice package · "
                 f"{route_airspace.get('source_page_text')}"
             ),
             "data": {"priority_score": 95},
@@ -3921,7 +4019,7 @@ def _decision_finding_projection(
             "source_reference": " · ".join(
                 part
                 for part in (
-                    "Uploaded CFP deferred declaration",
+                    "Uploaded OFP deferred declaration",
                     ", ".join(declarations) or None,
                 )
                 if part
@@ -4061,7 +4159,7 @@ def _decision_finding_projection(
                 "title": f"{icao} arrival ground constraints",
                 "summary": " | ".join(ground_parts),
                 "source_reference": (
-                    "Uploaded CFP · "
+                    "Uploaded OFP · "
                     + ",".join(f"p{page}" for page in sorted(source_pages))
                     + " · Destination NOTAM package"
                 ),
@@ -4137,14 +4235,14 @@ def _decision_finding_projection(
             for _, record in source_records
         })
         source_reference = (
-            "Uploaded company CFP · "
+            "Uploaded company OFP · "
             + ",".join(f"p{page}" for page in source_pages)
             + " · Airport weather list"
             if source_pages
             else _finding_source_reference(alternate_weather)
         )
         source_summary = (
-            f"CFP-held {alternate_location} alternate weather "
+            f"OFP-held {alternate_location} alternate weather "
             "(source only; applicability not re-inferred): "
             + " | ".join(
                 f"{label} {str(record.get('text') or '').strip()}"
@@ -4180,11 +4278,11 @@ def _decision_finding_projection(
             "severity": "warning",
             "title": "WEATHER COVERAGE INCOMPLETE",
             "summary": (
-                f"{', '.join(unavailable_coverage)} unavailable in the CFP. "
+                f"{', '.join(unavailable_coverage)} unavailable in the OFP. "
                 "This source-coverage gap is not a NIL operational finding; "
                 "held terminal weather or chart pages do not close it."
             ),
-            "source_reference": "Uploaded CFP · weather coverage ledger",
+            "source_reference": "Uploaded OFP · weather coverage ledger",
             "data": {"priority_score": 98},
         })
 
@@ -4370,7 +4468,7 @@ def _performance_reconciliation_projection(
     arithmetic_detail = (
         "Parsed page-1 fuel rows reconcile."
         if state == "verified"
-        else "Parsed page-1 fuel arithmetic is not verified; review the source CFP."
+        else "Parsed page-1 fuel arithmetic is not verified; review the source OFP."
     )
     if (
         requirement_total is not None
@@ -4413,7 +4511,7 @@ def _performance_reconciliation_projection(
         "label": "PAGE-1 FUEL ARITHMETIC",
         "status": "VERIFIED" if state == "verified" else "REVIEW",
         "detail": arithmetic_detail,
-        "source_reference": "Uploaded CFP · page 1 fuel summary",
+        "source_reference": "Uploaded OFP · page 1 fuel summary",
     })
     selected_rtow = publication.get("selected_rtow_kg")
     ptow = publication.get("ptow_kg")
@@ -4426,14 +4524,14 @@ def _performance_reconciliation_projection(
                 f"Selected RTOW {selected_rtow:,} kg minus PTOW {ptow:,} kg "
                 f"equals {margin:+,} kg."
             ),
-            "source_reference": "Uploaded CFP · performance and mass pages",
+            "source_reference": "Uploaded OFP · performance and mass pages",
         })
     else:
         rows.append({
             "label": "RTOW / PTOW",
             "status": "REVIEW",
-            "detail": "A complete RTOW/PTOW pair is unavailable in the parsed CFP.",
-            "source_reference": "Uploaded CFP · performance and mass pages",
+            "detail": "A complete RTOW/PTOW pair is unavailable in the parsed OFP.",
+            "source_reference": "Uploaded OFP · performance and mass pages",
         })
     maximum_fuel = (publication.get("inputs") or {}).get(
         "maximum_fuel_available_kg"
@@ -4449,7 +4547,7 @@ def _performance_reconciliation_projection(
                 f"fuel in tanks {int(tanks):,} kg equals {difference:+,} kg; "
                 "reconcile against the final load/performance release."
             ),
-            "source_reference": "Uploaded CFP · page 1 and performance inputs",
+            "source_reference": "Uploaded OFP · page 1 and performance inputs",
             "overview_summary": (
                 f"MAX FUEL {int(maximum_fuel):,} vs tanks {int(tanks):,} · "
                 f"{'VERIFIED' if difference >= 0 else 'RECONCILE'}"
@@ -4568,7 +4666,7 @@ def _release_gate_projection(
             "detail": str(
                 (technical_decision or {}).get("summary")
                 or (technical or {}).get("summary")
-                or "No deferred declaration is printed on CFP page 1."
+                or "No deferred declaration is printed on OFP page 1."
             ),
             "target": "sec_mel_cdl",
         },
@@ -4629,11 +4727,11 @@ def _source_assurance_projection(
         and isinstance(record.get("source_page"), int)
     })
     intam_page_text = (
-        f"CFP p{intam_pages[0]}"
+        f"OFP p{intam_pages[0]}"
         if len(intam_pages) == 1
-        else f"CFP pp{intam_pages[0]}-{intam_pages[-1]}"
+        else f"OFP pp{intam_pages[0]}-{intam_pages[-1]}"
         if intam_pages
-        else "CFP pages unavailable"
+        else "OFP pages unavailable"
     )
     va_sigmet = next(
         (
@@ -4646,7 +4744,7 @@ def _source_assurance_projection(
     route_airspace = route_airspace or {}
     rows = [
         {
-            "source": "UPLOADED CFP",
+            "source": "UPLOADED OFP",
             "status": "HELD",
             "detail": str(flight.get("document_id") or "Parsed flight-plan package"),
         },
@@ -4666,12 +4764,12 @@ def _source_assurance_projection(
             ),
         },
         {
-            "source": "CFP WEATHER",
+            "source": "OFP WEATHER",
             "status": "HELD" if weather_records else "NOT HELD",
             "detail": f"{weather_records} parsed bulletin record(s).",
         },
         {
-            "source": "CFP VOLCANO ADVISORIES",
+            "source": "OFP VOLCANO ADVISORIES",
             "status": "HELD" if volcanic_advisories else "NOT HELD",
             "detail": f"{len(volcanic_advisories)} named advisory record(s).",
         },
@@ -4753,11 +4851,11 @@ def _route_airspace_projection(flight: dict[str, Any]) -> dict[str, Any]:
         if isinstance(record.get("source_page"), int)
     })
     page_text = (
-        f"CFP p{pages[0]}"
+        f"OFP p{pages[0]}"
         if len(pages) == 1
-        else f"CFP pp{pages[0]}-{pages[-1]}"
+        else f"OFP pp{pages[0]}-{pages[-1]}"
         if pages
-        else "CFP pages unavailable"
+        else "OFP pages unavailable"
     )
     count = len(records)
     military_record = next(
@@ -4871,7 +4969,7 @@ def _intam_operational_priority_rows(
             "source_type": source_type,
             "source_identity": identity,
             "source_page": source_page,
-            "source_reference": f"CFP p{source_page} / {identity}",
+            "source_reference": f"OFP p{source_page} / {identity}",
             "status": "source-held; relevance not inferred",
             "relevance_inferred": False,
             "applicability_inferred": False,
@@ -5237,12 +5335,12 @@ def build_briefing_view(
             "captain": flight.get("captain"),
             "alternate": (alternates[0].get("airport") if alternates else "--"),
             "clock_basis": (
-                "ATOT + CFP ACTM (destination held)"
+                "ATOT + OFP ACTM (destination held)"
                 if calculated_eta_hhmm
                 else (
-                    "ATOT + CFP ACTM: destination ACTM unavailable"
+                    "ATOT + OFP ACTM: destination ACTM unavailable"
                     if actual_takeoff_hhmm
-                    else "CFP ACTM only"
+                    else "OFP ACTM only"
                 )
             ),
             "atot": (
@@ -5262,7 +5360,7 @@ def build_briefing_view(
             "destination": format_kg(fuel.get("planned_destination_fuel_kg")),
         },
         # Page-1 fuel/weight summary, arithmetic-verified at parse time. The
-        # report's "CFP PAGE 1 - FLIGHT PLAN" panel reads this and must render
+        # report's "OFP PAGE 1 - FLIGHT PLAN" panel reads this and must render
         # a review flag whenever state is not "verified".
         "fuel_summary": flight.get("fuel_summary"),
         # One flight-identity block for every surface (boss, 21 Aug: "I need
@@ -5341,6 +5439,7 @@ def build_briefing_view(
         "terrain": {
             "events": terrain_events,
             "summary": _terrain_summary(terrain_events, findings, waypoints),
+            "vws_review": _vws_review(waypoints),
         },
         "exception_cards": exception_cards,
         "communications": communications,

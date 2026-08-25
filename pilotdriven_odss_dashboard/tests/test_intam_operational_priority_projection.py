@@ -87,7 +87,7 @@ def test_operational_priority_rows_are_source_held_and_traceable() -> None:
             "source_type": "NOTAM PROCEDURE",
             "source_identity": "1A1891/26",
             "source_page": 32,
-            "source_reference": "CFP p32 / 1A1891/26",
+            "source_reference": "OFP p32 / 1A1891/26",
             "status": "source-held; relevance not inferred",
             "relevance_inferred": False,
             "applicability_inferred": False,
@@ -102,7 +102,7 @@ def test_operational_priority_rows_are_source_held_and_traceable() -> None:
             "source_type": "INTAM",
             "source_identity": "ALL FLEETS-8919",
             "source_page": 39,
-            "source_reference": "CFP p39 / ALL FLEETS-8919",
+            "source_reference": "OFP p39 / ALL FLEETS-8919",
             "status": "source-held; relevance not inferred",
             "relevance_inferred": False,
             "applicability_inferred": False,
@@ -117,7 +117,7 @@ def test_operational_priority_rows_are_source_held_and_traceable() -> None:
             "source_type": "INTAM",
             "source_identity": "A350-822",
             "source_page": 41,
-            "source_reference": "CFP p41 / A350-822",
+            "source_reference": "OFP p41 / A350-822",
             "status": "source-held; relevance not inferred",
             "relevance_inferred": False,
             "applicability_inferred": False,
@@ -132,7 +132,7 @@ def test_operational_priority_rows_are_source_held_and_traceable() -> None:
             "source_type": "INTAM",
             "source_identity": "ALL FLEETS-9116",
             "source_page": 44,
-            "source_reference": "CFP p44 / ALL FLEETS-9116",
+            "source_reference": "OFP p44 / ALL FLEETS-9116",
             "status": "source-held; relevance not inferred",
             "relevance_inferred": False,
             "applicability_inferred": False,
@@ -207,6 +207,6 @@ def test_fir_summary_keeps_the_procedure_gap_when_no_source_record_is_held() -> 
     ]
 
     assert _fir_boundary_summary(rows, []) == (
-        "WIIF +00:03 (CFP p7). Contact procedure/frequency unavailable; no "
+        "WIIF +00:03 (OFP p7). Contact procedure/frequency unavailable; no "
         "lead or frequency is inferred."
     )

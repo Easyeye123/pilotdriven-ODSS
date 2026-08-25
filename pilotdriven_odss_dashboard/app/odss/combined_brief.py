@@ -7,7 +7,7 @@ theme below IS the web token sheet, not a new palette. Naming rule from the
 same instruction list: no "Level 1", "Level 2", "Pertinent" or "Evidence
 level" anywhere on a page.
 
-Every figure printed here comes from the parsed CFP, a held governed source,
+Every figure printed here comes from the parsed OFP, a held governed source,
 or a deterministic derivation of those — anything unverified renders as a
 review flag, never as a number. AI authority: none.
 """
@@ -155,7 +155,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-24-boss-flow-v25"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-25-vws-fir-ofp-v26"
 
 
 def combined_briefing_cache_token(
@@ -172,6 +172,54 @@ def combined_briefing_cache_token(
 
 
 _FIT_FLOOR = T_MICRO
+
+_LEGACY_PRODUCT_TERM = re.compile(r"\bCFP\b")
+_RAW_LIDO_CLASSIFICATION_HEADINGS = {
+    "STANDARD": "SUMMARY STANDARD CFP",
+    "NON EDTO": "SUMMARY NON EDTO CFP",
+    "EDTO": "SUMMARY EDTO CFP",
+}
+
+
+def _ofp_source_reference_text(value: Any) -> str:
+    """Normalise generated source-reference metadata, never quoted evidence."""
+    return _LEGACY_PRODUCT_TERM.sub("OFP", str(value or ""))
+
+
+def _raw_lido_classification_heading(value: Any) -> str | None:
+    """Return the exact classification heading printed by supported Lido OFPs."""
+    return _RAW_LIDO_CLASSIFICATION_HEADINGS.get(str(value or "").strip().upper())
+
+
+def _join_sentences(*values: Any) -> str:
+    """Join generated statements with one readable stop and no doubled punctuation."""
+    parts = [str(value or "").strip() for value in values]
+    return " ".join(
+        part if part.endswith((".", "!", "?")) else f"{part}."
+        for part in parts
+        if part
+    )
+
+
+def _operational_terrain_status_lines(
+    body: Any,
+    vws_summary: Any,
+    *,
+    text_width: float,
+    max_lines: int,
+) -> list[str]:
+    """Reserve readable terrain-panel lines for the permanent VWS review.
+
+    Dense terrain narratives may use the remaining lines, but they must never
+    push the independently governed VWS sentence out of the operational PDF.
+    """
+    bounded_max_lines = max(1, int(max_lines))
+    vws_lines = _wrap(str(vws_summary or "").strip(), SANS, 8.8, text_width)
+    if len(vws_lines) > bounded_max_lines:
+        raise ValueError("VWS review exceeds the operational terrain panel capacity.")
+    body_lines = _wrap(str(body or "").strip(), SANS, 8.8, text_width)
+    body_capacity = bounded_max_lines - len(vws_lines)
+    return [*vws_lines, *body_lines[:body_capacity]]
 
 
 def _fit(
@@ -796,7 +844,7 @@ def _first_title(findings: list[dict[str, Any]], engines: set[str]) -> str | Non
 
 
 def _unique_text(values: list[Any]) -> list[str]:
-    """Keep first-seen display text while collapsing repeated CFP wording."""
+    """Keep first-seen display text while collapsing repeated OFP wording."""
     result: list[str] = []
     seen: set[str] = set()
     for value in values:
@@ -852,7 +900,7 @@ def governed_deferred_source_target(
 def _group_deferred_items(flight: dict[str, Any]) -> list[dict[str, Any]]:
     """Group separate defect lines governed by the same MEL/CDL reference.
 
-    A CFP can list two cabin defects under one MEL reference.  They remain two
+    A OFP can list two cabin defects under one MEL reference.  They remain two
     source facts, but repeating the same reference in the decision gate makes
     the report look as though the parser duplicated a row.  This display view
     keeps both descriptions/remarks while presenting the governing reference
@@ -910,16 +958,17 @@ def _gate_lines(
         )
         + (f"; +{len(deferred) - 2} more" if len(deferred) > 2 else "")
         if deferred
-        else "No deferred item on CFP page 1"
+        else "No deferred item on OFP page 1"
     )
     classification = _edto_classification(flight)
     source = _edto_source_classification(flight)
+    source_heading = _raw_lido_classification_heading(source)
     edto_line = (
-        "CFP page 1: SUMMARY STANDARD CFP (non-EDTO)"
+        f"OFP P1 source: {source_heading} (interpreted as non-EDTO)"
         if source == "STANDARD" and classification.startswith("NON")
-        else f"CFP classified {classification} CFP"
-        if classification
-        else "CFP classification requires review"
+        else f"OFP P1 source: {source_heading}"
+        if source_heading
+        else "OFP classification requires review"
     )
     # Verbatim from the briefing view - the one terrain sentence composed in
     # build_briefing_view. Recomposing it here is how the overview once
@@ -1000,7 +1049,7 @@ def _fuel_panel_rows(fuel_summary: dict[str, Any]) -> list[tuple[str, str]]:
         return f"{value:,} kg" if value is not None else "--"
 
     ground = fuel_summary.get("ground_miles_nm")
-    # Keep the CFP's allocation word beside the mass it qualifies.  A generic
+    # Keep the OFP's allocation word beside the mass it qualifies.  A generic
     # EXCESS total is not equivalent to a source line such as POLICY or
     # TANKER, and the pilot-facing PDF must not discard that distinction.
     nonzero_excess = [
@@ -1418,7 +1467,7 @@ def _draw_overview_summary_row(
             fuel_third_line,
         ]),
         ("STATUS", DASH_RED if deferred else DASH_GREEN, "sec_mel_cdl", [
-            f"{len(deferred)} CFP declaration(s)",
+            f"{len(deferred)} OFP declaration(s)",
             deferred_status_line,
         ]),
         ("WEATHER", DASH_ORANGE, "sec_hazard", [
@@ -1586,14 +1635,14 @@ def _draw_audit_rev3_v8_overview_summary_row(
     performance_publication = _shared_performance_publication(briefing)
     performance_inputs = performance_publication.get("inputs") or {}
     perf_inner = panel(canvas, MARGIN, row2_top - row2_h, basis_w, row2_h,
-                       title="CFP P1 - PERFORMANCE", accent=DASH_BLUE, title_colour=None)
+                       title="OFP P1 - PERFORMANCE", accent=DASH_BLUE, title_colour=None)
     ix = perf_inner[0]
     selected_keys = [str(key) for key in performance_publication.get("selected_candidate_keys") or []]
     limit_names = {
         "landing": "LANDING",
         "performance": "PERF / OBSTACLE",
         "structural": "STRUCTURAL",
-        "cfp_controlling": "CFP RTOW",
+        "cfp_controlling": "OFP RTOW",
     }
     limit_label = next(
         (limit_names[key] for key in selected_keys if key != "cfp_controlling" and key in limit_names),
@@ -1647,7 +1696,7 @@ def _draw_audit_rev3_v8_overview_summary_row(
     )
 
     fuel_inner = panel(canvas, fuel_x, row2_top - row2_h, fuel_w, row2_h,
-                       title="CFP P1 - MASS / FUEL", accent=DASH_GREEN, title_colour=None)
+                       title="OFP P1 - MASS / FUEL", accent=DASH_GREEN, title_colour=None)
     ix = fuel_inner[0]
     masses = fuel_summary.get("masses_kg") or {}
     performance_publication = _shared_performance_publication(briefing)
@@ -1719,8 +1768,8 @@ def _draw_audit_rev3_v8_overview_summary_row(
         ("FPL REQMT", timed("flt_plan_reqmt")),
         ("TANKS", f"{(rows_data.get('fuel_in_tanks') or {}).get('fuel_kg') or 0:,}/{(rows_data.get('excess_fuel') or {}).get('fuel_kg') or 0:,}"),
     ]
-    # When CFP page 1 itemises the whole excess as TANKER, it gets its own
-    # row in the CFP's own word (boss, 21 Aug: this excess IS tankering).
+    # When OFP page 1 itemises the whole excess as TANKER, it gets its own
+    # row in the OFP's own word (boss, 21 Aug: this excess IS tankering).
     tanker_items = [
         item for item in fuel_summary.get("excess_breakdown") or []
         if item.get("fuel_kg")
@@ -1754,10 +1803,10 @@ def _draw_audit_rev3_v8_overview_summary_row(
     if str(fuel_summary.get("state") or "") != "verified":
         canvas.setFillColor(DASH_ORANGE)
         canvas.setFont(SANS_BOLD, T_MICRO)
-        canvas.drawString(ix, row2_top - row2_h + 10, "Page-1 fuel arithmetic did not verify - review the source CFP page.")
+        canvas.drawString(ix, row2_top - row2_h + 10, "Page-1 fuel arithmetic did not verify - review the source OFP page.")
 
     tech_inner = panel(canvas, tech_x, row2_top - row2_h, tech_w, row2_h,
-                       title="CFP P1 - TECHNICAL STATUS", accent=DASH_RED, title_colour=None)
+                       title="OFP P1 - TECHNICAL STATUS", accent=DASH_RED, title_colour=None)
     ix = tech_inner[0]
     row_y = row2_top - 28
     deferred = flight.get("deferred_items") or []
@@ -1833,7 +1882,7 @@ def _draw_audit_rev3_v8_overview_summary_row(
     if not deferred:
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS, T_MICRO)
-        canvas.drawString(ix, row_y, "No deferred item is printed on CFP page 1.")
+        canvas.drawString(ix, row_y, "No deferred item is printed on OFP page 1.")
         row_y -= 11.5
     row_y -= 4
     canvas.setFillColor(TEXT_MUTED)
@@ -1851,7 +1900,7 @@ def _draw_audit_rev3_v8_overview_summary_row(
         source == "noaa_awc_live" for source in weather_sources
     )
     if weather_refresh_open:
-        release_lines.append(("OPEN", "CFP-held weather source - dispatch refresh."))
+        release_lines.append(("OPEN", "OFP-held weather source - dispatch refresh."))
     cdl_references = list(dict.fromkeys(
         str(reference).strip()
         for gate in deferred_gates
@@ -1901,7 +1950,7 @@ def draw_overview_page(
     section_page_numbers: dict[str, int] | None = None,
 ) -> None:
     """REV3 canon dashboard (boss, 20 Aug: "this format, this content, this
-    look"): airport cards flanking the CFP P1 route/levels panel with the
+    look"): airport cards flanking the OFP P1 route/levels panel with the
     analysis overlay, then FLIGHT BASIS | MASS/FUEL | TECHNICAL STATUS, and
     """
     width, height = PAGE_SIZE
@@ -1917,7 +1966,7 @@ def draw_overview_page(
             if token
         ]
     )
-    source_parts = ["CFP P1 master context + deterministic analysis"]
+    source_parts = ["OFP P1 master context + deterministic analysis"]
     if operational_readable and route_token_count > 8:
         source_parts.append("FULL ROUTE: DASHBOARD")
     if operational_readable and profile_token_count > 4:
@@ -2309,7 +2358,7 @@ def draw_overview_page(
     # planning is printed there as well.
     if dense_departure_layout and dense_destination_layout:
         # Both source cards need a readable weather lane. Retain enough centre
-        # width for the CFP route/levels panel while sharing the remaining
+        # width for the OFP route/levels panel while sharing the remaining
         # width symmetrically; no station is silently favoured or truncated.
         departure_fraction = destination_fraction = 0.31
     elif dense_departure_layout:
@@ -2403,7 +2452,7 @@ def draw_overview_page(
         return str(forecast.get("applicable_conditions") or "").strip()
 
     def draw_card_bulletins(panel_data: dict[str, Any], x: float, row_y: float, width: float, floor_y: float) -> tuple[float, bool]:
-        # The actual CFP bulletins ride on the card (18 Aug ruling; his GPT's
+        # The actual OFP bulletins ride on the card (18 Aug ruling; his GPT's
         # p1 reference prints PLAN / SCHEDULE / METAR / TAF / APPLICABLE) —
         # they also fill the space he flagged empty on 21 Aug.
         weather = panel_data.get("weather") or {}
@@ -2450,7 +2499,7 @@ def draw_overview_page(
         )
         return label, str(highlight.get("text") or "").strip()
 
-    # --- Row 1: DEPARTURE | CFP P1 ROUTE / LEVELS + ANALYSIS OVERLAY | DESTINATION
+    # --- Row 1: DEPARTURE | OFP P1 ROUTE / LEVELS + ANALYSIS OVERLAY | DESTINATION
     row1_top = y
     dep_inner = panel(
         canvas,
@@ -2792,7 +2841,7 @@ def draw_overview_page(
             row_y2 -= body_leading
 
     centre_inner = panel(canvas, centre_x, row1_top - row1_h, centre_w, row1_h,
-                         title="CFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY",
+                         title="OFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY",
                          accent=ACCENT, title_colour=None)
     cx0 = centre_inner[0]
     # Preserve the card's existing right margin; compact publication copy
@@ -2859,7 +2908,7 @@ def draw_overview_page(
     row_y3 = chip_row_y - (18 if operational_readable else 16)
     canvas.setFillColor(TEXT_MUTED)
     canvas.setFont(SANS, body_size)
-    canvas.drawString(cx0, row_y3, "CFP ROUTE")
+    canvas.drawString(cx0, row_y3, "OFP ROUTE")
     row_y3 -= body_leading if operational_readable else 10.0
     canvas.setFillColor(TEXT_SECONDARY)
     canvas.setFont(MONO, body_size)
@@ -3184,7 +3233,7 @@ def _timeline(
     """Horizontal dot timeline: entries are dicts with time, label, sub,
     accent. Times sit above the rail, labels below — the spec's strip."""
     if not entries:
-        review_line(canvas, x, y + 10, "No timeline events derived from the CFP - review required.")
+        review_line(canvas, x, y + 10, "No timeline events derived from the OFP - review required.")
         return
     step = w / max(1, len(entries) - 1) if len(entries) > 1 else 0
     rail_y = y + 13 + vertical_shift
@@ -3255,7 +3304,7 @@ def _clock_at(flight: dict[str, Any], actm_minutes_value: int | None) -> str:
 def _ddhhmm_actm(
     flight: dict[str, Any], value: str | None
 ) -> int | None:
-    """Resolve a governed DDHHMM product time against the CFP departure."""
+    """Resolve a governed DDHHMM product time against the OFP departure."""
     from datetime import datetime, timezone
 
     match = re.fullmatch(r"(\d{2})(\d{2})(\d{2})", str(value or ""))
@@ -3636,7 +3685,7 @@ def _profile_lines_for_width(
     *,
     font_size: float = T_MICRO,
 ) -> list[str]:
-    """Split the slash-delimited CFP level chain without losing a token."""
+    """Split the slash-delimited OFP level chain without losing a token."""
     profile_lines: list[str] = []
     current = ""
     for segment in str(profile or "").strip().split("/"):
@@ -3759,7 +3808,7 @@ def _cfp_page_reference(pages: list[int]) -> str:
     """Compact ordered physical-page provenance without hiding gaps."""
     ordered = sorted({int(page) for page in pages if int(page) > 0})
     if not ordered:
-        return "CFP pages unavailable"
+        return "OFP pages unavailable"
     ranges: list[tuple[int, int]] = []
     start = previous = ordered[0]
     for page in ordered[1:]:
@@ -3773,7 +3822,7 @@ def _cfp_page_reference(pages: list[int]) -> str:
         str(start) if start == end else f"{start}-{end}"
         for start, end in ranges
     )
-    return f"CFP p{rendered}" if len(ordered) == 1 else f"CFP pp{rendered}"
+    return f"OFP p{rendered}" if len(ordered) == 1 else f"OFP pp{rendered}"
 
 
 def _chunked(values: list[Any], size: int) -> list[list[Any]]:
@@ -3875,7 +3924,7 @@ def _performance_fuel_detail_pages(
             "PERFORMANCE",
             _shared_performance_publication(briefing),
         ),
-        *_flatten_detail_rows("CFP PERFORMANCE INPUTS", parsed_performance),
+        *_flatten_detail_rows("OFP PERFORMANCE INPUTS", parsed_performance),
         *switch_rows,
         *_flatten_detail_rows("MASSES", briefing.get("masses") or {}),
         *_flatten_detail_rows("FUEL", briefing.get("fuel") or {}),
@@ -3922,7 +3971,7 @@ def _deferred_detail_pages(
             value = item.get(key)
             rows.append((
                 f"{index} {label}",
-                str(value) if value not in (None, "") else "NOT STATED IN THE PARSED CFP DECLARATION",
+                str(value) if value not in (None, "") else "NOT STATED IN THE PARSED OFP DECLARATION",
             ))
         known = {
             "item_type",
@@ -3947,7 +3996,7 @@ def _deferred_detail_pages(
                 rows.extend(
                     _flatten_detail_rows(f"ITEM {index}.{key}", value)
                 )
-    return _detail_page_plans("FULL CFP DEFERRED DECLARATIONS", rows)
+    return _detail_page_plans("FULL OFP DEFERRED DECLARATIONS", rows)
 
 
 def _airport_notam_detail_pages(
@@ -3997,7 +4046,7 @@ def _airport_notam_detail_pages(
                 ),
                 (
                     f"{prefix} SOURCE",
-                    f"CFP page {item.get('source_page')}"
+                    f"OFP page {item.get('source_page')}"
                     if item.get("source_page") is not None
                     else "SOURCE PAGE NOT HELD",
                 ),
@@ -4164,7 +4213,7 @@ def _route_profile_continuation_pages(
     # sequence and prevents an exact ordered-fact audit.
     rows = [
         *(
-            ("CFP ROUTE" if index == 0 else "", line)
+            ("OFP ROUTE" if index == 0 else "", line)
             for index, line in enumerate(route_lines)
         ),
         *(
@@ -4445,7 +4494,7 @@ def _station_card_lines(panel_data: dict[str, Any]) -> list[tuple[str, str]]:
             str(item["text"]).strip(),
         ))
     if not rows:
-        rows.append(("SOURCE", "No selected CFP weather or NOTAM fact is held for this role."))
+        rows.append(("SOURCE", "No selected OFP weather or NOTAM fact is held for this role."))
     return rows
 
 
@@ -4875,9 +4924,9 @@ def _analysis_hazard_summary(
     ]
     if gaps:
         hazard_bits.append(
-            f"{'/'.join(gaps)} carry no data in this CFP - coverage gaps, not NIL findings."
+            f"{'/'.join(gaps)} carry no data in this OFP - coverage gaps, not NIL findings."
         )
-    return " ".join(hazard_bits) or "No enroute SIGMET is printed in this CFP."
+    return " ".join(hazard_bits) or "No enroute SIGMET is printed in this OFP."
 
 
 def _shared_communication_text(item: dict[str, Any]) -> str:
@@ -5005,7 +5054,7 @@ def _operational_route_fir_card_summary(
 
     record_count = int(route_airspace.get("record_count") or 0)
     source_page_text = str(
-        route_airspace.get("source_page_text") or "CFP pages unavailable"
+        route_airspace.get("source_page_text") or "OFP pages unavailable"
     ).strip()
     military_record = route_airspace.get("military_source_record") or {}
     military_id = (
@@ -5142,7 +5191,7 @@ def _operational_priority_source_summary(
             or row.get("applicability_inferred") is not False
         ):
             continue
-        source_reference = str(row.get("source_reference") or "").strip()
+        source_reference = _ofp_source_reference_text(row.get("source_reference")).strip()
         summary = str(row.get("summary") or "").strip()
         if source_reference and summary:
             facts.append(f"{source_reference}: {summary}")
@@ -5183,10 +5232,18 @@ def _operational_terrain_summary(
         terrain.get("summary")
         or "Terrain/profile assessment is unavailable - review required."
     ).strip()
-    full = (
-        summary + " Dedicated governed terrain/profile evidence follows this page."
-        if has_terrain_annex
-        else summary
+    vws_summary = str(
+        ((terrain.get("vws_review") or {}).get("summary"))
+        or "VWS review unavailable: no planned VWS value is held in the parsed OFP route."
+    ).strip()
+    full = _join_sentences(
+        summary,
+        vws_summary,
+        (
+            "Dedicated governed terrain/profile evidence follows this page"
+            if has_terrain_annex
+            else None
+        ),
     )
     if len(_wrap(full, SANS, T_SMALL, text_width)) <= max_lines:
         return full
@@ -5216,9 +5273,11 @@ def _operational_terrain_summary(
         else "maximum source value held in annex"
     )
     review = summary.rsplit("); ", 1)[-1] if "); " in summary else summary
-    compact = (
-        f"{len(events)} MSA >100* window(s); {maximum_line}. {review}. "
-        "Full governed terrain/profile evidence follows this page."
+    compact = _join_sentences(
+        f"{len(events)} MSA >100* window(s); {maximum_line}",
+        review,
+        vws_summary,
+        "Full governed terrain/profile evidence follows this page",
     )
     if len(_wrap(compact, SANS, T_SMALL, text_width)) > max_lines:
         raise ValueError("Terrain annex receipt exceeds readable capacity.")
@@ -5387,7 +5446,7 @@ def draw_time_gates_page(
     content_top = draw_page_chrome(
         canvas, flight,
         page_number=page_number, page_count=page_count,
-        source_line="CFP route log and timing anchors | FIR procedure extracts held in governed sources",
+        source_line="OFP route log and timing anchors | FIR procedure extracts held in governed sources",
     )
     canvas.bookmarkPage("sec_time")
     classification = _edto_classification(flight)
@@ -5414,11 +5473,11 @@ def draw_time_gates_page(
     for item in (briefing.get("communications") or [])[:3]:
         comm_rows.append((str(item.get("event") or "")[:12], f"{item.get('time')} - {item.get('detail')}"))
     if not comm_rows:
-        comm_rows = [("FIR", "No early FIR contact requirement derived from this CFP.")]
+        comm_rows = [("FIR", "No early FIR contact requirement derived from this OFP.")]
 
     deferred = _group_deferred_items(flight)
     operating_rows = [
-        ("MEL/CDL", "; ".join(f"{i.get('item_type')} {i.get('reference')}" for i in deferred[:2]) or "No deferred item on CFP page 1."),
+        ("MEL/CDL", "; ".join(f"{i.get('item_type')} {i.get('reference')}" for i in deferred[:2]) or "No deferred item on OFP page 1."),
         ("DEP", str((briefing.get("departure") or {}).get("runway") or "Runway review.")),
         ("DEST", str((briefing.get("destination") or {}).get("runway") or "Runway review.")),
     ]
@@ -5480,7 +5539,7 @@ def draw_terrain_page(
     content_top = draw_page_chrome(
         canvas, flight,
         page_number=page_number, page_count=page_count,
-        source_line="CFP route log MSA windows | A350 Depressurisation Profiles controlled attachments | strict MSA >100*",
+        source_line="OFP route log MSA windows | A350 Depressurisation Profiles controlled attachments | strict MSA >100*",
     )
     canvas.bookmarkPage("sec_terrain")
     y = draw_section_title(canvas, content_top, "High Terrain Exposure and Depressurisation")
@@ -5488,8 +5547,12 @@ def draw_terrain_page(
     full_w = width - 2 * MARGIN
     # The one composed terrain sentence prints verbatim here - the parity
     # gate requires it in both directions (a no-window flight must SAY so).
-    summary_line = str((briefing.get("terrain") or {}).get("summary") or "")
-    if summary_line:
+    terrain_view = briefing.get("terrain") or {}
+    summary_lines = [
+        str(terrain_view.get("summary") or "").strip(),
+        str((terrain_view.get("vws_review") or {}).get("summary") or "").strip(),
+    ]
+    for summary_line in (line for line in summary_lines if line):
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS, T_SMALL)
         _draw_string_fitted(canvas, MARGIN, y - 2, summary_line, SANS, T_SMALL, full_w, TEXT_SECONDARY)
@@ -5962,7 +6025,7 @@ def draw_performance_page(
     content_top = draw_page_chrome(
         canvas, flight,
         page_number=page_number, page_count=page_count,
-        source_line="CFP p.1 remarks and performance basis | deterministic RTOW and fuel arithmetic",
+        source_line="OFP p.1 remarks and performance basis | deterministic RTOW and fuel arithmetic",
     )
     canvas.bookmarkPage("sec_performance")
     y = draw_section_title(canvas, content_top, "Performance and Planning Sensitivity")
@@ -6033,7 +6096,7 @@ def draw_performance_page(
             canvas.drawString(ix + label_w + track_w + 6, bar_y + bar_h / 2 - 2.6, f"{value:,}")
             bar_y -= bar_h + 8
     else:
-        review_line(canvas, ix, iy + ih / 2, "No RTOW figures parsed from the CFP - performance review required.")
+        review_line(canvas, ix, iy + ih / 2, "No RTOW figures parsed from the OFP - performance review required.")
 
     right_x = MARGIN + half_w + 22
     inner = panel(canvas, right_x, body_top - body_h, half_w, body_h, title=f"{flight.get('departure') or '----'} RWY {performance.get('runway') or '--'} PERFORMANCE BASIS", accent=DEPARTURE)
@@ -6061,15 +6124,15 @@ def draw_performance_page(
     breakdown = fuel_summary.get("excess_breakdown") or []
     excess_parts = " + ".join(f"{item['label']} {item['fuel_kg']:,} kg" for item in breakdown if item.get("fuel_kg")) or None
     sens_rows = [
-        ("ZFW +/-1,000 kg", f"BURN +/-{zfw_burn:,} kg" if zfw_burn else "Sensitivity line not printed on this CFP.", "Update burn and arrival fuel"),
-        ("EXCESS ALLOCATION", excess_parts or "No itemised excess on CFP page 1.", "Purpose of carried excess fuel"),
-        ("CRUISE BASIS", f"CI {flight.get('cost_index')}" if flight.get("cost_index") else str(flight.get("cruise") or "Cruise basis on CFP page 1."), "Level-change fuel sensitivity"),
+        ("ZFW +/-1,000 kg", f"BURN +/-{zfw_burn:,} kg" if zfw_burn else "Sensitivity line not printed on this OFP.", "Update burn and arrival fuel"),
+        ("EXCESS ALLOCATION", excess_parts or "No itemised excess on OFP page 1.", "Purpose of carried excess fuel"),
+        ("CRUISE BASIS", f"CI {flight.get('cost_index')}" if flight.get("cost_index") else str(flight.get("cruise") or "Cruise basis on OFP page 1."), "Level-change fuel sensitivity"),
     ]
     header_y = 30 + sens_h - 26
     canvas.setFillColor(TEXT_MUTED)
     canvas.setFont(SANS_BOLD, T_MICRO)
     canvas.drawString(ix3, header_y, "VARIABLE")
-    canvas.drawString(ix3 + 130, header_y, "CFP EFFECT")
+    canvas.drawString(ix3 + 130, header_y, "OFP EFFECT")
     canvas.drawString(ix3 + 420, header_y, "DECISION USE")
     row_y = header_y - 13
     for variable, effect, use in sens_rows:
@@ -6103,7 +6166,7 @@ def draw_mel_cdl_page(
     content_top = draw_page_chrome(
         canvas, flight,
         page_number=page_number, page_count=page_count,
-        source_line="CFP page 1 declarations | source-bounded MEL/CDL crops",
+        source_line="OFP page 1 declarations | source-bounded MEL/CDL crops",
         page_family="deep",
     )
     if section_page_number == 1:
@@ -6145,7 +6208,7 @@ def draw_mel_cdl_page(
             inner = panel(canvas, cx, card_bottom, full_w, card_h, title="DEFERRED ITEMS", accent=EDTO_GREEN, title_colour=None)
             canvas.setFillColor(TEXT_SECONDARY)
             canvas.setFont(SANS_BOLD, T_SMALL)
-            canvas.drawString(inner[0], card_top - card_h / 2 - 8, "No MEL, CDL or CDDL item is listed on CFP page 1.")
+            canvas.drawString(inner[0], card_top - card_h / 2 - 8, "No MEL, CDL or CDDL item is listed on OFP page 1.")
             break
         raw_item_type = str(item.get("item_type") or "").strip().upper()
         item_type = deferred_item_type_for_display(raw_item_type)
@@ -6167,19 +6230,19 @@ def draw_mel_cdl_page(
         remark = str(item.get("company_remark") or "").strip()
         if raw_item_type not in {"", "UNCLASSIFIED", "UNSPECIFIED", "UNKNOWN"}:
             body = (
-                f"CFP REMARK - NOT THE APPROVED {raw_item_type} REMEDY: {remark}"
+                f"OFP REMARK - NOT THE APPROVED {raw_item_type} REMEDY: {remark}"
                 if remark
                 else (
-                    f"CFP declaration only. The approved {raw_item_type} remedy must be read "
+                    f"OFP declaration only. The approved {raw_item_type} remedy must be read "
                     "from the exact governed item."
                 )
             )
         else:
             body = (
-                f"CFP DECLARATION - REVIEW REQUIRED: {remark}"
+                f"OFP DECLARATION - REVIEW REQUIRED: {remark}"
                 if remark
                 else (
-                    "CFP declaration requires review; no MEL, CDL or CDDL "
+                    "OFP declaration requires review; no MEL, CDL or CDDL "
                     "classification or remedy is inferred."
                 )
             )
@@ -6226,7 +6289,7 @@ def draw_mel_cdl_page(
                 thickness=0,
             )
 
-    # Cropped CFP declaration. It remains useful source evidence, but it is
+    # Cropped OFP declaration. It remains useful source evidence, but it is
     # never labelled as the approved MEL/CDL/CDDL remedy. The card keeps the
     # original evidence scale and only removes unused container height.
     crops_top = y - cards_h - 10
@@ -6270,23 +6333,23 @@ def draw_mel_cdl_page(
         crops_bottom,
         full_w,
         crops_h,
-        title="CROPPED CFP DECLARATION - NOT THE APPROVED REMEDY",
+        title="CROPPED OFP DECLARATION - NOT THE APPROVED REMEDY",
         accent=DESTINATION,
     )
     ix, iy, iw, ih = inner
     if deferred:
         _draw_crop(
             canvas, crop, ix, iy + 6, iw, ih - 10,
-            missing_text="The deferred-item block could not be located for cropping - review CFP page 1 directly.",
+            missing_text="The deferred-item block could not be located for cropping - review OFP page 1 directly.",
         )
         if crop:
             canvas.setFillColor(TEXT_MUTED)
             canvas.setFont(SANS, T_MICRO)
-            canvas.drawRightString(ix + iw, iy - 1, f"Cropped from CFP page {crop['page_number']} - original content retained")
+            canvas.drawRightString(ix + iw, iy - 1, f"Cropped from OFP page {crop['page_number']} - original content retained")
     else:
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS_BOLD, T_SMALL)
-        canvas.drawCentredString(ix + iw / 2, iy + ih / 2, "No deferred item on CFP page 1 - there is no source section to crop.")
+        canvas.drawCentredString(ix + iw / 2, iy + ih / 2, "No deferred item on OFP page 1 - there is no source section to crop.")
 
 
 # ---------------------------------------------------------------------------
@@ -6324,9 +6387,9 @@ def draw_alternates_page(
             value
             for value in (
                 (
-                    "CFP alternate-planning summary"
+                    "OFP alternate-planning summary"
                     if non_edto
-                    else "CFP EDTO table"
+                    else "OFP EDTO table"
                 ),
                 (
                     f"{classification_label} classification"
@@ -6459,9 +6522,9 @@ def draw_alternates_page(
             inner[0],
             inner[1] + inner[3] / 2,
             (
-                "No parsed classification or destination-alternate facts are held - review the CFP."
+                "No parsed classification or destination-alternate facts are held - review the OFP."
                 if non_edto
-                else "No parsed EDTO or selected enroute-airport facts are held - review the CFP."
+                else "No parsed EDTO or selected enroute-airport facts are held - review the OFP."
             ),
         )
 
@@ -6485,13 +6548,14 @@ def draw_alternates_page(
             pad_y=14,
             full_width=True,
         )
-        source_title = "CFP ALTERNATE PLANNING - CROPPED RELEVANT SECTION"
+        source_title = "OFP ALTERNATE PLANNING - CROPPED RELEVANT SECTION"
         missing_source = (
             "Alternate-planning source section unavailable for cropping - "
-            "review the uploaded CFP."
+            "review the uploaded OFP."
         )
     else:
         source_classification = _edto_source_classification(flight)
+        source_heading = _raw_lido_classification_heading(source_classification)
         edto_source_pages = [
             item.get("source_page")
             for item in ((briefing.get("edto") or {}).get("assessment") or {}).get(
@@ -6508,19 +6572,15 @@ def draw_alternates_page(
             full_width=True,
         ) or crop_source_region(
             source_pdf_path,
-            needle=(
-                f"SUMMARY {source_classification} CFP"
-                if source_classification
-                else "SUMMARY EDTO CFP"
-            ),
+            needle=source_heading or _RAW_LIDO_CLASSIFICATION_HEADINGS["EDTO"],
             page_hint=0,
             source_pages=edto_source_pages,
             pad_y=8,
             full_width=True,
         )
-        source_title = "CFP EDTO TABLE - CROPPED RELEVANT SECTION"
+        source_title = "OFP EDTO TABLE - CROPPED RELEVANT SECTION"
         missing_source = (
-            "EDTO source section unavailable for cropping - review the uploaded CFP."
+            "EDTO source section unavailable for cropping - review the uploaded OFP."
         )
     inner = panel(
         canvas,
@@ -6555,7 +6615,7 @@ def _notam_rows(panel_data: dict[str, Any], flight: dict[str, Any], role: str) -
     rows: list[tuple[str, str, str]] = []
     runway = str(panel_data.get("runway") or "")
     if runway:
-        rows.append((f"RWY {runway.split('/')[0].strip()[:8]}", "PLANNED", "Planned CFP basis."))
+        rows.append((f"RWY {runway.split('/')[0].strip()[:8]}", "PLANNED", "Planned OFP basis."))
     for consideration in (panel_data.get("considerations") or [])[:5]:
         kind = str(consideration.get("kind") or "NOTAM")
         text = str(consideration.get("text") or "")
@@ -6599,7 +6659,7 @@ def draw_airports_page(
     content_top = draw_page_chrome(
         canvas, flight,
         page_number=page_number, page_count=page_count,
-        source_line="Selected CFP weather + time-applicable NOTAM source facts by operational airport role",
+        source_line="Selected OFP weather + time-applicable NOTAM source facts by operational airport role",
         section_label=(
             "AIRPORTS / NOTAM APPLICABILITY"
             + _continuation_suffix(section_page_number, section_page_count)
@@ -6629,7 +6689,7 @@ def draw_airports_page(
             30,
             full_w,
             y - 30,
-            title="CFP ROUTE AND LEVEL PROFILE - VERBATIM CONTINUATION",
+            title="OFP ROUTE AND LEVEL PROFILE - VERBATIM CONTINUATION",
             accent=ACCENT,
             title_colour=None,
         )
@@ -6664,7 +6724,7 @@ def draw_airports_page(
             canvas,
             inner[0],
             inner[1] + inner[3] / 2,
-            "No selected airport-role source panel is held - review the uploaded CFP.",
+            "No selected airport-role source panel is held - review the uploaded OFP.",
         )
         return
 
@@ -6753,7 +6813,7 @@ def draw_hazard_page(
     content_top = draw_page_chrome(
         canvas, flight,
         page_number=page_number, page_count=page_count,
-        source_line="CFP weather snapshot | SIGMET / volcanic-ash review | package WAFC charts",
+        source_line="OFP weather snapshot | SIGMET / volcanic-ash review | package WAFC charts",
         section_label=(
             "OPERATIONAL HAZARD ASSESSMENT"
             + _continuation_suffix(section_page_number, section_page_count)
@@ -6789,7 +6849,7 @@ def draw_hazard_page(
     half_w = (full_w - 22) / 2
 
     # REV3 canon (boss, 20 Aug): one verdict card per enroute SIGMET, each
-    # carrying its deterministic reason, then the coverage ledger; the CFP's
+    # carrying its deterministic reason, then the coverage ledger; the OFP's
     # own weather page rides alongside as the printed source.
     strip_h = 150.0
     columns_bottom = 30 + strip_h + 10
@@ -6848,10 +6908,10 @@ def draw_hazard_page(
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS, T_MICRO)
         canvas.drawString(MARGIN + 14, card_y - 30,
-                          "No enroute SIGMET is printed in this CFP's weather pages.")
+                          "No enroute SIGMET is printed in this OFP's weather pages.")
         card_y -= none_h + 8
 
-    # Coverage ledger: the CFP's section availability, the governed review
+    # Coverage ledger: the OFP's section availability, the governed review
     # statuses, and every VAAC centre - gaps stay visible, never assumed clear.
     ledger_h = max(96.0, card_y - columns_bottom)
     ledger_top = card_y
@@ -6893,9 +6953,9 @@ def draw_hazard_page(
         responsible_compact,
     ))
     for label, status in (
-        ("SIGMET REVIEW", str(((flight.get("sigmet_review") or {}).get("status")) or "no data in CFP")),
-        ("VA REVIEW", str(vaa_review.get("status") or "no data in CFP")),
-        ("TC REVIEW", str(((flight.get("tropical_cyclone_review") or {}).get("status")) or "no data in CFP")),
+        ("SIGMET REVIEW", str(((flight.get("sigmet_review") or {}).get("status")) or "no data in OFP")),
+        ("VA REVIEW", str(vaa_review.get("status") or "no data in OFP")),
+        ("TC REVIEW", str(((flight.get("tropical_cyclone_review") or {}).get("status")) or "no data in OFP")),
         ("VAAC CENTRES", vaac_centres_status),
     ):
         canvas.setFillColor(TEXT_MUTED)
@@ -6924,12 +6984,12 @@ def draw_hazard_page(
         canvas.drawString(MARGIN + 14, row_y, centre_line)
         row_y -= 10
 
-    # The CFP's own weather page, cropped as printed - the source beside the
+    # The OFP's own weather page, cropped as printed - the source beside the
     # verdicts, exactly as the canon lays it out.
     right_x = MARGIN + half_w + 22
     right_h = y - columns_bottom
     panel(canvas, right_x, y - right_h, half_w, right_h,
-          title="CFP SIGMET / WEATHER SOURCE", accent=WEATHER_AMBER, title_colour=None)
+          title="OFP SIGMET / WEATHER SOURCE", accent=WEATHER_AMBER, title_colour=None)
     weather_source_pages = [
         record.get("source_page")
         for record in flight.get("weather") or []
@@ -6971,7 +7031,7 @@ def draw_hazard_page(
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS, T_SMALL)
         canvas.drawString(right_x + 14, y - right_h / 2,
-                          "Source weather page unavailable for cropping - see the uploaded CFP.")
+                          "Source weather page unavailable for cropping - see the uploaded OFP.")
 
     y = columns_bottom - 10
 
@@ -7109,7 +7169,7 @@ def draw_comms_page(
     content_top = draw_page_chrome(
         canvas, flight,
         page_number=page_number, page_count=page_count,
-        source_line="CFP route log and early-call requirements | timings remain subject to current AIP/NOTAM and ATC",
+        source_line="OFP route log and early-call requirements | timings remain subject to current AIP/NOTAM and ATC",
     )
     canvas.bookmarkPage("sec_comms")
     y = draw_section_title(canvas, content_top, "FIR Communication and Time Reconciliation")
@@ -7145,7 +7205,7 @@ def draw_comms_page(
     if not comms:
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS, T_SMALL)
-        canvas.drawString(ix, row_y, "No early FIR contact requirement was derived from this CFP.")
+        canvas.drawString(ix, row_y, "No early FIR contact requirement was derived from this OFP.")
     for item in comms[:6]:
         canvas.setFillColor(TEXT)
         canvas.setFont(MONO_BOLD, T_MICRO)
@@ -7161,7 +7221,7 @@ def draw_comms_page(
     cruise = str(flight.get("cruise") or "").strip()
     bobcat = flight.get("bobcat")
     rows = [
-        ("ROUTE / LEVEL", cruise or "Cruise basis on CFP page 1."),
+        ("ROUTE / LEVEL", cruise or "Cruise basis on OFP page 1."),
         ("BOBCAT", (
             f"WPT {bobcat.get('waypoint')} FL{bobcat.get('flight_level')}" if bobcat else "No Page 1 allocation; all UTC derived from the take-off anchor."
         )),
@@ -7206,7 +7266,7 @@ def _draw_audit_rev3_v8_analysis_page(
         source_line=" | ".join(
             value
             for value in (
-                "CFP-derived deterministic verdicts",
+                "OFP-derived deterministic verdicts",
                 "no unsupported hazard inference",
                 compact_overflow_note,
             )
@@ -7257,7 +7317,7 @@ def _draw_audit_rev3_v8_analysis_page(
     perf_text = " ".join(part for part in (
         f"RTOW {selected_rtow:,} kg."
         if selected_rtow is not None
-        else "RTOW not derived - review CFP performance page.",
+        else "RTOW not derived - review OFP performance page.",
         (
             f"PTOW {ptow:,} kg gives {margin_kg:,} kg margin."
             if margin_kg is not None
@@ -7270,16 +7330,16 @@ def _draw_audit_rev3_v8_analysis_page(
         ),
         f"A 1,000 kg ZFW change moves burn {flight.get('zfw_change_burn_kg_per_1000')} kg." if flight.get("zfw_change_burn_kg_per_1000") else None,
         (
-            # In the CFP's own words: tankering carries return-sector fuel
+            # In the OFP's own words: tankering carries return-sector fuel
             # (boss, 21 Aug fuel video — correct number, wrong wording).
             (
                 "Excess is tankering: TANKER "
                 + f"{next(item['fuel_kg'] for item in fuel_summary.get('excess_breakdown') or [] if item.get('label') == 'TANKER' and item.get('fuel_kg')):,} kg "
                 + "carried for the return sector"
                 + (
-                    f" (requirement {fuel_summary.get('tanker_return_sector_req_kg'):,} kg per CFP page 1)."
+                    f" (requirement {fuel_summary.get('tanker_return_sector_req_kg'):,} kg per OFP page 1)."
                     if fuel_summary.get("tanker_return_sector_req_kg")
-                    else " per CFP page 1."
+                    else " per OFP page 1."
                 )
             )
             if any(
@@ -7315,10 +7375,10 @@ def _draw_audit_rev3_v8_analysis_page(
         if ref and ref not in seen_refs:
             seen_refs.append(ref)
     cddl_text = (
-        f"CFP page 1 carries {len(deferred)} technical item{'s' if len(deferred) != 1 else ''}: "
+        f"OFP page 1 carries {len(deferred)} technical item{'s' if len(deferred) != 1 else ''}: "
         f"{', '.join(seen_refs[:6])}. Execution remarks stay with the printed source; missing "
         "seal dimensions or identity are never guessed when determining any penalty."
-        if deferred else "No deferred technical item is printed on CFP page 1."
+        if deferred else "No deferred technical item is printed on OFP page 1."
     )
 
     edto_rows = {row.get("label"): row.get("value") for row in edto_view.get("operational_rows") or []}
@@ -7326,7 +7386,7 @@ def _draw_audit_rev3_v8_analysis_page(
         str(edto_rows.get("SECTOR 1") or edto_rows.get("ENTRY / EXIT") or ""),
         str(edto_rows.get("EDTO ALTN") or ""),
         str(edto_rows.get("FUEL") or ""),
-    ) if part) or "No EDTO facts were derived from this CFP - review page 1 directly."
+    ) if part) or "No EDTO facts were derived from this OFP - review page 1 directly."
 
     hazards_text = _analysis_hazard_summary(flight, briefing)
     selected_communications = list(communications or [])
@@ -7341,27 +7401,31 @@ def _draw_audit_rev3_v8_analysis_page(
         f"{theme.airport_code_label(departure_panel.get('icao') or flight.get('departure'))}: RWY {departure_panel.get('runway')}." if departure_panel.get("runway") else None,
         f"{theme.airport_code_label(destination_panel.get('icao') or flight.get('destination'))}: RWY {destination_panel.get('runway')}." if destination_panel.get("runway") else None,
         (
-            f"{primary_alternate.get('airport')} is the CFP preferred alternate"
+            f"{primary_alternate.get('airport')} is the OFP preferred alternate"
             + (f" on RWY {primary_alternate.get('runway')}" if primary_alternate.get("runway") else "")
             + (f" ({primary_alternate.get('approach')})." if primary_alternate.get("approach") else ".")
             if primary_alternate else None
         ),
     ) if part) or "Airport basis requires review - see the airports page."
 
-    terrain_text = str((briefing.get("terrain") or {}).get("summary") or "")
+    terrain_view = briefing.get("terrain") or {}
     depress_findings = [f for f in findings if f.get("engine") == "depressurisation"]
-    if depress_findings:
-        terrain_text += ". " + str(depress_findings[0].get("summary") or "")
+    terrain_text = _join_sentences(
+        terrain_view.get("summary"),
+        (terrain_view.get("vws_review") or {}).get("summary"),
+        depress_findings[0].get("summary") if depress_findings else None,
+    )
 
     # A NON-EDTO flight swaps the EDTO card for its one-line classification
     # instead of a panel of "--.--" placeholders (boss, 21 Aug: "this is not
     # EDTO information... useless information is repeated").
     non_edto = _edto_classification(flight).startswith("NON")
     source_classification = _edto_source_classification(flight)
+    source_heading = _raw_lido_classification_heading(source_classification)
     classification_sentence = (
-        "CFP page 1: SUMMARY STANDARD CFP (non-EDTO). "
+        f"OFP P1 source: {source_heading} (interpreted as non-EDTO). "
         if source_classification == "STANDARD"
-        else f"CFP page 1: SUMMARY {source_classification or 'NON EDTO'} CFP. "
+        else f"OFP P1 source: {source_heading or 'classification unavailable'}. "
     ) + "Destination alternate and enroute suitability remain independent checks."
     edto_cell = (
         ("CLASSIFICATION", EDTO_GREEN, classification_sentence)
@@ -7536,7 +7600,9 @@ def draw_analysis_page(
         )
         source_lines = _wrap(
             "SOURCE · "
-            + str(finding.get("source_reference") or "Unavailable"),
+            + _ofp_source_reference_text(
+                finding.get("source_reference") or "Unavailable"
+            ),
             SANS,
             T_SMALL,
             inner_width,
@@ -7719,7 +7785,7 @@ def _draw_operational_deferred_source_panel(
     # A bare declaration has no printed reference; the title simply omits it
     # (boss, 21 Aug: no UNSPECIFIED placeholder words on the pilot surface).
     reference = deferred_reference_for_display(item.get("reference"))
-    description = str(item.get("description") or "CFP DECLARATION").strip()
+    description = str(item.get("description") or "OFP DECLARATION").strip()
     title = " · ".join(
         part
         for part in (
@@ -7802,7 +7868,7 @@ def _draw_operational_deferred_source_panel(
     label = (
         f"OPEN EXACT {item_type} ITEM / REMEDY >"
         if target
-        else "GOVERNED LINK UNAVAILABLE · CFP SOURCE HELD"
+        else "GOVERNED LINK UNAVAILABLE · OFP SOURCE HELD"
     )
     label_width = pdfmetrics.stringWidth(label, SANS_BOLD, T_SMALL)
     if label_width > iw:
@@ -7844,7 +7910,9 @@ def _operational_performance_layout(
         )
         source_lines = _wrap(
             "SOURCE · "
-            + str(row.get("source_reference") or "Source unavailable"),
+            + _ofp_source_reference_text(
+                row.get("source_reference") or "Source unavailable"
+            ),
             SANS,
             T_SMALL,
             detail_width,
@@ -7942,7 +8010,7 @@ def draw_operational_performance_page(
     layout = layout or _operational_performance_layout(briefing)
     continuation_pages = list(layout.get("continuation_pages") or [])
     source_parts = [
-        "CFP performance/mass inputs",
+        "OFP performance/mass inputs",
         "page-1 fuel arithmetic",
         "deferred declaration summary",
     ]
@@ -8255,10 +8323,10 @@ def draw_operational_performance_page(
         reference = deferred_reference_for_display(item.get("reference"))
         status_rows.append((
             " ".join(part for part in (item_type, reference) if part) or "DECLARATION",
-            str(item.get("description") or "CFP declaration held"),
+            str(item.get("description") or "OFP declaration held"),
         ))
     if not status_rows:
-        status_rows = [("SOURCE STATUS", "No deferred declaration is printed on CFP page 1.")]
+        status_rows = [("SOURCE STATUS", "No deferred declaration is printed on OFP page 1.")]
     draw_rows(
         status_inner,
         status_rows,
@@ -8280,7 +8348,7 @@ def draw_operational_performance_page(
         # EOSID is source prose, not a bounded performance token.  Keep the
         # compact numeric card stable and give the complete escape routing a
         # measured, full-width continuation area instead of truncating it or
-        # failing when a valid CFP sentence wraps in the narrow column.
+        # failing when a valid OFP sentence wraps in the narrow column.
         eosid_lines = list(layout.get("eosid_lines") or [])
         eosid_line_height = float(layout["eosid_line_height"])
         eosid_height = float(layout["eosid_panel_height"])
@@ -8369,7 +8437,7 @@ def draw_operational_eosid_continuation_page(
         page_number=page_number,
         page_count=page_count,
         source_line=(
-            "CFP performance EOSID | lossless continuation "
+            "OFP performance EOSID | lossless continuation "
             f"{continuation_number}/{continuation_count}"
         ),
         section_label="EOSID / ESCAPE ROUTING",
@@ -8417,14 +8485,14 @@ def draw_operational_mel_cdl_page(
     source_pdf_path: str | None,
     deferred_items: list[dict[str, Any]],
 ) -> None:
-    """Dedicated one-page evidence view for up to four CFP declarations."""
+    """Dedicated one-page evidence view for up to four OFP declarations."""
     width, _ = PAGE_SIZE
     content_top = draw_page_chrome(
         canvas,
         flight,
         page_number=page_number,
         page_count=page_count,
-        source_line="CFP page 1 declarations | exact governed MEL/CDL item links",
+        source_line="OFP page 1 declarations | exact governed MEL/CDL item links",
         section_label="MEL/CDL AND CDDL",
         section_colour=COMMS_TEAL,
         page_family="deep",
@@ -8438,7 +8506,7 @@ def draw_operational_mel_cdl_page(
     if not visible_gates:
         visible_gates = [{
             "title": "STATUS CLEAR",
-            "summary": "No MEL, CDL or CDDL declaration is printed on CFP page 1.",
+            "summary": "No MEL, CDL or CDDL declaration is printed on OFP page 1.",
         }]
     gate_x = MARGIN + 10.0
     gate_w = width - 2 * gate_x
@@ -8567,7 +8635,7 @@ def draw_operational_mel_cdl_page(
                 segment.get("declaration_kind") or ""
             ).strip().upper()
             # Every declaration on the block earns a source panel — the
-            # 21 Aug CFP printed a bare CDDL, an IFEDDL and an engineering
+            # 21 Aug OFP printed a bare CDDL, an IFEDDL and an engineering
             # IN notice alongside the MEL, and the boss's reference shows
             # all of them (only unparseable rows stay out).
             if (
@@ -8632,7 +8700,7 @@ def draw_operational_mel_cdl_page(
         canvas.setFont(SANS, T_SMALL)
         status_lines = _wrap(
             "No MEL, CDL, CDDL, IFEDDL or engineering deferred declaration "
-            "is printed on CFP page 1. No governed remedy link applies.",
+            "is printed on OFP page 1. No governed remedy link applies.",
             SANS,
             T_SMALL,
             source_inner[2],
@@ -8906,7 +8974,7 @@ def _operational_alternate_forecast(
     kind = str(source.get("record_type") or "FORECAST").upper()
     source_page = source.get("source_page")
     prefix = (
-        f"{kind} CFP p{int(source_page)} | "
+        f"{kind} OFP p{int(source_page)} | "
         if isinstance(source_page, int)
         else f"{kind} SOURCE PAGE UNAVAILABLE | "
     )
@@ -8945,7 +9013,7 @@ def _operational_alternate_constraint_assessment(
             part
             for part in (
                 str(selected.get("notam_id") or "NOTICE"),
-                f"CFP p{int(source_page)}" if isinstance(source_page, int) else None,
+                f"OFP p{int(source_page)}" if isinstance(source_page, int) else None,
                 "|",
             )
             if part
@@ -8984,7 +9052,7 @@ def draw_operational_airports_page(
         source_line=" | ".join(
             value
             for value in (
-                "CFP airport plan + source-held weather + time-applicable notices",
+                "OFP airport plan + source-held weather + time-applicable notices",
                 compact_overflow_note,
             )
             if value
@@ -9050,7 +9118,7 @@ def draw_operational_airports_page(
                         str(notice.get("label") or "NOTICE"),
                         str(notice.get("text") or ""),
                         (
-                            f"SOURCE CFP p{notice.get('source_page')}"
+                            f"SOURCE OFP p{notice.get('source_page')}"
                             if isinstance(notice.get("source_page"), int)
                             else "SOURCE PAGE UNAVAILABLE"
                         ),
@@ -9347,7 +9415,7 @@ def draw_operational_hazard_page(
     wafc_charts: list[dict[str, Any]],
     compact_overflow_note: str | None = None,
 ) -> None:
-    """Weather evidence, named CFP volcano advisories and compact gaps."""
+    """Weather evidence, named OFP volcano advisories and compact gaps."""
     width, _ = PAGE_SIZE
     content_top = draw_page_chrome(
         canvas,
@@ -9357,8 +9425,8 @@ def draw_operational_hazard_page(
         source_line=" | ".join(
             value
             for value in (
-                "CFP weather snapshot",
-                "CFP volcano notices kept separate from VA SIGMET coverage",
+                "OFP weather snapshot",
+                "OFP volcano notices kept separate from VA SIGMET coverage",
                 compact_overflow_note,
             )
             if value
@@ -9389,11 +9457,11 @@ def draw_operational_hazard_page(
     weather_record_count = int(cfp_weather.get("record_count") or 0)
 
     terminal_body = (
-        f"{weather_record_count} parsed CFP weather record(s). "
+        f"{weather_record_count} parsed OFP weather record(s). "
         f"Departure {flight.get('departure') or '--'} and destination "
         f"{flight.get('destination') or '--'} source bulletins remain in the airport view."
     )
-    sigmet_body = "No enroute SIGMET record is printed in this CFP weather package."
+    sigmet_body = "No enroute SIGMET record is printed in this OFP weather package."
     ledger = " | ".join(
         f"{row.get('label')}: {row.get('status')}" for row in coverage_rows
     )
@@ -9469,7 +9537,7 @@ def draw_operational_hazard_page(
         advisory_bottom,
         full_w,
         advisory_h,
-        title="NAMED CFP VOLCANO ADVISORIES",
+        title="NAMED OFP VOLCANO ADVISORIES",
         accent=WEATHER_AMBER,
         title_colour=None,
     )
@@ -9479,7 +9547,7 @@ def draw_operational_hazard_page(
         canvas.drawString(
             advisory_inner[0],
             advisory_top - 36.0,
-            "No named volcano advisory record is held in the parsed CFP.",
+            "No named volcano advisory record is held in the parsed OFP.",
         )
     else:
         advisory_gap = 8.0
@@ -9657,19 +9725,19 @@ def draw_operational_hazard_page(
         source_bottom,
         source_w,
         source_h,
-        title="CFP WEATHER SOURCE",
+        title="OFP WEATHER SOURCE",
         accent=COMMS_TEAL,
         title_colour=None,
     )
     unique_weather_pages = sorted(set(weather_source_pages))
     weather_status = (
-        "CFP weather package held. Source page(s): "
+        "OFP weather package held. Source page(s): "
         + ", ".join(f"p{page}" for page in unique_weather_pages)
         + ". Full source records remain available in the dashboard."
         if unique_weather_pages
         else (
-            "No source-page provenance is held for the parsed CFP weather "
-            "records. Review the uploaded CFP."
+            "No source-page provenance is held for the parsed OFP weather "
+            "records. Review the uploaded OFP."
         )
     )
     weather_lines = _wrap(weather_status, SANS, T_SMALL, source_inner[2])
@@ -9741,7 +9809,7 @@ def draw_operational_hazard_page(
         else:
             chart_status = (
                 "UNAVAILABLE - weather-chart detection did not establish "
-                "appendix presence. Review the uploaded CFP; absence is not inferred."
+                "appendix presence. Review the uploaded OFP; absence is not inferred."
             )
     selected_label_lines: list[str] = []
     for chart in selected_charts:
@@ -9806,18 +9874,18 @@ def draw_operational_enroute_assurance_page(
     full_w = width - 2 * MARGIN
     gap = 12.0
     top = content_top - 8.0
-    # Nine 8.6 pt body lines need 124.6 pt including the fixed title/body
-    # insets.  Keep a generous 11.4 pt foot margin, but do not spend four
-    # otherwise-empty points that the provenance ledger needs when a release
-    # gate legitimately wraps to five lines.
+    # Preserve the established nine-line operational summaries and the source
+    # ledger below them. The Terrain/VWS card gets a little more width instead
+    # of making the whole row taller and displacing governed source receipts.
     card_h = 136.0
     available_card_width = full_w - 2 * gap
     card_widths = (
         available_card_width * 0.28,
-        available_card_width * 0.50,
-        available_card_width * 0.22,
+        available_card_width * 0.46,
+        available_card_width * 0.26,
     )
-    available_lines = int((card_h - 43.0) // 10.2)
+    standard_card_lines = 9
+    terrain_card_lines = int((card_h - 43.0) // 10.2)
     communications = list(briefing.get("communications") or [])
     fir_boundary_summary = str(
         briefing.get("fir_boundary_summary") or ""
@@ -9828,24 +9896,24 @@ def draw_operational_enroute_assurance_page(
         route_airspace,
         fir_boundary_summary,
         text_width=card_widths[0] - 20.0,
-        max_lines=available_lines,
+        max_lines=standard_card_lines,
     )
     intam = briefing.get("intam") or {}
     priority_source_body = _operational_priority_source_summary(
         intam,
         text_width=card_widths[1] - 20.0,
-        max_lines=available_lines,
+        max_lines=standard_card_lines,
     )
     intam_body = priority_source_body or _operational_intam_card_summary(
         intam,
         text_width=card_widths[1] - 20.0,
-        max_lines=available_lines,
+        max_lines=standard_card_lines,
     )
     terrain_body = _operational_terrain_summary(
         terrain,
         has_terrain_annex=has_terrain_annex,
         text_width=card_widths[2] - 20.0,
-        max_lines=available_lines,
+        max_lines=terrain_card_lines,
     )
     top_cards = (
         (
@@ -9854,18 +9922,24 @@ def draw_operational_enroute_assurance_page(
             else "FIR / COMMUNICATIONS",
             COMMS_TEAL,
             communication_body,
+            standard_card_lines,
         ),
         (
             "SOURCE-HELD ACTIONS / INTAM"
             if priority_source_body
-            else "COMPANY BULLETINS / INTAM",
+            else (
+                "COMPANY BULLETINS / INTAM · HELD"
+                if intam.get("record_count")
+                else "COMPANY BULLETINS / INTAM"
+            ),
             WEATHER_AMBER,
             intam_body,
+            standard_card_lines,
         ),
-        ("TERRAIN / PROFILE", TERRAIN_ORANGE, terrain_body),
+        ("TERRAIN / VWS", TERRAIN_ORANGE, terrain_body, terrain_card_lines),
     )
     card_x = MARGIN
-    for (title, accent, body), card_w in zip(top_cards, card_widths):
+    for (title, accent, body, line_budget), card_w in zip(top_cards, card_widths):
         inner = panel(
             canvas,
             card_x,
@@ -9877,7 +9951,7 @@ def draw_operational_enroute_assurance_page(
             title_colour=None,
         )
         lines = _wrap(body, SANS, T_SMALL, inner[2])
-        if len(lines) > available_lines:
+        if len(lines) > line_budget:
             raise ValueError(f"Enroute card {title} exceeds readable capacity.")
         row_y = top - 35.0
         canvas.setFillColor(TEXT_SECONDARY)
@@ -10051,7 +10125,7 @@ def draw_operational_terrain_page(
         source_line=" | ".join(
             value
             for value in (
-                "CFP route log MSA windows",
+                "OFP route log MSA windows",
                 "A350 Depressurisation Profiles controlled attachments",
                 "strict MSA >100*",
                 compact_overflow_note,
@@ -10125,7 +10199,7 @@ def draw_operational_terrain_page(
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS, 8.4)
         for line in _wrap(
-            "Parsed route MSA/VWS data unavailable; CFP trigger not evaluated.",
+            "Parsed route MSA/VWS data unavailable; OFP trigger not evaluated.",
             SANS,
             8.4,
             left_w - 24,
@@ -10167,10 +10241,16 @@ def draw_operational_terrain_page(
         if body and not body.endswith((".", "!", "?")):
             body += "."
         body += " Exact endpoint/airway source validation remains required; no nearby chart is substituted."
+    vws_summary = str(((briefing.get("terrain") or {}).get("vws_review") or {}).get("summary") or "").strip()
     row_y = status_y + status_h - 68.0
     canvas.setFillColor(TEXT_SECONDARY)
     canvas.setFont(SANS, 8.8)
-    for line in _wrap(body, SANS, 8.8, iw)[: max(1, int((row_y - iy) // 11.2))]:
+    for line in _operational_terrain_status_lines(
+        body,
+        vws_summary,
+        text_width=iw,
+        max_lines=max(1, int((row_y - iy) // 11.2)),
+    ):
         canvas.drawString(ix, row_y, line)
         row_y -= 11.2
 
@@ -11009,7 +11089,7 @@ def render_combined_briefing(
             title=detail_page["title"],
             rows=detail_page["rows"],
             source_line=(
-                "Complete parsed CFP deferred declarations and company remarks"
+                "Complete parsed OFP deferred declarations and company remarks"
             ),
             page_family="deep",
         )
@@ -11097,7 +11177,7 @@ def render_combined_briefing(
             section_page_count=hazard_page_count,
             title=detail_page["title"],
             rows=detail_page["rows"],
-            source_line="Complete shared CFP volcanic-ash source records",
+            source_line="Complete shared OFP volcanic-ash source records",
             page_family="deep",
         )
         canvas.showPage()

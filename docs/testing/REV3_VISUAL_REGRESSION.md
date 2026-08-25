@@ -10,15 +10,16 @@ For example, if one card moves by one pixel on page 4, the command exits `1` and
 
 ## Current approved reference
 
-`SQ214_REV3_reference_v8.pdf` (`a4774fc0…970a`) — the
+`SQ214_REV3_reference_v9_OFP_VWS.pdf` (`4df2f631…4f78`) — the
 SQ214-PER-SIN-19AUG corpus render under
-`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-atot-parity-v9"`, minted on
-23 Aug 2026. Relative to v7, the deliberate changes separate calculated
-ATOT/ETA clocks from the scheduled STD/STA, tighten compact report wording,
-keep the preferred-alternate line inside its page-one card, and retain the
-route-map source caption at the readable 7.2-point size. Page 1 was inspected
-on the final render; pages 2–41 are pixel-identical to the previously inspected
-v9 candidate. It supersedes v7 (`dba0f288…d434e`, compact visible
+`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-25-vws-fir-ofp-v26"`, minted on
+25 Aug 2026. Relative to v8, generated product labels say OFP, exact printed
+Lido `SUMMARY … CFP` headings remain identified as source text, and the
+deterministic terrain summary always includes the VWS review. The corrected
+render remains 41 pages with zero outside text boxes, visible overlaps, or
+blank pages; all pages were inspected as a contact sheet and pages 1, 2, and
+13 at full size. It supersedes v8 (`a4774fc0…970a`, ATOT/ETA parity), v7
+(`dba0f288…d434e`, compact visible
 `BACK TO OVERVIEW`), v6 (`4397ed3f…`, the flow-round reference), v5
 (`73475f4c…`, the 20–21 Aug punch-list skin), and the original 7-page pypdf
 REV3 artefact (`b02b0b36…`), which could never match the combined briefing the
@@ -55,7 +56,7 @@ cd pilotdriven_odss_dashboard
 python -m pip install -r requirements.txt
 cd ..
 
-export ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v8.pdf
+export ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v9_OFP_VWS.pdf
 export ODSS_REV3_VISUAL_CANDIDATE_PDF=/private/output/SQ214-PER-SIN-19AUG/SQ214-PER-SIN-19AUG_Flight_Briefing.pdf
 
 python pilotdriven_odss_dashboard/scripts/check_rev3_visual_regression.py \
@@ -70,7 +71,7 @@ Exit `0` means exact equality. Exit `1` means the reference preflight failed, th
 The same check is available as an opt-in test:
 
 ```bash
-ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v8.pdf \
+ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v9_OFP_VWS.pdf \
 ODSS_REV3_VISUAL_CANDIDATE_PDF=/private/output/SQ214-PER-SIN-19AUG/SQ214-PER-SIN-19AUG_Flight_Briefing.pdf \
 python -m pytest -q pilotdriven_odss_dashboard/tests/test_rev3_visual_regression.py
 ```

@@ -47,7 +47,7 @@ def test_quality_gate_accepts_three_page_a4_landscape_level1(tmp_path: Path) -> 
         pages=3,
         page_texts=[
                 "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS\n"
-                "Filed route from CFP coordinates",
+                "Filed route from OFP coordinates",
             "SQ304 - OPERATIONAL TIMING",
             "DEPRESSURISATION PROFILE ANALYSIS",
         ],
@@ -68,7 +68,7 @@ def test_quality_gate_accepts_non_sq_level1_operational_timing_title(
         pages=3,
         page_texts=[
             "APPLICABLE NOTAMS WITHIN STD / STA +/- 2 HOURS\n"
-            "Filed route from CFP coordinates",
+            "Filed route from OFP coordinates",
             "BAW304 - OPERATIONAL TIMING",
             "DEPRESSURISATION PROFILE ANALYSIS",
         ],
@@ -111,7 +111,7 @@ def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:
 
 def _combined_pages(*middle: str) -> list[str]:
     return [
-        "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS",
+        "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS",
         "FLIGHT BRIEFING\nDECISION ANALYSIS\nFLIGHT-PHASE DECISION TIMELINE",
         "FLIGHT BRIEFING\nMEL/CDL AND CDDL",
         *[f"FLIGHT BRIEFING\n{text}" for text in middle],
@@ -125,7 +125,7 @@ def test_combined_quality_gate_accepts_lossless_eosid_continuation(
     path = tmp_path / "combined-eosid-continuation.pdf"
     page_texts = [
         (
-            "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
+            "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
             "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
         ),
         (
@@ -148,7 +148,7 @@ def test_combined_quality_gate_accepts_lossless_eosid_continuation(
         ),
         (
             "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
-            "NAMED CFP VOLCANO ADVISORIES"
+            "NAMED OFP VOLCANO ADVISORIES"
         ),
         (
             "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
@@ -195,7 +195,7 @@ def test_combined_quality_gate_rejects_broken_eosid_continuation_sequence(
     path = tmp_path / "combined-broken-eosid-continuation.pdf"
     page_texts = [
         (
-            "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
+            "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
             "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
         ),
         (
@@ -218,7 +218,7 @@ def test_combined_quality_gate_rejects_broken_eosid_continuation_sequence(
         ),
         (
             "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
-            "NAMED CFP VOLCANO ADVISORIES"
+            "NAMED OFP VOLCANO ADVISORIES"
         ),
         (
             "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"

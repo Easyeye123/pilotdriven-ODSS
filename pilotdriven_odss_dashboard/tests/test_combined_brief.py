@@ -36,6 +36,7 @@ from app.odss.combined_brief import (
     _operational_fir_boundary_summary,
     _operational_priority_source_summary,
     _operational_phase_actions,
+    _operational_terrain_status_lines,
     _operational_terrain_summary,
     _route_anchor_entries,
     _terrain_table_points,
@@ -395,8 +396,8 @@ def test_alternate_projection_prints_source_forecast_and_bounded_assessment():
         max_lines=4,
     )
 
-    assert forecast.startswith("TAF CFP p14 | FT 201700")
-    assert "1B3711/26 CFP p24" in assessment
+    assert forecast.startswith("TAF OFP p14 | FT 201700")
+    assert "1B3711/26 OFP p24" in assessment
     assert "suitability not concluded" in assessment
 
 
@@ -406,7 +407,7 @@ def test_priority_source_summary_requires_held_action_prose_and_no_relevance_cla
         "source_pages": list(range(38, 45)),
         "operational_priority_rows": [
             {
-                "source_reference": "CFP p32 / 1A1891/26",
+                "source_reference": "OFP p32 / 1A1891/26",
                 "summary": (
                     "The limited trial is initiated at ATC request; the pilot "
                     "initiates AFN logon; the Jakarta FIR AFN address is WIIF."
@@ -415,7 +416,7 @@ def test_priority_source_summary_requires_held_action_prose_and_no_relevance_cla
                 "applicability_inferred": False,
             },
             {
-                "source_reference": "CFP p44 / ALL FLEETS-9116",
+                "source_reference": "OFP p44 / ALL FLEETS-9116",
                 "summary": (
                     "The source bulletin lists WSJC (Singapore FIR, South China "
                     "Sea) among FIRs reporting GNSS/GPS interference."
@@ -424,7 +425,7 @@ def test_priority_source_summary_requires_held_action_prose_and_no_relevance_cla
                 "applicability_inferred": False,
             },
             {
-                "source_reference": "CFP p39 / ALL FLEETS-8919",
+                "source_reference": "OFP p39 / ALL FLEETS-8919",
                 "summary": (
                     "Reduce taxi speed appropriately and be ready to respond "
                     "promptly to the marshaller."
@@ -433,7 +434,7 @@ def test_priority_source_summary_requires_held_action_prose_and_no_relevance_cla
                 "applicability_inferred": False,
             },
             {
-                "source_reference": "CFP p41 / A350-822",
+                "source_reference": "OFP p41 / A350-822",
                 "summary": (
                     "The FlySmart sign/signed button is absent; continue signing "
                     "the OFP in PilotSign per the source SOP."
@@ -452,7 +453,7 @@ def test_priority_source_summary_requires_held_action_prose_and_no_relevance_cla
 
     assert summary is not None
     assert "HELD 21 RECORDS" in summary
-    assert "CFP pp38-44" in summary
+    assert "OFP pp38-44" in summary
     assert "NOT RELEVANCE-SELECTED" in summary
     assert "applicability not inferred" in summary
     assert "AFN address is WIIF" in summary
@@ -479,10 +480,10 @@ def test_renders_the_full_section_set(rendered):
     # evidence is appended as page 8 instead of being forced into the core.
     assert len(rendered) == 8
     first = rendered[0].get_text()
-    assert "CFP P1 - ROUTE / LEVELS" in first
+    assert "OFP P1 - ROUTE / LEVELS" in first
     # The route/levels context remains above the five boss-facing summary
     # cards and phase-action strip.
-    assert "CFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY" in first
+    assert "OFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY" in first
     for card in ("PERFORMANCE", "FUEL", "STATUS", "WEATHER", "ALTERNATES"):
         assert card in first
     for phase in ("RELEASE", "BEFORE PUSH", "ROUTE", "ARRIVAL", "WEATHER"):
@@ -520,6 +521,56 @@ def test_compact_pdf_has_seven_core_outline_entries_plus_real_terrain(rendered):
         "Enroute / Assurance",
         "Terrain / Depressurisation",
     ]
+
+
+def test_vws_review_stays_visible_in_pdf_when_high_terrain_exists(tmp_path):
+    """The PDF must not lose VWS merely because the same route has MSA triggers."""
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    flight = sample_flight()
+    high_point = next(
+        waypoint
+        for waypoint in flight["route_waypoints"]
+        if waypoint.get("name") == "UDROS"
+    )
+    high_point["vws"] = 5
+    high_point["source_page"] = 7
+    out = tmp_path / "high-terrain-with-vws.pdf"
+
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    render_combined_briefing(flight, findings, [], out)
+
+    document = fitz.open(out)
+    text = " ".join(" ".join(page.get_text() for page in document).split())
+    expected = (
+        "VWS review: 1 planned >004 trigger window; maximum 005 at UDROS "
+        "(ACTM 02.20, OFP p7) - review required."
+    )
+    assert expected in text
+    assert "windows VWS review" not in text
+    assert "review required.." not in text
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+
+
+def test_operational_terrain_panel_reserves_the_vws_review_before_dense_body():
+    vws = (
+        "VWS review: 2 planned >004 trigger windows; maximum 006 at 46N70 "
+        "(ACTM 10.44, OFP p8) - review required."
+    )
+    lines = _operational_terrain_status_lines(
+        " ".join(f"dense-terrain-token-{index}" for index in range(80)),
+        vws,
+        text_width=180.0,
+        max_lines=8,
+    )
+
+    assert " ".join(lines).startswith(vws)
+    assert len(lines) <= 8
 
 
 def test_compact_dispatch_gates_use_the_shared_source_projection(tmp_path):
@@ -573,7 +624,7 @@ def test_compact_dispatch_gates_use_the_shared_source_projection(tmp_path):
     assert len(governed_links) == 2
     assert any("reference=10-10" in link for link in governed_links)
     assert any("reference=20-20" in link for link in governed_links)
-    assert page_text.count("GOVERNED LINK UNAVAILABLE · CFP SOURCE HELD") == 2
+    assert page_text.count("GOVERNED LINK UNAVAILABLE · OFP SOURCE HELD") == 2
     assert "+2 SOURCE DECLARATIONS REMAIN IN DASHBOARD" in page_text
 
 
@@ -1244,7 +1295,7 @@ def test_compact_station_summary_shows_three_shared_notices_with_sources(
         ("1B2938/26", 22),
     ):
         assert notice_id in page_text
-        assert f"SOURCE CFP p{source_page}" in page_text
+        assert f"SOURCE OFP p{source_page}" in page_text
     assert "SX98/26" not in page_text
     assert "1B4113/26" not in page_text
     assert "FIRST ·" not in page_text
@@ -1279,10 +1330,10 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     mel_page = next(
         page
         for page in document
-        if "CFP REMARK - NOT THE APPROVED MEL REMEDY" in page.get_text()
+        if "OFP REMARK - NOT THE APPROVED MEL REMEDY" in page.get_text()
     )
     mel_text = mel_page.get_text()
-    assert "CFP REMARK - NOT THE APPROVED MEL REMEDY" in mel_text
+    assert "OFP REMARK - NOT THE APPROVED MEL REMEDY" in mel_text
     assert "OPEN EXACT MEL ITEM / REMEDY >" in mel_text
     source_links = [
         link["uri"] for link in mel_page.get_links()
@@ -1303,7 +1354,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
         "destination": ["WSSS"],
         "sourcePage": ["1"],
     }
-    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-08-24-boss-flow-v25"
+    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-08-25-vws-fir-ofp-v26"
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
         7,
@@ -1421,7 +1472,7 @@ def test_no_deferred_page_never_invents_a_missing_source_or_remedy(rendered):
     assert "STATUS CLEAR" in text
     assert "NO DEFERRED DECLARATION PRINTED" in text
     assert "No governed remedy link applies" in text
-    assert "CFP DECLARATION" not in text
+    assert "OFP DECLARATION" not in text
     assert "source is not mounted" not in text
     assert "GOVERNED LINK UNAVAILABLE" not in text
     assert not [
@@ -1474,11 +1525,11 @@ def test_repeated_mel_reference_is_one_gate_and_one_detail_group(tmp_path):
     operational_out = tmp_path / "grouped-deferred-operational.pdf"
     render_combined_briefing(flight, findings, [], operational_out)
     operational_pages = fitz.open(operational_out)
-    assert "2 CFP declaration(s)" in operational_pages[0].get_text()
+    assert "2 OFP declaration(s)" in operational_pages[0].get_text()
     mel_page = next(
         page.get_text()
         for page in pages
-        if "CFP REMARK - NOT THE APPROVED MEL REMEDY" in page.get_text()
+        if "OFP REMARK - NOT THE APPROVED MEL REMEDY" in page.get_text()
     )
     assert mel_page.count("MEL 25-20-50A") == 1
     assert "FIRST CHILLING COMPARTMENT" in mel_page
@@ -1567,7 +1618,7 @@ def test_many_governing_references_create_as_many_pages_as_needed(tmp_path):
     compact_mel_pages = [
         page.get_text()
         for page in document
-        if "CROPPED CFP DECLARATION" in page.get_text()
+        if "CROPPED OFP DECLARATION" in page.get_text()
     ]
     assert len(compact_mel_pages) == 3
     first_mel_page, second_mel_page, third_mel_page = compact_mel_pages
@@ -2032,7 +2083,7 @@ def test_operational_performance_prints_candidates_and_known_inputs(
     assert "RTOW PERF · 256,906 kg" in performance_page
     assert "RTOW LAND · 252,000 kg" in performance_page
     assert "RTOW STRUCT · 280,000 kg" in performance_page
-    assert "CFP RTOW · 252,000 kg" in performance_page
+    assert "OFP RTOW · 252,000 kg" in performance_page
     assert "CONDITIONS" in performance_page
     assert "PACKS ON" in performance_page
     assert "ANTI-ICE OFF" in performance_page
@@ -2196,7 +2247,7 @@ def test_decision_row_reallocates_width_for_one_dense_source_finding(
         )
         + " FINAL-CONTROLLED-TAIL",
         "source_reference": (
-            "Uploaded CFP deferred declaration · AA MEL 25-21-50A "
+            "Uploaded OFP deferred declaration · AA MEL 25-21-50A "
             "SYNTHETIC CONTROLLED SOURCE"
         ),
         "target": "sec_mel_cdl",
@@ -2368,7 +2419,7 @@ def test_compact_fir_and_terrain_receipts_are_whole_and_explicit():
         "is inferred."
     )
     fir_summary = " | ".join(
-        f"F{index:03d} +{index:02d}:00 (CFP p{7 + index // 4})"
+        f"F{index:03d} +{index:02d}:00 (OFP p{7 + index // 4})"
         for index in range(1, 27)
     ) + suffix
     compact_fir = _operational_fir_boundary_summary(
@@ -2380,7 +2431,7 @@ def test_compact_fir_and_terrain_receipts_are_whole_and_explicit():
     assert "Showing " in compact_fir
     assert "of 26 FIR boundary groups" in compact_fir
     assert "dashboard and lossless audit briefing" in compact_fir
-    assert "F001 +01:00 (CFP p7)" in compact_fir
+    assert "F001 +01:00 (OFP p7)" in compact_fir
     assert "F026 +26:00" not in compact_fir
 
     terrain_summary = (
@@ -2420,6 +2471,31 @@ def test_compact_fir_and_terrain_receipts_are_whole_and_explicit():
     assert terrain["summary"] == terrain_summary
 
 
+def test_operational_terrain_card_keeps_no_trigger_vws_review_without_an_annex():
+    terrain_summary = (
+        "OFP route/profile trigger not activated: no parsed route waypoint MSA "
+        "exceeded 10,000 ft (maximum OFP MSA 7,000 ft; maximum planned VWS 004). "
+        "This is only the bounded OFP trigger result, not a terrain-clearance finding."
+    )
+    vws_summary = (
+        "VWS review: no planned >004 trigger in the source-held route values; "
+        "maximum 004 at LULBU (ACTM 02.18, OFP p8)."
+    )
+    rendered = _operational_terrain_summary(
+        {
+            "summary": terrain_summary,
+            "vws_review": {"summary": vws_summary},
+            "events": [],
+        },
+        has_terrain_annex=False,
+        text_width=155.0,
+        max_lines=12,
+    )
+
+    assert terrain_summary in rendered
+    assert vws_summary in rendered
+
+
 def test_compact_fir_preserves_current_jakarta_guard_and_a_whole_prefix():
     guard = (
         ". Boundary clocks are source-held. Jakarta CPDLC/AFN procedure is "
@@ -2427,7 +2503,7 @@ def test_compact_fir_preserves_current_jakarta_guard_and_a_whole_prefix():
         "applicability is not inferred."
     )
     fir_summary = " | ".join(
-        f"F{index:03d} +{index:02d}:00 (CFP p{7 + index // 4})"
+        f"F{index:03d} +{index:02d}:00 (OFP p{7 + index // 4})"
         for index in range(1, 32)
     ) + guard
 
@@ -2441,7 +2517,7 @@ def test_compact_fir_preserves_current_jakarta_guard_and_a_whole_prefix():
     assert "Showing " in compact
     assert "/31 FIR boundary groups" in compact
     assert "dashboard/lossless audit briefing" in compact
-    assert "F001 +01:00 (CFP p7)" in compact
+    assert "F001 +01:00 (OFP p7)" in compact
     assert "F031 +31:00" not in compact
     assert "compact summary exceeds" not in compact
 
@@ -2457,15 +2533,15 @@ def test_enroute_card_compacts_route_and_long_fir_receipts_without_hiding_source
         "is inferred."
     )
     fir_summary = " | ".join(
-        f"F{index:03d} +{index:02d}:00 (CFP p{7 + index // 4})"
+        f"F{index:03d} +{index:02d}:00 (OFP p{7 + index // 4})"
         for index in range(1, 32)
     ) + fir_suffix
     route_airspace = {
         "record_count": 16,
-        "source_page_text": "CFP pp75-98",
+        "source_page_text": "OFP pp75-98",
         "military_source_record": {"notam_id": "1A2118/26"},
         "card_summary": (
-            "ROUTE AIRSPACE · REVIEW · 16 source notice(s) · CFP pp75-98. "
+            "ROUTE AIRSPACE · REVIEW · 16 source notice(s) · OFP pp75-98. "
             "Military-training record 1A2118/26 is source-held. Route/level "
             "applicability and any ATC-clearance effect are not inferred; full "
             "held records remain in the dashboard."
@@ -2540,15 +2616,15 @@ def test_enroute_card_compacts_route_and_long_fir_receipts_without_hiding_source
 
     page = fitz.open(out)[0]
     text = " ".join(page.get_text().split())
-    assert "16 route-airspace notice(s) held - CFP pp75-98" in text
+    assert "16 route-airspace notice(s) held - OFP pp75-98" in text
     assert "Military-training 1A2118/26 held" in text
     assert "Showing " in text
     assert "of 31 FIR boundary groups" in text
-    assert "F001 +01:00 (CFP p7)" in text
+    assert "F001 +01:00 (OFP p7)" in text
     assert "F031 +31:00" not in text
     assert "full boundary rows remain in dashboard and lossless audit briefing" in text
     assert "Contact procedure/frequency unavailable" in text
-    assert "HELD - 21 records - CFP pp39-45" in text
+    assert "HELD - 21 records - OFP pp39-45" in text
     assert "REVIEW QUEUE - NOT RELEVANCE-SELECTED" in text
     assert "HELD-1" in text
     assert "HELD-8" not in text
@@ -2580,12 +2656,12 @@ def test_enroute_page_keeps_current_fir_guard_and_sq910_priority_receipt(
     briefing = {
         "communications": [],
         "fir_boundary_summary": " | ".join(
-            f"F{index:03d} +{index:02d}:00 (CFP p{7 + index // 4})"
+            f"F{index:03d} +{index:02d}:00 (OFP p{7 + index // 4})"
             for index in range(1, 32)
         ) + fir_guard,
         "route_airspace": {
             "record_count": 1,
-            "source_page_text": "CFP p33",
+            "source_page_text": "OFP p33",
             "card_summary": "1 route notice held.",
         },
         "intam": {
@@ -2593,7 +2669,7 @@ def test_enroute_page_keeps_current_fir_guard_and_sq910_priority_receipt(
             "source_pages": list(range(38, 45)),
             "operational_priority_rows": [
                 {
-                    "source_reference": "CFP p32 / 1A1891/26",
+                    "source_reference": "OFP p32 / 1A1891/26",
                     "summary": (
                         "The limited trial is initiated at ATC request; the pilot "
                         "initiates AFN logon; the Jakarta FIR AFN address is WIIF."
@@ -2602,7 +2678,7 @@ def test_enroute_page_keeps_current_fir_guard_and_sq910_priority_receipt(
                     "applicability_inferred": False,
                 },
                 {
-                    "source_reference": "CFP p39 / ALL FLEETS-8919",
+                    "source_reference": "OFP p39 / ALL FLEETS-8919",
                     "summary": (
                         "Reduce taxi speed appropriately and be ready to respond "
                         "promptly to the marshaller."
@@ -2611,7 +2687,7 @@ def test_enroute_page_keeps_current_fir_guard_and_sq910_priority_receipt(
                     "applicability_inferred": False,
                 },
                 {
-                    "source_reference": "CFP p41 / A350-822",
+                    "source_reference": "OFP p41 / A350-822",
                     "summary": (
                         "The FlySmart sign/signed button is absent; continue "
                         "signing the OFP in PilotSign per the source SOP."
@@ -2620,7 +2696,7 @@ def test_enroute_page_keeps_current_fir_guard_and_sq910_priority_receipt(
                     "applicability_inferred": False,
                 },
                 {
-                    "source_reference": "CFP p44 / ALL FLEETS-9116",
+                    "source_reference": "OFP p44 / ALL FLEETS-9116",
                     "summary": (
                         "The source bulletin lists WSJC (Singapore FIR, South "
                         "China Sea) among FIRs reporting GNSS/GPS interference."
@@ -2662,7 +2738,7 @@ def test_enroute_page_keeps_current_fir_guard_and_sq910_priority_receipt(
     assert "applicability is not inferred" in text
     assert "FIR boundary detail is held" not in text
     assert "SOURCE-HELD / NOT RELEVANCE-SELECTED" in text
-    assert "HELD 21 RECORDS CFP pp38-44" in text
+    assert "HELD 21 RECORDS OFP pp38-44" in text
     assert "AFN address is WIIF" in text
     assert "respond promptly to the marshaller" in text
     assert "signing the OFP in PilotSign per the source SOP" in text
@@ -2682,7 +2758,7 @@ def test_enroute_page_prints_complete_source_ledger_when_all_rows_fit(tmp_path):
         "intam": {"record_count": 0, "source_pages": [], "review_queue": []},
         "terrain": {
             "summary": (
-                "CFP route/profile trigger not evaluated: parsed route waypoint "
+                "OFP route/profile trigger not evaluated: parsed route waypoint "
                 "MSA and planned VWS data unavailable. This is not a "
                 "terrain-clearance finding."
             ),
@@ -2690,8 +2766,8 @@ def test_enroute_page_prints_complete_source_ledger_when_all_rows_fit(tmp_path):
         },
         "release_gates": [{"label": "STATUS", "status": "REVIEW", "detail": "Confirm the held release status."}],
         "source_assurance": [
-            {"source": "UPLOADED CFP", "status": "HELD", "detail": "test.pdf"},
-            {"source": "CFP WEATHER", "status": "HELD", "detail": "3 source records."},
+            {"source": "UPLOADED OFP", "status": "HELD", "detail": "test.pdf"},
+            {"source": "OFP WEATHER", "status": "HELD", "detail": "3 source records."},
         ],
     }
     out = tmp_path / "complete-source-ledger.pdf"
@@ -2711,8 +2787,8 @@ def test_enroute_page_prints_complete_source_ledger_when_all_rows_fit(tmp_path):
     text = " ".join(fitz.open(out)[0].get_text().split())
     assert "SOURCE LEDGER · COMPLETE" in text
     assert "All 2 source-assurance rows shown" in text
-    assert "UPLOADED CFP · HELD" in text
-    assert "CFP WEATHER · HELD" in text
+    assert "UPLOADED OFP · HELD" in text
+    assert "OFP WEATHER · HELD" in text
 
 
 def test_enroute_page_refuses_silent_release_gate_overflow(tmp_path):
@@ -2725,7 +2801,7 @@ def test_enroute_page_refuses_silent_release_gate_overflow(tmp_path):
         "intam": {"record_count": 0, "source_pages": [], "review_queue": []},
         "terrain": {
             "summary": (
-                "CFP route/profile trigger not evaluated: parsed route waypoint "
+                "OFP route/profile trigger not evaluated: parsed route waypoint "
                 "MSA and planned VWS data unavailable. This is not a "
                 "terrain-clearance finding."
             ),
@@ -2802,7 +2878,7 @@ def test_compact_baseline_is_seven_pages_without_real_terrain_evidence(tmp_path)
 
 def test_weather_page_uses_readable_source_status_cards_not_tiny_crops(rendered):
     weather = rendered[5].get_text()
-    assert "CFP WEATHER SOURCE" in weather
+    assert "OFP WEATHER SOURCE" in weather
     assert "WEATHER-CHART SOURCE STATUS" in weather
     assert "UNAVAILABLE - weather-chart detection did not establish appendix presence" in weather
     assert "absence is not inferred" in weather
@@ -2831,7 +2907,7 @@ def test_operational_weather_page_names_the_governed_selected_chart(
         )
         view["hazards"]["weather_chart_selection"] = {
             "status": "selected",
-            "reason": "Governed route-context chart selected inside the CFP flight window.",
+            "reason": "Governed route-context chart selected inside the OFP flight window.",
             "selected_charts": [{
                 "page_number": 1,
                 "label": "SIGWX · FL250-FL600 · valid 2026-08-19T12:00:00+00:00",
@@ -2920,7 +2996,7 @@ def test_operational_weather_page_keeps_first_two_shared_sigmet_dispositions(
         view["vaa"]["cfp_advisories"] = [
             {
                 "name": f"TEST VOLCANO {index}",
-                "derived": "Source-held CFP notice; crew review required.",
+                "derived": "Source-held OFP notice; crew review required.",
                 "text": "SHORT SOURCE TEXT",
                 "source_page": 20 + index,
             }
@@ -3083,14 +3159,14 @@ def test_source_held_charts_intam_and_fir_clocks_reach_compact_pages(tmp_path):
     document = fitz.open(out)
     weather = document[5].get_text()
     enroute = document[6].get_text()
-    assert "HELD - 12 raster chart page(s) - CFP pp46-57" in weather
+    assert "HELD - 12 raster chart page(s) - OFP pp46-57" in weather
     assert "Route relevance/classification review required" in weather
     assert "No weather-chart appendix detected" not in weather
     normalized_enroute = " ".join(enroute.split())
     for boundary in ("WIIF +00:03", "WSJC +00:14/+00:56", "RPHI +02:01"):
         assert boundary in normalized_enroute
     assert "contact procedure/frequency unavailable" in normalized_enroute.lower()
-    assert "HELD - 21 records - CFP pp39-45" in enroute
+    assert "HELD - 21 records - OFP pp39-45" in enroute
     assert "NOT RELEVANCE-SELECTED" in " ".join(enroute.split())
     assert "COMPANY BULLETINS / INTAM · HELD" in enroute
 
@@ -3109,7 +3185,7 @@ def test_decision_bookkeeping_and_deferred_cards_use_truthful_targets():
         {
             "engine": "page1",
             "severity": "information",
-            "title": "CFP Page 1 organised control summary",
+            "title": "OFP Page 1 organised control summary",
             "summary": "Uploaded source summary.",
             "data": {"source_page": 1},
         },
@@ -3187,7 +3263,7 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
         {
             "engine": "page1",
             "severity": "information",
-            "title": "CFP Page 1 organised control summary",
+            "title": "OFP Page 1 organised control summary",
             "summary": "Uploaded source summary.",
             "data": {},
         },
@@ -3286,7 +3362,7 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
             "label": "PERFORMANCE MAX FUEL / TANKS",
             "status": "OPEN",
             "detail": "Printed maximum fuel is below fuel in tanks.",
-            "source_reference": "Uploaded CFP performance inputs",
+            "source_reference": "Uploaded OFP performance inputs",
         }],
         deferred_gates=[{
             "title": "IN SIA/00-017 R1",
@@ -3343,7 +3419,7 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
         "alternate_weather"
     ]["summary"]
     assert by_engine["alternate_weather"]["source_reference"] == (
-        "Uploaded company CFP · p14 · Airport weather list"
+        "Uploaded company OFP · p14 · Airport weather list"
     )
     assert not any("SX98/26" in item["title"] for item in projected)
     assert "page1" not in by_engine
@@ -3458,7 +3534,7 @@ def test_edto_gate_label_agrees_with_the_cfp_classification(rendered):
     assert "TOP-UP 0 KG" in first
     text = "\n".join(page.get_text() for page in rendered)
     assert "EDTO / ENROUTE AIRPORTS" not in text
-    assert "CFP EDTO TABLE" not in text
+    assert "OFP EDTO TABLE" not in text
     assert "ENROUTE / ASSURANCE" in rendered[6].get_text()
 
 
@@ -3737,7 +3813,7 @@ def test_standard_cfp_keeps_one_non_edto_label_without_legacy_page(tmp_path, mon
     for retired in (
         "EDTO / ENROUTE AIRPORTS",
         "EDTO BOUNDARY / STATUS",
-        "CFP EDTO TABLE",
+        "OFP EDTO TABLE",
         "ENTRY ACTM",
         "EXIT ACTM",
         "EDTO TOP-UP",
@@ -3892,7 +3968,7 @@ def test_long_route_and_level_profile_continue_verbatim_on_airport_pages(
         for token in fix_level.split("/")
     ]
     # Wrapped source lines remain one visible ordered route. Repeating the
-    # "CFP ROUTE" label between lines would break this exact fact.
+    # "OFP ROUTE" label between lines would break this exact fact.
     assert " ".join(route_tokens) in " ".join(text.split())
     for token in (*route_tokens, *profile_source_tokens):
         assert token in text
@@ -4284,7 +4360,7 @@ def test_full_shared_performance_fuel_and_deferred_declarations_reach_pdf(
         "PACKS / ANTI-ICE ON / OFF",
         "31 min (00:31)",
         "FULL FUEL DETAIL SENTINEL END",
-        "FULL CFP DEFERRED DECLARATIONS",
+        "FULL OFP DEFERRED DECLARATIONS",
         "MEL | 99-99-01",
         "FULL DECLARATION DESCRIPTION END",
         "FULL COMPANY REMARK END",
@@ -4407,13 +4483,13 @@ def test_operational_vaa_cards_print_shared_applicability_before_source_excerpt(
         )
         view["vaa"]["cfp_advisories"] = [
             {
-                "name": f"CFP VOLCANO ADVISORY · TESTVOLCANO-{index}",
+                "name": f"OFP VOLCANO ADVISORY · TESTVOLCANO-{index}",
                 "volcano": f"TESTVOLCANO-{index}",
                 "notam_id": f"1A900{index}/26",
                 "valid_from": f"20 AUG 01{index}0Z",
                 "valid_to": "21 AUG 0100Z",
                 "derived": (
-                    f"Source-held CFP notice {index}; operational applicability "
+                    f"Source-held OFP notice {index}; operational applicability "
                     "remains a crew/dispatch review."
                 ),
                 "text": (
@@ -4448,7 +4524,7 @@ def test_operational_vaa_cards_print_shared_applicability_before_source_excerpt(
     for index in range(1, 5):
         title = f"TESTVOLCANO-{index} · 1A900{index}/26"
         applicability = (
-            f"Source-held CFP notice {index}; operational applicability remains "
+            f"Source-held OFP notice {index}; operational applicability remains "
             "a crew/dispatch review."
         )
         assert title in text
@@ -4491,7 +4567,7 @@ def test_operational_vaa_cards_keep_full_va_sigmet_name_beside_cfp_notices(
         notices = [
             {
                 "name": (
-                    f"CFP VOLCANO ADVISORY · TESTVOLCANO-{index} · "
+                    f"OFP VOLCANO ADVISORY · TESTVOLCANO-{index} · "
                     f"1A910{index}/26"
                 ),
                 "advisory_kind": "CFP_VAA_NOTICE",
@@ -4500,10 +4576,10 @@ def test_operational_vaa_cards_keep_full_va_sigmet_name_beside_cfp_notices(
                 "valid_from": f"20 AUG 01{index}0Z",
                 "valid_to": "21 AUG 0100Z",
                 "derived": (
-                    "Source-held CFP notice; operational applicability remains "
+                    "Source-held OFP notice; operational applicability remains "
                     "a crew/dispatch review."
                 ),
-                "text": f"SOURCE CFP NOTICE {index} REQUIRES REVIEW.",
+                "text": f"SOURCE OFP NOTICE {index} REQUIRES REVIEW.",
                 "source_page": 40 + index,
             }
             for index in range(1, 4)
@@ -4546,7 +4622,7 @@ def test_operational_vaa_cards_keep_full_va_sigmet_name_beside_cfp_notices(
     for index in range(1, 4):
         assert f"TESTVOLCANO-{index} · 1A910{index}/26" in text
         assert (
-            f"CFP VOLCANO ADVISORY · TESTVOLCANO-{index} · 1A910{index}/26"
+            f"OFP VOLCANO ADVISORY · TESTVOLCANO-{index} · 1A910{index}/26"
             not in text
         )
     physical = scan_physical_pdf(out)
@@ -4647,7 +4723,7 @@ def test_missing_performance_inputs_fail_closed_in_physical_pdf(
     render_combined_briefing(flight, findings, [], out)
 
     performance = " ".join(fitz.open(out)[2].get_text().split())
-    assert "A complete RTOW/PTOW pair is unavailable in the parsed CFP." in performance
+    assert "A complete RTOW/PTOW pair is unavailable in the parsed OFP." in performance
     assert "STATUS · MANUAL REVIEW REQUIRED" in performance
     assert "kg gives" not in performance
 
@@ -4728,7 +4804,7 @@ def test_hazard_page_prints_one_honest_fallback_when_no_sigmet_cards_exist(
     hazard = " ".join(fitz.open(out)[5].get_text().split())
     assert hazard.count("ENROUTE SIGMET") == 1
     assert hazard.count(
-        "No enroute SIGMET record is printed in this CFP weather package."
+        "No enroute SIGMET record is printed in this OFP weather package."
     ) == 1
 
 
@@ -5359,7 +5435,7 @@ def test_publication_filename_carries_flight_and_expanded_date():
 
 def test_tankering_excess_is_written_as_tankering(tmp_path):
     # Boss, 21 Aug 2026 (0:54 fuel video): "the number is correct, but the
-    # way it's written is not exactly right" - when CFP page 1 itemises the
+    # way it's written is not exactly right" - when OFP page 1 itemises the
     # excess as TANKER with a return-sector requirement, the report says
     # tankering, in his words, not a bare EXCESS figure.
     page1 = SQ23_PAGE1.replace(
@@ -5396,7 +5472,7 @@ def test_page_one_carries_the_performance_card_in_place_of_flight_basis(rendered
     # flight-basis facts already live in the header, chips and footer.
     first = rendered[0].get_text()
     assert "\nPERFORMANCE\n" in first
-    assert "CFP P1 - FLIGHT BASIS" not in first
+    assert "OFP P1 - FLIGHT BASIS" not in first
     assert "RTOW unavailable" in first
     assert "PTOW 245,529 kg" in first
     assert "Margin unavailable" in first
@@ -5415,7 +5491,7 @@ def test_destination_card_states_the_arrival_basis(rendered):
 def test_decision_timeline_states_its_clock_basis(rendered):
     second = rendered[1].get_text()
     assert "0952Z" in second and "2159Z" in second
-    assert "ATOT 0952Z + CFP ACTM drives clocks" in second
+    assert "ATOT 0952Z + OFP ACTM drives clocks" in second
     assert "calculated ETA 2159Z from filed EET 12:07" in second
     assert "STD 0945Z / STA 2240Z (12:55)" in second
     assert "from STD 0945Z gives nominal 2240Z" not in second

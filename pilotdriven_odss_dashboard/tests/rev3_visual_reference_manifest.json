@@ -3,8 +3,8 @@
   "gate": "rev3-raster-pixel-equality",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
-    "filename": "SQ214_REV3_reference_v8.pdf",
-    "sha256": "a4774fc03edc544399167beee267ace95bce1710ee6d262ebc8e5228bed3970a"
+    "filename": "SQ214_REV3_reference_v9_OFP_VWS.pdf",
+    "sha256": "4df2f631cf7bdb80b408c376619dd478e8ad86f1c6d6a380db993b8b0ec54f78"
   },
   "renderer": {
     "library": "PyMuPDF",
@@ -22,7 +22,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "63b0e2a9b476c1a546b02f7c51178a820a9753d1603a16aa7bca77ea5527a8c3"
+      "reference_raster_sha256": "8eb85661597210f821bdf14fa46e47c853bbd8e684cce19895484dd8ba0a1676"
     },
     {
       "page_number": 2,
@@ -30,7 +30,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "ba93741185005992d16a49f06797a92033de52bc3e0f3be52311091d273a596c"
+      "reference_raster_sha256": "1d838696de2510503464722d40652d8d8092ae1b4a962b630d6546d14a9fbaa9"
     },
     {
       "page_number": 3,
@@ -38,7 +38,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "e8b3abd90aa048a7b779e20afb396f4675389b208ad9baba1fc59c1dc6abdfe8"
+      "reference_raster_sha256": "1cabbf31ac214417101d9b1fa65e209dd8b3d6fc0c730d31cd77f060b6234846"
     },
     {
       "page_number": 4,
@@ -46,7 +46,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "554665b29b5b3bea729a7c00f6937d1db1bdba3901df51726f4ae035743a326d"
+      "reference_raster_sha256": "6f57d5f12343c17fab530e35cc9293854e3640d40717be87f3133aafcf37cd0f"
     },
     {
       "page_number": 5,
@@ -54,7 +54,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "31198e03dc2d454490e504eaab49b05fd2c13a164b7bab4e6171a263e422efc4"
+      "reference_raster_sha256": "87b95eb69695ebe044cff4161571e4706d3e0ad593ce19338bb507fb1a48b4ee"
     },
     {
       "page_number": 6,
@@ -86,7 +86,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "a041f05ce5b142fbad4fe3bb31ba7a21cb5c6f3b89de15e72e4a497543dc3f9b"
+      "reference_raster_sha256": "bf189956b7328ac5e2d44b52db2bdeb31304ec8ce306264e118973746b21b3da"
     },
     {
       "page_number": 10,
@@ -94,7 +94,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "8f26c6b1d04027e6644496a594ab6e8b5c56339b1d746515da59feb55f09f99f"
+      "reference_raster_sha256": "ed482122018bb342799aa6c715bb850abb40af1076f4ddc852dde9df06a52eea"
     },
     {
       "page_number": 11,
@@ -102,7 +102,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "c945d8fa56d66a828b94501c83fd342dbc9a0b832dc4176a199c57f4c82558d5"
+      "reference_raster_sha256": "6b3939a72ebbea20b8eb2463a43a0af643a6937f7c5ed5be77b753d031b47a86"
     },
     {
       "page_number": 12,
@@ -110,7 +110,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "ea0ed5cb9e9f774091db921ca75f93ca761302493920400cef40a7e19afcb634"
+      "reference_raster_sha256": "9a7e7eea951174c7ae482cbf2e2d733f6da608ac0490baea7c7974699d2e76f4"
     },
     {
       "page_number": 13,
@@ -118,7 +118,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "c1e148999a5ff89def819b5278d43a02ac9e4e5351f2ed8a7341bd3c59a7fd08"
+      "reference_raster_sha256": "e8a6778ee44712e4a8d4f3862efccbf5181391a4c9075aab72c3436d0fd7739f"
     },
     {
       "page_number": 14,
@@ -126,7 +126,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "bad336705cfd76ab6aca0e001676a468e81765ac0522025a5a9f649707cdf989"
+      "reference_raster_sha256": "522004d89fc4e86c34d23dd908a0eca43deb264335189dbfc651cf6e59d84b0c"
     },
     {
       "page_number": 15,
@@ -134,7 +134,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "90e41f4d792f285f9d5a6e3ed250a3c55f8aded94e3604dc6bd05dfde9bd0846"
+      "reference_raster_sha256": "16dc39ec3d8bc9580fa8d2735a5cabc1c9e2eefb865359655cdb0150ebe87856"
     },
     {
       "page_number": 16,
@@ -142,7 +142,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "1425615bc55d12273b071b6e44b216db0a4962effd49c8adcd5aeba509788658"
+      "reference_raster_sha256": "4525bc72261b902eed5c6e96cd487db57f12a126520781f2dc13aaa35bf575ad"
     },
     {
       "page_number": 17,
@@ -150,7 +150,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "b0fdf51aa7438b6a87c4748a8e13f71df17b83bb75a470b3a072c19e23286c0e"
+      "reference_raster_sha256": "3351309507cf46c26195b2d96ff91aa4506a1f758f789070f9e638d41499e162"
     },
     {
       "page_number": 18,
@@ -158,7 +158,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "965b3ccdf491e16f70c508f657c0fc29e34e086f3d54baadf10c487e219cc7df"
+      "reference_raster_sha256": "ae51252d9c0d92d8557b1b478f4785ed111d18c2f13858963195515ead74565d"
     },
     {
       "page_number": 19,
@@ -174,7 +174,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "51a4c809e382ffc48c28f5844bdfcad9137a8e6ce873f0c8eb91a0044b1562a9"
+      "reference_raster_sha256": "feaf95e6a5bd519dc3e8309730c50bab1976906cc7adc8f8e4c95a7f627c04ae"
     },
     {
       "page_number": 21,
@@ -182,7 +182,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "7ece117d6f767c5f9a924f3bacb1cea93579f37bdbd9c9b2b9107de97a8e8349"
+      "reference_raster_sha256": "a972a91a3618ce4e8c0fccfa492452c60d08d294d305978658366abb934b6d49"
     },
     {
       "page_number": 22,
@@ -190,7 +190,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "5c47df5021b513f4e3a9b099974e56d298a682c350cd5c817405df6cf56163f3"
+      "reference_raster_sha256": "99fd0badceeced358b461ded23be4400301ea59632dc5a58d169103de85eed29"
     },
     {
       "page_number": 23,
@@ -198,7 +198,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "4d8364d3b8a5f9d1b311ba90d2955d11c4186feda7d30fbee4ccd480220741d2"
+      "reference_raster_sha256": "d218677847b5a94e0763e084d19455e5a0422c7cdf27cca4e4d44b10bec523d2"
     },
     {
       "page_number": 24,
@@ -206,7 +206,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "a99583a67d22fc14ab85cea79d2d77e8b281af3c5bf4425e84f1711b14bfd469"
+      "reference_raster_sha256": "fec2d66343a4b78692d52d90832710d2db8b90fff020cd35efbd8599c7d6b782"
     },
     {
       "page_number": 25,
@@ -214,7 +214,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "16c56a539f6d8ecff2444d9d8d2aa3a4b6a100bd1220f8712f448f69ddcc806b"
+      "reference_raster_sha256": "a97d9b269ed769ab31aac6fa1a20dcc8bd5f6fdc67bfdba09990211262d38dc2"
     },
     {
       "page_number": 26,
@@ -222,7 +222,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "c79ef6714a25e7cc97285fe22922dd3d16539945017cbc4b66b495978f0d0ce1"
+      "reference_raster_sha256": "b53c18742ed6741fc164bfbb60fbd60524e2671f1508411eb57f20f87fd4ade9"
     },
     {
       "page_number": 27,
@@ -230,7 +230,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "435d08d9d35b593f3d6e686af0ccfe3aaa1921e6792bf09f454aa1c3867a5ebc"
+      "reference_raster_sha256": "c37b20ea7d172ea54636994119213ac9c1fc3a1836fa28db6267f57e948b4c2a"
     },
     {
       "page_number": 28,
@@ -238,7 +238,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "37a532d36ba767f02e6cfd8aff952d9c6534211a56e87e93f5223c9571e847d1"
+      "reference_raster_sha256": "11a4d6eda06ebd1f016673c3be470e8cbc702aee84eb9984d4fde21c0c5bbfb9"
     },
     {
       "page_number": 29,
@@ -246,7 +246,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "9d836e8d72bd2e42e5fd6fc457b856f228d99526172e6102dd7154d875f80e78"
+      "reference_raster_sha256": "4583c222928c9425338fe741d783cda4a8b05acdd1b2e32a93c4ca6868f7f113"
     },
     {
       "page_number": 30,
@@ -254,7 +254,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "a87d1ca98bf7a521b71c82b374e4d07f529f62b92dbc9a4a5a16a69402540dd0"
+      "reference_raster_sha256": "b60a4adb91122ebeebac17d91d2381e2fb9efa4b773455fae6e9020b44c13372"
     },
     {
       "page_number": 31,
@@ -262,7 +262,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "3d3fec3526c304b96201ab2da0b07d890ec91745e12db1938855323d0905a845"
+      "reference_raster_sha256": "b62ac572487b79a7b5015815115a7c4d48d87a8f83035a1e5c0b01ff45714b10"
     },
     {
       "page_number": 32,
@@ -270,7 +270,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "fbf4bf6104098871617aee93768ed8ef82d55f966b9919d2cb6772a6f698f5ad"
+      "reference_raster_sha256": "58b5ecfc62f5ce6b2195351b1db9bc7d689f737a3e132c1c34c26d67c410a000"
     },
     {
       "page_number": 33,
@@ -278,7 +278,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "fe6527d9bad371725bf272afea1c88eb0242b8fb8b946a55c39a2fea31d33a14"
+      "reference_raster_sha256": "9a237ce3cf56dcc08f6ab61d545fbc8cdfdf88dd8541911f87be9cbccd1949d9"
     },
     {
       "page_number": 34,
@@ -286,7 +286,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "9dfd89cc8e4239ae78cdd6f29fd6b499cc26de04985d6adfd531234bfe15f540"
+      "reference_raster_sha256": "9a4633f552f4e5bc4b835b8b5ef62426bb79b96c9439bbaf84eba4dcc705ac60"
     },
     {
       "page_number": 35,
@@ -294,7 +294,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "340062da4d57a247d5327075373f7c351e91dff5f72d9c2705f1536d83783760"
+      "reference_raster_sha256": "492e4334abf6c51b2f2c8fbd003df4932832b156f82dd5251b9cf087993f49fd"
     },
     {
       "page_number": 36,
@@ -302,7 +302,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "23c4758507daf9c0ad3f579844d29ecd898477d4edef96fc93765be75d315540"
+      "reference_raster_sha256": "6848ceca915beef92d8d83ee0783c020b7e9514a37d3620b38262450aa8b9852"
     },
     {
       "page_number": 37,
@@ -310,7 +310,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "a10a16e72c34e657faf898d8b21820caa5a4ab8eb7704b5a7a5562d57e5fb6a2"
+      "reference_raster_sha256": "4b0ef37cc32ef1a90dca370d31c5e169c25bf3bc4b8b3ca2cc4ad4f2072d33a8"
     },
     {
       "page_number": 38,
@@ -318,7 +318,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "b8b3fc359e6fd7de5aec63e3c2dbbb16b55e7dc5d834d4f854d03dfad5cd1307"
+      "reference_raster_sha256": "f93ef485a859dcaeb78fe8b91583e086bb8d13264712506592fb102692b94d50"
     },
     {
       "page_number": 39,
@@ -351,8 +351,8 @@
     "max_channel_delta": 0
   },
   "provenance": {
-    "minted_on": "2026-08-23",
-    "approval_basis": "User on 23 Aug 2026 authorized completion of the boss-feedback fixes and production QA. From v7, ATOT/ETA parity, STD/STA labels, compact report copy, and page-one fit corrections are deliberate. Page 1 was inspected on the final render; pages 2-41 are pixel-identical to the previously inspected v9 candidate. Pages 3-8, 11-12, and 39-41 are private lossless audit appendices, not the seven-page pilot download.",
-    "combined_briefing_schema_version": "2026-08-23-atot-parity-v9"
+    "minted_on": "2026-08-25",
+    "approval_basis": "Jabez directed 25 Aug 2026 implementation of David's OFP naming and permanent VWS review requirements; corrected 41-page render inspected with zero physical overflow or overlap and verbatim Lido source headings preserved.",
+    "combined_briefing_schema_version": "2026-08-25-vws-fir-ofp-v26"
   }
 }

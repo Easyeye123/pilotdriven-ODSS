@@ -53,7 +53,7 @@ def test_performance_publication_carries_the_cfp_inputs():
 def test_arrival_basis_line_names_std_schedule_and_filed_eet():
     assert _arrival_basis_line("0050", "0445", "3:55", "03.21") == "STD 0050Z + SCHED 3:55 · filed EET 03:21"
     assert _arrival_basis_line("0050", "0445", None, "03.21") == "STD 0050Z · filed EET 03:21"
-    assert _arrival_basis_line("", "", None, "--.--") == "Scheduled arrival per CFP page 1"
+    assert _arrival_basis_line("", "", None, "--.--") == "Scheduled arrival per OFP page 1"
 
 
 def test_actual_takeoff_drives_report_eta_without_erasing_the_schedule():
@@ -83,7 +83,7 @@ def test_actual_takeoff_drives_report_eta_without_erasing_the_schedule():
         "ATOT 0952Z + filed EET 12:07 · scheduled STA 2240Z"
     )
     assert identity["timeline_basis"] == (
-        "ATOT 0952Z + CFP ACTM drives clocks; calculated ETA 2159Z from "
+        "ATOT 0952Z + OFP ACTM drives clocks; calculated ETA 2159Z from "
         "filed EET 12:07. Schedule: STD 0945Z / STA 2240Z (12:55)."
     )
     assert [

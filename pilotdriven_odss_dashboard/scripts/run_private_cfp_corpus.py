@@ -636,7 +636,7 @@ def inspect_deferred_contract(
         if len(matching) != 1:
             missing_links.append({**item, "matching_link_count": len(matching)})
         if item["has_cfp_remark"]:
-            label = f"CFP REMARK - NOT THE APPROVED {item['type']} REMEDY"
+            label = f"OFP REMARK - NOT THE APPROVED {item['type']} REMEDY"
             if label not in folded_text:
                 missing_labels.append(label)
     return {

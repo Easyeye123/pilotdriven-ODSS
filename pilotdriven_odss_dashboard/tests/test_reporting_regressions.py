@@ -273,7 +273,7 @@ def _review_required_weather(
             "location": location,
             "utc_window": window,
             "mechanism": "None safely classified",
-            "timing": f"The CFP TAF does not fully cover {window}.",
+            "timing": f"The OFP TAF does not fully cover {window}.",
             "flight_effect": "Forecast coverage is incomplete.",
             "window_status": "review_required",
         },
@@ -369,7 +369,7 @@ def test_level2_adds_governed_caas_174_evidence_without_replacing_cfp(
         if "AIP SUPPLEMENT OPERATIONAL DETAILS" in page
     )
     assert "SX174/24" in page_three
-    assert "Uploaded CFP" in page_three
+    assert "Uploaded OFP" in page_three
     assert "CAAS AIRAC AIP SUP 174/2024" in appendix
     assert "28 NOV 24 0000Z-22 DEC 27 2359Z" in appendix
     assert appendix.count("section 2.2") == 2
@@ -441,7 +441,7 @@ def test_governed_caas_174_evidence_does_not_change_unrelated_notam_rows() -> No
     rows = _notam_rows([item])
 
     assert len(rows) == 1
-    assert rows[0][1] == "A9999/26 / Uploaded CFP"
+    assert rows[0][1] == "A9999/26 / Uploaded OFP"
     assert rows[0][2] == "TWY TEST closed."
     assert "CAAS" not in " ".join(rows[0])
 
@@ -606,7 +606,7 @@ def test_reports_keep_actm_only_until_an_actual_timing_anchor_exists(
     assert "ACTM / CALCULATED UTC TIMELINE" not in text
     if level == 2:
         assert (
-            "CFP ACTM is accumulated/planned, not actual; "
+            "OFP ACTM is accumulated/planned, not actual; "
             "ATOT/ATA required for UTC clocks"
         ) in " ".join(text.split())
 
@@ -649,7 +649,7 @@ def test_level2_labels_atot_anchored_utc_as_calculated_not_observed(
 @pytest.mark.parametrize(
     ("actual_takeoff_utc", "header_note"),
     [
-        (None, "CFP ACTM: NOT ACTUAL"),
+        (None, "OFP ACTM: NOT ACTUAL"),
         (
             "2026-07-11T10:45:00+00:00",
             "ATOT 11 JUL 1045Z | CALC UTC",
@@ -834,10 +834,10 @@ def test_zero_terrain_level1_reports_one_truthful_no_exposure_status(
     render_pdf(flight, [], [], 1, path)
 
     page = " ".join((PdfReader(path).pages[2].extract_text() or "").split())
-    assert page.count("NO CFP ROUTE HIGH-TERRAIN EXPOSURE DETECTED") == 1
+    assert page.count("NO OFP ROUTE HIGH-TERRAIN EXPOSURE DETECTED") == 1
     assert "ALL HIGH-TERRAIN EXPOSURE WINDOWS COVERED" not in page
     assert "No approved profile match in the mounted controlled index." not in page
-    assert "CFP route exposure and chart coverage shown separately" in page
+    assert "OFP route exposure and chart coverage shown separately" in page
     assert "actual exposure" not in page.lower()
     assert "FULL AUTHORITATIVE SOURCE CHARTS" not in page
 
@@ -986,7 +986,7 @@ def test_route_map_limits_routine_labels_on_dense_long_haul_routes() -> None:
 
     svg = render_route_svg(route_map)
     assert 'fill="#153044"' in svg
-    assert "Filed route from CFP coordinates" in svg
+    assert "Filed route from OFP coordinates" in svg
 
 
 def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> None:
@@ -1087,7 +1087,7 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
     assert first.count("Surface overlay unavailable") >= 2
     assert "DECISION GATES" in first
     assert "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS" in first
-    assert "Filed route from CFP coordinates" in first
+    assert "Filed route from OFP coordinates" in first
     assert "SQ304 - OPERATIONAL TIMING" in second
     assert "FLIGHT PHASE WINDOWS" in second
     assert "EDTO 1 | ENTRY 02.00 | EXIT 02.30" in second
@@ -1113,13 +1113,13 @@ def test_level1_matches_three_page_landscape_review_brief(tmp_path: Path) -> Non
         assert f"page {page_number} of 3" in page_text.lower()
         assert f"Page {page_number} of 3" in page_text
     assert "representative gates" not in second
-    assert "CFP p." not in second
-    assert "CFP p." not in third
+    assert "OFP p." not in second
+    assert "OFP p." not in third
     assert "parsed" not in second.lower()
     assert "..." not in first
     assert "…" not in first
     assert sum(
-        "Filed route from CFP coordinates" in (page.extract_text() or "")
+        "Filed route from OFP coordinates" in (page.extract_text() or "")
         for page in reader.pages
     ) == 1
 
@@ -1207,7 +1207,7 @@ def test_level1_and_level2_publish_sia722_ifeddl_as_review_required_source_text(
                 "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT"
             ),
             "source_status": (
-                "CFP deferred declaration requires review; acronym meaning is not "
+                "OFP deferred declaration requires review; acronym meaning is not "
                 "inferred and no MEL, CDL or CDDL classification is asserted."
             ),
         }
@@ -1424,7 +1424,7 @@ def test_level1_edto_summary_distinguishes_verified_nil_from_unverified_empty(
         (page.extract_text() or "")
         for page in PdfReader(verified_path).pages
     )
-    assert "Not applicable by complete CFP evidence" not in verified_text
+    assert "Not applicable by complete OFP evidence" not in verified_text
     assert "no EDTO section was published" not in verified_text
     assert "No EDTO airport period required" not in verified_text
     assert verified_text.count("NIL EDTO / SIGMET / VAA / TROPICAL CYCLONE") == 1
@@ -1445,7 +1445,7 @@ def test_level1_edto_summary_distinguishes_verified_nil_from_unverified_empty(
     assert "NIL EDTO / SIGMET" not in incomplete_text
     assert incomplete_text.count("NIL EDTO") == 1
     assert (
-        "NIL EDTO - verified not applicable from the complete uploaded CFP."
+        "NIL EDTO - verified not applicable from the complete uploaded OFP."
         in incomplete_text
     )
     assert "SIGMET: review required" in incomplete_text
@@ -1794,9 +1794,9 @@ def test_level2_matches_seven_page_operational_contract(tmp_path: Path) -> None:
     assert "PILOT USE" not in pages[4]
     assert "Crossing time parsed." not in pages[4]
     assert "DEPRESSURISATION PROFILE MATCH MATRIX" in pages[5]
-    assert "CFP ROUTE EXPOSURE" in pages[5]
+    assert "OFP ROUTE EXPOSURE" in pages[5]
     assert (
-        "cfp route exposure is not replaced by chart altitude"
+        "ofp route exposure is not replaced by chart altitude"
         in pages[5].casefold()
     )
     assert "actual exposure" not in "\n".join(pages).casefold()
@@ -2494,8 +2494,8 @@ def test_level2_cites_originating_evidence_without_exposing_trace_ids(
         for page in PdfReader(level2_path).pages
     )
     assert "Evidence:" not in level1_text
-    assert "Uploaded CFP" in " ".join(level2_text.split())
-    assert "CFP pp. 101-103" not in " ".join(level2_text.split())
+    assert "Uploaded OFP" in " ".join(level2_text.split())
+    assert "OFP pp. 101-103" not in " ".join(level2_text.split())
     assert _source_label(item) == (
         "Evidence: SQ304_CFP.pdf; NOTAM package; pp. 101-103."
     )
@@ -2512,7 +2512,7 @@ def test_level2_uses_pilot_facing_title_for_internal_cfp_document_id(
         {
             "source_type": "uploaded_cfp",
             "document_title": "cfp_98abe9902fa8439e874724881c1ac28e.pdf",
-            "display_title": "Uploaded company CFP",
+            "display_title": "Uploaded company OFP",
             "section": "NOTAM package",
             "pages": [36, 37],
         }
@@ -2524,10 +2524,10 @@ def test_level2_uses_pilot_facing_title_for_internal_cfp_document_id(
         (page.extract_text() or "")
         for page in PdfReader(path).pages
     )
-    assert "Uploaded CFP" in " ".join(text.split())
-    assert "CFP pp. 36-37" not in " ".join(text.split())
+    assert "Uploaded OFP" in " ".join(text.split())
+    assert "OFP pp. 36-37" not in " ".join(text.split())
     assert _source_label(item) == (
-        "Evidence: Uploaded company CFP; NOTAM package; pp. 36-37."
+        "Evidence: Uploaded company OFP; NOTAM package; pp. 36-37."
     )
     assert "cfp_98abe9902fa8439e874724881c1ac28e.pdf" not in text
 
@@ -2618,7 +2618,7 @@ def test_level2_groups_repeated_no_overlap_weather_into_one_checked_summary(
     )
     normalized = " ".join(text.split())
     assert normalized.count(
-        "No significant CFP forecast group overlapped."
+        "No significant OFP forecast group overlapped."
     ) == 1
     assert "DEPA KJFK 25 JUL 0115Z-0315Z" in normalized
     assert "DEST WSSS 25 JUL 1930Z-2330Z" in normalized
@@ -2735,7 +2735,7 @@ def test_level2_names_unconfirmed_official_volcanic_ash_source(
     page_seven = " ".join(
         (PdfReader(path).pages[6].extract_text() or "").split()
     )
-    assert "Uploaded CFP only" in page_seven
+    assert "Uploaded OFP only" in page_seven
     assert (
         "Applicability unresolved - review official volcanic-ash source."
         in page_seven
@@ -2980,7 +2980,7 @@ def test_run_analysis_normalizes_identity_before_json_and_reports(
     }
     rendered_identities = []
 
-    monkeypatch.setattr(analysis, "extract_pages", lambda path: ["CFP"])
+    monkeypatch.setattr(analysis, "extract_pages", lambda path: ["OFP"])
     monkeypatch.setattr(analysis, "parse_lido", lambda pages, name: dict(flight))
     monkeypatch.setattr(analysis, "analyse", lambda parsed: ([], []))
 
@@ -3035,7 +3035,7 @@ def test_run_analysis_serializes_report_artifact_targets_after_level2_render(
         "notams": [],
     }
 
-    monkeypatch.setattr(analysis, "extract_pages", lambda path: ["CFP"])
+    monkeypatch.setattr(analysis, "extract_pages", lambda path: ["OFP"])
     monkeypatch.setattr(analysis, "parse_lido", lambda pages, name: dict(flight))
     monkeypatch.setattr(analysis, "analyse", lambda parsed: ([], []))
 
