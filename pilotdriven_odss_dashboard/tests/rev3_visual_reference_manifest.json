@@ -3,8 +3,8 @@
   "gate": "rev3-raster-pixel-equality",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
-    "filename": "SQ214_REV3_reference_v9_OFP_VWS.pdf",
-    "sha256": "4df2f631cf7bdb80b408c376619dd478e8ad86f1c6d6a380db993b8b0ec54f78"
+    "filename": "SQ214_REV3_reference_v10_VAA_SOURCE_SEPARATION.pdf",
+    "sha256": "1521203d92917082f755355cb7b91a177775a423c899a2215f8de3592922b57f"
   },
   "renderer": {
     "library": "PyMuPDF",
@@ -310,7 +310,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "4b0ef37cc32ef1a90dca370d31c5e169c25bf3bc4b8b3ca2cc4ad4f2072d33a8"
+      "reference_raster_sha256": "77afc4af2f083974f841cc75fe1919676e7159043485f19fc2eec039bbf684ee"
     },
     {
       "page_number": 38,
@@ -351,8 +351,8 @@
     "max_channel_delta": 0
   },
   "provenance": {
-    "minted_on": "2026-08-25",
-    "approval_basis": "Jabez directed 25 Aug 2026 implementation of David's OFP naming and permanent VWS review requirements; corrected 41-page render inspected with zero physical overflow or overlap and verbatim Lido source headings preserved.",
-    "combined_briefing_schema_version": "2026-08-25-vws-fir-ofp-v26"
+    "minted_on": "2026-08-26",
+    "approval_basis": "Codex side-by-side review 2026-08-26: page 37 intentionally separates VA SIGMET review from direct VAA source reach and applicability; the other 40 pages are pixel-identical to approved v9, with no clipping or overlap.",
+    "combined_briefing_schema_version": "2026-08-26-vaa-source-separation-v27"
   }
 }
