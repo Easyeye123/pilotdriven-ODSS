@@ -1355,11 +1355,11 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
         "destination": ["WSSS"],
         "sourcePage": ["1"],
     }
-    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-08-25-vws-fir-ofp-v26"
+    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-08-26-vaa-source-separation-v27"
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
         7,
-        schema_version="2026-08-23-boss-flow-v11",
+        schema_version="2026-08-25-vws-fir-ofp-v26",
     )
 
 

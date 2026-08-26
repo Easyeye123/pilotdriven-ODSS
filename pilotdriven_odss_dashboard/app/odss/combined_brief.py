@@ -155,7 +155,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-25-vws-fir-ofp-v26"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-26-vaa-source-separation-v27"
 
 
 def combined_briefing_cache_token(
