@@ -1424,9 +1424,8 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
     sigmet_features = list(
         ((flight.get("sigmet_review") or {}).get("hazard_features") or [])
     )
-    vaa_features = list(
-        ((flight.get("vaa_review") or {}).get("hazard_features") or [])
-    )
+    va_sigmet_review = flight.get("va_sigmet_review") or flight.get("vaa_review") or {}
+    vaa_features = list(va_sigmet_review.get("hazard_features") or [])
     tc_features = list(
         ((flight.get("tropical_cyclone_review") or {}).get("hazard_features") or [])
     )
@@ -1438,7 +1437,9 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
         "label_indices": sorted(priority_indices),
         "hazard_features": hazard_features,
         "sigmet_status": (flight.get("sigmet_review") or {}).get("status"),
-        "vaa_status": (flight.get("vaa_review") or {}).get("status"),
+        "va_sigmet_status": va_sigmet_review.get("status"),
+        # Deprecated alias retained for saved views and old dashboard clients.
+        "vaa_status": va_sigmet_review.get("status"),
         "tropical_cyclone_status": (
             flight.get("tropical_cyclone_review") or {}
         ).get("status"),
@@ -2906,7 +2907,8 @@ def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
     The tally and the per-centre strings were previously arithmetic inside
     the PDF renderer, so the dashboard never showed them; both surfaces now
     print these composed values verbatim."""
-    ledger = (flight.get("vaa_review") or {}).get("vaac_centre_ledger") or []
+    legacy_review = flight.get("vaa_review") or {}
+    ledger = legacy_review.get("vaac_centre_ledger") or []
     status_copy = {
         "available": "reached",
         "partial": "partial",
@@ -2922,68 +2924,103 @@ def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
     ]
     reached = sum(1 for item in ledger if item.get("status") in {"available", "partial"})
 
-    # The responsible centres for THIS route, from the ICAO Doc 9766 Part 2
-    # areas (boss, 21 Aug: "there's a VAAC ... in Manila? ... don't see any
-    # [checking]"). Fail-closed: unsettled route geometry flags a review
-    # instead of naming a centre it cannot prove.
-    from .vaac_areas import responsible_vaac_centres
-
-    waypoints = flight.get("route_waypoints") or []
-    route_points = [
-        (waypoint.get("latitude"), waypoint.get("longitude"))
-        for waypoint in waypoints
-        if isinstance(waypoint.get("latitude"), (int, float))
-        and isinstance(waypoint.get("longitude"), (int, float))
-    ]
-    route_firs = [
-        waypoint.get("fir_boundary")
-        for waypoint in waypoints
-        if waypoint.get("fir_boundary")
-    ]
-    responsibility = responsible_vaac_centres(route_points, route_firs)
-    reached_names = {
-        str(item.get("centre") or "").upper()
-        for item in ledger
-        if item.get("status") in {"available", "partial"}
-    }
-    responsible_rows = [
-        {"centre": centre, "reached": centre in reached_names}
-        for centre in responsibility["centres"]
-    ]
-    if not route_points:
-        responsible_line = (
-            "Responsible VAAC for this route is unresolved - no route "
-            "coordinates are held; review coverage directly."
-        )
-    elif responsible_rows:
-        named = ", ".join(row["centre"] for row in responsible_rows)
-        missing = [row["centre"] for row in responsible_rows if not row["reached"]]
-        responsible_line = (
-            f"Responsible for this route: {named}"
-            + (
-                " - all reached"
-                if not missing
-                else f" - NOT reached: {', '.join(missing)} (review gap)"
-            )
-            + (
-                "; boundary segments need review"
-                if responsibility["review_required"]
-                else ""
-            )
-        )
+    direct_review = (
+        flight.get("direct_vaa_source_review")
+        or legacy_review.get("direct_vaa_source_review")
+    )
+    if isinstance(direct_review, dict):
+        # New analyses carry the route-responsible receipts explicitly.  Never
+        # reconstruct responsibility from the all-nine audit ledger: doing so
+        # can turn an unrelated reached centre into apparent route coverage.
+        receipts_by_centre = {
+            str(receipt.get("centre") or "").strip().upper(): receipt
+            for receipt in direct_review.get("responsible_centre_receipts") or []
+            if str(receipt.get("centre") or "").strip()
+        }
+        responsible_rows = [
+            {
+                "centre": str(centre).strip().upper(),
+                "reached": bool(
+                    receipts_by_centre.get(str(centre).strip().upper(), {}).get(
+                        "reached"
+                    )
+                ),
+            }
+            for centre in direct_review.get("responsible_centres") or []
+            if str(centre).strip()
+        ]
+        responsible_line = str(direct_review.get("responsible_line") or "")
+        responsible_review_required = bool(
+            direct_review.get("responsibility_review_required")
+        ) or not responsible_rows
+        responsible_source = direct_review.get("responsibility_source")
     else:
-        responsible_line = (
-            "Responsible VAAC for this route could not be settled from the "
-            "Doc 9766 areas - review coverage directly."
+        # Legacy saved analyses predate the explicit source contract.  Preserve
+        # their deterministic Doc 9766 projection without changing old files.
+        from .vaac_areas import responsible_vaac_centres
+
+        waypoints = flight.get("route_waypoints") or []
+        route_points = [
+            (waypoint.get("latitude"), waypoint.get("longitude"))
+            for waypoint in waypoints
+            if isinstance(waypoint.get("latitude"), (int, float))
+            and isinstance(waypoint.get("longitude"), (int, float))
+        ]
+        route_firs = [
+            waypoint.get("fir_boundary")
+            for waypoint in waypoints
+            if waypoint.get("fir_boundary")
+        ]
+        responsibility = responsible_vaac_centres(route_points, route_firs)
+        reached_names = {
+            str(item.get("centre") or "").upper()
+            for item in ledger
+            if item.get("status") in {"available", "partial"}
+        }
+        responsible_rows = [
+            {"centre": centre, "reached": centre in reached_names}
+            for centre in responsibility["centres"]
+        ]
+        if not route_points:
+            responsible_line = (
+                "Responsible VAAC for this route is unresolved - no route "
+                "coordinates are held; review coverage directly."
+            )
+        elif responsible_rows:
+            named = ", ".join(row["centre"] for row in responsible_rows)
+            missing = [
+                row["centre"] for row in responsible_rows if not row["reached"]
+            ]
+            responsible_line = (
+                f"Responsible for this route: {named}"
+                + (
+                    " - all reached"
+                    if not missing
+                    else f" - NOT reached: {', '.join(missing)} (review gap)"
+                )
+                + (
+                    "; boundary segments need review"
+                    if responsibility["review_required"]
+                    else ""
+                )
+            )
+        else:
+            responsible_line = (
+                "Responsible VAAC for this route could not be settled from the "
+                "Doc 9766 areas - review coverage directly."
+            )
+        responsible_review_required = (
+            bool(responsibility["review_required"]) or not responsible_rows
         )
+        responsible_source = responsibility["source"]
 
     return {
         "summary": f"{reached}/{len(ledger) or 9} reached",
         "centres": centres,
         "responsible": responsible_rows,
         "responsible_line": responsible_line,
-        "responsible_review_required": bool(responsibility["review_required"]) or not responsible_rows,
-        "responsible_source": responsibility["source"],
+        "responsible_review_required": responsible_review_required,
+        "responsible_source": responsible_source,
     }
 
 
@@ -3101,9 +3138,18 @@ def _va_official_note(flight: dict[str, Any] | None, volcano: str | None) -> str
     if not flight or not volcano:
         return None
     bare = re.sub(r"^(?:MT|MOUNT)\s+", "", str(volcano).upper()).strip()
+    legacy_review = flight.get("vaa_review") or {}
+    direct_review = flight.get("direct_vaa_source_review")
+    if not isinstance(direct_review, dict):
+        direct_review = legacy_review.get("direct_vaa_source_review")
     held = (
-        ((flight.get("vaa_review") or {}).get("direct_vaac_snapshot") or {}).get("advisories")
-    ) or []
+        list(direct_review.get("official_advisories") or [])
+        if isinstance(direct_review, dict)
+        else list(
+            (legacy_review.get("direct_vaac_snapshot") or {}).get("advisories")
+            or []
+        )
+    )
     matches = [
         advisory for advisory in held
         if bare and bare in str(advisory.get("volcano") or "").upper()
@@ -3330,6 +3376,80 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
             "advisory_kind": "VA_SIGMET",
         })
     return advisories
+
+
+def _legacy_direct_vaa_source_review(
+    flight: dict[str, Any],
+    legacy_review: dict[str, Any],
+) -> dict[str, Any]:
+    """Adapt a saved combined VAA review to the direct-source contract.
+
+    Analyses created before the split contract retained the official VAAC
+    snapshot only under ``vaa_review.direct_vaac_snapshot``.  Rebuilding a
+    briefing from one of those analyses must not discard the held advisory
+    identities or report the source as unavailable.  Re-run the current
+    responsible-centre projection over the saved source receipts; direct VAA
+    applicability intentionally remains unassessed.
+    """
+    snapshot = legacy_review.get("direct_vaac_snapshot")
+    if not isinstance(snapshot, dict) or not snapshot:
+        return {}
+
+    advisories = [
+        advisory
+        for advisory in snapshot.get("advisories") or []
+        if isinstance(advisory, dict)
+    ]
+    saved_sources = [
+        source
+        for source in snapshot.get("sources") or []
+        if isinstance(source, dict)
+    ]
+    snapshots: list[dict[str, Any]] = []
+    if saved_sources:
+        for source in saved_sources:
+            centre = str(source.get("centre") or "").strip().upper()
+            centre_advisories = [
+                advisory
+                for advisory in advisories
+                if str(
+                    advisory.get("centre") or advisory.get("vaac") or ""
+                ).strip().upper() == centre
+            ]
+            snapshots.append({
+                **source,
+                "centre": centre,
+                "advisories": centre_advisories,
+                "advisory_count": len(centre_advisories),
+            })
+    else:
+        snapshots = [snapshot]
+
+    mounted = [
+        {
+            "centre": str(row.get("centre") or "").strip().upper(),
+            "provider": row.get("provider"),
+            "token": "legacy-saved-analysis",
+        }
+        for row in legacy_review.get("vaac_centre_ledger") or []
+        if isinstance(row, dict)
+        and str(row.get("centre") or "").strip()
+        and str(row.get("status") or "").strip().lower() != "not_mounted"
+    ]
+
+    # Local import keeps briefing composition independent during module load;
+    # vaa.py does not import this module and owns the canonical contract logic.
+    from .vaa import build_direct_vaa_source_review
+
+    review = build_direct_vaa_source_review(
+        flight,
+        snapshots=snapshots,
+        mounted=mounted,
+    )
+    review["compatibility_source"] = (
+        "vaa_review.direct_vaac_snapshot"
+    )
+    return review
 
 
 def _overview_forecast_at_reference(
@@ -5301,6 +5421,22 @@ def build_briefing_view(
         for record in cfp_weather_records
     })
     volcanic_advisories = _va_cfp_advisories(flight)
+    legacy_vaa_review = flight.get("vaa_review") or {}
+    va_sigmet_review = flight.get("va_sigmet_review") or legacy_vaa_review
+    direct_vaa_source_review = (
+        flight.get("direct_vaa_source_review")
+        or legacy_vaa_review.get("direct_vaa_source_review")
+        or {}
+    )
+    if not direct_vaa_source_review:
+        direct_vaa_source_review = _legacy_direct_vaa_source_review(
+            flight,
+            legacy_vaa_review,
+        )
+    direct_vaa_status = (
+        direct_vaa_source_review.get("status")
+        or legacy_vaa_review.get("status")
+    )
     release_gates = _release_gate_projection(
         decision_findings,
         performance_reconciliation,
@@ -5502,10 +5638,35 @@ def build_briefing_view(
         },
         "vaa": {
             "cfp_advisories": volcanic_advisories,
-            "status": (flight.get("vaa_review") or {}).get("status"),
+            # CFP notices and official direct-VAAC advisories are deliberately
+            # separate collections.  CFP VA SIGMET/volcano text is not proof
+            # that a route-responsible VAAC source returned an advisory.
+            "cfp_notices": volcanic_advisories,
+            "direct_source_review": direct_vaa_source_review,
+            "official_advisories": list(
+                direct_vaa_source_review.get("official_advisories") or []
+            ),
+            "official_advisory_count": int(
+                direct_vaa_source_review.get("official_advisory_count") or 0
+            ),
+            "source_status": direct_vaa_source_review.get("source_status"),
+            "applicability_status": direct_vaa_source_review.get(
+                "applicability_status"
+            ),
+            "status": direct_vaa_status,
+            "legacy_status": legacy_vaa_review.get("status"),
             "page": (
                 level2_page("weather_detail")
-                if (flight.get("vaa_review") or {}).get("status")
+                if direct_vaa_status in {"affected", "review_required"}
+                else None
+            ),
+        },
+        "va_sigmet": {
+            "status": va_sigmet_review.get("status"),
+            "review": va_sigmet_review,
+            "page": (
+                level2_page("weather_detail")
+                if va_sigmet_review.get("status")
                 in {"affected", "review_required"}
                 else None
             ),
@@ -5543,7 +5704,8 @@ def build_briefing_view(
             ),
             *(
                 [{"label": "Volcanic ash review", "target": "vaa_detail", "page": level2_page("weather_detail")}]
-                if (flight.get("vaa_review") or {}).get("status")
+                if direct_vaa_status in {"affected", "review_required"}
+                or va_sigmet_review.get("status")
                 in {"affected", "review_required"}
                 else []
             ),

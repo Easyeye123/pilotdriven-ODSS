@@ -19,6 +19,7 @@ from shapely.geometry import LineString, MultiPolygon, Polygon, mapping
 from shapely.ops import split
 
 from .snapshot_governance import govern_snapshot, mark_snapshot_reused
+from .vaac_areas import responsible_vaac_centres
 
 
 AWC_ISIGMET_URL = "https://aviationweather.gov/api/data/isigmet?format=json"
@@ -1043,6 +1044,201 @@ def merge_vaac_snapshots(
     }
 
 
+_DIRECT_VAAC_PROVIDER_CENTRES = {
+    "jma-tokyo-vaac": "TOKYO",
+    "nws-anchorage-vaac": "ANCHORAGE",
+    "noaa-gts-darwin-vaa": "DARWIN",
+    "meteo-france-toulouse-vaac": "TOULOUSE",
+}
+
+
+def _direct_snapshot_centre(snapshot: dict[str, Any]) -> str:
+    centre = str(snapshot.get("centre") or "").strip().upper()
+    if centre:
+        return centre
+    centres = snapshot.get("centres") or []
+    if isinstance(centres, list) and len(centres) == 1:
+        return str(centres[0] or "").strip().upper()
+    return _DIRECT_VAAC_PROVIDER_CENTRES.get(
+        str(snapshot.get("provider") or ""),
+        "",
+    )
+
+
+def build_direct_vaa_source_review(
+    flight: dict[str, Any],
+    *,
+    snapshots: list[dict[str, Any]],
+    mounted: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Compose direct-VAA source/reach truth without inventing applicability.
+
+    Direct VAAC connectors retain official observed and forecast *snapshots*.
+    Their phase geometry has a ``valid_at_utc`` instant, not a validity
+    interval, and the connectors deliberately do not interpolate between
+    phases.  The held payload can therefore prove which responsible sources
+    answered and which official advisories they returned, but a source-only
+    zero cannot prove a full-flight route/time/level non-intersection.
+
+    This contract is intentionally separate from ``va_sigmet_review``.  Its
+    ``applicability_status`` remains ``not_assessed`` until a governed direct-
+    VAA evaluator exists; it never emits a checked-no-match result.
+    """
+    waypoints = flight.get("route_waypoints") or []
+    route_points = [
+        (waypoint.get("latitude"), waypoint.get("longitude"))
+        for waypoint in waypoints
+        if isinstance(waypoint.get("latitude"), (int, float))
+        and isinstance(waypoint.get("longitude"), (int, float))
+    ]
+    route_firs = [
+        waypoint.get("fir_boundary")
+        for waypoint in waypoints
+        if waypoint.get("fir_boundary")
+    ]
+    responsibility = responsible_vaac_centres(route_points, route_firs)
+    responsible = [
+        str(centre).strip().upper()
+        for centre in responsibility.get("centres") or []
+        if str(centre).strip()
+    ]
+    responsibility_review_required = bool(
+        responsibility.get("review_required")
+    ) or not responsible
+
+    snapshots_by_centre = {
+        centre: snapshot
+        for snapshot in snapshots
+        if (centre := _direct_snapshot_centre(snapshot))
+    }
+    mounted_by_centre = {
+        str(entry.get("centre") or "").strip().upper(): entry
+        for entry in mounted
+        if str(entry.get("centre") or "").strip()
+    }
+
+    receipts: list[dict[str, Any]] = []
+    advisories: list[dict[str, Any]] = []
+    seen_advisories: set[tuple[str, str, str, str]] = set()
+    for centre in responsible:
+        snapshot = snapshots_by_centre.get(centre)
+        mounted_entry = mounted_by_centre.get(centre)
+        status = str((snapshot or {}).get("status") or "").strip().lower()
+        if not status:
+            status = "unavailable" if mounted_entry else "not_mounted"
+        centre_advisories: list[dict[str, Any]] = []
+        for advisory in (snapshot or {}).get("advisories") or []:
+            held = {**advisory, "centre": centre}
+            identity = (
+                centre,
+                str(held.get("advisory_number") or ""),
+                str(held.get("issued_at_utc") or ""),
+                str(held.get("raw_sha256") or ""),
+            )
+            if identity in seen_advisories:
+                continue
+            seen_advisories.add(identity)
+            centre_advisories.append(held)
+            advisories.append(held)
+        receipts.append({
+            "centre": centre,
+            "provider": (snapshot or mounted_entry or {}).get("provider"),
+            "status": status,
+            "coverage_status": (
+                (snapshot or {}).get("coverage_status")
+                or ("fetch_not_returned" if mounted_entry else "not_mounted")
+            ),
+            "reached": status in {"available", "partial"},
+            "advisory_count": len(centre_advisories),
+            "source_url": (snapshot or {}).get("source_url"),
+        })
+
+    reached = [
+        str(receipt["centre"])
+        for receipt in receipts
+        if receipt["reached"]
+    ]
+    if (
+        responsible
+        and not responsibility_review_required
+        and all(receipt["status"] == "available" for receipt in receipts)
+    ):
+        source_status = "available"
+    elif reached:
+        source_status = "partial"
+    else:
+        source_status = "unavailable"
+
+    reasons = {"direct_vaa_applicability_not_assessed"}
+    if responsibility_review_required:
+        reasons.add("responsible_vaac_unresolved")
+    if source_status == "partial":
+        reasons.add("direct_vaac_coverage_partial")
+    elif source_status == "unavailable":
+        relevant_mounted = any(centre in mounted_by_centre for centre in responsible)
+        reasons.add(
+            "direct_vaac_advisory_source_unavailable"
+            if relevant_mounted
+            else "direct_vaac_advisory_source_not_mounted"
+        )
+
+    if not route_points:
+        responsible_line = (
+            "Responsible VAAC for this route is unresolved - no route "
+            "coordinates are held; review coverage directly."
+        )
+    elif responsible:
+        named = ", ".join(responsible)
+        missing = [
+            str(receipt["centre"])
+            for receipt in receipts
+            if not receipt["reached"]
+        ]
+        responsible_line = (
+            f"Responsible for this route: {named}"
+            + (
+                " - all reached"
+                if not missing
+                else f" - NOT reached: {', '.join(missing)} (review gap)"
+            )
+            + (
+                "; boundary segments need review"
+                if responsibility.get("review_required")
+                else ""
+            )
+        )
+    else:
+        responsible_line = (
+            "Responsible VAAC for this route could not be settled from the "
+            "Doc 9766 areas - review coverage directly."
+        )
+
+    return {
+        "schema_version": "1.0",
+        "product": "VAA",
+        "status": "review_required",
+        "source_status": source_status,
+        "applicability_status": "not_assessed",
+        "reason_codes": sorted(reasons),
+        "responsible_centres": responsible,
+        "reached_responsible_centres": reached,
+        "responsible_centre_receipts": receipts,
+        "responsible_line": responsible_line,
+        "responsibility_review_required": responsibility_review_required,
+        "unresolved_route_points": int(
+            responsibility.get("unresolved_points") or 0
+        ),
+        "responsibility_source": responsibility.get("source"),
+        "official_advisory_count": len(advisories),
+        "official_advisories": advisories,
+        "source_note": (
+            "Official direct VAAC VAA snapshots from route-responsible centres. "
+            "Source reach and held advisory count are reported; route/time/level "
+            "applicability is not assessed from point-in-time phases."
+        ),
+    }
+
+
 def assess_volcanic_ash(
     flight: dict[str, Any],
     pages: list[str],
@@ -1076,7 +1272,11 @@ def assess_volcanic_ash(
                 "advisories": [],
                 "error": "Unsupported ODSS_VA_SIGMET_SOURCE setting",
             }
-    review = evaluate_vaa(flight, snapshot, embedded)
+    # ``evaluate_vaa`` evaluates the international VA SIGMET feed.  Preserve
+    # that result as its own product contract before adding the historical
+    # direct-VAAC coverage fields used by older callers.
+    va_sigmet_review = evaluate_vaa(flight, snapshot, embedded)
+    va_sigmet_review["product"] = "VA_SIGMET"
     mounted = mounted_vaac_centres()
     direct_snapshots = (
         [direct_snapshot]
@@ -1084,11 +1284,21 @@ def assess_volcanic_ash(
         else fetch_mounted_vaac_snapshots(flight, mounted)
     )
     direct_snapshots = [item for item in direct_snapshots if item]
+    direct_vaa_source_review = build_direct_vaa_source_review(
+        flight,
+        snapshots=direct_snapshots,
+        mounted=mounted,
+    )
     direct_snapshot = merge_vaac_snapshots(direct_snapshots)
     direct_vaac_available = bool(
         direct_snapshot
         and direct_snapshot.get("status") in {"available", "partial"}
     )
+
+    # Backward-compatible combined review.  Its historical fail-closed status
+    # and reason codes remain available to existing reports while new callers
+    # consume ``va_sigmet_review`` and ``direct_vaa_source_review`` directly.
+    review = deepcopy(va_sigmet_review)
     review["direct_vaac_snapshot"] = direct_snapshot
     # Every ICAO centre is named. Unmounted centres remain explicit gaps rather
     # than vanishing from the receipt and making partial coverage look global.
@@ -1112,6 +1322,7 @@ def assess_volcanic_ash(
             "review_required_when_missing": True,
         },
     }
+    review["direct_vaa_source_review"] = direct_vaa_source_review
     if snapshot.get("provider") == "noaa-awc-international-sigmet" and not direct_vaac_available:
         # A centre that is mounted but did not answer is a different gap from no
         # centre being mounted at all, and the pilot receipt says which it was.
@@ -1133,6 +1344,8 @@ def assess_volcanic_ash(
         ))
         if review.get("status") == "not_applicable":
             review["status"] = "review_required"
+    flight["va_sigmet_review"] = va_sigmet_review
+    flight["direct_vaa_source_review"] = direct_vaa_source_review
     flight["vaa_review"] = review
     return review
 
@@ -1141,6 +1354,7 @@ __all__ = [
     "AWC_ISIGMET_URL",
     "AWC_SUPPORTED_HAZARDS",
     "assess_volcanic_ash",
+    "build_direct_vaa_source_review",
     "evaluate_vaa",
     "extract_embedded_vaa",
     "fetch_awc_snapshot",

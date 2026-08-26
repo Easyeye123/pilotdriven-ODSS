@@ -148,7 +148,7 @@ def test_combined_quality_gate_accepts_lossless_eosid_continuation(
         ),
         (
             "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
-            "NAMED OFP VOLCANO ADVISORIES"
+            "NAMED DIRECT / OFP VOLCANO ADVISORIES"
         ),
         (
             "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
@@ -218,7 +218,7 @@ def test_combined_quality_gate_rejects_broken_eosid_continuation_sequence(
         ),
         (
             "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
-            "NAMED OFP VOLCANO ADVISORIES"
+            "NAMED DIRECT / OFP VOLCANO ADVISORIES"
         ),
         (
             "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"

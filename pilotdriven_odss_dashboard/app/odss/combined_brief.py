@@ -4762,7 +4762,11 @@ def _hazard_vaac_line_capacity(
     if not sigmet_cards:
         card_y -= 48.0
     ledger_height = max(96.0, card_y - columns_bottom)
-    first_vaac_y = card_y - 28.0 - 11.0 - 13.0 - 4 * 11.0
+    # Five governed status rows precede the per-centre receipt: SIGMET,
+    # VA SIGMET, direct VAA source, tropical cyclone and VAA/VAAC reach.
+    # Keep this count in lockstep with ``draw_hazard_page`` so an extra truth
+    # row is continued instead of silently colliding with the panel footer.
+    first_vaac_y = card_y - 28.0 - 11.0 - 13.0 - 5 * 11.0
     minimum_y = card_y - ledger_height + 12.0
     if first_vaac_y < minimum_y:
         return 0
@@ -6933,7 +6937,16 @@ def draw_hazard_page(
         SANS, T_MICRO, half_w - 28, TEXT_MUTED,
     )
     row_y -= 13
-    vaa_review = flight.get("vaa_review") or {}
+    legacy_vaa_review = flight.get("vaa_review") or {}
+    va_sigmet_review = (
+        flight.get("va_sigmet_review") or legacy_vaa_review
+    )
+    direct_vaa_review = (
+        ((briefing.get("vaa") or {}).get("direct_source_review"))
+        or flight.get("direct_vaa_source_review")
+        or legacy_vaa_review.get("direct_vaa_source_review")
+        or {}
+    )
     # Verbatim from the briefing view - the tally and centre strings are
     # composed once in build_briefing_view for every surface.
     vaac_reach = (briefing.get("hazards") or {}).get("vaac_reach") or {}
@@ -6948,15 +6961,29 @@ def draw_hazard_page(
         )
     else:
         responsible_compact = "RESP UNRESOLVED"
+    direct_advisory_count = int(
+        direct_vaa_review.get("official_advisory_count") or 0
+    )
+    direct_source_status = str(
+        direct_vaa_review.get("source_status") or "unavailable"
+    )
+    direct_applicability = str(
+        direct_vaa_review.get("applicability_status") or "not assessed"
+    )
+    direct_vaa_status = (
+        f"{direct_source_status} | {direct_advisory_count} held | "
+        f"applicability {direct_applicability}"
+    )
     vaac_centres_status = " | ".join((
         str(vaac_reach.get("summary") or "0/9 reached"),
         responsible_compact,
     ))
     for label, status in (
         ("SIGMET REVIEW", str(((flight.get("sigmet_review") or {}).get("status")) or "no data in OFP")),
-        ("VA REVIEW", str(vaa_review.get("status") or "no data in OFP")),
+        ("VA SIGMET REVIEW", str(va_sigmet_review.get("status") or "no data in OFP")),
+        ("DIRECT VAA SOURCE", direct_vaa_status),
         ("TC REVIEW", str(((flight.get("tropical_cyclone_review") or {}).get("status")) or "no data in OFP")),
-        ("VAAC CENTRES", vaac_centres_status),
+        ("VAA / VAAC REACH", vaac_centres_status),
     ):
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont(SANS, T_MICRO)
@@ -9401,6 +9428,46 @@ def _draw_operational_wafc_source(
     )
 
 
+def _operational_volcano_advisory_selection(
+    direct_advisories: list[dict[str, Any]],
+    ofp_advisories: list[dict[str, Any]],
+    *,
+    limit: int = 4,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Tag all held records and select a bounded mixed-source card set.
+
+    Direct VAA identities lead the operational scan, but when both collections
+    are held at least one card remains available to an OFP/VA-SIGMET notice.
+    The full tagged list is returned as well so the renderer can state that
+    additional source records remain outside the bounded scan.
+    """
+    direct = [
+        {**advisory, "_publication_source": "direct_vaa"}
+        for advisory in direct_advisories
+    ]
+    ofp = [
+        {**advisory, "_publication_source": "ofp"}
+        for advisory in ofp_advisories
+    ]
+    held = [*direct, *ofp]
+    if limit <= 0:
+        return held, []
+    if not direct or not ofp:
+        return held, held[:limit]
+    if limit == 1:
+        return held, direct[:1]
+
+    direct_count = min(len(direct), limit - 1)
+    ofp_count = min(len(ofp), limit - direct_count)
+    remaining = limit - direct_count - ofp_count
+    if remaining:
+        direct_count += min(len(direct) - direct_count, remaining)
+        remaining = limit - direct_count - ofp_count
+    if remaining:
+        ofp_count += min(len(ofp) - ofp_count, remaining)
+    return held, [*direct[:direct_count], *ofp[:ofp_count]]
+
+
 def draw_operational_hazard_page(
     canvas,
     flight: dict[str, Any],
@@ -9446,13 +9513,24 @@ def draw_operational_hazard_page(
     # three coverage states.  Give that factual payload the widest lane while
     # keeping the shorter terminal and SIGMET summaries fully readable.
     card_widths = (
-        available_card_width * 0.26,
-        available_card_width * 0.28,
-        available_card_width * 0.46,
+        available_card_width * 0.20,
+        available_card_width * 0.24,
+        available_card_width * 0.56,
     )
     hazards = briefing.get("hazards") or {}
     coverage_rows = list(hazards.get("coverage_ledger") or [])
-    advisories = list((briefing.get("vaa") or {}).get("cfp_advisories") or [])
+    vaa_view = briefing.get("vaa") or {}
+    va_sigmet_view = briefing.get("va_sigmet") or {}
+    # The operational scan is bounded to four named cards. Direct identities
+    # lead, while a mixed-source result reserves at least one card for an OFP
+    # volcano/VA-SIGMET notice instead of letting direct records suppress that
+    # distinct route-briefing evidence altogether.
+    advisories, displayed_advisories = (
+        _operational_volcano_advisory_selection(
+            list(vaa_view.get("official_advisories") or []),
+            list(vaa_view.get("cfp_advisories") or []),
+        )
+    )
     cfp_weather = briefing.get("cfp_weather") or {}
     weather_record_count = int(cfp_weather.get("record_count") or 0)
 
@@ -9465,14 +9543,35 @@ def draw_operational_hazard_page(
     ledger = " | ".join(
         f"{row.get('label')}: {row.get('status')}" for row in coverage_rows
     )
-    ledger_sentence = f"{ledger}." if ledger else ""
+    ledger_sentence = f"OFP sections - {ledger}." if ledger else ""
     responsible = str((hazards.get("vaac_reach") or {}).get("responsible_line") or "")
+    responsible_sentence = (
+        responsible
+        if not responsible or responsible.endswith((".", "!", "?"))
+        else responsible + "."
+    )
+    va_sigmet_status = str(
+        va_sigmet_view.get("status") or "review_required"
+    ).replace("_", " ")
+    direct_source_status = str(
+        vaa_view.get("source_status") or "unavailable"
+    ).replace("_", " ")
+    direct_applicability = str(
+        vaa_view.get("applicability_status") or "not assessed"
+    ).replace("_", " ")
+    direct_advisory_count = int(vaa_view.get("official_advisory_count") or 0)
     coverage_body = " ".join(
         part
         for part in (
             ledger_sentence,
+            f"VA SIGMET review - {va_sigmet_status}.",
+            (
+                "Direct VAA / VAAC source - "
+                f"{direct_source_status}; {direct_advisory_count} official "
+                f"advisory record(s) held; applicability {direct_applicability}."
+            ),
+            responsible_sentence,
             "Coverage gaps are source gaps, not NIL findings.",
-            responsible,
         )
         if part
     )
@@ -9537,7 +9636,7 @@ def draw_operational_hazard_page(
         advisory_bottom,
         full_w,
         advisory_h,
-        title="NAMED OFP VOLCANO ADVISORIES",
+        title="NAMED DIRECT / OFP VOLCANO ADVISORIES",
         accent=WEATHER_AMBER,
         title_colour=None,
     )
@@ -9547,12 +9646,11 @@ def draw_operational_hazard_page(
         canvas.drawString(
             advisory_inner[0],
             advisory_top - 36.0,
-            "No named volcano advisory record is held in the parsed OFP.",
+            "No named official direct VAA or OFP volcano notice is held.",
         )
     else:
         advisory_gap = 8.0
         cell_h = (advisory_h - 38.0 - advisory_gap) / 2.0
-        displayed_advisories = advisories[:4]
         cards: list[tuple[dict[str, Any], float, float, float, float]] = []
         if len(displayed_advisories) == 4:
             top_w = (advisory_inner[2] - 2 * advisory_gap) / 3.0
@@ -9599,31 +9697,74 @@ def draw_operational_hazard_page(
             advisory_kind = str(
                 advisory.get("advisory_kind") or ""
             ).strip().upper()
-            title = (
-                str(
-                    advisory.get("name") or "VOLCANIC ASH ADVISORY"
-                ).strip()
-                if advisory_kind == "VA_SIGMET"
-                else " · ".join(
+            publication_source = str(
+                advisory.get("_publication_source") or "ofp"
+            ).strip().lower()
+            if publication_source == "direct_vaa":
+                title = " · ".join(
                     part
                     for part in (
-                        str(advisory.get("volcano") or "VOLCANO ADVISORY"),
-                        str(advisory.get("notam_id") or ""),
+                        str(
+                            advisory.get("centre")
+                            or advisory.get("vaac")
+                            or "VAAC"
+                        ).strip().upper(),
+                        str(
+                            advisory.get("advisory_number")
+                            or advisory.get("name")
+                            or advisory.get("advisory_id")
+                            or "VAA"
+                        ).strip(),
+                        str(advisory.get("volcano") or "").strip(),
                     )
                     if part
                 )
-            )
-            source_text = str(advisory.get("text") or "").strip()
-            derived_text = str(advisory.get("derived") or "").strip()
-            meta = " · ".join(
-                part
-                for part in (
-                    f"SOURCE p{advisory.get('source_page')}" if advisory.get("source_page") else None,
-                    str(advisory.get("valid_from") or "") or None,
-                    str(advisory.get("valid_to") or "") or None,
+                source_text = str(
+                    advisory.get("raw_text") or advisory.get("text") or ""
+                ).strip()
+                derived_text = (
+                    "Official direct VAA identity held; route/time/level "
+                    "applicability not assessed."
                 )
-                if part
-            )
+                meta = " · ".join(
+                    part
+                    for part in (
+                        "OFFICIAL DIRECT VAA SOURCE",
+                        (
+                            f"ISSUED {advisory.get('issued_at_utc')}"
+                            if advisory.get("issued_at_utc")
+                            else None
+                        ),
+                    )
+                    if part
+                )
+            else:
+                title = (
+                    str(
+                        advisory.get("name") or "VOLCANIC ASH ADVISORY"
+                    ).strip()
+                    if advisory_kind == "VA_SIGMET"
+                    else " · ".join(
+                        part
+                        for part in (
+                            str(advisory.get("volcano") or "VOLCANO ADVISORY"),
+                            str(advisory.get("notam_id") or ""),
+                        )
+                        if part
+                    )
+                )
+                source_text = str(advisory.get("text") or "").strip()
+                derived_text = str(advisory.get("derived") or "").strip()
+                meta = " · ".join(
+                    part
+                    for part in (
+                        "SOURCE-HELD OFP NOTICE",
+                        f"SOURCE p{advisory.get('source_page')}" if advisory.get("source_page") else None,
+                        str(advisory.get("valid_from") or "") or None,
+                        str(advisory.get("valid_to") or "") or None,
+                    )
+                    if part
+                )
             title_lines = _wrap(title, SANS_BOLD, T_SMALL, cell_w - 16.0)
             applicability = (
                 f"APPLICABILITY · {derived_text}"

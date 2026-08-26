@@ -7,11 +7,12 @@ import httpx
 from pypdf import PdfReader
 import pytest
 
-from app.odss.briefing import build_route_map, render_route_svg
+from app.odss.briefing import build_briefing_view, build_route_map, render_route_svg
 from app.odss.reporting import render_pdf
 from app.odss.parser import _parse_waypoints
 from app.odss.vaa import (
     assess_volcanic_ash,
+    build_direct_vaa_source_review,
     evaluate_vaa,
     extract_embedded_vaa,
     fetch_awc_snapshot,
@@ -447,6 +448,32 @@ def test_map_contract_and_schematic_include_only_verified_hazards() -> None:
     assert cleared.hazards_geojson["features"] == []
 
 
+def test_map_prefers_explicit_va_sigmet_review_over_legacy_combined_review() -> None:
+    flight = _flight()
+    flight["va_sigmet_review"] = evaluate_vaa(
+        flight,
+        _snapshot([_advisory()]),
+    )
+    flight["vaa_review"] = evaluate_vaa(flight, _snapshot([]))
+
+    contract = build_map_contract(flight, [], MapSettings(provider="schematic"))
+    route_map = build_route_map(flight)
+
+    assert len(contract.hazards_geojson["features"]) == 1
+    assert contract.metadata["va_sigmet_status"] == "affected"
+    assert contract.metadata["vaa_status"] == "affected"
+    assert route_map["va_sigmet_status"] == "affected"
+    assert route_map["vaa_status"] == "affected"
+
+    # A stale legacy combined review cannot put VA SIGMET geometry back after
+    # the explicit VA SIGMET evaluator has cleared it.
+    flight["vaa_review"] = flight["va_sigmet_review"]
+    flight["va_sigmet_review"] = evaluate_vaa(flight, _snapshot([]))
+    cleared = build_map_contract(flight, [], MapSettings(provider="schematic"))
+    assert cleared.hazards_geojson["features"] == []
+    assert cleared.metadata["va_sigmet_status"] == "not_applicable"
+
+
 def test_awc_sigmet_only_does_not_claim_complete_vaac_coverage(monkeypatch) -> None:
     monkeypatch.delenv("ODSS_VAAC_ADVISORY_SOURCE", raising=False)
     snapshot = _snapshot([])
@@ -461,6 +488,238 @@ def test_awc_sigmet_only_does_not_claim_complete_vaac_coverage(monkeypatch) -> N
         review["coverage_ledger"]["responsible_vaac_advisory_and_vag"]["available"]
         is False
     )
+
+
+def test_va_sigmet_and_direct_vaa_source_reviews_are_distinct(monkeypatch) -> None:
+    """A VA SIGMET hit must not turn an unmounted VAA source into "found"."""
+    monkeypatch.delenv("ODSS_VAAC_ADVISORY_SOURCE", raising=False)
+    flight = _flight()
+
+    legacy = assess_volcanic_ash(
+        flight,
+        [],
+        snapshot=_snapshot([_advisory()]),
+    )
+
+    assert flight["va_sigmet_review"]["product"] == "VA_SIGMET"
+    assert flight["va_sigmet_review"]["status"] == "affected"
+    assert len(flight["va_sigmet_review"]["hazard_features"]) == 1
+    direct = flight["direct_vaa_source_review"]
+    assert direct["product"] == "VAA"
+    assert direct["status"] == "review_required"
+    assert direct["source_status"] == "unavailable"
+    assert direct["applicability_status"] == "not_assessed"
+    assert direct["official_advisory_count"] == 0
+    assert "direct_vaa_applicability_not_assessed" in direct["reason_codes"]
+    # Existing callers still receive and can read the legacy combined review.
+    assert legacy is flight["vaa_review"]
+
+
+def test_direct_vaa_source_review_counts_only_route_responsible_centres() -> None:
+    flight = _flight()  # The route resolves to DARWIN.
+    tokyo_advisory = {
+        "centre": "TOKYO",
+        "vaac": "TOKYO",
+        "advisory_number": "2026/101",
+        "issued_at_utc": "2026-07-22T03:00:00+00:00",
+        "phases": [],
+    }
+
+    review = build_direct_vaa_source_review(
+        flight,
+        snapshots=[{
+            "centre": "TOKYO",
+            "provider": "jma-tokyo-vaac",
+            "status": "available",
+            "coverage_status": "tokyo_vaac_area_direct_advisories",
+            "advisory_count": 1,
+            "advisories": [tokyo_advisory],
+        }],
+        mounted=[{
+            "token": "jma-tokyo",
+            "centre": "TOKYO",
+            "provider": "jma-tokyo-vaac",
+        }],
+    )
+
+    assert review["responsible_centres"] == ["DARWIN"]
+    assert review["reached_responsible_centres"] == []
+    assert review["source_status"] == "unavailable"
+    assert review["official_advisory_count"] == 0
+    assert review["official_advisories"] == []
+
+
+def test_direct_vaa_source_review_is_partial_until_every_responsible_centre_is_reached() -> None:
+    flight = _flight()
+    flight["route_waypoints"][-1].update(latitude=14.5, longitude=121.0)
+    mounted = [
+        {"token": "darwin-gts", "centre": "DARWIN", "provider": "noaa-gts-darwin-vaa"},
+        {"token": "jma-tokyo", "centre": "TOKYO", "provider": "jma-tokyo-vaac"},
+    ]
+    darwin = {
+        "centre": "DARWIN",
+        "provider": "noaa-gts-darwin-vaa",
+        "status": "available",
+        "coverage_status": "darwin_vaac_area_direct_advisories",
+        "advisory_count": 0,
+        "advisories": [],
+    }
+
+    partial = build_direct_vaa_source_review(
+        flight,
+        snapshots=[darwin],
+        mounted=mounted,
+    )
+    assert partial["responsible_centres"] == ["DARWIN", "TOKYO"]
+    assert partial["reached_responsible_centres"] == ["DARWIN"]
+    assert partial["source_status"] == "partial"
+    assert partial["applicability_status"] == "not_assessed"
+
+    complete_sources = build_direct_vaa_source_review(
+        flight,
+        snapshots=[darwin, {
+            "centre": "TOKYO",
+            "provider": "jma-tokyo-vaac",
+            "status": "available",
+            "coverage_status": "tokyo_vaac_area_direct_advisories",
+            "advisory_count": 0,
+            "advisories": [],
+        }],
+        mounted=mounted,
+    )
+    assert complete_sources["source_status"] == "available"
+    assert complete_sources["applicability_status"] == "not_assessed"
+    assert complete_sources["status"] == "review_required"
+    assert "verified_no_intersection" not in complete_sources["reason_codes"]
+
+
+def test_direct_vaa_source_review_never_resurrects_the_all_centre_ledger_as_responsibility() -> None:
+    review = build_direct_vaa_source_review(
+        {"route_waypoints": []},
+        snapshots=[{
+            "centre": centre,
+            "provider": "fixture",
+            "status": "available",
+            "coverage_status": "fixture",
+            "advisory_count": 0,
+            "advisories": [],
+        } for centre in ("ANCHORAGE", "DARWIN", "TOKYO")],
+        mounted=[],
+    )
+
+    assert review["responsible_centres"] == []
+    assert review["responsible_centre_receipts"] == []
+    assert review["source_status"] == "unavailable"
+    assert review["responsibility_review_required"] is True
+    assert "responsible_vaac_unresolved" in review["reason_codes"]
+
+
+def test_briefing_projects_va_sigmet_and_direct_vaa_without_counting_cfp_notice_as_official() -> None:
+    flight = _flight()
+    va_sigmet_review = evaluate_vaa(flight, _snapshot([_advisory()]))
+    va_sigmet_review["product"] = "VA_SIGMET"
+    direct_review = build_direct_vaa_source_review(
+        flight,
+        snapshots=[],
+        mounted=[],
+    )
+    flight["va_sigmet_review"] = va_sigmet_review
+    flight["direct_vaa_source_review"] = direct_review
+    flight["vaa_review"] = {**va_sigmet_review, "status": "affected"}
+    flight["weather"] = [{
+        "location": "WIIF",
+        "record_type": "VA_SIGMET",
+        "text": (
+            "WIIF JAKARTA FIR WV SIGMET 08 VALID 220400/220700 VA ERUPTION "
+            "MT KRAKATAU WI S0200 E10400 - S0200 E10600 - N0200 E10600 "
+            "SFC/FL400"
+        ),
+        "source_page": 13,
+    }]
+
+    view = build_briefing_view(flight, [], [])
+
+    assert view["va_sigmet"]["status"] == "affected"
+    assert view["va_sigmet"]["review"] is va_sigmet_review
+    assert len(view["vaa"]["cfp_notices"]) == 1
+    assert view["vaa"]["cfp_advisories"] == view["vaa"]["cfp_notices"]
+    assert view["vaa"]["direct_source_review"] is direct_review
+    assert view["vaa"]["official_advisory_count"] == 0
+    assert view["vaa"]["official_advisories"] == []
+    assert view["vaa"]["applicability_status"] == "not_assessed"
+    assert view["vaa"]["status"] == "review_required"
+
+
+def test_briefing_adapts_legacy_direct_snapshot_without_losing_source_truth() -> None:
+    flight = _flight()  # The route resolves to DARWIN.
+    flight["vaa_review"] = {
+        "status": "affected",
+        "direct_vaac_snapshot": {
+            "centre": "DARWIN",
+            "provider": "noaa-gts-darwin-vaa",
+            "status": "available",
+            "coverage_status": "darwin_vaac_area_direct_advisories",
+            "advisory_count": 1,
+            "advisories": [{
+                "vaac": "DARWIN",
+                "advisory_number": "2026/017",
+                "volcano": "KRAKATAU",
+                "issued_at_utc": "2026-08-25T18:00:00+00:00",
+            }],
+        },
+        "vaac_centre_ledger": [{
+            "centre": "DARWIN",
+            "provider": "noaa-gts-darwin-vaa",
+            "status": "available",
+            "coverage_status": "darwin_vaac_area_direct_advisories",
+            "advisory_count": 1,
+        }],
+    }
+
+    view = build_briefing_view(flight, [], [])
+
+    direct = view["vaa"]["direct_source_review"]
+    assert direct["compatibility_source"] == (
+        "vaa_review.direct_vaac_snapshot"
+    )
+    assert view["vaa"]["status"] == "review_required"
+    assert view["vaa"]["source_status"] == "available"
+    assert view["vaa"]["applicability_status"] == "not_assessed"
+    assert view["vaa"]["official_advisory_count"] == 1
+    assert view["vaa"]["official_advisories"][0]["centre"] == "DARWIN"
+    assert view["va_sigmet"]["status"] == "affected"
+
+
+def test_vaac_reach_uses_explicit_responsible_receipts_not_all_centre_ledger() -> None:
+    from app.odss.briefing import _vaac_reach_summary
+
+    flight = _flight()
+    flight["vaa_review"] = {
+        "vaac_centre_ledger": [
+            {"centre": centre, "status": "available"}
+            for centre in ("ANCHORAGE", "DARWIN", "TOKYO")
+        ]
+    }
+    flight["direct_vaa_source_review"] = {
+        "responsible_centres": ["DARWIN"],
+        "responsible_centre_receipts": [{
+            "centre": "DARWIN",
+            "status": "not_mounted",
+            "reached": False,
+        }],
+        "responsible_line": (
+            "Responsible for this route: DARWIN - NOT reached: DARWIN "
+            "(review gap)"
+        ),
+        "responsibility_review_required": False,
+        "responsibility_source": {"document": "ICAO Doc 9766 fixture"},
+    }
+
+    summary = _vaac_reach_summary(flight)
+
+    assert summary["summary"] == "3/3 reached"  # all-nine audit tally only
+    assert summary["responsible"] == [{"centre": "DARWIN", "reached": False}]
+    assert "NOT reached: DARWIN" in summary["responsible_line"]
 
 
 

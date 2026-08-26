@@ -38,6 +38,7 @@ from app.odss.combined_brief import (
     _operational_phase_actions,
     _operational_terrain_status_lines,
     _operational_terrain_summary,
+    _operational_volcano_advisory_selection,
     _route_anchor_entries,
     _terrain_table_points,
     combined_briefing_cache_token,
@@ -4758,6 +4759,37 @@ def test_performance_margin_presentation_is_fail_closed_and_tri_state():
 def test_hazard_page_states_the_direct_vaac_centre_coverage(tmp_path):
     flight = sample_flight()
     flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["va_sigmet_review"] = {
+        "status": "not_applicable",
+        "product": "VA_SIGMET",
+    }
+    flight["direct_vaa_source_review"] = {
+        "status": "review_required",
+        "source_status": "partial",
+        "applicability_status": "not_assessed",
+        "official_advisory_count": 2,
+        "official_advisories": [{
+            "centre": "DARWIN",
+            "advisory_number": "2026/017",
+            "volcano": "KRAKATAU",
+            "issued_at_utc": "2026-08-25T18:00:00+00:00",
+            "raw_text": "VA ADVISORY FOR KRAKATAU",
+        }],
+        "responsible_centres": ["DARWIN", "TOULOUSE"],
+        "responsible_centre_receipts": [
+            {"centre": "DARWIN", "reached": True},
+            {"centre": "TOULOUSE", "reached": False},
+        ],
+        "responsible_line": (
+            "Responsible for this route: DARWIN, TOULOUSE - NOT reached: "
+            "TOULOUSE (review gap)"
+        ),
+    }
+    flight["vaa_review"] = {
+        **flight["va_sigmet_review"],
+        "status": "review_required",
+        "direct_vaa_source_review": flight["direct_vaa_source_review"],
+    }
     findings = [
         finding
         for finding in sample_findings()
@@ -4768,8 +4800,154 @@ def test_hazard_page_states_the_direct_vaac_centre_coverage(tmp_path):
         flight, findings, [], out, include_audit_appendix=True
     )
     hazard = "\n".join(page.get_text() for page in fitz.open(out))
-    assert "VAAC CENTRES" in hazard
+    assert "VA SIGMET REVIEW" in hazard
+    assert "DIRECT VAA SOURCE" in hazard
+    assert "partial | 2 held | applicability not assessed" in hazard
+    assert "VAA / VAAC REACH" in hazard
     assert "0/9 reached" in hazard
+
+
+def test_operational_hazard_page_keeps_va_sigmet_and_direct_vaa_distinct(
+    tmp_path,
+):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["va_sigmet_review"] = {
+        "status": "not_applicable",
+        "product": "VA_SIGMET",
+    }
+    flight["direct_vaa_source_review"] = {
+        "status": "review_required",
+        "source_status": "partial",
+        "applicability_status": "not_assessed",
+        "official_advisory_count": 2,
+        "official_advisories": [{
+            "centre": "DARWIN",
+            "advisory_number": "2026/017",
+            "volcano": "KRAKATAU",
+            "issued_at_utc": "2026-08-25T18:00:00+00:00",
+            "raw_text": "VA ADVISORY FOR KRAKATAU",
+        }],
+        "responsible_centres": ["DARWIN"],
+        "responsible_centre_receipts": [
+            {"centre": "DARWIN", "reached": True},
+        ],
+        "responsible_line": "Responsible for this route: DARWIN - all reached",
+    }
+    flight["vaa_review"] = {
+        **flight["va_sigmet_review"],
+        "status": "review_required",
+        "direct_vaa_source_review": flight["direct_vaa_source_review"],
+    }
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "operational-vaa-products.pdf"
+
+    render_combined_briefing(flight, findings, [], out)
+
+    hazard = " ".join(" ".join(
+        page.get_text()
+        for page in fitz.open(out)
+        if "WEATHER / ROUTE HAZARDS" in page.get_text()
+    ).split())
+    assert "VA SIGMET review - not applicable." in hazard
+    assert (
+        "Direct VAA / VAAC source - partial; 2 official advisory record(s) "
+        "held; applicability not assessed."
+    ) in hazard
+    assert "Responsible for this route: DARWIN - all reached." in hazard
+    assert "NAMED DIRECT / OFP VOLCANO ADVISORIES" in hazard
+    assert "DARWIN · 2026/017 · KRAKATAU" in hazard
+    assert "OFFICIAL DIRECT VAA SOURCE" in hazard
+
+
+def test_operational_hazard_card_limit_keeps_one_ofp_va_sigmet_notice() -> None:
+    direct = [
+        {"advisory_number": f"2026/{index:03d}", "centre": "DARWIN"}
+        for index in range(1, 5)
+    ]
+    ofp = [{"name": "WIIF WV SIGMET 08", "advisory_kind": "VA_SIGMET"}]
+
+    held, displayed = _operational_volcano_advisory_selection(direct, ofp)
+
+    assert len(held) == 5
+    assert len(displayed) == 4
+    assert [row["advisory_number"] for row in displayed[:3]] == [
+        "2026/001",
+        "2026/002",
+        "2026/003",
+    ]
+    assert displayed[-1]["name"] == "WIIF WV SIGMET 08"
+    assert displayed[-1]["_publication_source"] == "ofp"
+
+
+def test_legacy_direct_snapshot_source_truth_reaches_both_hazard_pdf_surfaces(
+    tmp_path,
+) -> None:
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["vaa_review"] = {
+        "status": "affected",
+        "direct_vaac_snapshot": {
+            "centre": "DARWIN",
+            "provider": "noaa-gts-darwin-vaa",
+            "status": "available",
+            "coverage_status": "darwin_vaac_area_direct_advisories",
+            "advisory_count": 1,
+            "advisories": [{
+                "vaac": "DARWIN",
+                "advisory_number": "2026/017",
+                "volcano": "KRAKATAU",
+                "issued_at_utc": "2026-08-25T18:00:00+00:00",
+            }],
+        },
+        "vaac_centre_ledger": [{
+            "centre": "DARWIN",
+            "provider": "noaa-gts-darwin-vaa",
+            "status": "available",
+            "coverage_status": "darwin_vaac_area_direct_advisories",
+            "advisory_count": 1,
+        }],
+    }
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    operational_out = tmp_path / "legacy-direct-vaa-operational.pdf"
+    audit_out = tmp_path / "legacy-direct-vaa-audit.pdf"
+
+    render_combined_briefing(
+        flight,
+        findings,
+        [],
+        operational_out,
+    )
+    render_combined_briefing(
+        flight,
+        findings,
+        [],
+        audit_out,
+        include_audit_appendix=True,
+    )
+
+    operational_text = " ".join(" ".join(
+        page.get_text() for page in fitz.open(operational_out)
+    ).split())
+    audit_text = " ".join(" ".join(
+        page.get_text() for page in fitz.open(audit_out)
+    ).split())
+    assert (
+        "Direct VAA / VAAC source - partial; 1 official advisory record(s) "
+        "held; applicability not assessed."
+    ) in operational_text
+    assert (
+        "DIRECT VAA SOURCE partial | 1 held | applicability not assessed"
+    ) in audit_text
+    assert "DARWIN · 2026/017 · KRAKATAU" in operational_text
 
 
 def test_hazard_page_prints_one_honest_fallback_when_no_sigmet_cards_exist(
