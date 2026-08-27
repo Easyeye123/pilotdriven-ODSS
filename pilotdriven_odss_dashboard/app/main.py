@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import Callable
+from contextlib import asynccontextmanager, contextmanager
+import fcntl
 from hashlib import sha256
-from contextlib import asynccontextmanager
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import secrets
 import sqlite3
 from pathlib import Path
 import traceback
+from typing import Any
 from urllib.parse import urlsplit
 import uuid
 
@@ -31,12 +33,15 @@ from .analysis import (
 )
 from .config import APP_VERSION, BASE_DIR, DATA_DIR
 from .database import (
+    abort_company_briefing_reference_publication,
     attach_report,
     claim_analysis,
+    commit_company_briefing_reference_publication,
     complete_analysis,
     create_flight,
     create_personal_note,
     delete_personal_note,
+    fail_company_briefing_reference_publication,
     get_flight_by_analysis_id,
     get_flight_by_service_request,
     get_flight_for_tenant,
@@ -44,6 +49,8 @@ from .database import (
     init_db,
     list_flights,
     record_audit_event,
+    find_company_briefing_reference_publication,
+    prepare_company_briefing_reference_publication,
     restore_analysis_snapshot,
     restore_personal_note,
     restore_analysis_state,
@@ -60,6 +67,10 @@ from .odss.level3 import generate_level3_artifacts
 from .odss.profile_chart_delivery import (
     held_profile_chart,
     render_held_profile_chart_page,
+)
+from .odss.governed_deferred_extract import (
+    governed_deferred_extracts,
+    normalize_governed_deferred_reference_payload,
 )
 from .odss.combined_brief import (
     combined_briefing_cache_token,
@@ -114,6 +125,48 @@ UPLOAD_CHUNK_BYTES = 1024 * 1024
 AUTH_REALM = "PilotDriven ODSS"
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _combined_report_lock(flight_id: Any):
+    """Serialise one flight's on-demand combined-report cache writers.
+
+    The file lock also coordinates separate service worker processes. Cache
+    files are content-addressed, but a lock still prevents duplicate renders
+    and keeps pruning from racing another writer.
+    """
+
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = REPORT_DIR / f".flight_{int(flight_id)}_combined.lock"
+    with lock_path.open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _prune_combined_report_cache(
+    flight_id: Any,
+    *,
+    keep: Path,
+    max_entries: int = 4,
+) -> None:
+    """Bound content-addressed cache growth while the flight lock is held."""
+
+    candidates = sorted(
+        REPORT_DIR.glob(f"flight_{int(flight_id)}_combined_*.pdf"),
+        key=lambda path: path.stat().st_mtime_ns,
+        reverse=True,
+    )
+    retained = {keep}
+    for candidate in candidates:
+        if candidate == keep:
+            continue
+        if len(retained) < max_entries:
+            retained.add(candidate)
+            continue
+        candidate.unlink(missing_ok=True)
 
 
 def _configured_auth() -> tuple[str, str] | None:
@@ -512,6 +565,74 @@ def _refresh_reports_with_primary_map(flight, result: dict) -> None:
         _record_map_refresh_warning(result.get("analysis_path"), error_type)
 
 
+def _carry_forward_company_briefing_references(
+    result: dict,
+    previous_analysis: dict | None,
+    *,
+    tenant_id: str | None,
+    actor_id: str | None,
+    analysis_id: str,
+    previous_analysis_path: str | None,
+) -> dict[str, Any] | None:
+    """Retain still-valid governed PDF evidence across timing re-analysis."""
+
+    previous = (previous_analysis or {}).get("company_briefing_references")
+    if not isinstance(previous, dict) or not result.get("analysis_path"):
+        return None
+    analysis_path = Path(str(result["analysis_path"]))
+    current = load_analysis(str(analysis_path))
+    if not current:
+        raise OSError("Regenerated analysis JSON is unavailable")
+    try:
+        normalized = normalize_governed_deferred_reference_payload(
+            (current.get("flight") or {}).get("deferred_items") or [],
+            previous,
+            flight=current.get("flight") or {},
+        )
+    except ValueError:
+        logger.warning(
+            "Stored company briefing references no longer bind after "
+            "re-analysis; governed PDF evidence was cleared."
+        )
+        return None
+    current["company_briefing_references"] = normalized
+    staged = analysis_path.with_name(
+        f"{analysis_path.name}.company-briefing-carry-{uuid.uuid4().hex}.tmp"
+    )
+    try:
+        staged.write_text(json.dumps(current, indent=2), encoding="utf-8")
+        publish_staged_artifacts([(staged, analysis_path)])
+        if tenant_id and actor_id:
+            prior_sha256 = None
+            source_publication_id = None
+            if previous_analysis_path:
+                previous_path = Path(str(previous_analysis_path))
+                if previous_path.is_file():
+                    prior_sha256 = sha256(previous_path.read_bytes()).hexdigest()
+                    source_publication = (
+                        find_company_briefing_reference_publication(
+                            tenant_id=tenant_id,
+                            analysis_id=analysis_id,
+                            target_analysis_path=str(previous_path),
+                            states=("committed",),
+                        )
+                    )
+                    if source_publication is not None:
+                        source_publication_id = str(source_publication["id"])
+            return {
+                "tenant_id": tenant_id,
+                "actor_id": actor_id,
+                "analysis_id": analysis_id,
+                "reference_count": len(normalized["references"]),
+                "governed_reference_status": normalized["status"],
+                "prior_artifact_sha256": prior_sha256,
+                "source_publication_operation_id": source_publication_id,
+            }
+    finally:
+        staged.unlink(missing_ok=True)
+    return None
+
+
 def _execute_analysis(
     flight_id: int,
     flight,
@@ -584,6 +705,14 @@ def _execute_analysis(
                 exc.error_type,
                 exc_info=True,
             )
+        carried_company_references = _carry_forward_company_briefing_references(
+            result,
+            previous_analysis,
+            tenant_id=tenant_id,
+            actor_id=(str(flight["user_id"]) if flight["user_id"] else None),
+            analysis_id=_public_analysis_id(flight),
+            previous_analysis_path=flight["analysis_path"],
+        )
         if flight["tenant_id"] and flight["user_id"]:
             result.update(
                 generate_level3_artifacts(
@@ -614,6 +743,35 @@ def _execute_analysis(
         )
         if report_failure is None:
             _refresh_reports_with_primary_map(flight, result)
+        if carried_company_references is not None:
+            final_analysis_path = Path(str(result["analysis_path"]))
+            record_audit_event(
+                tenant_id=str(carried_company_references["tenant_id"]),
+                actor_id=str(carried_company_references["actor_id"]),
+                action="analysis.company_briefing_references_carried_forward",
+                resource_type="analysis",
+                resource_id=str(carried_company_references["analysis_id"]),
+                details={
+                    "reference_count": carried_company_references[
+                        "reference_count"
+                    ],
+                    "governed_reference_status": carried_company_references[
+                        "governed_reference_status"
+                    ],
+                    "prior_artifact_sha256": carried_company_references[
+                        "prior_artifact_sha256"
+                    ],
+                    "new_artifact_sha256": sha256(
+                        final_analysis_path.read_bytes()
+                    ).hexdigest(),
+                    "source_publication_operation_id": (
+                        carried_company_references[
+                            "source_publication_operation_id"
+                        ]
+                    ),
+                    "reason": "analysis_recalculated_and_binding_revalidated",
+                },
+            )
         update_status(flight_id, "Completed", tenant_id=tenant_id)
         for (previous_path, directory), (new_path, _) in zip(
             previous_artifacts,
@@ -1231,6 +1389,13 @@ class ServicePersonalNoteRequest(BaseModel):
     include_level2: StrictBool
 
 
+class ServiceCompanyBriefingReferencesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    status: str = Field(pattern="^(available|unavailable)$")
+    references: list[dict[str, Any]] = Field(min_length=0, max_length=16)
+
+
 class ServiceLevel3AnswerRequest(BaseModel):
     answer: str | None = Field(default=None, max_length=500)
     declined: bool = False
@@ -1438,6 +1603,9 @@ def _service_summary(flight) -> dict:
             "level_3_report": f"/v1/analyses/{analysis_id}/reports/level-3",
             "timing": f"/v1/analyses/{analysis_id}/timing",
             "surface_overlays": f"/v1/analyses/{analysis_id}/surface-overlays",
+            "company_briefing_references": (
+                f"/v1/analyses/{analysis_id}/company-briefing-references"
+            ),
             "weather_charts": f"/v1/analyses/{analysis_id}/weather-charts/{{chart_number}}",
             "render_reports": f"/v1/analyses/{analysis_id}/reports/render",
         },
@@ -1866,6 +2034,11 @@ def get_service_briefing(request: Request, analysis_id: str):
         "schema_version": analysis.get("schema_version"),
         "flight": analysis_flight,
         "briefing": view.get("briefing"),
+        "company_briefing_references": (
+            analysis.get("company_briefing_references")
+            if isinstance(analysis.get("company_briefing_references"), dict)
+            else None
+        ),
         "timing": view.get("timing"),
         "personal_notes": analysis_flight.get("personal_notes") or [],
         "warnings": warnings,
@@ -2235,6 +2408,293 @@ def delete_service_personal_note(
     )
 
 
+@app.post("/v1/analyses/{analysis_id}/company-briefing-references")
+def update_service_company_briefing_references(
+    request: Request,
+    analysis_id: str,
+    payload: ServiceCompanyBriefingReferencesRequest,
+):
+    """Store only complete source-bound MEL/CDL evidence for the PDF.
+
+    The combined report is generated on demand and its cache key includes the
+    exact analysis JSON content digest. Publishing the normalized JSON
+    therefore invalidates every previous combined-report cache token without
+    changing the already-current Level 1/2 reports.
+    """
+
+    identity = request_service_identity(request)
+    flight = _service_flight(analysis_id, identity)
+    if str(flight["status"] or "") != "Completed":
+        raise HTTPException(
+            status_code=409,
+            detail="Company briefing references require a completed analysis.",
+        )
+
+    analysis_path = _stored_file(
+        flight["analysis_path"],
+        RESULT_DIR,
+        "Analysis not generated",
+    )
+    try:
+        prior_artifact = analysis_path.read_bytes()
+        current = json.loads(prior_artifact)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="The current analysis artifact is unavailable or invalid.",
+        ) from exc
+    if not isinstance(current, dict):
+        raise HTTPException(status_code=409, detail="Analysis is not complete")
+
+    deferred_items = (current.get("flight") or {}).get("deferred_items") or []
+    try:
+        normalized = normalize_governed_deferred_reference_payload(
+            deferred_items,
+            payload.model_dump(),
+            flight=current.get("flight") or {},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    publication_changed = current.get("company_briefing_references") != normalized
+    updated = json.loads(json.dumps(current))
+    updated["company_briefing_references"] = normalized
+    target_artifact = (
+        json.dumps(updated, indent=2).encode("utf-8")
+        if publication_changed
+        else prior_artifact
+    )
+    prior_artifact_sha256 = sha256(prior_artifact).hexdigest()
+    target_artifact_sha256 = sha256(target_artifact).hexdigest()
+    payload_sha256 = sha256(
+        json.dumps(
+            normalized,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+    existing = find_company_briefing_reference_publication(
+        tenant_id=identity.tenant_id,
+        analysis_id=analysis_id,
+        payload_sha256=payload_sha256,
+        target_artifact_sha256=target_artifact_sha256,
+        target_analysis_path=str(analysis_path),
+        states=("committed",),
+    )
+    if existing is not None and not publication_changed:
+        return JSONResponse({
+            "analysis_id": analysis_id,
+            "company_briefing_references": normalized,
+            "publication": {"state": "unchanged"},
+            "audit": {
+                "state": "recorded",
+                "event_id": str(existing["audit_event_id"]),
+            },
+            "combined_report": {
+                "state": "unchanged",
+                "render": "on_demand",
+                "href": f"/v1/analyses/{analysis_id}/reports/combined",
+            },
+        })
+
+    target_path = analysis_path
+    if publication_changed:
+        target_path = analysis_path.with_name(
+            f"{analysis_path.stem}.company-briefing-{uuid.uuid4().hex}.json"
+        )
+        staged = target_path.with_name(f"{target_path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with staged.open("wb") as output:
+                output.write(target_artifact)
+                output.flush()
+                os.fsync(output.fileno())
+            publish_staged_artifacts([(staged, target_path)])
+        except Exception as exc:
+            target_valid = False
+            try:
+                target_valid = (
+                    target_path.is_file()
+                    and sha256(target_path.read_bytes()).hexdigest()
+                    == target_artifact_sha256
+                )
+            except OSError:
+                pass
+            if target_valid:
+                logger.warning(
+                    "Company briefing target committed with a cleanup warning "
+                    "tenant=%s analysis=%s error_type=%s",
+                    identity.tenant_id,
+                    analysis_id,
+                    type(exc).__name__,
+                )
+            else:
+                target_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "message": (
+                            "The governed reference artifact could not be prepared. "
+                            "The prior analysis remains active; retry the same payload."
+                        ),
+                        "publication_persisted": False,
+                        "publication_state": "unchanged",
+                        "audit_state": "not_started",
+                        "retry_same_payload": True,
+                    },
+                ) from exc
+        finally:
+            staged.unlink(missing_ok=True)
+        try:
+            directory_fd = os.open(str(target_path.parent), os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError as exc:
+            target_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": (
+                        "The governed reference artifact could not be made durable. "
+                        "The prior analysis remains active; retry the same payload."
+                    ),
+                    "publication_persisted": False,
+                    "publication_state": "unchanged",
+                    "audit_state": "not_started",
+                    "retry_same_payload": True,
+                },
+            ) from exc
+    governed_extract_ids = [
+        str(extract["extract_id"])
+        for extract in governed_deferred_extracts(deferred_items, normalized)
+    ]
+    operation = prepare_company_briefing_reference_publication(
+        flight_id=int(flight["id"]),
+        tenant_id=identity.tenant_id,
+        analysis_id=analysis_id,
+        actor_id=identity.user_id,
+        payload_sha256=payload_sha256,
+        prior_analysis_path=str(analysis_path),
+        target_analysis_path=str(target_path),
+        prior_artifact_sha256=prior_artifact_sha256,
+        target_artifact_sha256=target_artifact_sha256,
+        audit_details={
+            "reference_count": len(normalized["references"]),
+            "governed_reference_status": normalized["status"],
+            "governed_extract_ids": governed_extract_ids,
+            "prior_artifact_sha256": prior_artifact_sha256,
+            "new_artifact_sha256": target_artifact_sha256,
+            "combined_report": (
+                "invalidated_for_on_demand_render"
+                if publication_changed
+                else "publication_unchanged"
+            ),
+        },
+    )
+    if operation is None:
+        if publication_changed:
+            target_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=409,
+            detail="Company briefing references require a completed, idle analysis.",
+        )
+
+    operation_id = str(operation["id"])
+    try:
+        claimed_prior_sha256 = sha256(analysis_path.read_bytes()).hexdigest()
+    except OSError:
+        claimed_prior_sha256 = None
+    if claimed_prior_sha256 != prior_artifact_sha256:
+        abort_company_briefing_reference_publication(
+            operation_id,
+            error="The analysis artifact changed before the claim was acquired.",
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="The analysis changed concurrently; retry against the latest briefing.",
+        )
+
+    try:
+        committed = commit_company_briefing_reference_publication(operation_id)
+    except Exception as exc:
+        # A commit can report an error after SQLite made it durable. Re-read
+        # before compensating so a successful newer state is never undone.
+        committed = find_company_briefing_reference_publication(
+            tenant_id=identity.tenant_id,
+            analysis_id=analysis_id,
+            payload_sha256=payload_sha256,
+            target_artifact_sha256=target_artifact_sha256,
+            target_analysis_path=str(target_path),
+            states=("committed",),
+        )
+        if committed is None:
+            prior_valid = False
+            try:
+                prior_valid = (
+                    analysis_path.is_file()
+                    and sha256(analysis_path.read_bytes()).hexdigest()
+                    == prior_artifact_sha256
+                )
+            except OSError:
+                pass
+            if prior_valid:
+                released = abort_company_briefing_reference_publication(
+                    operation_id,
+                    error=f"Atomic commit failed: {type(exc).__name__}: {exc}",
+                )
+            else:
+                released = fail_company_briefing_reference_publication(
+                    operation_id,
+                    error=(
+                        "Atomic commit failed and the prior analysis artifact "
+                        f"is invalid: {type(exc).__name__}: {exc}"
+                    ),
+                )
+            if publication_changed:
+                target_path.unlink(missing_ok=True)
+            logger.exception(
+                "Company briefing atomic audit/pointer commit failed "
+                "tenant=%s analysis=%s operation_id=%s",
+                identity.tenant_id,
+                analysis_id,
+                operation_id,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": (
+                        "The governed reference publication was not activated "
+                        "because its atomic audit commit failed."
+                    ),
+                    "publication_persisted": False,
+                    "publication_state": (
+                        "unchanged" if released and prior_valid else "indeterminate"
+                    ),
+                    "audit_state": "failed",
+                    "retry_same_payload": bool(released and prior_valid),
+                },
+            ) from exc
+
+    return JSONResponse({
+        "analysis_id": analysis_id,
+        "company_briefing_references": normalized,
+        "publication": {
+            "state": "published" if publication_changed else "unchanged",
+        },
+        "audit": {
+            "state": "recorded",
+            "event_id": str(committed["audit_event_id"]),
+        },
+        "combined_report": {
+            "state": "invalidated" if publication_changed else "unchanged",
+            "render": "on_demand",
+            "href": f"/v1/analyses/{analysis_id}/reports/combined",
+        },
+    })
+
+
 @app.post("/v1/analyses/{analysis_id}/surface-overlays")
 async def update_service_surface_overlays(
     request: Request,
@@ -2343,7 +2803,11 @@ def get_service_combined_report(request: Request, analysis_id: str):
     analysis_path = _stored_file(
         flight["analysis_path"], RESULT_DIR, "Analysis not generated"
     )
-    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    # Parse and key the exact same immutable byte snapshot. An atomic governed
+    # reference update between separate read/stat calls must never let old
+    # evidence be cached under the new publication identity.
+    analysis_snapshot = analysis_path.read_bytes()
+    analysis = json.loads(analysis_snapshot)
     analysis_flight = analysis.get("flight") or {}
     findings = analysis.get("findings") or []
     warnings = (analysis.get("view") or {}).get("warnings") or []
@@ -2368,27 +2832,36 @@ def get_service_combined_report(request: Request, analysis_id: str):
         except (OSError, ValueError):
             analysis_flight["fuel_summary"] = None
     token = combined_briefing_cache_token(
-        analysis_path.stat().st_mtime_ns,
+        sha256(analysis_snapshot).hexdigest(),
         flight["id"],
     )
     cache_path = REPORT_DIR / f"flight_{flight['id']}_combined_{token}.pdf"
-    if not cache_path.exists():
-        staging = cache_path.with_suffix(".tmp")
-        try:
-            render_combined_briefing(
-                analysis_flight,
-                findings,
-                warnings,
-                staging,
-                source_pdf_path=source_path,
-                weather_charts=weather_charts,
+    with _combined_report_lock(flight["id"]):
+        if not cache_path.exists():
+            staging = REPORT_DIR / (
+                f".{cache_path.name}.{uuid.uuid4().hex}.tmp"
             )
-            staging.replace(cache_path)
-        finally:
-            staging.unlink(missing_ok=True)
-        for stale in REPORT_DIR.glob(f"flight_{flight['id']}_combined_*.pdf"):
-            if stale != cache_path:
-                stale.unlink(missing_ok=True)
+            try:
+                render_combined_briefing(
+                    analysis_flight,
+                    findings,
+                    warnings,
+                    staging,
+                    source_pdf_path=source_path,
+                    weather_charts=weather_charts,
+                    company_briefing_references=(
+                        analysis.get("company_briefing_references")
+                        if isinstance(
+                            analysis.get("company_briefing_references"),
+                            dict,
+                        )
+                        else None
+                    ),
+                )
+                staging.replace(cache_path)
+            finally:
+                staging.unlink(missing_ok=True)
+        _prune_combined_report_cache(flight["id"], keep=cache_path)
     return FileResponse(
         cache_path,
         filename=combined_briefing_filename(

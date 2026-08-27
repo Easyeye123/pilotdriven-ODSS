@@ -1621,6 +1621,16 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 details,
                 {
                     "classification": item["item_type"].lower(),
+                    "deferred_entry_id": item.get("deferred_entry_id"),
+                    "classification_status": item.get("classification_status"),
+                    "classification_reason": item.get("classification_reason"),
+                    "governed_match_status": item.get("governed_match_status"),
+                    "source_identifier": item.get("source_identifier"),
+                    "source_group_tokens": list(item.get("source_group_tokens") or []),
+                    "source_page": item.get("source_page"),
+                    "source_line_start": item.get("source_line_start"),
+                    "source_line_end": item.get("source_line_end"),
+                    "source_lines": list(item.get("source_lines") or []),
                     "source_references": [
                         _cfp_source_reference(
                             flight,

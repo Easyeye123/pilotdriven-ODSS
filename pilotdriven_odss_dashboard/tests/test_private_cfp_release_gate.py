@@ -32,6 +32,10 @@ def test_private_release_manifest_holds_at_least_the_pinned_set():
     # remove the case from both the manifest and REQUIRED_CASE_IDS unnoticed.
     assert "SQ910-SIN-MNL-21AUG" in REQUIRED_CASE_IDS
     assert "SQ910-SIN-MNL-21AUG" in case_ids
+    # SQ481 is the current literal boss-feedback OFP. Keep it pinned as a
+    # release requirement, not merely present as an optional manifest row.
+    assert "SQ481-JNB-SIN-25AUG" in REQUIRED_CASE_IDS
+    assert "SQ481-JNB-SIN-25AUG" in case_ids
     assert REQUIRED_CASE_IDS <= case_ids
     assert len(case_ids) == len(cases), "case ids must be unique"
     assert len({case["filename"] for case in cases}) == len(cases)
@@ -61,7 +65,7 @@ def test_odss_runtime_image_is_reachable_only_through_the_full_pytest_stage():
 
 
 def test_private_corpus_checks_lossless_and_operational_publications():
-    """The corpus proves both complete facts and the seven-page download."""
+    """The corpus proves both complete facts and the eight-page download."""
     runner = (ROOT / "scripts" / "run_private_cfp_corpus.py").read_text(
         encoding="utf-8"
     )

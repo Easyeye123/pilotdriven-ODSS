@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 import sqlite3
 from typing import Any
 import uuid
@@ -45,7 +46,8 @@ CREATE TABLE IF NOT EXISTS flights (
     report_refresh_state TEXT NOT NULL DEFAULT 'pending',
     report_refresh_error_type TEXT,
     report_refresh_updated_at TEXT,
-    analysis_failure_category TEXT
+    analysis_failure_category TEXT,
+    analysis_claim_token TEXT
 );
 
 CREATE TABLE IF NOT EXISTS personal_notes (
@@ -123,6 +125,49 @@ END;
 '''
 
 
+COMPANY_BRIEFING_PUBLICATION_SCHEMA = '''
+CREATE TABLE IF NOT EXISTS company_briefing_reference_publications (
+    id TEXT PRIMARY KEY,
+    flight_id INTEGER NOT NULL,
+    tenant_id TEXT NOT NULL,
+    analysis_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    claim_token TEXT NOT NULL UNIQUE,
+    payload_sha256 TEXT NOT NULL,
+    prior_analysis_path TEXT NOT NULL,
+    target_analysis_path TEXT NOT NULL,
+    prior_artifact_sha256 TEXT NOT NULL,
+    target_artifact_sha256 TEXT NOT NULL,
+    audit_event_id TEXT NOT NULL UNIQUE,
+    audit_details_json TEXT NOT NULL,
+    prior_flight_state_json TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (
+        state IN ('prepared', 'committed', 'aborted', 'failed')
+    ),
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    committed_at TEXT,
+    FOREIGN KEY (flight_id) REFERENCES flights(id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_company_briefing_publications_analysis
+ON company_briefing_reference_publications (
+    tenant_id, analysis_id, created_at DESC
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_company_briefing_publications_active
+ON company_briefing_reference_publications (flight_id)
+WHERE state='prepared';
+
+CREATE INDEX IF NOT EXISTS idx_company_briefing_publications_committed
+ON company_briefing_reference_publications (
+    tenant_id, analysis_id, target_artifact_sha256, payload_sha256
+)
+WHERE state='committed';
+'''
+
+
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -154,6 +199,7 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         "report_refresh_error_type": "TEXT",
         "report_refresh_updated_at": "TEXT",
         "analysis_failure_category": "TEXT",
+        "analysis_claim_token": "TEXT",
     }
     for column, sql_type in additions.items():
         if column not in existing:
@@ -194,10 +240,65 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
     )
 
 
+def _ensure_company_briefing_publication_schema(
+    conn: sqlite3.Connection,
+) -> None:
+    """Install the publication journal, preserving any unreleased draft table.
+
+    The first local draft used an in-place artifact journal with a different
+    shape. It was never a supported production schema, but keeping it under a
+    legacy name avoids silently deleting diagnostic rows on developer hosts.
+    """
+
+    required = {
+        "id",
+        "flight_id",
+        "tenant_id",
+        "analysis_id",
+        "actor_id",
+        "claim_token",
+        "payload_sha256",
+        "prior_analysis_path",
+        "target_analysis_path",
+        "prior_artifact_sha256",
+        "target_artifact_sha256",
+        "audit_event_id",
+        "audit_details_json",
+        "prior_flight_state_json",
+        "state",
+        "last_error",
+        "created_at",
+        "updated_at",
+        "committed_at",
+    }
+    existing = {
+        row[1]
+        for row in conn.execute(
+            "PRAGMA table_info(company_briefing_reference_publications)"
+        )
+    }
+    if existing and not required.issubset(existing):
+        conn.execute("DROP INDEX IF EXISTS idx_company_briefing_publications_active")
+        conn.execute("DROP INDEX IF EXISTS idx_company_briefing_publications_analysis")
+        conn.execute("DROP INDEX IF EXISTS idx_company_briefing_publications_committed")
+        legacy_name = (
+            "company_briefing_reference_publications_legacy_"
+            f"{uuid.uuid4().hex}"
+        )
+        conn.execute(
+            "ALTER TABLE company_briefing_reference_publications "
+            f"RENAME TO {legacy_name}"
+        )
+    conn.executescript(COMPANY_BRIEFING_PUBLICATION_SCHEMA)
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
         _ensure_columns(conn)
+        _ensure_company_briefing_publication_schema(conn)
+    reconcile_company_briefing_reference_publications()
+    with connect() as conn:
         conn.execute(
             '''
             UPDATE flights SET
@@ -212,8 +313,16 @@ def init_db() -> None:
                 END,
                 report_refresh_error_type='InterruptedAnalysis',
                 report_refresh_updated_at=CURRENT_TIMESTAMP,
+                analysis_claim_token=NULL,
                 updated_at=CURRENT_TIMESTAMP
             WHERE status='Processing'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM company_briefing_reference_publications publication
+                  WHERE publication.flight_id=flights.id
+                    AND publication.state='prepared'
+                    AND publication.claim_token=flights.analysis_claim_token
+              )
             ''',
         )
 
@@ -435,27 +544,47 @@ def update_status(
     last_error: str | None = None,
     tenant_id: str | None = None,
     analysis_failure_category: str | None = None,
-) -> None:
+    expected_current_status: str | None = None,
+    expected_claim_token: str | None = None,
+) -> bool:
     with connect() as conn:
         cursor = conn.execute(
             '''
             UPDATE flights
             SET status=?, notes=COALESCE(?, notes), last_error=?,
                 analysis_failure_category=?, updated_at=CURRENT_TIMESTAMP
+                ,analysis_claim_token=CASE
+                    WHEN ?='Processing' THEN analysis_claim_token
+                    ELSE NULL
+                END
             WHERE id=? AND (? IS NULL OR tenant_id=?)
+              AND (? IS NULL OR status=?)
+              AND (? IS NULL OR analysis_claim_token=?)
             ''',
             (
                 status,
                 notes,
                 last_error,
                 analysis_failure_category,
+                status,
                 flight_id,
                 tenant_id,
                 tenant_id,
+                expected_current_status,
+                expected_current_status,
+                expected_claim_token,
+                expected_claim_token,
             ),
         )
         if cursor.rowcount != 1:
-            raise LookupError(f"Flight {flight_id} not found")
+            exists = conn.execute(
+                "SELECT 1 FROM flights WHERE id=? AND (? IS NULL OR tenant_id=?)",
+                (flight_id, tenant_id, tenant_id),
+            ).fetchone()
+            if exists is None:
+                raise LookupError(f"Flight {flight_id} not found")
+            return False
+        return True
 
 
 def restore_analysis_state(
@@ -465,15 +594,20 @@ def restore_analysis_state(
     last_error: str | None,
     tenant_id: str | None = None,
     analysis_failure_category: str | None = None,
-) -> None:
+    expected_current_status: str | None = None,
+    expected_claim_token: str | None = None,
+) -> bool:
     """Release an analysis claim back to an exact prior observable state."""
     with connect() as conn:
         cursor = conn.execute(
             '''
             UPDATE flights SET
                 status=?, notes=?, last_error=?, analysis_failure_category=?,
+                analysis_claim_token=NULL,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND (? IS NULL OR tenant_id=?)
+              AND (? IS NULL OR status=?)
+              AND (? IS NULL OR analysis_claim_token=?)
             ''',
             (
                 status,
@@ -483,10 +617,21 @@ def restore_analysis_state(
                 flight_id,
                 tenant_id,
                 tenant_id,
+                expected_current_status,
+                expected_current_status,
+                expected_claim_token,
+                expected_claim_token,
             ),
         )
         if cursor.rowcount != 1:
-            raise LookupError(f"Flight {flight_id} not found")
+            exists = conn.execute(
+                "SELECT 1 FROM flights WHERE id=? AND (? IS NULL OR tenant_id=?)",
+                (flight_id, tenant_id, tenant_id),
+            ).fetchone()
+            if exists is None:
+                raise LookupError(f"Flight {flight_id} not found")
+            return False
+        return True
 
 
 _ANALYSIS_SNAPSHOT_COLUMNS = (
@@ -603,6 +748,7 @@ def claim_analysis(
             return None
         if expected_status is not None and flight["status"] != expected_status:
             return None
+        claim_token = uuid.uuid4().hex
         conn.execute(
             '''
             UPDATE flights SET
@@ -610,12 +756,13 @@ def claim_analysis(
                 notes='Parsing Lido CFP and running ODSS engines.',
                 last_error=NULL,
                 analysis_failure_category=NULL,
+                analysis_claim_token=?,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND (? IS NULL OR tenant_id=?)
             ''',
-            (flight_id, tenant_id, tenant_id),
+            (claim_token, flight_id, tenant_id, tenant_id),
         )
-        return flight
+        return {**dict(flight), "analysis_claim_token": claim_token}
 
 
 def begin_analysis(flight_id: int, tenant_id: str | None = None) -> bool:
@@ -647,6 +794,7 @@ def complete_analysis(
                 report_refresh_error_type=?,
                 report_refresh_updated_at=CURRENT_TIMESTAMP,
                 status=CASE WHEN ? THEN 'Completed' ELSE 'Processing' END,
+                analysis_claim_token=CASE WHEN ? THEN NULL ELSE analysis_claim_token END,
                 notes=?, last_error=NULL, analysis_failure_category=NULL,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND (? IS NULL OR tenant_id=?)
@@ -666,6 +814,7 @@ def complete_analysis(
                 result.get("analysis_version", "0.6.0"),
                 result.get("report_refresh_state", "current"),
                 result.get("report_refresh_error_type"),
+                int(release_claim),
                 int(release_claim),
                 (
                     f"Analysed {result.get('page_count', 0)} pages; "
@@ -853,8 +1002,9 @@ def record_audit_event(
     resource_type: str,
     resource_id: str,
     details: dict[str, Any],
+    event_id: str | None = None,
 ) -> str:
-    event_id = uuid.uuid4().hex
+    event_id = event_id or uuid.uuid4().hex
     with connect() as conn:
         conn.execute(
             """
@@ -874,3 +1024,436 @@ def record_audit_event(
             ),
         )
     return event_id
+
+
+def get_audit_event(event_id: str) -> sqlite3.Row | None:
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM audit_events WHERE id=?",
+            (event_id,),
+        ).fetchone()
+
+
+def prepare_company_briefing_reference_publication(
+    *,
+    flight_id: int,
+    tenant_id: str,
+    analysis_id: str,
+    actor_id: str,
+    payload_sha256: str,
+    prior_analysis_path: str,
+    target_analysis_path: str,
+    prior_artifact_sha256: str,
+    target_artifact_sha256: str,
+    audit_details: dict[str, Any],
+) -> sqlite3.Row | None:
+    """Atomically reserve a publication and its exact flight claim.
+
+    The target JSON is immutable and already durable when this is called. The
+    currently referenced JSON remains untouched until :func:`commit_...`
+    inserts the audit row and switches the pointer in one SQLite transaction.
+    """
+
+    if not _verified_publication_artifact(
+        prior_analysis_path,
+        prior_artifact_sha256,
+    ):
+        raise OSError("Prior analysis artifact changed before publication claim")
+    if not _verified_publication_artifact(
+        target_analysis_path,
+        target_artifact_sha256,
+    ):
+        raise OSError("Prepared analysis artifact is missing or corrupt")
+
+    operation_id = uuid.uuid4().hex
+    audit_event_id = uuid.uuid4().hex
+    claim_token = uuid.uuid4().hex
+    with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        flight = conn.execute(
+            """
+            SELECT * FROM flights
+            WHERE id=? AND tenant_id=? AND analysis_id=?
+            """,
+            (flight_id, tenant_id, analysis_id),
+        ).fetchone()
+        if (
+            flight is None
+            or str(flight["status"] or "") != "Completed"
+            or str(flight["analysis_path"] or "") != prior_analysis_path
+            or flight["analysis_claim_token"] is not None
+        ):
+            return None
+        if not _verified_publication_artifact(
+            prior_analysis_path,
+            prior_artifact_sha256,
+        ) or not _verified_publication_artifact(
+            target_analysis_path,
+            target_artifact_sha256,
+        ):
+            return None
+        active = conn.execute(
+            """
+            SELECT 1 FROM company_briefing_reference_publications
+            WHERE flight_id=? AND state='prepared'
+            """,
+            (flight_id,),
+        ).fetchone()
+        if active is not None:
+            return None
+        prior_state = {
+            "status": str(flight["status"] or ""),
+            "notes": flight["notes"],
+            "last_error": flight["last_error"],
+            "analysis_failure_category": flight["analysis_failure_category"],
+        }
+        details = {
+            **audit_details,
+            "publication_operation_id": operation_id,
+        }
+        conn.execute(
+            """
+            INSERT INTO company_briefing_reference_publications (
+                id, flight_id, tenant_id, analysis_id, actor_id, claim_token,
+                payload_sha256, prior_analysis_path, target_analysis_path,
+                prior_artifact_sha256, target_artifact_sha256,
+                audit_event_id, audit_details_json,
+                prior_flight_state_json, state
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared')
+            """,
+            (
+                operation_id,
+                flight_id,
+                tenant_id,
+                analysis_id,
+                actor_id,
+                claim_token,
+                payload_sha256,
+                prior_analysis_path,
+                target_analysis_path,
+                prior_artifact_sha256,
+                target_artifact_sha256,
+                audit_event_id,
+                json.dumps(details, sort_keys=True, separators=(",", ":")),
+                json.dumps(prior_state, sort_keys=True, separators=(",", ":")),
+            ),
+        )
+        cursor = conn.execute(
+            """
+            UPDATE flights SET
+                status='Processing',
+                notes='Publishing governed company briefing references.',
+                last_error=NULL,
+                analysis_failure_category=NULL,
+                analysis_claim_token=?,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND tenant_id=? AND analysis_id=?
+              AND status='Completed' AND analysis_path=?
+              AND analysis_claim_token IS NULL
+            """,
+            (
+                claim_token,
+                flight_id,
+                tenant_id,
+                analysis_id,
+                prior_analysis_path,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("Company briefing publication claim was lost")
+        row = conn.execute(
+            "SELECT * FROM company_briefing_reference_publications WHERE id=?",
+            (operation_id,),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Company briefing publication operation was not stored")
+    return row
+
+
+def find_company_briefing_reference_publication(
+    *,
+    tenant_id: str,
+    analysis_id: str,
+    payload_sha256: str | None = None,
+    target_artifact_sha256: str | None = None,
+    target_analysis_path: str | None = None,
+    states: tuple[str, ...] | None = None,
+) -> sqlite3.Row | None:
+    clauses = ["tenant_id=?", "analysis_id=?"]
+    values: list[Any] = [tenant_id, analysis_id]
+    if payload_sha256 is not None:
+        clauses.append("payload_sha256=?")
+        values.append(payload_sha256)
+    if target_artifact_sha256 is not None:
+        clauses.append("target_artifact_sha256=?")
+        values.append(target_artifact_sha256)
+    if target_analysis_path is not None:
+        clauses.append("target_analysis_path=?")
+        values.append(target_analysis_path)
+    if states:
+        placeholders = ",".join("?" for _ in states)
+        clauses.append(f"state IN ({placeholders})")
+        values.extend(states)
+    with connect() as conn:
+        return conn.execute(
+            f"""
+            SELECT * FROM company_briefing_reference_publications
+            WHERE {' AND '.join(clauses)}
+            ORDER BY rowid DESC
+            LIMIT 1
+            """,
+            values,
+        ).fetchone()
+
+
+def commit_company_briefing_reference_publication(
+    operation_id: str,
+) -> sqlite3.Row:
+    """Atomically append the audit receipt and activate the target JSON."""
+
+    with connect() as conn:
+        expected = conn.execute(
+            "SELECT * FROM company_briefing_reference_publications WHERE id=?",
+            (operation_id,),
+        ).fetchone()
+    if expected is None:
+        raise LookupError(f"Publication operation {operation_id} not found")
+    if not _verified_publication_artifact(
+        str(expected["prior_analysis_path"]),
+        str(expected["prior_artifact_sha256"]),
+    ):
+        raise OSError("Prior analysis artifact is missing or corrupt")
+    if not _verified_publication_artifact(
+        str(expected["target_analysis_path"]),
+        str(expected["target_artifact_sha256"]),
+    ):
+        raise OSError("Prepared analysis artifact is missing or corrupt")
+
+    with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        operation = conn.execute(
+            "SELECT * FROM company_briefing_reference_publications WHERE id=?",
+            (operation_id,),
+        ).fetchone()
+        if operation is None:
+            raise LookupError(f"Publication operation {operation_id} not found")
+        if str(operation["state"]) == "committed":
+            return operation
+        if str(operation["state"]) != "prepared":
+            raise RuntimeError(
+                f"Publication operation {operation_id} is {operation['state']}"
+            )
+        prior_state = json.loads(str(operation["prior_flight_state_json"]))
+        details = json.loads(str(operation["audit_details_json"]))
+        conn.execute(
+            """
+            INSERT INTO audit_events (
+                id, tenant_id, actor_id, action,
+                resource_type, resource_id, details_json
+            ) VALUES (?, ?, ?, ?, 'analysis', ?, ?)
+            """,
+            (
+                operation["audit_event_id"],
+                operation["tenant_id"],
+                operation["actor_id"],
+                "analysis.company_briefing_references_publication_authorized",
+                operation["analysis_id"],
+                json.dumps(details, sort_keys=True, separators=(",", ":")),
+            ),
+        )
+        cursor = conn.execute(
+            """
+            UPDATE flights SET
+                analysis_path=?, status=?, notes=?, last_error=?,
+                analysis_failure_category=?, analysis_claim_token=NULL,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND tenant_id=? AND analysis_id=?
+              AND status='Processing' AND analysis_claim_token=?
+              AND analysis_path=?
+            """,
+            (
+                operation["target_analysis_path"],
+                prior_state["status"],
+                prior_state.get("notes"),
+                prior_state.get("last_error"),
+                prior_state.get("analysis_failure_category"),
+                operation["flight_id"],
+                operation["tenant_id"],
+                operation["analysis_id"],
+                operation["claim_token"],
+                operation["prior_analysis_path"],
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("Company briefing publication claim was lost")
+        conn.execute(
+            """
+            UPDATE company_briefing_reference_publications SET
+                state='committed', last_error=NULL,
+                committed_at=CURRENT_TIMESTAMP,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND state='prepared'
+            """,
+            (operation_id,),
+        )
+        updated = conn.execute(
+            "SELECT * FROM company_briefing_reference_publications WHERE id=?",
+            (operation_id,),
+        ).fetchone()
+    if updated is None:
+        raise RuntimeError("Company briefing publication operation disappeared")
+    return updated
+
+
+def abort_company_briefing_reference_publication(
+    operation_id: str,
+    *,
+    error: str,
+) -> bool:
+    """CAS-release a prepared publication without changing its active JSON."""
+
+    with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        operation = conn.execute(
+            "SELECT * FROM company_briefing_reference_publications WHERE id=?",
+            (operation_id,),
+        ).fetchone()
+        if operation is None:
+            raise LookupError(f"Publication operation {operation_id} not found")
+        if str(operation["state"]) != "prepared":
+            return str(operation["state"]) == "aborted"
+        prior_state = json.loads(str(operation["prior_flight_state_json"]))
+        cursor = conn.execute(
+            """
+            UPDATE flights SET
+                status=?, notes=?, last_error=?, analysis_failure_category=?,
+                analysis_claim_token=NULL, updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND tenant_id=? AND analysis_id=?
+              AND status='Processing' AND analysis_claim_token=?
+              AND analysis_path=?
+            """,
+            (
+                prior_state["status"],
+                prior_state.get("notes"),
+                prior_state.get("last_error"),
+                prior_state.get("analysis_failure_category"),
+                operation["flight_id"],
+                operation["tenant_id"],
+                operation["analysis_id"],
+                operation["claim_token"],
+                operation["prior_analysis_path"],
+            ),
+        )
+        state = "aborted" if cursor.rowcount == 1 else "failed"
+        conn.execute(
+            """
+            UPDATE company_briefing_reference_publications SET
+                state=?, last_error=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND state='prepared'
+            """,
+            (state, error, operation_id),
+        )
+        return cursor.rowcount == 1
+
+
+def fail_company_briefing_reference_publication(
+    operation_id: str,
+    *,
+    error: str,
+) -> bool:
+    """Fail closed when neither the prepared nor prior artifact is trustworthy."""
+
+    with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        operation = conn.execute(
+            "SELECT * FROM company_briefing_reference_publications WHERE id=?",
+            (operation_id,),
+        ).fetchone()
+        if operation is None:
+            raise LookupError(f"Publication operation {operation_id} not found")
+        if str(operation["state"]) != "prepared":
+            return False
+        cursor = conn.execute(
+            """
+            UPDATE flights SET
+                status='Failed',
+                notes='Governed reference publication requires recovery.',
+                last_error=?, analysis_failure_category='infrastructure',
+                analysis_claim_token=NULL, updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND tenant_id=? AND analysis_id=?
+              AND status='Processing' AND analysis_claim_token=?
+              AND analysis_path=?
+            """,
+            (
+                error,
+                operation["flight_id"],
+                operation["tenant_id"],
+                operation["analysis_id"],
+                operation["claim_token"],
+                operation["prior_analysis_path"],
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE company_briefing_reference_publications SET
+                state='failed', last_error=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND state='prepared'
+            """,
+            (error, operation_id),
+        )
+        return cursor.rowcount == 1
+
+
+def _verified_publication_artifact(path_value: str, digest: str) -> bool:
+    path = Path(path_value)
+    try:
+        path.resolve().relative_to((DB_PATH.parent / "results").resolve())
+        return path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == digest
+    except (OSError, ValueError):
+        return False
+
+
+def reconcile_company_briefing_reference_publications() -> None:
+    """Resolve a crash after prepare, before the atomic database commit."""
+
+    with connect() as conn:
+        operations = list(
+            conn.execute(
+                """
+                SELECT * FROM company_briefing_reference_publications
+                WHERE state='prepared'
+                ORDER BY rowid
+                """
+            )
+        )
+    for operation in operations:
+        operation_id = str(operation["id"])
+        target_valid = _verified_publication_artifact(
+            str(operation["target_analysis_path"]),
+            str(operation["target_artifact_sha256"]),
+        )
+        prior_valid = _verified_publication_artifact(
+            str(operation["prior_analysis_path"]),
+            str(operation["prior_artifact_sha256"]),
+        )
+        try:
+            if target_valid and prior_valid:
+                commit_company_briefing_reference_publication(operation_id)
+            elif prior_valid:
+                abort_company_briefing_reference_publication(
+                    operation_id,
+                    error="Prepared publication target was missing or corrupt at restart.",
+                )
+            else:
+                fail_company_briefing_reference_publication(
+                    operation_id,
+                    error=(
+                        "Prepared and prior governed reference artifacts were "
+                        "missing or corrupt at restart."
+                    ),
+                )
+        except Exception as exc:
+            fail_company_briefing_reference_publication(
+                operation_id,
+                error=f"Publication reconciliation failed: {type(exc).__name__}: {exc}",
+            )

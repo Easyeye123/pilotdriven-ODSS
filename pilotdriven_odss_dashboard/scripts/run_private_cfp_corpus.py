@@ -47,6 +47,7 @@ REQUIRED_CASE_IDS = frozenset({
     "SQ365-FCO-SIN",
     "SQ214-PER-SIN-19AUG",
     "SQ910-SIN-MNL-21AUG",
+    "SQ481-JNB-SIN-25AUG",
 })
 DEFERRED_TYPES = {"MEL", "CDL", "CDDL"}
 DEFERRED_REFERENCE = re.compile(r"^[A-Z0-9]+(?:-[A-Z0-9]+)+$")
@@ -727,6 +728,13 @@ def _iter_fact_leaves(node: Any, path: str = "") -> Any:
 def _fact_forms(path: str, value: Any) -> list[str]:
     text = str(value).strip().upper()
     forms = [text]
+    # UNCLASSIFIED is an internal fail-closed parser state, never pilot-facing
+    # wording. The operational renderer truthfully labels that row DEFERRED
+    # ITEM while the separately checked reference, declaration, description,
+    # and source lines retain its exact identity. Accept only that explicit
+    # safe label for this one internal value; do not waive any deferred fact.
+    if path == "deferred_items[].item_type" and text == "UNCLASSIFIED":
+        forms.append("DEFERRED ITEM")
     if isinstance(value, (int, float)) and not isinstance(value, bool) and float(value) == int(value):
         number = int(value)
         forms.append(f"{number:,}")

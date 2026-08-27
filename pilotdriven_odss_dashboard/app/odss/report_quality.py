@@ -126,6 +126,7 @@ _COMBINED_BOSS_FLOW_PAGES = (
     ("AIRPORTS / ALTERNATES", "DESTINATION ALTERNATE ASSESSMENT MATRIX"),
     ("WEATHER / ROUTE HAZARDS", "NAMED DIRECT / OFP VOLCANO ADVISORIES"),
     ("ENROUTE / ASSURANCE", "NUMBERED RELEASE GATES", "SOURCE ASSURANCE"),
+    ("COVERAGE CHECKLIST", "CAT / VWS EVIDENCE", "AIREP / PIREP"),
 )
 _COMBINED_EOSID_CONTINUATION_MARKERS = (
     "EOSID / ESCAPE ROUTING",
@@ -304,7 +305,9 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                     "and form one complete ordered 1/N through N/N sequence."
                 ),
             ))
-        for required_markers in _COMBINED_BOSS_FLOW_PAGES[3:]:
+        for flow_index, required_markers in enumerate(
+            _COMBINED_BOSS_FLOW_PAGES[3:]
+        ):
             page_text = (
                 extracted_pages[cursor].upper()
                 if cursor < page_count
@@ -322,6 +325,23 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                     ),
                 ))
             cursor += 1
+            if flow_index == 0:
+                while (
+                    cursor < page_count
+                    and _COMBINED_MEL_TITLE
+                    in extracted_pages[cursor].upper()
+                ):
+                    continuation_text = extracted_pages[cursor].upper()
+                    if _COMBINED_CONTINUATION_MARKER not in continuation_text:
+                        violations.append(ReportQualityViolation(
+                            "COMBINED_DUPLICATE_PRIMARY",
+                            (
+                                f"Flight Briefing page {cursor + 1} repeats "
+                                "the MEL/CDL primary page instead of declaring "
+                                "a continuation."
+                            ),
+                        ))
+                    cursor += 1
         for page_index in range(cursor, page_count):
             page_text = extracted_pages[page_index].upper()
             if not (

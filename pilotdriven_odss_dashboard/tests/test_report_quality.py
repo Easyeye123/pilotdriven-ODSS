@@ -154,6 +154,10 @@ def test_combined_quality_gate_accepts_lossless_eosid_continuation(
             "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
             "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
         ),
+        (
+            "FLIGHT BRIEFING\nCOVERAGE CHECKLIST\n"
+            "CAT / VWS EVIDENCE\nAIREP / PIREP"
+        ),
     ]
     _pdf(path, pages=len(page_texts), page_texts=page_texts)
 
@@ -161,6 +165,50 @@ def test_combined_quality_gate_accepts_lossless_eosid_continuation(
 
     assert result["valid"] is True
     assert result["violations"] == []
+
+
+def test_combined_quality_gate_rejects_missing_operational_coverage_page(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-missing-coverage.pdf"
+    page_texts = [
+        (
+            "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
+            "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
+        ),
+        (
+            "FLIGHT BRIEFING\nDECISION ANALYSIS\n"
+            "FLIGHT-PHASE DECISION TIMELINE\nSOURCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nPERFORMANCE / FUEL / STATUS\n"
+            "RECONCILIATION / RELEASE REVIEW"
+        ),
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL\nSOURCE DECLARATION",
+        (
+            "FLIGHT BRIEFING\nAIRPORTS / ALTERNATES\n"
+            "DESTINATION ALTERNATE ASSESSMENT MATRIX"
+        ),
+        (
+            "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
+            "NAMED DIRECT / OFP VOLCANO ADVISORIES"
+        ),
+        (
+            "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
+            "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+        "FLIGHT BRIEFING\nHIGH TERRAIN EXPOSURE AND DEPRESSURISATION",
+    ]
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        violation.code == "COMBINED_BOSS_FLOW_STRUCTURE"
+        and "COVERAGE CHECKLIST" in violation.message
+        for violation in result["violations"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -223,6 +271,10 @@ def test_combined_quality_gate_rejects_broken_eosid_continuation_sequence(
         (
             "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
             "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nCOVERAGE CHECKLIST\n"
+            "CAT / VWS EVIDENCE\nAIREP / PIREP"
         ),
     ]
     _pdf(path, pages=len(page_texts), page_texts=page_texts)

@@ -949,6 +949,49 @@
      "planning_publication": "08f85e8bfc6ad5a9d9e2a681cbda11a95f6559b49f8e4f4caf3be3286135ed2c"
     }
    }
+  },
+  {
+   "case_id": "SQ481-JNB-SIN-25AUG",
+   "filename": "SQ48125082026JNB.pdf",
+   "source_sha256": "471c5a67025f3d85fcb8b79f289843c5cd2c611a33c9c943bcdd238fa1b7bbd8",
+   "source_page_count": 64,
+   "flight_number": "SQ481",
+   "departure": "FAOR",
+   "destination": "WSSS",
+   "departure_iata": "JNB",
+   "destination_iata": "SIN",
+   "route_point_count": 51,
+   "route_hash": "e440f05519e0e51d2266ea8fce2df94db4f722f0eefa6a835c60228476ed94bc",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 55,
+     "weather": 29,
+     "alternates": 3,
+     "deferred_items": 1,
+     "edto_sectors": 2,
+     "edto_airports": 5,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 51,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "812fe176cc1216047d66dc4d80c506abc492689db2a4cfcb212bc6ffec8b8ace",
+     "weather": "ecc51f86ace69dee8a36a052d0ba8b45c7830b3af72dab1d3673c6f8ca1d4a9a",
+     "alternates": "7344469aead505f37fa42bd779c54aef783ae82037f5a867c7f497d5c4d4d1ed",
+     "deferred_items": "786b4c469b3010bebbae9a82637b0c41be8aa22dd5407ddf350002425f72efd0",
+     "edto_sectors": "cec458eb251252ca4a874b9172ac149ab36a28a5c66c87dfdffaed2548931195",
+     "edto_airports": "c933f80721e955593207ddbef00fd482435f6d8f08242425783776bfc498d7fd",
+     "fuel_enroute_airports": "854017e49a4ea71b72c54d81bf4ddd6d689e3190e49f021855bd3b80a9730732",
+     "route_waypoints": "268e5ce8017902599d3010fc5ca18f3c1ab1888684903802e684db5533e7a878",
+     "flight_planning_etps": "7c192e35853321c804e9c6cb4424030953ebfb1f2e1d29482db31be26d11b599",
+     "intam_records": "98d5cdbe2a575b01649c97b30f62d930c535dae9dc3185b4a746caa9953f1fb5",
+     "notam_procedure_records": "172063ecc75fbfcdc8d83028ca45a16d27d093d518eb0a5065ff27dcaa790395",
+     "planning_publication": "f0922bd22ec1a619b4a36c480c5312d614570d775f1251fd7e085bc4c7ae2567"
+    }
+   }
   }
  ]
 }

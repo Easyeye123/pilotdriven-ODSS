@@ -202,6 +202,16 @@ def split_deferred_source_segments(
                 "description": description,
                 "restriction": main_restriction or None,
                 "source_text": _source_text(description, main_restriction),
+                "deferred_entry_id": item.get("deferred_entry_id"),
+                "classification_status": item.get("classification_status"),
+                "classification_reason": item.get("classification_reason"),
+                "governed_match_status": item.get("governed_match_status"),
+                "source_identifier": item.get("source_identifier"),
+                "source_identifiers": list(item.get("source_identifiers") or []),
+                "source_group_tokens": list(item.get("source_group_tokens") or []),
+                "source_line_start": item.get("source_line_start"),
+                "source_line_end": item.get("source_line_end"),
+                "source_lines": list(item.get("source_lines") or []),
             })
 
         for embedded_index, marker in enumerate(markers, start=1):
@@ -470,6 +480,9 @@ def _publication_row(segment: Mapping[str, Any]) -> dict[str, Any]:
         "source_segment_index": int(segment["source_segment_index"]),
         "source_field": segment.get("source_field"),
         "source_declaration": segment.get("source_declaration"),
+        "deferred_entry_id": segment.get("deferred_entry_id"),
+        "classification_status": segment.get("classification_status"),
+        "governed_match_status": segment.get("governed_match_status"),
     }
 
 

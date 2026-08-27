@@ -248,6 +248,7 @@ GET  /v1/analyses/{id}/hazards.geojson
 GET  /v1/analyses/{id}/map-config
 GET  /v1/analyses/{id}/map-fallback
 POST /v1/analyses/{id}/timing
+POST /v1/analyses/{id}/company-briefing-references
 POST /v1/analyses/{id}/reports/render
 GET  /v1/analyses/{id}/reports/level-1
 GET  /v1/analyses/{id}/reports/level-2
@@ -265,6 +266,30 @@ Every `/v1/analyses/{id}` read or mutation requires trusted
 `X-PilotDriven-Tenant-Id` and `X-PilotDriven-User-Id` context from
 PilotDriven's authenticated server proxy. Storage queries include the tenant;
 knowing another tenant's analysis ID is insufficient to read or mutate it.
+
+Company MEL/CDL excerpts are accepted only through the authenticated
+`company-briefing-references` mutation. Each citation must identify a current
+company manual, revision/effective date, page, section and confirmed
+effectivity. ODSS independently rechecks every declared fleet and aircraft
+constraint against the active analysis; a caller-supplied `confirmed` flag is
+not sufficient. An unresolved OFP declaration may receive candidate excerpts only
+when the upstream governed matcher binds every candidate to the exact
+`deferred_entry_id` returned by the briefing and states both the ambiguity and
+the condition a reviewer must confirm. Loose text similarity and incomplete
+citations are rejected; the combined report remains manual-review-required.
+When a governed source is withdrawn or no longer current, publish
+`{"status":"unavailable","references":[]}` through the same mutation. ODSS
+stores that withdrawal and invalidates the combined-report cache so an earlier
+controlled excerpt cannot remain downloadable as current evidence.
+ODSS prepares changed references in a new immutable analysis JSON. The current
+JSON remains authoritative until one SQLite transaction appends the audit
+receipt, switches `flights.analysis_path`, restores the completed state and
+marks the publication committed. If that atomic commit fails, the mutation
+returns a structured `503` with `publication_persisted=false`,
+`publication_state=unchanged`, `audit_state=failed`, and
+`retry_same_payload=true`; the prior briefing remains active. A retry of an
+already committed identical payload returns the original audit receipt without
+rewriting the analysis or invalidating the combined-report cache again.
 
 ## Level 3 governed policy boundary
 

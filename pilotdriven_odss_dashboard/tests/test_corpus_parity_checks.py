@@ -852,6 +852,32 @@ def test_fact_waivers_are_explained_and_limited_to_non_operational_metadata() ->
         )
 
 
+def test_internal_unclassified_deferred_type_requires_the_safe_pilot_label() -> None:
+    from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
+
+    flight = {
+        "deferred_items": [{
+            "item_type": "UNCLASSIFIED",
+            "reference": "ECDL007905",
+            "description": "SEAT 21A TRAY TABLE UNABLE TO STOW",
+        }],
+    }
+    safe_surface = (
+        "DEFERRED ITEM ECDL007905 SEAT 21A TRAY TABLE UNABLE TO STOW"
+    )
+    passed = check_parsed_fact_coverage(flight, safe_surface)
+    assert passed["valid"], passed["missing"]
+
+    missing_safe_label = check_parsed_fact_coverage(
+        flight,
+        "ECDL007905 SEAT 21A TRAY TABLE UNABLE TO STOW",
+    )
+    assert not missing_safe_label["valid"]
+    assert missing_safe_label["missing"] == [
+        "deferred_items[].item_type = 'UNCLASSIFIED'"
+    ]
+
+
 def test_pdf_fact_coverage_requires_every_alternate() -> None:
     from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
 

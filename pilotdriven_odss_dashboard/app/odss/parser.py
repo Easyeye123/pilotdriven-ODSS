@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -346,7 +347,170 @@ def _parse_notam_procedure_records(
     return records
 
 
-def _parse_deferred_items(page1: str) -> list[dict[str, Any]]:
+_OPAQUE_DEFERRED_HEADER = re.compile(
+    r"^(?P<token>AA|BB|CC|DD|EE)\s+(?P<description>\S.*\S|\S)\s*$"
+)
+_OPAQUE_DEFERRED_IDENTIFIER = re.compile(
+    r"\b(?P<identifier>ECDL[0-9A-Z][0-9A-Z._/-]{2,79})\b"
+)
+_OPAQUE_DEFERRED_CLASS = re.compile(r"\bX\s+CLASS\s+(?P<class>[A-Z])\b")
+_KNOWN_DEFERRED_HEADER = re.compile(r"^(?:CDDL|CDL|MEL|IFEDDL|IN)(?:\s|$)")
+
+
+def _opaque_deferred_source_groups(
+    page1: str,
+    *,
+    source_page: int,
+) -> list[tuple[int, int, dict[str, Any]]]:
+    """Return source-bounded opaque ECDL groups without guessing their class.
+
+    Some Lido Page-1 blocks do not print a ``MEL``/``CDL``/``CDDL`` label.
+    SQ481 instead prints the same seat defect under AA and BB, followed by an
+    opaque ``ECDL`` identifier and class marker.  The identifier is evidence,
+    not a governed manual reference: it cannot safely select a MEL/CDL item.
+
+    This deliberately narrow recogniser requires both the opaque ECDL token
+    and a printed ``X CLASS`` line.  Unrelated AA/BB prose therefore remains
+    untouched.  Adjacent declarations with the same description are retained
+    as one audit group, including their original physical line numbers.
+    """
+
+    lines = page1.splitlines()
+    groups: list[tuple[int, int, dict[str, Any]]] = []
+    cursor = 0
+    while cursor < len(lines):
+        header = _OPAQUE_DEFERRED_HEADER.fullmatch(lines[cursor].strip())
+        if (
+            header is None
+            or _KNOWN_DEFERRED_HEADER.match(header.group("description").upper())
+        ):
+            cursor += 1
+            continue
+
+        group_start = cursor
+        description = " ".join(header.group("description").split())
+        group_tokens: list[str] = []
+        audit_lines: list[dict[str, Any]] = []
+        search_lines: list[str] = []
+        group_end = cursor
+
+        while cursor < len(lines):
+            current_header = _OPAQUE_DEFERRED_HEADER.fullmatch(
+                lines[cursor].strip()
+            )
+            if current_header is None:
+                break
+            current_description = " ".join(
+                current_header.group("description").split()
+            )
+            if (
+                current_description.upper() != description.upper()
+                or _KNOWN_DEFERRED_HEADER.match(current_description.upper())
+            ):
+                break
+
+            group_tokens.append(current_header.group("token"))
+            header_text = " ".join(lines[cursor].split())
+            audit_lines.append({
+                "line_number": cursor + 1,
+                "text": header_text,
+            })
+            search_lines.append(header_text)
+            group_end = cursor
+            cursor += 1
+
+            while cursor < len(lines):
+                stripped = lines[cursor].strip()
+                if stripped.startswith("PLAN ") or stripped.startswith("RTE NO"):
+                    break
+                if _OPAQUE_DEFERRED_HEADER.fullmatch(stripped):
+                    break
+                if stripped:
+                    line_text = " ".join(stripped.split())
+                    audit_lines.append({
+                        "line_number": cursor + 1,
+                        "text": line_text,
+                    })
+                    search_lines.append(line_text)
+                    group_end = cursor
+                cursor += 1
+
+            next_header = (
+                _OPAQUE_DEFERRED_HEADER.fullmatch(lines[cursor].strip())
+                if cursor < len(lines)
+                else None
+            )
+            if next_header is None:
+                break
+            next_description = " ".join(next_header.group("description").split())
+            if next_description.upper() != description.upper():
+                break
+
+        source_text = "\n".join(search_lines)
+        identifiers = list(dict.fromkeys(
+            match.group("identifier").upper()
+            for match in _OPAQUE_DEFERRED_IDENTIFIER.finditer(source_text.upper())
+        ))
+        class_lines = list(dict.fromkeys(
+            line["text"]
+            for line in audit_lines
+            if _OPAQUE_DEFERRED_CLASS.search(line["text"].upper())
+        ))
+        if not identifiers or not class_lines:
+            # This looked like generic AA/BB prose, not the exact opaque ECDL
+            # shape. Resume after the first line so another candidate remains
+            # discoverable without consuming source text.
+            cursor = group_start + 1
+            continue
+
+        identity_basis = "\n".join((
+            f"PAGE {source_page} LINES {group_start + 1}-{group_end + 1}",
+            *(
+                " ".join(line["text"].upper().split())
+                for line in audit_lines
+            ),
+        ))
+        deferred_entry_id = (
+            "ofp-deferred-"
+            + hashlib.sha256(identity_basis.encode("utf-8")).hexdigest()[:20]
+        )
+        groups.append((
+            group_start,
+            group_end,
+            {
+                "reference": identifiers[0] if len(identifiers) == 1 else None,
+                "source_identifier": (
+                    identifiers[0] if len(identifiers) == 1 else None
+                ),
+                "source_identifiers": identifiers,
+                "description": description,
+                # Keep the parser's existing safe engine path. This value is
+                # hidden from pilot surfaces by deferred_item_type_for_display.
+                "item_type": "UNCLASSIFIED",
+                "source_declaration": audit_lines[0]["text"],
+                "company_remark": " | ".join(class_lines),
+                "deferred_entry_id": deferred_entry_id,
+                "classification_status": "unresolved",
+                "classification_reason": (
+                    "The OFP prints an opaque ECDL identifier without an "
+                    "explicit MEL, CDL or CDDL mapping."
+                ),
+                "governed_match_status": "manual_review_required",
+                "source_group_tokens": list(dict.fromkeys(group_tokens)),
+                "source_page": source_page,
+                "source_line_start": group_start + 1,
+                "source_line_end": group_end + 1,
+                "source_lines": audit_lines,
+            },
+        ))
+    return groups
+
+
+def _parse_deferred_items(
+    page1: str,
+    *,
+    source_page: int = 1,
+) -> list[dict[str, Any]]:
     # Boss's 21 Aug 2026 SQ910 CFP printed four declaration shapes on one
     # block: "CC MEL 25-20-50A", bare "BB CDDL" (no reference), "AA IFEDDL"
     # and "DD IN SIA/00-017 R1" (engineering information notice). Every
@@ -355,7 +519,29 @@ def _parse_deferred_items(page1: str) -> list[dict[str, Any]]:
     # item's remark (that is how the ENG 2 fan-cowl notice vanished).
     items: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
-    for line in page1.splitlines():
+    lines = page1.splitlines()
+    opaque_groups = _opaque_deferred_source_groups(
+        page1,
+        source_page=source_page,
+    )
+    opaque_starts = {
+        start: (end, item)
+        for start, end, item in opaque_groups
+    }
+    opaque_consumed = {
+        index
+        for start, end, _ in opaque_groups
+        for index in range(start, end + 1)
+    }
+    for line_index, line in enumerate(lines):
+        if line_index in opaque_consumed:
+            held = opaque_starts.get(line_index)
+            if held is not None:
+                if current:
+                    items.append(current)
+                    current = None
+                items.append(held[1])
+            continue
         stripped = line.strip()
         match = re.match(
             # Reference and trailing description are both optional, and the

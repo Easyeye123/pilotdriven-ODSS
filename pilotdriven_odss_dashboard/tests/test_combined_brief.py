@@ -33,6 +33,7 @@ from app.odss.combined_brief import (
     _hazard_page_plans,
     _operational_alternate_constraint_assessment,
     _operational_alternate_forecast,
+    _operational_coverage_receipt,
     _operational_fir_boundary_summary,
     _operational_priority_source_summary,
     _operational_phase_actions,
@@ -476,10 +477,10 @@ def rendered(tmp_path):
 
 
 def test_renders_the_full_section_set(rendered):
-    # The boss-facing flow is seven compact operational sections.  This
+    # The boss-facing flow is eight compact operational sections.  This
     # fixture also carries real terrain events, so the controlled terrain
-    # evidence is appended as page 8 instead of being forced into the core.
-    assert len(rendered) == 8
+    # evidence is appended as page 9 instead of being forced into the core.
+    assert len(rendered) == 9
     first = rendered[0].get_text()
     assert "OFP P1 - ROUTE / LEVELS" in first
     # The route/levels context remains above the five boss-facing summary
@@ -498,6 +499,7 @@ def test_renders_the_full_section_set(rendered):
         "AIRPORTS / ALTERNATES",
         "WEATHER / ROUTE HAZARDS",
         "ENROUTE / ASSURANCE",
+        "COVERAGE CHECKLIST / CAT-VWS",
         "HIGH TERRAIN EXPOSURE AND DEPRESSURISATION",
     ):
         assert expected in titles
@@ -511,7 +513,7 @@ def test_renders_the_full_section_set(rendered):
     assert "RUNWAY / CONDITION · EBBR -- / --" in performance_page
 
 
-def test_compact_pdf_has_seven_core_outline_entries_plus_real_terrain(rendered):
+def test_compact_pdf_has_eight_core_outline_entries_plus_real_terrain(rendered):
     assert [row[1] for row in rendered.get_toc()] == [
         "Flight Overview",
         "Decision Analysis",
@@ -520,6 +522,7 @@ def test_compact_pdf_has_seven_core_outline_entries_plus_real_terrain(rendered):
         "Airports / Alternates",
         "Weather / Route Hazards",
         "Enroute / Assurance",
+        "Coverage Checklist / CAT-VWS",
         "Terrain / Depressurisation",
     ]
 
@@ -610,7 +613,9 @@ def test_compact_dispatch_gates_use_the_shared_source_projection(tmp_path):
     render_combined_briefing(flight, findings, [], output)
 
     document = fitz.open(output)
-    page_text = document[3].get_text()
+    mel_pages = _operational_mel_pages(document)
+    page_text = mel_pages[0]
+    mel_text = "\n".join(mel_pages)
     assert page_text.count("CABIN COMPACTORS") == 1
     assert page_text.count("CTRL / SYSB") == 1
     assert page_text.count("CDL 20-20 / 30-30") == 1
@@ -619,14 +624,17 @@ def test_compact_dispatch_gates_use_the_shared_source_projection(tmp_path):
     assert "UNCLASSIFIED" not in page_text
     governed_links = [
         str(link.get("uri") or "")
-        for link in document[3].get_links()
+        for page in document
+        for link in page.get_links()
         if "governed-deferred-reference" in str(link.get("uri") or "")
     ]
-    assert len(governed_links) == 2
+    assert len(governed_links) == 3
     assert any("reference=10-10" in link for link in governed_links)
     assert any("reference=20-20" in link for link in governed_links)
-    assert page_text.count("GOVERNED LINK UNAVAILABLE · OFP SOURCE HELD") == 2
-    assert "+2 SOURCE DECLARATIONS REMAIN IN DASHBOARD" in page_text
+    assert any("reference=30-30" in link for link in governed_links)
+    assert mel_text.count("GOVERNED LINK UNAVAILABLE · OFP SOURCE HELD") == 3
+    assert len(mel_pages) == 2
+    assert "SOURCE DECLARATIONS REMAIN IN DASHBOARD" not in mel_text
 
 
 def test_compact_sq910_four_shape_declarations_never_publish_placeholders(
@@ -842,7 +850,9 @@ def test_overview_premeasures_dense_destination_before_lossless_alternate(
     assert physical["pages"][0]["visible_overlap_count"] == 0
 
 
-def test_compact_pdf_marks_high_cardinality_content_that_remains_in_dashboard(tmp_path):
+def test_compact_pdf_paginates_deferred_content_and_marks_other_dashboard_detail(
+    tmp_path,
+):
     flight = sample_flight()
     flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
     descriptions = (
@@ -887,10 +897,19 @@ def test_compact_pdf_marks_high_cardinality_content_that_remains_in_dashboard(tm
     render_combined_briefing(flight, findings, [], output)
 
     document = fitz.open(output)
-    assert len(document) == 8
-    assert "+1 IN DASHBOARD" in document[3].get_text()
-    assert "+1 SOURCE DECLARATION REMAINS IN DASHBOARD" in document[3].get_text()
-    assert "Full selected detail remains in dashboard" in document[4].get_text()
+    assert len(document) == 10
+    mel_pages = _operational_mel_pages(document)
+    mel_text = "\n".join(mel_pages)
+    assert len(mel_pages) == 2
+    for description in descriptions:
+        assert description in mel_text
+    assert "SOURCE DECLARATION REMAINS IN DASHBOARD" not in mel_text
+    airports_text = next(
+        page.get_text()
+        for page in document
+        if "AIRPORTS / ALTERNATES" in page.get_text()
+    )
+    assert "Full selected detail remains in dashboard" in airports_text
 
 
 def test_compact_airport_matrix_keeps_vhhh_without_inventing_preferred_status(
@@ -1028,7 +1047,7 @@ def test_compact_airport_matrix_keeps_vhhh_without_inventing_preferred_status(
 
     document = fitz.open(output)
     airport_text = " ".join(document[4].get_text().split())
-    assert len(document) == 8
+    assert len(document) == 9
     assert "VHHH" in airport_text
     assert "PREFERRED · VHHH" not in airport_text
     physical = scan_physical_pdf(output)
@@ -1124,7 +1143,7 @@ def test_compact_airport_single_alternate_row_keeps_honest_source_status(
 
     document = fitz.open(output)
     airport_text = " ".join(document[4].get_text().split())
-    assert len(document) == 8
+    assert len(document) == 9
     assert "PREFERRED · WSAP" in airport_text
     assert "FORECAST UNAVAILABLE - review current controlled weather" in airport_text
     assert "SINGLE-ROW-FINAL selected source fact remains complete" in airport_text
@@ -1355,7 +1374,10 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
         "destination": ["WSSS"],
         "sourcePage": ["1"],
     }
-    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-08-26-vaa-source-separation-v27"
+    assert (
+        COMBINED_BRIEFING_SCHEMA_VERSION
+        == "2026-08-27-operational-mel-pagination-v30"
+    )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
         7,
@@ -1484,7 +1506,7 @@ def test_no_deferred_page_never_invents_a_missing_source_or_remedy(rendered):
 
 
 def test_operational_terrain_seventh_row_stays_above_manual_review_panel(rendered):
-    page = rendered[7]
+    page = rendered[8]
     matal = next(rect for rect in page.search_for("MATAL") if rect.x0 < 100)
     review = min(page.search_for("MANUAL REVIEW REQUIRED"), key=lambda rect: rect.y0)
     assert matal.y1 + 2.0 <= review.y0
@@ -1535,6 +1557,502 @@ def test_repeated_mel_reference_is_one_gate_and_one_detail_group(tmp_path):
     assert mel_page.count("MEL 25-20-50A") == 1
     assert "FIRST CHILLING COMPARTMENT" in mel_page
     assert "SECOND CHILLING COMPARTMENT" in mel_page
+
+
+def _company_manual_reference(
+    *,
+    section: str,
+    excerpt: str,
+    page: str = "221",
+    deferred_binding: dict | None = None,
+) -> dict:
+    reference = {
+        "excerpt": excerpt,
+        "citation": {
+            "sourceClass": "company_manual",
+            "documentTitle": "SIA A350 Minimum Equipment List",
+            "version": "Revision 39",
+            "effectiveDate": "2025-11-18",
+            "page": page,
+            "section": section,
+            "safeTarget": "/api/help-you/references/ref-test/open?page=221",
+            "applicability": {
+                "scope": "specified",
+                "fleet": "LH",
+                "aircraft": "A350-941",
+                "status": "confirmed",
+            },
+        },
+    }
+    if deferred_binding is not None:
+        reference["deferredBinding"] = deferred_binding
+    return reference
+
+
+def _operational_mel_page(document: fitz.Document) -> str:
+    return _operational_mel_pages(document)[0]
+
+
+def _operational_mel_pages(document: fitz.Document) -> list[str]:
+    return [
+        page.get_text()
+        for page in document
+        if (
+            "MEL/CDL AND CDDL" in page.get_text()
+            and "DISPATCH CONFIRMATION GATES" in page.get_text()
+        )
+    ]
+
+
+def test_operational_pdf_prints_one_complete_exact_governed_extract(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["deferred_items"] = [{
+        "item_type": "MEL",
+        "reference": "25-20-50A",
+        "description": "GALLEY CHILLER",
+        "source_declaration": "AA MEL 25-20-50A GALLEY CHILLER",
+    }]
+    exact_excerpt = (
+        "MEL 25-20-50A permits dispatch only when the listed operational "
+        "conditions are completed."
+    )
+    governed = {
+        "status": "available",
+        "references": [_company_manual_reference(
+            section="MEL 25-20-50A",
+            excerpt=exact_excerpt,
+            page="125",
+        )],
+    }
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "exact-governed-mel.pdf"
+
+    render_combined_briefing(
+        flight,
+        findings,
+        [],
+        out,
+        company_briefing_references=governed,
+    )
+
+    with fitz.open(out) as document:
+        mel_page = _operational_mel_page(document)
+    assert mel_page.count(exact_excerpt) == 1
+    assert "SIA A350 Minimum Equipment List" in mel_page
+    assert "Revision 39" in mel_page
+    assert "effective 2025-11-18" in mel_page
+    assert "p. 125" in mel_page
+    assert "LH / A350-941 - CONFIRMED" in mel_page
+    assert "EXACT CURRENT-APPROVED EXTRACT - EFFECTIVITY CONFIRMED" in mel_page
+
+
+def _five_deferred_rows() -> list[dict]:
+    return [
+        {
+            "item_type": "MEL",
+            "reference": f"25-20-{index:02d}A",
+            "description": f"SYS{index}",
+            "source_declaration": (
+                f"AA MEL 25-20-{index:02d}A SYS{index}"
+            ),
+        }
+        for index in range(1, 6)
+    ]
+
+
+def test_operational_pdf_paginates_five_deferred_rows_and_keeps_row_five_exact(
+    tmp_path,
+):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["deferred_items"] = _five_deferred_rows()
+    fifth_excerpt = (
+        "MEL 25-20-05A exact controlled row-five dispatch conditions."
+    )
+    governed = {
+        "status": "available",
+        "references": [_company_manual_reference(
+            section="MEL 25-20-05A",
+            excerpt=fifth_excerpt,
+            page="205",
+        )],
+    }
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "five-deferred-row-five-exact.pdf"
+
+    render_combined_briefing(
+        flight,
+        findings,
+        [],
+        out,
+        company_briefing_references=governed,
+    )
+
+    with fitz.open(out) as document:
+        mel_pages = _operational_mel_pages(document)
+        mel_text = "\n".join(mel_pages)
+        section_indexes = [
+            index
+            for index, page in enumerate(document)
+            if "MEL/CDL AND CDDL" in page.get_text()
+        ]
+        airports_index = next(
+            index
+            for index, page in enumerate(document)
+            if "AIRPORTS / ALTERNATES" in page.get_text()
+        )
+    assert len(mel_pages) >= 2
+    assert section_indexes == list(
+        range(section_indexes[0], section_indexes[0] + len(section_indexes))
+    )
+    assert airports_index == section_indexes[-1] + 1
+    for index in range(1, 6):
+        assert f"SYS{index}" in mel_text
+    assert mel_text.count(fifth_excerpt) == 1
+    assert "EXACT CURRENT-APPROVED EXTRACT - EFFECTIVITY CONFIRMED" in mel_text
+
+
+def test_operational_pdf_paginates_five_complete_governed_extracts(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["deferred_items"] = _five_deferred_rows()
+    governed = {
+        "status": "available",
+        "references": [
+            _company_manual_reference(
+                section=f"MEL 25-20-{index:02d}A",
+                excerpt=(
+                    f"MEL 25-20-{index:02d}A exact controlled extract "
+                    f"number {index}."
+                ),
+                page=str(300 + index),
+            )
+            for index in range(1, 6)
+        ],
+    }
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "five-governed-extracts.pdf"
+
+    render_combined_briefing(
+        flight,
+        findings,
+        [],
+        out,
+        company_briefing_references=governed,
+    )
+
+    with fitz.open(out) as document:
+        mel_pages = _operational_mel_pages(document)
+    mel_text = "\n".join(mel_pages)
+    assert len(mel_pages) >= 2
+    for index in range(1, 6):
+        excerpt = (
+            f"MEL 25-20-{index:02d}A exact controlled extract number {index}."
+        )
+        assert mel_text.count(excerpt) == 1
+    assert (
+        mel_text.count(
+            "EXACT CURRENT-APPROVED EXTRACT - EFFECTIVITY CONFIRMED"
+        )
+        == 5
+    )
+
+
+def test_operational_pdf_renders_long_governed_excerpt_losslessly_across_pages(
+    tmp_path,
+):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["deferred_items"] = [{
+        "item_type": "MEL",
+        "reference": "25-20-50A",
+        "description": "GALLEY CHILLER",
+        "source_declaration": "AA MEL 25-20-50A GALLEY CHILLER",
+    }]
+    markers = [f"COND{index:03d}" for index in range(1, 181)]
+    long_excerpt = " ".join(
+        f"{marker} requires the stated operational dispatch check."
+        for marker in markers
+    )
+    governed = {
+        "status": "available",
+        "references": [_company_manual_reference(
+            section="MEL 25-20-50A",
+            excerpt=long_excerpt,
+            page="125",
+        )],
+    }
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "long-governed-extract.pdf"
+
+    render_combined_briefing(
+        flight,
+        findings,
+        [],
+        out,
+        company_briefing_references=governed,
+    )
+
+    with fitz.open(out) as document:
+        mel_pages = _operational_mel_pages(document)
+    mel_text = "\n".join(mel_pages)
+    assert len(mel_pages) >= 2
+    assert "CONTINUED (2/" in mel_pages[1].upper()
+    assert "EXACT CURRENT-APPROVED EXTRACT CONTINUES" in mel_text
+    assert "EXACT CURRENT-APPROVED EXTRACT - EFFECTIVITY CONFIRMED" in mel_text
+    for marker in markers:
+        assert mel_text.count(marker) == 1
+
+
+def test_operational_pdf_prints_both_governed_candidates_without_choosing(
+    tmp_path,
+):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    deferred_entry_id = "ofp-deferred-sq481"
+    flight["deferred_items"] = [{
+        "item_type": "UNCLASSIFIED",
+        "reference": "ECDL007905",
+        "source_identifier": "ECDL007905",
+        "description": "SEAT 21A TRAY TABLE UNABLE TO STOW",
+        "source_declaration": "AA SEAT 21A TRAY TABLE UNABLE TO STOW",
+        "company_remark": "X CLASS B",
+        "deferred_entry_id": deferred_entry_id,
+        "classification_status": "unresolved",
+        "classification_reason": (
+            "The OFP does not print an explicit governed MEL or CDL mapping."
+        ),
+        "governed_match_status": "manual_review_required",
+    }]
+    ambiguity = (
+        "The OFP does not state whether the tray table blocks cabin-door access."
+    )
+    confirmation = (
+        "Confirm the Tech Log door-access condition before selecting B or C."
+    )
+
+    def candidate(suffix: str) -> dict:
+        reference = f"25-21-08{suffix}"
+        return _company_manual_reference(
+            section=f"MEL {reference}",
+            excerpt=(
+                f"MEL {reference} Passenger Seat Meal Table - exact controlled "
+                f"candidate {suffix} extract."
+            ),
+            deferred_binding={
+                "deferredEntryId": deferred_entry_id,
+                "matchStatus": "candidate",
+                "itemType": "MEL",
+                "reference": reference,
+                "ambiguityReason": ambiguity,
+                "confirmationRequired": confirmation,
+            },
+        )
+
+    governed = {
+        "status": "available",
+        "references": [candidate("B"), candidate("C")],
+    }
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "candidate-governed-mel.pdf"
+
+    render_combined_briefing(
+        flight,
+        findings,
+        [],
+        out,
+        company_briefing_references=governed,
+    )
+
+    with fitz.open(out) as document:
+        mel_page = _operational_mel_page(document)
+        coverage_page = next(
+            page.get_text()
+            for page in document
+            if "COVERAGE CHECKLIST / CAT-VWS" in page.get_text()
+        )
+    for suffix in ("B", "C"):
+        excerpt = (
+            f"MEL 25-21-08{suffix} Passenger Seat Meal Table - exact controlled "
+            f"candidate {suffix} extract."
+        )
+        assert mel_page.count(excerpt) == 1
+    assert mel_page.count("CANDIDATE ONLY - MANUAL REVIEW REQUIRED") == 2
+    assert "CLASSIFICATION UNRESOLVED" in mel_page
+    assert ambiguity in " ".join(mel_page.split())
+    assert confirmation in " ".join(mel_page.split())
+    assert "EXACT CURRENT-APPROVED EXTRACT - EFFECTIVITY CONFIRMED" not in mel_page
+    normalized_coverage = " ".join(coverage_page.split())
+    assert "MEL / CDL / CDDL" in normalized_coverage
+    assert "2 governed candidate extract(s) held; no candidate selected" in normalized_coverage
+
+
+def test_operational_pdf_fails_closed_when_governed_metadata_is_incomplete(
+    tmp_path,
+):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["deferred_items"] = [{
+        "item_type": "UNCLASSIFIED",
+        "reference": "ECDL007905",
+        "description": "SEAT 21A TRAY TABLE UNABLE TO STOW",
+        "source_declaration": "AA SEAT 21A TRAY TABLE UNABLE TO STOW",
+        "company_remark": "X CLASS B",
+        "deferred_entry_id": "ofp-deferred-sq481",
+        "classification_status": "unresolved",
+        "governed_match_status": "manual_review_required",
+    }]
+    incomplete = _company_manual_reference(
+        section="MEL 25-21-08B",
+        excerpt="MEL 25-21-08B Passenger Seat Meal Table.",
+        deferred_binding={
+            "deferredEntryId": "ofp-deferred-sq481",
+            "matchStatus": "candidate",
+            "itemType": "MEL",
+            "reference": "25-21-08B",
+            "ambiguityReason": "Door-access effect is missing.",
+            "confirmationRequired": "Confirm the Tech Log.",
+        },
+    )
+    incomplete["citation"]["applicability"] = {"status": "review_required"}
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "incomplete-governed-mel.pdf"
+
+    render_combined_briefing(
+        flight,
+        findings,
+        [],
+        out,
+        company_briefing_references={
+            "status": "available",
+            "references": [incomplete],
+        },
+    )
+
+    with fitz.open(out) as document:
+        mel_page = _operational_mel_page(document)
+    assert "ECDL007905" in mel_page
+    assert "MANUAL REVIEW REQUIRED | OFP SOURCE HELD" in mel_page
+    assert "25-21-08B" not in mel_page
+    assert "EXACT CURRENT-APPROVED EXTRACT" not in mel_page
+
+
+def test_operational_coverage_receipt_preserves_explicit_truth_states():
+    flight = sample_flight()
+    flight["fuel_summary"] = {"state": "verified"}
+    briefing = build_briefing_view(flight, [], [])
+    briefing["fuel_summary"] = {"state": "verified"}
+    briefing["performance_publication"] = {"status": "unexpected-green"}
+    briefing["terrain"]["vws_review"] = {
+        "status": "reviewed_no_trigger",
+        "summary": "VWS source-held route values were checked; no >004 trigger.",
+    }
+    briefing["external_cat_corroboration"] = {
+        "layers": [{
+            "key": "AIREP_PIREP",
+            "state": "CHECKED · NO MATCH",
+            "summary": "Governed AIREP/PIREP feed checked with no route match.",
+        }],
+    }
+
+    receipt = _operational_coverage_receipt(flight, briefing, [], None)
+    rows = {row["key"]: row for row in receipt["rows"]}
+
+    assert rows["airep_pirep"]["state"] == "CHECKED · NO MATCH"
+    assert rows["vws"]["state"] == "CHECKED · NO TRIGGER"
+    assert rows["fuel_performance"]["state"] == "REVIEW REQUIRED"
+    assert receipt["cat_vws"]["state"] == "INCOMPLETE"
+
+
+def test_operational_coverage_receipt_reads_semantic_identity_in_dict_layers():
+    flight = sample_flight()
+    briefing = build_briefing_view(flight, [], [])
+    briefing["external_cat_corroboration"] = {
+        "layers": {
+            "governed_layer_1": {
+                "key": "AIREP_PIREP",
+                "state": "CHECKED · NO MATCH",
+                "summary": (
+                    "Governed AIREP/PIREP feed checked with no route match."
+                ),
+            },
+        },
+    }
+
+    receipt = _operational_coverage_receipt(flight, briefing, [], None)
+    rows = {row["key"]: row for row in receipt["rows"]}
+
+    assert rows["airep_pirep"] == {
+        "key": "airep_pirep",
+        "label": "AIREP / PIREP",
+        "state": "CHECKED · NO MATCH",
+        "detail": "Governed AIREP/PIREP feed checked with no route match.",
+    }
+
+
+def test_operational_coverage_receipt_fails_closed_on_aircraft_identity_and_vws():
+    flight = sample_flight()
+    flight.pop("aircraft_type")
+    briefing = build_briefing_view(flight, [], [])
+    briefing["terrain"]["vws_review"] = {
+        "status": "unavailable",
+        "summary": "VWS source values unavailable.",
+    }
+
+    receipt = _operational_coverage_receipt(flight, briefing, [], None)
+    rows = {row["key"]: row for row in receipt["rows"]}
+
+    assert rows["ofp_parse"]["state"] == "REVIEW REQUIRED"
+    assert rows["vws"]["state"] == "UNAVAILABLE"
+    assert rows["airep_pirep"]["state"] == "NOT QUERIED"
+
+
+def test_operational_coverage_receipt_uses_shared_briefing_snapshot():
+    flight = sample_flight()
+    flight["official_weather_review"] = {"status": "complete"}
+    flight["sigmet_review"] = {
+        "status": "review_required",
+        "clean_current_feed_no_match": True,
+    }
+    flight["tropical_cyclone_review"] = {"status": "unavailable"}
+    briefing = build_briefing_view(flight, [], [])
+
+    # Mutating the raw parser output after view construction must not change
+    # the PDF checklist. Both surfaces publish the same immutable projection.
+    flight.clear()
+    receipt = _operational_coverage_receipt(flight, briefing, [], None)
+    rows = {row["key"]: row for row in receipt["rows"]}
+
+    assert rows["ofp_parse"]["state"] == "HELD"
+    assert rows["flight_timing"]["state"] == "HELD"
+    assert rows["metar_taf"]["state"] == "HELD"
+    assert rows["sigmet"]["state"] == "CHECKED · NO MATCH"
+    assert rows["tropical_cyclone"]["state"] == "UNAVAILABLE"
 
 
 def test_mel_cdl_page_keeps_all_governing_references_and_duplicate_details(tmp_path):
@@ -2079,7 +2597,7 @@ def test_operational_performance_prints_candidates_and_known_inputs(
     render_combined_briefing(flight, findings, [], out)
 
     document = fitz.open(out)
-    assert len(document) == 8
+    assert len(document) == 9
     performance_page = " ".join(document[2].get_text().split())
     assert "RTOW PERF · 256,906 kg" in performance_page
     assert "RTOW LAND · 252,000 kg" in performance_page
@@ -2183,7 +2701,7 @@ def test_operational_performance_adds_lossless_eosid_continuation_page(
         for page in document[3:]
     )
     assert continuation_count >= 2
-    assert len(document) == 8 + continuation_count
+    assert len(document) == 9 + continuation_count
     mel_page_number = 4 + continuation_count
     airports_page_number = 5 + continuation_count
     overview_text = " ".join(document[0].get_text().split())
@@ -2849,7 +3367,9 @@ def test_lossless_hazard_plan_moves_sigmet_after_full_named_advisories():
     assert len(plans) == 2
 
 
-def test_compact_baseline_is_seven_pages_without_real_terrain_evidence(tmp_path):
+def test_compact_baseline_is_eight_pages_without_real_terrain_evidence(tmp_path):
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
     flight = sample_flight()
     flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
     flight["depressurisation_profile_charts"] = []
@@ -2864,17 +3384,56 @@ def test_compact_baseline_is_seven_pages_without_real_terrain_evidence(tmp_path)
         for item in sample_findings()
         if item["engine"] not in {"terrain", "vws", "depressurisation"}
     ]
-    out = tmp_path / "seven-page-no-terrain.pdf"
+    out = tmp_path / "eight-page-no-terrain.pdf"
 
     render_combined_briefing(flight, findings, [], out)
 
     document = fitz.open(out)
-    assert len(document) == 7
-    assert [row[1] for row in document.get_toc()][-1] == "Enroute / Assurance"
+    assert len(document) == 8
+    assert [row[1] for row in document.get_toc()][-1] == "Coverage Checklist / CAT-VWS"
     expected = " ".join(
         build_briefing_view(flight, findings, [])["terrain"]["summary"].split()
     )
     assert expected in " ".join(document[6].get_text().split())
+    coverage = " ".join(document[7].get_text().split())
+    assert "COVERAGE CHECKLIST" in coverage
+    assert "CAT / VWS EVIDENCE" in coverage
+    assert "AIREP / PIREP" in coverage
+    assert "NOT QUERIED" in coverage
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+    assert physical["pages"][7]["visible_overlap_count"] == 0
+
+
+def test_rev3_audit_path_never_calls_operational_coverage_renderer(
+    tmp_path,
+    monkeypatch,
+):
+    from app.odss import combined_brief as combined_brief_module
+
+    def forbidden_operational_page(*args, **kwargs):
+        raise AssertionError("REV3 audit path called the operational coverage page")
+
+    monkeypatch.setattr(
+        combined_brief_module,
+        "draw_operational_coverage_page",
+        forbidden_operational_page,
+    )
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    findings = [
+        item
+        for item in sample_findings()
+        if item["engine"] != "depressurisation"
+    ]
+
+    combined_brief_module.render_combined_briefing(
+        flight,
+        findings,
+        [],
+        tmp_path / "audit-isolation.pdf",
+        include_audit_appendix=True,
+    )
 
 
 def test_weather_page_uses_readable_source_status_cards_not_tiny_crops(rendered):
@@ -3490,7 +4049,7 @@ def test_decision_analysis_cards_link_to_their_intended_pages(rendered):
         "Departure NOTAM 1A2469/26": 4,
         "WEATHER COVERAGE INCOMPLETE": 5,
         "Early ATC/FIR action before OAKX": 6,
-        "High-MSA event 1": 7,
+        "High-MSA event 1": 8,
     }
 
     def target_page(link):

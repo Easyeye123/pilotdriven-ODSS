@@ -38,6 +38,7 @@ from .deferred_dispatch import (
     deferred_reference_for_display,
     deferred_source_declaration_for_display,
 )
+from .governed_deferred_extract import governed_deferred_extracts
 
 PAGE_SIZE = landscape(A4)
 
@@ -155,19 +156,19 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-26-vaa-source-separation-v27"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-27-operational-mel-pagination-v30"
 
 
 def combined_briefing_cache_token(
-    analysis_mtime_ns: int,
+    analysis_snapshot_identity: Any,
     flight_id: Any,
     *,
     schema_version: str | None = None,
 ) -> str:
-    """Stable report-cache identity including the publication schema."""
+    """Stable content-snapshot cache identity including publication schema."""
     version = schema_version or COMBINED_BRIEFING_SCHEMA_VERSION
     return hashlib.sha256(
-        f"{analysis_mtime_ns}:{flight_id}:{version}".encode("utf-8")
+        f"{analysis_snapshot_identity}:{flight_id}:{version}".encode("utf-8")
     ).hexdigest()[:16]
 
 
@@ -910,6 +911,7 @@ def _group_deferred_items(flight: dict[str, Any]) -> list[dict[str, Any]]:
     order: list[tuple[str, str] | tuple[str, int]] = []
     for index, source in enumerate(flight.get("deferred_items") or []):
         item = dict(source)
+        item["source_item_index"] = index
         item_type = str(item.get("item_type") or "ITEM").strip().upper()
         reference = deferred_reference_for_display(item.get("reference"))
         key: tuple[str, str] | tuple[str, int] = (
@@ -4956,7 +4958,7 @@ def _operational_fir_boundary_summary(
     """Keep a short FIR summary honest while the lossless rows remain held.
 
     The shared summary can contain dozens of source-timed FIR groups.  Page 7
-    is a seven-page operational scan, so it shows the largest whole prefix
+    is part of the eight-page operational scan, so it shows the largest whole prefix
     that fits and explicitly points to the two lossless surfaces.  No token is
     cut mid-record and the shared briefing-view value is never mutated.
     """
@@ -7892,9 +7894,17 @@ def _draw_operational_deferred_source_panel(
         for line in _wrap(body, SANS, T_SMALL, iw)[: max(1, int((ih - link_height) // 11.0))]:
             canvas.drawString(ix, row_y, line)
             row_y -= 11.0
+    unresolved = (
+        str(item.get("classification_status") or "").strip().lower()
+        == "unresolved"
+        or str(item.get("governed_match_status") or "").strip().lower()
+        == "manual_review_required"
+    )
     label = (
         f"OPEN EXACT {item_type} ITEM / REMEDY >"
         if target
+        else "MANUAL REVIEW REQUIRED | OFP SOURCE HELD"
+        if unresolved
         else "GOVERNED LINK UNAVAILABLE · OFP SOURCE HELD"
     )
     label_width = pdfmetrics.stringWidth(label, SANS_BOLD, T_SMALL)
@@ -7910,6 +7920,245 @@ def _draw_operational_deferred_source_panel(
             relative=0,
             thickness=0,
         )
+
+
+GOVERNED_DEFERRED_PANEL_FOOTER_HEIGHT = 17.0
+
+
+def _governed_deferred_extract_panel_rows(
+    extract: dict[str, Any],
+    *,
+    inner_width: float,
+) -> list[tuple[str, str, float, Any]]:
+    """Measure every governed-extract line without dropping source prose."""
+
+    metadata = (
+        f"{extract.get('document_title')} | {extract.get('revision')} | "
+        f"effective {extract.get('effective_date')} | p. {extract.get('page')}"
+    )
+    section = str(extract.get("section") or "").strip()
+    effectivity = str(extract.get("effectivity") or "").strip()
+    source_declaration = str(
+        extract.get("source_declaration") or ""
+    ).strip()
+    candidate = str(extract.get("match_status") or "").lower() == "candidate"
+    body_blocks: list[tuple[str, str, float, Any]] = [
+        (
+            "SOURCE DECLARATION: "
+            + (source_declaration or "UNAVAILABLE - MANUAL REVIEW REQUIRED"),
+            SANS_BOLD,
+            T_MICRO,
+            TEXT_MUTED,
+        ),
+        (metadata, SANS_BOLD, T_MICRO, TEXT),
+        (
+            " | ".join(value for value in (section, effectivity) if value),
+            SANS,
+            T_MICRO,
+            TEXT_MUTED,
+        ),
+        (str(extract.get("excerpt") or ""), SANS, T_SMALL, TEXT_SECONDARY),
+    ]
+    if candidate:
+        body_blocks.extend((
+            (
+                "WHY UNRESOLVED: "
+                + str(extract.get("ambiguity_reason") or ""),
+                SANS_BOLD,
+                T_MICRO,
+                WEATHER_AMBER,
+            ),
+            (
+                "CONFIRM: "
+                + str(extract.get("confirmation_required") or ""),
+                SANS_BOLD,
+                T_MICRO,
+                WEATHER_AMBER,
+            ),
+        ))
+    planned: list[tuple[str, str, float, Any]] = []
+    for text, font, size, colour in body_blocks:
+        if not text.strip():
+            continue
+        for source_line in text.splitlines():
+            for line in _wrap_lossless_text(
+                source_line,
+                font,
+                size,
+                inner_width,
+            ):
+                planned.append((line, font, size, colour))
+        planned.append(("", font, size, colour))
+    if planned and not planned[-1][0]:
+        planned.pop()
+    return planned
+
+
+def _governed_deferred_row_height(
+    row: tuple[str, str, float, Any],
+) -> float:
+    return max(9.2, row[2] * 1.25)
+
+
+def _governed_deferred_panel_fits(
+    source_panel: dict[str, Any],
+    *,
+    width: float,
+    height: float,
+) -> bool:
+    if source_panel.get("kind") != "governed":
+        return True
+    fragment = source_panel.get("fragment")
+    rows = (
+        list(fragment.get("rows") or [])
+        if isinstance(fragment, dict)
+        else _governed_deferred_extract_panel_rows(
+            dict(source_panel["extract"]),
+            inner_width=width - 20.0,
+        )
+    )
+    available = (
+        height
+        - 24.0
+        - GOVERNED_DEFERRED_PANEL_FOOTER_HEIGHT
+    )
+    return sum(_governed_deferred_row_height(row) for row in rows) <= available
+
+
+def _governed_deferred_panel_fragments(
+    source_panel: dict[str, Any],
+    *,
+    width: float,
+    height: float,
+) -> list[dict[str, Any]]:
+    """Split one oversized accepted extract across lossless full-width cards."""
+
+    extract = dict(source_panel["extract"])
+    rows = _governed_deferred_extract_panel_rows(
+        extract,
+        inner_width=width - 20.0,
+    )
+    capacity = (
+        height
+        - 24.0
+        - GOVERNED_DEFERRED_PANEL_FOOTER_HEIGHT
+    )
+    if capacity <= 0:
+        raise ValueError("Governed deferred extract has no readable panel space.")
+    chunks: list[list[tuple[str, str, float, Any]]] = []
+    current: list[tuple[str, str, float, Any]] = []
+    used = 0.0
+    for row in rows:
+        row_height = _governed_deferred_row_height(row)
+        if row_height > capacity:
+            raise ValueError("Governed deferred extract line exceeds panel height.")
+        if current and used + row_height > capacity:
+            chunks.append(current)
+            current = []
+            used = 0.0
+        current.append(row)
+        used += row_height
+    if current:
+        chunks.append(current)
+    if not chunks:
+        chunks = [[]]
+    count = len(chunks)
+    return [
+        {
+            **source_panel,
+            "force_single_panel": True,
+            "fragment": {
+                "rows": chunk,
+                "number": index,
+                "count": count,
+            },
+        }
+        for index, chunk in enumerate(chunks, start=1)
+    ]
+
+
+def _draw_governed_deferred_extract_panel(
+    canvas,
+    extract: dict[str, Any],
+    *,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    fragment: dict[str, Any] | None = None,
+) -> None:
+    """Print one accepted governed extract fragment with explicit continuity."""
+
+    candidate = str(extract.get("match_status") or "").lower() == "candidate"
+    item_type = str(extract.get("item_type") or "").upper()
+    reference = str(extract.get("reference") or "").upper()
+    base_title = (
+        f"{item_type} {reference} CANDIDATE - CLASSIFICATION UNRESOLVED"
+        if candidate
+        else f"CONTROLLED {item_type} {reference} EXTRACT"
+    )
+    fragment_number = int((fragment or {}).get("number") or 1)
+    fragment_count = int((fragment or {}).get("count") or 1)
+    title = (
+        f"{base_title} - CONTINUED {fragment_number}/{fragment_count}"
+        if fragment_count > 1
+        else base_title
+    )
+    inner = panel(
+        canvas,
+        x,
+        y,
+        width,
+        height,
+        title=title,
+        accent=WEATHER_AMBER if candidate else EDTO_GREEN,
+        title_colour=None,
+    )
+    ix, iy, iw, ih = inner
+    planned = (
+        list(fragment.get("rows") or [])
+        if isinstance(fragment, dict)
+        else _governed_deferred_extract_panel_rows(
+            extract,
+            inner_width=iw,
+        )
+    )
+    line_heights = [max(9.2, row[2] * 1.25) for row in planned]
+    if sum(line_heights) > ih - GOVERNED_DEFERRED_PANEL_FOOTER_HEIGHT:
+        raise ValueError(
+            f"Governed {item_type} {reference} extract exceeds readable PDF capacity."
+        )
+    row_y = y + height - 35.0
+    for (line, font, size, colour), line_height in zip(planned, line_heights):
+        if line:
+            canvas.setFillColor(colour)
+            canvas.setFont(font, size)
+            canvas.drawString(ix, row_y, line)
+        row_y -= line_height
+    if fragment_count > 1 and fragment_number < fragment_count:
+        footer = (
+            "CANDIDATE EXTRACT CONTINUES - MANUAL REVIEW REQUIRED"
+            if candidate
+            else "EXACT CURRENT-APPROVED EXTRACT CONTINUES"
+        )
+    else:
+        footer = (
+            "CANDIDATE ONLY - MANUAL REVIEW REQUIRED"
+            if candidate
+            else "EXACT CURRENT-APPROVED EXTRACT - EFFECTIVITY CONFIRMED"
+        )
+    canvas.setFillColor(WEATHER_AMBER if candidate else EDTO_GREEN)
+    canvas.setFont(SANS_BOLD, T_MICRO)
+    _draw_string_fitted(
+        canvas,
+        ix,
+        iy + 3.0,
+        footer,
+        SANS_BOLD,
+        T_MICRO,
+        iw,
+        WEATHER_AMBER if candidate else EDTO_GREEN,
+    )
 
 
 def _operational_performance_layout(
@@ -8501,6 +8750,385 @@ def draw_operational_eosid_continuation_page(
         row_y -= line_height
 
 
+def _operational_mel_gate_layout(
+    gate_items: list[dict[str, Any]],
+    *,
+    gate_width: float,
+) -> tuple[list[tuple[dict[str, Any], str, list[str]]], float]:
+    """Measure one complete dispatch-gate row before drawing it."""
+
+    visible_gates = list(gate_items or [])
+    if not visible_gates:
+        visible_gates = [{
+            "title": "STATUS CLEAR",
+            "summary": (
+                "No MEL, CDL or CDDL declaration is printed on OFP page 1."
+            ),
+        }]
+    column_width = gate_width / len(visible_gates)
+    planned: list[tuple[dict[str, Any], str, list[str]]] = []
+    for item in visible_gates:
+        gate_title = str(item.get("title") or "").strip().upper()
+        if not gate_title:
+            item_type = deferred_item_type_for_display(item.get("item_type"))
+            reference = deferred_reference_for_display(item.get("reference"))
+            declaration = deferred_source_declaration_for_display(
+                item.get("source_declaration")
+            ).upper()
+            gate_title = declaration or " ".join(
+                value for value in (item_type, reference) if value
+            )
+            if not gate_title:
+                gate_title = "DEFERRED ITEM REVIEW REQUIRED"
+        body = str(item.get("summary") or "").strip()
+        if not body:
+            body = " ".join(
+                part
+                for part in (
+                    str(item.get("description") or "").strip(),
+                    str(item.get("company_remark") or "").strip(),
+                )
+                if part
+            )
+        body_lines = _wrap_lossless_text(
+            body or "Dispatch review required.",
+            SANS,
+            T_SMALL,
+            column_width - 24.0,
+        ) or [""]
+        planned.append((item, gate_title, body_lines))
+    max_body_lines = max(len(row[2]) for row in planned)
+    band_height = 22.0
+    gate_height = max(
+        122.0,
+        band_height + 41.0 + max_body_lines * 10.2,
+    )
+    return planned, gate_height
+
+
+def _operational_mel_source_items(
+    briefing: dict[str, Any],
+    deferred_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return every parsed OFP declaration in stable source order."""
+
+    dispatch_gates = list(briefing.get("deferred_dispatch_gates") or [])
+    source_items: list[dict[str, Any]] = []
+    for gate in dispatch_gates:
+        for segment in gate.get("source_segments") or []:
+            reference = str(segment.get("reference") or "").strip().upper()
+            item_type = str(segment.get("item_type") or "").strip().upper()
+            declaration_kind = str(
+                segment.get("declaration_kind") or ""
+            ).strip().upper()
+            unresolved_source = (
+                str(segment.get("classification_status") or "").strip().lower()
+                == "unresolved"
+            )
+            if (
+                item_type not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN"}
+                and declaration_kind not in {
+                    "MEL", "CDL", "CDDL", "IFEDDL", "IN",
+                }
+                and not unresolved_source
+            ):
+                continue
+            display_item_type = (
+                declaration_kind
+                if item_type == "OPERATIONAL_RESTRICTION" and declaration_kind
+                else item_type
+            )
+            source_items.append({
+                "source_item_index": segment.get("source_item_index"),
+                "source_segment_index": segment.get("source_segment_index"),
+                "item_type": display_item_type,
+                "reference": reference,
+                "description": segment.get("description"),
+                "company_remark": segment.get("restriction"),
+                "source_page": segment.get("source_page"),
+                "source_declaration": segment.get("source_declaration"),
+                "crop_end_needle": segment.get("crop_end_needle") or "PLAN",
+                "deferred_entry_id": segment.get("deferred_entry_id"),
+                "classification_status": segment.get("classification_status"),
+                "classification_reason": segment.get("classification_reason"),
+                "governed_match_status": segment.get("governed_match_status"),
+                "source_line_start": segment.get("source_line_start"),
+                "source_line_end": segment.get("source_line_end"),
+                "source_lines": list(segment.get("source_lines") or []),
+            })
+
+    represented_indices = {
+        item.get("source_item_index")
+        for item in source_items
+        if isinstance(item.get("source_item_index"), int)
+    }
+    for index, item in enumerate(deferred_items):
+        if index in represented_indices:
+            continue
+        source_items.append({
+            **item,
+            "source_item_index": index,
+            "source_segment_index": item.get("source_segment_index", 0),
+        })
+    source_items.sort(
+        key=lambda item: (
+            item.get("source_item_index") is None,
+            item.get("source_item_index")
+            if isinstance(item.get("source_item_index"), int)
+            else 999,
+            item.get("source_segment_index")
+            if isinstance(item.get("source_segment_index"), int)
+            else 999,
+        )
+    )
+    return source_items
+
+
+def _operational_mel_source_panels(
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    deferred_items: list[dict[str, Any]],
+    company_briefing_references: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Bind every declaration to its accepted extracts without omission."""
+
+    source_items = _operational_mel_source_items(briefing, deferred_items)
+    governed = governed_deferred_extracts(
+        deferred_items,
+        company_briefing_references,
+    )
+    governed_by_source: dict[int, list[dict[str, Any]]] = {}
+    for extract in governed:
+        source_index = extract.get("source_item_index")
+        if isinstance(source_index, int):
+            governed_by_source.setdefault(source_index, []).append(extract)
+
+    source_panels: list[dict[str, Any]] = []
+    rendered_extract_ids: set[str] = set()
+    for item in source_items:
+        source_index = item.get("source_item_index")
+        matched = (
+            governed_by_source.get(source_index, [])
+            if isinstance(source_index, int)
+            else []
+        )
+        item_type = str(item.get("item_type") or "").strip().upper()
+        reference = str(item.get("reference") or "").strip().upper()
+        applicable_extracts = [
+            extract
+            for extract in matched
+            if (
+                str(extract.get("match_status") or "").lower() == "candidate"
+                or (
+                    str(extract.get("item_type") or "").strip().upper()
+                    == item_type
+                    and str(extract.get("reference") or "").strip().upper()
+                    == reference
+                )
+            )
+        ]
+        if applicable_extracts:
+            for extract in applicable_extracts:
+                extract_id = str(extract.get("extract_id") or "")
+                if not extract_id or extract_id in rendered_extract_ids:
+                    continue
+                rendered_extract_ids.add(extract_id)
+                source_panels.append({
+                    "kind": "governed",
+                    "source_item_index": source_index,
+                    "extract": extract,
+                })
+            continue
+        source_panels.append({
+            "kind": "ofp",
+            "source_item_index": source_index,
+            "item": item,
+        })
+
+    # An upstream accepted reference must never disappear because a display
+    # segment was unavailable or used an unexpected label. Keep the extract,
+    # still tied to its validated source-item index, as a final fail-closed
+    # panel rather than manufacturing a match to another declaration.
+    for extract in governed:
+        extract_id = str(extract.get("extract_id") or "")
+        if not extract_id or extract_id in rendered_extract_ids:
+            continue
+        rendered_extract_ids.add(extract_id)
+        source_panels.append({
+            "kind": "governed",
+            "source_item_index": extract.get("source_item_index"),
+            "extract": extract,
+        })
+    return source_panels
+
+
+def _operational_mel_source_positions(
+    count: int,
+    *,
+    gate_x: float,
+    gate_width: float,
+    gate_y: float,
+) -> list[tuple[float, float, float, float]]:
+    """Return the current compact mosaic geometry for one source page."""
+
+    if count < 1 or count > MEL_CDL_GROUPS_PER_PAGE:
+        raise ValueError("Operational MEL/CDL source page requires 1 to 4 panels.")
+    source_top = gate_y - 14.0
+    source_bottom = 46.0
+    source_height = source_top - source_bottom
+    gap = 12.0
+    if count == 1:
+        return [(gate_x, source_bottom, gate_width, source_height)]
+    card_width = (gate_width - gap) / 2.0
+    if count == 2:
+        return [
+            (gate_x, source_bottom, card_width, source_height),
+            (gate_x + card_width + gap, source_bottom, card_width, source_height),
+        ]
+    if count == 3:
+        left_height = (source_height - gap) / 2.0
+        return [
+            (gate_x, source_bottom + left_height + gap, card_width, left_height),
+            (gate_x, source_bottom, card_width, left_height),
+            (gate_x + card_width + gap, source_bottom, card_width, source_height),
+        ]
+    card_height = (source_height - gap) / 2.0
+    return [
+        (gate_x, source_bottom + card_height + gap, card_width, card_height),
+        (
+            gate_x + card_width + gap,
+            source_bottom + card_height + gap,
+            card_width,
+            card_height,
+        ),
+        (gate_x, source_bottom, card_width, card_height),
+        (gate_x + card_width + gap, source_bottom, card_width, card_height),
+    ]
+
+
+def _operational_mel_source_pages(
+    source_panels: list[dict[str, Any]],
+    *,
+    gate_x: float,
+    gate_width: float,
+    gate_y: float,
+) -> list[list[dict[str, Any]]]:
+    """Pack readable panels and split only extracts that need continuation."""
+
+    pending = list(source_panels)
+    pages: list[list[dict[str, Any]]] = []
+    while pending:
+        selected_count = 0
+        for count in range(
+            min(MEL_CDL_GROUPS_PER_PAGE, len(pending)),
+            0,
+            -1,
+        ):
+            candidates = pending[:count]
+            if any(
+                panel.get("force_single_panel") for panel in candidates
+            ) and count != 1:
+                continue
+            positions = _operational_mel_source_positions(
+                count,
+                gate_x=gate_x,
+                gate_width=gate_width,
+                gate_y=gate_y,
+            )
+            if all(
+                _governed_deferred_panel_fits(
+                    source_panel,
+                    width=position[2],
+                    height=position[3],
+                )
+                for source_panel, position in zip(candidates, positions)
+            ):
+                selected_count = count
+                break
+        if selected_count:
+            pages.append(pending[:selected_count])
+            del pending[:selected_count]
+            continue
+
+        oversized = pending.pop(0)
+        if oversized.get("kind") != "governed":
+            raise ValueError("OFP deferred source panel exceeds readable capacity.")
+        full_position = _operational_mel_source_positions(
+            1,
+            gate_x=gate_x,
+            gate_width=gate_width,
+            gate_y=gate_y,
+        )[0]
+        fragments = _governed_deferred_panel_fragments(
+            oversized,
+            width=full_position[2],
+            height=full_position[3],
+        )
+        pages.extend([[fragment] for fragment in fragments])
+    return pages or [[]]
+
+
+def _operational_mel_page_plans(
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    deferred_items: list[dict[str, Any]],
+    company_briefing_references: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], float]:
+    """Plan every operational MEL/CDL page before fixing document numbers."""
+
+    gate_x = MARGIN + 10.0
+    gate_width = PAGE_SIZE[0] - 2 * gate_x
+    dispatch_gates = list(briefing.get("deferred_dispatch_gates") or [])
+    gate_items = dispatch_gates or list(deferred_items)
+    gate_pages = _chunked(gate_items, MEL_CDL_GROUPS_PER_PAGE)
+    continuation_gate = [{
+        "title": "SOURCE EVIDENCE CONTINUATION",
+        "summary": (
+            "Additional source-bound declaration or governed extract; "
+            "dispatch gates remain as stated on the preceding page."
+        ),
+    }]
+    measured_gate_pages = [*gate_pages, continuation_gate]
+    gate_height = max(
+        _operational_mel_gate_layout(
+            page,
+            gate_width=gate_width,
+        )[1]
+        for page in measured_gate_pages
+    )
+    gate_top = PAGE_SIZE[1] - 94.0 - 12.0
+    gate_y = gate_top - gate_height
+    source_panels = _operational_mel_source_panels(
+        flight,
+        briefing,
+        deferred_items,
+        company_briefing_references,
+    )
+    source_pages = _operational_mel_source_pages(
+        source_panels,
+        gate_x=gate_x,
+        gate_width=gate_width,
+        gate_y=gate_y,
+    )
+    page_count = max(len(gate_pages), len(source_pages), 1)
+    plans = [
+        {
+            "gate_items": (
+                gate_pages[index]
+                if index < len(gate_pages)
+                else continuation_gate
+            ),
+            "source_panels": (
+                source_pages[index]
+                if index < len(source_pages)
+                else []
+            ),
+        }
+        for index in range(page_count)
+    ]
+    return plans, gate_height
+
+
 def draw_operational_mel_cdl_page(
     canvas,
     flight: dict[str, Any],
@@ -8511,22 +9139,42 @@ def draw_operational_mel_cdl_page(
     page_count: int,
     source_pdf_path: str | None,
     deferred_items: list[dict[str, Any]],
+    company_briefing_references: dict[str, Any] | None = None,
+    gate_items: list[dict[str, Any]] | None = None,
+    planned_source_panels: list[dict[str, Any]] | None = None,
+    gate_height: float | None = None,
+    section_page_number: int = 1,
+    section_page_count: int = 1,
 ) -> None:
-    """Dedicated one-page evidence view for up to four OFP declarations."""
+    """Draw one measured deferred-evidence page from the lossless plan."""
     width, _ = PAGE_SIZE
+    section_suffix = _continuation_suffix(
+        section_page_number,
+        section_page_count,
+    )
     content_top = draw_page_chrome(
         canvas,
         flight,
         page_number=page_number,
         page_count=page_count,
-        source_line="OFP page 1 declarations | exact governed MEL/CDL item links",
-        section_label="MEL/CDL AND CDDL",
+        source_line=(
+            "OFP page 1 declarations | inline governed MEL/CDL evidence "
+            "where source-bound"
+        ),
+        section_label=f"MEL/CDL AND CDDL{section_suffix}",
         section_colour=COMMS_TEAL,
         page_family="deep",
     )
-    canvas.bookmarkPage("sec_mel_cdl")
+    if section_page_number == 1:
+        canvas.bookmarkPage("sec_mel_cdl")
+    else:
+        canvas.bookmarkPage(f"sec_mel_cdl_{section_page_number}")
     deferred = list(deferred_items or [])
-    dispatch_gates = list(briefing.get("deferred_dispatch_gates") or [])
+    dispatch_gates = list(
+        gate_items
+        if gate_items is not None
+        else briefing.get("deferred_dispatch_gates") or []
+    )
     visible_gates = dispatch_gates[:MEL_CDL_GROUPS_PER_PAGE]
     if not visible_gates:
         visible_gates = deferred[:MEL_CDL_GROUPS_PER_PAGE]
@@ -8572,7 +9220,8 @@ def draw_operational_mel_cdl_page(
         ) or [""]
         planned_gates.append((item, gate_title, body_lines))
     max_body_lines = max(len(row[2]) for row in planned_gates)
-    gate_h = max(122.0, band_h + 41.0 + max_body_lines * 10.2)
+    measured_gate_h = max(122.0, band_h + 41.0 + max_body_lines * 10.2)
+    gate_h = max(measured_gate_h, float(gate_height or 0.0))
     gate_y = gate_top - gate_h
     canvas.setFillColor(_page_colour(canvas, "panel", PANEL))
     canvas.setStrokeColor(_page_colour(canvas, "border", BORDER))
@@ -8598,10 +9247,9 @@ def draw_operational_mel_cdl_page(
     )
     canvas.setFillColor(_page_colour(canvas, "bg", BG))
     canvas.setFont(SANS_BOLD, 10.0)
-    gate_overflow_count = max(0, len(dispatch_gates) - MEL_CDL_GROUPS_PER_PAGE)
     gate_heading = "MEL/CDL AND CDDL - DISPATCH CONFIRMATION GATES"
-    if gate_overflow_count:
-        gate_heading += f" | +{gate_overflow_count} IN DASHBOARD"
+    if section_page_count > 1:
+        gate_heading += f" | PAGE {section_page_number}/{section_page_count}"
     _draw_string_fitted(
         canvas,
         gate_x + 12,
@@ -8661,6 +9309,10 @@ def draw_operational_mel_cdl_page(
             declaration_kind = str(
                 segment.get("declaration_kind") or ""
             ).strip().upper()
+            unresolved_source = (
+                str(segment.get("classification_status") or "").strip().lower()
+                == "unresolved"
+            )
             # Every declaration on the block earns a source panel — the
             # 21 Aug OFP printed a bare CDDL, an IFEDDL and an engineering
             # IN notice alongside the MEL, and the boss's reference shows
@@ -8668,6 +9320,7 @@ def draw_operational_mel_cdl_page(
             if (
                 item_type not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN"}
                 and declaration_kind not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN"}
+                and not unresolved_source
             ):
                 continue
             display_item_type = (
@@ -8686,6 +9339,13 @@ def draw_operational_mel_cdl_page(
                 "source_page": segment.get("source_page"),
                 "source_declaration": segment.get("source_declaration"),
                 "crop_end_needle": segment.get("crop_end_needle") or "PLAN",
+                "deferred_entry_id": segment.get("deferred_entry_id"),
+                "classification_status": segment.get("classification_status"),
+                "classification_reason": segment.get("classification_reason"),
+                "governed_match_status": segment.get("governed_match_status"),
+                "source_line_start": segment.get("source_line_start"),
+                "source_line_end": segment.get("source_line_end"),
+                "source_lines": list(segment.get("source_lines") or []),
             })
     source_items.sort(
         key=lambda item: (
@@ -8698,14 +9358,61 @@ def draw_operational_mel_cdl_page(
             else 999,
         )
     )
-    source_overflow_count = max(0, len(source_items) - 4)
-    source_items = source_items[:4]
     if not source_items:
-        source_items = deferred[:4]
+        source_items = [
+            {**item, "source_item_index": item.get("source_item_index", index)}
+            for index, item in enumerate(deferred)
+        ]
+    governed = governed_deferred_extracts(
+        deferred_items,
+        company_briefing_references,
+    )
+    governed_by_source: dict[int, list[dict[str, Any]]] = {}
+    for extract in governed:
+        source_index = extract.get("source_item_index")
+        if isinstance(source_index, int):
+            governed_by_source.setdefault(source_index, []).append(extract)
+    source_panels: list[dict[str, Any]] = []
+    rendered_extract_ids: set[str] = set()
+    rendered_source_indices: set[int] = set()
+    for item in source_items:
+        source_index = item.get("source_item_index")
+        matched = (
+            governed_by_source.get(source_index, [])
+            if isinstance(source_index, int)
+            else []
+        )
+        if matched:
+            if source_index in rendered_source_indices:
+                continue
+            rendered_source_indices.add(source_index)
+            for extract in matched:
+                extract_id = str(extract.get("extract_id") or "")
+                if not extract_id or extract_id in rendered_extract_ids:
+                    continue
+                rendered_extract_ids.add(extract_id)
+                source_panels.append({"kind": "governed", "extract": extract})
+            continue
+        source_panels.append({"kind": "ofp", "item": item})
+    governed_count = sum(
+        1 for item in source_panels if item.get("kind") == "governed"
+    )
+    if governed_count > 4 and planned_source_panels is None:
+        raise ValueError(
+            "Exact governed MEL/CDL extracts exceed the readable PDF page capacity."
+        )
+    # Current-approved excerpts lead. The compact report may retain additional
+    # OFP source declarations in the dashboard, but it never silently drops a
+    # complete governed extract in favour of a raw declaration crop.
+    source_panels.sort(key=lambda item: item.get("kind") != "governed")
+    if planned_source_panels is not None:
+        source_panels = list(planned_source_panels)
+    source_overflow_count = max(0, len(source_panels) - 4)
+    source_panels = source_panels[:4]
     source_top = gate_y - (24.0 if source_overflow_count else 14.0)
     source_bottom = 46.0
     source_h = source_top - source_bottom
-    if not source_items:
+    if not source_panels:
         source_inner = panel(
             canvas,
             gate_x,
@@ -8716,18 +9423,30 @@ def draw_operational_mel_cdl_page(
             accent=COMMS_TEAL,
             title_colour=None,
         )
-        canvas.setFillColor(EDTO_GREEN)
+        canvas.setFillColor(EDTO_GREEN if not deferred else WEATHER_AMBER)
         canvas.setFont(SANS_BOLD, 13.0)
         canvas.drawString(
             source_inner[0],
             source_top - 48.0,
-            "NO DEFERRED DECLARATION PRINTED",
+            (
+                "NO DEFERRED DECLARATION PRINTED"
+                if not deferred
+                else "SOURCE EVIDENCE CONTINUES ON ADJACENT PAGES"
+            ),
         )
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS, T_SMALL)
         status_lines = _wrap(
-            "No MEL, CDL, CDDL, IFEDDL or engineering deferred declaration "
-            "is printed on OFP page 1. No governed remedy link applies.",
+            (
+                "No MEL, CDL, CDDL, IFEDDL or engineering deferred declaration "
+                "is printed on OFP page 1. No governed remedy link applies."
+                if not deferred
+                else (
+                    "This page completes dispatch-gate coverage; every held OFP "
+                    "declaration and governed extract is printed on the adjacent "
+                    "MEL/CDL evidence pages."
+                )
+            ),
             SANS,
             T_SMALL,
             source_inner[2],
@@ -8752,15 +9471,15 @@ def draw_operational_mel_cdl_page(
             f"+{source_overflow_count} {declaration_label} {declaration_verb} IN DASHBOARD",
         )
     gap = 12.0
-    if len(source_items) == 1:
+    if len(source_panels) == 1:
         positions = [(gate_x, source_bottom, gate_w, source_h)]
-    elif len(source_items) == 2:
+    elif len(source_panels) == 2:
         card_w = (gate_w - gap) / 2.0
         positions = [
             (gate_x, source_bottom, card_w, source_h),
             (gate_x + card_w + gap, source_bottom, card_w, source_h),
         ]
-    elif len(source_items) == 3:
+    elif len(source_panels) == 3:
         card_w = (gate_w - gap) / 2.0
         left_h = (source_h - gap) / 2.0
         positions = [
@@ -8777,18 +9496,33 @@ def draw_operational_mel_cdl_page(
             (gate_x, source_bottom, card_w, card_h),
             (gate_x + card_w + gap, source_bottom, card_w, card_h),
         ]
-    for item, (x, y, card_w, card_h) in zip(source_items, positions):
-        _draw_operational_deferred_source_panel(
-            canvas,
-            flight,
-            item,
-            source_pdf_path=source_pdf_path,
-            x=x,
-            y=y,
-            width=card_w,
-            height=card_h,
-            include_governed_link=True,
-        )
+    for source_panel, (x, y, card_w, card_h) in zip(source_panels, positions):
+        if source_panel.get("kind") == "governed":
+            _draw_governed_deferred_extract_panel(
+                canvas,
+                dict(source_panel["extract"]),
+                x=x,
+                y=y,
+                width=card_w,
+                height=card_h,
+                fragment=(
+                    dict(source_panel["fragment"])
+                    if isinstance(source_panel.get("fragment"), dict)
+                    else None
+                ),
+            )
+        else:
+            _draw_operational_deferred_source_panel(
+                canvas,
+                flight,
+                dict(source_panel["item"]),
+                source_pdf_path=source_pdf_path,
+                x=x,
+                y=y,
+                width=card_w,
+                height=card_h,
+                include_governed_link=True,
+            )
 
 
 def _operational_airport_role(panel_data: dict[str, Any]) -> str:
@@ -9989,6 +10723,622 @@ def draw_operational_hazard_page(
         chart_y -= 10.2
 
 
+_COVERAGE_RECEIPT_STATES = frozenset({
+    "FOUND",
+    "CHECKED · NO MATCH",
+    "CHECKED · NO TRIGGER",
+    "HELD",
+    "NOT APPLICABLE",
+    "REVIEW REQUIRED",
+    "UNAVAILABLE",
+    "NOT QUERIED",
+})
+
+
+def _coverage_receipt_row(
+    key: str,
+    label: str,
+    state: str,
+    detail: str,
+) -> dict[str, str]:
+    """One explicit, bounded checklist result; missing evidence never becomes NIL."""
+    if state not in _COVERAGE_RECEIPT_STATES:
+        raise ValueError(f"Unsupported coverage receipt state: {state}")
+    normalized_detail = " ".join(str(detail or "").split())
+    if not normalized_detail:
+        raise ValueError(f"Coverage receipt row {key} requires a truthful detail.")
+    return {
+        "key": key,
+        "label": label,
+        "state": state,
+        "detail": normalized_detail,
+    }
+
+
+def _review_receipt_state(
+    review: Any,
+    *,
+    clean_no_match: bool = False,
+) -> str:
+    """Map only explicit upstream review states into the PDF receipt vocabulary."""
+    if not isinstance(review, dict):
+        return "NOT QUERIED"
+    status = str(review.get("status") or review.get("state") or "").strip().lower()
+    if status in {"checked · no match", "checked - no match", "checked_no_match"}:
+        return "CHECKED · NO MATCH"
+    if status in {
+        "checked · no trigger",
+        "checked - no trigger",
+        "checked_no_trigger",
+    }:
+        return "CHECKED · NO TRIGGER"
+    if status in {"not queried", "not_queried"}:
+        return "NOT QUERIED"
+    if status in {"affected", "present", "found", "matched"}:
+        return "FOUND"
+    if status in {"not_applicable", "not_present", "no_match"}:
+        return "CHECKED · NO MATCH"
+    if status in {"complete", "available", "held", "verified", "ok"}:
+        return "HELD"
+    if status in {"not_assessed", "disabled"}:
+        return "NOT QUERIED"
+    if status in {"unavailable", "source_unavailable"}:
+        return "UNAVAILABLE"
+    if clean_no_match and status == "review_required":
+        return "CHECKED · NO MATCH"
+    return "REVIEW REQUIRED"
+
+
+def _external_cat_receipt(briefing: dict[str, Any]) -> dict[str, str]:
+    """Read a future explicit AIREP/PIREP layer without inventing one today."""
+    external = briefing.get("external_cat_corroboration")
+    if not isinstance(external, dict):
+        return _coverage_receipt_row(
+            "airep_pirep",
+            "AIREP / PIREP",
+            "NOT QUERIED",
+            "No governed AIREP/PIREP retrieval receipt is attached to this analysis.",
+        )
+    layers = external.get("layers")
+    candidates: list[dict[str, Any]] = []
+    if isinstance(layers, dict):
+        candidates = [
+            value
+            for key, value in layers.items()
+            if isinstance(value, dict)
+            and any(
+                token in " ".join((
+                    str(key),
+                    str(value.get("key") or ""),
+                    str(value.get("label") or ""),
+                    str(value.get("source") or ""),
+                )).upper()
+                for token in ("AIREP", "PIREP")
+            )
+        ]
+    elif isinstance(layers, list):
+        candidates = [
+            value
+            for value in layers
+            if isinstance(value, dict)
+            and any(
+                token in str(
+                    value.get("key")
+                    or value.get("label")
+                    or value.get("source")
+                    or ""
+                ).upper()
+                for token in ("AIREP", "PIREP")
+            )
+        ]
+    source = candidates[0] if candidates else external
+    state = _review_receipt_state(source)
+    detail = str(
+        source.get("summary")
+        or source.get("reason")
+        or source.get("detail")
+        or "Explicit AIREP/PIREP receipt is incomplete; review required."
+    )
+    return _coverage_receipt_row(
+        "airep_pirep",
+        "AIREP / PIREP",
+        state,
+        detail,
+    )
+
+
+def _operational_coverage_receipt(
+    _flight: dict[str, Any],
+    briefing: dict[str, Any],
+    findings: list[dict[str, Any]],
+    company_briefing_references: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Project the operational checklist from explicit held states only.
+
+    This is a publication receipt, not a second analysis engine. It names what
+    the existing deterministic pipeline established and keeps every expected
+    category visible when that evidence is absent, unavailable, or not queried.
+    """
+    rows: list[dict[str, str]] = []
+    receipt_inputs = briefing.get("coverage_receipt_inputs") or {}
+    identity_complete = receipt_inputs.get("identity_complete") is True
+    rows.append(_coverage_receipt_row(
+        "ofp_parse",
+        "OFP PARSE",
+        "HELD" if identity_complete else "REVIEW REQUIRED",
+        (
+            "Flight, route and aircraft source identity held."
+            if identity_complete
+            else "Parsed flight identity is incomplete; source package review required."
+        ),
+    ))
+
+    timing_complete = receipt_inputs.get("timing_complete") is True
+    rows.append(_coverage_receipt_row(
+        "flight_timing",
+        "FLIGHT TIMING",
+        "HELD" if timing_complete else "REVIEW REQUIRED",
+        (
+            "Scheduled departure and arrival UTC are held."
+            if timing_complete
+            else "Scheduled departure/arrival UTC pair is incomplete."
+        ),
+    ))
+
+    deferred_items = [
+        item for item in (receipt_inputs.get("deferred_items") or [])
+        if isinstance(item, dict)
+    ]
+    governed_extracts = governed_deferred_extracts(
+        deferred_items,
+        company_briefing_references,
+    )
+    exact_extracts = [
+        item for item in governed_extracts
+        if item.get("match_status") == "exact"
+    ]
+    candidate_extracts = [
+        item for item in governed_extracts
+        if item.get("match_status") == "candidate"
+    ]
+    if candidate_extracts:
+        mel_state = "REVIEW REQUIRED"
+        mel_detail = (
+            f"{len(candidate_extracts)} governed candidate extract(s) held; "
+            "no candidate selected without manual confirmation."
+        )
+    elif exact_extracts:
+        mel_state = "FOUND"
+        mel_detail = (
+            f"{len(exact_extracts)} exact governed extract(s) bound to "
+            f"{len(deferred_items)} OFP deferred declaration(s)."
+        )
+    elif deferred_items:
+        mel_state = "REVIEW REQUIRED"
+        mel_detail = (
+            f"{len(deferred_items)} OFP deferred declaration(s) held; "
+            "no exact governed manual extract is published."
+        )
+    else:
+        mel_state = "CHECKED · NO MATCH"
+        mel_detail = (
+            "No supported MEL/CDL/CDDL declaration was parsed from OFP page 1; "
+            "this is not a fleet-defect NIL statement."
+        )
+    rows.append(_coverage_receipt_row(
+        "mel_cdl",
+        "MEL / CDL / CDDL",
+        mel_state,
+        mel_detail,
+    ))
+
+    fuel_summary = briefing.get("fuel_summary")
+    fuel_state = str(
+        (fuel_summary or {}).get("state")
+        if isinstance(fuel_summary, dict)
+        else ""
+    ).lower()
+    performance = briefing.get("performance_publication") or {}
+    performance_state = str(performance.get("status") or "").lower()
+    fuel_performance_held = (
+        fuel_state == "verified"
+        and performance_state in {"within-limit", "verified", "complete", "ok"}
+    )
+    rows.append(_coverage_receipt_row(
+        "fuel_performance",
+        "FUEL / PERFORMANCE",
+        "HELD" if fuel_performance_held else "REVIEW REQUIRED",
+        (
+            "Verified OFP fuel arithmetic and a deterministic performance state are held."
+            if fuel_performance_held
+            else "Fuel arithmetic or performance publication remains review-required."
+        ),
+    ))
+
+    airport_panels = [
+        item for item in (briefing.get("airport_operational_panels") or [])
+        if isinstance(item, dict)
+    ]
+    alternate_rows = [
+        item for item in (briefing.get("alternate_assessment_rows") or [])
+        if isinstance(item, dict)
+    ]
+    rows.append(_coverage_receipt_row(
+        "airports_alternates",
+        "AIRPORTS / ALTERNATES",
+        "HELD" if airport_panels else "UNAVAILABLE",
+        (
+            f"{len(airport_panels)} airport role panel(s) and "
+            f"{len(alternate_rows)} alternate assessment row(s) held."
+            if airport_panels
+            else "No governed airport role panel is held in this analysis."
+        ),
+    ))
+
+    edto = briefing.get("edto") or {}
+    edto_status = str((edto.get("assessment") or {}).get("status") or "").lower()
+    if edto_status == "verified_not_applicable":
+        edto_state = "NOT APPLICABLE"
+        edto_detail = "Deterministic OFP classification confirms a non-EDTO flight."
+    elif edto_status in {"affected", "complete", "verified", "ok"}:
+        edto_state = "HELD"
+        edto_detail = "EDTO classification and checked-period assessment are held."
+    else:
+        edto_state = "REVIEW REQUIRED"
+        edto_detail = "EDTO classification or checked-period suitability is unresolved."
+    rows.append(_coverage_receipt_row("edto", "EDTO", edto_state, edto_detail))
+
+    selected_airport_notams = sum(
+        len(panel.get("selected_notams") or []) for panel in airport_panels
+    )
+    airport_notam_sources = sum(
+        len(panel.get("source_pages") or []) for panel in airport_panels
+    )
+    if selected_airport_notams:
+        airport_notam_state = "FOUND"
+        airport_notam_detail = (
+            f"{selected_airport_notams} selected airport NOTAM record(s) held "
+            "with applicability shown in the airport section."
+        )
+    elif airport_notam_sources:
+        airport_notam_state = "CHECKED · NO MATCH"
+        airport_notam_detail = (
+            "Airport NOTAM source pages were checked; no selected match is held."
+        )
+    else:
+        airport_notam_state = "UNAVAILABLE"
+        airport_notam_detail = (
+            "No airport NOTAM source page is held; an empty selection is not NIL."
+        )
+    rows.append(_coverage_receipt_row(
+        "airport_notam",
+        "AIRPORT NOTAM",
+        airport_notam_state,
+        airport_notam_detail,
+    ))
+
+    route_airspace = briefing.get("route_airspace") or {}
+    route_airspace_count = int(route_airspace.get("record_count") or 0)
+    rows.append(_coverage_receipt_row(
+        "enroute_notam",
+        "ENROUTE FIR NOTAM",
+        "HELD" if route_airspace_count else "UNAVAILABLE",
+        (
+            f"{route_airspace_count} bounded route-airspace record(s) held; "
+            "applicability is not inferred."
+            if route_airspace_count
+            else "No bounded route-airspace record is held; absence is not inferred."
+        ),
+    ))
+
+    weather_review = receipt_inputs.get("official_weather_review")
+    weather_state = _review_receipt_state(weather_review)
+    rows.append(_coverage_receipt_row(
+        "metar_taf",
+        "METAR / TAF",
+        weather_state,
+        (
+            "Official weather coverage receipt is complete."
+            if weather_state == "HELD"
+            else "Official METAR/TAF coverage is incomplete or was not queried."
+        ),
+    ))
+
+    sigmet_review = receipt_inputs.get("sigmet_review")
+    sigmet_state = _review_receipt_state(
+        sigmet_review,
+        clean_no_match=bool(
+            isinstance(sigmet_review, dict)
+            and sigmet_review.get("clean_current_feed_no_match")
+        ),
+    )
+    rows.append(_coverage_receipt_row(
+        "sigmet",
+        "SIGMET",
+        sigmet_state,
+        "Explicit route/time/level SIGMET review state; missing coverage stays visible.",
+    ))
+
+    vaa_review = (briefing.get("vaa") or {}).get("direct_source_review")
+    vaa_state = _review_receipt_state(vaa_review)
+    rows.append(_coverage_receipt_row(
+        "vaa_vaac",
+        "VAA / VAAC",
+        vaa_state,
+        "Responsible-centre reach and direct-advisory applicability remain separate checks.",
+    ))
+
+    tc_review = receipt_inputs.get("tropical_cyclone_review")
+    tc_state = _review_receipt_state(tc_review)
+    rows.append(_coverage_receipt_row(
+        "tropical_cyclone",
+        "TROPICAL CYCLONE",
+        tc_state,
+        "Explicit route/time/level TC review state; missing advisory coverage is not NIL.",
+    ))
+
+    terrain = briefing.get("terrain") or {}
+    vws_review = terrain.get("vws_review") or {}
+    vws_status = str(vws_review.get("status") or "").lower()
+    if vws_status == "review_required":
+        vws_state = "FOUND"
+    elif vws_status == "reviewed_no_trigger":
+        vws_state = "CHECKED · NO TRIGGER"
+    else:
+        vws_state = "UNAVAILABLE"
+    vws_row = _coverage_receipt_row(
+        "vws",
+        "VWS",
+        vws_state,
+        str(vws_review.get("summary") or "VWS source values are unavailable."),
+    )
+    rows.append(vws_row)
+
+    matched_profiles = _matched_profiles(findings)
+    terrain_events = list(terrain.get("events") or [])
+    if matched_profiles:
+        profile_state = "FOUND"
+        profile_detail = (
+            f"{len(matched_profiles)} exact controlled depressurisation profile match(es) held."
+        )
+    elif terrain_events:
+        profile_state = "REVIEW REQUIRED"
+        profile_detail = (
+            "OFP terrain trigger exists, but no exact controlled profile match is held."
+        )
+    else:
+        profile_state = "NOT APPLICABLE"
+        profile_detail = (
+            "OFP route/profile trigger was not activated; no generic chart is substituted."
+        )
+    rows.append(_coverage_receipt_row(
+        "depressurisation_profile",
+        "DEPRESSURISATION PROFILE",
+        profile_state,
+        profile_detail,
+    ))
+
+    chart_selection = (briefing.get("hazards") or {}).get(
+        "weather_chart_selection"
+    ) or {}
+    chart_status = str(chart_selection.get("status") or "").lower()
+    if chart_status == "selected":
+        chart_state = "FOUND"
+    elif chart_status == "none-detected":
+        chart_state = "CHECKED · NO MATCH"
+    elif chart_status == "unavailable":
+        chart_state = "UNAVAILABLE"
+    else:
+        chart_state = "REVIEW REQUIRED"
+    chart_row = _coverage_receipt_row(
+        "wafs_sigwx",
+        "WAFS / SIGWX",
+        chart_state,
+        str(
+            chart_selection.get("reason")
+            or "No governed route-context weather-chart decision is held."
+        ),
+    )
+    rows.append(chart_row)
+
+    airep_row = _external_cat_receipt(briefing)
+    rows.append(airep_row)
+
+    if exact_extracts:
+        references_state = "FOUND"
+        references_detail = f"{len(exact_extracts)} exact governed manual extract(s) published."
+    elif candidate_extracts:
+        references_state = "REVIEW REQUIRED"
+        references_detail = (
+            f"{len(candidate_extracts)} governed candidate extract(s) held; none selected."
+        )
+    elif isinstance(company_briefing_references, dict) and str(
+        company_briefing_references.get("status") or ""
+    ).lower() == "unavailable":
+        references_state = "UNAVAILABLE"
+        references_detail = "Governed company-manual references are explicitly unavailable."
+    else:
+        references_state = "NOT QUERIED"
+        references_detail = "No governed company-manual reference receipt is attached."
+    rows.append(_coverage_receipt_row(
+        "governed_references",
+        "GOVERNED MANUAL REFERENCES",
+        references_state,
+        references_detail,
+    ))
+
+    cat_layers = [vws_row, chart_row, airep_row]
+    complete_states = {
+        "FOUND",
+        "CHECKED · NO MATCH",
+        "CHECKED · NO TRIGGER",
+        "HELD",
+        "NOT APPLICABLE",
+    }
+    cat_complete = all(row["state"] in complete_states for row in cat_layers)
+    return {
+        "rows": rows,
+        "cat_vws": {
+            "state": "COMPLETE" if cat_complete else "INCOMPLETE",
+            "layers": cat_layers,
+            "detail": (
+                "All three explicit CAT/VWS evidence layers reached a completed state."
+                if cat_complete
+                else "One or more CAT/VWS layers are unavailable, unqueried, or review-required."
+            ),
+        },
+    }
+
+
+def _coverage_state_colour(state: str):
+    if state in {"FOUND", "HELD", "CHECKED · NO MATCH", "CHECKED · NO TRIGGER"}:
+        return EDTO_GREEN
+    if state == "NOT APPLICABLE":
+        return COMMS_TEAL
+    if state in {"REVIEW REQUIRED", "INCOMPLETE"}:
+        return WEATHER_AMBER
+    return CRITICAL
+
+
+def draw_operational_coverage_page(
+    canvas,
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    findings: list[dict[str, Any]],
+    *,
+    page_number: int,
+    page_count: int,
+    company_briefing_references: dict[str, Any] | None,
+) -> None:
+    """Operational-only searched-item checklist and CAT/VWS evidence receipt."""
+    width, _ = PAGE_SIZE
+    receipt = _operational_coverage_receipt(
+        flight,
+        briefing,
+        findings,
+        company_briefing_references,
+    )
+    content_top = draw_page_chrome(
+        canvas,
+        flight,
+        page_number=page_number,
+        page_count=page_count,
+        source_line=(
+            "Deterministic analysis receipts | governed source states | "
+            "missing coverage is never published as NIL"
+        ),
+        section_label="COVERAGE CHECKLIST / CAT-VWS",
+        section_colour=SECTION_BLUE,
+    )
+    canvas.bookmarkPage("sec_coverage")
+    full_w = width - 2 * MARGIN
+    top = content_top - 8.0
+    cat_h = 144.0
+    cat_bottom = top - cat_h
+    cat_state = str((receipt.get("cat_vws") or {}).get("state") or "INCOMPLETE")
+    cat_inner = panel(
+        canvas,
+        MARGIN,
+        cat_bottom,
+        full_w,
+        cat_h,
+        title=f"CAT / VWS EVIDENCE · {cat_state}",
+        accent=_coverage_state_colour(cat_state),
+        title_colour=None,
+    )
+    layers = list((receipt.get("cat_vws") or {}).get("layers") or [])
+    if len(layers) != 3:
+        raise ValueError("CAT/VWS evidence receipt must contain exactly three layers.")
+    layer_gap = 10.0
+    layer_w = (cat_inner[2] - 2 * layer_gap) / 3.0
+    layer_y = cat_bottom + 12.0
+    layer_h = cat_h - 42.0
+    for index, layer in enumerate(layers):
+        layer_x = cat_inner[0] + index * (layer_w + layer_gap)
+        canvas.setFillColor(_page_colour(canvas, "elevated", ELEVATED))
+        canvas.setStrokeColor(_page_colour(canvas, "border", BORDER))
+        canvas.roundRect(layer_x, layer_y, layer_w, layer_h, 5, stroke=1, fill=1)
+        canvas.setFillColor(TEXT)
+        canvas.setFont(SANS_BOLD, 8.7)
+        canvas.drawString(layer_x + 9.0, layer_y + layer_h - 17.0, layer["label"])
+        canvas.setFillColor(_coverage_state_colour(layer["state"]))
+        canvas.setFont(MONO_BOLD, 8.0)
+        canvas.drawRightString(
+            layer_x + layer_w - 9.0,
+            layer_y + layer_h - 17.0,
+            layer["state"],
+        )
+        detail_lines = _wrap(
+            layer["detail"],
+            SANS,
+            7.8,
+            layer_w - 18.0,
+        )
+        if len(detail_lines) > 5:
+            raise ValueError(
+                f"CAT/VWS layer {layer['label']} exceeds readable capacity."
+            )
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS, 7.8)
+        line_y = layer_y + layer_h - 35.0
+        for line in detail_lines:
+            canvas.drawString(layer_x + 9.0, line_y, line)
+            line_y -= 10.0
+
+    checklist_top = cat_bottom - 10.0
+    checklist_bottom = 46.0
+    checklist_h = checklist_top - checklist_bottom
+    checklist_inner = panel(
+        canvas,
+        MARGIN,
+        checklist_bottom,
+        full_w,
+        checklist_h,
+        title="COVERAGE CHECKLIST",
+        accent=COMMS_TEAL,
+        title_colour=None,
+    )
+    rows = list(receipt.get("rows") or [])
+    left_rows = rows[:9]
+    right_rows = rows[9:]
+    column_gap = 18.0
+    column_w = (checklist_inner[2] - column_gap) / 2.0
+    for column_index, column_rows in enumerate((left_rows, right_rows)):
+        if len(column_rows) > 9:
+            raise ValueError("Coverage checklist exceeds the two-column page capacity.")
+        column_x = checklist_inner[0] + column_index * (column_w + column_gap)
+        row_h = checklist_inner[3] / 9.0
+        row_top = checklist_top - 27.0
+        for row_index, row in enumerate(column_rows):
+            y_top = row_top - row_index * row_h
+            if row_index:
+                canvas.setStrokeColor(_page_colour(canvas, "border", BORDER))
+                canvas.setLineWidth(0.45)
+                canvas.line(column_x, y_top + 3.0, column_x + column_w, y_top + 3.0)
+            canvas.setFillColor(TEXT)
+            canvas.setFont(SANS_BOLD, 8.2)
+            canvas.drawString(column_x, y_top - 7.0, row["label"])
+            canvas.setFillColor(_coverage_state_colour(row["state"]))
+            canvas.setFont(MONO_BOLD, 7.3)
+            canvas.drawRightString(column_x + column_w, y_top - 7.0, row["state"])
+            detail_lines = _wrap(
+                row["detail"],
+                SANS,
+                7.2,
+                column_w,
+            )
+            if len(detail_lines) > 2:
+                raise ValueError(
+                    f"Coverage checklist row {row['label']} exceeds readable capacity."
+                )
+            canvas.setFillColor(TEXT_SECONDARY)
+            canvas.setFont(SANS, 7.2)
+            detail_y = y_top - 18.0
+            for line in detail_lines:
+                canvas.drawString(column_x, detail_y, line)
+                detail_y -= 8.4
+
+
 def draw_operational_enroute_assurance_page(
     canvas,
     flight: dict[str, Any],
@@ -10633,7 +11983,7 @@ def _audit_rev3_v8_briefing_projection(
     """Remove post-v8 operational projections from the frozen audit view.
 
     This is a renderer compatibility profile, not a flight exception: the
-    current seven-page brief retains every new source record and semantic
+    current eight-page brief retains every new source record and semantic
     projection.  The immutable audit publication keeps the exact fields,
     selection limits and ordering covered by its v8 raster contract.
     """
@@ -10740,11 +12090,12 @@ def render_combined_briefing(
     *,
     source_pdf_path: str | None = None,
     weather_charts: dict[str, Any] | None = None,
+    company_briefing_references: dict[str, Any] | None = None,
     include_audit_appendix: bool = False,
 ) -> None:
     """Render the one-PDF Flight Briefing to `path`.
 
-    The production default is the seven-page REV3 operational briefing.  A
+    The production default is the eight-page operational briefing.  A
     caller that needs the lossless audit publication can opt in to measured
     continuation pages with ``include_audit_appendix=True``.  Both modes are
     rendered from the same briefing view; the compact document never swaps in
@@ -10792,6 +12143,14 @@ def render_combined_briefing(
     )
     if include_audit_appendix:
         briefing = _audit_rev3_v8_briefing_projection(flight, briefing)
+    # The authenticated service boundary supplies governed references
+    # explicitly. Keeping them outside raw `flight` data prevents an analysis
+    # field from silently becoming pilot-visible PDF authority.
+    governed_reference_payload = (
+        company_briefing_references
+        if isinstance(company_briefing_references, dict)
+        else None
+    )
     analysis_primary_communications, analysis_communication_pages = (
         _analysis_communication_plan(
             flight,
@@ -10933,7 +12292,7 @@ def render_combined_briefing(
     canvas.setTitle(f"Flight Briefing {theme.display_flight_number(flight)} {theme.header_date_label(flight)}")
 
     if not include_audit_appendix:
-        # The operational baseline is seven readable pages. Terrain/profile
+        # The operational baseline is eight readable pages. Terrain/profile
         # evidence is appended only when an actual event or controlled chart
         # is held; an empty no-event terrain page is never manufactured. An
         # unusually long EOSID adds only the measured continuation pages
@@ -10946,18 +12305,41 @@ def render_combined_briefing(
             performance_layout.get("continuation_pages") or []
         )
         eosid_continuation_count = len(eosid_continuation_pages)
+        operational_deferred_items = [
+            dict(item)
+            for item in briefing.get("deferred_source_items") or []
+            if isinstance(item, dict)
+        ]
+        operational_mel_pages, operational_mel_gate_height = (
+            _operational_mel_page_plans(
+                flight,
+                briefing,
+                operational_deferred_items,
+                governed_reference_payload,
+            )
+        )
+        operational_mel_page_count = len(operational_mel_pages)
+        operational_mel_first_page = 4 + eosid_continuation_count
+        operational_airports_page = (
+            operational_mel_first_page + operational_mel_page_count
+        )
+        operational_hazards_page = operational_airports_page + 1
+        operational_enroute_page = operational_airports_page + 2
+        operational_coverage_page = operational_airports_page + 3
+        operational_terrain_page = operational_airports_page + 4
         operational_page_count = (
             7
+            + operational_mel_page_count
             + int(has_terrain_annex)
             + eosid_continuation_count
         )
         operational_section_pages = {
-            "mel_cdl": 4 + eosid_continuation_count,
-            "airports": 5 + eosid_continuation_count,
-            "hazards": 6 + eosid_continuation_count,
-            "enroute": 7 + eosid_continuation_count,
+            "mel_cdl": operational_mel_first_page,
+            "airports": operational_airports_page,
+            "hazards": operational_hazards_page,
+            "enroute": operational_enroute_page,
+            "coverage": operational_coverage_page,
         }
-        deferred_page = deferred_pages[0] if deferred_pages else []
         hazard_page = (
             hazard_pages[0]
             if hazard_pages
@@ -11075,22 +12457,42 @@ def render_combined_briefing(
                 level=0,
             )
         canvas.showPage()
-        draw_operational_mel_cdl_page(
-            canvas,
-            flight,
-            briefing,
-            findings,
-            page_number=4 + eosid_continuation_count,
-            page_count=operational_page_count,
-            source_pdf_path=source_pdf_path,
-            deferred_items=deferred_page,
-        )
-        canvas.addOutlineEntry("MEL/CDL Evidence", "sec_mel_cdl", level=0)
-        canvas.showPage()
+        for index, mel_page in enumerate(operational_mel_pages, start=1):
+            draw_operational_mel_cdl_page(
+                canvas,
+                flight,
+                briefing,
+                findings,
+                page_number=operational_mel_first_page + index - 1,
+                page_count=operational_page_count,
+                source_pdf_path=source_pdf_path,
+                deferred_items=operational_deferred_items,
+                company_briefing_references=governed_reference_payload,
+                gate_items=list(mel_page.get("gate_items") or []),
+                planned_source_panels=list(
+                    mel_page.get("source_panels") or []
+                ),
+                gate_height=operational_mel_gate_height,
+                section_page_number=index,
+                section_page_count=operational_mel_page_count,
+            )
+            canvas.addOutlineEntry(
+                (
+                    "MEL/CDL Evidence"
+                    if index == 1
+                    else (
+                        "MEL/CDL Evidence "
+                        f"{index}/{operational_mel_page_count}"
+                    )
+                ),
+                "sec_mel_cdl" if index == 1 else f"sec_mel_cdl_{index}",
+                level=0,
+            )
+            canvas.showPage()
         draw_operational_airports_page(
             canvas,
             flight,
-            page_number=5 + eosid_continuation_count,
+            page_number=operational_airports_page,
             page_count=operational_page_count,
             panels=list(briefing.get("airport_operational_panels") or []),
             alternate_assessment_rows=list(
@@ -11109,7 +12511,7 @@ def render_combined_briefing(
             flight,
             briefing,
             weather_chart_selection=weather_chart_selection,
-            page_number=6 + eosid_continuation_count,
+            page_number=operational_hazards_page,
             page_count=operational_page_count,
             source_pdf_path=source_pdf_path,
             sigmet_cards=list(hazards.get("sigmet_cards") or [])[:2],
@@ -11126,11 +12528,26 @@ def render_combined_briefing(
             canvas,
             flight,
             briefing,
-            page_number=7 + eosid_continuation_count,
+            page_number=operational_enroute_page,
             page_count=operational_page_count,
             has_terrain_annex=has_terrain_annex,
         )
         canvas.addOutlineEntry("Enroute / Assurance", "sec_enroute", level=0)
+        canvas.showPage()
+        draw_operational_coverage_page(
+            canvas,
+            flight,
+            briefing,
+            findings,
+            page_number=operational_coverage_page,
+            page_count=operational_page_count,
+            company_briefing_references=governed_reference_payload,
+        )
+        canvas.addOutlineEntry(
+            "Coverage Checklist / CAT-VWS",
+            "sec_coverage",
+            level=0,
+        )
         canvas.showPage()
         if has_terrain_annex:
             draw_operational_terrain_page(
@@ -11139,7 +12556,7 @@ def render_combined_briefing(
                 briefing,
                 findings,
                 chart_images,
-                page_number=8 + eosid_continuation_count,
+                page_number=operational_terrain_page,
                 page_count=operational_page_count,
                 compact_overflow_note=compact_note(
                     terrain_overflow_count,

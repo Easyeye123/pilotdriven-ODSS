@@ -5451,6 +5451,62 @@ def build_briefing_view(
         coverage_ledger,
         route_airspace,
     )
+    deferred_receipt_items = [
+        {
+            key: item.get(key)
+            for key in (
+                "item_type",
+                "reference",
+                "deferred_entry_id",
+                "classification_status",
+            )
+        }
+        for item in (flight.get("deferred_items") or [])
+        if isinstance(item, dict)
+    ]
+    official_weather_review = flight.get("official_weather_review")
+    sigmet_review = flight.get("sigmet_review")
+    tropical_cyclone_review = flight.get("tropical_cyclone_review")
+    coverage_receipt_inputs = {
+        # This bounded projection is the single dashboard/PDF contract for
+        # checklist facts. Keep the renderer out of the raw parsed flight so
+        # new checklist rows cannot silently diverge between surfaces.
+        "identity_complete": all(
+            str(flight.get(key) or "").strip()
+            for key in (
+                "flight_number",
+                "departure",
+                "destination",
+                "aircraft_type",
+                "registration",
+            )
+        ),
+        "timing_complete": all(
+            str(flight.get(key) or "").strip()
+            for key in ("scheduled_departure_utc", "scheduled_arrival_utc")
+        ),
+        "deferred_items": deferred_receipt_items,
+        "official_weather_review": (
+            {"status": official_weather_review.get("status")}
+            if isinstance(official_weather_review, dict)
+            else None
+        ),
+        "sigmet_review": (
+            {
+                "status": sigmet_review.get("status"),
+                "clean_current_feed_no_match": bool(
+                    sigmet_review.get("clean_current_feed_no_match")
+                ),
+            }
+            if isinstance(sigmet_review, dict)
+            else None
+        ),
+        "tropical_cyclone_review": (
+            {"status": tropical_cyclone_review.get("status")}
+            if isinstance(tropical_cyclone_review, dict)
+            else None
+        ),
+    }
     return {
         "status": "REVIEW REQUIRED" if needs_review else "BRIEFING COMPLETE",
         "status_severity": "warning" if needs_review else "information",
@@ -5553,10 +5609,20 @@ def build_briefing_view(
         "decision_findings": decision_findings,
         "release_gates": release_gates,
         "source_assurance": source_assurance,
+        "coverage_receipt_inputs": coverage_receipt_inputs,
         # Compact dispatch confirmation gates are a source-preserving shared
         # view. Raw deferred_items remain untouched for the deterministic
         # engines and detailed report rows.
         "deferred_dispatch_gates": deferred_dispatch_gates,
+        # Lossless OFP declaration projection used by both publication
+        # surfaces. Keep the PDF renderer on this shared view instead of
+        # reaching back into raw flight data, which could let its MEL/CDL
+        # evidence diverge from the dashboard contract.
+        "deferred_source_items": [
+            dict(item)
+            for item in (flight.get("deferred_items") or [])
+            if isinstance(item, dict)
+        ],
         "departure": departure_panel,
         "destination": destination_panel,
         "airport_operational_panels": airport_operational_panels,

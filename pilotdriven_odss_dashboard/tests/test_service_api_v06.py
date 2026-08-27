@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
+import os
 import sqlite3
 import sys
 import time
@@ -67,6 +69,60 @@ N03 10.0 E105 40.0 090
         for text in pages:
             page = document.new_page()
             page.insert_textbox((36, 36, 560, 806), text, fontname="courier", fontsize=9)
+        return document.tobytes()
+    finally:
+        document.close()
+
+
+def _build_lido_pdf_with_sq481_deferred_block() -> bytes:
+    pages = [
+        """SUMMARY CFP
+9V-SMG SIA304 SIN/BRU ETD 1030 11JUL26
+SCHED DEP 1030 UTC SCHED ARR 2200 UTC
+AA SEAT 21A TRAY TABLE UNABLE TO STOW
+   X CLASS B
+   ECDL007905
+BB SEAT 21A TRAY TABLE UNABLE TO STOW
+   X CLASS B
+PLAN 12/0/1
+RTE NO 001 A350-941
+CRUISE CI 35
+EDTO/RVSM
+WSSS/02L
+DCT BOBI1 DCT BOBI2 EBBR/25L
+BURNOFF 11.30 050000
+STAT CONT 00.30 002000
+ALTN FUEL 00.20 001500
+ALTN HOLD 00.15 001000
+TAXI FUEL 001000
+FLT PLAN REQMT 13.00 060000
+FUEL IN TANKS 14.00 065000
+PZFW 180000
+PTOW 245000
+PLWT 195000
+""",
+        "LIDO CFP PAGE 2\nTAKEOFF PERFORMANCE\nWSSS RWY 02L\nRWY COND:  DRY\nEOSID : STRAIGHT OUT.\n",
+        "LIDO CFP PAGE 3\nEDTO INFORMATION\n",
+        "LIDO CFP PAGE 4\nFUEL AND MASS SUMMARY\n",
+        "LIDO CFP PAGE 5\nALTERNATE SUMMARY\n",
+        "LIDO CFP PAGE 6\nROUTE LOG CONTINUED\n",
+        """LIDO CFP PAGE 7
+BOBI1 00.15
+N01 20.0 E103 50.0 105*
+BOBI2 00.25
+N03 10.0 E105 40.0 090
+""",
+    ]
+    document = fitz.open()
+    try:
+        for text in pages:
+            page = document.new_page()
+            page.insert_textbox(
+                (36, 36, 560, 806),
+                text,
+                fontname="courier",
+                fontsize=9,
+            )
         return document.tobytes()
     finally:
         document.close()
@@ -1915,6 +1971,1026 @@ def test_service_personal_note_failures_restore_database_and_prior_reports(
         initial_note["id"]
     ]
     assert restored_level_1 == prior_level_1
+
+
+def test_company_briefing_references_are_tenant_scoped_normalized_and_rendered(
+    service_app: TestClient,
+) -> None:
+    owner_headers = _authorization("tenant-owner", "pilot-owner")
+    other_headers = _authorization("tenant-other", "pilot-other")
+    created = service_app.post(
+        "/v1/analyses",
+        headers=owner_headers,
+        files={
+            "file": (
+                "SQ304.pdf",
+                _build_lido_pdf_with_sq481_deferred_block(),
+                "application/pdf",
+            )
+        },
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=owner_headers,
+    ).json()
+    item = briefing["flight"]["deferred_items"][0]
+    assert item["classification_status"] == "unresolved"
+    deferred_entry_id = item["deferred_entry_id"]
+
+    initial_report = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/combined",
+        headers=owner_headers,
+    )
+    assert initial_report.status_code == 200
+    with fitz.open(stream=initial_report.content, filetype="pdf") as document:
+        initial_text = "\n".join(page.get_text() for page in document)
+    assert "MANUAL REVIEW REQUIRED | OFP SOURCE HELD" in initial_text
+    assert "25-21-08B" not in initial_text
+
+    ambiguity = (
+        "The OFP does not state whether the tray table blocks cabin-door access."
+    )
+    confirmation = (
+        "Confirm the Tech Log door-access condition before selecting B or C."
+    )
+
+    def candidate(suffix: str) -> dict:
+        reference = f"25-21-08{suffix}"
+        return {
+            "excerpt": (
+                f"MEL {reference} Passenger Seat Meal Table controlled "
+                f"candidate {suffix} extract."
+            ),
+            "citation": {
+                "sourceClass": "company_manual",
+                "documentTitle": "Synthetic A350 MEL",
+                "version": "Revision TEST",
+                "effectiveDate": "2026-07-01",
+                "page": "221",
+                "section": f"MEL {reference}",
+                "safeTarget": (
+                    "/api/help-you/references/ref-test/open?page=221"
+                ),
+                "applicability": {
+                    "scope": "specified",
+                    "fleet": "LH",
+                    "aircraft": "A350-941",
+                    "status": "confirmed",
+                },
+                "untrustedExtra": "must not persist",
+            },
+            "deferredBinding": {
+                "deferredEntryId": deferred_entry_id,
+                "matchStatus": "candidate",
+                "itemType": "MEL",
+                "reference": reference,
+                "ambiguityReason": ambiguity,
+                "confirmationRequired": confirmation,
+            },
+            "untrustedExtra": "must not persist",
+        }
+
+    payload = {
+        "status": "available",
+        "references": [candidate("B"), candidate("C")],
+    }
+    unauthenticated = service_app.post(
+        f"/v1/analyses/{analysis_id}/company-briefing-references",
+        json=payload,
+    )
+    cross_tenant = service_app.post(
+        f"/v1/analyses/{analysis_id}/company-briefing-references",
+        headers=other_headers,
+        json=payload,
+    )
+    assert unauthenticated.status_code == 401
+    assert cross_tenant.status_code == 404
+
+    published = service_app.post(
+        f"/v1/analyses/{analysis_id}/company-briefing-references",
+        headers=owner_headers,
+        json=payload,
+    )
+    assert published.status_code == 200
+    body = published.json()
+    assert body["combined_report"] == {
+        "state": "invalidated",
+        "render": "on_demand",
+        "href": f"/v1/analyses/{analysis_id}/reports/combined",
+    }
+    stored_references = body["company_briefing_references"]["references"]
+    assert len(stored_references) == 2
+    assert "untrustedExtra" not in stored_references[0]
+    assert "untrustedExtra" not in stored_references[0]["citation"]
+    assert stored_references[0]["deferredBinding"] == {
+        "deferredEntryId": deferred_entry_id,
+        "matchStatus": "candidate",
+        "itemType": "MEL",
+        "reference": "25-21-08B",
+        "ambiguityReason": ambiguity,
+        "confirmationRequired": confirmation,
+    }
+    with database.connect() as conn:
+        audit_row = conn.execute(
+            """
+            SELECT action, details_json FROM audit_events
+            WHERE tenant_id=? AND resource_id=?
+              AND action='analysis.company_briefing_references_publication_authorized'
+            ORDER BY rowid DESC LIMIT 1
+            """,
+            ("tenant-owner", analysis_id),
+        ).fetchone()
+    assert audit_row is not None
+    audit_details = json.loads(audit_row["details_json"])
+    assert audit_details["reference_count"] == 2
+    assert audit_details["governed_reference_status"] == "available"
+    assert len(audit_details["governed_extract_ids"]) == 2
+    assert all(
+        extract_id.startswith("governed-deferred-")
+        for extract_id in audit_details["governed_extract_ids"]
+    )
+    assert audit_details["prior_artifact_sha256"] != (
+        audit_details["new_artifact_sha256"]
+    )
+    serialized_audit = json.dumps(audit_details, sort_keys=True)
+    assert "controlled candidate B extract" not in serialized_audit
+    assert "controlled candidate C extract" not in serialized_audit
+    assert "excerpt" not in serialized_audit.lower()
+
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-owner")
+    assert flight is not None
+    stored_analysis = json.loads(
+        Path(str(flight["analysis_path"])).read_text(encoding="utf-8")
+    )
+    assert (
+        stored_analysis["company_briefing_references"]
+        == body["company_briefing_references"]
+    )
+    reloaded_briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=owner_headers,
+    ).json()
+    assert (
+        reloaded_briefing["company_briefing_references"]
+        == body["company_briefing_references"]
+    )
+    published_artifact_sha256 = hashlib.sha256(
+        Path(str(flight["analysis_path"])).read_bytes()
+    ).hexdigest()
+
+    refreshed_report = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/combined",
+        headers=owner_headers,
+    )
+    assert refreshed_report.status_code == 200
+    assert refreshed_report.content != initial_report.content
+    with fitz.open(stream=refreshed_report.content, filetype="pdf") as document:
+        refreshed_text = "\n".join(page.get_text() for page in document)
+    for suffix in ("B", "C"):
+        assert refreshed_text.count(
+            f"MEL 25-21-08{suffix} Passenger Seat Meal Table controlled "
+            f"candidate {suffix} extract."
+        ) == 1
+    assert refreshed_text.count(
+        "CANDIDATE ONLY - MANUAL REVIEW REQUIRED"
+    ) == 2
+    assert "EXACT CURRENT-APPROVED EXTRACT" not in refreshed_text
+
+    timing = service_app.post(
+        f"/v1/analyses/{analysis_id}/timing",
+        headers=owner_headers,
+        json={
+            "reference_type": "takeoff",
+            "reference_utc": "2026-07-11T10:42:00+00:00",
+        },
+    )
+    assert timing.status_code == 200
+    reanalysed_flight = database.get_flight_by_analysis_id(
+        analysis_id,
+        "tenant-owner",
+    )
+    assert reanalysed_flight is not None
+    reanalysed = json.loads(
+        Path(str(reanalysed_flight["analysis_path"])).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert (
+        reanalysed["company_briefing_references"]
+        == body["company_briefing_references"]
+    )
+    with database.connect() as conn:
+        carried_audit = conn.execute(
+            """
+            SELECT details_json FROM audit_events
+            WHERE tenant_id=? AND resource_id=?
+              AND action='analysis.company_briefing_references_carried_forward'
+            ORDER BY rowid DESC LIMIT 1
+            """,
+            ("tenant-owner", analysis_id),
+        ).fetchone()
+    assert carried_audit is not None
+    carried_details = json.loads(carried_audit["details_json"])
+    assert carried_details["prior_artifact_sha256"] == published_artifact_sha256
+    assert carried_details["new_artifact_sha256"] == hashlib.sha256(
+        Path(str(reanalysed_flight["analysis_path"])).read_bytes()
+    ).hexdigest()
+    assert carried_details["source_publication_operation_id"]
+    assert carried_details["reason"] == (
+        "analysis_recalculated_and_binding_revalidated"
+    )
+
+    cleared = service_app.post(
+        f"/v1/analyses/{analysis_id}/company-briefing-references",
+        headers=owner_headers,
+        json={"status": "unavailable", "references": []},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["company_briefing_references"] == {
+        "status": "unavailable",
+        "references": [],
+    }
+    cleared_briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=owner_headers,
+    ).json()
+    assert cleared_briefing["company_briefing_references"] == {
+        "status": "unavailable",
+        "references": [],
+    }
+    cleared_report = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/combined",
+        headers=owner_headers,
+    )
+    assert cleared_report.status_code == 200
+    with fitz.open(stream=cleared_report.content, filetype="pdf") as document:
+        cleared_text = "\n".join(page.get_text() for page in document)
+    assert "25-21-08B Passenger Seat Meal Table controlled" not in cleared_text
+    assert "25-21-08C Passenger Seat Meal Table controlled" not in cleared_text
+
+
+def test_combined_report_cache_uses_the_exact_analysis_byte_snapshot(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    analysis_path = Path(str(flight["analysis_path"]))
+
+    original_read_bytes = Path.read_bytes
+    original_read_text = Path.read_text
+    armed = {"value": True}
+
+    def replace_snapshot(raw: bytes) -> None:
+        if not armed["value"]:
+            return
+        armed["value"] = False
+        updated = json.loads(raw)
+        updated["company_briefing_references"] = {
+            "status": "unavailable",
+            "references": [],
+        }
+        staged = analysis_path.with_name(f"{analysis_path.name}.race.tmp")
+        staged.write_text(json.dumps(updated), encoding="utf-8")
+        staged.replace(analysis_path)
+
+    def racing_read_bytes(path: Path) -> bytes:
+        raw = original_read_bytes(path)
+        if path == analysis_path:
+            replace_snapshot(raw)
+        return raw
+
+    def racing_read_text(path: Path, *args, **kwargs) -> str:
+        value = original_read_text(path, *args, **kwargs)
+        if path == analysis_path:
+            replace_snapshot(value.encode(kwargs.get("encoding") or "utf-8"))
+        return value
+
+    monkeypatch.setattr(Path, "read_bytes", racing_read_bytes)
+    monkeypatch.setattr(Path, "read_text", racing_read_text)
+
+    rendered_states: list[str] = []
+
+    def fake_render(_flight, _findings, _warnings, output_path, **kwargs):
+        references = kwargs.get("company_briefing_references")
+        state = "NEW" if references else "OLD"
+        rendered_states.append(state)
+        Path(output_path).write_bytes(f"%PDF-1.4\n{state}\n".encode())
+
+    monkeypatch.setattr(main, "render_combined_briefing", fake_render)
+
+    first = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/combined",
+        headers=_authorization(),
+    )
+    second = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/combined",
+        headers=_authorization(),
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.content.endswith(b"OLD\n")
+    assert second.content.endswith(b"NEW\n")
+    assert rendered_states == ["OLD", "NEW"]
+
+
+def test_concurrent_combined_report_cache_miss_renders_once_per_flight(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    render_started = threading.Event()
+    release_render = threading.Event()
+    render_calls = 0
+    render_calls_lock = threading.Lock()
+
+    def slow_render(_flight, _findings, _warnings, output_path, **_kwargs):
+        nonlocal render_calls
+        with render_calls_lock:
+            render_calls += 1
+        render_started.set()
+        assert release_render.wait(timeout=5)
+        Path(output_path).write_bytes(b"%PDF-1.4\nSERIALIZED\n")
+
+    monkeypatch.setattr(main, "render_combined_briefing", slow_render)
+    path = f"/v1/analyses/{analysis_id}/reports/combined"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first_future = pool.submit(service_app.get, path, headers=_authorization())
+        assert render_started.wait(timeout=5)
+        second_future = pool.submit(service_app.get, path, headers=_authorization())
+        time.sleep(0.1)
+        assert render_calls == 1
+        release_render.set()
+        first = first_future.result(timeout=5)
+        second = second_future.result(timeout=5)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.content == second.content
+    assert render_calls == 1
+
+
+def test_combined_report_cache_pruning_counts_an_old_kept_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(main, "REPORT_DIR", tmp_path)
+    paths = []
+    for index in range(6):
+        path = tmp_path / f"flight_41_combined_token-{index}.pdf"
+        path.write_bytes(f"artifact-{index}".encode())
+        os.utime(path, ns=(index + 1, index + 1))
+        paths.append(path)
+
+    main._prune_combined_report_cache(
+        41,
+        keep=paths[0],
+        max_entries=4,
+    )
+
+    retained = set(tmp_path.glob("flight_41_combined_*.pdf"))
+    assert len(retained) == 4
+    assert paths[0] in retained
+    assert retained == {paths[0], paths[3], paths[4], paths[5]}
+
+
+def test_company_briefing_references_reject_every_unbound_or_incomplete_row(
+    service_app: TestClient,
+) -> None:
+    headers = _authorization()
+    created = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={
+            "file": (
+                "SQ304.pdf",
+                _build_lido_pdf_with_sq481_deferred_block(),
+                "application/pdf",
+            )
+        },
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=headers,
+    ).json()
+    deferred_entry_id = briefing["flight"]["deferred_items"][0][
+        "deferred_entry_id"
+    ]
+    complete = {
+        "excerpt": "MEL 25-21-08B Passenger Seat Meal Table controlled extract.",
+        "citation": {
+            "sourceClass": "company_manual",
+            "documentTitle": "Synthetic A350 MEL",
+            "version": "Revision TEST",
+            "effectiveDate": "2026-07-01",
+            "page": "221",
+            "section": "MEL 25-21-08B",
+            "applicability": {
+                "scope": "specified",
+                "aircraft": "A350-941",
+                "status": "confirmed",
+            },
+        },
+        "deferredBinding": {
+            "deferredEntryId": deferred_entry_id,
+            "matchStatus": "candidate",
+            "itemType": "MEL",
+            "reference": "25-21-08B",
+            "ambiguityReason": "Door-access effect is absent.",
+            "confirmationRequired": "Confirm the Tech Log.",
+        },
+    }
+    invalid_rows = [
+        {
+            **complete,
+            "deferredBinding": {
+                **complete["deferredBinding"],
+                "deferredEntryId": "ofp-deferred-wrong",
+            },
+        },
+        {
+            key: value
+            for key, value in complete.items()
+            if key != "deferredBinding"
+        },
+        {
+            **complete,
+            "citation": {
+                **complete["citation"],
+                "applicability": {"status": "review_required"},
+            },
+        },
+    ]
+    for invalid in invalid_rows:
+        rejected = service_app.post(
+            f"/v1/analyses/{analysis_id}/company-briefing-references",
+            headers=headers,
+            json={"status": "available", "references": [invalid]},
+        )
+        assert rejected.status_code == 422
+        assert "does not bind" in rejected.json()["detail"]
+
+    applicability_mismatch = {
+        **complete,
+        "citation": {
+            **complete["citation"],
+            "applicability": {
+                "scope": "specified",
+                "aircraft": "B787-10",
+                "status": "confirmed",
+            },
+        },
+    }
+    rejected_mismatch = service_app.post(
+        f"/v1/analyses/{analysis_id}/company-briefing-references",
+        headers=headers,
+        json={"status": "available", "references": [applicability_mismatch]},
+    )
+    assert rejected_mismatch.status_code == 422
+    assert "active flight applicability" in rejected_mismatch.json()["detail"]
+
+    malformed_clear = service_app.post(
+        f"/v1/analyses/{analysis_id}/company-briefing-references",
+        headers=headers,
+        json={"status": "unavailable", "references": [complete]},
+    )
+    assert malformed_clear.status_code == 422
+    assert "must contain no entries" in malformed_clear.json()["detail"]
+
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    stored_analysis = json.loads(
+        Path(str(flight["analysis_path"])).read_text(encoding="utf-8")
+    )
+    assert "company_briefing_references" not in stored_analysis
+    assert database.get_flight_by_analysis_id(
+        analysis_id,
+        "tenant-1",
+    )["status"] == "Completed"
+
+
+def test_company_briefing_reference_atomic_commit_failure_is_retryable_and_unchanged_retry_is_idempotent(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    headers = _authorization()
+    created = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={
+            "file": (
+                "SQ304.pdf",
+                _build_lido_pdf_with_sq481_deferred_block(),
+                "application/pdf",
+            )
+        },
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    analysis_path = Path(str(flight["analysis_path"]))
+    prior_artifact = analysis_path.read_bytes()
+    prior_mtime = analysis_path.stat().st_mtime_ns
+
+    real_commit = main.commit_company_briefing_reference_publication
+    commit_calls = 0
+
+    def fail_first_commit(operation_id: str):
+        nonlocal commit_calls
+        commit_calls += 1
+        if commit_calls == 1:
+            raise sqlite3.OperationalError("synthetic audit store outage")
+        return real_commit(operation_id)
+
+    monkeypatch.setattr(
+        main,
+        "commit_company_briefing_reference_publication",
+        fail_first_commit,
+    )
+    with caplog.at_level(logging.ERROR, logger="app.main"):
+        failed = service_app.post(
+            f"/v1/analyses/{analysis_id}/company-briefing-references",
+            headers=headers,
+            json={"status": "unavailable", "references": []},
+        )
+
+    assert failed.status_code == 503
+    assert failed.json()["detail"] == {
+        "message": (
+            "The governed reference publication was not activated because "
+            "its atomic audit commit failed."
+        ),
+        "publication_persisted": False,
+        "publication_state": "unchanged",
+        "audit_state": "failed",
+        "retry_same_payload": True,
+    }
+    assert "atomic audit/pointer commit failed" in caplog.text
+    assert analysis_path.read_bytes() == prior_artifact
+    assert analysis_path.stat().st_mtime_ns == prior_mtime
+    assert "company_briefing_references" not in json.loads(prior_artifact)
+    assert database.get_flight_by_analysis_id(
+        analysis_id,
+        "tenant-1",
+    )["status"] == "Completed"
+
+    retried = service_app.post(
+        f"/v1/analyses/{analysis_id}/company-briefing-references",
+        headers=headers,
+        json={"status": "unavailable", "references": []},
+    )
+
+    assert retried.status_code == 200
+    assert retried.json()["publication"] == {"state": "published"}
+    assert retried.json()["audit"]["state"] == "recorded"
+    audit_event_id = retried.json()["audit"]["event_id"]
+    assert retried.json()["combined_report"]["state"] == "invalidated"
+    published_flight = database.get_flight_by_analysis_id(
+        analysis_id,
+        "tenant-1",
+    )
+    assert published_flight is not None
+    published_path = Path(str(published_flight["analysis_path"]))
+    assert published_path != analysis_path
+    persisted_after_retry = published_path.read_bytes()
+    assert persisted_after_retry != prior_artifact
+    assert json.loads(persisted_after_retry)["company_briefing_references"] == {
+        "status": "unavailable",
+        "references": [],
+    }
+    with database.connect() as conn:
+        audit = conn.execute(
+            "SELECT * FROM audit_events WHERE id=?",
+            (audit_event_id,),
+        ).fetchone()
+        audit_count = conn.execute(
+            """
+            SELECT COUNT(*) FROM audit_events
+            WHERE resource_id=?
+              AND action='analysis.company_briefing_references_publication_authorized'
+            """,
+            (analysis_id,),
+        ).fetchone()[0]
+    assert audit is not None
+    audit_details = json.loads(audit["details_json"])
+    assert audit_details["prior_artifact_sha256"] == hashlib.sha256(
+        prior_artifact
+    ).hexdigest()
+    assert audit_details["new_artifact_sha256"] == hashlib.sha256(
+        persisted_after_retry
+    ).hexdigest()
+    assert audit_details["governed_extract_ids"] == []
+    assert audit_details["combined_report"] == (
+        "invalidated_for_on_demand_render"
+    )
+
+    def audit_outage_must_not_be_called(_operation_id: str):
+        raise AssertionError("unchanged retry attempted another audit commit")
+
+    monkeypatch.setattr(
+        main,
+        "commit_company_briefing_reference_publication",
+        audit_outage_must_not_be_called,
+    )
+    mtime_after_retry = published_path.stat().st_mtime_ns
+    retried_unchanged = service_app.post(
+        f"/v1/analyses/{analysis_id}/company-briefing-references",
+        headers=headers,
+        json={"status": "unavailable", "references": []},
+    )
+    assert retried_unchanged.status_code == 200
+    assert retried_unchanged.json()["publication"] == {"state": "unchanged"}
+    assert retried_unchanged.json()["audit"]["event_id"] == audit_event_id
+    assert published_path.read_bytes() == persisted_after_retry
+    assert published_path.stat().st_mtime_ns == mtime_after_retry
+    with database.connect() as conn:
+        assert conn.execute(
+            """
+            SELECT COUNT(*) FROM audit_events
+            WHERE resource_id=?
+              AND action='analysis.company_briefing_references_publication_authorized'
+            """,
+            (analysis_id,),
+        ).fetchone()[0] == audit_count
+
+
+def test_company_briefing_reference_publication_failure_keeps_prior_artifact(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = _authorization()
+    created = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={
+            "file": (
+                "SQ304.pdf",
+                _build_lido_pdf_with_sq481_deferred_block(),
+                "application/pdf",
+            )
+        },
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    analysis_path = Path(str(flight["analysis_path"]))
+    prior_artifact = analysis_path.read_bytes()
+    def fail_publication(_artifacts) -> None:
+        raise OSError("synthetic governed artifact publication failure")
+
+    monkeypatch.setattr(main, "publish_staged_artifacts", fail_publication)
+    failed = service_app.post(
+        f"/v1/analyses/{analysis_id}/company-briefing-references",
+        headers=headers,
+        json={"status": "unavailable", "references": []},
+    )
+
+    assert failed.status_code == 503
+    assert failed.json()["detail"] == {
+        "message": (
+            "The governed reference artifact could not be prepared. The prior "
+            "analysis remains active; retry the same payload."
+        ),
+        "publication_persisted": False,
+        "publication_state": "unchanged",
+        "audit_state": "not_started",
+        "retry_same_payload": True,
+    }
+    assert analysis_path.read_bytes() == prior_artifact
+    with database.connect() as conn:
+        assert conn.execute(
+            """
+            SELECT COUNT(*) FROM audit_events
+            WHERE resource_id=?
+              AND action='analysis.company_briefing_references_publication_authorized'
+            """,
+            (analysis_id,),
+        ).fetchone()[0] == 0
+    assert database.get_flight_by_analysis_id(
+        analysis_id,
+        "tenant-1",
+    )["status"] == "Completed"
+
+
+def test_company_briefing_reference_post_commit_cleanup_error_reports_success(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    headers = _authorization()
+    created = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={
+            "file": (
+                "SQ304.pdf",
+                _build_lido_pdf_with_sq481_deferred_block(),
+                "application/pdf",
+            )
+        },
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    analysis_path = Path(str(flight["analysis_path"]))
+    prior_artifact = analysis_path.read_bytes()
+
+    def commit_then_warn(artifacts) -> None:
+        staged, destination = artifacts[0]
+        staged.replace(destination)
+        raise OSError("synthetic backup cleanup warning")
+
+    monkeypatch.setattr(main, "publish_staged_artifacts", commit_then_warn)
+    with caplog.at_level(logging.WARNING, logger="app.main"):
+        published = service_app.post(
+            f"/v1/analyses/{analysis_id}/company-briefing-references",
+            headers=headers,
+            json={"status": "unavailable", "references": []},
+        )
+
+    assert published.status_code == 200
+    assert published.json()["publication"] == {"state": "published"}
+    assert "target committed with a cleanup warning" in caplog.text
+    current_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert current_flight is not None
+    current_path = Path(str(current_flight["analysis_path"]))
+    committed = current_path.read_bytes()
+    assert committed != prior_artifact
+    assert json.loads(committed)["company_briefing_references"] == {
+        "status": "unavailable",
+        "references": [],
+    }
+
+
+def test_company_briefing_reference_claim_compare_and_set_requires_completed(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = _authorization()
+    created = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={
+            "file": (
+                "SQ304.pdf",
+                _build_lido_pdf_with_sq481_deferred_block(),
+                "application/pdf",
+            )
+        },
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    analysis_path = Path(str(flight["analysis_path"]))
+    prior_artifact = analysis_path.read_bytes()
+    real_prepare = main.prepare_company_briefing_reference_publication
+    prepare_calls = 0
+
+    def race_prepare(**kwargs):
+        nonlocal prepare_calls
+        prepare_calls += 1
+        database.update_status(
+            int(kwargs["flight_id"]),
+            "Failed",
+            notes="Synthetic concurrent state transition.",
+            tenant_id=kwargs["tenant_id"],
+        )
+        return real_prepare(**kwargs)
+
+    monkeypatch.setattr(
+        main,
+        "prepare_company_briefing_reference_publication",
+        race_prepare,
+    )
+    rejected = service_app.post(
+        f"/v1/analyses/{analysis_id}/company-briefing-references",
+        headers=headers,
+        json={"status": "unavailable", "references": []},
+    )
+
+    assert rejected.status_code == 409
+    assert prepare_calls == 1
+    assert analysis_path.read_bytes() == prior_artifact
+    assert database.get_flight_by_analysis_id(
+        analysis_id,
+        "tenant-1",
+    )["status"] == "Failed"
+
+
+def test_company_briefing_reference_prepared_crash_reconciles_once(
+    service_app: TestClient,
+) -> None:
+    headers = _authorization()
+    created = service_app.post(
+        "/v1/analyses",
+        headers=headers,
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    prior_path = Path(str(flight["analysis_path"]))
+    prior_bytes = prior_path.read_bytes()
+    desired = {"status": "unavailable", "references": []}
+    updated = json.loads(prior_bytes)
+    updated["company_briefing_references"] = desired
+    target_bytes = json.dumps(updated, indent=2).encode()
+    target_path = prior_path.with_name(f"{prior_path.stem}.prepared-crash.json")
+    target_path.write_bytes(target_bytes)
+    payload_sha256 = hashlib.sha256(
+        json.dumps(desired, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    operation = database.prepare_company_briefing_reference_publication(
+        flight_id=int(flight["id"]),
+        tenant_id="tenant-1",
+        analysis_id=analysis_id,
+        actor_id="pilot-7",
+        payload_sha256=payload_sha256,
+        prior_analysis_path=str(prior_path),
+        target_analysis_path=str(target_path),
+        prior_artifact_sha256=hashlib.sha256(prior_bytes).hexdigest(),
+        target_artifact_sha256=hashlib.sha256(target_bytes).hexdigest(),
+        audit_details={
+            "reference_count": 0,
+            "governed_reference_status": "unavailable",
+            "governed_extract_ids": [],
+        },
+    )
+    assert operation is not None
+    assert database.get_flight_by_analysis_id(
+        analysis_id,
+        "tenant-1",
+    )["status"] == "Processing"
+
+    database.init_db()
+    recovered = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert recovered is not None
+    assert recovered["status"] == "Completed"
+    assert recovered["analysis_path"] == str(target_path)
+    assert json.loads(target_path.read_bytes())["company_briefing_references"] == desired
+    committed = database.find_company_briefing_reference_publication(
+        tenant_id="tenant-1",
+        analysis_id=analysis_id,
+        payload_sha256=payload_sha256,
+        target_analysis_path=str(target_path),
+        states=("committed",),
+    )
+    assert committed is not None
+    with database.connect() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE id=?",
+            (committed["audit_event_id"],),
+        ).fetchone()[0] == 1
+    database.init_db()
+    with database.connect() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE id=?",
+            (committed["audit_event_id"],),
+        ).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("target_damage", ["missing", "corrupt"])
+def test_company_briefing_reference_reconciler_rolls_back_bad_target(
+    service_app: TestClient,
+    target_damage: str,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    prior_path = Path(str(flight["analysis_path"]))
+    prior_bytes = prior_path.read_bytes()
+    target_path = prior_path.with_name(
+        f"{prior_path.stem}.prepared-{target_damage}.json"
+    )
+    target_bytes = prior_bytes + b"\n"
+    target_path.write_bytes(target_bytes)
+    operation = database.prepare_company_briefing_reference_publication(
+        flight_id=int(flight["id"]),
+        tenant_id="tenant-1",
+        analysis_id=analysis_id,
+        actor_id="pilot-7",
+        payload_sha256=hashlib.sha256(b"unavailable").hexdigest(),
+        prior_analysis_path=str(prior_path),
+        target_analysis_path=str(target_path),
+        prior_artifact_sha256=hashlib.sha256(prior_bytes).hexdigest(),
+        target_artifact_sha256=hashlib.sha256(target_bytes).hexdigest(),
+        audit_details={"reference_count": 0},
+    )
+    assert operation is not None
+    if target_damage == "missing":
+        target_path.unlink()
+    else:
+        target_path.write_bytes(b"corrupt")
+
+    database.init_db()
+    restored = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert restored is not None
+    assert restored["status"] == "Completed"
+    assert restored["analysis_path"] == str(prior_path)
+    assert prior_path.read_bytes() == prior_bytes
+    with database.connect() as conn:
+        operation_row = conn.execute(
+            """
+            SELECT state FROM company_briefing_reference_publications
+            WHERE id=?
+            """,
+            (operation["id"],),
+        ).fetchone()
+        assert operation_row["state"] == "aborted"
+        assert conn.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE id=?",
+            (operation["audit_event_id"],),
+        ).fetchone()[0] == 0
+
+
+def test_stale_analysis_claim_token_cannot_release_replacement_claim(
+    service_app: TestClient,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert flight is not None
+    first = database.claim_analysis(
+        int(flight["id"]),
+        "tenant-1",
+        expected_status="Completed",
+    )
+    assert first is not None
+    assert database.update_status(
+        int(flight["id"]),
+        "Failed",
+        tenant_id="tenant-1",
+        expected_current_status="Processing",
+        expected_claim_token=first["analysis_claim_token"],
+    )
+    second = database.claim_analysis(
+        int(flight["id"]),
+        "tenant-1",
+        expected_status="Failed",
+    )
+    assert second is not None
+    assert second["analysis_claim_token"] != first["analysis_claim_token"]
+
+    assert not database.restore_analysis_state(
+        int(flight["id"]),
+        "Completed",
+        flight["notes"],
+        flight["last_error"],
+        tenant_id="tenant-1",
+        analysis_failure_category=flight["analysis_failure_category"],
+        expected_current_status="Processing",
+        expected_claim_token=first["analysis_claim_token"],
+    )
+    current = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert current is not None
+    assert current["status"] == "Processing"
+    assert current["analysis_claim_token"] == second["analysis_claim_token"]
+    assert database.restore_analysis_state(
+        int(flight["id"]),
+        "Failed",
+        second["notes"],
+        second["last_error"],
+        tenant_id="tenant-1",
+        analysis_failure_category=second["analysis_failure_category"],
+        expected_current_status="Processing",
+        expected_claim_token=second["analysis_claim_token"],
+    )
 
 
 def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
