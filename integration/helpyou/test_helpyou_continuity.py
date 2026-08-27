@@ -15,6 +15,7 @@ from helpyou_continuity import (
     InteractionMode,
     PilotMemoryPair,
     bootstrap_helpyou_session,
+    checkpoint_fingerprint,
     checkpoint_required,
     facilitation_sequence,
     governed_state_fingerprint,
@@ -81,6 +82,7 @@ class TestVerifier:
         repository=None,
         path=None,
         expected_governed_fingerprint=None,
+        expected_checkpoint_fingerprint=None,
         verified_at_utc="2026-08-27T02:55:00Z",
         expires_at_utc="2026-08-27T03:10:00Z",
     ):
@@ -88,10 +90,11 @@ class TestVerifier:
         self.repository = repository
         self.path = path
         self.expected_governed_fingerprint = expected_governed_fingerprint
+        self.expected_checkpoint_fingerprint = expected_checkpoint_fingerprint
         self.verified_at_utc = verified_at_utc
         self.expires_at_utc = expires_at_utc
 
-    def verify(self, authority, governed_fingerprint):
+    def verify(self, authority, governed_fingerprint, checkpoint_envelope_fingerprint):
         return AuthorityVerificationReceipt(
             github_repository=self.repository or authority.github_repository,
             github_path=self.path or authority.github_path,
@@ -101,6 +104,10 @@ class TestVerifier:
             human_record_fingerprint=authority.human_record_fingerprint,
             governed_state_fingerprint=(
                 self.expected_governed_fingerprint or governed_fingerprint
+            ),
+            checkpoint_fingerprint=(
+                self.expected_checkpoint_fingerprint
+                or checkpoint_envelope_fingerprint
             ),
             verified_at_utc=self.verified_at_utc,
             expires_at_utc=self.expires_at_utc,
@@ -124,7 +131,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             checkpoint_id="HCP-001",
             sequence=1,
             previous_checkpoint_id=None,
-            previous_governed_state_fingerprint=None,
+            previous_checkpoint_fingerprint=None,
             user_scope_id="user_12345678",
             updated_at_utc="2026-08-27T00:00:00Z",
             authority=self.authority("c"),
@@ -167,8 +174,8 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         self.assertEqual(result.sequence, 2)
         self.assertEqual(result.previous_checkpoint_id, "HCP-001")
         self.assertEqual(
-            result.previous_governed_state_fingerprint,
-            governed_state_fingerprint(self.state()),
+            result.previous_checkpoint_fingerprint,
+            checkpoint_fingerprint(self.state()),
         )
         self.assertEqual(result.approved_changes, EXPECTED_DEFAULTS)
 
@@ -420,9 +427,26 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         first, second = self.state(), self.successor()
         bad = replace(
             second,
-            previous_governed_state_fingerprint="sha256:" + "f" * 64,
+            previous_checkpoint_fingerprint="sha256:" + "f" * 64,
         )
         store = MemoryStore((state_to_private_payload(first), state_to_private_payload(bad)))
+        with self.assertRaisesRegex(ContinuityPolicyError, "hash chain is broken"):
+            bootstrap_helpyou_session(
+                first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+            )
+
+    def test_historical_human_record_substitution_breaks_hash_chain(self):
+        first, second = self.state(), self.successor()
+        substituted = replace(
+            first,
+            authority=replace(
+                first.authority,
+                human_record_fingerprint="sha256:" + "9" * 64,
+            ),
+        )
+        store = MemoryStore(
+            (state_to_private_payload(substituted), state_to_private_payload(second))
+        )
         with self.assertRaisesRegex(ContinuityPolicyError, "hash chain is broken"):
             bootstrap_helpyou_session(
                 first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
@@ -435,7 +459,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             checkpoint_id=first.checkpoint_id,
             sequence=3,
             previous_checkpoint_id=second.checkpoint_id,
-            previous_governed_state_fingerprint=governed_state_fingerprint(second),
+            previous_checkpoint_fingerprint=checkpoint_fingerprint(second),
             updated_at_utc="2026-08-27T02:00:00Z",
             authority=self.authority("e"),
         )
@@ -495,7 +519,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             checkpoint_id=first.checkpoint_id,
             sequence=3,
             previous_checkpoint_id=second.checkpoint_id,
-            previous_governed_state_fingerprint=governed_state_fingerprint(second),
+            previous_checkpoint_fingerprint=checkpoint_fingerprint(second),
             updated_at_utc="2026-08-27T02:00:00Z",
             authority=self.authority("e"),
         )
