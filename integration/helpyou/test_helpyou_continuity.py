@@ -17,6 +17,7 @@ from helpyou_continuity import (
     bootstrap_helpyou_session,
     checkpoint_required,
     facilitation_sequence,
+    governed_state_fingerprint,
     load_checkpoint,
     persist_checkpoint,
     public_checkpoint_projection,
@@ -25,6 +26,8 @@ from helpyou_continuity import (
     select_mode,
     state_to_private_payload,
 )
+
+NOW_UTC = "2026-08-27T03:00:00Z"
 
 
 EXPECTED_DEFAULTS = (
@@ -60,17 +63,47 @@ class PublicStore(MemoryStore):
     privacy_class = "PUBLIC"
 
 
-class TestVerifier:
-    def __init__(self, *, mismatch=False):
-        self.mismatch = mismatch
+class RaceStore(MemoryStore):
+    def __init__(self, payloads, competing_payload):
+        super().__init__(payloads)
+        self.competing_payload = deepcopy(competing_payload)
 
-    def verify(self, authority):
+    def compare_and_swap_checkpoint(self, expected_checkpoint_id, payload):
+        self.payloads.append(deepcopy(self.competing_payload))
+        return super().compare_and_swap_checkpoint(expected_checkpoint_id, payload)
+
+
+class TestVerifier:
+    def __init__(
+        self,
+        *,
+        mismatch=False,
+        repository=None,
+        path=None,
+        expected_governed_fingerprint=None,
+        verified_at_utc="2026-08-27T02:55:00Z",
+        expires_at_utc="2026-08-27T03:10:00Z",
+    ):
+        self.mismatch = mismatch
+        self.repository = repository
+        self.path = path
+        self.expected_governed_fingerprint = expected_governed_fingerprint
+        self.verified_at_utc = verified_at_utc
+        self.expires_at_utc = expires_at_utc
+
+    def verify(self, authority, governed_fingerprint):
         return AuthorityVerificationReceipt(
+            github_repository=self.repository or authority.github_repository,
+            github_path=self.path or authority.github_path,
             github_commit_sha=("f" * 40 if self.mismatch else authority.github_commit_sha),
             policy_fingerprint=authority.policy_fingerprint,
             human_record_id=authority.human_record_id,
             human_record_fingerprint=authority.human_record_fingerprint,
-            verified_at_utc="2026-08-27T01:30:00Z",
+            governed_state_fingerprint=(
+                self.expected_governed_fingerprint or governed_fingerprint
+            ),
+            verified_at_utc=self.verified_at_utc,
+            expires_at_utc=self.expires_at_utc,
         )
 
 
@@ -238,6 +271,12 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContinuityPolicyError, "array of strings"):
             load_checkpoint(payload)
 
+    def test_stored_governed_fingerprint_detects_tamper(self):
+        payload = state_to_private_payload(self.state())
+        payload["next_prompt"] = "Tampered prompt"
+        with self.assertRaisesRegex(ContinuityPolicyError, "fingerprint does not match"):
+            load_checkpoint(payload)
+
     def test_private_memory_round_trips(self):
         state = replace(
             self.state(),
@@ -254,6 +293,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             first.user_scope_id,
             MemoryStore((state_to_private_payload(first), state_to_private_payload(second))),
             TestVerifier(),
+            now_utc=NOW_UTC,
         )
         self.assertEqual(state, second)
         self.assertEqual(brief.checkpoint_id, second.checkpoint_id)
@@ -263,13 +303,63 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         state = self.state()
         store = MemoryStore((state_to_private_payload(state),))
         with self.assertRaisesRegex(ContinuityPolicyError, "does not match binding"):
-            bootstrap_helpyou_session(state.user_scope_id, store, TestVerifier(mismatch=True))
+            bootstrap_helpyou_session(
+                state.user_scope_id, store, TestVerifier(mismatch=True), now_utc=NOW_UTC
+            )
+
+    def test_receipt_binds_complete_governed_checkpoint_state(self):
+        original = self.state()
+        tampered = replace(original, next_prompt="Tampered but internally rehashed prompt")
+        store = MemoryStore((state_to_private_payload(tampered),))
+        verifier = TestVerifier(
+            expected_governed_fingerprint=governed_state_fingerprint(original)
+        )
+        with self.assertRaisesRegex(ContinuityPolicyError, "does not match binding"):
+            bootstrap_helpyou_session(
+                original.user_scope_id, store, verifier, now_utc=NOW_UTC
+            )
+
+    def test_receipt_binds_repository_and_path(self):
+        state = self.state()
+        store = MemoryStore((state_to_private_payload(state),))
+        for verifier in (
+            TestVerifier(repository="OtherOwner/other-repository"),
+            TestVerifier(path="docs/helpyou/OTHER_PROTOCOL.md"),
+        ):
+            with self.subTest(verifier=verifier):
+                with self.assertRaisesRegex(ContinuityPolicyError, "does not match binding"):
+                    bootstrap_helpyou_session(
+                        state.user_scope_id, store, verifier, now_utc=NOW_UTC
+                    )
+
+    def test_expired_authority_receipt_fails_closed(self):
+        state = self.state()
+        store = MemoryStore((state_to_private_payload(state),))
+        verifier = TestVerifier(expires_at_utc="2026-08-27T02:59:59Z")
+        with self.assertRaisesRegex(ContinuityPolicyError, "not currently valid"):
+            bootstrap_helpyou_session(
+                state.user_scope_id, store, verifier, now_utc=NOW_UTC
+            )
+
+    def test_oversized_receipt_validity_fails_closed(self):
+        state = self.state()
+        store = MemoryStore((state_to_private_payload(state),))
+        verifier = TestVerifier(
+            verified_at_utc="2026-08-27T02:30:00Z",
+            expires_at_utc="2026-08-27T03:30:00Z",
+        )
+        with self.assertRaisesRegex(ContinuityPolicyError, "exceeds 15 minutes"):
+            bootstrap_helpyou_session(
+                state.user_scope_id, store, verifier, now_utc=NOW_UTC
+            )
 
     def test_bootstrap_requires_private_store_capability(self):
         state = self.state()
         store = PublicStore((state_to_private_payload(state),))
         with self.assertRaisesRegex(ContinuityPolicyError, "PRIVATE store"):
-            bootstrap_helpyou_session(state.user_scope_id, store, TestVerifier())
+            bootstrap_helpyou_session(
+                state.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+            )
 
     def test_competing_successors_fail_closed(self):
         first, second = self.state(), self.successor()
@@ -279,14 +369,18 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             state_to_private_payload(conflict),
         ))
         with self.assertRaisesRegex(ContinuityPolicyError, "Conflicting checkpoints"):
-            bootstrap_helpyou_session(first.user_scope_id, store, TestVerifier())
+            bootstrap_helpyou_session(
+                first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+            )
 
     def test_broken_predecessor_chain_fails(self):
         first, second = self.state(), self.successor()
         bad = replace(second, previous_checkpoint_id="HCP-XXX")
         store = MemoryStore((state_to_private_payload(first), state_to_private_payload(bad)))
         with self.assertRaisesRegex(ContinuityPolicyError, "predecessor chain"):
-            bootstrap_helpyou_session(first.user_scope_id, store, TestVerifier())
+            bootstrap_helpyou_session(
+                first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+            )
 
     def test_checkpoint_id_cannot_be_reused_later_in_chain(self):
         first, second = self.state(), self.successor()
@@ -300,30 +394,69 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         )
         store = MemoryStore(tuple(state_to_private_payload(item) for item in (first, second, third)))
         with self.assertRaisesRegex(ContinuityPolicyError, "reused within the chain"):
-            bootstrap_helpyou_session(first.user_scope_id, store, TestVerifier())
+            bootstrap_helpyou_session(
+                first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+            )
 
     def test_persist_round_trip_verifies(self):
         store = MemoryStore()
-        persist_checkpoint(store, self.state(), TestVerifier())
+        persist_checkpoint(store, self.state(), TestVerifier(), now_utc=NOW_UTC)
         self.assertEqual(len(store.payloads), 1)
 
     def test_failed_persistence_is_not_reported_as_success(self):
         with self.assertRaisesRegex(ContinuityPolicyError, "compare-and-swap"):
-            persist_checkpoint(MemoryStore(drop_writes=True), self.state(), TestVerifier())
+            persist_checkpoint(
+                MemoryStore(drop_writes=True), self.state(), TestVerifier(),
+                now_utc=NOW_UTC,
+            )
 
     def test_compare_and_swap_rejects_competing_successor(self):
-        first, second = self.state(), self.successor()
-        store = MemoryStore((state_to_private_payload(first), state_to_private_payload(second)))
+        first, candidate = self.state(), self.successor()
         competing = replace(
-            second,
+            candidate,
             checkpoint_id="HCP-099",
             sequence=2,
             previous_checkpoint_id=first.checkpoint_id,
             updated_at_utc="2026-08-27T01:30:00Z",
             authority=self.authority("e"),
         )
+        store = RaceStore(
+            (state_to_private_payload(first),), state_to_private_payload(competing)
+        )
         with self.assertRaisesRegex(ContinuityPolicyError, "compare-and-swap"):
-            persist_checkpoint(store, competing, TestVerifier())
+            persist_checkpoint(store, candidate, TestVerifier(), now_utc=NOW_UTC)
+
+    def test_invalid_sequence_is_rejected_before_store_mutation(self):
+        first = self.state()
+        invalid = replace(
+            self.successor(),
+            checkpoint_id="HCP-003",
+            sequence=3,
+            previous_checkpoint_id=first.checkpoint_id,
+            updated_at_utc="2026-08-27T02:00:00Z",
+            authority=self.authority("e"),
+        )
+        store = MemoryStore((state_to_private_payload(first),))
+        with self.assertRaisesRegex(ContinuityPolicyError, "not the next sequence"):
+            persist_checkpoint(store, invalid, TestVerifier(), now_utc=NOW_UTC)
+        self.assertEqual(len(store.payloads), 1)
+
+    def test_reused_historical_id_is_rejected_before_store_mutation(self):
+        first, second = self.state(), self.successor()
+        invalid = replace(
+            second,
+            checkpoint_id=first.checkpoint_id,
+            sequence=3,
+            previous_checkpoint_id=second.checkpoint_id,
+            updated_at_utc="2026-08-27T02:00:00Z",
+            authority=self.authority("e"),
+        )
+        store = MemoryStore(
+            (state_to_private_payload(first), state_to_private_payload(second))
+        )
+        with self.assertRaisesRegex(ContinuityPolicyError, "historical checkpoint_id"):
+            persist_checkpoint(store, invalid, TestVerifier(), now_utc=NOW_UTC)
+        self.assertEqual(len(store.payloads), 2)
 
     def test_development_string_uses_development_sequence(self):
         steps = facilitation_sequence("development")
