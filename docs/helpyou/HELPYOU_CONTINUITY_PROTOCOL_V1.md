@@ -50,6 +50,8 @@ Both authority pointers, their fingerprints and external verification are requir
 Each checkpoint records at least:
 
 - protocol version and checkpoint identifier;
+- monotonically increasing sequence and predecessor identifier;
+- pseudonymous user-scope identifier;
 - explicit UTC update time;
 - GitHub repository and protocol path;
 - merged GitHub commit and normalized policy fingerprint;
@@ -65,7 +67,7 @@ Each checkpoint records at least:
 - the next prompt; and
 - completion or gap status.
 
-The same approved material change must not be represented by multiple conflicting successor checkpoints. A later correction supersedes the earlier position explicitly; it does not erase the history.
+The same approved material change must not be represented by multiple conflicting successor checkpoints. A successor requires a new checkpoint identifier, a later UTC time and a newly verified human record. A later correction supersedes the earlier position explicitly; it does not erase the history.
 
 ## 6. Visible resumption brief
 
@@ -131,7 +133,7 @@ Continuity checkpoints preserve what was known and approved; they do not promote
 
 ## 10. Failure and recovery
 
-If both authority layers are accessible and verified, resume from the latest valid checkpoint. An unmerged pull request is not active normative authority. If only one layer is accessible, declare continuity incomplete, show what was recovered and stop any claim dependent on the missing layer. If neither layer is accessible, state that no controlled checkpoint can be verified; do not imply that model memory is a substitute.
+If both authority layers are accessible and verified, retrieve the complete private chain, reject competing sequence numbers or broken predecessor links, and resume from the latest valid checkpoint. An unmerged pull request is not active normative authority. If only one layer is accessible, declare continuity incomplete, show what was recovered and stop any claim dependent on the missing layer. If neither layer is accessible, state that no controlled checkpoint can be verified; do not imply that model memory is a substitute.
 
 The recoverability test is passed only when a fresh session can:
 
@@ -149,6 +151,11 @@ The reference implementation must test at least:
 - Assessment and Research require explicit selection;
 - every approved material event requires a checkpoint;
 - the four approved defaults can be stored as one atomic, idempotent bundle;
+- successor IDs, sequence, predecessor and UTC ordering are enforced;
+- malformed booleans, hashes, fingerprints, timestamps and arrays fail closed;
+- mode-change events actually update the selected mode;
+- competing successors and broken checkpoint chains fail closed;
+- a write is round-trip verified through the private store adapter;
 - drafts cannot be recorded as approved changes;
 - both authority pointers are required;
 - missing required fields fail closed;
