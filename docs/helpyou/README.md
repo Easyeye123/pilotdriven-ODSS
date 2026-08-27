@@ -8,7 +8,7 @@ Helpyou is a two-way, source-governed aviation decision-support and individual l
 
 It has two product sections:
 
-1. **Chat & Learn** — interrogates the pilot, answers questions, supports decision discussions, reviews stated reasoning and learns persistently from the pilot.
+1. **Chat & Learn** — interrogates the pilot, answers questions, supports decision discussions, reviews stated reasoning and supports governed persistent learning when product storage is integrated.
 2. **Compile & Data Hub** — compiles controlled manuals and operational sources into versioned knowledge objects for Helpyou and the ODSS CFP analyser.
 
 ODSS remains the sole owner of deterministic Lido CFP analysis. Helpyou consumes ODSS results; it does not duplicate or reinterpret the ODSS engines.
@@ -34,4 +34,8 @@ ODSS remains the sole owner of deterministic Lido CFP analysis. Helpyou consumes
 - A Lido CFP upload routes to ODSS and does not trigger a cognitive review by itself.
 - A CFP-grounded scenario must use the same ODSS weather-selection and validity protocol as the CFP analysis.
 - The default reply is the smallest complete answer at the correct operational level.
-- A valid continuity checkpoint loads with a visible status brief only after a fresh external receipt binds both authority layers and the canonical governed checkpoint state; Development Mode is the default unless Assessment or Research is explicitly selected.
+- Once product startup integration exists, a valid continuity checkpoint shall load with a visible status brief only after a fresh external receipt binds both authority layers and the canonical governed checkpoint state; Development Mode is the default unless Assessment or Research is explicitly selected.
+
+## Continuity deployment boundary
+
+The continuity protocol and Python module are reference controls. They do not keep a hosted conversation open and do not themselves provide private persistence. Product startup must wire the private compare-and-swap store, authority verifier and visible brief. Until that integration exists, the durable private artifacts support controlled recovery, but loading them is not automatic in every ChatGPT or PilotDriven session.
