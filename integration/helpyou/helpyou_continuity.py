@@ -28,9 +28,11 @@ class CheckpointStatus(str, Enum):
 
 
 class ContinuityEvent(str, Enum):
+    INITIALIZATION = "initialization"
     APPROVED_MATERIAL_CHANGE = "approved_material_change"
     APPROVED_SOURCE_REVISION = "approved_source_revision"
     APPROVED_MODE_CHANGE = "approved_mode_change"
+    APPROVED_MEMORY_CHANGE = "approved_memory_change"
     DRAFT_CHANGE = "draft_change"
     INFORMATION_ONLY = "information_only"
 
@@ -40,6 +42,7 @@ CHECKPOINT_EVENTS = frozenset(
         ContinuityEvent.APPROVED_MATERIAL_CHANGE,
         ContinuityEvent.APPROVED_SOURCE_REVISION,
         ContinuityEvent.APPROVED_MODE_CHANGE,
+        ContinuityEvent.APPROVED_MEMORY_CHANGE,
     }
 )
 APPROVED_DEFAULTS_V1 = (
@@ -80,7 +83,9 @@ def _strings(payload: Mapping[str, Any], key: str) -> tuple[str, ...]:
         raise ContinuityPolicyError(f"{key} must be an array of strings.")
     if any(not isinstance(item, str) or not item.strip() for item in value):
         raise ContinuityPolicyError(f"{key} must contain non-empty strings.")
-    return tuple(item.strip() for item in value)
+    if any(item != item.strip() for item in value):
+        raise ContinuityPolicyError(f"{key} strings must use canonical whitespace.")
+    return tuple(value)
 
 
 def _json_bool(payload: Mapping[str, Any], key: str) -> bool:
@@ -211,6 +216,12 @@ class ContinuityState:
     user_scope_id: str
     updated_at_utc: str
     authority: AuthorityPointers
+    transition_id: str
+    transition_event: ContinuityEvent
+    transition_approved_changes: tuple[str, ...]
+    approval_evidence_ref: str
+    applied_transition_ids: tuple[str, ...]
+    applied_human_record_ids: tuple[str, ...]
     mode: InteractionMode = InteractionMode.DEVELOPMENT
     mode_selected_explicitly: bool = False
     status: CheckpointStatus = CheckpointStatus.ACTIVE
@@ -255,6 +266,41 @@ class ContinuityState:
             raise ContinuityPolicyError("user_scope_id must be pseudonymous.")
         _utc(self.updated_at_utc)
         self.authority.validate()
+        _identifier(self.transition_id, "transition_id")
+        if not isinstance(self.transition_event, ContinuityEvent):
+            raise ContinuityPolicyError("transition_event must be a ContinuityEvent.")
+        if (
+            not isinstance(self.approval_evidence_ref, str)
+            or not self.approval_evidence_ref.strip()
+            or len(self.approval_evidence_ref) > 256
+            or "\n" in self.approval_evidence_ref
+        ):
+            raise ContinuityPolicyError("approval_evidence_ref must be a short private reference.")
+        if not isinstance(self.applied_transition_ids, tuple):
+            raise ContinuityPolicyError("applied_transition_ids must be a tuple.")
+        for transition_id in self.applied_transition_ids:
+            _identifier(transition_id, "applied_transition_id")
+        if (
+            len(self.applied_transition_ids) != self.sequence
+            or len(set(self.applied_transition_ids)) != len(self.applied_transition_ids)
+            or self.applied_transition_ids[-1] != self.transition_id
+        ):
+            raise ContinuityPolicyError(
+                "applied_transition_ids must be unique, complete and end at transition_id."
+            )
+        if not isinstance(self.applied_human_record_ids, tuple):
+            raise ContinuityPolicyError("applied_human_record_ids must be a tuple.")
+        for record_id in self.applied_human_record_ids:
+            _identifier(record_id, "applied_human_record_id")
+        if (
+            len(self.applied_human_record_ids) != self.sequence
+            or len(set(self.applied_human_record_ids))
+            != len(self.applied_human_record_ids)
+            or self.applied_human_record_ids[-1] != self.authority.human_record_id
+        ):
+            raise ContinuityPolicyError(
+                "applied_human_record_ids must be globally unique, complete and current."
+            )
         if not isinstance(self.mode, InteractionMode):
             raise ContinuityPolicyError("mode must be an InteractionMode.")
         if type(self.mode_selected_explicitly) is not bool:
@@ -276,13 +322,68 @@ class ContinuityState:
             ("approved_changes", self.approved_changes),
             ("superseded_positions", self.superseded_positions),
             ("open_questions", self.open_questions),
+            ("transition_approved_changes", self.transition_approved_changes),
         ):
             if not isinstance(value, tuple) or any(
                 not isinstance(item, str) or not item.strip() for item in value
             ):
                 raise ContinuityPolicyError(f"{name} must be a tuple of strings.")
+            if any(item != item.strip() for item in value):
+                raise ContinuityPolicyError(
+                    f"{name} strings must use canonical whitespace."
+                )
         if len(set(self.approved_changes)) != len(self.approved_changes):
             raise ContinuityPolicyError("approved_changes contains duplicates.")
+        if len(set(self.transition_approved_changes)) != len(
+            self.transition_approved_changes
+        ):
+            raise ContinuityPolicyError("transition_approved_changes contains duplicates.")
+        if self.sequence == 1:
+            if self.transition_event is ContinuityEvent.INITIALIZATION:
+                if self.transition_approved_changes or self.approved_changes:
+                    raise ContinuityPolicyError(
+                        "An initialization checkpoint cannot contain approved changes."
+                    )
+                if (
+                    self.mode is not InteractionMode.DEVELOPMENT
+                    or self.mode_selected_explicitly
+                ):
+                    raise ContinuityPolicyError(
+                        "Initialization must use unselected Development Mode."
+                    )
+            elif self.transition_event not in CHECKPOINT_EVENTS:
+                raise ContinuityPolicyError("The first checkpoint event is not admissible.")
+            else:
+                if self.approved_changes != self.transition_approved_changes:
+                    raise ContinuityPolicyError(
+                        "The first approved checkpoint cannot contain extra history."
+                    )
+                if self.transition_event is ContinuityEvent.APPROVED_MODE_CHANGE:
+                    if not self.mode_selected_explicitly:
+                        raise ContinuityPolicyError(
+                            "A first mode-change checkpoint requires explicit selection."
+                        )
+                elif (
+                    self.mode is not InteractionMode.DEVELOPMENT
+                    or self.mode_selected_explicitly
+                ):
+                    raise ContinuityPolicyError(
+                        "A non-mode first checkpoint must use default Development Mode."
+                    )
+        elif self.transition_event not in CHECKPOINT_EVENTS:
+            raise ContinuityPolicyError("A successor requires an approved transition event.")
+        if self.transition_event in CHECKPOINT_EVENTS:
+            if not self.transition_approved_changes:
+                raise ContinuityPolicyError(
+                    "An approved transition requires transition_approved_changes."
+                )
+            if any(
+                item not in self.approved_changes
+                for item in self.transition_approved_changes
+            ):
+                raise ContinuityPolicyError(
+                    "Transition changes must be represented in approved_changes."
+                )
         if not isinstance(self.next_prompt, str) or not self.next_prompt.strip():
             raise ContinuityPolicyError("next_prompt is required.")
         if not isinstance(self.private_pilot_memory, tuple):
@@ -300,18 +401,48 @@ class ResumeBrief:
     mode: str
     active_case_ref: str | None
     last_approved_change: str | None
+    last_transition_id: str
+    last_transition_event: str
     open_questions: tuple[str, ...]
     next_prompt: str
     authority_status: str
 
 
+@dataclass(frozen=True, kw_only=True)
+class IncompleteRecoveryBrief:
+    """Safe, visible status when dual-authority continuity cannot be established."""
+
+    status: str
+    recovered_layers: tuple[str, ...]
+    unavailable_layers: tuple[str, ...]
+    safe_to_resume: bool
+    next_action: str
+
+
+class ContinuityRecoveryError(ContinuityPolicyError):
+    """Fail-closed bootstrap error carrying a UI-safe recovery brief."""
+
+    def __init__(self, message: str, recovery_brief: IncompleteRecoveryBrief):
+        super().__init__(message)
+        self.recovery_brief = recovery_brief
+
+
 class PrivateContinuityStore(Protocol):
+    """Trusted append-only store with envelope-bound atomic compare-and-swap.
+
+    Production history is immutable. CAS must compare both the expected latest
+    checkpoint identifier and its complete checkpoint-envelope fingerprint.
+    """
+
     privacy_class: str
 
     def list_checkpoints(self, user_scope_id: str) -> Iterable[Mapping[str, Any]]: ...
 
     def compare_and_swap_checkpoint(
-        self, expected_checkpoint_id: str | None, payload: Mapping[str, Any]
+        self,
+        expected_checkpoint_id: str | None,
+        expected_checkpoint_fingerprint: str | None,
+        payload: Mapping[str, Any],
     ) -> bool: ...
 
 
@@ -320,7 +451,8 @@ class AuthorityVerifier(Protocol):
 
     A production adapter must establish merged-main reachability, recompute the
     policy and human-record hashes, and confirm that the human record embeds the
-    supplied governed-state fingerprint before returning a short-lived receipt.
+    supplied governed-state and complete checkpoint-envelope fingerprints before
+    returning a short-lived receipt.
     """
 
     def verify(
@@ -329,6 +461,17 @@ class AuthorityVerifier(Protocol):
         governed_state_fingerprint: str,
         checkpoint_fingerprint: str,
     ) -> AuthorityVerificationReceipt: ...
+
+
+class TrustedClock(Protocol):
+    def now_utc(self) -> str: ...
+
+
+class SystemUTCClock:
+    def now_utc(self) -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace(
+            "+00:00", "Z"
+        )
 
 
 def _require_private_store(store: PrivateContinuityStore) -> None:
@@ -340,7 +483,7 @@ def _verified_receipt(
     verifier: AuthorityVerifier,
     state: ContinuityState,
     *,
-    now_utc: str,
+    trusted_clock: TrustedClock | None,
 ) -> AuthorityVerificationReceipt:
     state.validate()
     receipt = verifier.verify(
@@ -348,10 +491,17 @@ def _verified_receipt(
         governed_state_fingerprint(state),
         checkpoint_fingerprint(state),
     )
+    now_utc = _trusted_now(trusted_clock)
     if not isinstance(receipt, AuthorityVerificationReceipt):
         raise ContinuityPolicyError("Authority verifier did not return a valid receipt.")
     receipt.validate_against(state, now_utc=now_utc)
     return receipt
+
+
+def _trusted_now(clock: TrustedClock | None) -> str:
+    now_utc = (clock or SystemUTCClock()).now_utc()
+    _utc(now_utc)
+    return now_utc
 
 
 def _event(value: str | ContinuityEvent) -> ContinuityEvent:
@@ -379,6 +529,8 @@ def _successor(
     *,
     event: str | ContinuityEvent,
     approved_changes: tuple[str, ...],
+    transition_id: str,
+    approval_evidence_ref: str,
     checkpoint_id: str,
     updated_at_utc: str,
     next_prompt: str,
@@ -399,9 +551,28 @@ def _successor(
     normalized = tuple(item.strip() for item in approved_changes)
     if not normalized or len(set(normalized)) != len(normalized):
         raise ContinuityPolicyError("The approved bundle is empty or duplicated.")
+    _identifier(transition_id, "transition_id")
+    if (
+        not isinstance(approval_evidence_ref, str)
+        or not approval_evidence_ref.strip()
+        or len(approval_evidence_ref) > 256
+        or "\n" in approval_evidence_ref
+    ):
+        raise ContinuityPolicyError("approval_evidence_ref must be a short private reference.")
+    if transition_id in previous.applied_transition_ids:
+        if (
+            transition_id == previous.transition_id
+            and previous.transition_event is normalized_event
+            and previous.transition_approved_changes == normalized
+            and previous.approval_evidence_ref == approval_evidence_ref.strip()
+            and previous.mode is mode
+            and previous.mode_selected_explicitly is explicit
+        ):
+            return previous
+        raise ContinuityPolicyError("transition_id collides with an applied transition.")
+    if authority.human_record_id in previous.applied_human_record_ids:
+        raise ContinuityPolicyError("human_record_id collides with historical authority.")
     new_changes = tuple(item for item in normalized if item not in previous.approved_changes)
-    if not new_changes:
-        return previous
     _identifier(checkpoint_id, "checkpoint_id")
     if checkpoint_id == previous.checkpoint_id:
         raise ContinuityPolicyError("A successor requires a new checkpoint_id.")
@@ -418,12 +589,21 @@ def _successor(
         previous_checkpoint_fingerprint=checkpoint_fingerprint(previous),
         updated_at_utc=updated_at_utc,
         authority=authority,
+        transition_id=transition_id,
+        transition_event=normalized_event,
+        transition_approved_changes=normalized,
+        approval_evidence_ref=approval_evidence_ref.strip(),
+        applied_transition_ids=previous.applied_transition_ids + (transition_id,),
+        applied_human_record_ids=(
+            previous.applied_human_record_ids + (authority.human_record_id,)
+        ),
         mode=mode,
         mode_selected_explicitly=explicit,
         approved_changes=previous.approved_changes + new_changes,
         next_prompt=next_prompt,
     )
     state.validate()
+    _validate_transition(previous, state)
     return state
 
 
@@ -432,6 +612,8 @@ def record_approved_bundle(
     *,
     event: str | ContinuityEvent,
     approved_changes: tuple[str, ...],
+    transition_id: str,
+    approval_evidence_ref: str,
     checkpoint_id: str,
     updated_at_utc: str,
     next_prompt: str,
@@ -444,6 +626,8 @@ def record_approved_bundle(
         previous,
         event=normalized_event,
         approved_changes=approved_changes,
+        transition_id=transition_id,
+        approval_evidence_ref=approval_evidence_ref,
         checkpoint_id=checkpoint_id,
         updated_at_utc=updated_at_utc,
         next_prompt=next_prompt,
@@ -462,6 +646,8 @@ def record_mode_change(
     *,
     new_mode: str | InteractionMode,
     approved_change: str,
+    transition_id: str,
+    approval_evidence_ref: str,
     checkpoint_id: str,
     updated_at_utc: str,
     next_prompt: str,
@@ -472,6 +658,8 @@ def record_mode_change(
         previous,
         event=ContinuityEvent.APPROVED_MODE_CHANGE,
         approved_changes=(approved_change,),
+        transition_id=transition_id,
+        approval_evidence_ref=approval_evidence_ref,
         checkpoint_id=checkpoint_id,
         updated_at_utc=updated_at_utc,
         next_prompt=next_prompt,
@@ -481,20 +669,23 @@ def record_mode_change(
     )
 
 
-def visible_resume_brief(
+def _visible_resume_brief(
     state: ContinuityState,
     receipt: AuthorityVerificationReceipt,
-    *,
-    now_utc: str,
 ) -> ResumeBrief:
     state.validate()
-    receipt.validate_against(state, now_utc=now_utc)
     return ResumeBrief(
         checkpoint_id=state.checkpoint_id,
         status=state.status.value,
         mode=state.mode.value,
         active_case_ref=state.active_case_ref,
-        last_approved_change=state.approved_changes[-1] if state.approved_changes else None,
+        last_approved_change=(
+            state.transition_approved_changes[-1]
+            if state.transition_approved_changes
+            else None
+        ),
+        last_transition_id=state.transition_id,
+        last_transition_event=state.transition_event.value,
         open_questions=state.open_questions,
         next_prompt=state.next_prompt,
         authority_status="Merged GitHub main + human-readable record verified",
@@ -504,29 +695,59 @@ def visible_resume_brief(
 def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
     if not isinstance(payload, Mapping):
         raise ContinuityPolicyError("Checkpoint payload must be a mapping.")
+    if any(not isinstance(key, str) for key in payload):
+        raise ContinuityPolicyError("Checkpoint field names must be strings.")
     required = {
         "protocol_version", "checkpoint_id", "sequence", "previous_checkpoint_id",
         "previous_checkpoint_fingerprint",
         "user_scope_id", "updated_at_utc", "authority", "mode",
         "mode_selected_explicitly", "status", "next_prompt",
+        "transition_id", "transition_event", "transition_approved_changes",
+        "approval_evidence_ref", "applied_transition_ids",
+        "applied_human_record_ids",
         "governed_state_fingerprint",
         "checkpoint_fingerprint",
+        "active_case_ref", "source_manifest", "controlled_facts",
+        "approved_changes", "superseded_positions", "open_questions",
+        "private_pilot_memory",
     }
     missing = sorted(required.difference(payload))
     if missing:
         raise ContinuityPolicyError("Checkpoint cannot be reconstructed; missing: " + ", ".join(missing))
+    unknown = sorted(set(payload).difference(required))
+    if unknown:
+        raise ContinuityPolicyError(
+            "Checkpoint contains unknown fields: " + ", ".join(unknown)
+        )
     authority = payload["authority"]
     if not isinstance(authority, Mapping):
         raise ContinuityPolicyError("authority must be a mapping.")
+    if any(not isinstance(key, str) for key in authority):
+        raise ContinuityPolicyError("authority field names must be strings.")
+    authority_fields = {
+        "github_repository", "github_path", "github_commit_sha",
+        "policy_fingerprint", "human_record_id", "human_record_fingerprint",
+    }
+    missing_authority = sorted(authority_fields.difference(authority))
+    unknown_authority = sorted(set(authority).difference(authority_fields))
+    if missing_authority or unknown_authority:
+        raise ContinuityPolicyError(
+            "authority fields are invalid; missing="
+            + ",".join(missing_authority)
+            + "; unknown="
+            + ",".join(unknown_authority)
+        )
     for key in (
         "protocol_version", "checkpoint_id", "user_scope_id", "updated_at_utc",
         "mode", "status", "next_prompt",
+        "transition_id", "transition_event", "approval_evidence_ref",
     ):
         if not isinstance(payload[key], str):
             raise ContinuityPolicyError(f"{key} must be a JSON string.")
     try:
         mode = InteractionMode(payload["mode"])
         status = CheckpointStatus(payload["status"])
+        transition_event = ContinuityEvent(payload["transition_event"])
     except (TypeError, ValueError) as exc:
         raise ContinuityPolicyError("Stored mode or status is invalid.") from exc
     if type(payload["sequence"]) is not int:
@@ -538,6 +759,11 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
     for item in memories:
         if not isinstance(item, Mapping):
             raise ContinuityPolicyError("Invalid private_pilot_memory item.")
+        if any(not isinstance(key, str) for key in item):
+            raise ContinuityPolicyError("private_pilot_memory field names must be strings.")
+        memory_fields = {"raw_pilot_wording", "ai_interpretation"}
+        if set(item) != memory_fields:
+            raise ContinuityPolicyError("private_pilot_memory fields are invalid.")
         parsed_memory.append(PilotMemoryPair(
             raw_pilot_wording=item.get("raw_pilot_wording", ""),
             ai_interpretation=item.get("ai_interpretation", ""),
@@ -558,6 +784,12 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
             human_record_id=authority.get("human_record_id", ""),
             human_record_fingerprint=authority.get("human_record_fingerprint", ""),
         ),
+        transition_id=payload["transition_id"],
+        transition_event=transition_event,
+        transition_approved_changes=_strings(payload, "transition_approved_changes"),
+        approval_evidence_ref=payload["approval_evidence_ref"],
+        applied_transition_ids=_strings(payload, "applied_transition_ids"),
+        applied_human_record_ids=_strings(payload, "applied_human_record_ids"),
         mode=mode,
         mode_selected_explicitly=_json_bool(payload, "mode_selected_explicitly"),
         status=status,
@@ -609,6 +841,12 @@ def _private_payload_body(state: ContinuityState) -> dict[str, Any]:
             "human_record_id": state.authority.human_record_id,
             "human_record_fingerprint": state.authority.human_record_fingerprint,
         },
+        "transition_id": state.transition_id,
+        "transition_event": state.transition_event.value,
+        "transition_approved_changes": list(state.transition_approved_changes),
+        "approval_evidence_ref": state.approval_evidence_ref,
+        "applied_transition_ids": list(state.applied_transition_ids),
+        "applied_human_record_ids": list(state.applied_human_record_ids),
         "mode": state.mode.value,
         "mode_selected_explicitly": state.mode_selected_explicitly,
         "status": state.status.value,
@@ -661,6 +899,76 @@ def checkpoint_fingerprint(state: ContinuityState) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+def _validate_transition(previous: ContinuityState, current: ContinuityState) -> None:
+    previous.validate()
+    current.validate()
+    if current.protocol_version != previous.protocol_version:
+        raise ContinuityPolicyError("A successor cannot silently change protocol_version.")
+    if current.user_scope_id != previous.user_scope_id:
+        raise ContinuityPolicyError("A successor cannot change user_scope_id.")
+    if (
+        current.authority.github_repository != previous.authority.github_repository
+        or current.authority.github_path != previous.authority.github_path
+    ):
+        raise ContinuityPolicyError(
+            "A successor cannot migrate the authority repository or path."
+        )
+    authority_revision_changed = (
+        current.authority.github_commit_sha != previous.authority.github_commit_sha
+        or current.authority.policy_fingerprint != previous.authority.policy_fingerprint
+    )
+    if (
+        authority_revision_changed
+        and current.transition_event is not ContinuityEvent.APPROVED_SOURCE_REVISION
+    ):
+        raise ContinuityPolicyError(
+            "Only an approved source revision may change commit or policy fingerprint."
+        )
+    if (
+        current.authority.human_record_id == previous.authority.human_record_id
+        or current.authority.human_record_fingerprint
+        == previous.authority.human_record_fingerprint
+    ):
+        raise ContinuityPolicyError("A successor must bind a distinct human record.")
+    if current.transition_event not in CHECKPOINT_EVENTS:
+        raise ContinuityPolicyError("A successor requires an approved transition event.")
+    if current.transition_id in previous.applied_transition_ids:
+        raise ContinuityPolicyError("A successor reuses an applied transition_id.")
+    if current.applied_transition_ids != previous.applied_transition_ids + (
+        current.transition_id,
+    ):
+        raise ContinuityPolicyError("The applied transition history is not append-only.")
+    if current.applied_human_record_ids != previous.applied_human_record_ids + (
+        current.authority.human_record_id,
+    ):
+        raise ContinuityPolicyError("The human-record authority history is not append-only.")
+    expected_changes = previous.approved_changes + tuple(
+        item
+        for item in current.transition_approved_changes
+        if item not in previous.approved_changes
+    )
+    if current.approved_changes != expected_changes:
+        raise ContinuityPolicyError("The approved change history is not append-only.")
+    for field in ("source_manifest", "controlled_facts", "superseded_positions"):
+        old = getattr(previous, field)
+        new = getattr(current, field)
+        if new[: len(old)] != old:
+            raise ContinuityPolicyError(f"{field} history is not append-only.")
+    if current.transition_event is not ContinuityEvent.APPROVED_MEMORY_CHANGE:
+        old_memory = previous.private_pilot_memory
+        if current.private_pilot_memory[: len(old_memory)] != old_memory:
+            raise ContinuityPolicyError(
+                "Pilot memory can be removed or rewritten only by an approved memory change."
+            )
+    previous_mode = (previous.mode, previous.mode_selected_explicitly)
+    current_mode = (current.mode, current.mode_selected_explicitly)
+    if current.transition_event is ContinuityEvent.APPROVED_MODE_CHANGE:
+        if current_mode == previous_mode:
+            raise ContinuityPolicyError("A mode-change transition must change mode state.")
+    elif current_mode != previous_mode:
+        raise ContinuityPolicyError("Only an approved mode-change transition may change mode.")
+
+
 def state_to_private_payload(state: ContinuityState) -> dict[str, Any]:
     body = _private_payload_body(state)
     body["governed_state_fingerprint"] = governed_state_fingerprint(state)
@@ -689,6 +997,16 @@ def _chain(user_scope_id: str, payloads: Iterable[Mapping[str, Any]]) -> tuple[C
     checkpoint_ids = [item.checkpoint_id for item in chain]
     if len(set(checkpoint_ids)) != len(checkpoint_ids):
         raise ContinuityPolicyError("A checkpoint_id is reused within the chain.")
+    human_record_ids = [item.authority.human_record_id for item in chain]
+    if len(set(human_record_ids)) != len(human_record_ids):
+        raise ContinuityPolicyError("A human_record_id is reused within the chain.")
+    human_record_fingerprints = [
+        item.authority.human_record_fingerprint for item in chain
+    ]
+    if len(set(human_record_fingerprints)) != len(human_record_fingerprints):
+        raise ContinuityPolicyError(
+            "A human_record_fingerprint is reused within the chain."
+        )
     for previous, current in zip(chain, chain[1:]):
         if current.previous_checkpoint_id != previous.checkpoint_id:
             raise ContinuityPolicyError("The predecessor chain is broken.")
@@ -699,6 +1017,7 @@ def _chain(user_scope_id: str, payloads: Iterable[Mapping[str, Any]]) -> tuple[C
             raise ContinuityPolicyError("The governed-state hash chain is broken.")
         if _utc(current.updated_at_utc) <= _utc(previous.updated_at_utc):
             raise ContinuityPolicyError("Checkpoint timestamps are not increasing.")
+        _validate_transition(previous, current)
     return chain
 
 
@@ -707,16 +1026,46 @@ def bootstrap_helpyou_session(
     store: PrivateContinuityStore,
     verifier: AuthorityVerifier,
     *,
-    now_utc: str,
+    trusted_clock: TrustedClock | None = None,
 ) -> tuple[ContinuityState, ResumeBrief]:
-    _require_private_store(store)
-    state = _chain(user_scope_id, store.list_checkpoints(user_scope_id))[-1]
-    receipt = _verified_receipt(
-        verifier,
-        state,
-        now_utc=now_utc,
-    )
-    return state, visible_resume_brief(state, receipt, now_utc=now_utc)
+    try:
+        _require_private_store(store)
+        state = _chain(user_scope_id, store.list_checkpoints(user_scope_id))[-1]
+    except Exception as exc:
+        brief = IncompleteRecoveryBrief(
+            status=CheckpointStatus.INCOMPLETE.value,
+            recovered_layers=(),
+            unavailable_layers=("verified private checkpoint", "authority binding"),
+            safe_to_resume=False,
+            next_action=(
+                "Recover and verify the latest private checkpoint, or obtain explicit "
+                "approval to initialize a new chain."
+            ),
+        )
+        raise ContinuityRecoveryError(
+            f"Continuity is INCOMPLETE: {exc}", brief
+        ) from exc
+    try:
+        receipt = _verified_receipt(
+            verifier,
+            state,
+            trusted_clock=trusted_clock,
+        )
+    except Exception as exc:
+        brief = IncompleteRecoveryBrief(
+            status=CheckpointStatus.INCOMPLETE.value,
+            recovered_layers=("private checkpoint candidate",),
+            unavailable_layers=("verified authority binding",),
+            safe_to_resume=False,
+            next_action=(
+                "Re-establish both authority verifications before using recovered "
+                "case state for substantive work."
+            ),
+        )
+        raise ContinuityRecoveryError(
+            f"Continuity is INCOMPLETE: {exc}", brief
+        ) from exc
+    return state, _visible_resume_brief(state, receipt)
 
 
 def persist_checkpoint(
@@ -724,18 +1073,23 @@ def persist_checkpoint(
     state: ContinuityState,
     verifier: AuthorityVerifier,
     *,
-    now_utc: str,
+    trusted_clock: TrustedClock | None = None,
 ) -> None:
     _require_private_store(store)
     state.validate()
     _verified_receipt(
         verifier,
         state,
-        now_utc=now_utc,
+        trusted_clock=trusted_clock,
     )
     existing_payloads = tuple(store.list_checkpoints(state.user_scope_id))
     if existing_payloads:
         existing_chain = _chain(state.user_scope_id, existing_payloads)
+        matching = [item for item in existing_chain if item.checkpoint_id == state.checkpoint_id]
+        if matching:
+            if matching[0] == state:
+                return
+            raise ContinuityPolicyError("checkpoint_id already exists with different state.")
         latest = existing_chain[-1]
         if state.sequence != latest.sequence + 1:
             raise ContinuityPolicyError("Candidate sequence is not the next sequence.")
@@ -746,7 +1100,7 @@ def persist_checkpoint(
             != checkpoint_fingerprint(latest)
         ):
             raise ContinuityPolicyError(
-                "Candidate governed-state predecessor does not match latest checkpoint."
+                "Candidate checkpoint-envelope predecessor does not match latest checkpoint."
             )
         if state.checkpoint_id in {item.checkpoint_id for item in existing_chain}:
             raise ContinuityPolicyError("Candidate reuses a historical checkpoint_id.")
@@ -757,16 +1111,30 @@ def persist_checkpoint(
             == latest.authority.human_record_fingerprint
         ):
             raise ContinuityPolicyError("Candidate does not bind a new human record.")
+        _validate_transition(latest, state)
+        expected_fingerprint = checkpoint_fingerprint(latest)
     elif state.sequence != 1 or state.previous_checkpoint_id is not None:
         raise ContinuityPolicyError("The first persisted checkpoint must start sequence 1.")
+    else:
+        expected_fingerprint = None
     candidate_payload = state_to_private_payload(state)
     _chain(state.user_scope_id, existing_payloads + (candidate_payload,))
     committed = store.compare_and_swap_checkpoint(
-        state.previous_checkpoint_id, candidate_payload
+        state.previous_checkpoint_id,
+        expected_fingerprint,
+        candidate_payload,
     )
     if type(committed) is not bool or not committed:
+        after_payloads = tuple(store.list_checkpoints(state.user_scope_id))
+        if after_payloads:
+            after_rejection = _chain(state.user_scope_id, after_payloads)
+            if any(item == state for item in after_rejection):
+                return
         raise ContinuityPolicyError("Checkpoint compare-and-swap was rejected.")
-    if _chain(state.user_scope_id, store.list_checkpoints(state.user_scope_id))[-1] != state:
+    round_trip_chain = _chain(
+        state.user_scope_id, store.list_checkpoints(state.user_scope_id)
+    )
+    if not any(item == state for item in round_trip_chain):
         raise ContinuityPolicyError("Checkpoint round-trip verification failed.")
 
 
