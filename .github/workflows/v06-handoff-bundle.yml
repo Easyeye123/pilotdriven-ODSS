@@ -65,9 +65,9 @@ jobs:
           PYTHONPATH: .
         run: pytest -q
 
-      - name: Test Helpyou policy
+      - name: Test Helpyou policies
         working-directory: integration/helpyou
-        run: python -m unittest -v test_helpyou_policy.py
+        run: python -m unittest discover -s . -p "test_*.py" -v
 
       - name: Build complete handoff archive
         run: |
