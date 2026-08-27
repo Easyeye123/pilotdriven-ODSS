@@ -3,10 +3,13 @@
 **Status:** Approved continuity baseline  
 **Version:** 1.0  
 **Approval date:** 27.08.26
+**Deployment:** Reference control; hosted startup and private-store integration required
+
+This is the approved normative/reference baseline. It is not a hosted persistence service and is not automatically invoked by ChatGPT or PilotDriven today.
 
 ## 1. Purpose
 
-This protocol makes a Helpyou discussion recoverable across conversation, workspace or interface interruptions. Chat history is useful context but is not the canonical system of record. Continuity is established by controlled checkpoints, dual authority pointers and a visible resumption brief.
+This protocol defines how a Helpyou discussion becomes recoverable across conversation, workspace or interface interruptions when the hosted product provides the required startup hook, private store and authority verifier. Chat history is useful context but is not the canonical system of record. Continuity is established by controlled checkpoints, dual authority pointers and a visible resumption brief.
 
 This protocol governs conversation state and learning facilitation. It does not make operational aviation decisions, calculate Flight Briefing findings or replace current approved sources.
 
@@ -16,7 +19,7 @@ This protocol governs conversation state and learning facilitation. It does not 
 |---|---|---|
 | D1 | Authority | The controlled GitHub protocol and a persistent human-readable record are both required. |
 | D2 | Checkpoint trigger | Every approved material, source-revision or mode change creates a successor checkpoint. Draft discussion does not silently become approved state. |
-| D3 | Resumption | A checkpoint is loaded automatically when accessible, followed by a visible status brief before substantive work. |
+| D3 | Resumption | Once integrated, product startup shall automatically load an accessible valid checkpoint and show a visible status brief before substantive work. |
 | D4 | Interaction mode | Development Mode is the default. Assessment or Research Mode activates only through explicit selection recorded in the checkpoint. |
 
 ## 3. Continuity contract
