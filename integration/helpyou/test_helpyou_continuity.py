@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
+import traceback
 import unittest
 
 from helpyou_continuity import (
@@ -9,12 +10,14 @@ from helpyou_continuity import (
     AuthorityPointers,
     AuthorityVerificationReceipt,
     CheckpointStatus,
+    CommittedHeadVerificationReceipt,
     ContinuityEvent,
     ContinuityPolicyError,
     ContinuityRecoveryError,
     ContinuityState,
     InteractionMode,
     PilotMemoryPair,
+    VerificationLayerFailure,
     bootstrap_helpyou_session,
     checkpoint_fingerprint,
     checkpoint_required,
@@ -25,6 +28,7 @@ from helpyou_continuity import (
     public_checkpoint_projection,
     record_approved_bundle,
     record_mode_change,
+    record_status_change,
     select_mode,
     state_to_private_payload,
 )
@@ -82,6 +86,37 @@ class MemoryStore:
         return True
 
 
+class HeadRegistry:
+    def __init__(self, payload=None):
+        self.head = (0, None, None)
+        if payload is not None:
+            self.advance(payload)
+
+    def advance(self, payload):
+        self.head = (
+            payload["sequence"],
+            payload["checkpoint_id"],
+            payload["checkpoint_fingerprint"],
+        )
+
+
+class RegistryStore(MemoryStore):
+    def __init__(self, registry, payloads=(), *, advance_head=True):
+        super().__init__(payloads)
+        self.registry = registry
+        self.advance_head = advance_head
+
+    def compare_and_swap_checkpoint(
+        self, expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+    ):
+        committed = super().compare_and_swap_checkpoint(
+            expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+        )
+        if committed and self.advance_head:
+            self.registry.advance(payload)
+        return committed
+
+
 class PublicStore(MemoryStore):
     privacy_class = "PUBLIC"
 
@@ -135,6 +170,9 @@ class TestVerifier:
         path=None,
         expected_governed_fingerprint=None,
         expected_checkpoint_fingerprint=None,
+        head_override=None,
+        authority_layer_failure=None,
+        head_layer_failure=None,
         verified_at_utc="2026-08-27T02:55:00Z",
         expires_at_utc="2026-08-27T03:10:00Z",
     ):
@@ -143,10 +181,15 @@ class TestVerifier:
         self.path = path
         self.expected_governed_fingerprint = expected_governed_fingerprint
         self.expected_checkpoint_fingerprint = expected_checkpoint_fingerprint
+        self.head_override = head_override
+        self.authority_layer_failure = authority_layer_failure
+        self.head_layer_failure = head_layer_failure
         self.verified_at_utc = verified_at_utc
         self.expires_at_utc = expires_at_utc
 
     def verify(self, authority, governed_fingerprint, checkpoint_envelope_fingerprint):
+        if self.authority_layer_failure is not None:
+            raise VerificationLayerFailure(**self.authority_layer_failure)
         return AuthorityVerificationReceipt(
             github_repository=self.repository or authority.github_repository,
             github_path=self.path or authority.github_path,
@@ -161,6 +204,52 @@ class TestVerifier:
                 self.expected_checkpoint_fingerprint
                 or checkpoint_envelope_fingerprint
             ),
+            verified_at_utc=self.verified_at_utc,
+            expires_at_utc=self.expires_at_utc,
+        )
+
+    def verify_current_head(
+        self,
+        user_scope_id,
+        requested_sequence,
+        requested_checkpoint_id,
+        requested_checkpoint_fingerprint,
+    ):
+        if self.head_layer_failure is not None:
+            raise VerificationLayerFailure(**self.head_layer_failure)
+        sequence, checkpoint_id, fingerprint = self.head_override or (
+            requested_sequence,
+            requested_checkpoint_id,
+            requested_checkpoint_fingerprint,
+        )
+        return CommittedHeadVerificationReceipt(
+            user_scope_id=user_scope_id,
+            sequence=sequence,
+            checkpoint_id=checkpoint_id,
+            checkpoint_fingerprint=fingerprint,
+            verified_at_utc=self.verified_at_utc,
+            expires_at_utc=self.expires_at_utc,
+        )
+
+
+class RegistryVerifier(TestVerifier):
+    def __init__(self, registry, **kwargs):
+        super().__init__(**kwargs)
+        self.registry = registry
+
+    def verify_current_head(
+        self,
+        user_scope_id,
+        requested_sequence,
+        requested_checkpoint_id,
+        requested_checkpoint_fingerprint,
+    ):
+        sequence, checkpoint_id, fingerprint = self.registry.head
+        return CommittedHeadVerificationReceipt(
+            user_scope_id=user_scope_id,
+            sequence=sequence,
+            checkpoint_id=checkpoint_id,
+            checkpoint_fingerprint=fingerprint,
             verified_at_utc=self.verified_at_utc,
             expires_at_utc=self.expires_at_utc,
         )
@@ -187,6 +276,21 @@ class OrderingVerifier(TestVerifier):
         self.calls.append("verifier")
         return super().verify(
             authority, governed_fingerprint, checkpoint_envelope_fingerprint
+        )
+
+    def verify_current_head(
+        self,
+        user_scope_id,
+        requested_sequence,
+        requested_checkpoint_id,
+        requested_checkpoint_fingerprint,
+    ):
+        self.calls.append("head_verifier")
+        return super().verify_current_head(
+            user_scope_id,
+            requested_sequence,
+            requested_checkpoint_id,
+            requested_checkpoint_fingerprint,
         )
 
 
@@ -265,6 +369,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         self.assertTrue(checkpoint_required(ContinuityEvent.APPROVED_SOURCE_REVISION))
         self.assertTrue(checkpoint_required(ContinuityEvent.APPROVED_MODE_CHANGE))
         self.assertTrue(checkpoint_required(ContinuityEvent.APPROVED_MEMORY_CHANGE))
+        self.assertTrue(checkpoint_required(ContinuityEvent.APPROVED_STATUS_CHANGE))
         self.assertFalse(checkpoint_required(ContinuityEvent.DRAFT_CHANGE))
 
     def test_four_item_bundle_creates_one_successor(self):
@@ -391,6 +496,43 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
                 updated_at_utc="2026-08-27T01:00:00Z", next_prompt="Begin.",
                 authority=self.authority("d"),
             )
+
+    def test_generic_bundle_rejects_status_change_event(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "record_status_change"):
+            record_approved_bundle(
+                self.state(), event=ContinuityEvent.APPROVED_STATUS_CHANGE,
+                approved_changes=("Runtime integration became unavailable.",),
+                checkpoint_id="HCP-002", transition_id="EVT-STATUS-001",
+                approval_evidence_ref="fixture:status-approval",
+                updated_at_utc="2026-08-27T01:00:00Z", next_prompt="Recover runtime.",
+                authority=self.authority("d"),
+            )
+
+    def test_status_change_records_complete_gap_metadata(self):
+        result = record_status_change(
+            self.state(),
+            new_status=CheckpointStatus.INCOMPLETE,
+            reason_code="RUNTIME_INTEGRATION_PENDING",
+            unavailable_layers=("hosted startup integration",),
+            approved_change="Runtime integration gap recorded.",
+            transition_id="EVT-STATUS-002",
+            approval_evidence_ref="fixture:status-approval",
+            checkpoint_id="HCP-002",
+            updated_at_utc="2026-08-27T01:00:00Z",
+            next_prompt="Complete hosted startup integration.",
+            authority=self.authority("d"),
+        )
+        self.assertIs(result.status, CheckpointStatus.INCOMPLETE)
+        self.assertEqual(result.status_reason_code, "RUNTIME_INTEGRATION_PENDING")
+        self.assertFalse(result.safe_to_resume)
+
+    def test_incomplete_status_requires_gap_metadata(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "status_reason_code"):
+            replace(self.state(), status=CheckpointStatus.INCOMPLETE).validate()
+
+    def test_superseded_status_is_not_persistable(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "not a persistable"):
+            replace(self.state(), status=CheckpointStatus.SUPERSEDED).validate()
 
     def test_serialized_mode_event_cannot_bypass_mode_gate(self):
         with self.assertRaisesRegex(ContinuityPolicyError, "record_mode_change"):
@@ -558,7 +700,10 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             OrderingVerifier(calls),
             trusted_clock=OrderingClock(calls),
         )
-        self.assertEqual(calls, ["verifier", "clock"])
+        self.assertEqual(
+            calls,
+            ["head_verifier", "clock", "verifier", "clock"],
+        )
 
     def test_fractional_receipt_time_is_not_rejected_by_clock_precision(self):
         state = self.state()
@@ -602,14 +747,18 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
     def test_bootstrap_rejects_mismatched_authority_receipt(self):
         state = self.state()
         store = MemoryStore((state_to_private_payload(state),))
-        with self.assertRaisesRegex(ContinuityRecoveryError, "does not match binding") as caught:
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE") as caught:
             bootstrap_helpyou_session(
                 state.user_scope_id, store, TestVerifier(mismatch=True),
                 trusted_clock=FIXED_CLOCK,
             )
         brief = caught.exception.recovery_brief
         self.assertEqual(brief.status, "INCOMPLETE")
-        self.assertEqual(brief.recovered_layers, ("private checkpoint candidate",))
+        self.assertEqual(brief.reason_code, "AUTHORITY_UNVERIFIED")
+        self.assertEqual(
+            brief.recovered_layers,
+            ("private checkpoint candidate", "trusted monotonic head"),
+        )
         self.assertFalse(brief.safe_to_resume)
 
     def test_bootstrap_missing_checkpoint_returns_structured_incomplete_brief(self):
@@ -620,9 +769,118 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             )
         brief = caught.exception.recovery_brief
         self.assertEqual(brief.status, "INCOMPLETE")
+        self.assertEqual(brief.reason_code, "CHECKPOINT_UNAVAILABLE")
         self.assertEqual(brief.recovered_layers, ())
         self.assertIn("verified private checkpoint", brief.unavailable_layers)
         self.assertFalse(brief.safe_to_resume)
+
+    def test_verified_incomplete_checkpoint_is_gated_not_resumed(self):
+        state = replace(
+            self.state(),
+            status=CheckpointStatus.INCOMPLETE,
+            status_reason_code="RUNTIME_INTEGRATION_PENDING",
+            unavailable_layers=("hosted startup integration",),
+            safe_to_resume=False,
+        )
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                state.user_scope_id,
+                MemoryStore((state_to_private_payload(state),)),
+                TestVerifier(),
+                trusted_clock=FIXED_CLOCK,
+            )
+        brief = caught.exception.recovery_brief
+        self.assertEqual(brief.reason_code, "RUNTIME_INTEGRATION_PENDING")
+        self.assertEqual(brief.unavailable_layers, ("hosted startup integration",))
+        self.assertFalse(brief.safe_to_resume)
+
+    def test_partial_authority_failures_identify_exact_layer(self):
+        state = self.state()
+        cases = (
+            (
+                {
+                    "reason_code": "HUMAN_RECORD_UNAVAILABLE",
+                    "recovered_layers": ("GitHub protocol authority",),
+                    "unavailable_layers": ("human-readable checkpoint authority",),
+                },
+                "human-readable checkpoint authority",
+                "GitHub protocol authority",
+            ),
+            (
+                {
+                    "reason_code": "GITHUB_AUTHORITY_UNAVAILABLE",
+                    "recovered_layers": ("human-readable checkpoint authority",),
+                    "unavailable_layers": ("GitHub protocol authority",),
+                },
+                "GitHub protocol authority",
+                "human-readable checkpoint authority",
+            ),
+        )
+        for failure, unavailable, recovered in cases:
+            with self.subTest(reason=failure["reason_code"]):
+                with self.assertRaises(ContinuityRecoveryError) as caught:
+                    bootstrap_helpyou_session(
+                        state.user_scope_id,
+                        MemoryStore((state_to_private_payload(state),)),
+                        TestVerifier(authority_layer_failure=failure),
+                        trusted_clock=FIXED_CLOCK,
+                    )
+                brief = caught.exception.recovery_brief
+                self.assertEqual(brief.unavailable_layers, (unavailable,))
+                self.assertIn(recovered, brief.recovered_layers)
+                self.assertFalse(brief.safe_to_resume)
+
+    def test_clock_failure_is_identified_separately(self):
+        class FailedClock:
+            def now_utc(self):
+                raise RuntimeError("backend diagnostic")
+
+        state = self.state()
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                state.user_scope_id,
+                MemoryStore((state_to_private_payload(state),)),
+                TestVerifier(),
+                trusted_clock=FailedClock(),
+            )
+        brief = caught.exception.recovery_brief
+        self.assertEqual(brief.reason_code, "CLOCK_UNAVAILABLE")
+        self.assertEqual(brief.unavailable_layers, ("trusted clock",))
+        self.assertFalse(brief.safe_to_resume)
+
+    def test_bootstrap_does_not_expose_adapter_exception_text(self):
+        secret = "secret token=do-not-expose"
+
+        class SecretStore(MemoryStore):
+            def list_checkpoints(self, user_scope_id):
+                raise RuntimeError(secret)
+
+        class SecretVerifier(TestVerifier):
+            def verify(self, authority, governed_fingerprint, checkpoint_envelope_fingerprint):
+                raise RuntimeError(secret)
+
+        class SecretClock:
+            def now_utc(self):
+                raise RuntimeError(secret)
+
+        state = self.state()
+        cases = (
+            (SecretStore(), TestVerifier(), FIXED_CLOCK),
+            (MemoryStore((state_to_private_payload(state),)), SecretVerifier(), FIXED_CLOCK),
+            (MemoryStore((state_to_private_payload(state),)), TestVerifier(), SecretClock()),
+        )
+        for store, verifier, clock in cases:
+            with self.subTest(store=type(store).__name__, verifier=type(verifier).__name__):
+                with self.assertRaises(ContinuityRecoveryError) as caught:
+                    bootstrap_helpyou_session(
+                        state.user_scope_id, store, verifier, trusted_clock=clock
+                    )
+                rendered = "".join(
+                    traceback.format_exception(caught.exception)
+                )
+                self.assertNotIn(secret, str(caught.exception))
+                self.assertNotIn(secret, rendered)
+                self.assertIsNone(caught.exception.__context__)
 
     def test_receipt_binds_complete_governed_checkpoint_state(self):
         original = self.state()
@@ -631,7 +889,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         verifier = TestVerifier(
             expected_governed_fingerprint=governed_state_fingerprint(original)
         )
-        with self.assertRaisesRegex(ContinuityPolicyError, "does not match binding"):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE"):
             bootstrap_helpyou_session(
                 original.user_scope_id, store, verifier, trusted_clock=FIXED_CLOCK
             )
@@ -662,7 +920,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             TestVerifier(path="docs/helpyou/OTHER_PROTOCOL.md"),
         ):
             with self.subTest(verifier=verifier):
-                with self.assertRaisesRegex(ContinuityPolicyError, "does not match binding"):
+                with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE"):
                     bootstrap_helpyou_session(
                         state.user_scope_id, store, verifier, trusted_clock=FIXED_CLOCK
                     )
@@ -671,7 +929,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         state = self.state()
         store = MemoryStore((state_to_private_payload(state),))
         verifier = TestVerifier(expires_at_utc="2026-08-27T02:59:59Z")
-        with self.assertRaisesRegex(ContinuityPolicyError, "not currently valid"):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE"):
             bootstrap_helpyou_session(
                 state.user_scope_id, store, verifier, trusted_clock=FIXED_CLOCK
             )
@@ -683,7 +941,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             verified_at_utc="2026-08-27T02:30:00Z",
             expires_at_utc="2026-08-27T03:30:00Z",
         )
-        with self.assertRaisesRegex(ContinuityPolicyError, "exceeds 15 minutes"):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE"):
             bootstrap_helpyou_session(
                 state.user_scope_id, store, verifier, trusted_clock=FIXED_CLOCK
             )
@@ -691,7 +949,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
     def test_bootstrap_requires_private_store_capability(self):
         state = self.state()
         store = PublicStore((state_to_private_payload(state),))
-        with self.assertRaisesRegex(ContinuityPolicyError, "PRIVATE store"):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE"):
             bootstrap_helpyou_session(
                 state.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
@@ -703,16 +961,37 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             state_to_private_payload(first), state_to_private_payload(second),
             state_to_private_payload(conflict),
         ))
-        with self.assertRaisesRegex(ContinuityPolicyError, "Conflicting checkpoints"):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE"):
             bootstrap_helpyou_session(
                 first.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
+
+    def test_valid_but_stale_chain_prefix_fails_head_verification(self):
+        first, third = self.state(), self.third()
+        verifier = TestVerifier(
+            head_override=(
+                third.sequence,
+                third.checkpoint_id,
+                checkpoint_fingerprint(third),
+            )
+        )
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                first.user_scope_id,
+                MemoryStore((state_to_private_payload(first),)),
+                verifier,
+                trusted_clock=FIXED_CLOCK,
+            )
+        brief = caught.exception.recovery_brief
+        self.assertEqual(brief.reason_code, "HEAD_UNVERIFIED")
+        self.assertEqual(brief.unavailable_layers, ("trusted monotonic head",))
+        self.assertFalse(brief.safe_to_resume)
 
     def test_broken_predecessor_chain_fails(self):
         first, second = self.state(), self.successor()
         bad = replace(second, previous_checkpoint_id="HCP-XXX")
         store = MemoryStore((state_to_private_payload(first), state_to_private_payload(bad)))
-        with self.assertRaisesRegex(ContinuityPolicyError, "predecessor chain"):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE"):
             bootstrap_helpyou_session(
                 first.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
@@ -724,7 +1003,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             previous_checkpoint_fingerprint="sha256:" + "f" * 64,
         )
         store = MemoryStore((state_to_private_payload(first), state_to_private_payload(bad)))
-        with self.assertRaisesRegex(ContinuityPolicyError, "hash chain is broken"):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE"):
             bootstrap_helpyou_session(
                 first.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
@@ -741,7 +1020,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         store = MemoryStore(
             (state_to_private_payload(substituted), state_to_private_payload(second))
         )
-        with self.assertRaisesRegex(ContinuityPolicyError, "hash chain is broken"):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE"):
             bootstrap_helpyou_session(
                 first.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
@@ -753,7 +1032,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             checkpoint_id=first.checkpoint_id,
         )
         store = MemoryStore(tuple(state_to_private_payload(item) for item in (first, second, third)))
-        with self.assertRaisesRegex(ContinuityPolicyError, "reused within the chain"):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE"):
             bootstrap_helpyou_session(
                 first.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
@@ -761,6 +1040,29 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
     def test_persist_round_trip_verifies(self):
         store = MemoryStore()
         persist_checkpoint(store, self.state(), TestVerifier(), trusted_clock=FIXED_CLOCK)
+        self.assertEqual(len(store.payloads), 1)
+
+    def test_persist_atomically_advances_independent_head_and_is_recoverable(self):
+        registry = HeadRegistry()
+        store = RegistryStore(registry)
+        verifier = RegistryVerifier(registry)
+        first, second = self.state(), self.successor()
+        persist_checkpoint(store, first, verifier, trusted_clock=FIXED_CLOCK)
+        persist_checkpoint(store, second, verifier, trusted_clock=FIXED_CLOCK)
+        recovered, brief = bootstrap_helpyou_session(
+            first.user_scope_id, store, verifier, trusted_clock=FIXED_CLOCK
+        )
+        self.assertEqual(recovered, second)
+        self.assertEqual(brief.checkpoint_id, second.checkpoint_id)
+
+    def test_persist_fails_if_store_does_not_advance_independent_head(self):
+        registry = HeadRegistry()
+        store = RegistryStore(registry, advance_head=False)
+        with self.assertRaisesRegex(ContinuityPolicyError, "chain tail"):
+            persist_checkpoint(
+                store, self.state(), RegistryVerifier(registry),
+                trusted_clock=FIXED_CLOCK,
+            )
         self.assertEqual(len(store.payloads), 1)
 
     def test_persist_retry_of_identical_checkpoint_is_idempotent(self):
@@ -793,6 +1095,22 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         )
         store = MemoryStore((state_to_private_payload(first),))
         with self.assertRaisesRegex(ContinuityPolicyError, "Only an approved mode-change"):
+            persist_checkpoint(
+                store, invalid, TestVerifier(), trusted_clock=FIXED_CLOCK
+            )
+        self.assertEqual(store.cas_calls, 0)
+
+    def test_semantic_status_bypass_is_rejected_before_cas(self):
+        first = self.state()
+        invalid = replace(
+            self.successor(),
+            status=CheckpointStatus.INCOMPLETE,
+            status_reason_code="RUNTIME_INTEGRATION_PENDING",
+            unavailable_layers=("hosted startup integration",),
+            safe_to_resume=False,
+        )
+        store = MemoryStore((state_to_private_payload(first),))
+        with self.assertRaisesRegex(ContinuityPolicyError, "approved status-change"):
             persist_checkpoint(
                 store, invalid, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
