@@ -199,6 +199,7 @@ class ContinuityState:
     checkpoint_id: str
     sequence: int
     previous_checkpoint_id: str | None
+    previous_governed_state_fingerprint: str | None
     user_scope_id: str
     updated_at_utc: str
     authority: AuthorityPointers
@@ -222,7 +223,10 @@ class ContinuityState:
         _identifier(self.checkpoint_id, "checkpoint_id")
         if type(self.sequence) is not int or self.sequence < 1:
             raise ContinuityPolicyError("sequence must be a positive integer.")
-        if self.sequence == 1 and self.previous_checkpoint_id is not None:
+        if self.sequence == 1 and (
+            self.previous_checkpoint_id is not None
+            or self.previous_governed_state_fingerprint is not None
+        ):
             raise ContinuityPolicyError("The first checkpoint cannot name a predecessor.")
         if self.sequence > 1:
             if self.previous_checkpoint_id is None:
@@ -230,6 +234,13 @@ class ContinuityState:
             _identifier(self.previous_checkpoint_id, "previous_checkpoint_id")
             if self.previous_checkpoint_id == self.checkpoint_id:
                 raise ContinuityPolicyError("A checkpoint cannot be its own predecessor.")
+            if (
+                not isinstance(self.previous_governed_state_fingerprint, str)
+                or not _FP_RE.fullmatch(self.previous_governed_state_fingerprint)
+            ):
+                raise ContinuityPolicyError(
+                    "A successor requires previous_governed_state_fingerprint."
+                )
         if not isinstance(self.user_scope_id, str) or not _USER_RE.fullmatch(
             self.user_scope_id
         ):
@@ -297,6 +308,13 @@ class PrivateContinuityStore(Protocol):
 
 
 class AuthorityVerifier(Protocol):
+    """Trusted adapter that independently verifies both authority artifacts.
+
+    A production adapter must establish merged-main reachability, recompute the
+    policy and human-record hashes, and confirm that the human record embeds the
+    supplied governed-state fingerprint before returning a short-lived receipt.
+    """
+
     def verify(
         self,
         authority: AuthorityPointers,
@@ -384,6 +402,7 @@ def _successor(
         checkpoint_id=checkpoint_id,
         sequence=previous.sequence + 1,
         previous_checkpoint_id=previous.checkpoint_id,
+        previous_governed_state_fingerprint=governed_state_fingerprint(previous),
         updated_at_utc=updated_at_utc,
         authority=authority,
         mode=mode,
@@ -474,6 +493,7 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         raise ContinuityPolicyError("Checkpoint payload must be a mapping.")
     required = {
         "protocol_version", "checkpoint_id", "sequence", "previous_checkpoint_id",
+        "previous_governed_state_fingerprint",
         "user_scope_id", "updated_at_utc", "authority", "mode",
         "mode_selected_explicitly", "status", "next_prompt",
         "governed_state_fingerprint",
@@ -484,6 +504,12 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
     authority = payload["authority"]
     if not isinstance(authority, Mapping):
         raise ContinuityPolicyError("authority must be a mapping.")
+    for key in (
+        "protocol_version", "checkpoint_id", "user_scope_id", "updated_at_utc",
+        "mode", "status", "next_prompt",
+    ):
+        if not isinstance(payload[key], str):
+            raise ContinuityPolicyError(f"{key} must be a JSON string.")
     try:
         mode = InteractionMode(payload["mode"])
         status = CheckpointStatus(payload["status"])
@@ -499,23 +525,26 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         if not isinstance(item, Mapping):
             raise ContinuityPolicyError("Invalid private_pilot_memory item.")
         parsed_memory.append(PilotMemoryPair(
-            raw_pilot_wording=str(item.get("raw_pilot_wording", "")),
-            ai_interpretation=str(item.get("ai_interpretation", "")),
+            raw_pilot_wording=item.get("raw_pilot_wording", ""),
+            ai_interpretation=item.get("ai_interpretation", ""),
         ))
     state = ContinuityState(
-        protocol_version=str(payload["protocol_version"]),
-        checkpoint_id=str(payload["checkpoint_id"]),
+        protocol_version=payload["protocol_version"],
+        checkpoint_id=payload["checkpoint_id"],
         sequence=payload["sequence"],
         previous_checkpoint_id=payload["previous_checkpoint_id"],
-        user_scope_id=str(payload["user_scope_id"]),
-        updated_at_utc=str(payload["updated_at_utc"]),
+        previous_governed_state_fingerprint=payload[
+            "previous_governed_state_fingerprint"
+        ],
+        user_scope_id=payload["user_scope_id"],
+        updated_at_utc=payload["updated_at_utc"],
         authority=AuthorityPointers(
-            github_repository=str(authority.get("github_repository", "")),
-            github_path=str(authority.get("github_path", "")),
-            github_commit_sha=str(authority.get("github_commit_sha", "")),
-            policy_fingerprint=str(authority.get("policy_fingerprint", "")),
-            human_record_id=str(authority.get("human_record_id", "")),
-            human_record_fingerprint=str(authority.get("human_record_fingerprint", "")),
+            github_repository=authority.get("github_repository", ""),
+            github_path=authority.get("github_path", ""),
+            github_commit_sha=authority.get("github_commit_sha", ""),
+            policy_fingerprint=authority.get("policy_fingerprint", ""),
+            human_record_id=authority.get("human_record_id", ""),
+            human_record_fingerprint=authority.get("human_record_fingerprint", ""),
         ),
         mode=mode,
         mode_selected_explicitly=_json_bool(payload, "mode_selected_explicitly"),
@@ -526,7 +555,7 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         approved_changes=_strings(payload, "approved_changes"),
         superseded_positions=_strings(payload, "superseded_positions"),
         open_questions=_strings(payload, "open_questions"),
-        next_prompt=str(payload["next_prompt"]),
+        next_prompt=payload["next_prompt"],
         private_pilot_memory=tuple(parsed_memory),
     )
     state.validate()
@@ -547,6 +576,9 @@ def _private_payload_body(state: ContinuityState) -> dict[str, Any]:
         "checkpoint_id": state.checkpoint_id,
         "sequence": state.sequence,
         "previous_checkpoint_id": state.previous_checkpoint_id,
+        "previous_governed_state_fingerprint": (
+            state.previous_governed_state_fingerprint
+        ),
         "user_scope_id": state.user_scope_id,
         "updated_at_utc": state.updated_at_utc,
         "authority": {
@@ -625,6 +657,11 @@ def _chain(user_scope_id: str, payloads: Iterable[Mapping[str, Any]]) -> tuple[C
     for previous, current in zip(chain, chain[1:]):
         if current.previous_checkpoint_id != previous.checkpoint_id:
             raise ContinuityPolicyError("The predecessor chain is broken.")
+        if (
+            current.previous_governed_state_fingerprint
+            != governed_state_fingerprint(previous)
+        ):
+            raise ContinuityPolicyError("The governed-state hash chain is broken.")
         if _utc(current.updated_at_utc) <= _utc(previous.updated_at_utc):
             raise ContinuityPolicyError("Checkpoint timestamps are not increasing.")
     return chain
@@ -669,6 +706,13 @@ def persist_checkpoint(
             raise ContinuityPolicyError("Candidate sequence is not the next sequence.")
         if state.previous_checkpoint_id != latest.checkpoint_id:
             raise ContinuityPolicyError("Candidate predecessor does not match latest checkpoint.")
+        if (
+            state.previous_governed_state_fingerprint
+            != governed_state_fingerprint(latest)
+        ):
+            raise ContinuityPolicyError(
+                "Candidate governed-state predecessor does not match latest checkpoint."
+            )
         if state.checkpoint_id in {item.checkpoint_id for item in existing_chain}:
             raise ContinuityPolicyError("Candidate reuses a historical checkpoint_id.")
         if _utc(state.updated_at_utc) <= _utc(latest.updated_at_utc):
