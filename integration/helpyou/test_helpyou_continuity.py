@@ -11,6 +11,7 @@ from helpyou_continuity import (
     CheckpointStatus,
     ContinuityEvent,
     ContinuityPolicyError,
+    ContinuityRecoveryError,
     ContinuityState,
     InteractionMode,
     PilotMemoryPair,
@@ -31,6 +32,19 @@ from helpyou_continuity import (
 NOW_UTC = "2026-08-27T03:00:00Z"
 
 
+class FixedClock:
+    def now_utc(self):
+        return NOW_UTC
+
+
+FIXED_CLOCK = FixedClock()
+
+
+class FractionalClock:
+    def now_utc(self):
+        return "2026-08-27T03:00:00.600000Z"
+
+
 EXPECTED_DEFAULTS = (
     "D1: GitHub protocol plus persistent human-readable authority",
     "D2: checkpoint after every approved material change",
@@ -45,16 +59,24 @@ class MemoryStore:
     def __init__(self, payloads=(), *, drop_writes=False):
         self.payloads = [deepcopy(item) for item in payloads]
         self.drop_writes = drop_writes
+        self.cas_calls = 0
 
     def list_checkpoints(self, user_scope_id):
         return deepcopy(self.payloads)
 
-    def compare_and_swap_checkpoint(self, expected_checkpoint_id, payload):
+    def compare_and_swap_checkpoint(
+        self, expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+    ):
+        self.cas_calls += 1
         if self.drop_writes:
             return False
         latest = max(self.payloads, key=lambda item: item["sequence"], default=None)
         current_id = latest["checkpoint_id"] if latest else None
-        if current_id != expected_checkpoint_id:
+        current_fingerprint = latest["checkpoint_fingerprint"] if latest else None
+        if (
+            current_id != expected_checkpoint_id
+            or current_fingerprint != expected_checkpoint_fingerprint
+        ):
             return False
         self.payloads.append(deepcopy(payload))
         return True
@@ -69,9 +91,39 @@ class RaceStore(MemoryStore):
         super().__init__(payloads)
         self.competing_payload = deepcopy(competing_payload)
 
-    def compare_and_swap_checkpoint(self, expected_checkpoint_id, payload):
+    def compare_and_swap_checkpoint(
+        self, expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+    ):
         self.payloads.append(deepcopy(self.competing_payload))
-        return super().compare_and_swap_checkpoint(expected_checkpoint_id, payload)
+        return super().compare_and_swap_checkpoint(
+            expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+        )
+
+
+class FastFollowStore(MemoryStore):
+    def __init__(self, payloads, follower_payload):
+        super().__init__(payloads)
+        self.follower_payload = deepcopy(follower_payload)
+
+    def compare_and_swap_checkpoint(
+        self, expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+    ):
+        committed = super().compare_and_swap_checkpoint(
+            expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+        )
+        if committed:
+            self.payloads.append(deepcopy(self.follower_payload))
+        return committed
+
+
+class SameCandidateRaceStore(MemoryStore):
+    def compare_and_swap_checkpoint(
+        self, expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+    ):
+        self.payloads.append(deepcopy(payload))
+        return super().compare_and_swap_checkpoint(
+            expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+        )
 
 
 class TestVerifier:
@@ -114,6 +166,30 @@ class TestVerifier:
         )
 
 
+class OrderingClock:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def now_utc(self):
+        self.calls.append("clock")
+        return "2026-08-27T03:00:02Z"
+
+
+class OrderingVerifier(TestVerifier):
+    def __init__(self, calls):
+        super().__init__(
+            verified_at_utc="2026-08-27T03:00:01Z",
+            expires_at_utc="2026-08-27T03:10:01Z",
+        )
+        self.calls = calls
+
+    def verify(self, authority, governed_fingerprint, checkpoint_envelope_fingerprint):
+        self.calls.append("verifier")
+        return super().verify(
+            authority, governed_fingerprint, checkpoint_envelope_fingerprint
+        )
+
+
 class HelpyouContinuityV2Tests(unittest.TestCase):
     def authority(self, marker="a") -> AuthorityPointers:
         return AuthorityPointers(
@@ -135,6 +211,12 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             user_scope_id="user_12345678",
             updated_at_utc="2026-08-27T00:00:00Z",
             authority=self.authority("c"),
+            transition_id="EVT-INIT-001",
+            transition_event=ContinuityEvent.INITIALIZATION,
+            transition_approved_changes=(),
+            approval_evidence_ref="fixture:initialization",
+            applied_transition_ids=("EVT-INIT-001",),
+            applied_human_record_ids=("HCP-C001",),
             active_case_ref="private-case-reference",
             next_prompt="Continue the controlled case review.",
         )
@@ -144,10 +226,25 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             self.state(),
             event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
             approved_changes=APPROVED_DEFAULTS_V1,
+            transition_id="EVT-DEFAULTS-001",
+            approval_evidence_ref="fixture:defaults-approval",
             checkpoint_id="HCP-002",
             updated_at_utc="2026-08-27T01:00:00Z",
             next_prompt="Calibrate Development Mode prompting.",
             authority=self.authority("d"),
+        )
+
+    def third(self) -> ContinuityState:
+        return record_approved_bundle(
+            self.successor(),
+            event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
+            approved_changes=("Third approved change",),
+            transition_id="EVT-THIRD-001",
+            approval_evidence_ref="fixture:third-approval",
+            checkpoint_id="HCP-003",
+            updated_at_utc="2026-08-27T02:00:00Z",
+            next_prompt="Continue after the third change.",
+            authority=self.authority("e"),
         )
 
     def test_four_defaults_are_exactly_hardcoded(self):
@@ -167,6 +264,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         self.assertTrue(checkpoint_required(ContinuityEvent.APPROVED_MATERIAL_CHANGE))
         self.assertTrue(checkpoint_required(ContinuityEvent.APPROVED_SOURCE_REVISION))
         self.assertTrue(checkpoint_required(ContinuityEvent.APPROVED_MODE_CHANGE))
+        self.assertTrue(checkpoint_required(ContinuityEvent.APPROVED_MEMORY_CHANGE))
         self.assertFalse(checkpoint_required(ContinuityEvent.DRAFT_CHANGE))
 
     def test_four_item_bundle_creates_one_successor(self):
@@ -185,6 +283,8 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             result,
             event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
             approved_changes=APPROVED_DEFAULTS_V1,
+            transition_id="EVT-DEFAULTS-001",
+            approval_evidence_ref="fixture:defaults-approval",
             checkpoint_id="HCP-003",
             updated_at_utc="2026-08-27T02:00:00Z",
             next_prompt="Different prompt",
@@ -192,11 +292,58 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         )
         self.assertIs(replay, result)
 
+    def test_repeated_change_text_with_new_transition_id_creates_checkpoint(self):
+        second = self.successor()
+        third = record_approved_bundle(
+            second,
+            event=ContinuityEvent.APPROVED_SOURCE_REVISION,
+            approved_changes=APPROVED_DEFAULTS_V1,
+            transition_id="EVT-DEFAULTS-002",
+            approval_evidence_ref="fixture:new-source-approval",
+            checkpoint_id="HCP-003",
+            updated_at_utc="2026-08-27T02:00:00Z",
+            next_prompt="Continue with the revised source.",
+            authority=self.authority("e"),
+        )
+        self.assertEqual(third.sequence, 3)
+        self.assertEqual(third.approved_changes, second.approved_changes)
+        self.assertEqual(third.transition_id, "EVT-DEFAULTS-002")
+
+    def test_transition_id_collision_with_different_content_fails(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "transition_id collides"):
+            record_approved_bundle(
+                self.successor(),
+                event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
+                approved_changes=("Different content",),
+                transition_id="EVT-DEFAULTS-001",
+                approval_evidence_ref="fixture:defaults-approval",
+                checkpoint_id="HCP-003",
+                updated_at_utc="2026-08-27T02:00:00Z",
+                next_prompt="Continue.",
+                authority=self.authority("e"),
+            )
+
+    def test_human_record_id_cannot_be_reused_across_chain(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "historical authority"):
+            record_approved_bundle(
+                self.successor(),
+                event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
+                approved_changes=("Third approved change",),
+                transition_id="EVT-THIRD-REUSE",
+                approval_evidence_ref="fixture:third-approval",
+                checkpoint_id="HCP-003",
+                updated_at_utc="2026-08-27T02:00:00Z",
+                next_prompt="Continue.",
+                authority=self.authority("c"),
+            )
+
     def test_successor_rejects_reused_id(self):
         with self.assertRaisesRegex(ContinuityPolicyError, "new checkpoint_id"):
             record_approved_bundle(
                 self.state(), event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
                 approved_changes=("Approved change",), checkpoint_id="HCP-001",
+                transition_id="EVT-CHANGE-001",
+                approval_evidence_ref="fixture:change-approval",
                 updated_at_utc="2026-08-27T01:00:00Z", next_prompt="Continue.",
                 authority=self.authority("d"),
             )
@@ -206,15 +353,19 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             record_approved_bundle(
                 self.state(), event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
                 approved_changes=("Approved change",), checkpoint_id="HCP-002",
+                transition_id="EVT-CHANGE-002",
+                approval_evidence_ref="fixture:change-approval",
                 updated_at_utc="2026-08-26T23:00:00Z", next_prompt="Continue.",
                 authority=self.authority("d"),
             )
 
     def test_successor_requires_new_human_record(self):
-        with self.assertRaisesRegex(ContinuityPolicyError, "newly verified human record"):
+        with self.assertRaisesRegex(ContinuityPolicyError, "historical authority"):
             record_approved_bundle(
                 self.state(), event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
                 approved_changes=("Approved change",), checkpoint_id="HCP-002",
+                transition_id="EVT-CHANGE-003",
+                approval_evidence_ref="fixture:change-approval",
                 updated_at_utc="2026-08-27T01:00:00Z", next_prompt="Continue.",
                 authority=self.authority("c"),
             )
@@ -222,6 +373,8 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
     def test_mode_change_changes_the_mode(self):
         result = record_mode_change(
             self.state(), new_mode="assessment", approved_change="Assessment selected.",
+            transition_id="EVT-MODE-001",
+            approval_evidence_ref="fixture:mode-approval",
             checkpoint_id="HCP-002", updated_at_utc="2026-08-27T01:00:00Z",
             next_prompt="Begin assessment.", authority=self.authority("d"),
         )
@@ -233,6 +386,8 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             record_approved_bundle(
                 self.state(), event=ContinuityEvent.APPROVED_MODE_CHANGE,
                 approved_changes=("Assessment selected.",), checkpoint_id="HCP-002",
+                transition_id="EVT-MODE-002",
+                approval_evidence_ref="fixture:mode-approval",
                 updated_at_utc="2026-08-27T01:00:00Z", next_prompt="Begin.",
                 authority=self.authority("d"),
             )
@@ -242,6 +397,8 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             record_approved_bundle(
                 self.state(), event="approved_mode_change",
                 approved_changes=("Assessment selected.",), checkpoint_id="HCP-002",
+                transition_id="EVT-MODE-003",
+                approval_evidence_ref="fixture:mode-approval",
                 updated_at_utc="2026-08-27T01:00:00Z", next_prompt="Begin.",
                 authority=self.authority("d"),
             )
@@ -251,6 +408,8 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             record_approved_bundle(
                 self.state(), event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
                 approved_changes="ABC", checkpoint_id="HCP-002",
+                transition_id="EVT-CHANGE-004",
+                approval_evidence_ref="fixture:change-approval",
                 updated_at_utc="2026-08-27T01:00:00Z", next_prompt="Continue.",
                 authority=self.authority("d"),
             )
@@ -306,11 +465,61 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContinuityPolicyError, "raw_pilot_wording"):
             load_checkpoint(payload)
 
+    def test_first_checkpoint_cannot_smuggle_approved_history(self):
+        bad = replace(
+            self.state(),
+            transition_event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
+            transition_approved_changes=("Approved A",),
+            approved_changes=("Approved A", "Unapproved extra"),
+        )
+        with self.assertRaisesRegex(ContinuityPolicyError, "extra history"):
+            bad.validate()
+
+    def test_first_non_mode_checkpoint_cannot_select_assessment(self):
+        bad = replace(
+            self.state(),
+            transition_event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
+            transition_approved_changes=("Approved A",),
+            approved_changes=("Approved A",),
+            mode=InteractionMode.ASSESSMENT,
+            mode_selected_explicitly=True,
+        )
+        with self.assertRaisesRegex(ContinuityPolicyError, "non-mode first checkpoint"):
+            bad.validate()
+
     def test_string_cannot_become_tuple_of_characters(self):
         payload = state_to_private_payload(self.state())
         payload["approved_changes"] = "approved"
         with self.assertRaisesRegex(ContinuityPolicyError, "array of strings"):
             load_checkpoint(payload)
+
+    def test_unknown_checkpoint_and_authority_fields_fail_closed(self):
+        payload = state_to_private_payload(self.state())
+        payload["verified"] = True
+        with self.assertRaisesRegex(ContinuityPolicyError, "unknown fields"):
+            load_checkpoint(payload)
+        payload = state_to_private_payload(self.state())
+        payload["authority"]["verified"] = True
+        with self.assertRaisesRegex(ContinuityPolicyError, "authority fields are invalid"):
+            load_checkpoint(payload)
+
+    def test_unknown_private_memory_fields_fail_closed(self):
+        state = replace(
+            self.state(),
+            private_pilot_memory=(PilotMemoryPair(
+                raw_pilot_wording="Private exact wording",
+                ai_interpretation="Private interpreted meaning",
+            ),),
+        )
+        payload = state_to_private_payload(state)
+        payload["private_pilot_memory"][0]["verified"] = True
+        with self.assertRaisesRegex(ContinuityPolicyError, "memory fields are invalid"):
+            load_checkpoint(payload)
+
+    def test_tuple_strings_require_canonical_whitespace(self):
+        bad = replace(self.state(), controlled_facts=(" padded fact ",))
+        with self.assertRaisesRegex(ContinuityPolicyError, "canonical whitespace"):
+            bad.validate()
 
     def test_stored_governed_fingerprint_detects_tamper(self):
         payload = state_to_private_payload(self.state())
@@ -334,19 +543,86 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             first.user_scope_id,
             MemoryStore((state_to_private_payload(first), state_to_private_payload(second))),
             TestVerifier(),
-            now_utc=NOW_UTC,
+            trusted_clock=FIXED_CLOCK,
         )
         self.assertEqual(state, second)
         self.assertEqual(brief.checkpoint_id, second.checkpoint_id)
         self.assertEqual(brief.mode, "development")
 
+    def test_trusted_clock_is_read_after_verifier_returns(self):
+        calls = []
+        state = self.state()
+        bootstrap_helpyou_session(
+            state.user_scope_id,
+            MemoryStore((state_to_private_payload(state),)),
+            OrderingVerifier(calls),
+            trusted_clock=OrderingClock(calls),
+        )
+        self.assertEqual(calls, ["verifier", "clock"])
+
+    def test_fractional_receipt_time_is_not_rejected_by_clock_precision(self):
+        state = self.state()
+        verifier = TestVerifier(
+            verified_at_utc="2026-08-27T03:00:00.500000Z",
+            expires_at_utc="2026-08-27T03:10:00.500000Z",
+        )
+        bootstrap_helpyou_session(
+            state.user_scope_id,
+            MemoryStore((state_to_private_payload(state),)),
+            verifier,
+            trusted_clock=FractionalClock(),
+        )
+
+    def test_resume_brief_uses_current_transition_not_cumulative_tail(self):
+        second = self.successor()
+        repeated_first_change = record_approved_bundle(
+            second,
+            event=ContinuityEvent.APPROVED_SOURCE_REVISION,
+            approved_changes=(APPROVED_DEFAULTS_V1[0],),
+            transition_id="EVT-REPEAT-001",
+            approval_evidence_ref="fixture:repeat-approval",
+            checkpoint_id="HCP-003",
+            updated_at_utc="2026-08-27T02:00:00Z",
+            next_prompt="Continue after repeated wording.",
+            authority=self.authority("e"),
+        )
+        _, brief = bootstrap_helpyou_session(
+            second.user_scope_id,
+            MemoryStore((
+                state_to_private_payload(self.state()),
+                state_to_private_payload(second),
+                state_to_private_payload(repeated_first_change),
+            )),
+            TestVerifier(),
+            trusted_clock=FIXED_CLOCK,
+        )
+        self.assertEqual(brief.last_approved_change, APPROVED_DEFAULTS_V1[0])
+        self.assertEqual(brief.last_transition_id, "EVT-REPEAT-001")
+
     def test_bootstrap_rejects_mismatched_authority_receipt(self):
         state = self.state()
         store = MemoryStore((state_to_private_payload(state),))
-        with self.assertRaisesRegex(ContinuityPolicyError, "does not match binding"):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "does not match binding") as caught:
             bootstrap_helpyou_session(
-                state.user_scope_id, store, TestVerifier(mismatch=True), now_utc=NOW_UTC
+                state.user_scope_id, store, TestVerifier(mismatch=True),
+                trusted_clock=FIXED_CLOCK,
             )
+        brief = caught.exception.recovery_brief
+        self.assertEqual(brief.status, "INCOMPLETE")
+        self.assertEqual(brief.recovered_layers, ("private checkpoint candidate",))
+        self.assertFalse(brief.safe_to_resume)
+
+    def test_bootstrap_missing_checkpoint_returns_structured_incomplete_brief(self):
+        with self.assertRaisesRegex(ContinuityRecoveryError, "INCOMPLETE") as caught:
+            bootstrap_helpyou_session(
+                "user_12345678", MemoryStore(), TestVerifier(),
+                trusted_clock=FIXED_CLOCK,
+            )
+        brief = caught.exception.recovery_brief
+        self.assertEqual(brief.status, "INCOMPLETE")
+        self.assertEqual(brief.recovered_layers, ())
+        self.assertIn("verified private checkpoint", brief.unavailable_layers)
+        self.assertFalse(brief.safe_to_resume)
 
     def test_receipt_binds_complete_governed_checkpoint_state(self):
         original = self.state()
@@ -357,7 +633,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ContinuityPolicyError, "does not match binding"):
             bootstrap_helpyou_session(
-                original.user_scope_id, store, verifier, now_utc=NOW_UTC
+                original.user_scope_id, store, verifier, trusted_clock=FIXED_CLOCK
             )
 
     def test_receipt_binds_repository_and_path(self):
@@ -370,7 +646,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             with self.subTest(verifier=verifier):
                 with self.assertRaisesRegex(ContinuityPolicyError, "does not match binding"):
                     bootstrap_helpyou_session(
-                        state.user_scope_id, store, verifier, now_utc=NOW_UTC
+                        state.user_scope_id, store, verifier, trusted_clock=FIXED_CLOCK
                     )
 
     def test_expired_authority_receipt_fails_closed(self):
@@ -379,7 +655,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         verifier = TestVerifier(expires_at_utc="2026-08-27T02:59:59Z")
         with self.assertRaisesRegex(ContinuityPolicyError, "not currently valid"):
             bootstrap_helpyou_session(
-                state.user_scope_id, store, verifier, now_utc=NOW_UTC
+                state.user_scope_id, store, verifier, trusted_clock=FIXED_CLOCK
             )
 
     def test_oversized_receipt_validity_fails_closed(self):
@@ -391,7 +667,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ContinuityPolicyError, "exceeds 15 minutes"):
             bootstrap_helpyou_session(
-                state.user_scope_id, store, verifier, now_utc=NOW_UTC
+                state.user_scope_id, store, verifier, trusted_clock=FIXED_CLOCK
             )
 
     def test_bootstrap_requires_private_store_capability(self):
@@ -399,7 +675,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         store = PublicStore((state_to_private_payload(state),))
         with self.assertRaisesRegex(ContinuityPolicyError, "PRIVATE store"):
             bootstrap_helpyou_session(
-                state.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+                state.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
 
     def test_competing_successors_fail_closed(self):
@@ -411,7 +687,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         ))
         with self.assertRaisesRegex(ContinuityPolicyError, "Conflicting checkpoints"):
             bootstrap_helpyou_session(
-                first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+                first.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
 
     def test_broken_predecessor_chain_fails(self):
@@ -420,7 +696,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         store = MemoryStore((state_to_private_payload(first), state_to_private_payload(bad)))
         with self.assertRaisesRegex(ContinuityPolicyError, "predecessor chain"):
             bootstrap_helpyou_session(
-                first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+                first.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
 
     def test_broken_governed_state_hash_chain_fails(self):
@@ -432,7 +708,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         store = MemoryStore((state_to_private_payload(first), state_to_private_payload(bad)))
         with self.assertRaisesRegex(ContinuityPolicyError, "hash chain is broken"):
             bootstrap_helpyou_session(
-                first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+                first.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
 
     def test_historical_human_record_substitution_breaks_hash_chain(self):
@@ -449,36 +725,82 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ContinuityPolicyError, "hash chain is broken"):
             bootstrap_helpyou_session(
-                first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+                first.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
 
     def test_checkpoint_id_cannot_be_reused_later_in_chain(self):
         first, second = self.state(), self.successor()
         third = replace(
-            second,
+            self.third(),
             checkpoint_id=first.checkpoint_id,
-            sequence=3,
-            previous_checkpoint_id=second.checkpoint_id,
-            previous_checkpoint_fingerprint=checkpoint_fingerprint(second),
-            updated_at_utc="2026-08-27T02:00:00Z",
-            authority=self.authority("e"),
         )
         store = MemoryStore(tuple(state_to_private_payload(item) for item in (first, second, third)))
         with self.assertRaisesRegex(ContinuityPolicyError, "reused within the chain"):
             bootstrap_helpyou_session(
-                first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+                first.user_scope_id, store, TestVerifier(), trusted_clock=FIXED_CLOCK
             )
 
     def test_persist_round_trip_verifies(self):
         store = MemoryStore()
-        persist_checkpoint(store, self.state(), TestVerifier(), now_utc=NOW_UTC)
+        persist_checkpoint(store, self.state(), TestVerifier(), trusted_clock=FIXED_CLOCK)
         self.assertEqual(len(store.payloads), 1)
+
+    def test_persist_retry_of_identical_checkpoint_is_idempotent(self):
+        store = MemoryStore()
+        state = self.state()
+        persist_checkpoint(store, state, TestVerifier(), trusted_clock=FIXED_CLOCK)
+        persist_checkpoint(store, state, TestVerifier(), trusted_clock=FIXED_CLOCK)
+        self.assertEqual(len(store.payloads), 1)
+
+    def test_same_candidate_race_is_treated_as_success(self):
+        first, candidate = self.state(), self.successor()
+        store = SameCandidateRaceStore((state_to_private_payload(first),))
+        persist_checkpoint(store, candidate, TestVerifier(), trusted_clock=FIXED_CLOCK)
+        self.assertEqual(len(store.payloads), 2)
+
+    def test_fast_follower_does_not_make_committed_write_look_failed(self):
+        first, candidate, follower = self.state(), self.successor(), self.third()
+        store = FastFollowStore(
+            (state_to_private_payload(first),), state_to_private_payload(follower)
+        )
+        persist_checkpoint(store, candidate, TestVerifier(), trusted_clock=FIXED_CLOCK)
+        self.assertEqual(len(store.payloads), 3)
+
+    def test_semantic_mode_bypass_is_rejected_before_cas(self):
+        first = self.state()
+        invalid = replace(
+            self.successor(),
+            mode=InteractionMode.ASSESSMENT,
+            mode_selected_explicitly=True,
+        )
+        store = MemoryStore((state_to_private_payload(first),))
+        with self.assertRaisesRegex(ContinuityPolicyError, "Only an approved mode-change"):
+            persist_checkpoint(
+                store, invalid, TestVerifier(), trusted_clock=FIXED_CLOCK
+            )
+        self.assertEqual(store.cas_calls, 0)
+
+    def test_material_change_cannot_migrate_policy_authority(self):
+        first = self.state()
+        invalid = replace(
+            self.successor(),
+            authority=replace(
+                self.successor().authority,
+                github_commit_sha="f" * 40,
+            ),
+        )
+        store = MemoryStore((state_to_private_payload(first),))
+        with self.assertRaisesRegex(ContinuityPolicyError, "approved source revision"):
+            persist_checkpoint(
+                store, invalid, TestVerifier(), trusted_clock=FIXED_CLOCK
+            )
+        self.assertEqual(store.cas_calls, 0)
 
     def test_failed_persistence_is_not_reported_as_success(self):
         with self.assertRaisesRegex(ContinuityPolicyError, "compare-and-swap"):
             persist_checkpoint(
                 MemoryStore(drop_writes=True), self.state(), TestVerifier(),
-                now_utc=NOW_UTC,
+                trusted_clock=FIXED_CLOCK,
             )
 
     def test_compare_and_swap_rejects_competing_successor(self):
@@ -490,44 +812,123 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             previous_checkpoint_id=first.checkpoint_id,
             updated_at_utc="2026-08-27T01:30:00Z",
             authority=self.authority("e"),
+            applied_human_record_ids=("HCP-C001", "HCP-E001"),
         )
         store = RaceStore(
             (state_to_private_payload(first),), state_to_private_payload(competing)
         )
         with self.assertRaisesRegex(ContinuityPolicyError, "compare-and-swap"):
-            persist_checkpoint(store, candidate, TestVerifier(), now_utc=NOW_UTC)
+            persist_checkpoint(
+                store, candidate, TestVerifier(), trusted_clock=FIXED_CLOCK
+            )
+
+    def test_append_only_audit_histories_cannot_be_erased(self):
+        first = replace(
+            self.state(),
+            source_manifest=("Source 1",),
+            controlled_facts=("Fact 1",),
+            superseded_positions=("Superseded position 1",),
+        )
+        candidate = record_approved_bundle(
+            first,
+            event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
+            approved_changes=("Second approved change",),
+            transition_id="EVT-AUDIT-002",
+            approval_evidence_ref="fixture:audit-approval",
+            checkpoint_id="HCP-002",
+            updated_at_utc="2026-08-27T01:00:00Z",
+            next_prompt="Continue.",
+            authority=self.authority("d"),
+        )
+        invalid = replace(
+            candidate,
+            source_manifest=(),
+            controlled_facts=(),
+            superseded_positions=(),
+        )
+        store = MemoryStore((state_to_private_payload(first),))
+        with self.assertRaisesRegex(ContinuityPolicyError, "history is not append-only"):
+            persist_checkpoint(
+                store, invalid, TestVerifier(), trusted_clock=FIXED_CLOCK
+            )
+        self.assertEqual(store.cas_calls, 0)
+
+    def test_pilot_memory_removal_requires_approved_memory_change(self):
+        first = replace(
+            self.state(),
+            private_pilot_memory=(PilotMemoryPair(
+                raw_pilot_wording="Remember my exact wording.",
+                ai_interpretation="The pilot asked to retain the exact wording.",
+            ),),
+        )
+        candidate = record_approved_bundle(
+            first,
+            event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
+            approved_changes=("Second approved change",),
+            transition_id="EVT-MATERIAL-002",
+            approval_evidence_ref="fixture:material-approval",
+            checkpoint_id="HCP-002",
+            updated_at_utc="2026-08-27T01:00:00Z",
+            next_prompt="Continue.",
+            authority=self.authority("d"),
+        )
+        invalid = replace(candidate, private_pilot_memory=())
+        store = MemoryStore((state_to_private_payload(first),))
+        with self.assertRaisesRegex(ContinuityPolicyError, "approved memory change"):
+            persist_checkpoint(
+                store, invalid, TestVerifier(), trusted_clock=FIXED_CLOCK
+            )
+        self.assertEqual(store.cas_calls, 0)
+
+    def test_approved_memory_change_can_remove_pilot_memory(self):
+        first = replace(
+            self.state(),
+            private_pilot_memory=(PilotMemoryPair(
+                raw_pilot_wording="Forget this exact wording.",
+                ai_interpretation="The pilot requested removal of this memory.",
+            ),),
+        )
+        candidate = record_approved_bundle(
+            first,
+            event=ContinuityEvent.APPROVED_MEMORY_CHANGE,
+            approved_changes=("User approved removal of the retained memory.",),
+            transition_id="EVT-MEMORY-002",
+            approval_evidence_ref="fixture:memory-removal-approval",
+            checkpoint_id="HCP-002",
+            updated_at_utc="2026-08-27T01:00:00Z",
+            next_prompt="Continue.",
+            authority=self.authority("d"),
+        )
+        candidate = replace(candidate, private_pilot_memory=())
+        store = MemoryStore((state_to_private_payload(first),))
+        persist_checkpoint(
+            store, candidate, TestVerifier(), trusted_clock=FIXED_CLOCK
+        )
+        self.assertEqual(load_checkpoint(store.payloads[-1]), candidate)
 
     def test_invalid_sequence_is_rejected_before_store_mutation(self):
         first = self.state()
-        invalid = replace(
-            self.successor(),
-            checkpoint_id="HCP-003",
-            sequence=3,
-            previous_checkpoint_id=first.checkpoint_id,
-            updated_at_utc="2026-08-27T02:00:00Z",
-            authority=self.authority("e"),
-        )
+        invalid = self.third()
         store = MemoryStore((state_to_private_payload(first),))
         with self.assertRaisesRegex(ContinuityPolicyError, "not the next sequence"):
-            persist_checkpoint(store, invalid, TestVerifier(), now_utc=NOW_UTC)
+            persist_checkpoint(
+                store, invalid, TestVerifier(), trusted_clock=FIXED_CLOCK
+            )
         self.assertEqual(len(store.payloads), 1)
 
     def test_reused_historical_id_is_rejected_before_store_mutation(self):
         first, second = self.state(), self.successor()
         invalid = replace(
-            second,
+            self.third(),
             checkpoint_id=first.checkpoint_id,
-            sequence=3,
-            previous_checkpoint_id=second.checkpoint_id,
-            previous_checkpoint_fingerprint=checkpoint_fingerprint(second),
-            updated_at_utc="2026-08-27T02:00:00Z",
-            authority=self.authority("e"),
         )
         store = MemoryStore(
             (state_to_private_payload(first), state_to_private_payload(second))
         )
-        with self.assertRaisesRegex(ContinuityPolicyError, "historical checkpoint_id"):
-            persist_checkpoint(store, invalid, TestVerifier(), now_utc=NOW_UTC)
+        with self.assertRaisesRegex(ContinuityPolicyError, "already exists with different"):
+            persist_checkpoint(
+                store, invalid, TestVerifier(), trusted_clock=FIXED_CLOCK
+            )
         self.assertEqual(len(store.payloads), 2)
 
     def test_development_string_uses_development_sequence(self):
