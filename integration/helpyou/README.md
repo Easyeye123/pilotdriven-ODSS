@@ -44,4 +44,4 @@ The implementation is standard-library only.
 
 ## Integration boundary
 
-`helpyou_continuity.py` is a reference enforcement module, not a hosted persistence service. Product startup must call `bootstrap_session`, retrieve and externally verify both authority layers, and render the returned status brief before the first substantive Helpyou response. Documentation or a pull-request branch alone does not create platform-level automatic continuity.
+`helpyou_continuity.py` is a reference enforcement module, not a hosted persistence service. Product startup must call `bootstrap_helpyou_session`, provide a private store adapter, retrieve and externally verify the complete checkpoint chain, and render the returned status brief before the first substantive Helpyou response. Documentation or a pull-request branch alone does not create platform-level automatic continuity.
