@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+import hashlib
+import json
 import re
 from typing import Any, Iterable, Mapping, Protocol
 
@@ -52,6 +54,7 @@ _USER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{7,127}$")
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _FP_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+MAX_RECEIPT_VALIDITY = timedelta(minutes=15)
 
 
 def _identifier(value: str, field: str) -> None:
@@ -126,22 +129,54 @@ class AuthorityPointers:
 class AuthorityVerificationReceipt:
     """Receipt returned only after external GitHub and private-record checks."""
 
+    github_repository: str
+    github_path: str
     github_commit_sha: str
     policy_fingerprint: str
     human_record_id: str
     human_record_fingerprint: str
+    governed_state_fingerprint: str
     verified_at_utc: str
+    expires_at_utc: str
 
-    def validate_against(self, authority: AuthorityPointers) -> None:
+    def validate_against(
+        self,
+        state: "ContinuityState",
+        *,
+        now_utc: str,
+    ) -> None:
+        state.validate()
+        authority = state.authority
         authority.validate()
-        _utc(self.verified_at_utc)
+        if not isinstance(self.governed_state_fingerprint, str) or not _FP_RE.fullmatch(
+            self.governed_state_fingerprint
+        ):
+            raise ContinuityPolicyError(
+                "governed_state_fingerprint must use sha256:<64 lowercase hex>."
+            )
+        verified_at = _utc(self.verified_at_utc)
+        expires_at = _utc(self.expires_at_utc)
+        checkpoint_time = _utc(state.updated_at_utc)
+        now = _utc(now_utc)
         if (
-            self.github_commit_sha != authority.github_commit_sha
+            self.github_repository != authority.github_repository
+            or self.github_path != authority.github_path
+            or self.github_commit_sha != authority.github_commit_sha
             or self.policy_fingerprint != authority.policy_fingerprint
             or self.human_record_id != authority.human_record_id
             or self.human_record_fingerprint != authority.human_record_fingerprint
+            or self.governed_state_fingerprint
+            != governed_state_fingerprint(state)
         ):
             raise ContinuityPolicyError("Authority verification receipt does not match binding.")
+        if verified_at < checkpoint_time:
+            raise ContinuityPolicyError("Authority receipt predates the checkpoint.")
+        if expires_at <= verified_at:
+            raise ContinuityPolicyError("Authority receipt expiry is invalid.")
+        if expires_at - verified_at > MAX_RECEIPT_VALIDITY:
+            raise ContinuityPolicyError("Authority receipt validity exceeds 15 minutes.")
+        if not (verified_at <= now <= expires_at):
+            raise ContinuityPolicyError("Authority verification receipt is not currently valid.")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -262,7 +297,11 @@ class PrivateContinuityStore(Protocol):
 
 
 class AuthorityVerifier(Protocol):
-    def verify(self, authority: AuthorityPointers) -> AuthorityVerificationReceipt: ...
+    def verify(
+        self,
+        authority: AuthorityPointers,
+        governed_state_fingerprint: str,
+    ) -> AuthorityVerificationReceipt: ...
 
 
 def _require_private_store(store: PrivateContinuityStore) -> None:
@@ -271,12 +310,16 @@ def _require_private_store(store: PrivateContinuityStore) -> None:
 
 
 def _verified_receipt(
-    verifier: AuthorityVerifier, authority: AuthorityPointers
+    verifier: AuthorityVerifier,
+    state: ContinuityState,
+    *,
+    now_utc: str,
 ) -> AuthorityVerificationReceipt:
-    receipt = verifier.verify(authority)
+    state.validate()
+    receipt = verifier.verify(state.authority, governed_state_fingerprint(state))
     if not isinstance(receipt, AuthorityVerificationReceipt):
         raise ContinuityPolicyError("Authority verifier did not return a valid receipt.")
-    receipt.validate_against(authority)
+    receipt.validate_against(state, now_utc=now_utc)
     return receipt
 
 
@@ -407,10 +450,13 @@ def record_mode_change(
 
 
 def visible_resume_brief(
-    state: ContinuityState, receipt: AuthorityVerificationReceipt
+    state: ContinuityState,
+    receipt: AuthorityVerificationReceipt,
+    *,
+    now_utc: str,
 ) -> ResumeBrief:
     state.validate()
-    receipt.validate_against(state.authority)
+    receipt.validate_against(state, now_utc=now_utc)
     return ResumeBrief(
         checkpoint_id=state.checkpoint_id,
         status=state.status.value,
@@ -430,6 +476,7 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         "protocol_version", "checkpoint_id", "sequence", "previous_checkpoint_id",
         "user_scope_id", "updated_at_utc", "authority", "mode",
         "mode_selected_explicitly", "status", "next_prompt",
+        "governed_state_fingerprint",
     }
     missing = sorted(required.difference(payload))
     if missing:
@@ -483,10 +530,17 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         private_pilot_memory=tuple(parsed_memory),
     )
     state.validate()
+    stored_fingerprint = payload["governed_state_fingerprint"]
+    if not isinstance(stored_fingerprint, str) or not _FP_RE.fullmatch(stored_fingerprint):
+        raise ContinuityPolicyError(
+            "governed_state_fingerprint must use sha256:<64 lowercase hex>."
+        )
+    if stored_fingerprint != governed_state_fingerprint(state):
+        raise ContinuityPolicyError("Stored governed-state fingerprint does not match checkpoint.")
     return state
 
 
-def state_to_private_payload(state: ContinuityState) -> dict[str, Any]:
+def _private_payload_body(state: ContinuityState) -> dict[str, Any]:
     state.validate()
     return {
         "protocol_version": state.protocol_version,
@@ -518,6 +572,33 @@ def state_to_private_payload(state: ContinuityState) -> dict[str, Any]:
             for item in state.private_pilot_memory
         ],
     }
+
+
+def governed_state_fingerprint(state: ContinuityState) -> str:
+    """Hash every governed field except the separately verified human-record hash.
+
+    Excluding the human-record hash lets the human-readable record embed this digest
+    without creating a circular hash dependency. The receipt independently binds and
+    verifies the human-record hash as part of the complete authority tuple.
+    """
+
+    body = _private_payload_body(state)
+    authority = dict(body["authority"])
+    authority.pop("human_record_fingerprint")
+    body["authority"] = authority
+    encoded = json.dumps(
+        body,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def state_to_private_payload(state: ContinuityState) -> dict[str, Any]:
+    body = _private_payload_body(state)
+    body["governed_state_fingerprint"] = governed_state_fingerprint(state)
+    return body
 
 
 def _chain(user_scope_id: str, payloads: Iterable[Mapping[str, Any]]) -> tuple[ContinuityState, ...]:
@@ -553,23 +634,56 @@ def bootstrap_helpyou_session(
     user_scope_id: str,
     store: PrivateContinuityStore,
     verifier: AuthorityVerifier,
+    *,
+    now_utc: str,
 ) -> tuple[ContinuityState, ResumeBrief]:
     _require_private_store(store)
     state = _chain(user_scope_id, store.list_checkpoints(user_scope_id))[-1]
-    receipt = _verified_receipt(verifier, state.authority)
-    return state, visible_resume_brief(state, receipt)
+    receipt = _verified_receipt(
+        verifier,
+        state,
+        now_utc=now_utc,
+    )
+    return state, visible_resume_brief(state, receipt, now_utc=now_utc)
 
 
 def persist_checkpoint(
     store: PrivateContinuityStore,
     state: ContinuityState,
     verifier: AuthorityVerifier,
+    *,
+    now_utc: str,
 ) -> None:
     _require_private_store(store)
     state.validate()
-    _verified_receipt(verifier, state.authority)
+    _verified_receipt(
+        verifier,
+        state,
+        now_utc=now_utc,
+    )
+    existing_payloads = tuple(store.list_checkpoints(state.user_scope_id))
+    if existing_payloads:
+        existing_chain = _chain(state.user_scope_id, existing_payloads)
+        latest = existing_chain[-1]
+        if state.sequence != latest.sequence + 1:
+            raise ContinuityPolicyError("Candidate sequence is not the next sequence.")
+        if state.previous_checkpoint_id != latest.checkpoint_id:
+            raise ContinuityPolicyError("Candidate predecessor does not match latest checkpoint.")
+        if state.checkpoint_id in {item.checkpoint_id for item in existing_chain}:
+            raise ContinuityPolicyError("Candidate reuses a historical checkpoint_id.")
+        if _utc(state.updated_at_utc) <= _utc(latest.updated_at_utc):
+            raise ContinuityPolicyError("Candidate timestamp is not later than latest checkpoint.")
+        if (
+            state.authority.human_record_fingerprint
+            == latest.authority.human_record_fingerprint
+        ):
+            raise ContinuityPolicyError("Candidate does not bind a new human record.")
+    elif state.sequence != 1 or state.previous_checkpoint_id is not None:
+        raise ContinuityPolicyError("The first persisted checkpoint must start sequence 1.")
+    candidate_payload = state_to_private_payload(state)
+    _chain(state.user_scope_id, existing_payloads + (candidate_payload,))
     committed = store.compare_and_swap_checkpoint(
-        state.previous_checkpoint_id, state_to_private_payload(state)
+        state.previous_checkpoint_id, candidate_payload
     )
     if type(committed) is not bool or not committed:
         raise ContinuityPolicyError("Checkpoint compare-and-swap was rejected.")
