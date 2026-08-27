@@ -299,7 +299,7 @@ class ContinuityState:
             or self.applied_human_record_ids[-1] != self.authority.human_record_id
         ):
             raise ContinuityPolicyError(
-                "applied_human_record_ids must be globally unique, complete and current."
+                "applied_human_record_ids must be chain-unique, complete and current."
             )
         if not isinstance(self.mode, InteractionMode):
             raise ContinuityPolicyError("mode must be an InteractionMode.")
@@ -450,9 +450,11 @@ class AuthorityVerifier(Protocol):
     """Trusted adapter that independently verifies both authority artifacts.
 
     A production adapter must establish merged-main reachability, recompute the
-    policy and human-record hashes, and confirm that the human record embeds the
-    supplied governed-state and complete checkpoint-envelope fingerprints before
-    returning a short-lived receipt.
+    policy and human-record hashes, and confirm that the human record embeds only
+    the supplied governed-state fingerprint. The record must not be required to
+    embed the checkpoint-envelope fingerprint because that envelope contains the
+    record hash. The short-lived receipt independently binds the verified record
+    hash and the complete checkpoint-envelope fingerprint.
     """
 
     def verify(
@@ -958,7 +960,8 @@ def _validate_transition(previous: ContinuityState, current: ContinuityState) ->
         old_memory = previous.private_pilot_memory
         if current.private_pilot_memory[: len(old_memory)] != old_memory:
             raise ContinuityPolicyError(
-                "Pilot memory can be removed or rewritten only by an approved memory change."
+                "Pilot memory can be deactivated or superseded in the active state "
+                "only by an approved memory change; immutable history remains."
             )
     previous_mode = (previous.mode, previous.mode_selected_explicitly)
     current_mode = (current.mode, current.mode_selected_explicitly)
