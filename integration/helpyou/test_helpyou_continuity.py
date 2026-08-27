@@ -771,7 +771,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         self.assertEqual(brief.status, "INCOMPLETE")
         self.assertEqual(brief.reason_code, "CHECKPOINT_UNAVAILABLE")
         self.assertEqual(brief.recovered_layers, ())
-        self.assertIn("verified private checkpoint", brief.unavailable_layers)
+        self.assertEqual(brief.unavailable_layers, ("private checkpoint store",))
         self.assertFalse(brief.safe_to_resume)
 
     def test_verified_incomplete_checkpoint_is_gated_not_resumed(self):
@@ -881,6 +881,28 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
                 self.assertNotIn(secret, str(caught.exception))
                 self.assertNotIn(secret, rendered)
                 self.assertIsNone(caught.exception.__context__)
+
+    def test_typed_failure_channel_rejects_secret_or_ambiguous_layers(self):
+        secret = "backend secret token=typed"
+        with self.assertRaises(ContinuityPolicyError) as caught:
+            VerificationLayerFailure(
+                reason_code="HUMAN_RECORD_UNAVAILABLE",
+                recovered_layers=("GitHub protocol authority",),
+                unavailable_layers=(secret,),
+            )
+        self.assertNotIn(secret, str(caught.exception))
+        with self.assertRaisesRegex(ContinuityPolicyError, "both recovered and unavailable"):
+            VerificationLayerFailure(
+                reason_code="AMBIGUOUS_LAYER",
+                recovered_layers=("GitHub protocol authority",),
+                unavailable_layers=("GitHub protocol authority",),
+            )
+        with self.assertRaisesRegex(ContinuityPolicyError, "duplicate"):
+            VerificationLayerFailure(
+                reason_code="DUPLICATE_LAYER",
+                recovered_layers=(),
+                unavailable_layers=("trusted clock", "trusted clock"),
+            )
 
     def test_receipt_binds_complete_governed_checkpoint_state(self):
         original = self.state()
