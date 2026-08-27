@@ -161,6 +161,21 @@ class SameCandidateRaceStore(MemoryStore):
         )
 
 
+class FollowBetweenListAndHeadStore(RegistryStore):
+    def __init__(self, registry, payloads, follower_payload):
+        super().__init__(registry, payloads)
+        self.follower_payload = deepcopy(follower_payload)
+        self.list_calls = 0
+
+    def list_checkpoints(self, user_scope_id):
+        self.list_calls += 1
+        snapshot = super().list_checkpoints(user_scope_id)
+        if self.list_calls == 2:
+            self.payloads.append(deepcopy(self.follower_payload))
+            self.registry.advance(self.follower_payload)
+        return snapshot
+
+
 class TestVerifier:
     def __init__(
         self,
@@ -255,6 +270,20 @@ class RegistryVerifier(TestVerifier):
         )
 
 
+class BadLatestAuthorityVerifier(TestVerifier):
+    def __init__(self, bad_human_record_id):
+        super().__init__()
+        self.bad_human_record_id = bad_human_record_id
+
+    def verify(self, authority, governed_fingerprint, checkpoint_envelope_fingerprint):
+        receipt = super().verify(
+            authority, governed_fingerprint, checkpoint_envelope_fingerprint
+        )
+        if authority.human_record_id == self.bad_human_record_id:
+            return replace(receipt, github_commit_sha="f" * 40)
+        return receipt
+
+
 class OrderingClock:
     def __init__(self, calls):
         self.calls = calls
@@ -323,6 +352,23 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             applied_human_record_ids=("HCP-C001",),
             active_case_ref="private-case-reference",
             next_prompt="Continue the controlled case review.",
+        )
+
+    def incomplete_state(
+        self,
+        unavailable_layers=("hosted startup integration",),
+        reason_code="RUNTIME_INTEGRATION_PENDING",
+    ) -> ContinuityState:
+        change = "Continuity gap recorded."
+        return replace(
+            self.state(),
+            transition_event=ContinuityEvent.APPROVED_STATUS_CHANGE,
+            transition_approved_changes=(change,),
+            approved_changes=(change,),
+            status=CheckpointStatus.INCOMPLETE,
+            status_reason_code=reason_code,
+            unavailable_layers=unavailable_layers,
+            safe_to_resume=False,
         )
 
     def successor(self) -> ContinuityState:
@@ -526,13 +572,96 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         self.assertEqual(result.status_reason_code, "RUNTIME_INTEGRATION_PENDING")
         self.assertFalse(result.safe_to_resume)
 
+    def test_activation_cannot_silently_discard_supplied_unresolved_gap(self):
+        incomplete = record_status_change(
+            self.state(),
+            new_status=CheckpointStatus.INCOMPLETE,
+            reason_code="RUNTIME_INTEGRATION_PENDING",
+            unavailable_layers=("hosted startup integration",),
+            approved_change="Runtime integration gap recorded.",
+            transition_id="EVT-STATUS-003",
+            approval_evidence_ref="fixture:status-gap-approval",
+            checkpoint_id="HCP-002",
+            updated_at_utc="2026-08-27T01:00:00Z",
+            next_prompt="Complete hosted startup integration.",
+            authority=self.authority("d"),
+        )
+        with self.assertRaisesRegex(ContinuityPolicyError, "cannot discard"):
+            record_status_change(
+                incomplete,
+                new_status=CheckpointStatus.ACTIVE,
+                reason_code="RUNTIME_INTEGRATION_PENDING",
+                unavailable_layers=("hosted startup integration",),
+                approved_change="Activate continuity.",
+                transition_id="EVT-STATUS-004",
+                approval_evidence_ref="fixture:status-activation-approval",
+                checkpoint_id="HCP-003",
+                updated_at_utc="2026-08-27T02:00:00Z",
+                next_prompt="Resume.",
+                authority=self.authority("e"),
+            )
+
     def test_incomplete_status_requires_gap_metadata(self):
         with self.assertRaisesRegex(ContinuityPolicyError, "status_reason_code"):
             replace(self.state(), status=CheckpointStatus.INCOMPLETE).validate()
 
+    def test_incomplete_status_requires_controlled_reason_code(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "controlled recovery"):
+            replace(
+                self.state(),
+                status=CheckpointStatus.INCOMPLETE,
+                status_reason_code="SECRET_TOKEN_AKIA1234567890",
+                unavailable_layers=("hosted startup integration",),
+                safe_to_resume=False,
+            ).validate()
+
+    def test_genesis_status_change_cannot_be_default_active_noop(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "non-default INCOMPLETE"):
+            replace(
+                self.state(),
+                transition_event=ContinuityEvent.APPROVED_STATUS_CHANGE,
+                transition_approved_changes=("Activate continuity.",),
+                approved_changes=("Activate continuity.",),
+            ).validate()
+
+    def test_genesis_events_cannot_smuggle_orthogonal_mode_or_status(self):
+        gap = self.incomplete_state()
+        with self.assertRaisesRegex(ContinuityPolicyError, "Development Mode"):
+            replace(
+                gap,
+                mode=InteractionMode.ASSESSMENT,
+                mode_selected_explicitly=True,
+            ).validate()
+        with self.assertRaisesRegex(ContinuityPolicyError, "default ACTIVE"):
+            replace(
+                gap,
+                transition_event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
+            ).validate()
+        with self.assertRaisesRegex(ContinuityPolicyError, "default ACTIVE"):
+            replace(
+                gap,
+                transition_event=ContinuityEvent.APPROVED_MODE_CHANGE,
+                mode=InteractionMode.ASSESSMENT,
+                mode_selected_explicitly=True,
+            ).validate()
+        with self.assertRaisesRegex(ContinuityPolicyError, "non-default mode"):
+            replace(
+                self.state(),
+                transition_event=ContinuityEvent.APPROVED_MODE_CHANGE,
+                transition_approved_changes=("Development selected.",),
+                approved_changes=("Development selected.",),
+                mode_selected_explicitly=True,
+            ).validate()
+
     def test_superseded_status_is_not_persistable(self):
         with self.assertRaisesRegex(ContinuityPolicyError, "not a persistable"):
             replace(self.state(), status=CheckpointStatus.SUPERSEDED).validate()
+
+    def test_unsupported_protocol_version_fails_closed(self):
+        payload = state_to_private_payload(self.state())
+        payload["protocol_version"] = "999.999"
+        with self.assertRaisesRegex(ContinuityPolicyError, "supported version 1.0"):
+            load_checkpoint(payload)
 
     def test_serialized_mode_event_cannot_bypass_mode_gate(self):
         with self.assertRaisesRegex(ContinuityPolicyError, "record_mode_change"):
@@ -571,6 +700,33 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         payload["authority"]["policy_fingerprint"] = "sha256:bad"
         with self.assertRaisesRegex(ContinuityPolicyError, "64 lowercase hex"):
             load_checkpoint(payload)
+
+    def test_authority_paths_are_canonical_and_traversal_safe(self):
+        state = self.state()
+        for repository in ("../repo", "owner/.."):
+            with self.subTest(repository=repository):
+                with self.assertRaisesRegex(ContinuityPolicyError, "noncanonical"):
+                    replace(
+                        state,
+                        authority=replace(
+                            state.authority,
+                            github_repository=repository,
+                        ),
+                    ).validate()
+        for path in (
+            "docs\\..\\secret",
+            "docs/../secret",
+            "docs/./protocol.md",
+            "docs//protocol.md",
+            "docs/\rsecret",
+            "docs/protocol.md ",
+        ):
+            with self.subTest(path=repr(path)):
+                with self.assertRaisesRegex(ContinuityPolicyError, "safe repository path"):
+                    replace(
+                        state,
+                        authority=replace(state.authority, github_path=path),
+                    ).validate()
 
     def test_invalid_timestamp_fails(self):
         payload = state_to_private_payload(self.state())
@@ -757,7 +913,14 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         self.assertEqual(brief.reason_code, "AUTHORITY_UNVERIFIED")
         self.assertEqual(
             brief.recovered_layers,
-            ("private checkpoint candidate", "trusted monotonic head"),
+            (
+                "private checkpoint store",
+                "private checkpoint candidate",
+                "verified private checkpoint chain",
+                "trusted monotonic head",
+                "trusted clock",
+                "trusted authority verifier",
+            ),
         )
         self.assertFalse(brief.safe_to_resume)
 
@@ -769,19 +932,33 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             )
         brief = caught.exception.recovery_brief
         self.assertEqual(brief.status, "INCOMPLETE")
-        self.assertEqual(brief.reason_code, "CHECKPOINT_UNAVAILABLE")
-        self.assertEqual(brief.recovered_layers, ())
-        self.assertEqual(brief.unavailable_layers, ("private checkpoint store",))
+        self.assertEqual(brief.reason_code, "CHECKPOINT_NOT_FOUND")
+        self.assertEqual(brief.recovered_layers, ("private checkpoint store",))
+        self.assertEqual(brief.unavailable_layers, ("private checkpoint candidate",))
         self.assertFalse(brief.safe_to_resume)
 
+    def test_bootstrap_validates_user_scope_before_store_io(self):
+        class TrackingStore(MemoryStore):
+            def __init__(self):
+                super().__init__()
+                self.list_calls = 0
+
+            def list_checkpoints(self, user_scope_id):
+                self.list_calls += 1
+                return super().list_checkpoints(user_scope_id)
+
+        store = TrackingStore()
+        with self.assertRaisesRegex(ContinuityPolicyError, "pseudonymous"):
+            bootstrap_helpyou_session(
+                "INVALID/PRIVATE/SCOPE",
+                store,
+                TestVerifier(),
+                trusted_clock=FIXED_CLOCK,
+            )
+        self.assertEqual(store.list_calls, 0)
+
     def test_verified_incomplete_checkpoint_is_gated_not_resumed(self):
-        state = replace(
-            self.state(),
-            status=CheckpointStatus.INCOMPLETE,
-            status_reason_code="RUNTIME_INTEGRATION_PENDING",
-            unavailable_layers=("hosted startup integration",),
-            safe_to_resume=False,
-        )
+        state = self.incomplete_state()
         with self.assertRaises(ContinuityRecoveryError) as caught:
             bootstrap_helpyou_session(
                 state.user_scope_id,
@@ -793,6 +970,94 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         self.assertEqual(brief.reason_code, "RUNTIME_INTEGRATION_PENDING")
         self.assertEqual(brief.unavailable_layers, ("hosted startup integration",))
         self.assertFalse(brief.safe_to_resume)
+
+    def test_verified_recorded_authority_gaps_require_status_clearance(self):
+        for recorded_layer, reason_code in (
+            ("trusted monotonic head", "RUNTIME_INTEGRATION_PENDING"),
+            ("GitHub protocol authority", "GITHUB_AUTHORITY_UNAVAILABLE"),
+            (
+                "human-readable checkpoint authority",
+                "HUMAN_RECORD_UNAVAILABLE",
+            ),
+            ("trusted authority verifier", "RUNTIME_INTEGRATION_PENDING"),
+        ):
+            with self.subTest(recorded_layer=recorded_layer):
+                state = self.incomplete_state(
+                    unavailable_layers=(recorded_layer,),
+                    reason_code=reason_code,
+                )
+                with self.assertRaises(ContinuityRecoveryError) as caught:
+                    bootstrap_helpyou_session(
+                        state.user_scope_id,
+                        MemoryStore((state_to_private_payload(state),)),
+                        TestVerifier(),
+                        trusted_clock=FIXED_CLOCK,
+                    )
+                brief = caught.exception.recovery_brief
+                self.assertEqual(brief.reason_code, "STATUS_CLEARANCE_PENDING")
+                self.assertIn(recorded_layer, brief.recovered_layers)
+                self.assertEqual(
+                    brief.unavailable_layers,
+                    ("approved checkpoint status clearance",),
+                )
+                self.assertFalse(
+                    set(brief.recovered_layers).intersection(brief.unavailable_layers)
+                )
+                self.assertFalse(brief.safe_to_resume)
+
+    def test_verified_mixed_runtime_gap_retains_unresolved_layer(self):
+        state = self.incomplete_state(
+            unavailable_layers=(
+                "trusted authority verifier",
+                "hosted startup integration",
+            ),
+        )
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                state.user_scope_id,
+                MemoryStore((state_to_private_payload(state),)),
+                TestVerifier(),
+                trusted_clock=FIXED_CLOCK,
+            )
+        brief = caught.exception.recovery_brief
+        self.assertIn("trusted authority verifier", brief.recovered_layers)
+        self.assertEqual(brief.reason_code, "RUNTIME_INTEGRATION_PENDING")
+        self.assertEqual(brief.unavailable_layers, ("hosted startup integration",))
+        self.assertEqual(brief.next_action, state.next_prompt)
+
+    def test_malformed_accessible_chain_identifies_chain_layer(self):
+        payload = state_to_private_payload(self.state())
+        payload["unsupported_field"] = "value"
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                self.state().user_scope_id,
+                MemoryStore((payload,)),
+                TestVerifier(),
+                trusted_clock=FIXED_CLOCK,
+            )
+        brief = caught.exception.recovery_brief
+        self.assertEqual(brief.reason_code, "CHECKPOINT_CHAIN_UNVERIFIED")
+        self.assertIn("private checkpoint store", brief.recovered_layers)
+        self.assertEqual(
+            brief.unavailable_layers,
+            ("verified private checkpoint chain",),
+        )
+
+    def test_unsupported_protocol_bootstrap_is_structured_and_gated(self):
+        payload = state_to_private_payload(self.state())
+        payload["protocol_version"] = "999.999"
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                self.state().user_scope_id,
+                MemoryStore((payload,)),
+                TestVerifier(),
+                trusted_clock=FIXED_CLOCK,
+            )
+        self.assertEqual(
+            caught.exception.recovery_brief.reason_code,
+            "CHECKPOINT_CHAIN_UNVERIFIED",
+        )
+        self.assertFalse(caught.exception.recovery_brief.safe_to_resume)
 
     def test_partial_authority_failures_identify_exact_layer(self):
         state = self.state()
@@ -828,7 +1093,99 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
                 brief = caught.exception.recovery_brief
                 self.assertEqual(brief.unavailable_layers, (unavailable,))
                 self.assertIn(recovered, brief.recovered_layers)
+                for stage_layer in (
+                    "private checkpoint store",
+                    "verified private checkpoint chain",
+                    "trusted monotonic head",
+                    "trusted clock",
+                    "trusted authority verifier",
+                ):
+                    self.assertIn(stage_layer, brief.recovered_layers)
                 self.assertFalse(brief.safe_to_resume)
+
+    def test_wrong_stage_typed_failure_is_normalized_without_layer_conflict(self):
+        state = self.state()
+        wrong_head_failure = {
+            "reason_code": "CHECKPOINT_NOT_FOUND",
+            "recovered_layers": (),
+            "unavailable_layers": ("private checkpoint candidate",),
+        }
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                state.user_scope_id,
+                MemoryStore((state_to_private_payload(state),)),
+                TestVerifier(head_layer_failure=wrong_head_failure),
+                trusted_clock=FIXED_CLOCK,
+            )
+        brief = caught.exception.recovery_brief
+        self.assertEqual(brief.reason_code, "HEAD_ADAPTER_FAILURE")
+        self.assertEqual(brief.unavailable_layers, ("trusted monotonic head",))
+        self.assertNotIn("trusted clock", brief.recovered_layers)
+        self.assertFalse(
+            set(brief.recovered_layers).intersection(brief.unavailable_layers)
+        )
+
+        wrong_authority_failure = {
+            "reason_code": "CHECKPOINT_NOT_FOUND",
+            "recovered_layers": (),
+            "unavailable_layers": ("private checkpoint candidate",),
+        }
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                state.user_scope_id,
+                MemoryStore((state_to_private_payload(state),)),
+                TestVerifier(authority_layer_failure=wrong_authority_failure),
+                trusted_clock=FIXED_CLOCK,
+            )
+        brief = caught.exception.recovery_brief
+        self.assertEqual(brief.reason_code, "AUTHORITY_ADAPTER_FAILURE")
+        self.assertEqual(brief.unavailable_layers, ("trusted authority verifier",))
+
+    def test_invalid_verifier_receipt_types_fail_at_adapter_stage_before_clock(self):
+        class CountingClock:
+            def __init__(self):
+                self.calls = 0
+
+            def now_utc(self):
+                self.calls += 1
+                return NOW_UTC
+
+        class InvalidHeadVerifier(TestVerifier):
+            def verify_current_head(self, *args):
+                return object()
+
+        class InvalidAuthorityVerifier(TestVerifier):
+            def verify(self, *args):
+                return object()
+
+        state = self.state()
+        clock = CountingClock()
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                state.user_scope_id,
+                MemoryStore((state_to_private_payload(state),)),
+                InvalidHeadVerifier(),
+                trusted_clock=clock,
+            )
+        self.assertEqual(clock.calls, 0)
+        self.assertEqual(
+            caught.exception.recovery_brief.reason_code,
+            "HEAD_ADAPTER_FAILURE",
+        )
+
+        clock = CountingClock()
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                state.user_scope_id,
+                MemoryStore((state_to_private_payload(state),)),
+                InvalidAuthorityVerifier(),
+                trusted_clock=clock,
+            )
+        self.assertEqual(clock.calls, 1)
+        brief = caught.exception.recovery_brief
+        self.assertEqual(brief.reason_code, "AUTHORITY_ADAPTER_FAILURE")
+        self.assertEqual(brief.unavailable_layers, ("trusted authority verifier",))
+        self.assertNotIn("trusted authority verifier", brief.recovered_layers)
 
     def test_clock_failure_is_identified_separately(self):
         class FailedClock:
@@ -846,7 +1203,37 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         brief = caught.exception.recovery_brief
         self.assertEqual(brief.reason_code, "CLOCK_UNAVAILABLE")
         self.assertEqual(brief.unavailable_layers, ("trusted clock",))
+        self.assertIn("verified private checkpoint chain", brief.recovered_layers)
+        self.assertNotIn("trusted clock", brief.recovered_layers)
+        self.assertIn("trusted UTC clock", brief.next_action)
         self.assertFalse(brief.safe_to_resume)
+
+    def test_authority_phase_clock_failure_names_clock_recovery_action(self):
+        class FailSecondClock:
+            def __init__(self):
+                self.calls = 0
+
+            def now_utc(self):
+                self.calls += 1
+                if self.calls == 2:
+                    raise RuntimeError("private clock diagnostic")
+                return NOW_UTC
+
+        state = self.state()
+        with self.assertRaises(ContinuityRecoveryError) as caught:
+            bootstrap_helpyou_session(
+                state.user_scope_id,
+                MemoryStore((state_to_private_payload(state),)),
+                TestVerifier(),
+                trusted_clock=FailSecondClock(),
+            )
+        brief = caught.exception.recovery_brief
+        self.assertEqual(brief.reason_code, "CLOCK_UNAVAILABLE")
+        self.assertEqual(brief.unavailable_layers, ("trusted clock",))
+        self.assertIn("trusted monotonic head", brief.recovered_layers)
+        self.assertIn("trusted authority verifier", brief.recovered_layers)
+        self.assertNotIn("trusted clock", brief.recovered_layers)
+        self.assertIn("trusted UTC clock", brief.next_action)
 
     def test_bootstrap_does_not_expose_adapter_exception_text(self):
         secret = "secret token=do-not-expose"
@@ -893,16 +1280,53 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         self.assertNotIn(secret, str(caught.exception))
         with self.assertRaisesRegex(ContinuityPolicyError, "both recovered and unavailable"):
             VerificationLayerFailure(
-                reason_code="AMBIGUOUS_LAYER",
+                reason_code="AUTHORITY_UNVERIFIED",
                 recovered_layers=("GitHub protocol authority",),
                 unavailable_layers=("GitHub protocol authority",),
             )
         with self.assertRaisesRegex(ContinuityPolicyError, "duplicate"):
             VerificationLayerFailure(
-                reason_code="DUPLICATE_LAYER",
+                reason_code="AUTHORITY_UNVERIFIED",
                 recovered_layers=(),
                 unavailable_layers=("trusted clock", "trusted clock"),
             )
+
+    def test_typed_failure_channel_rejects_uncontrolled_reason_code(self):
+        secret = "SECRET_TOKEN_AKIA1234567890"
+        with self.assertRaises(ContinuityPolicyError) as caught:
+            VerificationLayerFailure(
+                reason_code=secret,
+                recovered_layers=("GitHub protocol authority",),
+                unavailable_layers=("human-readable checkpoint authority",),
+            )
+        self.assertNotIn(secret, str(caught.exception))
+
+    def test_typed_failure_rejects_recovered_layers_outside_adapter_stage(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "outside"):
+            VerificationLayerFailure(
+                reason_code="HEAD_UNVERIFIED",
+                recovered_layers=("approved checkpoint status clearance",),
+                unavailable_layers=("trusted monotonic head",),
+            )
+        with self.assertRaisesRegex(ContinuityPolicyError, "outside"):
+            VerificationLayerFailure(
+                reason_code="HUMAN_RECORD_UNAVAILABLE",
+                recovered_layers=("trusted clock",),
+                unavailable_layers=("human-readable checkpoint authority",),
+            )
+
+    def test_reason_code_must_match_named_unavailable_layer(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "does not match"):
+            VerificationLayerFailure(
+                reason_code="HUMAN_RECORD_UNAVAILABLE",
+                recovered_layers=("human-readable checkpoint authority",),
+                unavailable_layers=("GitHub protocol authority",),
+            )
+        with self.assertRaisesRegex(ContinuityPolicyError, "does not match"):
+            replace(
+                self.incomplete_state(),
+                status_reason_code="HUMAN_RECORD_UNAVAILABLE",
+            ).validate()
 
     def test_receipt_binds_complete_governed_checkpoint_state(self):
         original = self.state()
@@ -1007,6 +1431,13 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         brief = caught.exception.recovery_brief
         self.assertEqual(brief.reason_code, "HEAD_UNVERIFIED")
         self.assertEqual(brief.unavailable_layers, ("trusted monotonic head",))
+        for recovered in (
+            "private checkpoint store",
+            "private checkpoint candidate",
+            "verified private checkpoint chain",
+            "trusted clock",
+        ):
+            self.assertIn(recovered, brief.recovered_layers)
         self.assertFalse(brief.safe_to_resume)
 
     def test_broken_predecessor_chain_fails(self):
@@ -1064,6 +1495,132 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         persist_checkpoint(store, self.state(), TestVerifier(), trusted_clock=FIXED_CLOCK)
         self.assertEqual(len(store.payloads), 1)
 
+    def test_persist_sanitizes_raw_store_exceptions(self):
+        secret = "secret token=persist-do-not-expose"
+
+        class FailedReadStore(MemoryStore):
+            def list_checkpoints(self, user_scope_id):
+                raise RuntimeError(secret)
+
+        class FailedCasStore(MemoryStore):
+            def compare_and_swap_checkpoint(
+                self, expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+            ):
+                raise RuntimeError(secret)
+
+        class FailedPostWriteReadStore(MemoryStore):
+            def __init__(self):
+                super().__init__()
+                self.reads = 0
+
+            def list_checkpoints(self, user_scope_id):
+                self.reads += 1
+                if self.reads > 1:
+                    raise RuntimeError(secret)
+                return super().list_checkpoints(user_scope_id)
+
+        for store in (FailedReadStore(), FailedCasStore(), FailedPostWriteReadStore()):
+            with self.subTest(store=type(store).__name__):
+                with self.assertRaises(ContinuityPolicyError) as caught:
+                    persist_checkpoint(
+                        store,
+                        self.state(),
+                        TestVerifier(),
+                        trusted_clock=FIXED_CLOCK,
+                    )
+                rendered = "".join(traceback.format_exception(caught.exception))
+                self.assertNotIn(secret, str(caught.exception))
+                self.assertNotIn(secret, rendered)
+                self.assertIsNone(caught.exception.__context__)
+
+    def test_persist_reconciles_commit_then_transport_error(self):
+        secret = "secret token=commit-timeout"
+
+        class CommitThenRaiseStore(MemoryStore):
+            def compare_and_swap_checkpoint(
+                self, expected_checkpoint_id, expected_checkpoint_fingerprint, payload
+            ):
+                super().compare_and_swap_checkpoint(
+                    expected_checkpoint_id,
+                    expected_checkpoint_fingerprint,
+                    payload,
+                )
+                raise RuntimeError(secret)
+
+        store = CommitThenRaiseStore()
+        persist_checkpoint(
+            store,
+            self.state(),
+            TestVerifier(),
+            trusted_clock=FIXED_CLOCK,
+        )
+        self.assertEqual(len(store.payloads), 1)
+
+    def test_persist_sanitizes_store_originated_decode_and_capability_failures(self):
+        secret = "secret token=stored-private-key"
+
+        class SecretMapping(dict):
+            def __iter__(self):
+                raise RuntimeError(secret)
+
+        class SecretCapabilityStore(MemoryStore):
+            @property
+            def privacy_class(self):
+                raise ContinuityPolicyError(secret)
+
+        payload_with_secret_key = state_to_private_payload(self.state())
+        payload_with_secret_key[secret] = "value"
+        stores = (
+            MemoryStore((SecretMapping(state_to_private_payload(self.state())),)),
+            MemoryStore((payload_with_secret_key,)),
+            SecretCapabilityStore(),
+        )
+        for store in stores:
+            with self.subTest(store=type(store).__name__):
+                with self.assertRaises(ContinuityPolicyError) as caught:
+                    persist_checkpoint(
+                        store,
+                        self.state(),
+                        TestVerifier(),
+                        trusted_clock=FIXED_CLOCK,
+                    )
+                rendered = "".join(traceback.format_exception(caught.exception))
+                self.assertNotIn(secret, str(caught.exception))
+                self.assertNotIn(secret, rendered)
+                self.assertIsNone(caught.exception.__context__)
+
+    def test_idempotent_retry_verifies_authority_of_current_tail(self):
+        first, candidate, follower = self.state(), self.successor(), self.third()
+        store = MemoryStore(tuple(
+            state_to_private_payload(item) for item in (first, candidate, follower)
+        ))
+        with self.assertRaises(ContinuityPolicyError):
+            persist_checkpoint(
+                store,
+                candidate,
+                BadLatestAuthorityVerifier(follower.authority.human_record_id),
+                trusted_clock=FIXED_CLOCK,
+            )
+
+    def test_snapshot_verification_retries_when_head_advances_after_read(self):
+        registry = HeadRegistry(state_to_private_payload(self.state()))
+        first, candidate, follower = self.state(), self.successor(), self.third()
+        store = FollowBetweenListAndHeadStore(
+            registry,
+            (state_to_private_payload(first),),
+            state_to_private_payload(follower),
+        )
+        persist_checkpoint(
+            store,
+            candidate,
+            RegistryVerifier(registry),
+            trusted_clock=FIXED_CLOCK,
+        )
+        self.assertEqual(
+            [payload["checkpoint_id"] for payload in store.payloads],
+            [first.checkpoint_id, candidate.checkpoint_id, follower.checkpoint_id],
+        )
+
     def test_persist_atomically_advances_independent_head_and_is_recoverable(self):
         registry = HeadRegistry()
         store = RegistryStore(registry)
@@ -1080,7 +1637,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
     def test_persist_fails_if_store_does_not_advance_independent_head(self):
         registry = HeadRegistry()
         store = RegistryStore(registry, advance_head=False)
-        with self.assertRaisesRegex(ContinuityPolicyError, "chain tail"):
+        with self.assertRaisesRegex(ContinuityPolicyError, "verified chain state"):
             persist_checkpoint(
                 store, self.state(), RegistryVerifier(registry),
                 trusted_clock=FIXED_CLOCK,
