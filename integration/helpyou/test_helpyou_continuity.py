@@ -7,6 +7,7 @@ import unittest
 from helpyou_continuity import (
     APPROVED_DEFAULTS_V1,
     AuthorityPointers,
+    AuthorityVerificationReceipt,
     CheckpointStatus,
     ContinuityEvent,
     ContinuityPolicyError,
@@ -22,7 +23,7 @@ from helpyou_continuity import (
     record_approved_bundle,
     record_mode_change,
     select_mode,
-    state_to_payload,
+    state_to_private_payload,
 )
 
 
@@ -35,6 +36,8 @@ EXPECTED_DEFAULTS = (
 
 
 class MemoryStore:
+    privacy_class = "PRIVATE"
+
     def __init__(self, payloads=(), *, drop_writes=False):
         self.payloads = [deepcopy(item) for item in payloads]
         self.drop_writes = drop_writes
@@ -42,9 +45,33 @@ class MemoryStore:
     def list_checkpoints(self, user_scope_id):
         return deepcopy(self.payloads)
 
-    def put_checkpoint(self, payload):
-        if not self.drop_writes:
-            self.payloads.append(deepcopy(payload))
+    def compare_and_swap_checkpoint(self, expected_checkpoint_id, payload):
+        if self.drop_writes:
+            return False
+        latest = max(self.payloads, key=lambda item: item["sequence"], default=None)
+        current_id = latest["checkpoint_id"] if latest else None
+        if current_id != expected_checkpoint_id:
+            return False
+        self.payloads.append(deepcopy(payload))
+        return True
+
+
+class PublicStore(MemoryStore):
+    privacy_class = "PUBLIC"
+
+
+class TestVerifier:
+    def __init__(self, *, mismatch=False):
+        self.mismatch = mismatch
+
+    def verify(self, authority):
+        return AuthorityVerificationReceipt(
+            github_commit_sha=("f" * 40 if self.mismatch else authority.github_commit_sha),
+            policy_fingerprint=authority.policy_fingerprint,
+            human_record_id=authority.human_record_id,
+            human_record_fingerprint=authority.human_record_fingerprint,
+            verified_at_utc="2026-08-27T01:30:00Z",
+        )
 
 
 class HelpyouContinuityV2Tests(unittest.TestCase):
@@ -56,8 +83,6 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             policy_fingerprint="sha256:" + "b" * 64,
             human_record_id=f"HCP-{marker.upper()}001",
             human_record_fingerprint="sha256:" + marker * 64,
-            github_main_verified=True,
-            human_record_verified=True,
         )
 
     def state(self) -> ContinuityState:
@@ -167,30 +192,48 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
                 authority=self.authority("d"),
             )
 
+    def test_serialized_mode_event_cannot_bypass_mode_gate(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "record_mode_change"):
+            record_approved_bundle(
+                self.state(), event="approved_mode_change",
+                approved_changes=("Assessment selected.",), checkpoint_id="HCP-002",
+                updated_at_utc="2026-08-27T01:00:00Z", next_prompt="Begin.",
+                authority=self.authority("d"),
+            )
+
+    def test_mutation_rejects_string_change_collection(self):
+        with self.assertRaisesRegex(ContinuityPolicyError, "array of strings"):
+            record_approved_bundle(
+                self.state(), event=ContinuityEvent.APPROVED_MATERIAL_CHANGE,
+                approved_changes="ABC", checkpoint_id="HCP-002",
+                updated_at_utc="2026-08-27T01:00:00Z", next_prompt="Continue.",
+                authority=self.authority("d"),
+            )
+
     def test_string_false_is_not_a_verified_boolean(self):
-        payload = state_to_payload(self.state())
-        payload["authority"]["github_main_verified"] = "false"
+        payload = state_to_private_payload(self.state())
+        payload["mode_selected_explicitly"] = "false"
         with self.assertRaisesRegex(ContinuityPolicyError, "JSON boolean"):
             load_checkpoint(payload)
 
     def test_invalid_sha_and_fingerprint_fail(self):
-        payload = state_to_payload(self.state())
+        payload = state_to_private_payload(self.state())
         payload["authority"]["github_commit_sha"] = "not-a-sha"
         with self.assertRaisesRegex(ContinuityPolicyError, "40 lowercase hex"):
             load_checkpoint(payload)
-        payload = state_to_payload(self.state())
+        payload = state_to_private_payload(self.state())
         payload["authority"]["policy_fingerprint"] = "sha256:bad"
         with self.assertRaisesRegex(ContinuityPolicyError, "64 lowercase hex"):
             load_checkpoint(payload)
 
     def test_invalid_timestamp_fails(self):
-        payload = state_to_payload(self.state())
+        payload = state_to_private_payload(self.state())
         payload["updated_at_utc"] = "not-a-dateZ"
         with self.assertRaisesRegex(ContinuityPolicyError, "ISO-8601"):
             load_checkpoint(payload)
 
     def test_string_cannot_become_tuple_of_characters(self):
-        payload = state_to_payload(self.state())
+        payload = state_to_private_payload(self.state())
         payload["approved_changes"] = "approved"
         with self.assertRaisesRegex(ContinuityPolicyError, "array of strings"):
             load_checkpoint(payload)
@@ -203,39 +246,84 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
                 ai_interpretation="Private interpreted meaning",
             ),),
         )
-        self.assertEqual(load_checkpoint(state_to_payload(state)), state)
+        self.assertEqual(load_checkpoint(state_to_private_payload(state)), state)
 
     def test_bootstrap_loads_latest_and_returns_brief(self):
         first, second = self.state(), self.successor()
         state, brief = bootstrap_helpyou_session(
-            first.user_scope_id, MemoryStore((state_to_payload(first), state_to_payload(second)))
+            first.user_scope_id,
+            MemoryStore((state_to_private_payload(first), state_to_private_payload(second))),
+            TestVerifier(),
         )
         self.assertEqual(state, second)
         self.assertEqual(brief.checkpoint_id, second.checkpoint_id)
         self.assertEqual(brief.mode, "development")
 
+    def test_bootstrap_rejects_mismatched_authority_receipt(self):
+        state = self.state()
+        store = MemoryStore((state_to_private_payload(state),))
+        with self.assertRaisesRegex(ContinuityPolicyError, "does not match binding"):
+            bootstrap_helpyou_session(state.user_scope_id, store, TestVerifier(mismatch=True))
+
+    def test_bootstrap_requires_private_store_capability(self):
+        state = self.state()
+        store = PublicStore((state_to_private_payload(state),))
+        with self.assertRaisesRegex(ContinuityPolicyError, "PRIVATE store"):
+            bootstrap_helpyou_session(state.user_scope_id, store, TestVerifier())
+
     def test_competing_successors_fail_closed(self):
         first, second = self.state(), self.successor()
         conflict = replace(second, checkpoint_id="HCP-099")
-        store = MemoryStore((state_to_payload(first), state_to_payload(second), state_to_payload(conflict)))
+        store = MemoryStore((
+            state_to_private_payload(first), state_to_private_payload(second),
+            state_to_private_payload(conflict),
+        ))
         with self.assertRaisesRegex(ContinuityPolicyError, "Conflicting checkpoints"):
-            bootstrap_helpyou_session(first.user_scope_id, store)
+            bootstrap_helpyou_session(first.user_scope_id, store, TestVerifier())
 
     def test_broken_predecessor_chain_fails(self):
         first, second = self.state(), self.successor()
         bad = replace(second, previous_checkpoint_id="HCP-XXX")
-        store = MemoryStore((state_to_payload(first), state_to_payload(bad)))
+        store = MemoryStore((state_to_private_payload(first), state_to_private_payload(bad)))
         with self.assertRaisesRegex(ContinuityPolicyError, "predecessor chain"):
-            bootstrap_helpyou_session(first.user_scope_id, store)
+            bootstrap_helpyou_session(first.user_scope_id, store, TestVerifier())
+
+    def test_checkpoint_id_cannot_be_reused_later_in_chain(self):
+        first, second = self.state(), self.successor()
+        third = replace(
+            second,
+            checkpoint_id=first.checkpoint_id,
+            sequence=3,
+            previous_checkpoint_id=second.checkpoint_id,
+            updated_at_utc="2026-08-27T02:00:00Z",
+            authority=self.authority("e"),
+        )
+        store = MemoryStore(tuple(state_to_private_payload(item) for item in (first, second, third)))
+        with self.assertRaisesRegex(ContinuityPolicyError, "reused within the chain"):
+            bootstrap_helpyou_session(first.user_scope_id, store, TestVerifier())
 
     def test_persist_round_trip_verifies(self):
         store = MemoryStore()
-        persist_checkpoint(store, self.state())
+        persist_checkpoint(store, self.state(), TestVerifier())
         self.assertEqual(len(store.payloads), 1)
 
     def test_failed_persistence_is_not_reported_as_success(self):
-        with self.assertRaisesRegex(ContinuityPolicyError, "No continuity checkpoint"):
-            persist_checkpoint(MemoryStore(drop_writes=True), self.state())
+        with self.assertRaisesRegex(ContinuityPolicyError, "compare-and-swap"):
+            persist_checkpoint(MemoryStore(drop_writes=True), self.state(), TestVerifier())
+
+    def test_compare_and_swap_rejects_competing_successor(self):
+        first, second = self.state(), self.successor()
+        store = MemoryStore((state_to_private_payload(first), state_to_private_payload(second)))
+        competing = replace(
+            second,
+            checkpoint_id="HCP-099",
+            sequence=2,
+            previous_checkpoint_id=first.checkpoint_id,
+            updated_at_utc="2026-08-27T01:30:00Z",
+            authority=self.authority("e"),
+        )
+        with self.assertRaisesRegex(ContinuityPolicyError, "compare-and-swap"):
+            persist_checkpoint(store, competing, TestVerifier())
 
     def test_development_string_uses_development_sequence(self):
         steps = facilitation_sequence("development")
