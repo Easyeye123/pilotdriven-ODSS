@@ -33,6 +33,7 @@ class ContinuityEvent(str, Enum):
     APPROVED_SOURCE_REVISION = "approved_source_revision"
     APPROVED_MODE_CHANGE = "approved_mode_change"
     APPROVED_MEMORY_CHANGE = "approved_memory_change"
+    APPROVED_STATUS_CHANGE = "approved_status_change"
     DRAFT_CHANGE = "draft_change"
     INFORMATION_ONLY = "information_only"
 
@@ -43,6 +44,7 @@ CHECKPOINT_EVENTS = frozenset(
         ContinuityEvent.APPROVED_SOURCE_REVISION,
         ContinuityEvent.APPROVED_MODE_CHANGE,
         ContinuityEvent.APPROVED_MEMORY_CHANGE,
+        ContinuityEvent.APPROVED_STATUS_CHANGE,
     }
 )
 APPROVED_DEFAULTS_V1 = (
@@ -193,6 +195,76 @@ class AuthorityVerificationReceipt:
 
 
 @dataclass(frozen=True, kw_only=True)
+class CommittedHeadVerificationReceipt:
+    """Short-lived attestation from an independent monotonic head registry."""
+
+    user_scope_id: str
+    sequence: int
+    checkpoint_id: str | None
+    checkpoint_fingerprint: str | None
+    verified_at_utc: str
+    expires_at_utc: str
+
+    def validate_against(
+        self,
+        user_scope_id: str,
+        expected_state: "ContinuityState | None",
+        *,
+        now_utc: str,
+    ) -> None:
+        if not isinstance(self.user_scope_id, str) or not _USER_RE.fullmatch(
+            self.user_scope_id
+        ):
+            raise ContinuityPolicyError("Head receipt user_scope_id is invalid.")
+        if type(self.sequence) is not int or self.sequence < 0:
+            raise ContinuityPolicyError("Head receipt sequence must be a non-negative integer.")
+        if self.sequence == 0:
+            if self.checkpoint_id is not None or self.checkpoint_fingerprint is not None:
+                raise ContinuityPolicyError("An empty head cannot identify a checkpoint.")
+        else:
+            if self.checkpoint_id is None:
+                raise ContinuityPolicyError("A committed head requires checkpoint_id.")
+            _identifier(self.checkpoint_id, "head checkpoint_id")
+            if (
+                not isinstance(self.checkpoint_fingerprint, str)
+                or not _FP_RE.fullmatch(self.checkpoint_fingerprint)
+            ):
+                raise ContinuityPolicyError(
+                    "A committed head requires a checkpoint fingerprint."
+                )
+        verified_at = _utc(self.verified_at_utc)
+        expires_at = _utc(self.expires_at_utc)
+        now = _utc(now_utc)
+        expected = (
+            (0, None, None)
+            if expected_state is None
+            else (
+                expected_state.sequence,
+                expected_state.checkpoint_id,
+                checkpoint_fingerprint(expected_state),
+            )
+        )
+        if (
+            self.user_scope_id != user_scope_id
+            or (self.sequence, self.checkpoint_id, self.checkpoint_fingerprint)
+            != expected
+        ):
+            raise ContinuityPolicyError(
+                "Committed-head receipt does not match the retrieved chain tail."
+            )
+        if expected_state is not None and verified_at < _utc(expected_state.updated_at_utc):
+            raise ContinuityPolicyError("Committed-head receipt predates the checkpoint.")
+        if expires_at <= verified_at:
+            raise ContinuityPolicyError("Committed-head receipt expiry is invalid.")
+        if expires_at - verified_at > MAX_RECEIPT_VALIDITY:
+            raise ContinuityPolicyError("Committed-head receipt validity exceeds 15 minutes.")
+        if not (verified_at <= now <= expires_at):
+            raise ContinuityPolicyError(
+                "Committed-head verification receipt is not currently valid."
+            )
+
+
+@dataclass(frozen=True, kw_only=True)
 class PilotMemoryPair:
     raw_pilot_wording: str
     ai_interpretation: str
@@ -225,6 +297,9 @@ class ContinuityState:
     mode: InteractionMode = InteractionMode.DEVELOPMENT
     mode_selected_explicitly: bool = False
     status: CheckpointStatus = CheckpointStatus.ACTIVE
+    status_reason_code: str | None = None
+    unavailable_layers: tuple[str, ...] = ()
+    safe_to_resume: bool = True
     active_case_ref: str | None = None
     source_manifest: tuple[str, ...] = ()
     controlled_facts: tuple[str, ...] = ()
@@ -309,6 +384,36 @@ class ContinuityState:
             raise ContinuityPolicyError("Assessment or Research requires explicit selection.")
         if not isinstance(self.status, CheckpointStatus):
             raise ContinuityPolicyError("status must be a CheckpointStatus.")
+        if self.status is CheckpointStatus.SUPERSEDED:
+            raise ContinuityPolicyError(
+                "SUPERSEDED is not a persistable v1 state; successor history governs supersession."
+            )
+        if not isinstance(self.unavailable_layers, tuple) or any(
+            not isinstance(item, str) or not item.strip() or item != item.strip()
+            for item in self.unavailable_layers
+        ):
+            raise ContinuityPolicyError(
+                "unavailable_layers must be a tuple of canonical strings."
+            )
+        if type(self.safe_to_resume) is not bool:
+            raise ContinuityPolicyError("safe_to_resume must be a boolean.")
+        if self.status is CheckpointStatus.ACTIVE:
+            if (
+                self.status_reason_code is not None
+                or self.unavailable_layers
+                or not self.safe_to_resume
+            ):
+                raise ContinuityPolicyError(
+                    "ACTIVE requires no gap reason, no unavailable layers and safe_to_resume=true."
+                )
+        elif self.status is CheckpointStatus.INCOMPLETE:
+            if self.status_reason_code is None:
+                raise ContinuityPolicyError("INCOMPLETE requires status_reason_code.")
+            _identifier(self.status_reason_code, "status_reason_code")
+            if not self.unavailable_layers or self.safe_to_resume:
+                raise ContinuityPolicyError(
+                    "INCOMPLETE requires unavailable layers and safe_to_resume=false."
+                )
         if self.active_case_ref is not None and (
             not isinstance(self.active_case_ref, str)
             or not self.active_case_ref.strip()
@@ -413,6 +518,7 @@ class IncompleteRecoveryBrief:
     """Safe, visible status when dual-authority continuity cannot be established."""
 
     status: str
+    reason_code: str
     recovered_layers: tuple[str, ...]
     unavailable_layers: tuple[str, ...]
     safe_to_resume: bool
@@ -427,11 +533,43 @@ class ContinuityRecoveryError(ContinuityPolicyError):
         self.recovery_brief = recovery_brief
 
 
+class VerificationLayerFailure(ContinuityPolicyError):
+    """Sanitized typed failure that a trusted adapter may expose to bootstrap."""
+
+    def __init__(
+        self,
+        *,
+        reason_code: str,
+        recovered_layers: tuple[str, ...],
+        unavailable_layers: tuple[str, ...],
+    ):
+        _identifier(reason_code, "reason_code")
+        if not unavailable_layers:
+            raise ContinuityPolicyError(
+                "VerificationLayerFailure requires an unavailable layer."
+            )
+        for collection in (recovered_layers, unavailable_layers):
+            if not isinstance(collection, tuple) or any(
+                not isinstance(item, str) or not item.strip() or item != item.strip()
+                for item in collection
+            ):
+                raise ContinuityPolicyError(
+                    "Verification layer names must be canonical strings."
+                )
+        super().__init__(f"Verification layer unavailable: {reason_code}.")
+        self.reason_code = reason_code
+        self.recovered_layers = recovered_layers
+        self.unavailable_layers = unavailable_layers
+
+
 class PrivateContinuityStore(Protocol):
     """Trusted append-only store with envelope-bound atomic compare-and-swap.
 
     Production history is immutable. CAS must compare both the expected latest
-    checkpoint identifier and its complete checkpoint-envelope fingerprint.
+    checkpoint identifier and its complete checkpoint-envelope fingerprint and
+    atomically advance the independent monotonic head registry used by the
+    authority verifier. A write is not reported successful until the advanced
+    head is independently attested.
     """
 
     privacy_class: str
@@ -455,6 +593,9 @@ class AuthorityVerifier(Protocol):
     embed the checkpoint-envelope fingerprint because that envelope contains the
     record hash. The short-lived receipt independently binds the verified record
     hash and the complete checkpoint-envelope fingerprint.
+    The same trusted boundary must query an independently authenticated,
+    monotonic, linearizable head registry; requested head fields are comparison
+    candidates and must never be echoed without an independent lookup.
     """
 
     def verify(
@@ -463,6 +604,19 @@ class AuthorityVerifier(Protocol):
         governed_state_fingerprint: str,
         checkpoint_fingerprint: str,
     ) -> AuthorityVerificationReceipt: ...
+
+    def verify_current_head(
+        self,
+        user_scope_id: str,
+        requested_sequence: int,
+        requested_checkpoint_id: str | None,
+        requested_checkpoint_fingerprint: str | None,
+    ) -> CommittedHeadVerificationReceipt:
+        """Return the actual head from an independent monotonic registry.
+
+        The requested values are comparison candidates, not trusted inputs to echo.
+        """
+        ...
 
 
 class TrustedClock(Protocol):
@@ -488,11 +642,37 @@ def _verified_receipt(
     trusted_clock: TrustedClock | None,
 ) -> AuthorityVerificationReceipt:
     state.validate()
-    receipt = verifier.verify(
-        state.authority,
-        governed_state_fingerprint(state),
-        checkpoint_fingerprint(state),
-    )
+    typed_failure: tuple[str, tuple[str, ...], tuple[str, ...]] | None = None
+    verifier_failed = False
+    try:
+        receipt = verifier.verify(
+            state.authority,
+            governed_state_fingerprint(state),
+            checkpoint_fingerprint(state),
+        )
+    except VerificationLayerFailure as exc:
+        typed_failure = (
+            exc.reason_code,
+            exc.recovered_layers,
+            exc.unavailable_layers,
+        )
+    except Exception:
+        verifier_failed = True
+    if typed_failure is not None:
+        raise VerificationLayerFailure(
+            reason_code=typed_failure[0],
+            recovered_layers=typed_failure[1],
+            unavailable_layers=typed_failure[2],
+        )
+    if verifier_failed:
+        raise VerificationLayerFailure(
+            reason_code="AUTHORITY_ADAPTER_FAILURE",
+            recovered_layers=(),
+            unavailable_layers=(
+                "GitHub protocol authority",
+                "human-readable checkpoint authority",
+            ),
+        )
     now_utc = _trusted_now(trusted_clock)
     if not isinstance(receipt, AuthorityVerificationReceipt):
         raise ContinuityPolicyError("Authority verifier did not return a valid receipt.")
@@ -500,9 +680,69 @@ def _verified_receipt(
     return receipt
 
 
+def _verified_head(
+    verifier: AuthorityVerifier,
+    user_scope_id: str,
+    expected_state: ContinuityState | None,
+    *,
+    trusted_clock: TrustedClock | None,
+) -> CommittedHeadVerificationReceipt:
+    expected_sequence = 0 if expected_state is None else expected_state.sequence
+    expected_id = None if expected_state is None else expected_state.checkpoint_id
+    expected_fingerprint = (
+        None if expected_state is None else checkpoint_fingerprint(expected_state)
+    )
+    typed_failure: tuple[str, tuple[str, ...], tuple[str, ...]] | None = None
+    verifier_failed = False
+    try:
+        receipt = verifier.verify_current_head(
+            user_scope_id,
+            expected_sequence,
+            expected_id,
+            expected_fingerprint,
+        )
+    except VerificationLayerFailure as exc:
+        typed_failure = (
+            exc.reason_code,
+            exc.recovered_layers,
+            exc.unavailable_layers,
+        )
+    except Exception:
+        verifier_failed = True
+    if typed_failure is not None:
+        raise VerificationLayerFailure(
+            reason_code=typed_failure[0],
+            recovered_layers=typed_failure[1],
+            unavailable_layers=typed_failure[2],
+        )
+    if verifier_failed:
+        raise VerificationLayerFailure(
+            reason_code="HEAD_ADAPTER_FAILURE",
+            recovered_layers=(),
+            unavailable_layers=("trusted monotonic head",),
+        )
+    now_utc = _trusted_now(trusted_clock)
+    if not isinstance(receipt, CommittedHeadVerificationReceipt):
+        raise ContinuityPolicyError(
+            "Head verifier did not return a valid receipt."
+        )
+    receipt.validate_against(user_scope_id, expected_state, now_utc=now_utc)
+    return receipt
+
+
 def _trusted_now(clock: TrustedClock | None) -> str:
-    now_utc = (clock or SystemUTCClock()).now_utc()
-    _utc(now_utc)
+    clock_failed = False
+    try:
+        now_utc = (clock or SystemUTCClock()).now_utc()
+        _utc(now_utc)
+    except Exception:
+        clock_failed = True
+    if clock_failed:
+        raise VerificationLayerFailure(
+            reason_code="CLOCK_UNAVAILABLE",
+            recovered_layers=(),
+            unavailable_layers=("trusted clock",),
+        )
     return now_utc
 
 
@@ -539,6 +779,10 @@ def _successor(
     authority: AuthorityPointers,
     mode: InteractionMode,
     explicit: bool,
+    status: CheckpointStatus,
+    status_reason_code: str | None,
+    unavailable_layers: tuple[str, ...],
+    safe_to_resume: bool,
 ) -> ContinuityState:
     previous.validate()
     normalized_event = _event(event)
@@ -569,6 +813,10 @@ def _successor(
             and previous.approval_evidence_ref == approval_evidence_ref.strip()
             and previous.mode is mode
             and previous.mode_selected_explicitly is explicit
+            and previous.status is status
+            and previous.status_reason_code == status_reason_code
+            and previous.unavailable_layers == unavailable_layers
+            and previous.safe_to_resume is safe_to_resume
         ):
             return previous
         raise ContinuityPolicyError("transition_id collides with an applied transition.")
@@ -601,6 +849,10 @@ def _successor(
         ),
         mode=mode,
         mode_selected_explicitly=explicit,
+        status=status,
+        status_reason_code=status_reason_code,
+        unavailable_layers=unavailable_layers,
+        safe_to_resume=safe_to_resume,
         approved_changes=previous.approved_changes + new_changes,
         next_prompt=next_prompt,
     )
@@ -624,6 +876,8 @@ def record_approved_bundle(
     normalized_event = _event(event)
     if normalized_event is ContinuityEvent.APPROVED_MODE_CHANGE:
         raise ContinuityPolicyError("Use record_mode_change for mode changes.")
+    if normalized_event is ContinuityEvent.APPROVED_STATUS_CHANGE:
+        raise ContinuityPolicyError("Use record_status_change for status changes.")
     return _successor(
         previous,
         event=normalized_event,
@@ -636,6 +890,10 @@ def record_approved_bundle(
         authority=authority,
         mode=previous.mode,
         explicit=previous.mode_selected_explicitly,
+        status=previous.status,
+        status_reason_code=previous.status_reason_code,
+        unavailable_layers=previous.unavailable_layers,
+        safe_to_resume=previous.safe_to_resume,
     )
 
 
@@ -668,6 +926,53 @@ def record_mode_change(
         authority=authority,
         mode=mode,
         explicit=explicit,
+        status=previous.status,
+        status_reason_code=previous.status_reason_code,
+        unavailable_layers=previous.unavailable_layers,
+        safe_to_resume=previous.safe_to_resume,
+    )
+
+
+def record_status_change(
+    previous: ContinuityState,
+    *,
+    new_status: str | CheckpointStatus,
+    reason_code: str | None,
+    unavailable_layers: tuple[str, ...] = (),
+    approved_change: str,
+    transition_id: str,
+    approval_evidence_ref: str,
+    checkpoint_id: str,
+    updated_at_utc: str,
+    next_prompt: str,
+    authority: AuthorityPointers,
+) -> ContinuityState:
+    try:
+        status = CheckpointStatus(new_status)
+    except (TypeError, ValueError) as exc:
+        raise ContinuityPolicyError(f"Unknown checkpoint status: {new_status!r}") from exc
+    if status is CheckpointStatus.SUPERSEDED:
+        raise ContinuityPolicyError(
+            "SUPERSEDED is represented by successor history, not a v1 status change."
+        )
+    return _successor(
+        previous,
+        event=ContinuityEvent.APPROVED_STATUS_CHANGE,
+        approved_changes=(approved_change,),
+        transition_id=transition_id,
+        approval_evidence_ref=approval_evidence_ref,
+        checkpoint_id=checkpoint_id,
+        updated_at_utc=updated_at_utc,
+        next_prompt=next_prompt,
+        authority=authority,
+        mode=previous.mode,
+        explicit=previous.mode_selected_explicitly,
+        status=status,
+        status_reason_code=(reason_code if status is CheckpointStatus.INCOMPLETE else None),
+        unavailable_layers=(
+            unavailable_layers if status is CheckpointStatus.INCOMPLETE else ()
+        ),
+        safe_to_resume=status is CheckpointStatus.ACTIVE,
     )
 
 
@@ -703,7 +1008,8 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         "protocol_version", "checkpoint_id", "sequence", "previous_checkpoint_id",
         "previous_checkpoint_fingerprint",
         "user_scope_id", "updated_at_utc", "authority", "mode",
-        "mode_selected_explicitly", "status", "next_prompt",
+        "mode_selected_explicitly", "status", "status_reason_code",
+        "unavailable_layers", "safe_to_resume", "next_prompt",
         "transition_id", "transition_event", "transition_approved_changes",
         "approval_evidence_ref", "applied_transition_ids",
         "applied_human_record_ids",
@@ -754,6 +1060,10 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         raise ContinuityPolicyError("Stored mode or status is invalid.") from exc
     if type(payload["sequence"]) is not int:
         raise ContinuityPolicyError("sequence must be a JSON integer.")
+    if payload["status_reason_code"] is not None and not isinstance(
+        payload["status_reason_code"], str
+    ):
+        raise ContinuityPolicyError("status_reason_code must be null or a JSON string.")
     memories = payload.get("private_pilot_memory", ())
     if not isinstance(memories, (list, tuple)) or isinstance(memories, (str, bytes)):
         raise ContinuityPolicyError("private_pilot_memory must be an array.")
@@ -795,6 +1105,9 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         mode=mode,
         mode_selected_explicitly=_json_bool(payload, "mode_selected_explicitly"),
         status=status,
+        status_reason_code=payload["status_reason_code"],
+        unavailable_layers=_strings(payload, "unavailable_layers"),
+        safe_to_resume=_json_bool(payload, "safe_to_resume"),
         active_case_ref=payload.get("active_case_ref"),
         source_manifest=_strings(payload, "source_manifest"),
         controlled_facts=_strings(payload, "controlled_facts"),
@@ -852,6 +1165,9 @@ def _private_payload_body(state: ContinuityState) -> dict[str, Any]:
         "mode": state.mode.value,
         "mode_selected_explicitly": state.mode_selected_explicitly,
         "status": state.status.value,
+        "status_reason_code": state.status_reason_code,
+        "unavailable_layers": list(state.unavailable_layers),
+        "safe_to_resume": state.safe_to_resume,
         "active_case_ref": state.active_case_ref,
         "source_manifest": list(state.source_manifest),
         "controlled_facts": list(state.controlled_facts),
@@ -970,6 +1286,27 @@ def _validate_transition(previous: ContinuityState, current: ContinuityState) ->
             raise ContinuityPolicyError("A mode-change transition must change mode state.")
     elif current_mode != previous_mode:
         raise ContinuityPolicyError("Only an approved mode-change transition may change mode.")
+    previous_status = (
+        previous.status,
+        previous.status_reason_code,
+        previous.unavailable_layers,
+        previous.safe_to_resume,
+    )
+    current_status = (
+        current.status,
+        current.status_reason_code,
+        current.unavailable_layers,
+        current.safe_to_resume,
+    )
+    if current.transition_event is ContinuityEvent.APPROVED_STATUS_CHANGE:
+        if current_status == previous_status:
+            raise ContinuityPolicyError(
+                "A status-change transition must change status or gap metadata."
+            )
+    elif current_status != previous_status:
+        raise ContinuityPolicyError(
+            "Only an approved status-change transition may change status metadata."
+        )
 
 
 def state_to_private_payload(state: ContinuityState) -> dict[str, Any]:
@@ -1031,12 +1368,16 @@ def bootstrap_helpyou_session(
     *,
     trusted_clock: TrustedClock | None = None,
 ) -> tuple[ContinuityState, ResumeBrief]:
+    checkpoint_failed = False
     try:
         _require_private_store(store)
         state = _chain(user_scope_id, store.list_checkpoints(user_scope_id))[-1]
-    except Exception as exc:
+    except Exception:
+        checkpoint_failed = True
+    if checkpoint_failed:
         brief = IncompleteRecoveryBrief(
             status=CheckpointStatus.INCOMPLETE.value,
+            reason_code="CHECKPOINT_UNAVAILABLE",
             recovered_layers=(),
             unavailable_layers=("verified private checkpoint", "authority binding"),
             safe_to_resume=False,
@@ -1046,28 +1387,105 @@ def bootstrap_helpyou_session(
             ),
         )
         raise ContinuityRecoveryError(
-            f"Continuity is INCOMPLETE: {exc}", brief
-        ) from exc
+            "Continuity is INCOMPLETE: verified private checkpoint unavailable.",
+            brief,
+        )
+    head_failure: tuple[str, tuple[str, ...], tuple[str, ...]] | None = None
+    try:
+        _verified_head(
+            verifier,
+            user_scope_id,
+            state,
+            trusted_clock=trusted_clock,
+        )
+    except VerificationLayerFailure as exc:
+        head_failure = (
+            exc.reason_code,
+            exc.recovered_layers,
+            exc.unavailable_layers,
+        )
+    except Exception:
+        head_failure = (
+            "HEAD_UNVERIFIED",
+            (),
+            ("trusted monotonic head",),
+        )
+    if head_failure is not None:
+        brief = IncompleteRecoveryBrief(
+            status=CheckpointStatus.INCOMPLETE.value,
+            reason_code=head_failure[0],
+            recovered_layers=("private checkpoint candidate",) + head_failure[1],
+            unavailable_layers=head_failure[2],
+            safe_to_resume=False,
+            next_action=(
+                "Re-establish the trusted monotonic head before using recovered "
+                "case state for substantive work."
+            ),
+        )
+        raise ContinuityRecoveryError(
+            "Continuity is INCOMPLETE: committed head is unverified.",
+            brief,
+        )
+    authority_failure: tuple[str, tuple[str, ...], tuple[str, ...]] | None = None
     try:
         receipt = _verified_receipt(
             verifier,
             state,
             trusted_clock=trusted_clock,
         )
-    except Exception as exc:
+    except VerificationLayerFailure as exc:
+        authority_failure = (
+            exc.reason_code,
+            exc.recovered_layers,
+            exc.unavailable_layers,
+        )
+    except Exception:
+        authority_failure = (
+            "AUTHORITY_UNVERIFIED",
+            (),
+            (
+                "GitHub protocol authority",
+                "human-readable checkpoint authority",
+            ),
+        )
+    if authority_failure is not None:
         brief = IncompleteRecoveryBrief(
             status=CheckpointStatus.INCOMPLETE.value,
-            recovered_layers=("private checkpoint candidate",),
-            unavailable_layers=("verified authority binding",),
+            reason_code=authority_failure[0],
+            recovered_layers=(
+                "private checkpoint candidate",
+                "trusted monotonic head",
+            )
+            + authority_failure[1],
+            unavailable_layers=authority_failure[2],
             safe_to_resume=False,
             next_action=(
-                "Re-establish both authority verifications before using recovered "
-                "case state for substantive work."
+                "Re-establish each unavailable authority layer before using "
+                "recovered case state for substantive work."
             ),
         )
         raise ContinuityRecoveryError(
-            f"Continuity is INCOMPLETE: {exc}", brief
-        ) from exc
+            "Continuity is INCOMPLETE: authority verification unavailable.",
+            brief,
+        )
+    if state.status is CheckpointStatus.INCOMPLETE:
+        brief = IncompleteRecoveryBrief(
+            status=state.status.value,
+            reason_code=state.status_reason_code or "CHECKPOINT_INCOMPLETE",
+            recovered_layers=(
+                "verified private checkpoint chain",
+                "trusted monotonic head",
+                "GitHub protocol authority",
+                "human-readable checkpoint authority",
+            ),
+            unavailable_layers=state.unavailable_layers,
+            safe_to_resume=False,
+            next_action=state.next_prompt,
+        )
+        raise ContinuityRecoveryError(
+            "Continuity is INCOMPLETE: checkpoint gap remains unresolved.",
+            brief,
+        )
     return state, _visible_resume_brief(state, receipt)
 
 
@@ -1088,6 +1506,12 @@ def persist_checkpoint(
     existing_payloads = tuple(store.list_checkpoints(state.user_scope_id))
     if existing_payloads:
         existing_chain = _chain(state.user_scope_id, existing_payloads)
+        _verified_head(
+            verifier,
+            state.user_scope_id,
+            existing_chain[-1],
+            trusted_clock=trusted_clock,
+        )
         matching = [item for item in existing_chain if item.checkpoint_id == state.checkpoint_id]
         if matching:
             if matching[0] == state:
@@ -1119,6 +1543,12 @@ def persist_checkpoint(
     elif state.sequence != 1 or state.previous_checkpoint_id is not None:
         raise ContinuityPolicyError("The first persisted checkpoint must start sequence 1.")
     else:
+        _verified_head(
+            verifier,
+            state.user_scope_id,
+            None,
+            trusted_clock=trusted_clock,
+        )
         expected_fingerprint = None
     candidate_payload = state_to_private_payload(state)
     _chain(state.user_scope_id, existing_payloads + (candidate_payload,))
@@ -1131,11 +1561,28 @@ def persist_checkpoint(
         after_payloads = tuple(store.list_checkpoints(state.user_scope_id))
         if after_payloads:
             after_rejection = _chain(state.user_scope_id, after_payloads)
+            _verified_head(
+                verifier,
+                state.user_scope_id,
+                after_rejection[-1],
+                trusted_clock=trusted_clock,
+            )
             if any(item == state for item in after_rejection):
                 return
         raise ContinuityPolicyError("Checkpoint compare-and-swap was rejected.")
     round_trip_chain = _chain(
         state.user_scope_id, store.list_checkpoints(state.user_scope_id)
+    )
+    _verified_head(
+        verifier,
+        state.user_scope_id,
+        round_trip_chain[-1],
+        trusted_clock=trusted_clock,
+    )
+    _verified_receipt(
+        verifier,
+        round_trip_chain[-1],
+        trusted_clock=trusted_clock,
     )
     if not any(item == state for item in round_trip_chain):
         raise ContinuityPolicyError("Checkpoint round-trip verification failed.")
