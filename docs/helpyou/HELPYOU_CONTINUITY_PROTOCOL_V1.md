@@ -18,7 +18,7 @@ This protocol governs conversation state and learning facilitation. It does not 
 | ID | Approved default | Hardcoded result |
 |---|---|---|
 | D1 | Authority | The controlled GitHub protocol and a persistent human-readable record are both required. |
-| D2 | Checkpoint trigger | Every approved material, source-revision, mode or pilot-memory change creates a successor checkpoint. Draft discussion does not silently become approved state. |
+| D2 | Checkpoint trigger | Every approved material, source-revision, mode, status or pilot-memory change creates a successor checkpoint. Draft discussion does not silently become approved state. |
 | D3 | Resumption | Once integrated, product startup shall automatically load an accessible valid checkpoint and show a visible status brief before substantive work. |
 | D4 | Interaction mode | Development Mode is the default. Assessment or Research Mode activates only through explicit selection recorded in the checkpoint. |
 
@@ -46,7 +46,7 @@ The generic protocol, schema and regression logic belong in GitHub. The human-re
 - private source identifiers or case facts; and
 - unapproved hypotheses.
 
-Both authority pointers, their fingerprints and a trusted-adapter verification receipt are required for a checkpoint to be declared recoverable. The verifier independently confirms that the commit is reachable from merged `main`, recomputes the policy and human-record hashes, and confirms that the human record embeds the supplied governed-state fingerprint. The human record is not required to embed the checkpoint-envelope fingerprint because that envelope contains the human-record hash. Instead, the receipt independently binds the complete repository/path/commit/fingerprint tuple, the governed-state fingerprint and the checkpoint-envelope fingerprint. The governed-state digest excludes only the human-record file hash so the human record can embed it without a circular dependency; the envelope digest closes that gap for successor chaining. Receipts are refreshed on every bootstrap and remain valid for no more than 15 minutes. Receipt expiry does not expire or delete the checkpoint; it requires fresh verification for the next load. Stored `verified=true` assertions are insufficient. GitHub authority means the merged `main`-branch commit, not an unmerged branch or pull request. A GitHub document alone proves the protocol but not the current private state. A human record alone preserves the state but does not prove which machine-enforced protocol governed it.
+Both authority pointers, their fingerprints and a trusted-adapter verification receipt are required for a checkpoint to be declared recoverable. The verifier independently confirms that the commit is reachable from merged `main`, recomputes the policy and human-record hashes, and confirms that the human record embeds the supplied governed-state fingerprint. The human record is not required to embed the checkpoint-envelope fingerprint because that envelope contains the human-record hash. Instead, the receipt independently binds the complete repository/path/commit/fingerprint tuple, the governed-state fingerprint and the checkpoint-envelope fingerprint. The governed-state digest excludes only the human-record file hash so the human record can embed it without a circular dependency; the envelope digest closes that gap for successor chaining. A separate short-lived receipt from an independently authenticated monotonic head registry binds the user scope to the actual latest sequence, checkpoint identifier and envelope fingerprint. The head lookup must be linearizable and must not echo caller-supplied candidates. This freshness check detects a valid but stale chain prefix, which hash chaining alone cannot detect. Receipts are refreshed on every bootstrap and remain valid for no more than 15 minutes. Receipt expiry does not expire or delete the checkpoint; it requires fresh verification for the next load. Stored `verified=true` assertions are insufficient. GitHub authority means the merged `main`-branch commit, not an unmerged branch or pull request. A GitHub document alone proves the protocol but not the current private state. A human record alone preserves the state but does not prove which machine-enforced protocol governed it.
 
 ## 5. Checkpoint state
 
@@ -65,6 +65,7 @@ Each checkpoint records at least:
 - stable transition identifier, event type and current transition delta;
 - private upstream approval-evidence reference, append-only applied-transition identifiers and human-record identifiers unique within the complete user checkpoint chain;
 - current mode and whether a non-default mode was explicitly selected;
+- status, stable gap-reason code, unavailable layers and a safe-to-resume gate;
 - private active-case reference, when applicable;
 - source manifest by controlled reference, not copied proprietary content;
 - controlled facts;
@@ -74,7 +75,7 @@ Each checkpoint records at least:
 - the next prompt; and
 - completion or gap status.
 
-The same approved event must not be represented by multiple conflicting successor checkpoints. Idempotency is keyed by a stable transition identifier, not prose; repeated wording under a new source-revision or material-change event still creates a checkpoint. A successor requires checkpoint and human-record identifiers unique within the complete user chain, a later UTC time, the prior checkpoint-envelope fingerprint and a distinct verified human record. The existing chain plus candidate must pass full sequence, predecessor, identifier, timestamp, transition-semantic, transitive-digest and authority validation before any write. The repository and path remain immutable; changes to the merged commit or policy fingerprint require an `APPROVED_SOURCE_REVISION` transition. Source references, controlled facts, approved changes and superseded positions are append-only. A later correction adds a supersession record and corrected fact; it does not erase history. An `APPROVED_MEMORY_CHANGE` transition may deactivate or supersede pilot memory in the latest active view, but immutable predecessor checkpoints retain the historical value for audit. Genuine erasure requires a separately governed deletion or cryptographic key-destruction process outside this append-only checkpoint chain. The private store is append-only and immutable. Its compare-and-swap checks both the expected predecessor identifier and complete envelope fingerprint so same-ID rewrites and competing writers fail closed.
+The same approved event must not be represented by multiple conflicting successor checkpoints. Idempotency is keyed by a stable transition identifier, not prose; repeated wording under a new source-revision or material-change event still creates a checkpoint. A successor requires checkpoint and human-record identifiers unique within the complete user chain, a later UTC time, the prior checkpoint-envelope fingerprint and a distinct verified human record. The existing chain plus candidate must pass full sequence, predecessor, identifier, timestamp, transition-semantic, transitive-digest, current-head and authority validation before any write. The repository and path remain immutable; changes to the merged commit or policy fingerprint require an `APPROVED_SOURCE_REVISION` transition. Status or gap metadata changes require an `APPROVED_STATUS_CHANGE`. `ACTIVE` requires no gap reason, no unavailable layers and `safe_to_resume=true`; `INCOMPLETE` requires a reason, at least one unavailable layer and `safe_to_resume=false`. `SUPERSEDED` is not a persistable v1 tail state because successor history itself records supersession. Source references, controlled facts, approved changes and superseded positions are append-only. A later correction adds a supersession record and corrected fact; it does not erase history. An `APPROVED_MEMORY_CHANGE` transition may deactivate or supersede pilot memory in the latest active view, but immutable predecessor checkpoints retain the historical value for audit. Genuine erasure requires a separately governed deletion or cryptographic key-destruction process outside this append-only checkpoint chain. The private store is append-only and immutable. Its compare-and-swap checks both the expected predecessor identifier and complete envelope fingerprint and atomically advances the independent monotonic head. A write is not reported successful until the advanced head and latest authority artifacts are independently reverified.
 
 The reference module rejects draft-labelled events and preserves caller-supplied approved changes; it does not authenticate that a human approved them. The product integration is responsible for authenticating the user action and retaining an immutable private approval-evidence reference before calling the approved-change API.
 
@@ -143,15 +144,16 @@ Continuity checkpoints preserve what was known and approved; they do not promote
 
 ## 10. Failure and recovery
 
-If both authority layers are accessible, retrieve the complete private chain, verify every predecessor envelope digest and semantic transition transitively, and obtain a fresh trusted-adapter receipt matching the repository, path, merged commit, authority fingerprints, governed-state fingerprint embedded in the human record and complete checkpoint-envelope fingerprint. The trusted clock is read only after the verifier returns and preserves sub-second precision. Reject expired receipts, unknown or noncanonical schema fields, competing sequence numbers, reused identifiers or broken predecessor links, and resume from the latest valid checkpoint. An unmerged pull request is not active normative authority. If only one layer is accessible, bootstrap raises a structured `ContinuityRecoveryError` containing an `INCOMPLETE` recovery brief, the recovered and unavailable layers, a `safe_to_resume=false` gate and the next recovery action. The host must render that brief and block substantive use of the recovered case state. If neither layer is accessible, the same structured brief states that no controlled checkpoint can be verified; model memory is not a substitute.
+If both authority layers are accessible, retrieve the complete private chain, verify every predecessor envelope digest and semantic transition transitively, match its tail to the independently attested monotonic head, and obtain a fresh trusted-adapter receipt matching the repository, path, merged commit, authority fingerprints, governed-state fingerprint embedded in the human record and complete checkpoint-envelope fingerprint. The trusted clock is read only after each verifier returns and preserves sub-second precision. Reject expired receipts, a stale valid prefix, unknown or noncanonical schema fields, competing sequence numbers, reused identifiers or broken predecessor links. Resume only when the verified tail is `ACTIVE` and `safe_to_resume=true`; a verified `INCOMPLETE` tail produces a structured gated brief rather than a normal resume. An unmerged pull request is not active normative authority. If only one authority layer is accessible, a trusted adapter raises a sanitized typed layer failure so bootstrap can identify which layer was recovered and which is unavailable. Head and clock failures receive distinct reason codes. Public exception text and tracebacks must not reproduce raw store, verifier or clock diagnostics; controlled adapters own any private diagnostic logging. The host must render the safe brief and block substantive use of the recovered case state. If neither layer is accessible, the same structured brief states that no controlled checkpoint can be verified; model memory is not a substitute.
 
 The recoverability test is passed only when a fresh session can:
 
 1. locate both authority pointers;
 2. validate the checkpoint schema;
 3. display the resumption brief;
-4. identify the next prompt without asking for a full retelling; and
-5. keep private state out of the public repository.
+4. match the retrieved tail to an independently attested monotonic head;
+5. identify the next prompt without asking for a full retelling; and
+6. keep private state out of the public repository.
 
 ## 11. Regression baseline
 
@@ -174,6 +176,8 @@ The reference implementation must test at least:
 - a compare-and-swap rejection cannot be reported as a successful checkpoint;
 - CAS binds the predecessor envelope and identical retry races are recognized as success;
 - a fast-following valid checkpoint does not make an already committed write appear to fail;
+- valid-prefix rollback is rejected by an independently attested monotonic head;
+- persistence atomically advances that head and proves the new state is immediately recoverable;
 - public or capability-unknown stores cannot receive private pilot memory;
 - external authority-receipt mismatch fails closed;
 - repository/path mismatch, expired or overlong receipts, and governed-state tampering fail closed;
@@ -186,6 +190,9 @@ The reference implementation must test at least:
 - both authority pointers are required;
 - missing required fields fail closed;
 - a visible resumption brief is always produced after a valid load, and a structured `INCOMPLETE` brief is produced when recovery fails;
+- raw store, verifier and clock exception text is not exposed through the recovery error or traceback;
+- one-layer authority failures and trusted-clock failures identify the exact unavailable layer with sanitized reason codes;
+- an `INCOMPLETE` persisted tail is gated by reason, unavailable-layer and safe-to-resume metadata, while `SUPERSEDED` is rejected as a v1 tail state;
 - Development Mode teaches policy and options before probing;
 - Assessment Mode does not coach before commitment; and
 - private pilot wording and AI interpretation are excluded from public projection.
