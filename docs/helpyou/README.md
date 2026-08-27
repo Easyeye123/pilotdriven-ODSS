@@ -18,6 +18,7 @@ ODSS remains the sole owner of deterministic Lido CFP analysis. Helpyou consumes
 - [`HELPYOU_SYSTEM_REQUIREMENTS_V1.md`](HELPYOU_SYSTEM_REQUIREMENTS_V1.md) — Customer Needs, constraints, functional requirements, design parameters, process variables and interface.
 - [`HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md`](HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md) — CFP-grounded LOFT-style discussion, option generation, Endsley, Rasmussen, CBTA and Flight Discipline.
 - [`HELPYOU_DATA_CONTRACTS_V1.md`](HELPYOU_DATA_CONTRACTS_V1.md) — source, claim, routing, memory and scenario data contracts.
+- [`HELPYOU_CONTINUITY_PROTOCOL_V1.md`](HELPYOU_CONTINUITY_PROTOCOL_V1.md) — durable checkpoints, visible resumption, dual authority and Development/Assessment/Research mode gates.
 - [`../../integration/helpyou/README.md`](../../integration/helpyou/README.md) — deterministic reference policy and tests.
 
 ## Governing doctrine
@@ -33,3 +34,4 @@ ODSS remains the sole owner of deterministic Lido CFP analysis. Helpyou consumes
 - A Lido CFP upload routes to ODSS and does not trigger a cognitive review by itself.
 - A CFP-grounded scenario must use the same ODSS weather-selection and validity protocol as the CFP analysis.
 - The default reply is the smallest complete answer at the correct operational level.
+- A valid continuity checkpoint loads with a visible status brief; Development Mode is the default unless Assessment or Research is explicitly selected.
