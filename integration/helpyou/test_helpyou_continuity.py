@@ -636,6 +636,24 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
                 original.user_scope_id, store, verifier, trusted_clock=FIXED_CLOCK
             )
 
+    def test_digest_split_avoids_human_record_hash_circularity(self):
+        original = self.state()
+        changed_record_hash = replace(
+            original,
+            authority=replace(
+                original.authority,
+                human_record_fingerprint="sha256:" + "9" * 64,
+            ),
+        )
+        self.assertEqual(
+            governed_state_fingerprint(original),
+            governed_state_fingerprint(changed_record_hash),
+        )
+        self.assertNotEqual(
+            checkpoint_fingerprint(original),
+            checkpoint_fingerprint(changed_record_hash),
+        )
+
     def test_receipt_binds_repository_and_path(self):
         state = self.state()
         store = MemoryStore((state_to_private_payload(state),))
@@ -853,7 +871,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             )
         self.assertEqual(store.cas_calls, 0)
 
-    def test_pilot_memory_removal_requires_approved_memory_change(self):
+    def test_active_memory_deactivation_requires_approved_memory_change(self):
         first = replace(
             self.state(),
             private_pilot_memory=(PilotMemoryPair(
@@ -880,7 +898,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             )
         self.assertEqual(store.cas_calls, 0)
 
-    def test_approved_memory_change_can_remove_pilot_memory(self):
+    def test_approved_memory_change_can_deactivate_active_pilot_memory(self):
         first = replace(
             self.state(),
             private_pilot_memory=(PilotMemoryPair(
@@ -891,7 +909,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         candidate = record_approved_bundle(
             first,
             event=ContinuityEvent.APPROVED_MEMORY_CHANGE,
-            approved_changes=("User approved removal of the retained memory.",),
+            approved_changes=("User approved deactivation from the active memory view.",),
             transition_id="EVT-MEMORY-002",
             approval_evidence_ref="fixture:memory-removal-approval",
             checkpoint_id="HCP-002",
