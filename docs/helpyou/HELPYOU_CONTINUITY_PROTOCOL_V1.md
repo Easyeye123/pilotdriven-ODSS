@@ -43,7 +43,7 @@ The generic protocol, schema and regression logic belong in GitHub. The human-re
 - private source identifiers or case facts; and
 - unapproved hypotheses.
 
-Both authority pointers, their fingerprints and an external verification receipt are required for a checkpoint to be declared recoverable. Stored `verified=true` assertions are insufficient. GitHub authority means the merged `main`-branch commit, not an unmerged branch or pull request. A GitHub document alone proves the protocol but not the current private state. A human record alone preserves the state but does not prove which machine-enforced protocol governed it.
+Both authority pointers, their fingerprints and an external verification receipt are required for a checkpoint to be declared recoverable. The receipt must bind the complete repository/path/commit/fingerprint tuple and the checkpoint's canonical governed-state fingerprint. The human-readable record must contain that governed-state fingerprint. The canonical digest excludes only the human-record file hash, which the receipt verifies separately, avoiding a circular hash dependency without leaving a state field unauthenticated. Receipts expire within 15 minutes; stored `verified=true` assertions are insufficient. GitHub authority means the merged `main`-branch commit, not an unmerged branch or pull request. A GitHub document alone proves the protocol but not the current private state. A human record alone preserves the state but does not prove which machine-enforced protocol governed it.
 
 ## 5. Checkpoint state
 
@@ -57,6 +57,7 @@ Each checkpoint records at least:
 - merged GitHub commit and normalized policy fingerprint;
 - persistent human-record identifier;
 - human-record fingerprint and verification state;
+- canonical governed-state fingerprint embedded in the human-readable record;
 - current mode and whether a non-default mode was explicitly selected;
 - private active-case reference, when applicable;
 - source manifest by controlled reference, not copied proprietary content;
@@ -67,7 +68,7 @@ Each checkpoint records at least:
 - the next prompt; and
 - completion or gap status.
 
-The same approved material change must not be represented by multiple conflicting successor checkpoints. A successor requires a globally unique checkpoint identifier, a later UTC time and a newly verified human record. A private persistence adapter must use compare-and-swap against the expected predecessor so a competing writer cannot silently create another successor. A later correction supersedes the earlier position explicitly; it does not erase the history.
+The same approved material change must not be represented by multiple conflicting successor checkpoints. A successor requires a globally unique checkpoint identifier, a later UTC time and a newly verified human record. The existing chain plus candidate must pass full sequence, predecessor, identifier, timestamp, digest and authority validation before any write. A private persistence adapter then uses compare-and-swap against the expected predecessor so a competing writer cannot silently create another successor. A later correction supersedes the earlier position explicitly; it does not erase the history.
 
 ## 6. Visible resumption brief
 
@@ -133,7 +134,7 @@ Continuity checkpoints preserve what was known and approved; they do not promote
 
 ## 10. Failure and recovery
 
-If both authority layers are accessible, retrieve the complete private chain, obtain an external receipt matching the merged commit and both fingerprints, reject competing sequence numbers, reused identifiers or broken predecessor links, and resume from the latest valid checkpoint. An unmerged pull request is not active normative authority. If only one layer is accessible, declare continuity incomplete, show what was recovered and stop any claim dependent on the missing layer. If neither layer is accessible, state that no controlled checkpoint can be verified; do not imply that model memory is a substitute.
+If both authority layers are accessible, retrieve the complete private chain, recompute its governed-state fingerprint, and obtain a fresh external receipt matching the repository, path, merged commit, authority fingerprints and governed-state fingerprint embedded in the human record. Reject expired receipts, competing sequence numbers, reused identifiers or broken predecessor links, and resume from the latest valid checkpoint. An unmerged pull request is not active normative authority. If only one layer is accessible, declare continuity incomplete, show what was recovered and stop any claim dependent on the missing layer. If neither layer is accessible, state that no controlled checkpoint can be verified; do not imply that model memory is a substitute.
 
 The recoverability test is passed only when a fresh session can:
 
@@ -159,6 +160,8 @@ The reference implementation must test at least:
 - a compare-and-swap rejection cannot be reported as a successful checkpoint;
 - public or capability-unknown stores cannot receive private pilot memory;
 - external authority-receipt mismatch fails closed;
+- repository/path mismatch, expired or overlong receipts, and governed-state tampering fail closed;
+- an invalid candidate is rejected before compare-and-swap can mutate the store;
 - drafts cannot be recorded as approved changes;
 - both authority pointers are required;
 - missing required fields fail closed;
