@@ -124,6 +124,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             checkpoint_id="HCP-001",
             sequence=1,
             previous_checkpoint_id=None,
+            previous_governed_state_fingerprint=None,
             user_scope_id="user_12345678",
             updated_at_utc="2026-08-27T00:00:00Z",
             authority=self.authority("c"),
@@ -165,6 +166,10 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         result = self.successor()
         self.assertEqual(result.sequence, 2)
         self.assertEqual(result.previous_checkpoint_id, "HCP-001")
+        self.assertEqual(
+            result.previous_governed_state_fingerprint,
+            governed_state_fingerprint(self.state()),
+        )
         self.assertEqual(result.approved_changes, EXPECTED_DEFAULTS)
 
     def test_bundle_replay_is_idempotent(self):
@@ -263,6 +268,35 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
         payload = state_to_private_payload(self.state())
         payload["updated_at_utc"] = "not-a-dateZ"
         with self.assertRaisesRegex(ContinuityPolicyError, "ISO-8601"):
+            load_checkpoint(payload)
+
+    def test_json_scalars_are_not_coerced_to_strings(self):
+        for key, invalid in (
+            ("protocol_version", 1.0),
+            ("checkpoint_id", 12345678),
+            ("user_scope_id", 12345678),
+            ("updated_at_utc", 20260827),
+            ("mode", 1),
+            ("status", True),
+            ("next_prompt", 7),
+        ):
+            with self.subTest(key=key):
+                payload = state_to_private_payload(self.state())
+                payload[key] = invalid
+                with self.assertRaisesRegex(ContinuityPolicyError, "JSON string"):
+                    load_checkpoint(payload)
+
+    def test_private_memory_scalars_are_not_coerced(self):
+        state = replace(
+            self.state(),
+            private_pilot_memory=(PilotMemoryPair(
+                raw_pilot_wording="Private exact wording",
+                ai_interpretation="Private interpreted meaning",
+            ),),
+        )
+        payload = state_to_private_payload(state)
+        payload["private_pilot_memory"][0]["raw_pilot_wording"] = 123
+        with self.assertRaisesRegex(ContinuityPolicyError, "raw_pilot_wording"):
             load_checkpoint(payload)
 
     def test_string_cannot_become_tuple_of_characters(self):
@@ -382,6 +416,18 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
                 first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
             )
 
+    def test_broken_governed_state_hash_chain_fails(self):
+        first, second = self.state(), self.successor()
+        bad = replace(
+            second,
+            previous_governed_state_fingerprint="sha256:" + "f" * 64,
+        )
+        store = MemoryStore((state_to_private_payload(first), state_to_private_payload(bad)))
+        with self.assertRaisesRegex(ContinuityPolicyError, "hash chain is broken"):
+            bootstrap_helpyou_session(
+                first.user_scope_id, store, TestVerifier(), now_utc=NOW_UTC
+            )
+
     def test_checkpoint_id_cannot_be_reused_later_in_chain(self):
         first, second = self.state(), self.successor()
         third = replace(
@@ -389,6 +435,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             checkpoint_id=first.checkpoint_id,
             sequence=3,
             previous_checkpoint_id=second.checkpoint_id,
+            previous_governed_state_fingerprint=governed_state_fingerprint(second),
             updated_at_utc="2026-08-27T02:00:00Z",
             authority=self.authority("e"),
         )
@@ -448,6 +495,7 @@ class HelpyouContinuityV2Tests(unittest.TestCase):
             checkpoint_id=first.checkpoint_id,
             sequence=3,
             previous_checkpoint_id=second.checkpoint_id,
+            previous_governed_state_fingerprint=governed_state_fingerprint(second),
             updated_at_utc="2026-08-27T02:00:00Z",
             authority=self.authority("e"),
         )
