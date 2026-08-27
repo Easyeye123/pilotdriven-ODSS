@@ -2,7 +2,7 @@
 
 **Status:** Approved continuity baseline  
 **Version:** 1.0  
-**Approval date:** 27.08.26
+**Approval date:** 27.08.26  
 **Deployment:** Reference control; hosted startup and private-store integration required
 
 This is the approved normative/reference baseline. It is not a hosted persistence service and is not automatically invoked by ChatGPT or PilotDriven today.
@@ -18,7 +18,7 @@ This protocol governs conversation state and learning facilitation. It does not 
 | ID | Approved default | Hardcoded result |
 |---|---|---|
 | D1 | Authority | The controlled GitHub protocol and a persistent human-readable record are both required. |
-| D2 | Checkpoint trigger | Every approved material, source-revision or mode change creates a successor checkpoint. Draft discussion does not silently become approved state. |
+| D2 | Checkpoint trigger | Every approved material, source-revision, mode or pilot-memory change creates a successor checkpoint. Draft discussion does not silently become approved state. |
 | D3 | Resumption | Once integrated, product startup shall automatically load an accessible valid checkpoint and show a visible status brief before substantive work. |
 | D4 | Interaction mode | Development Mode is the default. Assessment or Research Mode activates only through explicit selection recorded in the checkpoint. |
 
@@ -29,7 +29,7 @@ This protocol governs conversation state and learning facilitation. It does not 
 3. Load the latest valid checkpoint and show its identifier, status, active mode, last approved change, open items and next prompt.
 4. Do not silently reconstruct missing controlled state from model memory.
 5. If a checkpoint is incomplete or inaccessible, identify the exact missing layer and fail closed on affected claims.
-6. Preserve approved changes, superseded positions and unresolved questions separately.
+6. Preserve source references, controlled facts, approved changes and superseded positions as append-only histories; preserve unresolved questions separately.
 7. Preserve the pilot's raw wording separately from AI interpretation.
 8. Keep pilot memory and private flight-case content out of the public repository.
 9. Never allow pilot memory, AI interpretation or a continuity record to override approved operational authority.
@@ -62,6 +62,8 @@ Each checkpoint records at least:
 - persistent human-record identifier;
 - human-record fingerprint and verification state;
 - canonical governed-state fingerprint embedded in the human-readable record;
+- stable transition identifier, event type and current transition delta;
+- private upstream approval-evidence reference, append-only applied-transition identifiers and globally unique human-record identifiers;
 - current mode and whether a non-default mode was explicitly selected;
 - private active-case reference, when applicable;
 - source manifest by controlled reference, not copied proprietary content;
@@ -72,7 +74,7 @@ Each checkpoint records at least:
 - the next prompt; and
 - completion or gap status.
 
-The same approved material change must not be represented by multiple conflicting successor checkpoints. A successor requires a globally unique checkpoint identifier, a later UTC time, the prior checkpoint-envelope fingerprint and a newly verified human record. The existing chain plus candidate must pass full sequence, predecessor, identifier, timestamp, transitive digest and authority validation before any write. A private persistence adapter then uses compare-and-swap against the expected predecessor so a competing writer cannot silently create another successor. A later correction supersedes the earlier position explicitly; it does not erase the history.
+The same approved event must not be represented by multiple conflicting successor checkpoints. Idempotency is keyed by a stable transition identifier, not prose; repeated wording under a new source-revision or material-change event still creates a checkpoint. A successor requires a globally unique checkpoint identifier and human-record identifier, a later UTC time, the prior checkpoint-envelope fingerprint and a distinct verified human record. The existing chain plus candidate must pass full sequence, predecessor, identifier, timestamp, transition-semantic, transitive-digest and authority validation before any write. The repository and path remain immutable; changes to the merged commit or policy fingerprint require an `APPROVED_SOURCE_REVISION` transition. Source references, controlled facts, approved changes and superseded positions are append-only. A later correction adds a supersession record and corrected fact; it does not erase history. Pilot memory may be removed or rewritten only by an `APPROVED_MEMORY_CHANGE` transition with private approval evidence. The private store is append-only and immutable. Its compare-and-swap checks both the expected predecessor identifier and complete envelope fingerprint so same-ID rewrites and competing writers fail closed.
 
 The reference module rejects draft-labelled events and preserves caller-supplied approved changes; it does not authenticate that a human approved them. The product integration is responsible for authenticating the user action and retaining an immutable private approval-evidence reference before calling the approved-change API.
 
@@ -87,12 +89,13 @@ Status: <active / incomplete / superseded>
 Mode: <development / assessment / research>
 Active case: <private reference or none>
 Last approved change: <one statement>
+Last transition: <stable identifier / event type>
 Open items: <material unresolved questions>
 Next step: <one deterministic prompt>
 Authority: <GitHub verified / human record verified / gap stated>
 ```
 
-The brief is a control display, not a request for the pilot to retell the entire case.
+“Last approved change” comes from the current transition delta, not the tail of cumulative prose history. The brief is a control display, not a request for the pilot to retell the entire case.
 
 ## 7. Facilitation modes
 
@@ -140,7 +143,7 @@ Continuity checkpoints preserve what was known and approved; they do not promote
 
 ## 10. Failure and recovery
 
-If both authority layers are accessible, retrieve the complete private chain, verify every predecessor envelope digest transitively, and obtain a fresh trusted-adapter receipt matching the repository, path, merged commit, authority fingerprints, governed-state fingerprint embedded in the human record and complete checkpoint-envelope fingerprint. Reject expired receipts, competing sequence numbers, reused identifiers or broken predecessor links, and resume from the latest valid checkpoint. An unmerged pull request is not active normative authority. If only one layer is accessible, declare continuity incomplete, show what was recovered and stop any claim dependent on the missing layer. If neither layer is accessible, state that no controlled checkpoint can be verified; do not imply that model memory is a substitute.
+If both authority layers are accessible, retrieve the complete private chain, verify every predecessor envelope digest and semantic transition transitively, and obtain a fresh trusted-adapter receipt matching the repository, path, merged commit, authority fingerprints, governed-state fingerprint embedded in the human record and complete checkpoint-envelope fingerprint. The trusted clock is read only after the verifier returns and preserves sub-second precision. Reject expired receipts, unknown or noncanonical schema fields, competing sequence numbers, reused identifiers or broken predecessor links, and resume from the latest valid checkpoint. An unmerged pull request is not active normative authority. If only one layer is accessible, bootstrap raises a structured `ContinuityRecoveryError` containing an `INCOMPLETE` recovery brief, the recovered and unavailable layers, a `safe_to_resume=false` gate and the next recovery action. The host must render that brief and block substantive use of the recovered case state. If neither layer is accessible, the same structured brief states that no controlled checkpoint can be verified; model memory is not a substitute.
 
 The recoverability test is passed only when a fresh session can:
 
@@ -161,19 +164,28 @@ The reference implementation must test at least:
 - successor IDs, sequence, predecessor and UTC ordering are enforced;
 - malformed booleans, hashes, fingerprints, timestamps and arrays fail closed;
 - malformed JSON scalar types fail closed without string coercion;
+- unknown fields and noncanonical array whitespace fail closed;
 - mode-change events actually update the selected mode;
+- direct-state mode changes and ordinary-event authority migrations fail semantic validation;
+- genesis checkpoints cannot smuggle prior approvals or a non-default mode;
+- stable transition identifiers make retries idempotent without suppressing distinct repeated-prose events;
 - competing successors and broken checkpoint chains fail closed;
 - a write is round-trip verified through the private store adapter;
 - a compare-and-swap rejection cannot be reported as a successful checkpoint;
+- CAS binds the predecessor envelope and identical retry races are recognized as success;
+- a fast-following valid checkpoint does not make an already committed write appear to fail;
 - public or capability-unknown stores cannot receive private pilot memory;
 - external authority-receipt mismatch fails closed;
 - repository/path mismatch, expired or overlong receipts, and governed-state tampering fail closed;
 - a changed predecessor, governed state or historical human-record hash breaks the transitive envelope chain;
+- human-record identifiers are unique across the complete chain;
+- source, controlled-fact and supersession histories cannot be erased;
+- pilot memory cannot be removed or rewritten without an approved memory-change transition;
 - an invalid candidate is rejected before compare-and-swap can mutate the store;
 - drafts cannot be recorded as approved changes;
 - both authority pointers are required;
 - missing required fields fail closed;
-- a visible resumption brief is always produced after a valid load;
+- a visible resumption brief is always produced after a valid load, and a structured `INCOMPLETE` brief is produced when recovery fails;
 - Development Mode teaches policy and options before probing;
 - Assessment Mode does not coach before commitment; and
 - private pilot wording and AI interpretation are excluded from public projection.
