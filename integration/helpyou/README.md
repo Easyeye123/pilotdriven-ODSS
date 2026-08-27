@@ -1,6 +1,6 @@
 # Helpyou Policy Reference
 
-This directory contains a deterministic reference policy for the first Helpyou integration boundary.
+This directory contains deterministic reference policies for the first Helpyou integration boundary and the approved continuity/facilitation baseline.
 
 It does **not** answer aviation questions and does **not** duplicate ODSS. It establishes:
 
@@ -11,13 +11,16 @@ It does **not** answer aviation questions and does **not** duplicate ODSS. It es
 - the ODSS/pilot-memory boundary;
 - minimum-sufficient response sections;
 - the PilotDriven citation format;
-- mandatory separation of the pilot's raw wording and the AI interpretation.
+- mandatory separation of the pilot's raw wording and the AI interpretation;
+- dual-authority continuity checkpoints;
+- visible fail-closed resumption; and
+- Development Mode as the default unless Assessment or Research is explicitly selected.
 
 ## Run
 
 ```bash
 cd integration/helpyou
-python3 -m unittest -v test_helpyou_policy.py
+python3 -m unittest discover -s . -p "test_*.py" -v
 ```
 
 The implementation is standard-library only.
@@ -32,3 +35,13 @@ The implementation is standard-library only.
 6. Citation dates use `DD.MM.YY`; document dates use `eff`.
 7. Helpyou returns the minimum sufficient detail for the routed task.
 8. Every pilot turn passes through memory classification, while durable memory remains governed and user-controllable.
+9. Private flight-case data, proprietary source content and pilot wording never enter this public repository.
+10. A valid continuity checkpoint requires verified merged-GitHub and persistent human-record bindings.
+11. Every approved material change creates one atomic successor checkpoint; drafts do not.
+12. A valid load produces a visible status brief before substantive work.
+13. Development Mode teaches the policy and viable options before one focused learning question.
+14. Assessment or Research activates only through explicit recorded selection; the word `facilitator` alone does not select a mode.
+
+## Integration boundary
+
+`helpyou_continuity.py` is a reference enforcement module, not a hosted persistence service. Product startup must call `bootstrap_session`, retrieve and externally verify both authority layers, and render the returned status brief before the first substantive Helpyou response. Documentation or a pull-request branch alone does not create platform-level automatic continuity.
