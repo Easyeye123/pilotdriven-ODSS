@@ -66,7 +66,8 @@ Contains:
 - ODSS/pilot-memory boundary enforcement;
 - compact citation rendering;
 - minimum-sufficient response planning;
-- regression tests.
+- the reference continuity bootstrap, governed-state binding and mode gates;
+- continuity and policy regression tests.
 
 ## Included process documentation
 
@@ -82,6 +83,9 @@ docs/helpyou/README.md
 docs/helpyou/HELPYOU_SYSTEM_REQUIREMENTS_V1.md
 docs/helpyou/HELPYOU_SCENARIO_AND_COGNITIVE_PROTOCOL_V1.md
 docs/helpyou/HELPYOU_DATA_CONTRACTS_V1.md
+docs/helpyou/HELPYOU_CONTINUITY_PROTOCOL_V1.md
+integration/helpyou/helpyou_continuity.py
+integration/helpyou/test_helpyou_continuity.py
 ```
 
 ## Not included
@@ -92,6 +96,9 @@ docs/helpyou/HELPYOU_DATA_CONTRACTS_V1.md
 - user SQLite database;
 - proprietary MEL/CDL/Jeppesen/depressurisation manuals;
 - production PilotDriven authentication or billing;
+- hosted Helpyou continuity startup hook or private compare-and-swap store;
+- production external authority verifier;
+- private human-readable checkpoints, pilot memory or flight-case source files;
 - operator approval/certification.
 
 ## Handoff rule
