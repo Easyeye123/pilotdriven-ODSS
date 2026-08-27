@@ -36,7 +36,7 @@ The implementation is standard-library only.
 7. Helpyou returns the minimum sufficient detail for the routed task.
 8. Every pilot turn passes through memory classification, while durable memory remains governed and user-controllable.
 9. Private flight-case data, proprietary source content and pilot wording never enter this public repository.
-10. A valid continuity checkpoint requires verified merged-GitHub and persistent human-record bindings.
+10. A valid continuity checkpoint requires verified merged-GitHub and persistent human-record bindings plus a fresh receipt for the complete governed checkpoint state.
 11. Every approved material change creates one atomic successor checkpoint; drafts do not.
 12. A valid load produces a visible status brief before substantive work.
 13. Development Mode teaches the policy and viable options before one focused learning question.
@@ -44,4 +44,4 @@ The implementation is standard-library only.
 
 ## Integration boundary
 
-`helpyou_continuity.py` is a reference enforcement module, not a hosted persistence service. Product startup must call `bootstrap_helpyou_session`, provide a `PRIVATE` compare-and-swap store adapter and an external authority verifier, retrieve and verify the complete checkpoint chain, and render the returned status brief before the first substantive Helpyou response. Documentation or a pull-request branch alone does not create platform-level automatic continuity.
+`helpyou_continuity.py` is a reference enforcement module, not a hosted persistence service. Product startup must call `bootstrap_helpyou_session`, provide a `PRIVATE` compare-and-swap store adapter and an external authority verifier, retrieve and verify the complete checkpoint chain, verify a short-lived receipt that binds repository, path, merged commit, both authority fingerprints and the canonical governed-state fingerprint, and render the returned status brief before the first substantive Helpyou response. Candidate transitions are fully validated before compare-and-swap. Documentation or a pull-request branch alone does not create platform-level automatic continuity.
