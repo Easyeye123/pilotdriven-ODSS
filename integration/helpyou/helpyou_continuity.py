@@ -27,6 +27,18 @@ class CheckpointStatus(str, Enum):
     SUPERSEDED = "SUPERSEDED"
 
 
+class VerificationLayer(str, Enum):
+    PRIVATE_CHECKPOINT_STORE = "private checkpoint store"
+    PRIVATE_CHECKPOINT_CANDIDATE = "private checkpoint candidate"
+    VERIFIED_PRIVATE_CHAIN = "verified private checkpoint chain"
+    GITHUB_AUTHORITY = "GitHub protocol authority"
+    HUMAN_RECORD_AUTHORITY = "human-readable checkpoint authority"
+    MONOTONIC_HEAD = "trusted monotonic head"
+    TRUSTED_CLOCK = "trusted clock"
+    HOSTED_STARTUP = "hosted startup integration"
+    AUTHORITY_VERIFIER = "trusted authority verifier"
+
+
 class ContinuityEvent(str, Enum):
     INITIALIZATION = "initialization"
     APPROVED_MATERIAL_CHANGE = "approved_material_change"
@@ -60,6 +72,31 @@ _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _FP_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 MAX_RECEIPT_VALIDITY = timedelta(minutes=15)
+
+
+def _canonical_layers(values: tuple[str, ...], field: str) -> tuple[str, ...]:
+    if not isinstance(values, tuple):
+        raise ContinuityPolicyError(f"{field} must be a tuple of verification layers.")
+    normalized: list[str] = []
+    for value in values:
+        try:
+            normalized.append(VerificationLayer(value).value)
+        except (TypeError, ValueError):
+            raise ContinuityPolicyError(
+                f"{field} contains an unrecognized verification layer."
+            ) from None
+    if len(set(normalized)) != len(normalized):
+        raise ContinuityPolicyError(f"{field} contains duplicate verification layers.")
+    return tuple(normalized)
+
+
+def _merge_layers(*collections: tuple[str, ...]) -> tuple[str, ...]:
+    merged: list[str] = []
+    for collection in collections:
+        for value in _canonical_layers(collection, "verification layers"):
+            if value not in merged:
+                merged.append(value)
+    return tuple(merged)
 
 
 def _identifier(value: str, field: str) -> None:
@@ -388,12 +425,11 @@ class ContinuityState:
             raise ContinuityPolicyError(
                 "SUPERSEDED is not a persistable v1 state; successor history governs supersession."
             )
-        if not isinstance(self.unavailable_layers, tuple) or any(
-            not isinstance(item, str) or not item.strip() or item != item.strip()
-            for item in self.unavailable_layers
-        ):
+        if _canonical_layers(
+            self.unavailable_layers, "unavailable_layers"
+        ) != self.unavailable_layers:
             raise ContinuityPolicyError(
-                "unavailable_layers must be a tuple of canonical strings."
+                "unavailable_layers must use canonical verification-layer values."
             )
         if type(self.safe_to_resume) is not bool:
             raise ContinuityPolicyError("safe_to_resume must be a boolean.")
@@ -524,6 +560,31 @@ class IncompleteRecoveryBrief:
     safe_to_resume: bool
     next_action: str
 
+    def __post_init__(self) -> None:
+        if self.status != CheckpointStatus.INCOMPLETE.value:
+            raise ContinuityPolicyError(
+                "IncompleteRecoveryBrief status must be INCOMPLETE."
+            )
+        _identifier(self.reason_code, "reason_code")
+        recovered = _canonical_layers(self.recovered_layers, "recovered_layers")
+        unavailable = _canonical_layers(self.unavailable_layers, "unavailable_layers")
+        if not unavailable:
+            raise ContinuityPolicyError(
+                "IncompleteRecoveryBrief requires an unavailable layer."
+            )
+        if set(recovered).intersection(unavailable):
+            raise ContinuityPolicyError(
+                "A verification layer cannot be both recovered and unavailable."
+            )
+        if self.safe_to_resume is not False:
+            raise ContinuityPolicyError(
+                "IncompleteRecoveryBrief requires safe_to_resume=false."
+            )
+        if not isinstance(self.next_action, str) or not self.next_action.strip():
+            raise ContinuityPolicyError(
+                "IncompleteRecoveryBrief requires a next action."
+            )
+
 
 class ContinuityRecoveryError(ContinuityPolicyError):
     """Fail-closed bootstrap error carrying a UI-safe recovery brief."""
@@ -548,14 +609,14 @@ class VerificationLayerFailure(ContinuityPolicyError):
             raise ContinuityPolicyError(
                 "VerificationLayerFailure requires an unavailable layer."
             )
-        for collection in (recovered_layers, unavailable_layers):
-            if not isinstance(collection, tuple) or any(
-                not isinstance(item, str) or not item.strip() or item != item.strip()
-                for item in collection
-            ):
-                raise ContinuityPolicyError(
-                    "Verification layer names must be canonical strings."
-                )
+        recovered_layers = _canonical_layers(recovered_layers, "recovered_layers")
+        unavailable_layers = _canonical_layers(
+            unavailable_layers, "unavailable_layers"
+        )
+        if len(set(recovered_layers).intersection(unavailable_layers)):
+            raise ContinuityPolicyError(
+                "A verification layer cannot be both recovered and unavailable."
+            )
         super().__init__(f"Verification layer unavailable: {reason_code}.")
         self.reason_code = reason_code
         self.recovered_layers = recovered_layers
@@ -1379,7 +1440,7 @@ def bootstrap_helpyou_session(
             status=CheckpointStatus.INCOMPLETE.value,
             reason_code="CHECKPOINT_UNAVAILABLE",
             recovered_layers=(),
-            unavailable_layers=("verified private checkpoint", "authority binding"),
+            unavailable_layers=(VerificationLayer.PRIVATE_CHECKPOINT_STORE.value,),
             safe_to_resume=False,
             next_action=(
                 "Recover and verify the latest private checkpoint, or obtain explicit "
@@ -1414,7 +1475,10 @@ def bootstrap_helpyou_session(
         brief = IncompleteRecoveryBrief(
             status=CheckpointStatus.INCOMPLETE.value,
             reason_code=head_failure[0],
-            recovered_layers=("private checkpoint candidate",) + head_failure[1],
+            recovered_layers=_merge_layers(
+                (VerificationLayer.PRIVATE_CHECKPOINT_CANDIDATE.value,),
+                head_failure[1],
+            ),
             unavailable_layers=head_failure[2],
             safe_to_resume=False,
             next_action=(
@@ -1452,11 +1516,13 @@ def bootstrap_helpyou_session(
         brief = IncompleteRecoveryBrief(
             status=CheckpointStatus.INCOMPLETE.value,
             reason_code=authority_failure[0],
-            recovered_layers=(
-                "private checkpoint candidate",
-                "trusted monotonic head",
-            )
-            + authority_failure[1],
+            recovered_layers=_merge_layers(
+                (
+                    VerificationLayer.PRIVATE_CHECKPOINT_CANDIDATE.value,
+                    VerificationLayer.MONOTONIC_HEAD.value,
+                ),
+                authority_failure[1],
+            ),
             unavailable_layers=authority_failure[2],
             safe_to_resume=False,
             next_action=(
@@ -1473,10 +1539,10 @@ def bootstrap_helpyou_session(
             status=state.status.value,
             reason_code=state.status_reason_code or "CHECKPOINT_INCOMPLETE",
             recovered_layers=(
-                "verified private checkpoint chain",
-                "trusted monotonic head",
-                "GitHub protocol authority",
-                "human-readable checkpoint authority",
+                VerificationLayer.VERIFIED_PRIVATE_CHAIN.value,
+                VerificationLayer.MONOTONIC_HEAD.value,
+                VerificationLayer.GITHUB_AUTHORITY.value,
+                VerificationLayer.HUMAN_RECORD_AUTHORITY.value,
             ),
             unavailable_layers=state.unavailable_layers,
             safe_to_resume=False,
