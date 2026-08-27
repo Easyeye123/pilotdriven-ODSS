@@ -34,4 +34,4 @@ ODSS remains the sole owner of deterministic Lido CFP analysis. Helpyou consumes
 - A Lido CFP upload routes to ODSS and does not trigger a cognitive review by itself.
 - A CFP-grounded scenario must use the same ODSS weather-selection and validity protocol as the CFP analysis.
 - The default reply is the smallest complete answer at the correct operational level.
-- A valid continuity checkpoint loads with a visible status brief; Development Mode is the default unless Assessment or Research is explicitly selected.
+- A valid continuity checkpoint loads with a visible status brief only after a fresh external receipt binds both authority layers and the canonical governed checkpoint state; Development Mode is the default unless Assessment or Research is explicitly selected.
