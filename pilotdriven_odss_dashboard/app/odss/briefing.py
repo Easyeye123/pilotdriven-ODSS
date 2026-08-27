@@ -2146,25 +2146,30 @@ def _edto_gate_sentence(edto_view: dict[str, Any]) -> str:
 
 
 
+def _edto_classification_sentence(
+    classification: str,
+    fuel_summary: dict[str, Any],
+) -> str:
+    """Describe the held page-1 classification in current product language."""
+    source = str(
+        fuel_summary.get("source_classification") or classification
+    ).strip().upper()
+    return (
+        "OFP P1 classification: STANDARD (interpreted as non-EDTO)."
+        if source == "STANDARD" and classification.startswith("NON")
+        else f"OFP P1 classification: {source}."
+        if source in {"STANDARD", "NON EDTO", "EDTO"}
+        else "OFP classification requires review."
+    )
+
+
 def _edto_operational_rows(
     classification: str,
     edto_view: dict[str, Any],
     fuel_summary: dict[str, Any],
 ) -> list[tuple[str, str]]:
     """Pilot-readable EDTO facts already parsed from the uploaded OFP."""
-    source = str(fuel_summary.get("source_classification") or classification).strip().upper()
-    source_heading = {
-        "STANDARD": "SUMMARY STANDARD CFP",
-        "NON EDTO": "SUMMARY NON EDTO CFP",
-        "EDTO": "SUMMARY EDTO CFP",
-    }.get(source)
-    source_sentence = (
-        f"OFP P1 source: {source_heading} (interpreted as non-EDTO)."
-        if source == "STANDARD" and classification.startswith("NON")
-        else f"OFP P1 source: {source_heading}."
-        if source_heading
-        else "OFP classification requires review."
-    )
+    source_sentence = _edto_classification_sentence(classification, fuel_summary)
     rows: list[tuple[str, str]] = [("CLASSIFICATION", (
         source_sentence
     ))]

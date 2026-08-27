@@ -137,6 +137,29 @@ def test_missing_edto_row_fails() -> None:
     assert any("edto" in failure for failure in result["failures"])
 
 
+def test_frozen_audit_classification_is_an_explicit_semantic_alias() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    operational_text = _passing_text(flight)
+    current_classification = _edto_operational_rows(
+        _edto_classification(flight),
+        build_briefing_view(flight, [], [])["edto"],
+        flight.get("fuel_summary") or {},
+    )[0][1]
+    frozen_audit_text = operational_text.replace(
+        current_classification,
+        "OFP P1 source: SUMMARY STANDARD CFP (interpreted as non-EDTO).",
+    )
+
+    result = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        frozen_audit_text,
+    )
+
+    assert result["valid"], result["failures"]
+
+
 def test_unprinted_bulletin_fails() -> None:
     flight = _flight(LOG_PAGE_LOW)
     text = _passing_text(flight).replace("METAR SA 010200", "METAR WITHHELD")

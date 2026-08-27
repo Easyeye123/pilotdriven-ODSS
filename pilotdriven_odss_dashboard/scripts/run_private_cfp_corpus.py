@@ -16,7 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.analysis import run_odss_analysis
-from app.odss.combined_brief import render_combined_briefing
+from app.odss.combined_brief import (
+    _audit_rev3_v8_classification_sentence,
+    render_combined_briefing,
+)
 from app.odss.report_quality import validate_combined_briefing_pdf
 
 
@@ -958,7 +961,14 @@ def check_cross_surface_parity(
     for row in edto_rows:
         label = str(row.get("label") or "")
         value = str(row.get("value") or "")
-        if not printed(value):
+        frozen_audit_alias = (
+            _audit_rev3_v8_classification_sentence(flight)
+            if label.strip().upper() == "CLASSIFICATION"
+            else ""
+        )
+        if not printed(value) and not (
+            frozen_audit_alias and printed(frozen_audit_alias)
+        ):
             failures.append(f"edto: row {label!r} ({value!r}) not printed")
 
     for role in ("departure", "destination"):

@@ -1582,6 +1582,9 @@ def test_edto_operational_rows_are_part_of_the_view() -> None:
     view = build_briefing_view(_flight(LOG_PAGE_LOW), [], [])
     rows = view["edto"]["operational_rows"]
     assert rows and rows[0]["label"] == "CLASSIFICATION"
+    assert rows[0]["value"] == (
+        "OFP P1 classification: STANDARD (interpreted as non-EDTO)."
+    )
     labels = [row["label"] for row in rows]
     assert labels == ["CLASSIFICATION", "GATE"]
     assert all(isinstance(row["value"], str) and row["value"] for row in rows)

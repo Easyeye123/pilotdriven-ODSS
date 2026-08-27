@@ -1376,7 +1376,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     }
     assert (
         COMBINED_BRIEFING_SCHEMA_VERSION
-        == "2026-08-27-operational-mel-pagination-v30"
+        == "2026-08-28-ofp-classification-v31"
     )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
@@ -5841,6 +5841,7 @@ def test_production_combined_renderer_has_no_reference_specific_hardcoding():
 
 def test_audit_rev3_v8_projection_isolates_operational_only_records():
     flight = sample_flight()
+    flight["fuel_summary"] = {"source_classification": "EDTO"}
     briefing = {
         "overview": {
             "timeline": [
@@ -5875,6 +5876,15 @@ def test_audit_rev3_v8_projection_isolates_operational_only_records():
         "fuel_summary": {
             "rows": {"fuel_in_tanks": {"fuel_kg": 1000}},
             "derived_fuel_kg": {"taxi_to_landing": 900},
+        },
+        "edto": {
+            "operational_rows": [
+                {
+                    "label": "CLASSIFICATION",
+                    "value": "OFP P1 classification: EDTO.",
+                },
+                {"label": "GATE", "value": "Independent checks remain."},
+            ],
         },
         "alternate_assessment_rows": [{"airport": "WMKK"}],
         "airport_operational_panels": [
@@ -5935,6 +5945,9 @@ def test_audit_rev3_v8_projection_isolates_operational_only_records():
     }
     assert "planning_sensitivity" not in projected["performance_publication"]
     assert "alternate_assessment_rows" not in projected
+    assert projected["edto"]["operational_rows"][0]["value"] == (
+        "OFP P1 source: SUMMARY EDTO CFP."
+    )
     projected_notams = [
         line["label"]
         for line in projected["airport_operational_panels"][0][
@@ -5952,6 +5965,9 @@ def test_audit_rev3_v8_projection_isolates_operational_only_records():
         == 205_000
     )
     assert "derived_fuel_kg" in briefing["fuel_summary"]
+    assert briefing["edto"]["operational_rows"][0]["value"] == (
+        "OFP P1 classification: EDTO."
+    )
     assert briefing["alternate_assessment_rows"] == [{"airport": "WMKK"}]
     assert len(briefing["airport_operational_panels"][0]["card_summary_lines"]) == 4
 

@@ -30,6 +30,7 @@ from . import brief_theme as theme
 from .brief_theme import register_fonts
 from .briefing import (
     _edto_classification,
+    _edto_classification_sentence,
     _edto_gate_sentence,
 )
 from .constants import format_actm
@@ -156,7 +157,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-27-operational-mel-pagination-v30"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-28-ofp-classification-v31"
 
 
 def combined_briefing_cache_token(
@@ -11976,6 +11977,21 @@ def _audit_rev3_v8_compact_notam_lines(
     return lines
 
 
+def _audit_rev3_v8_classification_sentence(flight: dict[str, Any]) -> str:
+    """Reproduce the quoted page-1 heading in the frozen audit profile."""
+    source_classification = _edto_source_classification(flight)
+    normalized_classification = _edto_classification(flight)
+    source_heading = _raw_lido_classification_heading(source_classification)
+    return (
+        f"OFP P1 source: {source_heading} (interpreted as non-EDTO)."
+        if source_classification == "STANDARD"
+        and normalized_classification.startswith("NON")
+        else f"OFP P1 source: {source_heading}."
+        if source_heading
+        else "OFP classification requires review."
+    )
+
+
 def _audit_rev3_v8_briefing_projection(
     flight: dict[str, Any],
     briefing: dict[str, Any],
@@ -12040,6 +12056,31 @@ def _audit_rev3_v8_briefing_projection(
     # would otherwise move two exact detail rows onto the following page.
     fuel_summary.pop("derived_fuel_kg", None)
     projected["fuel_summary"] = fuel_summary
+
+    # The immutable private audit reference quotes the literal Lido page-1
+    # heading and is protected by exact-pixel equality. Keep that quoted
+    # evidence only in the audit compatibility projection; the current shared
+    # view and production PDF use the generated OFP classification wording.
+    edto = dict(briefing.get("edto") or {})
+    audit_source_sentence = _audit_rev3_v8_classification_sentence(flight)
+    current_source_sentence = _edto_classification_sentence(
+        _edto_classification(flight),
+        flight.get("fuel_summary") or {},
+    )
+    audit_rows: list[Any] = []
+    for source_row in edto.get("operational_rows") or []:
+        if not isinstance(source_row, dict):
+            audit_rows.append(source_row)
+            continue
+        row = dict(source_row)
+        if (
+            str(row.get("label") or "").strip().upper() == "CLASSIFICATION"
+            and str(row.get("value") or "").strip() == current_source_sentence
+        ):
+            row["value"] = audit_source_sentence
+        audit_rows.append(row)
+    edto["operational_rows"] = audit_rows
+    projected["edto"] = edto
 
     panels: list[dict[str, Any]] = []
     for panel in briefing.get("airport_operational_panels") or []:
