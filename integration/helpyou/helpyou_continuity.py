@@ -136,6 +136,7 @@ class AuthorityVerificationReceipt:
     human_record_id: str
     human_record_fingerprint: str
     governed_state_fingerprint: str
+    checkpoint_fingerprint: str
     verified_at_utc: str
     expires_at_utc: str
 
@@ -154,6 +155,12 @@ class AuthorityVerificationReceipt:
             raise ContinuityPolicyError(
                 "governed_state_fingerprint must use sha256:<64 lowercase hex>."
             )
+        if not isinstance(self.checkpoint_fingerprint, str) or not _FP_RE.fullmatch(
+            self.checkpoint_fingerprint
+        ):
+            raise ContinuityPolicyError(
+                "checkpoint_fingerprint must use sha256:<64 lowercase hex>."
+            )
         verified_at = _utc(self.verified_at_utc)
         expires_at = _utc(self.expires_at_utc)
         checkpoint_time = _utc(state.updated_at_utc)
@@ -167,6 +174,7 @@ class AuthorityVerificationReceipt:
             or self.human_record_fingerprint != authority.human_record_fingerprint
             or self.governed_state_fingerprint
             != governed_state_fingerprint(state)
+            or self.checkpoint_fingerprint != checkpoint_fingerprint(state)
         ):
             raise ContinuityPolicyError("Authority verification receipt does not match binding.")
         if verified_at < checkpoint_time:
@@ -199,7 +207,7 @@ class ContinuityState:
     checkpoint_id: str
     sequence: int
     previous_checkpoint_id: str | None
-    previous_governed_state_fingerprint: str | None
+    previous_checkpoint_fingerprint: str | None
     user_scope_id: str
     updated_at_utc: str
     authority: AuthorityPointers
@@ -225,7 +233,7 @@ class ContinuityState:
             raise ContinuityPolicyError("sequence must be a positive integer.")
         if self.sequence == 1 and (
             self.previous_checkpoint_id is not None
-            or self.previous_governed_state_fingerprint is not None
+            or self.previous_checkpoint_fingerprint is not None
         ):
             raise ContinuityPolicyError("The first checkpoint cannot name a predecessor.")
         if self.sequence > 1:
@@ -235,11 +243,11 @@ class ContinuityState:
             if self.previous_checkpoint_id == self.checkpoint_id:
                 raise ContinuityPolicyError("A checkpoint cannot be its own predecessor.")
             if (
-                not isinstance(self.previous_governed_state_fingerprint, str)
-                or not _FP_RE.fullmatch(self.previous_governed_state_fingerprint)
+                not isinstance(self.previous_checkpoint_fingerprint, str)
+                or not _FP_RE.fullmatch(self.previous_checkpoint_fingerprint)
             ):
                 raise ContinuityPolicyError(
-                    "A successor requires previous_governed_state_fingerprint."
+                    "A successor requires previous_checkpoint_fingerprint."
                 )
         if not isinstance(self.user_scope_id, str) or not _USER_RE.fullmatch(
             self.user_scope_id
@@ -319,6 +327,7 @@ class AuthorityVerifier(Protocol):
         self,
         authority: AuthorityPointers,
         governed_state_fingerprint: str,
+        checkpoint_fingerprint: str,
     ) -> AuthorityVerificationReceipt: ...
 
 
@@ -334,7 +343,11 @@ def _verified_receipt(
     now_utc: str,
 ) -> AuthorityVerificationReceipt:
     state.validate()
-    receipt = verifier.verify(state.authority, governed_state_fingerprint(state))
+    receipt = verifier.verify(
+        state.authority,
+        governed_state_fingerprint(state),
+        checkpoint_fingerprint(state),
+    )
     if not isinstance(receipt, AuthorityVerificationReceipt):
         raise ContinuityPolicyError("Authority verifier did not return a valid receipt.")
     receipt.validate_against(state, now_utc=now_utc)
@@ -402,7 +415,7 @@ def _successor(
         checkpoint_id=checkpoint_id,
         sequence=previous.sequence + 1,
         previous_checkpoint_id=previous.checkpoint_id,
-        previous_governed_state_fingerprint=governed_state_fingerprint(previous),
+        previous_checkpoint_fingerprint=checkpoint_fingerprint(previous),
         updated_at_utc=updated_at_utc,
         authority=authority,
         mode=mode,
@@ -493,10 +506,11 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         raise ContinuityPolicyError("Checkpoint payload must be a mapping.")
     required = {
         "protocol_version", "checkpoint_id", "sequence", "previous_checkpoint_id",
-        "previous_governed_state_fingerprint",
+        "previous_checkpoint_fingerprint",
         "user_scope_id", "updated_at_utc", "authority", "mode",
         "mode_selected_explicitly", "status", "next_prompt",
         "governed_state_fingerprint",
+        "checkpoint_fingerprint",
     }
     missing = sorted(required.difference(payload))
     if missing:
@@ -533,9 +547,7 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         checkpoint_id=payload["checkpoint_id"],
         sequence=payload["sequence"],
         previous_checkpoint_id=payload["previous_checkpoint_id"],
-        previous_governed_state_fingerprint=payload[
-            "previous_governed_state_fingerprint"
-        ],
+        previous_checkpoint_fingerprint=payload["previous_checkpoint_fingerprint"],
         user_scope_id=payload["user_scope_id"],
         updated_at_utc=payload["updated_at_utc"],
         authority=AuthorityPointers(
@@ -566,6 +578,16 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
         )
     if stored_fingerprint != governed_state_fingerprint(state):
         raise ContinuityPolicyError("Stored governed-state fingerprint does not match checkpoint.")
+    stored_checkpoint_fingerprint = payload["checkpoint_fingerprint"]
+    if (
+        not isinstance(stored_checkpoint_fingerprint, str)
+        or not _FP_RE.fullmatch(stored_checkpoint_fingerprint)
+    ):
+        raise ContinuityPolicyError(
+            "checkpoint_fingerprint must use sha256:<64 lowercase hex>."
+        )
+    if stored_checkpoint_fingerprint != checkpoint_fingerprint(state):
+        raise ContinuityPolicyError("Stored checkpoint fingerprint does not match checkpoint.")
     return state
 
 
@@ -576,9 +598,7 @@ def _private_payload_body(state: ContinuityState) -> dict[str, Any]:
         "checkpoint_id": state.checkpoint_id,
         "sequence": state.sequence,
         "previous_checkpoint_id": state.previous_checkpoint_id,
-        "previous_governed_state_fingerprint": (
-            state.previous_governed_state_fingerprint
-        ),
+        "previous_checkpoint_fingerprint": state.previous_checkpoint_fingerprint,
         "user_scope_id": state.user_scope_id,
         "updated_at_utc": state.updated_at_utc,
         "authority": {
@@ -627,9 +647,24 @@ def governed_state_fingerprint(state: ContinuityState) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+def checkpoint_fingerprint(state: ContinuityState) -> str:
+    """Hash the complete checkpoint envelope, including the human-record hash."""
+
+    body = _private_payload_body(state)
+    body["governed_state_fingerprint"] = governed_state_fingerprint(state)
+    encoded = json.dumps(
+        body,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 def state_to_private_payload(state: ContinuityState) -> dict[str, Any]:
     body = _private_payload_body(state)
     body["governed_state_fingerprint"] = governed_state_fingerprint(state)
+    body["checkpoint_fingerprint"] = checkpoint_fingerprint(state)
     return body
 
 
@@ -658,8 +693,8 @@ def _chain(user_scope_id: str, payloads: Iterable[Mapping[str, Any]]) -> tuple[C
         if current.previous_checkpoint_id != previous.checkpoint_id:
             raise ContinuityPolicyError("The predecessor chain is broken.")
         if (
-            current.previous_governed_state_fingerprint
-            != governed_state_fingerprint(previous)
+            current.previous_checkpoint_fingerprint
+            != checkpoint_fingerprint(previous)
         ):
             raise ContinuityPolicyError("The governed-state hash chain is broken.")
         if _utc(current.updated_at_utc) <= _utc(previous.updated_at_utc):
@@ -707,8 +742,8 @@ def persist_checkpoint(
         if state.previous_checkpoint_id != latest.checkpoint_id:
             raise ContinuityPolicyError("Candidate predecessor does not match latest checkpoint.")
         if (
-            state.previous_governed_state_fingerprint
-            != governed_state_fingerprint(latest)
+            state.previous_checkpoint_fingerprint
+            != checkpoint_fingerprint(latest)
         ):
             raise ContinuityPolicyError(
                 "Candidate governed-state predecessor does not match latest checkpoint."
