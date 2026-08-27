@@ -46,7 +46,7 @@ The generic protocol, schema and regression logic belong in GitHub. The human-re
 - private source identifiers or case facts; and
 - unapproved hypotheses.
 
-Both authority pointers, their fingerprints and a trusted-adapter verification receipt are required for a checkpoint to be declared recoverable. The verifier independently confirms that the commit is reachable from merged `main`, recomputes the policy and human-record hashes, and confirms that the human record embeds the supplied governed-state fingerprint. The receipt binds the complete repository/path/commit/fingerprint tuple and that fingerprint. The canonical digest excludes only the human-record file hash, which the receipt verifies separately, avoiding a circular hash dependency without leaving a state field unauthenticated. Receipts are refreshed on every bootstrap and remain valid for no more than 15 minutes. Receipt expiry does not expire or delete the checkpoint; it requires fresh verification for the next load. Stored `verified=true` assertions are insufficient. GitHub authority means the merged `main`-branch commit, not an unmerged branch or pull request. A GitHub document alone proves the protocol but not the current private state. A human record alone preserves the state but does not prove which machine-enforced protocol governed it.
+Both authority pointers, their fingerprints and a trusted-adapter verification receipt are required for a checkpoint to be declared recoverable. The verifier independently confirms that the commit is reachable from merged `main`, recomputes the policy and human-record hashes, and confirms that the human record embeds the supplied governed-state fingerprint. The receipt binds the complete repository/path/commit/fingerprint tuple, the governed-state fingerprint and a checkpoint-envelope fingerprint that also includes the human-record hash. The governed-state digest excludes only the human-record file hash so the human record can embed it without a circular dependency; the envelope digest closes that gap for successor chaining. Receipts are refreshed on every bootstrap and remain valid for no more than 15 minutes. Receipt expiry does not expire or delete the checkpoint; it requires fresh verification for the next load. Stored `verified=true` assertions are insufficient. GitHub authority means the merged `main`-branch commit, not an unmerged branch or pull request. A GitHub document alone proves the protocol but not the current private state. A human record alone preserves the state but does not prove which machine-enforced protocol governed it.
 
 ## 5. Checkpoint state
 
@@ -54,7 +54,7 @@ Each checkpoint records at least:
 
 - protocol version and checkpoint identifier;
 - monotonically increasing sequence and predecessor identifier;
-- predecessor governed-state fingerprint, creating a transitive hash chain;
+- predecessor checkpoint-envelope fingerprint, creating a transitive chain that also authenticates historical human-record hashes;
 - pseudonymous user-scope identifier;
 - explicit UTC update time;
 - GitHub repository and protocol path;
@@ -72,7 +72,7 @@ Each checkpoint records at least:
 - the next prompt; and
 - completion or gap status.
 
-The same approved material change must not be represented by multiple conflicting successor checkpoints. A successor requires a globally unique checkpoint identifier, a later UTC time, the prior governed-state fingerprint and a newly verified human record. The existing chain plus candidate must pass full sequence, predecessor, identifier, timestamp, transitive digest and authority validation before any write. A private persistence adapter then uses compare-and-swap against the expected predecessor so a competing writer cannot silently create another successor. A later correction supersedes the earlier position explicitly; it does not erase the history.
+The same approved material change must not be represented by multiple conflicting successor checkpoints. A successor requires a globally unique checkpoint identifier, a later UTC time, the prior checkpoint-envelope fingerprint and a newly verified human record. The existing chain plus candidate must pass full sequence, predecessor, identifier, timestamp, transitive digest and authority validation before any write. A private persistence adapter then uses compare-and-swap against the expected predecessor so a competing writer cannot silently create another successor. A later correction supersedes the earlier position explicitly; it does not erase the history.
 
 The reference module rejects draft-labelled events and preserves caller-supplied approved changes; it does not authenticate that a human approved them. The product integration is responsible for authenticating the user action and retaining an immutable private approval-evidence reference before calling the approved-change API.
 
@@ -140,7 +140,7 @@ Continuity checkpoints preserve what was known and approved; they do not promote
 
 ## 10. Failure and recovery
 
-If both authority layers are accessible, retrieve the complete private chain, verify every predecessor digest transitively, and obtain a fresh trusted-adapter receipt matching the repository, path, merged commit, authority fingerprints and governed-state fingerprint embedded in the human record. Reject expired receipts, competing sequence numbers, reused identifiers or broken predecessor links, and resume from the latest valid checkpoint. An unmerged pull request is not active normative authority. If only one layer is accessible, declare continuity incomplete, show what was recovered and stop any claim dependent on the missing layer. If neither layer is accessible, state that no controlled checkpoint can be verified; do not imply that model memory is a substitute.
+If both authority layers are accessible, retrieve the complete private chain, verify every predecessor envelope digest transitively, and obtain a fresh trusted-adapter receipt matching the repository, path, merged commit, authority fingerprints, governed-state fingerprint embedded in the human record and complete checkpoint-envelope fingerprint. Reject expired receipts, competing sequence numbers, reused identifiers or broken predecessor links, and resume from the latest valid checkpoint. An unmerged pull request is not active normative authority. If only one layer is accessible, declare continuity incomplete, show what was recovered and stop any claim dependent on the missing layer. If neither layer is accessible, state that no controlled checkpoint can be verified; do not imply that model memory is a substitute.
 
 The recoverability test is passed only when a fresh session can:
 
@@ -168,7 +168,7 @@ The reference implementation must test at least:
 - public or capability-unknown stores cannot receive private pilot memory;
 - external authority-receipt mismatch fails closed;
 - repository/path mismatch, expired or overlong receipts, and governed-state tampering fail closed;
-- a changed predecessor or predecessor digest breaks the transitive chain;
+- a changed predecessor, governed state or historical human-record hash breaks the transitive envelope chain;
 - an invalid candidate is rejected before compare-and-swap can mutate the store;
 - drafts cannot be recorded as approved changes;
 - both authority pointers are required;
