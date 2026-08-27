@@ -37,6 +37,22 @@ class VerificationLayer(str, Enum):
     TRUSTED_CLOCK = "trusted clock"
     HOSTED_STARTUP = "hosted startup integration"
     AUTHORITY_VERIFIER = "trusted authority verifier"
+    STATUS_CLEARANCE = "approved checkpoint status clearance"
+
+
+class RecoveryReasonCode(str, Enum):
+    CHECKPOINT_UNAVAILABLE = "CHECKPOINT_UNAVAILABLE"
+    CHECKPOINT_NOT_FOUND = "CHECKPOINT_NOT_FOUND"
+    CHECKPOINT_CHAIN_UNVERIFIED = "CHECKPOINT_CHAIN_UNVERIFIED"
+    HEAD_UNVERIFIED = "HEAD_UNVERIFIED"
+    HEAD_ADAPTER_FAILURE = "HEAD_ADAPTER_FAILURE"
+    AUTHORITY_UNVERIFIED = "AUTHORITY_UNVERIFIED"
+    AUTHORITY_ADAPTER_FAILURE = "AUTHORITY_ADAPTER_FAILURE"
+    CLOCK_UNAVAILABLE = "CLOCK_UNAVAILABLE"
+    HUMAN_RECORD_UNAVAILABLE = "HUMAN_RECORD_UNAVAILABLE"
+    GITHUB_AUTHORITY_UNAVAILABLE = "GITHUB_AUTHORITY_UNAVAILABLE"
+    RUNTIME_INTEGRATION_PENDING = "RUNTIME_INTEGRATION_PENDING"
+    STATUS_CLEARANCE_PENDING = "STATUS_CLEARANCE_PENDING"
 
 
 class ContinuityEvent(str, Enum):
@@ -72,6 +88,8 @@ _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _FP_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 MAX_RECEIPT_VALIDITY = timedelta(minutes=15)
+MAX_SNAPSHOT_VERIFY_ATTEMPTS = 3
+SUPPORTED_PROTOCOL_VERSION = "1.0"
 
 
 def _canonical_layers(values: tuple[str, ...], field: str) -> tuple[str, ...]:
@@ -102,6 +120,106 @@ def _merge_layers(*collections: tuple[str, ...]) -> tuple[str, ...]:
 def _identifier(value: str, field: str) -> None:
     if not isinstance(value, str) or not _ID_RE.fullmatch(value):
         raise ContinuityPolicyError(f"{field} must be an opaque controlled identifier.")
+
+
+def _reason_code(value: str, field: str) -> str:
+    try:
+        return RecoveryReasonCode(value).value
+    except (TypeError, ValueError):
+        raise ContinuityPolicyError(
+            f"{field} must use a controlled recovery reason code."
+        ) from None
+
+
+def _validate_reason_unavailable_layers(
+    reason_code: str,
+    unavailable_layers: tuple[str, ...],
+    field: str,
+) -> None:
+    reason = RecoveryReasonCode(_reason_code(reason_code, field))
+    layers = frozenset(_canonical_layers(unavailable_layers, "unavailable_layers"))
+    exact_layers = {
+        RecoveryReasonCode.CHECKPOINT_UNAVAILABLE: frozenset(
+            (VerificationLayer.PRIVATE_CHECKPOINT_STORE.value,)
+        ),
+        RecoveryReasonCode.CHECKPOINT_NOT_FOUND: frozenset(
+            (VerificationLayer.PRIVATE_CHECKPOINT_CANDIDATE.value,)
+        ),
+        RecoveryReasonCode.CHECKPOINT_CHAIN_UNVERIFIED: frozenset(
+            (VerificationLayer.VERIFIED_PRIVATE_CHAIN.value,)
+        ),
+        RecoveryReasonCode.HEAD_UNVERIFIED: frozenset(
+            (VerificationLayer.MONOTONIC_HEAD.value,)
+        ),
+        RecoveryReasonCode.HEAD_ADAPTER_FAILURE: frozenset(
+            (VerificationLayer.MONOTONIC_HEAD.value,)
+        ),
+        RecoveryReasonCode.AUTHORITY_UNVERIFIED: frozenset(
+            (
+                VerificationLayer.GITHUB_AUTHORITY.value,
+                VerificationLayer.HUMAN_RECORD_AUTHORITY.value,
+            )
+        ),
+        RecoveryReasonCode.AUTHORITY_ADAPTER_FAILURE: frozenset(
+            (VerificationLayer.AUTHORITY_VERIFIER.value,)
+        ),
+        RecoveryReasonCode.CLOCK_UNAVAILABLE: frozenset(
+            (VerificationLayer.TRUSTED_CLOCK.value,)
+        ),
+        RecoveryReasonCode.HUMAN_RECORD_UNAVAILABLE: frozenset(
+            (VerificationLayer.HUMAN_RECORD_AUTHORITY.value,)
+        ),
+        RecoveryReasonCode.GITHUB_AUTHORITY_UNAVAILABLE: frozenset(
+            (VerificationLayer.GITHUB_AUTHORITY.value,)
+        ),
+        RecoveryReasonCode.STATUS_CLEARANCE_PENDING: frozenset(
+            (VerificationLayer.STATUS_CLEARANCE.value,)
+        ),
+    }
+    expected = exact_layers.get(reason)
+    if expected is not None:
+        if layers != expected:
+            raise ContinuityPolicyError(
+                f"{field} does not match its unavailable verification layer."
+            )
+        return
+    runtime_layers = frozenset(
+        (
+            VerificationLayer.PRIVATE_CHECKPOINT_STORE.value,
+            VerificationLayer.MONOTONIC_HEAD.value,
+            VerificationLayer.HOSTED_STARTUP.value,
+            VerificationLayer.AUTHORITY_VERIFIER.value,
+            VerificationLayer.STATUS_CLEARANCE.value,
+        )
+    )
+    if reason is RecoveryReasonCode.RUNTIME_INTEGRATION_PENDING and (
+        not layers or not layers.issubset(runtime_layers)
+    ):
+        raise ContinuityPolicyError(
+            f"{field} does not match runtime-integration unavailable layers."
+        )
+
+
+def _validate_adapter_recovered_layers(
+    reason_code: str,
+    recovered_layers: tuple[str, ...],
+) -> None:
+    reason = RecoveryReasonCode(_reason_code(reason_code, "reason_code"))
+    recovered = frozenset(
+        _canonical_layers(recovered_layers, "recovered_layers")
+    )
+    allowed = {
+        RecoveryReasonCode.HUMAN_RECORD_UNAVAILABLE: frozenset(
+            (VerificationLayer.GITHUB_AUTHORITY.value,)
+        ),
+        RecoveryReasonCode.GITHUB_AUTHORITY_UNAVAILABLE: frozenset(
+            (VerificationLayer.HUMAN_RECORD_AUTHORITY.value,)
+        ),
+    }.get(reason, frozenset())
+    if not recovered.issubset(allowed):
+        raise ContinuityPolicyError(
+            "recovered_layers contains a layer outside the failure's authority stage."
+        )
 
 
 def _utc(value: str) -> datetime:
@@ -148,12 +266,24 @@ class AuthorityPointers:
             self.github_repository
         ):
             raise ContinuityPolicyError("github_repository must use owner/name.")
+        repository_components = self.github_repository.split("/")
+        if any(component in {".", ".."} for component in repository_components):
+            raise ContinuityPolicyError(
+                "github_repository contains a noncanonical component."
+            )
+        path_components = (
+            self.github_path.split("/")
+            if isinstance(self.github_path, str)
+            else ()
+        )
         if (
             not isinstance(self.github_path, str)
             or not self.github_path.strip()
+            or self.github_path != self.github_path.strip()
             or self.github_path.startswith("/")
-            or ".." in self.github_path.split("/")
-            or "\n" in self.github_path
+            or "\\" in self.github_path
+            or any(component in {"", ".", ".."} for component in path_components)
+            or any(ord(character) < 32 or ord(character) == 127 for character in self.github_path)
         ):
             raise ContinuityPolicyError("github_path is not a safe repository path.")
         if not isinstance(self.github_commit_sha, str) or not _COMMIT_RE.fullmatch(
@@ -347,10 +477,10 @@ class ContinuityState:
     private_pilot_memory: tuple[PilotMemoryPair, ...] = ()
 
     def validate(self) -> None:
-        if not isinstance(self.protocol_version, str) or not re.fullmatch(
-            r"[0-9]+\.[0-9]+", self.protocol_version
-        ):
-            raise ContinuityPolicyError("protocol_version must use major.minor.")
+        if self.protocol_version != SUPPORTED_PROTOCOL_VERSION:
+            raise ContinuityPolicyError(
+                f"protocol_version must be supported version {SUPPORTED_PROTOCOL_VERSION}."
+            )
         _identifier(self.checkpoint_id, "checkpoint_id")
         if type(self.sequence) is not int or self.sequence < 1:
             raise ContinuityPolicyError("sequence must be a positive integer.")
@@ -445,7 +575,11 @@ class ContinuityState:
         elif self.status is CheckpointStatus.INCOMPLETE:
             if self.status_reason_code is None:
                 raise ContinuityPolicyError("INCOMPLETE requires status_reason_code.")
-            _identifier(self.status_reason_code, "status_reason_code")
+            _validate_reason_unavailable_layers(
+                self.status_reason_code,
+                self.unavailable_layers,
+                "status_reason_code",
+            )
             if not self.unavailable_layers or self.safe_to_resume:
                 raise ContinuityPolicyError(
                     "INCOMPLETE requires unavailable layers and safe_to_resume=false."
@@ -492,6 +626,10 @@ class ContinuityState:
                     raise ContinuityPolicyError(
                         "Initialization must use unselected Development Mode."
                     )
+                if self.status is not CheckpointStatus.ACTIVE:
+                    raise ContinuityPolicyError(
+                        "Initialization must use default ACTIVE status."
+                    )
             elif self.transition_event not in CHECKPOINT_EVENTS:
                 raise ContinuityPolicyError("The first checkpoint event is not admissible.")
             else:
@@ -500,17 +638,44 @@ class ContinuityState:
                         "The first approved checkpoint cannot contain extra history."
                     )
                 if self.transition_event is ContinuityEvent.APPROVED_MODE_CHANGE:
-                    if not self.mode_selected_explicitly:
+                    if (
+                        not self.mode_selected_explicitly
+                        or self.mode is InteractionMode.DEVELOPMENT
+                    ):
                         raise ContinuityPolicyError(
-                            "A first mode-change checkpoint requires explicit selection."
+                            "A first mode-change checkpoint requires an explicit "
+                            "non-default mode."
                         )
-                elif (
-                    self.mode is not InteractionMode.DEVELOPMENT
-                    or self.mode_selected_explicitly
-                ):
-                    raise ContinuityPolicyError(
-                        "A non-mode first checkpoint must use default Development Mode."
-                    )
+                    if self.status is not CheckpointStatus.ACTIVE:
+                        raise ContinuityPolicyError(
+                            "A first mode-change checkpoint must retain default ACTIVE status."
+                        )
+                elif self.transition_event is ContinuityEvent.APPROVED_STATUS_CHANGE:
+                    if (
+                        self.mode is not InteractionMode.DEVELOPMENT
+                        or self.mode_selected_explicitly
+                    ):
+                        raise ContinuityPolicyError(
+                            "A first status-change checkpoint must retain unselected "
+                            "Development Mode."
+                        )
+                    if self.status is not CheckpointStatus.INCOMPLETE:
+                        raise ContinuityPolicyError(
+                            "A first status-change checkpoint must establish a non-default "
+                            "INCOMPLETE status."
+                        )
+                else:
+                    if (
+                        self.mode is not InteractionMode.DEVELOPMENT
+                        or self.mode_selected_explicitly
+                    ):
+                        raise ContinuityPolicyError(
+                            "A non-mode first checkpoint must use default Development Mode."
+                        )
+                    if self.status is not CheckpointStatus.ACTIVE:
+                        raise ContinuityPolicyError(
+                            "A non-status first checkpoint must use default ACTIVE status."
+                        )
         elif self.transition_event not in CHECKPOINT_EVENTS:
             raise ContinuityPolicyError("A successor requires an approved transition event.")
         if self.transition_event in CHECKPOINT_EVENTS:
@@ -565,7 +730,6 @@ class IncompleteRecoveryBrief:
             raise ContinuityPolicyError(
                 "IncompleteRecoveryBrief status must be INCOMPLETE."
             )
-        _identifier(self.reason_code, "reason_code")
         recovered = _canonical_layers(self.recovered_layers, "recovered_layers")
         unavailable = _canonical_layers(self.unavailable_layers, "unavailable_layers")
         if not unavailable:
@@ -576,6 +740,11 @@ class IncompleteRecoveryBrief:
             raise ContinuityPolicyError(
                 "A verification layer cannot be both recovered and unavailable."
             )
+        _validate_reason_unavailable_layers(
+            self.reason_code,
+            unavailable,
+            "reason_code",
+        )
         if self.safe_to_resume is not False:
             raise ContinuityPolicyError(
                 "IncompleteRecoveryBrief requires safe_to_resume=false."
@@ -594,6 +763,10 @@ class ContinuityRecoveryError(ContinuityPolicyError):
         self.recovery_brief = recovery_brief
 
 
+class _HeadBindingFailure(ContinuityPolicyError):
+    """Internal marker: head receipt type was valid and clock check completed."""
+
+
 class VerificationLayerFailure(ContinuityPolicyError):
     """Sanitized typed failure that a trusted adapter may expose to bootstrap."""
 
@@ -604,7 +777,6 @@ class VerificationLayerFailure(ContinuityPolicyError):
         recovered_layers: tuple[str, ...],
         unavailable_layers: tuple[str, ...],
     ):
-        _identifier(reason_code, "reason_code")
         if not unavailable_layers:
             raise ContinuityPolicyError(
                 "VerificationLayerFailure requires an unavailable layer."
@@ -617,6 +789,13 @@ class VerificationLayerFailure(ContinuityPolicyError):
             raise ContinuityPolicyError(
                 "A verification layer cannot be both recovered and unavailable."
             )
+        reason_code = _reason_code(reason_code, "reason_code")
+        _validate_reason_unavailable_layers(
+            reason_code,
+            unavailable_layers,
+            "reason_code",
+        )
+        _validate_adapter_recovered_layers(reason_code, recovered_layers)
         super().__init__(f"Verification layer unavailable: {reason_code}.")
         self.reason_code = reason_code
         self.recovered_layers = recovered_layers
@@ -712,11 +891,23 @@ def _verified_receipt(
             checkpoint_fingerprint(state),
         )
     except VerificationLayerFailure as exc:
-        typed_failure = (
-            exc.reason_code,
-            exc.recovered_layers,
-            exc.unavailable_layers,
-        )
+        if exc.reason_code in {
+            RecoveryReasonCode.AUTHORITY_UNVERIFIED.value,
+            RecoveryReasonCode.AUTHORITY_ADAPTER_FAILURE.value,
+            RecoveryReasonCode.HUMAN_RECORD_UNAVAILABLE.value,
+            RecoveryReasonCode.GITHUB_AUTHORITY_UNAVAILABLE.value,
+        }:
+            typed_failure = (
+                exc.reason_code,
+                exc.recovered_layers,
+                exc.unavailable_layers,
+            )
+        else:
+            typed_failure = (
+                RecoveryReasonCode.AUTHORITY_ADAPTER_FAILURE.value,
+                (),
+                (VerificationLayer.AUTHORITY_VERIFIER.value,),
+            )
     except Exception:
         verifier_failed = True
     if typed_failure is not None:
@@ -729,15 +920,29 @@ def _verified_receipt(
         raise VerificationLayerFailure(
             reason_code="AUTHORITY_ADAPTER_FAILURE",
             recovered_layers=(),
-            unavailable_layers=(
-                "GitHub protocol authority",
-                "human-readable checkpoint authority",
-            ),
+            unavailable_layers=(VerificationLayer.AUTHORITY_VERIFIER.value,),
+        )
+    if type(receipt) is not AuthorityVerificationReceipt:
+        raise VerificationLayerFailure(
+            reason_code=RecoveryReasonCode.AUTHORITY_ADAPTER_FAILURE.value,
+            recovered_layers=(),
+            unavailable_layers=(VerificationLayer.AUTHORITY_VERIFIER.value,),
         )
     now_utc = _trusted_now(trusted_clock)
-    if not isinstance(receipt, AuthorityVerificationReceipt):
-        raise ContinuityPolicyError("Authority verifier did not return a valid receipt.")
-    receipt.validate_against(state, now_utc=now_utc)
+    receipt_invalid = False
+    try:
+        receipt.validate_against(state, now_utc=now_utc)
+    except Exception:
+        receipt_invalid = True
+    if receipt_invalid:
+        raise VerificationLayerFailure(
+            reason_code=RecoveryReasonCode.AUTHORITY_UNVERIFIED.value,
+            recovered_layers=(),
+            unavailable_layers=(
+                VerificationLayer.GITHUB_AUTHORITY.value,
+                VerificationLayer.HUMAN_RECORD_AUTHORITY.value,
+            ),
+        )
     return receipt
 
 
@@ -763,11 +968,21 @@ def _verified_head(
             expected_fingerprint,
         )
     except VerificationLayerFailure as exc:
-        typed_failure = (
-            exc.reason_code,
-            exc.recovered_layers,
-            exc.unavailable_layers,
-        )
+        if exc.reason_code in {
+            RecoveryReasonCode.HEAD_UNVERIFIED.value,
+            RecoveryReasonCode.HEAD_ADAPTER_FAILURE.value,
+        }:
+            typed_failure = (
+                exc.reason_code,
+                exc.recovered_layers,
+                exc.unavailable_layers,
+            )
+        else:
+            typed_failure = (
+                RecoveryReasonCode.HEAD_ADAPTER_FAILURE.value,
+                (),
+                (VerificationLayer.MONOTONIC_HEAD.value,),
+            )
     except Exception:
         verifier_failed = True
     if typed_failure is not None:
@@ -782,12 +997,22 @@ def _verified_head(
             recovered_layers=(),
             unavailable_layers=("trusted monotonic head",),
         )
-    now_utc = _trusted_now(trusted_clock)
-    if not isinstance(receipt, CommittedHeadVerificationReceipt):
-        raise ContinuityPolicyError(
-            "Head verifier did not return a valid receipt."
+    if type(receipt) is not CommittedHeadVerificationReceipt:
+        raise VerificationLayerFailure(
+            reason_code=RecoveryReasonCode.HEAD_ADAPTER_FAILURE.value,
+            recovered_layers=(),
+            unavailable_layers=(VerificationLayer.MONOTONIC_HEAD.value,),
         )
-    receipt.validate_against(user_scope_id, expected_state, now_utc=now_utc)
+    now_utc = _trusted_now(trusted_clock)
+    receipt_invalid = False
+    try:
+        receipt.validate_against(user_scope_id, expected_state, now_utc=now_utc)
+    except Exception:
+        receipt_invalid = True
+    if receipt_invalid:
+        raise _HeadBindingFailure(
+            "Committed-head receipt does not match the verified chain state."
+        )
     return receipt
 
 
@@ -1015,6 +1240,18 @@ def record_status_change(
     if status is CheckpointStatus.SUPERSEDED:
         raise ContinuityPolicyError(
             "SUPERSEDED is represented by successor history, not a v1 status change."
+        )
+    if status is CheckpointStatus.ACTIVE and (
+        reason_code is not None or unavailable_layers
+    ):
+        raise ContinuityPolicyError(
+            "ACTIVE status cannot discard supplied unresolved gap metadata."
+        )
+    if status is CheckpointStatus.INCOMPLETE and (
+        reason_code is None or not unavailable_layers
+    ):
+        raise ContinuityPolicyError(
+            "INCOMPLETE status requires a reason and unavailable layers."
         )
     return _successor(
         previous,
@@ -1422,6 +1659,15 @@ def _chain(user_scope_id: str, payloads: Iterable[Mapping[str, Any]]) -> tuple[C
     return chain
 
 
+def _verification_next_action(reason_code: str, default_action: str) -> str:
+    if reason_code == RecoveryReasonCode.CLOCK_UNAVAILABLE.value:
+        return (
+            "Re-establish the trusted UTC clock and obtain fresh verification "
+            "receipts before using recovered case state for substantive work."
+        )
+    return default_action
+
+
 def bootstrap_helpyou_session(
     user_scope_id: str,
     store: PrivateContinuityStore,
@@ -1429,13 +1675,19 @@ def bootstrap_helpyou_session(
     *,
     trusted_clock: TrustedClock | None = None,
 ) -> tuple[ContinuityState, ResumeBrief]:
-    checkpoint_failed = False
+    if not isinstance(user_scope_id, str) or not _USER_RE.fullmatch(user_scope_id):
+        raise ContinuityPolicyError("user_scope_id must be pseudonymous.")
+    store_failed = False
     try:
         _require_private_store(store)
-        state = _chain(user_scope_id, store.list_checkpoints(user_scope_id))[-1]
     except Exception:
-        checkpoint_failed = True
-    if checkpoint_failed:
+        store_failed = True
+    if not store_failed:
+        try:
+            payloads = tuple(store.list_checkpoints(user_scope_id))
+        except Exception:
+            store_failed = True
+    if store_failed:
         brief = IncompleteRecoveryBrief(
             status=CheckpointStatus.INCOMPLETE.value,
             reason_code="CHECKPOINT_UNAVAILABLE",
@@ -1450,7 +1702,48 @@ def bootstrap_helpyou_session(
         raise ContinuityRecoveryError(
             "Continuity is INCOMPLETE: verified private checkpoint unavailable.",
             brief,
+        ) from None
+    if not payloads:
+        brief = IncompleteRecoveryBrief(
+            status=CheckpointStatus.INCOMPLETE.value,
+            reason_code="CHECKPOINT_NOT_FOUND",
+            recovered_layers=(VerificationLayer.PRIVATE_CHECKPOINT_STORE.value,),
+            unavailable_layers=(VerificationLayer.PRIVATE_CHECKPOINT_CANDIDATE.value,),
+            safe_to_resume=False,
+            next_action=(
+                "Recover the latest private checkpoint, or obtain explicit approval "
+                "to initialize a new chain."
+            ),
         )
+        raise ContinuityRecoveryError(
+            "Continuity is INCOMPLETE: no private checkpoint was found.",
+            brief,
+        ) from None
+    chain_failed = False
+    try:
+        chain = _chain(user_scope_id, payloads)
+    except Exception:
+        chain_failed = True
+    if chain_failed:
+        brief = IncompleteRecoveryBrief(
+            status=CheckpointStatus.INCOMPLETE.value,
+            reason_code="CHECKPOINT_CHAIN_UNVERIFIED",
+            recovered_layers=(
+                VerificationLayer.PRIVATE_CHECKPOINT_STORE.value,
+                VerificationLayer.PRIVATE_CHECKPOINT_CANDIDATE.value,
+            ),
+            unavailable_layers=(VerificationLayer.VERIFIED_PRIVATE_CHAIN.value,),
+            safe_to_resume=False,
+            next_action=(
+                "Recover a complete schema-valid checkpoint chain and verify every "
+                "predecessor and semantic transition."
+            ),
+        )
+        raise ContinuityRecoveryError(
+            "Continuity is INCOMPLETE: private checkpoint chain is unverified.",
+            brief,
+        ) from None
+    state = chain[-1]
     head_failure: tuple[str, tuple[str, ...], tuple[str, ...]] | None = None
     try:
         _verified_head(
@@ -1458,6 +1751,12 @@ def bootstrap_helpyou_session(
             user_scope_id,
             state,
             trusted_clock=trusted_clock,
+        )
+    except _HeadBindingFailure:
+        head_failure = (
+            RecoveryReasonCode.HEAD_UNVERIFIED.value,
+            (VerificationLayer.TRUSTED_CLOCK.value,),
+            (VerificationLayer.MONOTONIC_HEAD.value,),
         )
     except VerificationLayerFailure as exc:
         head_failure = (
@@ -1476,20 +1775,27 @@ def bootstrap_helpyou_session(
             status=CheckpointStatus.INCOMPLETE.value,
             reason_code=head_failure[0],
             recovered_layers=_merge_layers(
-                (VerificationLayer.PRIVATE_CHECKPOINT_CANDIDATE.value,),
+                (
+                    VerificationLayer.PRIVATE_CHECKPOINT_STORE.value,
+                    VerificationLayer.PRIVATE_CHECKPOINT_CANDIDATE.value,
+                    VerificationLayer.VERIFIED_PRIVATE_CHAIN.value,
+                ),
                 head_failure[1],
             ),
             unavailable_layers=head_failure[2],
             safe_to_resume=False,
-            next_action=(
-                "Re-establish the trusted monotonic head before using recovered "
-                "case state for substantive work."
+            next_action=_verification_next_action(
+                head_failure[0],
+                (
+                    "Re-establish the trusted monotonic head before using recovered "
+                    "case state for substantive work."
+                ),
             ),
         )
         raise ContinuityRecoveryError(
             "Continuity is INCOMPLETE: committed head is unverified.",
             brief,
-        )
+        ) from None
     authority_failure: tuple[str, tuple[str, ...], tuple[str, ...]] | None = None
     try:
         receipt = _verified_receipt(
@@ -1513,46 +1819,134 @@ def bootstrap_helpyou_session(
             ),
         )
     if authority_failure is not None:
+        authority_stage_recovered = [
+            VerificationLayer.PRIVATE_CHECKPOINT_STORE.value,
+            VerificationLayer.PRIVATE_CHECKPOINT_CANDIDATE.value,
+            VerificationLayer.VERIFIED_PRIVATE_CHAIN.value,
+            VerificationLayer.MONOTONIC_HEAD.value,
+        ]
+        if authority_failure[0] != RecoveryReasonCode.CLOCK_UNAVAILABLE.value:
+            authority_stage_recovered.append(VerificationLayer.TRUSTED_CLOCK.value)
+        if authority_failure[0] != RecoveryReasonCode.AUTHORITY_ADAPTER_FAILURE.value:
+            authority_stage_recovered.append(
+                VerificationLayer.AUTHORITY_VERIFIER.value
+            )
         brief = IncompleteRecoveryBrief(
             status=CheckpointStatus.INCOMPLETE.value,
             reason_code=authority_failure[0],
             recovered_layers=_merge_layers(
-                (
-                    VerificationLayer.PRIVATE_CHECKPOINT_CANDIDATE.value,
-                    VerificationLayer.MONOTONIC_HEAD.value,
-                ),
+                tuple(authority_stage_recovered),
                 authority_failure[1],
             ),
             unavailable_layers=authority_failure[2],
             safe_to_resume=False,
-            next_action=(
-                "Re-establish each unavailable authority layer before using "
-                "recovered case state for substantive work."
+            next_action=_verification_next_action(
+                authority_failure[0],
+                (
+                    "Re-establish each unavailable authority layer before using "
+                    "recovered case state for substantive work."
+                ),
             ),
         )
         raise ContinuityRecoveryError(
             "Continuity is INCOMPLETE: authority verification unavailable.",
             brief,
-        )
+        ) from None
     if state.status is CheckpointStatus.INCOMPLETE:
+        verified_now = (
+            VerificationLayer.PRIVATE_CHECKPOINT_STORE.value,
+            VerificationLayer.PRIVATE_CHECKPOINT_CANDIDATE.value,
+            VerificationLayer.VERIFIED_PRIVATE_CHAIN.value,
+            VerificationLayer.MONOTONIC_HEAD.value,
+            VerificationLayer.TRUSTED_CLOCK.value,
+            VerificationLayer.GITHUB_AUTHORITY.value,
+            VerificationLayer.HUMAN_RECORD_AUTHORITY.value,
+            VerificationLayer.AUTHORITY_VERIFIER.value,
+        )
+        remaining_recorded_gaps = tuple(
+            layer for layer in state.unavailable_layers if layer not in verified_now
+        )
+        if remaining_recorded_gaps:
+            recovery_reason = state.status_reason_code
+            recovery_unavailable = remaining_recorded_gaps
+        else:
+            recovery_reason = RecoveryReasonCode.STATUS_CLEARANCE_PENDING.value
+            recovery_unavailable = (VerificationLayer.STATUS_CLEARANCE.value,)
         brief = IncompleteRecoveryBrief(
             status=state.status.value,
-            reason_code=state.status_reason_code or "CHECKPOINT_INCOMPLETE",
-            recovered_layers=(
-                VerificationLayer.VERIFIED_PRIVATE_CHAIN.value,
-                VerificationLayer.MONOTONIC_HEAD.value,
-                VerificationLayer.GITHUB_AUTHORITY.value,
-                VerificationLayer.HUMAN_RECORD_AUTHORITY.value,
+            reason_code=recovery_reason,
+            recovered_layers=tuple(
+                layer for layer in verified_now if layer not in remaining_recorded_gaps
             ),
-            unavailable_layers=state.unavailable_layers,
+            unavailable_layers=recovery_unavailable,
             safe_to_resume=False,
             next_action=state.next_prompt,
         )
         raise ContinuityRecoveryError(
             "Continuity is INCOMPLETE: checkpoint gap remains unresolved.",
             brief,
-        )
+        ) from None
     return state, _visible_resume_brief(state, receipt)
+
+
+def _persistence_payloads(
+    store: PrivateContinuityStore, user_scope_id: str
+) -> tuple[Mapping[str, Any], ...]:
+    adapter_failed = False
+    try:
+        payloads = tuple(store.list_checkpoints(user_scope_id))
+    except Exception:
+        adapter_failed = True
+    if adapter_failed:
+        raise ContinuityPolicyError(
+            "Checkpoint persistence adapter failed while reading the private chain."
+        )
+    return payloads
+
+
+def _verified_persistence_snapshot(
+    store: PrivateContinuityStore,
+    user_scope_id: str,
+    verifier: AuthorityVerifier,
+    *,
+    trusted_clock: TrustedClock | None,
+) -> tuple[ContinuityState, ...]:
+    """Return a bounded, mutually consistent chain/head/authority snapshot."""
+
+    last_failure: ContinuityPolicyError | None = None
+    for _ in range(MAX_SNAPSHOT_VERIFY_ATTEMPTS):
+        payloads = _persistence_payloads(store, user_scope_id)
+        chain_failed = False
+        try:
+            chain = _chain(user_scope_id, payloads) if payloads else ()
+        except Exception:
+            chain_failed = True
+        if chain_failed:
+            raise ContinuityPolicyError(
+                "Stored checkpoint chain failed schema or integrity verification."
+            )
+        try:
+            tail = chain[-1] if chain else None
+            _verified_head(
+                verifier,
+                user_scope_id,
+                tail,
+                trusted_clock=trusted_clock,
+            )
+            if tail is not None:
+                _verified_receipt(
+                    verifier,
+                    tail,
+                    trusted_clock=trusted_clock,
+                )
+            return chain
+        except ContinuityPolicyError as exc:
+            last_failure = exc
+    if last_failure is not None:
+        raise last_failure from None
+    raise ContinuityPolicyError(
+        "Checkpoint persistence snapshot could not be verified."
+    )
 
 
 def persist_checkpoint(
@@ -1562,22 +1956,28 @@ def persist_checkpoint(
     *,
     trusted_clock: TrustedClock | None = None,
 ) -> None:
-    _require_private_store(store)
+    capability_failed = False
+    try:
+        _require_private_store(store)
+    except Exception:
+        capability_failed = True
+    if capability_failed:
+        raise ContinuityPolicyError(
+            "Checkpoint persistence store capability could not be verified."
+        )
     state.validate()
     _verified_receipt(
         verifier,
         state,
         trusted_clock=trusted_clock,
     )
-    existing_payloads = tuple(store.list_checkpoints(state.user_scope_id))
-    if existing_payloads:
-        existing_chain = _chain(state.user_scope_id, existing_payloads)
-        _verified_head(
-            verifier,
-            state.user_scope_id,
-            existing_chain[-1],
-            trusted_clock=trusted_clock,
-        )
+    existing_chain = _verified_persistence_snapshot(
+        store,
+        state.user_scope_id,
+        verifier,
+        trusted_clock=trusted_clock,
+    )
+    if existing_chain:
         matching = [item for item in existing_chain if item.checkpoint_id == state.checkpoint_id]
         if matching:
             if matching[0] == state:
@@ -1609,45 +2009,47 @@ def persist_checkpoint(
     elif state.sequence != 1 or state.previous_checkpoint_id is not None:
         raise ContinuityPolicyError("The first persisted checkpoint must start sequence 1.")
     else:
-        _verified_head(
-            verifier,
-            state.user_scope_id,
-            None,
-            trusted_clock=trusted_clock,
-        )
         expected_fingerprint = None
     candidate_payload = state_to_private_payload(state)
-    _chain(state.user_scope_id, existing_payloads + (candidate_payload,))
-    committed = store.compare_and_swap_checkpoint(
-        state.previous_checkpoint_id,
-        expected_fingerprint,
-        candidate_payload,
+    normalized_existing_payloads = tuple(
+        state_to_private_payload(item) for item in existing_chain
     )
+    _chain(state.user_scope_id, normalized_existing_payloads + (candidate_payload,))
+    cas_failed = False
+    try:
+        committed = store.compare_and_swap_checkpoint(
+            state.previous_checkpoint_id,
+            expected_fingerprint,
+            candidate_payload,
+        )
+    except Exception:
+        cas_failed = True
+    if cas_failed:
+        after_unknown_outcome = _verified_persistence_snapshot(
+            store,
+            state.user_scope_id,
+            verifier,
+            trusted_clock=trusted_clock,
+        )
+        if any(item == state for item in after_unknown_outcome):
+            return
+        raise ContinuityPolicyError(
+            "Checkpoint persistence adapter outcome could not be verified."
+        )
     if type(committed) is not bool or not committed:
-        after_payloads = tuple(store.list_checkpoints(state.user_scope_id))
-        if after_payloads:
-            after_rejection = _chain(state.user_scope_id, after_payloads)
-            _verified_head(
-                verifier,
-                state.user_scope_id,
-                after_rejection[-1],
-                trusted_clock=trusted_clock,
-            )
-            if any(item == state for item in after_rejection):
-                return
+        after_rejection = _verified_persistence_snapshot(
+            store,
+            state.user_scope_id,
+            verifier,
+            trusted_clock=trusted_clock,
+        )
+        if any(item == state for item in after_rejection):
+            return
         raise ContinuityPolicyError("Checkpoint compare-and-swap was rejected.")
-    round_trip_chain = _chain(
-        state.user_scope_id, store.list_checkpoints(state.user_scope_id)
-    )
-    _verified_head(
-        verifier,
+    round_trip_chain = _verified_persistence_snapshot(
+        store,
         state.user_scope_id,
-        round_trip_chain[-1],
-        trusted_clock=trusted_clock,
-    )
-    _verified_receipt(
         verifier,
-        round_trip_chain[-1],
         trusted_clock=trusted_clock,
     )
     if not any(item == state for item in round_trip_chain):
