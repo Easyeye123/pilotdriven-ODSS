@@ -71,13 +71,6 @@ def _utc(value: str) -> datetime:
     return parsed
 
 
-def _bool(payload: Mapping[str, Any], key: str) -> bool:
-    value = payload.get(key)
-    if type(value) is not bool:
-        raise ContinuityPolicyError(f"{key} must be a JSON boolean.")
-    return value
-
-
 def _strings(payload: Mapping[str, Any], key: str) -> tuple[str, ...]:
     value = payload.get(key, ())
     if not isinstance(value, (list, tuple)) or isinstance(value, (str, bytes)):
@@ -85,6 +78,13 @@ def _strings(payload: Mapping[str, Any], key: str) -> tuple[str, ...]:
     if any(not isinstance(item, str) or not item.strip() for item in value):
         raise ContinuityPolicyError(f"{key} must contain non-empty strings.")
     return tuple(item.strip() for item in value)
+
+
+def _json_bool(payload: Mapping[str, Any], key: str) -> bool:
+    value = payload.get(key)
+    if type(value) is not bool:
+        raise ContinuityPolicyError(f"{key} must be a JSON boolean.")
+    return value
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -95,8 +95,6 @@ class AuthorityPointers:
     policy_fingerprint: str
     human_record_id: str
     human_record_fingerprint: str
-    github_main_verified: bool
-    human_record_verified: bool
 
     def validate(self) -> None:
         if not isinstance(self.github_repository, str) or not _REPO_RE.fullmatch(
@@ -122,14 +120,28 @@ class AuthorityPointers:
             if not isinstance(value, str) or not _FP_RE.fullmatch(value):
                 raise ContinuityPolicyError(f"{field} must use sha256:<64 lowercase hex>.")
         _identifier(self.human_record_id, "human_record_id")
-        if type(self.github_main_verified) is not bool:
-            raise ContinuityPolicyError("github_main_verified must be a boolean.")
-        if type(self.human_record_verified) is not bool:
-            raise ContinuityPolicyError("human_record_verified must be a boolean.")
-        if not self.github_main_verified:
-            raise ContinuityPolicyError("Merged-main GitHub authority is unverified.")
-        if not self.human_record_verified:
-            raise ContinuityPolicyError("The human-readable record is unverified.")
+
+
+@dataclass(frozen=True, kw_only=True)
+class AuthorityVerificationReceipt:
+    """Receipt returned only after external GitHub and private-record checks."""
+
+    github_commit_sha: str
+    policy_fingerprint: str
+    human_record_id: str
+    human_record_fingerprint: str
+    verified_at_utc: str
+
+    def validate_against(self, authority: AuthorityPointers) -> None:
+        authority.validate()
+        _utc(self.verified_at_utc)
+        if (
+            self.github_commit_sha != authority.github_commit_sha
+            or self.policy_fingerprint != authority.policy_fingerprint
+            or self.human_record_id != authority.human_record_id
+            or self.human_record_fingerprint != authority.human_record_fingerprint
+        ):
+            raise ContinuityPolicyError("Authority verification receipt does not match binding.")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -239,10 +251,40 @@ class ResumeBrief:
     authority_status: str
 
 
-class ContinuityStore(Protocol):
+class PrivateContinuityStore(Protocol):
+    privacy_class: str
+
     def list_checkpoints(self, user_scope_id: str) -> Iterable[Mapping[str, Any]]: ...
 
-    def put_checkpoint(self, payload: Mapping[str, Any]) -> None: ...
+    def compare_and_swap_checkpoint(
+        self, expected_checkpoint_id: str | None, payload: Mapping[str, Any]
+    ) -> bool: ...
+
+
+class AuthorityVerifier(Protocol):
+    def verify(self, authority: AuthorityPointers) -> AuthorityVerificationReceipt: ...
+
+
+def _require_private_store(store: PrivateContinuityStore) -> None:
+    if getattr(store, "privacy_class", None) != "PRIVATE":
+        raise ContinuityPolicyError("Continuity persistence requires a PRIVATE store adapter.")
+
+
+def _verified_receipt(
+    verifier: AuthorityVerifier, authority: AuthorityPointers
+) -> AuthorityVerificationReceipt:
+    receipt = verifier.verify(authority)
+    if not isinstance(receipt, AuthorityVerificationReceipt):
+        raise ContinuityPolicyError("Authority verifier did not return a valid receipt.")
+    receipt.validate_against(authority)
+    return receipt
+
+
+def _event(value: str | ContinuityEvent) -> ContinuityEvent:
+    try:
+        return ContinuityEvent(value)
+    except (TypeError, ValueError) as exc:
+        raise ContinuityPolicyError(f"Unknown continuity event: {value!r}") from exc
 
 
 def select_mode(requested: str | InteractionMode | None) -> tuple[InteractionMode, bool]:
@@ -254,14 +296,14 @@ def select_mode(requested: str | InteractionMode | None) -> tuple[InteractionMod
         raise ContinuityPolicyError(f"Unknown interaction mode: {requested!r}") from exc
 
 
-def checkpoint_required(event: ContinuityEvent) -> bool:
-    return event in CHECKPOINT_EVENTS
+def checkpoint_required(event: str | ContinuityEvent) -> bool:
+    return _event(event) in CHECKPOINT_EVENTS
 
 
 def _successor(
     previous: ContinuityState,
     *,
-    event: ContinuityEvent,
+    event: str | ContinuityEvent,
     approved_changes: tuple[str, ...],
     checkpoint_id: str,
     updated_at_utc: str,
@@ -271,9 +313,16 @@ def _successor(
     explicit: bool,
 ) -> ContinuityState:
     previous.validate()
-    if not checkpoint_required(event):
+    normalized_event = _event(event)
+    if normalized_event not in CHECKPOINT_EVENTS:
         raise ContinuityPolicyError("The event does not permit an approved checkpoint.")
-    normalized = tuple(item.strip() for item in approved_changes if item.strip())
+    if not isinstance(approved_changes, (list, tuple)) or isinstance(
+        approved_changes, (str, bytes)
+    ):
+        raise ContinuityPolicyError("approved_changes must be an array of strings.")
+    if any(not isinstance(item, str) or not item.strip() for item in approved_changes):
+        raise ContinuityPolicyError("approved_changes must contain non-empty strings.")
+    normalized = tuple(item.strip() for item in approved_changes)
     if not normalized or len(set(normalized)) != len(normalized):
         raise ContinuityPolicyError("The approved bundle is empty or duplicated.")
     new_changes = tuple(item for item in normalized if item not in previous.approved_changes)
@@ -306,18 +355,19 @@ def _successor(
 def record_approved_bundle(
     previous: ContinuityState,
     *,
-    event: ContinuityEvent,
+    event: str | ContinuityEvent,
     approved_changes: tuple[str, ...],
     checkpoint_id: str,
     updated_at_utc: str,
     next_prompt: str,
     authority: AuthorityPointers,
 ) -> ContinuityState:
-    if event is ContinuityEvent.APPROVED_MODE_CHANGE:
+    normalized_event = _event(event)
+    if normalized_event is ContinuityEvent.APPROVED_MODE_CHANGE:
         raise ContinuityPolicyError("Use record_mode_change for mode changes.")
     return _successor(
         previous,
-        event=event,
+        event=normalized_event,
         approved_changes=approved_changes,
         checkpoint_id=checkpoint_id,
         updated_at_utc=updated_at_utc,
@@ -356,8 +406,11 @@ def record_mode_change(
     )
 
 
-def visible_resume_brief(state: ContinuityState) -> ResumeBrief:
+def visible_resume_brief(
+    state: ContinuityState, receipt: AuthorityVerificationReceipt
+) -> ResumeBrief:
     state.validate()
+    receipt.validate_against(state.authority)
     return ResumeBrief(
         checkpoint_id=state.checkpoint_id,
         status=state.status.value,
@@ -416,11 +469,9 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
             policy_fingerprint=str(authority.get("policy_fingerprint", "")),
             human_record_id=str(authority.get("human_record_id", "")),
             human_record_fingerprint=str(authority.get("human_record_fingerprint", "")),
-            github_main_verified=_bool(authority, "github_main_verified"),
-            human_record_verified=_bool(authority, "human_record_verified"),
         ),
         mode=mode,
-        mode_selected_explicitly=_bool(payload, "mode_selected_explicitly"),
+        mode_selected_explicitly=_json_bool(payload, "mode_selected_explicitly"),
         status=status,
         active_case_ref=payload.get("active_case_ref"),
         source_manifest=_strings(payload, "source_manifest"),
@@ -435,7 +486,7 @@ def load_checkpoint(payload: Mapping[str, Any]) -> ContinuityState:
     return state
 
 
-def state_to_payload(state: ContinuityState) -> dict[str, Any]:
+def state_to_private_payload(state: ContinuityState) -> dict[str, Any]:
     state.validate()
     return {
         "protocol_version": state.protocol_version,
@@ -451,8 +502,6 @@ def state_to_payload(state: ContinuityState) -> dict[str, Any]:
             "policy_fingerprint": state.authority.policy_fingerprint,
             "human_record_id": state.authority.human_record_id,
             "human_record_fingerprint": state.authority.human_record_fingerprint,
-            "github_main_verified": state.authority.github_main_verified,
-            "human_record_verified": state.authority.human_record_verified,
         },
         "mode": state.mode.value,
         "mode_selected_explicitly": state.mode_selected_explicitly,
@@ -489,6 +538,9 @@ def _chain(user_scope_id: str, payloads: Iterable[Mapping[str, Any]]) -> tuple[C
     if numbers != list(range(1, numbers[-1] + 1)):
         raise ContinuityPolicyError("The checkpoint chain has a missing sequence.")
     chain = tuple(by_sequence[number] for number in numbers)
+    checkpoint_ids = [item.checkpoint_id for item in chain]
+    if len(set(checkpoint_ids)) != len(checkpoint_ids):
+        raise ContinuityPolicyError("A checkpoint_id is reused within the chain.")
     for previous, current in zip(chain, chain[1:]):
         if current.previous_checkpoint_id != previous.checkpoint_id:
             raise ContinuityPolicyError("The predecessor chain is broken.")
@@ -497,14 +549,30 @@ def _chain(user_scope_id: str, payloads: Iterable[Mapping[str, Any]]) -> tuple[C
     return chain
 
 
-def bootstrap_helpyou_session(user_scope_id: str, store: ContinuityStore) -> tuple[ContinuityState, ResumeBrief]:
+def bootstrap_helpyou_session(
+    user_scope_id: str,
+    store: PrivateContinuityStore,
+    verifier: AuthorityVerifier,
+) -> tuple[ContinuityState, ResumeBrief]:
+    _require_private_store(store)
     state = _chain(user_scope_id, store.list_checkpoints(user_scope_id))[-1]
-    return state, visible_resume_brief(state)
+    receipt = _verified_receipt(verifier, state.authority)
+    return state, visible_resume_brief(state, receipt)
 
 
-def persist_checkpoint(store: ContinuityStore, state: ContinuityState) -> None:
+def persist_checkpoint(
+    store: PrivateContinuityStore,
+    state: ContinuityState,
+    verifier: AuthorityVerifier,
+) -> None:
+    _require_private_store(store)
     state.validate()
-    store.put_checkpoint(state_to_payload(state))
+    _verified_receipt(verifier, state.authority)
+    committed = store.compare_and_swap_checkpoint(
+        state.previous_checkpoint_id, state_to_private_payload(state)
+    )
+    if type(committed) is not bool or not committed:
+        raise ContinuityPolicyError("Checkpoint compare-and-swap was rejected.")
     if _chain(state.user_scope_id, store.list_checkpoints(state.user_scope_id))[-1] != state:
         raise ContinuityPolicyError("Checkpoint round-trip verification failed.")
 
@@ -544,6 +612,6 @@ def public_checkpoint_projection(state: ContinuityState) -> dict[str, Any]:
         "mode": state.mode.value,
         "status": state.status.value,
         "approved_change_count": len(state.approved_changes),
-        "authority_verified": True,
+        "authority_binding_present": True,
         "private_checkpoint_present": True,
     }
