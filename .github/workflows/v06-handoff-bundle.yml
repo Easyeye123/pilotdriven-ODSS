@@ -66,6 +66,7 @@ jobs:
         run: pytest -q
 
       - name: Test Helpyou policies
+        if: always()
         working-directory: integration/helpyou
         run: python -m unittest discover -s . -p "test_*.py" -v
 
