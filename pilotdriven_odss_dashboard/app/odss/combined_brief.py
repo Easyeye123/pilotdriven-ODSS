@@ -9793,6 +9793,27 @@ def _operational_alternate_constraint_assessment(
     return combined
 
 
+_AIRPORT_INDEX_START_Y = PAGE_SIZE[1] - 94.0 - 12.0
+_AIRPORT_INDEX_BOTTOM_Y = 42.0
+_AIRPORT_INDEX_LINE_ADVANCE = 9.6
+_AIRPORT_INDEX_SPACE_ADVANCE = 4.0
+
+
+def _operational_airport_index_page_fits(
+    lines: list[tuple[str, str]],
+) -> bool:
+    """Apply the exact baseline budget used by the airport-index renderer."""
+    y = _AIRPORT_INDEX_START_Y
+    for kind, _ in lines:
+        if kind == "space":
+            y -= _AIRPORT_INDEX_SPACE_ADVANCE
+            continue
+        if y < _AIRPORT_INDEX_BOTTOM_Y:
+            return False
+        y -= _AIRPORT_INDEX_LINE_ADVANCE
+    return True
+
+
 def _operational_airport_index_pages(
     briefing: dict[str, Any],
 ) -> list[list[tuple[str, str]]]:
@@ -9896,12 +9917,14 @@ def _operational_airport_index_pages(
             ("airport", f"{entry_heading} · CONTINUED"),
         ))
 
-    maximum_lines = 64
     pages: list[list[tuple[str, str]]] = []
     page: list[tuple[str, str]] = []
     for entry_lines, continuation_heading in entry_blocks:
-        if len(entry_lines) <= maximum_lines:
-            if page and len(page) + len(entry_lines) > maximum_lines:
+        if _operational_airport_index_page_fits(entry_lines):
+            if page and not _operational_airport_index_page_fits([
+                *page,
+                *entry_lines,
+            ]):
                 pages.append(page)
                 page = []
             page.extend(entry_lines)
@@ -9914,15 +9937,30 @@ def _operational_airport_index_pages(
             pages.append(page)
             page = []
         remaining = list(entry_lines)
-        pages.append(remaining[:maximum_lines])
-        remaining = remaining[maximum_lines:]
+        first_page: list[tuple[str, str]] = []
+        while remaining and _operational_airport_index_page_fits([
+            *first_page,
+            remaining[0],
+        ]):
+            first_page.append(remaining.pop(0))
+        if not first_page:
+            raise ValueError(
+                "Airport surface/notes index row exceeds an empty page."
+            )
+        pages.append(first_page)
         while remaining:
-            capacity = maximum_lines - 1
-            pages.append([
-                continuation_heading,
-                *remaining[:capacity],
-            ])
-            remaining = remaining[capacity:]
+            continuation_page = [continuation_heading]
+            while remaining and _operational_airport_index_page_fits([
+                *continuation_page,
+                remaining[0],
+            ]):
+                continuation_page.append(remaining.pop(0))
+            if len(continuation_page) == 1:
+                raise ValueError(
+                    "Airport surface/notes index continuation row exceeds "
+                    "an empty page."
+                )
+            pages.append(continuation_page)
     if page:
         pages.append(page)
     return pages
@@ -9958,6 +9996,11 @@ def draw_operational_airport_index_page(
         else f"sec_airport_surface_index_{continuation_number}"
     )
     y = content_top - 12.0
+    if abs(y - _AIRPORT_INDEX_START_Y) > 0.01:
+        raise ValueError(
+            "Airport surface/notes index chrome changed without a matching "
+            "pagination budget."
+        )
     colours = {
         "airport": TEXT,
         "source": TEXT_SECONDARY,
@@ -9978,14 +10021,17 @@ def draw_operational_airport_index_page(
     }
     for kind, value in lines:
         if kind == "space":
-            y -= 4.0
+            y -= _AIRPORT_INDEX_SPACE_ADVANCE
             continue
-        if y < 42.0:
-            raise ValueError("Airport surface/notes index exceeds its measured page capacity.")
+        if y < _AIRPORT_INDEX_BOTTOM_Y:
+            raise ValueError(
+                "Airport surface/notes index exceeds its measured page "
+                "capacity."
+            )
         canvas.setFillColor(colours.get(kind, TEXT_SECONDARY))
         canvas.setFont(fonts.get(kind, SANS), T_SMALL)
         canvas.drawString(MARGIN + 10.0, y, value)
-        y -= 9.6
+        y -= _AIRPORT_INDEX_LINE_ADVANCE
 
 
 def draw_operational_airports_page(

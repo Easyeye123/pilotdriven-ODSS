@@ -33,6 +33,7 @@ from app.odss.combined_brief import (
     _hazard_page_plans,
     _operational_alternate_constraint_assessment,
     _operational_alternate_forecast,
+    _operational_airport_index_page_fits,
     _operational_airport_index_pages,
     _operational_coverage_receipt,
     _operational_fir_boundary_summary,
@@ -678,7 +679,7 @@ def test_large_released_airport_notes_repeat_the_icao_on_every_index_page():
 
     pages = _operational_airport_index_pages(flight)
     assert len(pages) >= 2
-    assert all(len(page) <= 64 for page in pages)
+    assert all(_operational_airport_index_page_fits(page) for page in pages)
     assert all(
         page[0][0] == "airport"
         and "AIRPORT 1/1 · WSSS · DESTINATION" in page[0][1]
@@ -688,6 +689,73 @@ def test_large_released_airport_notes_repeat_the_icao_on_every_index_page():
         f"Exact note {index:02d}" in " ".join(value for _, value in sum(pages, []))
         for index in range(80)
     )
+
+
+def test_sixteen_airport_index_respects_the_renderer_page_capacity(tmp_path):
+    """The fresh SQ481 airport-list shape must render, not fail at download."""
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    airport_codes = [
+        "FAOR", "FMMI", "FIMP", "FQMA", "FVHA", "HTDA", "HKJK", "HECA",
+        "VABB", "VOMM", "VCBI", "WIII", "WADD", "WMKK", "WSSS", "WMSA",
+    ]
+    flight["airport_surface_index"] = [
+        {
+            "icao": icao,
+            "name": f"Filed airport {index:02d}",
+            "roles": (
+                ["departure"]
+                if index == 1
+                else ["destination"]
+                if index == len(airport_codes)
+                else ["edto", "fuel_enroute"]
+                if index % 3 == 0
+                else ["enroute"]
+            ),
+            "roleLabel": "Applicable filed airport",
+            "stationStatus": "held",
+            "sourceLabel": (
+                "Uploaded OFP station package with exact isolated airport "
+                "NOTAM evidence"
+            ),
+            "window": {
+                "startsAt": "2026-08-25T18:25:00Z",
+                "endsAt": "2026-08-26T05:00:00Z",
+                "referenceAt": "2026-08-25T23:30:00Z",
+                "referenceBasis": "filed airport role timing window",
+            },
+            "notamCount": index,
+            "notes": {
+                "status": "unavailable",
+                "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
+                "releaseStatus": None,
+                "airportVersion": None,
+                "cycle": None,
+                "schemaVersion": None,
+                "objects": [],
+                "lines": [],
+                "omittedLineCount": 0,
+            },
+        }
+        for index, icao in enumerate(airport_codes, start=1)
+    ]
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "sixteen-airport-index.pdf"
+
+    render_combined_briefing(flight, findings, [], out)
+
+    document = fitz.open(out)
+    text = " ".join(" ".join(page.get_text() for page in document).split())
+    for index, icao in enumerate(airport_codes, start=1):
+        assert f"AIRPORT {index}/16 · {icao}" in text
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
 
 
 def test_vws_review_stays_visible_in_pdf_when_high_terrain_exists(tmp_path):
