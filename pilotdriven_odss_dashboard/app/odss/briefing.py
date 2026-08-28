@@ -5631,6 +5631,14 @@ def build_briefing_view(
         "departure": departure_panel,
         "destination": destination_panel,
         "airport_operational_panels": airport_operational_panels,
+        # Exact validated airport/notes publication shared by the dashboard
+        # and combined PDF. Keep it in the composed view so renderers never
+        # create a second product directly from raw flight storage.
+        "airport_surface_index": [
+            dict(entry)
+            for entry in (flight.get("airport_surface_index") or [])
+            if isinstance(entry, dict)
+        ],
         "alternate_assessment_rows": alternate_assessment_rows,
         "fuel_enroute_airports": [
             panel

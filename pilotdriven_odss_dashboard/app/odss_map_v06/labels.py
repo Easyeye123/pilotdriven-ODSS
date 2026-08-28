@@ -16,6 +16,7 @@ ROLE_PRIORITY: dict[str, int] = {
     "edto_etp": 80,
     "edto_exit": 80,
     "depressurisation_critical": 75,
+    "vws_trigger": 72,
     "terrain_critical": 70,
     "toc": 60,
     "tod": 60,

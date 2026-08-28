@@ -167,6 +167,117 @@ def test_combined_quality_gate_accepts_lossless_eosid_continuation(
     assert result["violations"] == []
 
 
+def test_combined_quality_gate_accepts_declared_airport_index_pages(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-airport-index.pdf"
+    airport_codes = [
+        "FAOR", "FMMI", "FIMP", "VCBI", "WIMM", "WITT", "WADD",
+        "WMKK", "WSSS", "WMSA", "VTBS", "VHHH", "RCTP", "RPLL",
+        "VVTS", "VVDN", "WIHH", "WIII", "WBSB",
+    ]
+    page_texts = [
+        (
+            "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
+            "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
+        ),
+        (
+            "FLIGHT BRIEFING\nDECISION ANALYSIS\n"
+            "FLIGHT-PHASE DECISION TIMELINE\nSOURCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nPERFORMANCE / FUEL / STATUS\n"
+            "RECONCILIATION / RELEASE REVIEW"
+        ),
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL\nSOURCE DECLARATION",
+        (
+            "FLIGHT BRIEFING\nAIRPORTS / ALTERNATES\n"
+            "DESTINATION ALTERNATE ASSESSMENT MATRIX\n"
+            "19 FILED SURFACE/NOTES AIRPORTS · 2 INDEX PAGES FOLLOW"
+        ),
+        (
+            "FLIGHT BRIEFING\nAIRPORT SURFACE / NOTES INDEX · 1/2\n"
+            + "\n".join(
+                f"AIRPORT {index}/19 · {code}"
+                for index, code in enumerate(airport_codes[:10], start=1)
+            )
+        ),
+        (
+            "FLIGHT BRIEFING\nAIRPORT SURFACE / NOTES INDEX · 2/2\n"
+            + "\n".join(
+                f"AIRPORT {index}/19 · {code}"
+                for index, code in enumerate(airport_codes[10:], start=11)
+            )
+        ),
+        (
+            "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
+            "NAMED DIRECT / OFP VOLCANO ADVISORIES"
+        ),
+        (
+            "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
+            "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nCOVERAGE CHECKLIST\n"
+            "CAT / VWS EVIDENCE\nAIREP / PIREP"
+        ),
+    ]
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is True
+    assert result["violations"] == []
+
+
+def test_combined_quality_gate_rejects_broken_airport_index_sequence(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-broken-airport-index.pdf"
+    page_texts = [
+        (
+            "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
+            "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
+        ),
+        (
+            "FLIGHT BRIEFING\nDECISION ANALYSIS\n"
+            "FLIGHT-PHASE DECISION TIMELINE\nSOURCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nPERFORMANCE / FUEL / STATUS\n"
+            "RECONCILIATION / RELEASE REVIEW"
+        ),
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL\nSOURCE DECLARATION",
+        (
+            "FLIGHT BRIEFING\nAIRPORTS / ALTERNATES\n"
+            "DESTINATION ALTERNATE ASSESSMENT MATRIX\n"
+            "19 FILED SURFACE/NOTES AIRPORTS · 2 INDEX PAGES FOLLOW"
+        ),
+        "FLIGHT BRIEFING\nAIRPORT SURFACE / NOTES INDEX · 2/2\nAIRPORT 1/19 · FAOR",
+        (
+            "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
+            "NAMED DIRECT / OFP VOLCANO ADVISORIES"
+        ),
+        (
+            "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
+            "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nCOVERAGE CHECKLIST\n"
+            "CAT / VWS EVIDENCE\nAIREP / PIREP"
+        ),
+    ]
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        violation.code == "COMBINED_AIRPORT_INDEX_STRUCTURE"
+        for violation in result["violations"]
+    )
+
+
 def test_combined_quality_gate_rejects_missing_operational_coverage_page(
     tmp_path: Path,
 ) -> None:

@@ -140,6 +140,22 @@ _COMBINED_EOSID_PAGE = re.compile(
     r"LOSSLESS CONTINUATION\s+(?P<index>\d+)\s*/\s*(?P<count>\d+)",
     re.IGNORECASE,
 )
+_COMBINED_AIRPORT_INDEX_MARKER = "AIRPORT SURFACE / NOTES INDEX"
+_COMBINED_AIRPORT_INDEX_DECLARATION = re.compile(
+    r"(?P<airports>\d+)\s+FILED\s+SURFACE\s*/\s*NOTES\s+AIRPORTS\s*"
+    r"[·-]\s*(?P<count>\d+)\s+INDEX\s+PAGES?\s+FOLLOW",
+    re.IGNORECASE,
+)
+_COMBINED_AIRPORT_INDEX_PAGE = re.compile(
+    r"AIRPORT\s+SURFACE\s*/\s*NOTES\s+INDEX\s*[·-]\s*"
+    r"(?P<index>\d+)\s*/\s*(?P<count>\d+)",
+    re.IGNORECASE,
+)
+_COMBINED_AIRPORT_INDEX_ENTRY = re.compile(
+    r"AIRPORT\s+(?P<index>\d+)\s*/\s*(?P<count>\d+)\s*"
+    r"[·-]\s*(?P<icao>[A-Z]{4})\b",
+    re.IGNORECASE,
+)
 _COMBINED_RETIRED_LABELS = (
     "LEVEL 1",
     "LEVEL 2",
@@ -342,6 +358,92 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                             ),
                         ))
                     cursor += 1
+            elif flow_index == 1:
+                declaration = _COMBINED_AIRPORT_INDEX_DECLARATION.search(
+                    page_text
+                )
+                airport_index_pages: list[tuple[int, int]] = []
+                airport_index_texts: list[str] = []
+                while (
+                    cursor < page_count
+                    and _COMBINED_AIRPORT_INDEX_MARKER
+                    in extracted_pages[cursor].upper()
+                ):
+                    page_match = _COMBINED_AIRPORT_INDEX_PAGE.search(
+                        extracted_pages[cursor]
+                    )
+                    airport_index_texts.append(extracted_pages[cursor])
+                    if page_match:
+                        airport_index_pages.append((
+                            int(page_match.group("index")),
+                            int(page_match.group("count")),
+                        ))
+                    else:
+                        airport_index_pages.append((0, 0))
+                    cursor += 1
+
+                airport_index_structure_valid = True
+                if airport_index_pages:
+                    declared_count = (
+                        int(declaration.group("count"))
+                        if declaration
+                        else 0
+                    )
+                    observed_indices = [
+                        index for index, _ in airport_index_pages
+                    ]
+                    observed_counts = {
+                        count for _, count in airport_index_pages
+                    }
+                    airport_index_structure_valid = bool(
+                        declaration
+                        and declared_count == len(airport_index_pages)
+                        and observed_indices
+                        == list(range(1, declared_count + 1))
+                        and observed_counts == {declared_count}
+                    )
+                elif declaration:
+                    airport_index_structure_valid = False
+                if not airport_index_structure_valid:
+                    violations.append(ReportQualityViolation(
+                        "COMBINED_AIRPORT_INDEX_STRUCTURE",
+                        (
+                            "Airport surface/notes index pages must be declared "
+                            "on the Airports / Alternates page and form one "
+                            "complete ordered 1/N through N/N sequence."
+                        ),
+                    ))
+                if declaration and airport_index_pages:
+                    declared_airports = int(declaration.group("airports"))
+                    airport_entries: list[tuple[int, int, str]] = []
+                    for index_text in airport_index_texts:
+                        for line in index_text.splitlines():
+                            if "CONTINUED" in line.upper():
+                                continue
+                            match = _COMBINED_AIRPORT_INDEX_ENTRY.search(line)
+                            if match:
+                                airport_entries.append((
+                                    int(match.group("index")),
+                                    int(match.group("count")),
+                                    match.group("icao").upper(),
+                                ))
+                    entries_valid = bool(
+                        [index for index, _, _ in airport_entries]
+                        == list(range(1, declared_airports + 1))
+                        and {count for _, count, _ in airport_entries}
+                        == {declared_airports}
+                        and len({icao for _, _, icao in airport_entries})
+                        == declared_airports
+                    )
+                    if not entries_valid:
+                        violations.append(ReportQualityViolation(
+                            "COMBINED_AIRPORT_INDEX_ENTRY_STRUCTURE",
+                            (
+                                "Airport surface/notes entries must match the "
+                                "declared filed-airport count and form one "
+                                "unique ordered 1/N through N/N ICAO list."
+                            ),
+                        ))
         for page_index in range(cursor, page_count):
             page_text = extracted_pages[page_index].upper()
             if not (

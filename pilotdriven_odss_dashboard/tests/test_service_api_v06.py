@@ -3033,6 +3033,68 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         },
     }]
     overlays[0]["counts"]["reviewRequired"] = 1
+    airport_surface_index = [
+        {
+            "icao": flight["departure"],
+            "name": "Departure test airport",
+            "roles": ["departure"],
+            "roleLabel": "Departure",
+            "stationStatus": "held",
+            "sourceLabel": "Uploaded OFP station package",
+            "window": {
+                "startsAt": "2026-07-11T09:42:00Z",
+                "endsAt": "2026-07-11T11:42:00Z",
+                "referenceAt": "2026-07-11T10:42:00Z",
+                "referenceBasis": "departure",
+            },
+            "notamCount": 1,
+            "notes": {
+                "status": "unavailable",
+                "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
+                "releaseStatus": None,
+                "airportVersion": None,
+                "cycle": None,
+                "schemaVersion": None,
+                "objects": [],
+                "lines": [],
+                "omittedLineCount": 0,
+            },
+        },
+        {
+            "icao": flight["destination"],
+            "name": "Destination test airport",
+            "roles": ["destination"],
+            "roleLabel": "Destination",
+            "stationStatus": "held",
+            "sourceLabel": "Uploaded OFP station package",
+            "window": {
+                "startsAt": "2026-07-11T19:00:00Z",
+                "endsAt": "2026-07-11T21:00:00Z",
+                "referenceAt": "2026-07-11T20:00:00Z",
+                "referenceBasis": "destination",
+            },
+            "notamCount": 2,
+            "notes": {
+                "status": "released",
+                "message": "RELEASED AIRPORT NOTES — EXACT PACKAGE VALUES",
+                "releaseStatus": "released",
+                "airportVersion": "TEST-2607-1",
+                "cycle": "2607",
+                "schemaVersion": "1",
+                "objects": [
+                    {"name": "ops.json", "sha256": "a" * 64},
+                ],
+                "lines": [
+                    {
+                        "sourceObject": "ops.json",
+                        "path": "surface.caution",
+                        "value": "Exact released test note.",
+                    },
+                ],
+                "omittedLineCount": 0,
+            },
+        },
+    ]
 
     cross_tenant = service_app.post(
         f"/v1/analyses/{analysis_id}/surface-overlays",
@@ -3052,7 +3114,10 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
     published = service_app.post(
         f"/v1/analyses/{analysis_id}/surface-overlays",
         headers=owner_headers,
-        json={"overlays": overlays},
+        json={
+            "overlays": overlays,
+            "airport_surface_index": airport_surface_index,
+        },
     )
     assert published.status_code == 200
     published_overlays = published.json()["surface_overlays"]
@@ -3064,12 +3129,18 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         item["report_map"]["mode"] == "schematic-fallback"
         for item in published_overlays
     )
+    assert published.json()["airport_surface_index"] == airport_surface_index
 
     briefing = service_app.get(
         f"/v1/analyses/{analysis_id}/briefing",
         headers=owner_headers,
     ).json()
     assert len(briefing["flight"]["surface_overlays"]) == 2
+    assert briefing["flight"]["airport_surface_index"] == airport_surface_index
+    assert (
+        briefing["briefing"]["airport_surface_index"]
+        == airport_surface_index
+    )
     source_conflict = briefing["flight"]["surface_overlays"][0][
         "reviewRequired"
     ][0]["sourceConflict"]
@@ -3132,6 +3203,9 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
         "actual_takeoff",
         "calculated_destination_from_atot_and_cfp_actm",
     ]
+    # This request intentionally models an older cached app bundle that knows
+    # only the overlay field. Omission must preserve the governed airport index.
+    assert republished.json()["airport_surface_index"] == airport_surface_index
     refreshed = service_app.get(
         f"/v1/analyses/{analysis_id}/briefing",
         headers=owner_headers,
@@ -3158,12 +3232,31 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
     )
     assert cleared.status_code == 200
     assert cleared.json()["surface_overlays"] == []
+    assert cleared.json()["airport_surface_index"] == airport_surface_index
 
     cleared_briefing = service_app.get(
         f"/v1/analyses/{analysis_id}/briefing",
         headers=owner_headers,
     ).json()
     assert cleared_briefing["flight"]["surface_overlays"] == []
+    assert (
+        cleared_briefing["briefing"]["airport_surface_index"]
+        == airport_surface_index
+    )
+
+    explicit_index_clear = service_app.post(
+        f"/v1/analyses/{analysis_id}/surface-overlays",
+        headers=owner_headers,
+        json={"overlays": [], "airport_surface_index": []},
+    )
+    assert explicit_index_clear.status_code == 200
+    assert explicit_index_clear.json()["airport_surface_index"] == []
+    explicitly_cleared_briefing = service_app.get(
+        f"/v1/analyses/{analysis_id}/briefing",
+        headers=owner_headers,
+    ).json()
+    assert explicitly_cleared_briefing["flight"]["airport_surface_index"] == []
+    assert explicitly_cleared_briefing["briefing"]["airport_surface_index"] == []
 
     cleared_level1 = service_app.get(
         f"/v1/analyses/{analysis_id}/reports/level-1",

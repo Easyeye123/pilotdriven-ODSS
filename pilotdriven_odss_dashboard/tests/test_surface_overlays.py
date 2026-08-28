@@ -9,6 +9,7 @@ from app.odss.surface_overlays import (
     _styled_surface_overlay,
     surface_conflict_publication_label,
     surface_mark_presentation,
+    validated_airport_surface_index,
 )
 from app.odss.pertinent_brief import _surface_overlay_lines
 
@@ -162,6 +163,126 @@ def test_surface_overlay_clear_must_be_explicit() -> None:
     assert SurfaceOverlayRequest.model_validate({"overlays": []}).overlays == []
     with pytest.raises(ValidationError):
         SurfaceOverlayRequest.model_validate({})
+
+
+def _airport_index_entry(
+    icao: str = "WSSS",
+    roles: list[str] | None = None,
+    *,
+    released: bool = False,
+) -> dict:
+    notes = {
+        "status": "unavailable",
+        "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
+        "releaseStatus": None,
+        "airportVersion": None,
+        "cycle": None,
+        "schemaVersion": None,
+        "objects": [],
+        "lines": [],
+        "omittedLineCount": 0,
+    }
+    if released:
+        notes = {
+            "status": "released",
+            "message": "RELEASED AIRPORT NOTES — EXACT PACKAGE VALUES",
+            "releaseStatus": "released",
+            "airportVersion": "v25.1",
+            "cycle": "2609",
+            "schemaVersion": "25",
+            "objects": [{"name": "notes.json", "sha256": "a" * 64}],
+            "lines": [{
+                "sourceObject": "notes.json",
+                "path": "taxi.caution",
+                "value": "Exact released note text.",
+            }],
+            "omittedLineCount": 0,
+        }
+    return {
+        "icao": icao,
+        "name": "Synthetic airport",
+        "roles": roles or ["destination"],
+        "roleLabel": "Destination",
+        "stationStatus": "held",
+        "sourceLabel": "Uploaded OFP station package",
+        "window": {
+            "startsAt": "2026-08-28T10:00:00Z",
+            "endsAt": "2026-08-28T12:00:00Z",
+            "referenceAt": "2026-08-28T11:00:00Z",
+            "referenceBasis": "scheduled_arrival",
+        },
+        "notamCount": 3,
+        "notes": notes,
+    }
+
+
+def test_airport_surface_index_accepts_exact_released_notes_and_enroute_rows() -> None:
+    payload = SurfaceOverlayRequest.model_validate({
+        "overlays": [],
+        "airport_surface_index": [
+            _airport_index_entry(released=True),
+            _airport_index_entry("FIMP", ["edto"]),
+            _airport_index_entry("WITT", ["fuel_enroute"]),
+        ],
+    })
+    result = validated_airport_surface_index(
+        payload,
+        {"departure": "FAOR", "destination": "WSSS"},
+    )
+    assert [item["icao"] for item in result] == ["WSSS", "FIMP", "WITT"]
+    assert result[0]["notes"]["lines"][0]["value"] == "Exact released note text."
+
+
+def test_omitted_airport_surface_index_preserves_it_while_explicit_empty_clears() -> None:
+    flight = {"departure": "FAOR", "destination": "WSSS"}
+    omitted = SurfaceOverlayRequest.model_validate({"overlays": []})
+    explicit_clear = SurfaceOverlayRequest.model_validate({
+        "overlays": [],
+        "airport_surface_index": [],
+    })
+    assert validated_airport_surface_index(omitted, flight) is None
+    assert validated_airport_surface_index(explicit_clear, flight) == []
+
+
+def test_airport_surface_index_rejects_duplicate_or_wrong_endpoint_binding() -> None:
+    duplicate = SurfaceOverlayRequest.model_validate({
+        "overlays": [],
+        "airport_surface_index": [
+            _airport_index_entry("FIMP", ["edto"]),
+            _airport_index_entry("FIMP", ["enroute"]),
+        ],
+    })
+    with pytest.raises(ValueError, match="Duplicate FIMP"):
+        validated_airport_surface_index(
+            duplicate,
+            {"departure": "FAOR", "destination": "WSSS"},
+        )
+
+    wrong_destination = SurfaceOverlayRequest.model_validate({
+        "overlays": [],
+        "airport_surface_index": [
+            _airport_index_entry("WMKK", ["destination"]),
+        ],
+    })
+    with pytest.raises(ValueError, match="Destination airport surface index"):
+        validated_airport_surface_index(
+            wrong_destination,
+            {"departure": "FAOR", "destination": "WSSS"},
+        )
+
+
+def test_unavailable_airport_notes_cannot_smuggle_package_content() -> None:
+    invalid = _airport_index_entry()
+    invalid["notes"]["lines"] = [{
+        "sourceObject": "draft.json",
+        "path": "note",
+        "value": "Draft content",
+    }]
+    with pytest.raises(ValidationError, match="cannot publish package content"):
+        SurfaceOverlayRequest.model_validate({
+            "overlays": [],
+            "airport_surface_index": [invalid],
+        })
 
 
 def test_review_required_surface_accepts_bounded_official_source_conflict() -> None:

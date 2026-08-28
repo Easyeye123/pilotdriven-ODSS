@@ -81,6 +81,7 @@ def run_odss_analysis(
     timing_reference: dict[str, Any] | None = None,
     personal_notes: list[dict[str, Any]] | None = None,
     surface_overlays: list[dict[str, Any]] | None = None,
+    airport_surface_index: list[dict[str, Any]] | None = None,
     weather_window_preference: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the deterministic Flight Briefing analysis.
@@ -104,6 +105,10 @@ def run_odss_analysis(
     flight["surface_overlays"] = [
         dict(overlay)
         for overlay in (surface_overlays or [])
+    ]
+    flight["airport_surface_index"] = [
+        dict(entry)
+        for entry in (airport_surface_index or [])
     ]
     if weather_window_preference is not None:
         flight["weather_window_preference"] = dict(weather_window_preference)

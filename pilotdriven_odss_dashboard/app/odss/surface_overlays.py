@@ -264,11 +264,80 @@ class SurfaceOverlayContract(_StrictModel):
         return self
 
 
+class AirportNoteLine(_StrictModel):
+    sourceObject: str = Field(min_length=1, max_length=96)
+    path: str = Field(min_length=1, max_length=512)
+    value: str = Field(min_length=1, max_length=4_000)
+
+
+class AirportNoteObject(_StrictModel):
+    name: str = Field(min_length=1, max_length=96)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class AirportNotesPublication(_StrictModel):
+    status: Literal["released", "unavailable"]
+    message: str = Field(min_length=1, max_length=200)
+    releaseStatus: str | None = Field(default=None, max_length=40)
+    airportVersion: str | None = Field(default=None, max_length=80)
+    cycle: str | None = Field(default=None, max_length=40)
+    schemaVersion: str | None = Field(default=None, max_length=40)
+    objects: list[AirportNoteObject] = Field(max_length=24)
+    lines: list[AirportNoteLine] = Field(max_length=96)
+    omittedLineCount: int = Field(ge=0, le=1_000_000)
+
+    @model_validator(mode="after")
+    def validate_release(self):
+        if self.status == "released":
+            if self.releaseStatus != "released":
+                raise ValueError("Released airport notes require released source status.")
+            if not self.airportVersion or not self.cycle or not self.schemaVersion:
+                raise ValueError("Released airport notes require package identity and cycle.")
+        elif self.lines or self.objects:
+            raise ValueError("Unavailable airport notes cannot publish package content.")
+        return self
+
+
+class AirportSurfaceIndexWindow(_StrictModel):
+    startsAt: str | None = Field(default=None, max_length=64)
+    endsAt: str | None = Field(default=None, max_length=64)
+    referenceAt: str | None = Field(default=None, max_length=64)
+    referenceBasis: str | None = Field(default=None, max_length=120)
+
+
+class AirportSurfaceIndexEntry(_StrictModel):
+    icao: str = Field(pattern=r"^[A-Z]{4}$")
+    name: str = Field(default="", max_length=200)
+    roles: list[
+        Literal[
+            "departure",
+            "destination",
+            "edto",
+            "fuel_enroute",
+            "fuel_enroute_airport",
+            "enroute",
+        ]
+    ] = Field(min_length=1, max_length=6)
+    roleLabel: str = Field(min_length=1, max_length=160)
+    stationStatus: Literal["held", "unavailable", "error"]
+    sourceLabel: str = Field(min_length=1, max_length=240)
+    window: AirportSurfaceIndexWindow
+    notamCount: int = Field(ge=0, le=10_000)
+    notes: AirportNotesPublication
+
+
 class SurfaceOverlayRequest(_StrictModel):
     # The field stays required so an omitted payload cannot clear an analysis by
     # accident. An explicit empty list is the fail-safe clear after a timing
     # refresh can no longer validate the previous marks.
     overlays: list[SurfaceOverlayContract] = Field(max_length=2)
+    # Omission means "leave the published index unchanged" so a browser that
+    # loaded the previous app bundle cannot erase it while refreshing the two
+    # legacy map overlays. An explicit [] remains the deliberate clear.
+    airport_surface_index: list[AirportSurfaceIndexEntry] | None = Field(
+        default=None,
+        max_length=30,
+    )
 
 
 def validated_surface_overlays(
@@ -290,6 +359,28 @@ def validated_surface_overlays(
                 f"{overlay.role.title()} surface overlay does not match the analysed flight."
             )
         result.append(overlay.model_dump(mode="json"))
+    return result
+
+
+def validated_airport_surface_index(
+    request: SurfaceOverlayRequest,
+    flight: dict[str, Any],
+) -> list[dict[str, Any]] | None:
+    if request.airport_surface_index is None:
+        return None
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    departure = str(flight.get("departure") or "").strip().upper()
+    destination = str(flight.get("destination") or "").strip().upper()
+    for entry in request.airport_surface_index:
+        if entry.icao in seen:
+            raise ValueError(f"Duplicate {entry.icao} airport surface index entry.")
+        seen.add(entry.icao)
+        if "departure" in entry.roles and entry.icao != departure:
+            raise ValueError("Departure airport surface index does not match the analysed flight.")
+        if "destination" in entry.roles and entry.icao != destination:
+            raise ValueError("Destination airport surface index does not match the analysed flight.")
+        result.append(entry.model_dump(mode="json"))
     return result
 
 
@@ -540,6 +631,7 @@ async def attach_surface_report_maps(
 
 __all__ = [
     "SurfaceOverlayRequest",
+    "validated_airport_surface_index",
     "attach_surface_report_maps",
     "surface_mark_presentation",
     "validated_surface_overlays",

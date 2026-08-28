@@ -33,6 +33,7 @@ from app.odss.combined_brief import (
     _hazard_page_plans,
     _operational_alternate_constraint_assessment,
     _operational_alternate_forecast,
+    _operational_airport_index_pages,
     _operational_coverage_receipt,
     _operational_fir_boundary_summary,
     _operational_priority_source_summary,
@@ -525,6 +526,168 @@ def test_compact_pdf_has_eight_core_outline_entries_plus_real_terrain(rendered):
         "Coverage Checklist / CAT-VWS",
         "Terrain / Depressurisation",
     ]
+
+
+def test_operational_pdf_publishes_the_canonical_airport_and_notes_index(tmp_path):
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["airport_surface_index"] = [
+        {
+            "icao": "EBBR",
+            "name": "Brussels",
+            "roles": ["departure"],
+            "roleLabel": "Departure",
+            "stationStatus": "held",
+            "sourceLabel": "Uploaded OFP station package",
+            "window": {
+                "startsAt": "2026-07-16T08:52:00Z",
+                "endsAt": "2026-07-16T10:52:00Z",
+                "referenceAt": "2026-07-16T09:52:00Z",
+                "referenceBasis": "actual_takeoff",
+            },
+            "notamCount": 4,
+            "notes": {
+                "status": "unavailable",
+                "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
+                "releaseStatus": None,
+                "airportVersion": None,
+                "cycle": None,
+                "schemaVersion": None,
+                "objects": [],
+                "lines": [],
+                "omittedLineCount": 0,
+            },
+        },
+        {
+            "icao": "FIMP",
+            "name": "Mauritius",
+            "roles": ["edto", "fuel_enroute"],
+            "roleLabel": "EDTO alternate / Fuel-enroute",
+            "stationStatus": "held",
+            "sourceLabel": "Uploaded OFP station package",
+            "window": {
+                "startsAt": "2026-07-16T13:00:00Z",
+                "endsAt": "2026-07-16T15:00:00Z",
+                "referenceAt": None,
+                "referenceBasis": "edto_period",
+            },
+            "notamCount": 2,
+            "notes": {
+                "status": "released",
+                "message": "RELEASED AIRPORT NOTES — EXACT PACKAGE VALUES",
+                "releaseStatus": "released",
+                "airportVersion": "v25.1",
+                "cycle": "2608",
+                "schemaVersion": "25",
+                "objects": [{"name": "notes.json", "sha256": "a" * 64}],
+                "lines": [{
+                    "sourceObject": "notes.json",
+                    "path": "taxi.caution",
+                    "value": "Exact released Mauritius taxi note.",
+                }],
+                "omittedLineCount": 0,
+            },
+        },
+        {
+            "icao": "WSSS",
+            "name": "Singapore Changi",
+            "roles": ["destination"],
+            "roleLabel": "Destination",
+            "stationStatus": "held",
+            "sourceLabel": "Uploaded OFP station package",
+            "window": {
+                "startsAt": "2026-07-17T00:00:00Z",
+                "endsAt": "2026-07-17T02:00:00Z",
+                "referenceAt": "2026-07-17T01:00:00Z",
+                "referenceBasis": "scheduled_arrival",
+            },
+            "notamCount": 7,
+            "notes": {
+                "status": "unavailable",
+                "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
+                "releaseStatus": None,
+                "airportVersion": None,
+                "cycle": None,
+                "schemaVersion": None,
+                "objects": [],
+                "lines": [],
+                "omittedLineCount": 0,
+            },
+        },
+    ]
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "canonical-airport-index.pdf"
+
+    pages = _operational_airport_index_pages(flight)
+    assert len(pages) == 1
+    render_combined_briefing(flight, findings, [], out)
+
+    document = fitz.open(out)
+    assert len(document) == 10
+    assert [row[1] for row in document.get_toc()][4:7] == [
+        "Airports / Alternates",
+        "Airport Surface / Notes Index",
+        "Weather / Route Hazards",
+    ]
+    index_text = " ".join(document[5].get_text().split())
+    assert "AIRPORT 1/3 · EBBR · DEPARTURE" in index_text
+    assert "AIRPORT 2/3 · FIMP · EDTO / FUEL ENROUTE" in index_text
+    assert "AIRPORT 3/3 · WSSS · DESTINATION" in index_text
+    assert index_text.count("AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED") == 2
+    assert "VERSION v25.1 · CYCLE 2608 · SCHEMA 25" in index_text
+    assert "SHA256 " + "a" * 64 in index_text
+    assert "Exact released Mauritius taxi note." in index_text
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+
+
+def test_large_released_airport_notes_repeat_the_icao_on_every_index_page():
+    lines = [
+        {
+            "sourceObject": "notes.json",
+            "path": f"items[{index}]",
+            "value": f"Exact note {index:02d}",
+        }
+        for index in range(80)
+    ]
+    flight = {
+        "airport_surface_index": [{
+            "icao": "WSSS",
+            "roles": ["destination"],
+            "stationStatus": "held",
+            "sourceLabel": "Uploaded OFP station package",
+            "window": {},
+            "notamCount": 0,
+            "notes": {
+                "status": "released",
+                "airportVersion": "v25.1",
+                "cycle": "2608",
+                "schemaVersion": "25",
+                "objects": [],
+                "lines": lines,
+                "omittedLineCount": 0,
+            },
+        }],
+    }
+
+    pages = _operational_airport_index_pages(flight)
+    assert len(pages) >= 2
+    assert all(len(page) <= 64 for page in pages)
+    assert all(
+        page[0][0] == "airport"
+        and "AIRPORT 1/1 · WSSS · DESTINATION" in page[0][1]
+        for page in pages
+    )
+    assert all(
+        f"Exact note {index:02d}" in " ".join(value for _, value in sum(pages, []))
+        for index in range(80)
+    )
 
 
 def test_vws_review_stays_visible_in_pdf_when_high_terrain_exists(tmp_path):

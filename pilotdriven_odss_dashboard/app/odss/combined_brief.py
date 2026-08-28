@@ -9793,6 +9793,201 @@ def _operational_alternate_constraint_assessment(
     return combined
 
 
+def _operational_airport_index_pages(
+    briefing: dict[str, Any],
+) -> list[list[tuple[str, str]]]:
+    """Paginate the shared dashboard/PDF airport publication losslessly."""
+
+    entries = [
+        item
+        for item in (briefing.get("airport_surface_index") or [])
+        if isinstance(item, dict)
+    ]
+    if not entries:
+        return []
+    text_width = PAGE_SIZE[0] - 2 * MARGIN - 20.0
+    entry_blocks: list[tuple[list[tuple[str, str]], tuple[str, str]]] = []
+
+    for index, entry in enumerate(entries, start=1):
+        entry_lines: list[tuple[str, str]] = []
+
+        def append_wrapped(kind: str, value: str) -> None:
+            wrapped = _wrap_lossless_text(
+                value,
+                MONO if kind in {"note", "object"} else SANS,
+                T_SMALL,
+                text_width,
+            ) or ["--"]
+            entry_lines.extend((kind, line) for line in wrapped)
+
+        icao = str(entry.get("icao") or "----").upper()
+        roles = " / ".join(
+            str(role).replace("_", " ").upper()
+            for role in entry.get("roles") or []
+        ) or "ROLE UNAVAILABLE"
+        entry_heading = f"AIRPORT {index}/{len(entries)} · {icao} · {roles}"
+        append_wrapped(
+            "airport",
+            entry_heading,
+        )
+        append_wrapped(
+            "source",
+            (
+                "OFP NOTAM EVIDENCE · "
+                f"{str(entry.get('stationStatus') or 'unavailable').upper()} · "
+                f"{int(entry.get('notamCount') or 0)} RECORDS · "
+                f"{str(entry.get('sourceLabel') or 'Source unavailable')}"
+            ),
+        )
+        window = entry.get("window") or {}
+        effectivity = " / ".join(
+            value
+            for value in (
+                str(window.get("startsAt") or "").strip(),
+                str(window.get("endsAt") or "").strip(),
+                str(window.get("referenceAt") or "").strip(),
+                str(window.get("referenceBasis") or "").strip(),
+            )
+            if value
+        ) or "UNAVAILABLE — MANUAL REVIEW REQUIRED"
+        append_wrapped("source", f"EFFECTIVITY · {effectivity}")
+
+        notes = entry.get("notes") or {}
+        if notes.get("status") == "released":
+            append_wrapped(
+                "notes_released",
+                (
+                    "AIRPORT NOTES (SEPARATE FROM NOTAM TRUTH) · RELEASED · "
+                    f"VERSION {notes.get('airportVersion') or '--'} · "
+                    f"CYCLE {notes.get('cycle') or '--'} · "
+                    f"SCHEMA {notes.get('schemaVersion') or '--'}"
+                ),
+            )
+            for source_object in notes.get("objects") or []:
+                append_wrapped(
+                    "object",
+                    (
+                        f"OBJECT · {source_object.get('name') or '--'} · "
+                        f"SHA256 {source_object.get('sha256') or '--'}"
+                    ),
+                )
+            for line in notes.get("lines") or []:
+                append_wrapped(
+                    "note",
+                    (
+                        f"NOTE · {line.get('sourceObject') or '--'} · "
+                        f"{line.get('path') or '--'} = {line.get('value') or '--'}"
+                    ),
+                )
+            omitted = int(notes.get("omittedLineCount") or 0)
+            if omitted:
+                append_wrapped(
+                    "notes_unavailable",
+                    f"{omitted} ADDITIONAL EXACT PACKAGE VALUES OUTSIDE THIS BOUNDED BRIEFING — REVIEW RELEASED PACKAGE",
+                )
+        else:
+            append_wrapped(
+                "notes_unavailable",
+                "AIRPORT NOTES (SEPARATE FROM NOTAM TRUTH) · AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
+            )
+        entry_lines.append(("space", ""))
+        entry_blocks.append((
+            entry_lines,
+            ("airport", f"{entry_heading} · CONTINUED"),
+        ))
+
+    maximum_lines = 64
+    pages: list[list[tuple[str, str]]] = []
+    page: list[tuple[str, str]] = []
+    for entry_lines, continuation_heading in entry_blocks:
+        if len(entry_lines) <= maximum_lines:
+            if page and len(page) + len(entry_lines) > maximum_lines:
+                pages.append(page)
+                page = []
+            page.extend(entry_lines)
+            continue
+
+        # A large RELEASED package can exceed one page. Keep the first chunk
+        # with its normal ICAO heading and repeat that exact binding on every
+        # continuation so note values never appear under an anonymous page.
+        if page:
+            pages.append(page)
+            page = []
+        remaining = list(entry_lines)
+        pages.append(remaining[:maximum_lines])
+        remaining = remaining[maximum_lines:]
+        while remaining:
+            capacity = maximum_lines - 1
+            pages.append([
+                continuation_heading,
+                *remaining[:capacity],
+            ])
+            remaining = remaining[capacity:]
+    if page:
+        pages.append(page)
+    return pages
+
+
+def draw_operational_airport_index_page(
+    canvas,
+    flight: dict[str, Any],
+    *,
+    page_number: int,
+    page_count: int,
+    lines: list[tuple[str, str]],
+    continuation_number: int,
+    continuation_count: int,
+) -> None:
+    content_top = draw_page_chrome(
+        canvas,
+        flight,
+        page_number=page_number,
+        page_count=page_count,
+        source_line=(
+            "Parsed-OFP airport list + current RELEASED Airport Notes only"
+        ),
+        section_label=(
+            "AIRPORT SURFACE / NOTES INDEX"
+            + f" · {continuation_number}/{continuation_count}"
+        ),
+        section_colour=SECTION_BLUE,
+    )
+    canvas.bookmarkPage(
+        "sec_airport_surface_index"
+        if continuation_number == 1
+        else f"sec_airport_surface_index_{continuation_number}"
+    )
+    y = content_top - 12.0
+    colours = {
+        "airport": TEXT,
+        "source": TEXT_SECONDARY,
+        "notes_released": EDTO_GREEN,
+        "notes_unavailable": WEATHER_AMBER,
+        "note": TEXT_SECONDARY,
+        "object": TEXT_MUTED,
+        "space": TEXT,
+    }
+    fonts = {
+        "airport": SANS_BOLD,
+        "source": SANS,
+        "notes_released": SANS_BOLD,
+        "notes_unavailable": SANS_BOLD,
+        "note": MONO,
+        "object": MONO,
+        "space": SANS,
+    }
+    for kind, value in lines:
+        if kind == "space":
+            y -= 4.0
+            continue
+        if y < 42.0:
+            raise ValueError("Airport surface/notes index exceeds its measured page capacity.")
+        canvas.setFillColor(colours.get(kind, TEXT_SECONDARY))
+        canvas.setFont(fonts.get(kind, SANS), T_SMALL)
+        canvas.drawString(MARGIN + 10.0, y, value)
+        y -= 9.6
+
+
 def draw_operational_airports_page(
     canvas,
     flight: dict[str, Any],
@@ -12361,16 +12556,25 @@ def render_combined_briefing(
         )
         operational_mel_page_count = len(operational_mel_pages)
         operational_mel_first_page = 4 + eosid_continuation_count
+        operational_airport_index_pages = _operational_airport_index_pages(
+            briefing
+        )
+        operational_airport_index_count = len(
+            operational_airport_index_pages
+        )
         operational_airports_page = (
             operational_mel_first_page + operational_mel_page_count
         )
-        operational_hazards_page = operational_airports_page + 1
-        operational_enroute_page = operational_airports_page + 2
-        operational_coverage_page = operational_airports_page + 3
-        operational_terrain_page = operational_airports_page + 4
+        operational_hazards_page = (
+            operational_airports_page + 1 + operational_airport_index_count
+        )
+        operational_enroute_page = operational_hazards_page + 1
+        operational_coverage_page = operational_hazards_page + 2
+        operational_terrain_page = operational_hazards_page + 3
         operational_page_count = (
             7
             + operational_mel_page_count
+            + operational_airport_index_count
             + int(has_terrain_annex)
             + eosid_continuation_count
         )
@@ -12540,13 +12744,50 @@ def render_combined_briefing(
                 briefing.get("alternate_assessment_rows") or []
             ),
             edto_view=dict(briefing.get("edto") or {}),
-            compact_overflow_note=compact_note(
-                airport_overflow_count,
-                "airport/NOTAM record",
+            compact_overflow_note=(
+                f"{len(briefing.get('airport_surface_index') or [])} filed "
+                "surface/notes airports · "
+                f"{operational_airport_index_count} index "
+                f"page{'s' if operational_airport_index_count != 1 else ''} follow"
+                if operational_airport_index_count
+                else compact_note(
+                    airport_overflow_count,
+                    "airport/NOTAM record",
+                )
             ),
         )
         canvas.addOutlineEntry("Airports / Alternates", "sec_airports", level=0)
         canvas.showPage()
+        for index, airport_index_lines in enumerate(
+            operational_airport_index_pages,
+            start=1,
+        ):
+            draw_operational_airport_index_page(
+                canvas,
+                flight,
+                page_number=operational_airports_page + index,
+                page_count=operational_page_count,
+                lines=airport_index_lines,
+                continuation_number=index,
+                continuation_count=operational_airport_index_count,
+            )
+            canvas.addOutlineEntry(
+                (
+                    "Airport Surface / Notes Index"
+                    if index == 1
+                    else (
+                        "Airport Surface / Notes Index "
+                        f"{index}/{operational_airport_index_count}"
+                    )
+                ),
+                (
+                    "sec_airport_surface_index"
+                    if index == 1
+                    else f"sec_airport_surface_index_{index}"
+                ),
+                level=0,
+            )
+            canvas.showPage()
         draw_operational_hazard_page(
             canvas,
             flight,

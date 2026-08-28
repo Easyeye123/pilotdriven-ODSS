@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from math import isfinite
 from typing import Any
 
 from ..odss.constants import edto_sectors
@@ -308,6 +309,17 @@ def _significance_index(
     for point in points:
         name = _normalized_name(point)
         raw_name = str(point.get("name") or "").upper()
+        vws = point.get("vws")
+        # The controlled ODSS engine defines a trigger as strictly greater
+        # than 004. Publish that governed result as a marker role so browser
+        # presentation never reinterprets or relaxes the threshold.
+        if (
+            isinstance(vws, (int, float))
+            and not isinstance(vws, bool)
+            and isfinite(float(vws))
+            and float(vws) > 4
+        ):
+            index[name].add("vws_trigger")
         if point.get("fir_boundary"):
             index[name].add("fir")
         if raw_name == "TOC":

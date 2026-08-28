@@ -81,6 +81,7 @@ from .odss.reporting import render_pdf
 from .odss.surface_overlays import (
     SurfaceOverlayRequest,
     attach_surface_report_maps,
+    validated_airport_surface_index,
     validated_surface_overlays,
 )
 from .odss_map_v06.api import (
@@ -655,6 +656,12 @@ def _execute_analysis(
     previous_surface_overlays = (
         (previous_analysis or {}).get("flight", {}).get("surface_overlays") or []
     )
+    previous_airport_surface_index = (
+        (previous_analysis or {})
+        .get("flight", {})
+        .get("airport_surface_index")
+        or []
+    )
     previous_weather_window = (
         (previous_analysis or {})
         .get("flight", {})
@@ -685,6 +692,7 @@ def _execute_analysis(
                 timing_reference=_timing_reference_from_row(flight),
                 personal_notes=[dict(note) for note in list_personal_notes(flight_id)],
                 surface_overlays=previous_surface_overlays,
+                airport_surface_index=previous_airport_surface_index,
                 weather_window_preference=(
                     weather_window_preference or previous_weather_window
                 ),
@@ -1458,6 +1466,7 @@ def _publish_surface_overlay_reports(
     flight,
     analysis: dict,
     overlays: list[dict],
+    airport_surface_index: list[dict] | None = None,
 ) -> None:
     analysis_path = _stored_file(
         flight["analysis_path"],
@@ -1477,9 +1486,16 @@ def _publish_surface_overlay_reports(
     updated = json.loads(json.dumps(analysis))
     updated_flight = updated.setdefault("flight", {})
     updated_flight["surface_overlays"] = overlays
+    if airport_surface_index is not None:
+        updated_flight["airport_surface_index"] = airport_surface_index
     updated.setdefault("view", {})["surface_overlays"] = _surface_overlay_summary(
         overlays
     )
+    if airport_surface_index is not None:
+        updated_view = updated.setdefault("view", {})
+        updated_view.setdefault("briefing", {})["airport_surface_index"] = (
+            airport_surface_index
+        )
     route_map_path, route_map_label = _surface_report_route_map(updated)
     warnings = (updated.get("view") or {}).get("warnings") or []
     findings = updated.get("findings") or []
@@ -2714,12 +2730,29 @@ async def update_service_surface_overlays(
             payload,
             analysis.get("flight") or {},
         )
+        airport_surface_index = validated_airport_surface_index(
+            payload,
+            analysis.get("flight") or {},
+        )
+        published_airport_surface_index = (
+            airport_surface_index
+            if airport_surface_index is not None
+            else list(
+                (analysis.get("flight") or {}).get("airport_surface_index")
+                or []
+            )
+        )
         prepared = await attach_surface_report_maps(
             analysis_id,
             overlays,
             map_settings,
         )
-        _publish_surface_overlay_reports(claimed_flight, analysis, prepared)
+        _publish_surface_overlay_reports(
+            claimed_flight,
+            analysis,
+            prepared,
+            airport_surface_index,
+        )
         record_audit_event(
             tenant_id=identity.tenant_id,
             actor_id=identity.user_id,
@@ -2732,6 +2765,7 @@ async def update_service_surface_overlays(
             resource_id=analysis_id,
             details={
                 "cleared": not prepared,
+                "airport_index_count": len(published_airport_surface_index),
                 "airports": [
                     {
                         "icao": overlay["icao"],
@@ -2760,6 +2794,7 @@ async def update_service_surface_overlays(
     return JSONResponse({
         "analysis_id": analysis_id,
         "surface_overlays": _surface_overlay_summary(prepared),
+        "airport_surface_index": published_airport_surface_index,
         "report_links": _service_summary(claimed_flight)["links"],
     })
 
