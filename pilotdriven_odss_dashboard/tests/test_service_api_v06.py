@@ -3050,6 +3050,7 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
             "notamCount": 1,
             "notes": {
                 "status": "unavailable",
+                "availabilityStatus": "no_current_released_match",
                 "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
                 "releaseStatus": None,
                 "airportVersion": None,
@@ -3076,6 +3077,7 @@ def test_surface_overlays_are_tenant_scoped_embedded_and_preserved(
             "notamCount": 2,
             "notes": {
                 "status": "released",
+                "availabilityStatus": "current",
                 "message": "RELEASED AIRPORT NOTES — EXACT PACKAGE VALUES",
                 "releaseStatus": "released",
                 "airportVersion": "TEST-2607-1",

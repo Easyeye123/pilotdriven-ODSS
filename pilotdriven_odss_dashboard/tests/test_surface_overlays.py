@@ -173,6 +173,7 @@ def _airport_index_entry(
 ) -> dict:
     notes = {
         "status": "unavailable",
+        "availabilityStatus": "no_current_released_match",
         "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
         "releaseStatus": None,
         "airportVersion": None,
@@ -185,6 +186,7 @@ def _airport_index_entry(
     if released:
         notes = {
             "status": "released",
+            "availabilityStatus": "current",
             "message": "RELEASED AIRPORT NOTES — EXACT PACKAGE VALUES",
             "releaseStatus": "released",
             "airportVersion": "v25.1",
@@ -231,6 +233,35 @@ def test_airport_surface_index_accepts_exact_released_notes_and_enroute_rows() -
     )
     assert [item["icao"] for item in result] == ["WSSS", "FIMP", "WITT"]
     assert result[0]["notes"]["lines"][0]["value"] == "Exact released note text."
+
+
+def test_airport_surface_index_fails_closed_on_non_current_released_notes() -> None:
+    for availability_status in (
+        "future",
+        "expired",
+        "withdrawn",
+        "review_required",
+    ):
+        entry = _airport_index_entry(released=True)
+        entry["notes"]["availabilityStatus"] = availability_status
+        with pytest.raises(
+            ValidationError,
+            match="current availability",
+        ):
+            SurfaceOverlayRequest.model_validate({
+                "overlays": [],
+                "airport_surface_index": [entry],
+            })
+
+
+def test_airport_surface_index_rejects_current_status_without_released_content() -> None:
+    entry = _airport_index_entry()
+    entry["notes"]["availabilityStatus"] = "current"
+    with pytest.raises(ValidationError, match="cannot claim current availability"):
+        SurfaceOverlayRequest.model_validate({
+            "overlays": [],
+            "airport_surface_index": [entry],
+        })
 
 
 def test_omitted_airport_surface_index_preserves_it_while_explicit_empty_clears() -> None:

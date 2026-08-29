@@ -551,6 +551,7 @@ def test_operational_pdf_publishes_the_canonical_airport_and_notes_index(tmp_pat
             "notamCount": 4,
             "notes": {
                 "status": "unavailable",
+                "availabilityStatus": "no_current_released_match",
                 "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
                 "releaseStatus": None,
                 "airportVersion": None,
@@ -577,6 +578,7 @@ def test_operational_pdf_publishes_the_canonical_airport_and_notes_index(tmp_pat
             "notamCount": 2,
             "notes": {
                 "status": "released",
+                "availabilityStatus": "current",
                 "message": "RELEASED AIRPORT NOTES — EXACT PACKAGE VALUES",
                 "releaseStatus": "released",
                 "airportVersion": "v25.1",
@@ -607,6 +609,7 @@ def test_operational_pdf_publishes_the_canonical_airport_and_notes_index(tmp_pat
             "notamCount": 7,
             "notes": {
                 "status": "unavailable",
+                "availabilityStatus": "source_unavailable",
                 "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
                 "releaseStatus": None,
                 "airportVersion": None,
@@ -644,6 +647,9 @@ def test_operational_pdf_publishes_the_canonical_airport_and_notes_index(tmp_pat
     assert "VERSION v25.1 · CYCLE 2608 · SCHEMA 25" in index_text
     assert "SHA256 " + "a" * 64 in index_text
     assert "Exact released Mauritius taxi note." in index_text
+    coverage_text = " ".join(document[-2].get_text().split())
+    assert "AIRPORT INTELLIGENCE / AIRPORT NOTES" in coverage_text
+    assert "Source unavailable for WSSS" in coverage_text
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
 
@@ -667,6 +673,7 @@ def test_large_released_airport_notes_repeat_the_icao_on_every_index_page():
             "notamCount": 0,
             "notes": {
                 "status": "released",
+                "availabilityStatus": "current",
                 "airportVersion": "v25.1",
                 "cycle": "2608",
                 "schemaVersion": "25",
@@ -729,6 +736,7 @@ def test_sixteen_airport_index_respects_the_renderer_page_capacity(tmp_path):
             "notamCount": index,
             "notes": {
                 "status": "unavailable",
+                "availabilityStatus": "no_current_released_match",
                 "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
                 "releaseStatus": None,
                 "airportVersion": None,
@@ -2210,6 +2218,23 @@ def test_operational_coverage_receipt_preserves_explicit_truth_states():
             "summary": "Governed AIREP/PIREP feed checked with no route match.",
         }],
     }
+    briefing["airport_surface_index"] = [
+        {
+            "icao": "EBBR",
+            "notes": {
+                "status": "released",
+                "availabilityStatus": "current",
+                "releaseStatus": "released",
+            },
+        },
+        {
+            "icao": "WSSS",
+            "notes": {
+                "status": "unavailable",
+                "availabilityStatus": "no_current_released_match",
+            },
+        },
+    ]
 
     receipt = _operational_coverage_receipt(flight, briefing, [], None)
     rows = {row["key"]: row for row in receipt["rows"]}
@@ -2217,7 +2242,32 @@ def test_operational_coverage_receipt_preserves_explicit_truth_states():
     assert rows["airep_pirep"]["state"] == "CHECKED · NO MATCH"
     assert rows["vws"]["state"] == "CHECKED · NO TRIGGER"
     assert rows["fuel_performance"]["state"] == "REVIEW REQUIRED"
+    assert rows["airport_intelligence"]["state"] == "REVIEW REQUIRED"
+    assert "1/2 current released exact-ICAO package" in rows[
+        "airport_intelligence"
+    ]["detail"]
     assert receipt["cat_vws"]["state"] == "INCOMPLETE"
+
+
+def test_operational_coverage_receipt_reports_airport_note_source_unavailable():
+    flight = sample_flight()
+    briefing = build_briefing_view(flight, [], [])
+    briefing["airport_surface_index"] = [{
+        "icao": "WSSS",
+        "notes": {
+            "status": "unavailable",
+            "availabilityStatus": "source_unavailable",
+        },
+    }]
+
+    receipt = _operational_coverage_receipt(flight, briefing, [], None)
+    row = {item["key"]: item for item in receipt["rows"]}[
+        "airport_intelligence"
+    ]
+
+    assert row["label"] == "AIRPORT INTELLIGENCE / AIRPORT NOTES"
+    assert row["state"] == "UNAVAILABLE"
+    assert "WSSS" in row["detail"]
 
 
 def test_operational_coverage_receipt_reads_semantic_identity_in_dict_layers():

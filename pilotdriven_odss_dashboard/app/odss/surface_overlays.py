@@ -279,6 +279,15 @@ class AirportNotesPublication(_StrictModel):
     status: Literal["released", "unavailable"]
     message: str = Field(min_length=1, max_length=200)
     releaseStatus: str | None = Field(default=None, max_length=40)
+    availabilityStatus: Literal[
+        "current",
+        "no_current_released_match",
+        "source_unavailable",
+        "future",
+        "expired",
+        "withdrawn",
+        "review_required",
+    ] | None = None
     airportVersion: str | None = Field(default=None, max_length=80)
     cycle: str | None = Field(default=None, max_length=40)
     schemaVersion: str | None = Field(default=None, max_length=40)
@@ -291,10 +300,19 @@ class AirportNotesPublication(_StrictModel):
         if self.status == "released":
             if self.releaseStatus != "released":
                 raise ValueError("Released airport notes require released source status.")
+            if self.availabilityStatus != "current":
+                raise ValueError(
+                    "Released airport notes require current availability."
+                )
             if not self.airportVersion or not self.cycle or not self.schemaVersion:
                 raise ValueError("Released airport notes require package identity and cycle.")
-        elif self.lines or self.objects:
-            raise ValueError("Unavailable airport notes cannot publish package content.")
+        else:
+            if self.availabilityStatus == "current":
+                raise ValueError(
+                    "Unavailable airport notes cannot claim current availability."
+                )
+            if self.lines or self.objects:
+                raise ValueError("Unavailable airport notes cannot publish package content.")
         return self
 
 

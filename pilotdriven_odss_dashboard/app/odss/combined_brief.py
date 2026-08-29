@@ -11259,6 +11259,77 @@ def _operational_coverage_receipt(
         airport_notam_detail,
     ))
 
+    airport_surface_index = [
+        item for item in (briefing.get("airport_surface_index") or [])
+        if isinstance(item, dict)
+    ]
+    note_rows = [
+        {
+            "icao": str(item.get("icao") or "").upper(),
+            "status": str((item.get("notes") or {}).get("status") or "").lower(),
+            "availability": str(
+                (item.get("notes") or {}).get("availabilityStatus") or ""
+            ).lower(),
+        }
+        for item in airport_surface_index
+    ]
+    current_note_count = sum(
+        item["status"] == "released" and item["availability"] == "current"
+        for item in note_rows
+    )
+    unavailable_icaos = [
+        item["icao"] for item in note_rows
+        if item["availability"] == "source_unavailable"
+    ]
+    review_icaos = [
+        item["icao"] for item in note_rows
+        if item["availability"] in {
+            "future", "expired", "withdrawn", "review_required", "",
+        }
+    ]
+    no_match_count = sum(
+        item["availability"] == "no_current_released_match"
+        for item in note_rows
+    )
+    if not note_rows:
+        airport_notes_state = "REVIEW REQUIRED"
+        airport_notes_detail = "Applicable Airport Notes coverage is not published."
+    elif unavailable_icaos:
+        airport_notes_state = "UNAVAILABLE"
+        airport_notes_detail = (
+            f"Source unavailable for {','.join(unavailable_icaos)}; "
+            f"{len(note_rows)} applicable ICAO(s) checked."
+        )
+    elif current_note_count == len(note_rows):
+        airport_notes_state = "FOUND"
+        airport_notes_detail = (
+            f"{current_note_count}/{len(note_rows)} current released exact-ICAO "
+            "package(s) held."
+        )
+    elif review_icaos:
+        airport_notes_state = "REVIEW REQUIRED"
+        airport_notes_detail = (
+            f"{current_note_count}/{len(note_rows)} current released exact-ICAO "
+            f"package(s); review {','.join(review_icaos)}."
+        )
+    elif no_match_count == len(note_rows):
+        airport_notes_state = "CHECKED · NO MATCH"
+        airport_notes_detail = (
+            f"{len(note_rows)} exact ICAO(s) checked; no current released package."
+        )
+    else:
+        airport_notes_state = "REVIEW REQUIRED"
+        airport_notes_detail = (
+            f"{current_note_count}/{len(note_rows)} current released exact-ICAO "
+            "package(s); remaining coverage requires review."
+        )
+    rows.append(_coverage_receipt_row(
+        "airport_intelligence",
+        "AIRPORT INTELLIGENCE / AIRPORT NOTES",
+        airport_notes_state,
+        airport_notes_detail,
+    ))
+
     route_airspace = briefing.get("route_airspace") or {}
     route_airspace_count = int(route_airspace.get("record_count") or 0)
     rows.append(_coverage_receipt_row(
