@@ -218,11 +218,12 @@ def _airport_index_entry(
     }
 
 
-def test_airport_surface_index_accepts_exact_released_notes_and_enroute_rows() -> None:
+def test_airport_surface_index_accepts_destination_alternate_and_enroute_rows() -> None:
     payload = SurfaceOverlayRequest.model_validate({
         "overlays": [],
         "airport_surface_index": [
             _airport_index_entry(released=True),
+            _airport_index_entry("WMKK", ["destination_alternate"]),
             _airport_index_entry("FIMP", ["edto"]),
             _airport_index_entry("WITT", ["fuel_enroute"]),
         ],
@@ -231,7 +232,7 @@ def test_airport_surface_index_accepts_exact_released_notes_and_enroute_rows() -
         payload,
         {"departure": "FAOR", "destination": "WSSS"},
     )
-    assert [item["icao"] for item in result] == ["WSSS", "FIMP", "WITT"]
+    assert [item["icao"] for item in result] == ["WSSS", "WMKK", "FIMP", "WITT"]
     assert result[0]["notes"]["lines"][0]["value"] == "Exact released note text."
 
 

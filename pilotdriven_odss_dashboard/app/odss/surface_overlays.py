@@ -330,12 +330,13 @@ class AirportSurfaceIndexEntry(_StrictModel):
         Literal[
             "departure",
             "destination",
+            "destination_alternate",
             "edto",
             "fuel_enroute",
             "fuel_enroute_airport",
             "enroute",
         ]
-    ] = Field(min_length=1, max_length=6)
+    ] = Field(min_length=1, max_length=7)
     roleLabel: str = Field(min_length=1, max_length=160)
     stationStatus: Literal["held", "unavailable", "error"]
     sourceLabel: str = Field(min_length=1, max_length=240)
