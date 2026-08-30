@@ -436,3 +436,47 @@ def test_report_summary_does_not_call_nonclosures_closed() -> None:
     assert "Review locator: TAXIWAY W9" in text
     assert "Closed:" not in text
     assert "04L/22R" not in text
+
+
+def _ulr_station_index(count: int) -> list[dict]:
+    # SQ38 WSSS-KLAX (29 Aug 2026) published 39 station-package airports; the
+    # index bound must clear every real ULR OFP, not just regional counts.
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    entries = [
+        _airport_index_entry("WSSS", ["departure"]),
+        _airport_index_entry("KLAX", ["destination"]),
+        _airport_index_entry("KONT", ["destination_alternate"]),
+        _airport_index_entry("KSFO", ["destination_alternate"]),
+    ]
+    seen = {entry["icao"] for entry in entries}
+    for first in letters:
+        for second in letters:
+            if len(entries) >= count:
+                return entries
+            icao = f"Z{first}{second}X"
+            if icao in seen:
+                continue
+            seen.add(icao)
+            entries.append(_airport_index_entry(icao, ["fuel_enroute"]))
+    return entries
+
+
+def test_airport_surface_index_accepts_ulr_station_count() -> None:
+    request = SurfaceOverlayRequest.model_validate({
+        "overlays": [],
+        "airport_surface_index": _ulr_station_index(39),
+    })
+    result = validated_airport_surface_index(
+        request,
+        {"departure": "WSSS", "destination": "KLAX"},
+    )
+    assert result is not None
+    assert len(result) == 39
+
+
+def test_airport_surface_index_still_bounds_runaway_station_count() -> None:
+    with pytest.raises(ValidationError):
+        SurfaceOverlayRequest.model_validate({
+            "overlays": [],
+            "airport_surface_index": _ulr_station_index(65),
+        })

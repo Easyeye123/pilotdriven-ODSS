@@ -353,9 +353,12 @@ class SurfaceOverlayRequest(_StrictModel):
     # Omission means "leave the published index unchanged" so a browser that
     # loaded the previous app bundle cannot erase it while refreshing the two
     # legacy map overlays. An explicit [] remains the deliberate clear.
+    # The bound must clear a real ULR station package — SQ38 WSSS-KLAX
+    # (29 Aug 2026) filed 39 station airports and the previous cap of 30
+    # rejected the whole publication as a 422.
     airport_surface_index: list[AirportSurfaceIndexEntry] | None = Field(
         default=None,
-        max_length=30,
+        max_length=64,
     )
 
 

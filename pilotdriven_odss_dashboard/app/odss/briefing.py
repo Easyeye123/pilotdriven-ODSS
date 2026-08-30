@@ -1425,7 +1425,11 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
         ((flight.get("sigmet_review") or {}).get("hazard_features") or [])
     )
     va_sigmet_review = flight.get("va_sigmet_review") or flight.get("vaa_review") or {}
-    vaa_features = list(va_sigmet_review.get("hazard_features") or [])
+    # Monitoring polygons ride with the affecting ones (boss 30 Aug: a held
+    # ash advisory is drawn even when it does not intersect the route).
+    vaa_features = list(va_sigmet_review.get("hazard_features") or []) + list(
+        va_sigmet_review.get("monitoring_features") or []
+    )
     tc_features = list(
         ((flight.get("tropical_cyclone_review") or {}).get("hazard_features") or [])
     )
@@ -3019,6 +3023,9 @@ def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
         )
         responsible_source = responsibility["source"]
 
+    va_sigmet_review = flight.get("va_sigmet_review") or legacy_review or {}
+    affecting_polygons = len(va_sigmet_review.get("hazard_features") or [])
+    monitoring_polygons = len(va_sigmet_review.get("monitoring_features") or [])
     return {
         "summary": f"{reached}/{len(ledger) or 9} reached",
         "centres": centres,
@@ -3026,6 +3033,12 @@ def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
         "responsible_line": responsible_line,
         "responsible_review_required": responsible_review_required,
         "responsible_source": responsible_source,
+        # Boss 30 Aug: the dashboard states how many ash polygons are actually
+        # drawn on the map, split by whether one intersects the route.
+        "advisory_polygons": {
+            "affecting": affecting_polygons,
+            "monitoring": monitoring_polygons,
+        },
     }
 
 

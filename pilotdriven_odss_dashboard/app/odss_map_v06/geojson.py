@@ -171,6 +171,12 @@ def build_map_contract(
         if va_sigmet_review.get("status") == "affected"
         else []
     )
+    # A held ash advisory is drawn even when the verified result is
+    # no-intersection (boss 30 Aug: "develop the polygon"); the feature's
+    # hazard_state property lets the client style monitoring vs affecting.
+    vaa_features = vaa_features + list(
+        va_sigmet_review.get("monitoring_features") or []
+    )
     tropical_cyclone_features = (
         list(tropical_cyclone_review.get("hazard_features") or [])
         if tropical_cyclone_review.get("status") == "affected"

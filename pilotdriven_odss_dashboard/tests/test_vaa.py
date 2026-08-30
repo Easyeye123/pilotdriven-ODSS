@@ -752,3 +752,35 @@ def test_vaac_reach_summary_names_the_responsible_centres() -> None:
     assert summary["responsible_source"]["document"].startswith("ICAO Doc 9766")
     assert "Responsible for this route: DARWIN, TOKYO" in summary["responsible_line"]
     assert summary["responsible_review_required"] is False
+
+
+def test_nonintersecting_advisories_still_publish_monitoring_polygons() -> None:
+    # Boss 30 Aug: "develop the polygon" — a held advisory must stay drawable
+    # even when the verified result is no-intersection; absence of a match is
+    # not absence of the ash cloud.
+    advisory = _advisory(lower=400, upper=450)
+    review = evaluate_vaa(_flight(), _snapshot([advisory]))
+
+    assert review["status"] == "not_applicable"
+    assert review["hazard_features"] == []
+    features = review["monitoring_features"]
+    assert len(features) == 1
+    props = features[0]["properties"]
+    assert props["hazard"] == "volcanic_ash"
+    assert props["hazard_state"] == "monitoring"
+    assert props["not_for_navigation"] is True
+
+
+def test_affected_features_are_tagged_affecting_without_monitoring_duplicate() -> None:
+    review = evaluate_vaa(_flight(), _snapshot([_advisory()]))
+
+    assert review["status"] == "affected"
+    assert review["hazard_features"][0]["properties"]["hazard_state"] == "affecting"
+    assert review["monitoring_features"] == []
+
+
+def test_sigmet_label_stays_matched_only_without_monitoring_features() -> None:
+    advisory = _advisory(lower=400, upper=450)
+    review = evaluate_vaa(_flight(), _snapshot([advisory]), hazard_label="sigmet")
+
+    assert review["monitoring_features"] == []

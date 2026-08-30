@@ -642,6 +642,7 @@ def evaluate_vaa(
         "reason_codes": [],
         "matches": [],
         "hazard_features": [],
+        "monitoring_features": [],
     }
 
     if snapshot.get("status") == "disabled":
@@ -756,6 +757,7 @@ def evaluate_vaa(
                         else hazard_label
                     ),
                     "hazard_code": advisory.get("hazard"),
+                    "hazard_state": "affecting",
                     "fir_id": advisory.get("fir_id"),
                     "valid_from_utc": advisory.get("valid_from_utc"),
                     "valid_to_utc": advisory.get("valid_to_utc"),
@@ -765,6 +767,45 @@ def evaluate_vaa(
                     "not_for_navigation": True,
                 },
             }
+
+    monitoring_features: list[dict[str, Any]] = []
+    if hazard_label == "volcanic_ash":
+        # Boss 30 Aug: "develop the polygon" — a held advisory stays drawable
+        # even when the verified result is no-intersection. The map layer tags
+        # it as monitoring, so absence of a match never hides the ash cloud;
+        # SIGMET and TC labels stay matched-only to keep the map readable.
+        for advisory in snapshot.get("advisories") or []:
+            advisory_id = str(advisory.get("advisory_id") or default_advisory_id)
+            if advisory_id in matched_features:
+                continue
+            geometry = advisory.get("geometry") or {}
+            if not geometry:
+                continue
+            try:
+                safe_geometry = _map_safe_geometry(geometry)
+            except (TypeError, ValueError):
+                continue
+            if not safe_geometry:
+                continue
+            monitoring_features.append({
+                "type": "Feature",
+                "id": advisory_id,
+                "geometry": safe_geometry,
+                "properties": {
+                    "advisory_id": advisory_id,
+                    "hazard": hazard_label,
+                    "hazard_code": advisory.get("hazard"),
+                    "hazard_state": "monitoring",
+                    "fir_id": advisory.get("fir_id"),
+                    "valid_from_utc": advisory.get("valid_from_utc"),
+                    "valid_to_utc": advisory.get("valid_to_utc"),
+                    "lower_flight_level": advisory.get("lower_flight_level"),
+                    "upper_flight_level": advisory.get("upper_flight_level"),
+                    "source": snapshot.get("provider"),
+                    "not_for_navigation": True,
+                },
+            })
+    result["monitoring_features"] = monitoring_features
 
     result["matches"] = matches
     result["hazard_features"] = list(matched_features.values())

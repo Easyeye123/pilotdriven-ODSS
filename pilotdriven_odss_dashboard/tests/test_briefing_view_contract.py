@@ -1874,3 +1874,31 @@ def test_compact_notam_holds_wrong_direction_and_prefers_return_runway_signal() 
         "LOC IGD 109.5 RWY21 subject to interruption / possible signal "
         "oscillation due crane operations; runway is not reported closed."
     )
+
+
+def test_vaac_reach_counts_drawn_advisory_polygons() -> None:
+    # Boss 30 Aug: the dashboard states how many ash polygons are actually
+    # drawn on the map, split by whether one intersects the route.
+    flight = _flight(LOG_PAGE_LOW)
+    flight["vaa_review"] = {"status": "review_required", "vaac_centre_ledger": []}
+    flight["va_sigmet_review"] = {
+        "status": "not_applicable",
+        "hazard_features": [],
+        "monitoring_features": [
+            {"type": "Feature", "id": "2026/51", "geometry": {}, "properties": {}},
+        ],
+    }
+    view = build_briefing_view(flight, [], [])
+    polygons = view["hazards"]["vaac_reach"]["advisory_polygons"]
+    assert polygons == {"affecting": 0, "monitoring": 1}
+
+    flight["va_sigmet_review"] = {
+        "status": "affected",
+        "hazard_features": [
+            {"type": "Feature", "id": "2026/52", "geometry": {}, "properties": {}},
+        ],
+        "monitoring_features": [],
+    }
+    view = build_briefing_view(flight, [], [])
+    polygons = view["hazards"]["vaac_reach"]["advisory_polygons"]
+    assert polygons == {"affecting": 1, "monitoring": 0}
