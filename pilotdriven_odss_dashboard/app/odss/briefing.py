@@ -1425,14 +1425,14 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
         ((flight.get("sigmet_review") or {}).get("hazard_features") or [])
     )
     va_sigmet_review = flight.get("va_sigmet_review") or flight.get("vaa_review") or {}
-    # Monitoring polygons ride with the affecting ones (boss 30 Aug: a held
-    # ash advisory is drawn even when it does not intersect the route).
-    vaa_features = list(va_sigmet_review.get("hazard_features") or []) + list(
-        va_sigmet_review.get("monitoring_features") or []
-    )
+    vaa_features = list(va_sigmet_review.get("hazard_features") or [])
     tc_features = list(
         ((flight.get("tropical_cyclone_review") or {}).get("hazard_features") or [])
     )
+    # Monitoring ash polygons are a dashboard map layer (boss 30 Aug: a held
+    # advisory is drawn even without a route intersection). They ship on the
+    # web map contract only; the report's fixed page-1 layout keeps its
+    # matched-only hazard list, so the pixel-pinned corpus renders stay put.
     hazard_features = sigmet_features + vaa_features + tc_features
 
     return {
