@@ -10,8 +10,20 @@ For example, if one card moves by one pixel on page 4, the command exits `1` and
 
 ## Current approved reference
 
-`SQ214_REV3_reference_v9_OFP_VWS.pdf` (`4df2f631…4f78`) — the
+The pinned manifest (`tests/rev3_visual_reference_manifest.json`) is the
+authority for the current reference — this section is prose and has gone
+stale before (30 Aug: a deploy was attempted against v9 while the manifest
+pinned v10).
+
+`SQ214_REV3_reference_v10_VAA_SOURCE_SEPARATION.pdf` (`1521203d…b57f`) — the
 SQ214-PER-SIN-19AUG corpus render under
+`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-26-vaa-source-separation-v27"`,
+minted on 26 Aug 2026. Relative to v9, page 37 intentionally separates the VA
+SIGMET review from direct VAA source reach and applicability; the other 40
+pages are pixel-identical to v9.
+
+Superseded: `SQ214_REV3_reference_v9_OFP_VWS.pdf` (`4df2f631…4f78`) — the
+render under
 `COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-25-vws-fir-ofp-v26"`, minted on
 25 Aug 2026. Relative to v8, generated product labels say OFP, exact printed
 Lido `SUMMARY … CFP` headings remain identified as source text, and the
