@@ -2,7 +2,7 @@
 
 ## What this checks
 
-This gate answers one narrow question: does the candidate SQ214 combined Flight Briefing (all 41 pages, as produced by the private CFP corpus run) render to exactly the same pixels as the approved reference render?
+This gate answers one narrow question: does the candidate SQ214 combined Flight Briefing (all pages, as produced by the private CFP corpus run) render to exactly the same pixels as the approved reference render?
 
 The comparison uses the pinned PyMuPDF runtime from `pilotdriven_odss_dashboard/requirements.txt`. Every page is rendered at scale 1 into DeviceRGB with annotations enabled and no alpha channel. Page count, physical page size, raster size and every RGB pixel must match. There is no visual tolerance.
 
@@ -15,16 +15,19 @@ authority for the current reference — this section is prose and has gone
 stale before (30 Aug: a deploy was attempted against v9 while the manifest
 pinned v10).
 
-`SQ214_REV3_reference_v12_APPROACH_EVIDENCE_CORRECTED.pdf`
-(`8bf7b209…42e2`) — the SQ214-PER-SIN-19AUG corpus render under
-`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-31-surface-shortening-v32"`,
-minted on 31 Aug 2026. It applies the independently reviewed positive-ownership
-instrument-approach classifier: exact IAP/IAC, ILS/LOC/GP/DME, marker and
-partial-category outages are critical, while approach-lighting-only notices do
-not borrow an ILS outage. The 1,152-record replay produced only the three
-intended lighting demotions. All 41 pages were inspected as a contact sheet,
-with the changed airport-detail pages inspected at full size; there is no
+`SQ214_REV3_reference_v13_REV1_SIX_BOX_AND_NOTAM_EVIDENCE.pdf`
+(`2f026325…ccb5`) — the
+SQ214-PER-SIN-19AUG corpus render under
+`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-31-rev1-six-box-notam-evidence-v33"`,
+minted on 31 Aug 2026. It carries the approved REV1 six-box page-one hierarchy,
+the corrected approach-evidence ownership, and the complete selected-NOTAM
+evidence appendices. All 46 lossless audit pages and all 39 operational pages
+were inspected as contact sheets and as individual renders; there is no
 clipping, overlap, blank-page, footer or source-retention regression.
+
+Superseded: `SQ214_REV3_reference_v12_APPROACH_EVIDENCE_CORRECTED.pdf`
+(`8bf7b209…42e2`) — the 41-page render under
+`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-31-surface-shortening-v32"`.
 
 Superseded without deployment:
 `SQ214_REV3_reference_v11_CRITICAL_APPROACH_EVIDENCE.pdf`
@@ -71,10 +74,11 @@ The approved reference PDF is proprietary and must not be committed. Git contain
 
 Keep the reference PDF in approved private storage or an ignored local path. Keep generated receipts and difference PNGs under the repository's ignored `tmp/` directory. Do not add the PDF or PNGs to Git.
 
-The 41-page corpus artifact deliberately includes private lossless audit
-appendices. Pages 3–8, 11–12, and 39–41 are not part of the seven-page
-pilot-facing production download; they preserve the parsed-fact publication
-coverage that the private corpus gate verifies.
+The 46-page combined corpus artifact deliberately includes private lossless
+audit evidence. The pilot-facing operational download is a separately scanned
+39-page artifact; the combined reference preserves the parsed-fact publication
+coverage that the private corpus gate verifies and is not a page-count target
+for the operational download.
 
 ## Run the gate
 

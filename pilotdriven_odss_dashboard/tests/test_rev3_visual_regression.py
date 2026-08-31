@@ -204,15 +204,15 @@ def test_wrong_private_reference_hash_fails_before_comparison(tmp_path: Path) ->
 def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
     payload = json.loads(PINNED_MANIFEST.read_text(encoding="utf-8"))
 
-    # 41 page entries of geometry + checksums only; far below any size that could embed the PDF.
+    # 46 page entries of geometry + checksums only; far below any size that could embed the PDF.
     assert PINNED_MANIFEST.stat().st_size < 16_000
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference_v12_APPROACH_EVIDENCE_CORRECTED.pdf",
-        "sha256": "8bf7b2095a82cbea7e19fb85427fdcecd04566afa5ba9030c2b1b30c94ce42e2",
+        "filename": "SQ214_REV3_reference_v13_REV1_SIX_BOX_AND_NOTAM_EVIDENCE.pdf",
+        "sha256": "2f0263253a76cac5b5795b42d1d777c21d0d742b07973f0eed8dd1f3b9f0ccb5",
     }
-    assert len(payload["pages"]) == 41
-    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-31-surface-shortening-v32"
-    assert "critical instrument-approach flag requirement" in payload["provenance"]["approval_basis"]
+    assert len(payload["pages"]) == 46
+    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-31-rev1-six-box-notam-evidence-v33"
+    assert "all 46 lossless plus all 39 operational pages" in payload["provenance"]["approval_basis"]
     assert payload["thresholds"] == {
         "max_changed_pixel_ratio": 0.0,
         "max_mean_absolute_error": 0.0,
