@@ -2475,8 +2475,8 @@ def test_operational_page_one_uses_dynamic_six_box_ofp_hierarchy(tmp_path):
     assert page_text.count("ITEMS REQUIRING CONFIRMATION") == 1
     assert "SOURCE CHECKS OPEN" not in page_text
     assert "Flight control summary" not in page_text
-    assert "EBBR" in page_text
-    assert "WSSS" in page_text
+    assert "EBBR RWY 07R" in page_text
+    assert "WSSS RWY 20R" in page_text
     assert "245,529 kg" in page_text
     assert "79,643 kg" in page_text
 
@@ -3184,7 +3184,7 @@ def test_alternate_matrix_title_distinguishes_rows_shown_from_secondary_panels()
         secondary_airport_count=5,
     ) == (
         "DESTINATION ALTERNATE ASSESSMENT MATRIX · 4/5 ROWS SHOWN · "
-        "5 FILED SECONDARY AIRPORT PANELS · FULL DETAIL IN DASHBOARD"
+        "5 SECONDARY AIRPORTS · FULL SELECTED DETAIL REMAINS IN DASHBOARD"
     )
 
 
@@ -3860,6 +3860,11 @@ def test_operational_overview_long_route_points_to_dashboard(tmp_path):
     first_page = " ".join(fitz.open(out)[0].get_text().split())
     assert "FULL ROUTE: DASHBOARD" in first_page
     assert "FULL: DASHBOARD" in first_page
+    assert (
+        "FILED ROUTE · WSSS/20C FIX01 A001 FIX02 A002 FIX03 A003 FIX04"
+        in first_page
+    )
+    assert "LEVEL PROFILE · SIN/FIX01/301/FIX02" in first_page
     assert "AIRPORTS PAGE" not in first_page
 
 
@@ -3886,8 +3891,8 @@ def test_six_box_flight_plan_card_keeps_route_rules_and_cruise_values(tmp_path):
     for expected in (
         "ROUTE / PLAN RTE99 / P11",
         "FLT RULES EDTO / RVSM",
-        "CI / APD 999 / 100%",
-        "CRZ COMP P111",
+        "CI / APD CI 999 / APD 100%",
+        "CRZ COMP CRZ P111",
     ):
         assert expected in text
     from scripts.run_private_cfp_corpus import scan_physical_pdf

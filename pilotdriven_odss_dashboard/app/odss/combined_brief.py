@@ -2131,8 +2131,8 @@ def _draw_operational_six_box_overview(
     departure_rows = [
         (
             "APT / RWY",
-            f"{theme.airport_code_label(str(departure.get('icao') or '----'))} / "
-            f"{departure_plan.get('runway') or '--'}",
+            f"{theme.airport_code_label(str(departure.get('icao') or '----'))} "
+            f"RWY {departure_plan.get('runway') or '--'}",
         ),
         ("SID", unavailable(departure_plan.get("procedure") or page_one.get("sid"))),
         (
@@ -2184,8 +2184,8 @@ def _draw_operational_six_box_overview(
     destination_rows = [
         (
             "APT / RWY",
-            f"{theme.airport_code_label(str(destination.get('icao') or '----'))} / "
-            f"{destination_plan.get('runway') or '--'}",
+            f"{theme.airport_code_label(str(destination.get('icao') or '----'))} "
+            f"RWY {destination_plan.get('runway') or '--'}",
         ),
         ("STAR", unavailable(destination_plan.get("procedure") or page_one.get("star"))),
         ("TAF AT SCHED ARR", unavailable(forecast_value)),
@@ -2301,8 +2301,8 @@ def _draw_operational_six_box_overview(
         (
             "CI / APD",
             (
-                f"{identity.get('cost_index')} / "
-                f"{identity.get('apd_percent')}%"
+                f"CI {identity.get('cost_index')} / "
+                f"APD {identity.get('apd_percent')}%"
                 if identity.get("cost_index") is not None
                 and identity.get("apd_percent") is not None
                 else "UNAVAILABLE - REVIEW REQUIRED"
@@ -2316,7 +2316,7 @@ def _draw_operational_six_box_overview(
         (
             "CRZ COMP",
             (
-                f"{'P' if int(cruise_wind) >= 0 else 'M'}{abs(int(cruise_wind)):03d}"
+                f"CRZ {'P' if int(cruise_wind) >= 0 else 'M'}{abs(int(cruise_wind))}"
                 if cruise_wind is not None
                 else "UNAVAILABLE - REVIEW REQUIRED"
             ),
@@ -2438,15 +2438,15 @@ def _draw_operational_six_box_overview(
         cell_x = MARGIN + index * cell_w
         if index:
             canvas.setStrokeColor(_page_colour(canvas, "border", BORDER))
-            canvas.line(cell_x, confirmation_y + 8, cell_x, action_top + 2)
+            canvas.line(cell_x, confirmation_y + 31, cell_x, action_top + 2)
         canvas.setFillColor(action["accent"])
         canvas.setFont(SANS_BOLD, 8.4)
         canvas.drawString(cell_x + 8, action_top - 1, str(action["phase"]))
         lines = _wrap(
             str(action["headline"]), SANS_BOLD, 8.4, cell_w - 16
         )
-        if len(lines) > 4:
-            lines = lines[:3] + ["SEE LINKED SECTION"]
+        if len(lines) > 3:
+            lines = lines[:2] + ["SEE LINKED SECTION"]
         line_y = action_top - 15.0
         canvas.setFillColor(TEXT_SECONDARY)
         canvas.setFont(SANS_BOLD, 8.4)
@@ -2459,6 +2459,43 @@ def _draw_operational_six_box_overview(
             (cell_x, confirmation_y, cell_x + cell_w, action_top + 4),
             relative=0,
             thickness=0,
+        )
+
+    route_prefix = " ".join(
+        str(flight.get("route_text") or "").split()[:8]
+    )
+    profile_tokens = [
+        token
+        for token in str(flight.get("planned_level_profile") or "").split("/")
+        if token
+    ]
+    profile_prefix = "/".join(profile_tokens[:4])
+    route_receipt = " · FULL ROUTE: DASHBOARD" if len(
+        str(flight.get("route_text") or "").split()
+    ) > 8 else ""
+    profile_receipt = " · FULL: DASHBOARD" if len(profile_tokens) > 4 else ""
+    filed_lines = (
+        f"FILED ROUTE · {route_prefix or 'UNAVAILABLE - REVIEW REQUIRED'}{route_receipt}",
+        f"LEVEL PROFILE · {profile_prefix or 'UNAVAILABLE - REVIEW REQUIRED'}{profile_receipt}",
+    )
+    canvas.setStrokeColor(_page_colour(canvas, "border", BORDER))
+    canvas.line(
+        MARGIN + 8,
+        confirmation_y + 27,
+        MARGIN + full_w - 8,
+        confirmation_y + 27,
+    )
+    for index, filed_line in enumerate(filed_lines):
+        if pdfmetrics.stringWidth(filed_line, MONO, 6.7) > full_w - 20:
+            raise ValueError(
+                "Page-1 filed route/profile receipt exceeds readable width."
+            )
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(MONO, 6.7)
+        canvas.drawString(
+            MARGIN + 10,
+            confirmation_y + 17 - index * 10.5,
+            filed_line,
         )
 
 
@@ -2482,19 +2519,7 @@ def draw_overview_page(
     body_leading = 10.6 if operational_readable else 9.4
     section_pages = section_page_numbers or {}
     airports_page_number = int(section_pages.get("airports") or 5)
-    route_token_count = len(str(flight.get("route_text") or "").split())
-    profile_token_count = len(
-        [
-            token
-            for token in str(flight.get("planned_level_profile") or "").split("/")
-            if token
-        ]
-    )
     source_parts = ["OFP P1 master context + deterministic analysis"]
-    if operational_readable and route_token_count > 8:
-        source_parts.append("FULL ROUTE: DASHBOARD")
-    if operational_readable and profile_token_count > 4:
-        source_parts.append("FULL: DASHBOARD")
     content_top = draw_page_chrome(
         canvas,
         flight,
@@ -11264,10 +11289,14 @@ def _operational_alternate_matrix_title(
             f" · {displayed_alternate_count}/{alternate_count} ROWS SHOWN"
         )
     if secondary_airport_count:
-        panel_label = "PANEL" if secondary_airport_count == 1 else "PANELS"
+        airport_label = (
+            "SECONDARY AIRPORT"
+            if secondary_airport_count == 1
+            else "SECONDARY AIRPORTS"
+        )
         title += (
-            f" · {secondary_airport_count} FILED SECONDARY AIRPORT "
-            f"{panel_label} · FULL DETAIL IN DASHBOARD"
+            f" · {secondary_airport_count} {airport_label}"
+            " · FULL SELECTED DETAIL REMAINS IN DASHBOARD"
         )
     return title
 
