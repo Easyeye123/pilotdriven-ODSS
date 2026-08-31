@@ -36,6 +36,8 @@ from .direct_vaac import (
     advisory_fields,
     advisory_flight_window,
     advisory_iso,
+    advisory_is_exercise,
+    advisory_next_receipt,
     advisory_phase,
     advisory_utc,
 )
@@ -100,6 +102,13 @@ GTS_CENTRES: dict[str, dict[str, Any]] = {
 }
 
 _DTG = re.compile(r"\b(\d{4})(\d{2})(\d{2})/(\d{2})(\d{2})Z?\b")
+_WMO_HEADER = re.compile(
+    r"(?m)^(?P<heading>FV[A-Z]{2}\d{2})\s+"
+    r"(?P<office>[A-Z]{4})\s+(?P<ddhhmm>\d{6})\b"
+)
+_MIRROR_SLOT = re.compile(
+    r"^(?P<heading>fv[a-z]{2}\d{2})\.(?P<office>[a-z]{4})\.\.txt$"
+)
 # "PSN: S0832 E12246" — degrees and minutes, hemisphere-prefixed, as printed
 # in every VA ADVISORY. Seconds are never printed; nothing is interpolated.
 _PSN = re.compile(
@@ -109,7 +118,7 @@ _PSN = re.compile(
 
 def parse_advisory_psn(value: str) -> dict[str, float] | None:
     """The advisory's printed volcano position as decimal degrees."""
-    match = _PSN.search(str(value or ""))
+    match = _PSN.fullmatch(str(value or "").strip())
     if not match:
         return None
     lat_hem, lat_deg, lat_min, lon_hem, lon_deg, lon_min = match.groups()
@@ -125,7 +134,7 @@ def parse_advisory_psn(value: str) -> dict[str, float] | None:
 
 
 def _dtg_utc(value: str) -> datetime | None:
-    match = _DTG.search(str(value or ""))
+    match = _DTG.fullmatch(str(value or "").strip().upper())
     if not match:
         return None
     year, month, day, hour, minute = map(int, match.groups())
@@ -189,11 +198,28 @@ def parse_gts_vaac_advisory(
             f"{centre} VAAC bulletin did not carry its expected WMO heading"
         )
     fields = advisory_fields(text)
+    if advisory_is_exercise(text, fields):
+        raise ValueError(f"{centre} VAAC exercise advisory is not operational evidence")
     if fields.get("VAAC", "").strip().upper() != centre:
         raise ValueError(f"{centre} VAAC advisory identity could not be verified")
     issued_at = _dtg_utc(fields.get("DTG", ""))
     if issued_at is None:
         raise ValueError(f"{centre} VAAC advisory carried no readable DTG")
+    wmo_header = _WMO_HEADER.search(text)
+    if (
+        wmo_header is None
+        or wmo_header.group("ddhhmm") != issued_at.strftime("%d%H%M")
+    ):
+        raise ValueError(f"{centre} VAAC WMO issue time did not match its DTG")
+    mirror_slot = _MIRROR_SLOT.fullmatch(
+        str(metadata.get("file") or "").strip().lower()
+    )
+    if (
+        mirror_slot is None
+        or mirror_slot.group("heading") != wmo_header.group("heading").lower()
+        or mirror_slot.group("office") != wmo_header.group("office").lower()
+    ):
+        raise ValueError(f"{centre} VAAC WMO heading did not match its mirror slot")
     phases: list[dict[str, Any]] = []
     observed = fields.get("OBS VA CLD")
     if observed:
@@ -291,10 +317,15 @@ def fetch_gts_vaac_snapshots(
         text_cache: dict[str, str | Exception] = {}
         for centre in wanted:
             rows = parse_gts_listing(index_html, centre)
+            if not rows:
+                snapshots[centre] = unavailable(
+                    centre,
+                    f"No recognized fixed GTS mirror slot was listed for {centre}",
+                )
+                continue
             advisories: list[dict[str, Any]] = []
             errors: list[dict[str, str]] = []
             listing_issue_times: list[str] = []
-            next_advisories: list[str] = []
             for row in rows:
                 cached = text_cache.get(row["file"])
                 if cached is None:
@@ -321,9 +352,10 @@ def fetch_gts_vaac_snapshots(
                 issued = advisory_utc(advisory["issued_at_utc"])
                 if issued is not None and window_start <= issued <= window_end:
                     advisories.append(advisory)
-                    if advisory.get("next_advisory"):
-                        next_advisories.append(str(advisory["next_advisory"]))
             listing_issue_times.sort()
+            next_advisory_due, next_advisory_notes = advisory_next_receipt(
+                advisories
+            )
             snapshots[centre] = _govern({
                 "schema_version": "1.0",
                 "status": "available" if not errors else "partial",
@@ -339,7 +371,8 @@ def fetch_gts_vaac_snapshots(
                 "listing_latest_utc": listing_issue_times[-1] if listing_issue_times else None,
                 "advisory_count": len(advisories),
                 "advisories": advisories,
-                "next_advisory_due": sorted(next_advisories)[-1] if next_advisories else None,
+                "next_advisory_due": next_advisory_due,
+                "next_advisory_notes": next_advisory_notes,
                 "errors": errors,
                 "source_note": (
                     f"Official {centre} VAAC VA ADVISORY evidence retrieved as "

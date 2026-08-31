@@ -129,7 +129,13 @@ class SurfaceMarker(_StrictModel):
     geometry: SurfacePointGeometry
 
 
-SurfaceMarkClass = Literal["closure", "scheduled", "equipment", "locator"]
+SurfaceMarkClass = Literal[
+    "closure",
+    "shortening",
+    "scheduled",
+    "equipment",
+    "locator",
+]
 SurfaceReferenceState = Literal[
     "active_at_reference",
     "begins_after_reference",
@@ -427,6 +433,15 @@ _SURFACE_STYLES = {
         "fill-opacity": 0.55,
         "marker-label": "X",
     },
+    "shortening": {
+        "color": "#F59E0B",
+        "width": 7,
+        "outline-color": "#78350F",
+        "outline-width": 2,
+        "fill-color": "#F59E0B",
+        "fill-opacity": 0.4,
+        "marker-label": "R",
+    },
     "scheduled": {
         "color": "#FBBF24",
         "width": 7,
@@ -459,7 +474,8 @@ _SURFACE_STYLE_PRIORITY = {
     "locator": 0,
     "equipment": 1,
     "scheduled": 2,
-    "closure": 3,
+    "shortening": 3,
+    "closure": 4,
 }
 
 
@@ -474,6 +490,8 @@ def surface_mark_presentation(match: dict[str, Any]) -> str | None:
         return "scheduled"
     if mark_class == "equipment":
         return "equipment"
+    if mark_class == "shortening" and state == "active_at_reference":
+        return "shortening"
     if mark_class == "closure" and state == "active_at_reference":
         return "closure"
     # Missing/unknown timing, explicit locator rows, and legacy unclassified

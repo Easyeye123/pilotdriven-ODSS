@@ -54,6 +54,9 @@ _FIELD = re.compile(r"^([A-Z][A-Z0-9 +/()_-]*):\s*(.*)$")
 _COORDINATE = re.compile(
     r"\b([NS])(\d{2})(\d{2})?\s+([EW])(\d{3})(\d{2})?\b"
 )
+_NEXT_ADVISORY_DTG = re.compile(
+    r"\b(\d{4})(\d{2})(\d{2})/(\d{2})(\d{2})Z?\b"
+)
 
 
 def _utc(value: Any) -> datetime | None:
@@ -71,6 +74,59 @@ def _utc(value: Any) -> datetime | None:
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def advisory_next_receipt(
+    advisories: list[dict[str, Any]],
+) -> tuple[str | None, list[str]]:
+    """Return the earliest held update deadline and exact non-time statuses.
+
+    A centre can hold several advisories at once.  The actionable receipt is
+    therefore the earliest valid deadline, not the final item encountered.
+    Text such as ``NO FURTHER ADVISORIES`` remains visible as source evidence;
+    it is never converted into a made-up timestamp or freshness result.
+    """
+
+    deadlines: list[tuple[datetime, str]] = []
+    notes: list[str] = []
+    for advisory in advisories:
+        raw = str(advisory.get("next_advisory") or "").strip()
+        if not raw:
+            continue
+        match = _NEXT_ADVISORY_DTG.search(raw)
+        due: datetime | None = None
+        if match:
+            try:
+                due = datetime(
+                    *map(int, match.groups()),
+                    tzinfo=timezone.utc,
+                )
+            except ValueError:
+                due = None
+        issued = _utc(advisory.get("issued_at_utc"))
+        if due is not None and issued is not None and due >= issued:
+            deadlines.append((due, raw))
+        else:
+            number = " ".join(
+                str(advisory.get("advisory_number") or "").split()
+            )
+            volcano = " ".join(
+                str(advisory.get("volcano") or "").split()
+            )
+            identity = " / ".join(
+                value
+                for value in (
+                    f"ADVISORY {number}" if number else "",
+                    volcano,
+                )
+                if value
+            )
+            attributed = f"{identity or 'UNATTRIBUTED ADVISORY'}: {raw}"
+            if attributed not in notes:
+                notes.append(attributed)
+
+    earliest = min(deadlines, key=lambda item: item[0])[1] if deadlines else None
+    return earliest, notes
 
 
 def _snapshot_cache_seconds() -> float:
@@ -207,11 +263,96 @@ def _fields(text: str) -> dict[str, str]:
     for line in text.splitlines():
         match = _FIELD.match(line)
         if match:
-            current = match.group(1).strip()
+            current = re.sub(
+                r"(\+\d+)\s*HR\b",
+                r"\1 HR",
+                match.group(1).strip(),
+            )
             output[current] = match.group(2).strip()
         elif current:
             output[current] = f"{output[current]} {line.strip()}".strip()
     return output
+
+
+def _is_exercise_advisory(
+    text: str,
+    fields: dict[str, str] | None = None,
+) -> bool:
+    """Reject exercise traffic before it can become an operational receipt."""
+
+    held_fields = fields if fields is not None else _fields(text)
+    status = " ".join(str(held_fields.get("STATUS") or "").upper().split())
+    if re.search(r"\b(?:EXER|EXERCISE|VOLCEX|TEST)\b", status):
+        return True
+    info_source = " ".join(
+        str(held_fields.get("INFO SOURCE") or "").upper().split()
+    ).strip(" .;,:-")
+    if info_source in {"EXER", "EXERCISE", "VOLCEX", "TEST"}:
+        return True
+    controlled_details = " ".join(
+        " ".join(str(held_fields.get(key) or "").upper().split())
+        for key in ("ERUPTION DETAILS", "RMK")
+    )
+    if re.search(
+        r"\b(?:EXERCISE|VOLCEX|TEST\s+(?:ADVISORY|PLEASE\s+DISREGARD))\b",
+        controlled_details,
+    ):
+        return True
+    return bool(re.search(
+        r"\b(?:EXERCISE|VOLCEX|VA\s+TEST|TEST\s+PLEASE\s+DISREGARD)\b",
+        str(text or "").upper(),
+    ))
+
+
+def _advisory_issue_time(value: str | None) -> datetime | None:
+    match = re.fullmatch(
+        r"(\d{4})(\d{2})(\d{2})/(\d{2})(\d{2})Z",
+        str(value or "").strip().upper(),
+    )
+    if not match:
+        return None
+    year, month, day, hour, minute = map(int, match.groups())
+    try:
+        return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _volcano_identity(value: str | None) -> str:
+    # The listing prints the volcano name while the advisory body appends the
+    # six-digit volcano number.  Compare the held names without manufacturing
+    # an identity from that number or from an external catalogue.
+    normalized = " ".join(str(value or "").upper().split())
+    return re.sub(r"\s+\d{6}$", "", normalized).strip()
+
+
+def _advisory_identity_matches(
+    fields: dict[str, str],
+    metadata: dict[str, Any],
+) -> bool:
+    listed_issue = _utc(metadata.get("issued_at_utc"))
+    body_issue = _advisory_issue_time(fields.get("DTG"))
+    listed_number = " ".join(
+        str(metadata.get("advisory_number") or "").upper().split()
+    )
+    body_number = " ".join(
+        str(fields.get("ADVISORY NR") or "").upper().split()
+    )
+    listed_volcano = _volcano_identity(metadata.get("volcano"))
+    body_volcano = _volcano_identity(fields.get("VOLCANO"))
+    source_url = str(metadata.get("vaa_url") or "")
+
+    return bool(
+        listed_issue
+        and body_issue
+        and listed_issue.replace(second=0, microsecond=0) == body_issue
+        and listed_number
+        and body_number == listed_number
+        and listed_volcano
+        and body_volcano == listed_volcano
+        and source_url
+        and _safe_source_url(source_url) == source_url
+    )
 
 
 def _phase_time(value: str, issued_at: datetime) -> datetime | None:
@@ -250,13 +391,56 @@ def _position(
     return [round(lon, 5), round(lat, 5)]
 
 
+def _validated_position(match: re.Match[str]) -> list[float] | None:
+    latitude_minutes = int(match.group(3) or 0)
+    longitude_minutes = int(match.group(6) or 0)
+    if latitude_minutes >= 60 or longitude_minutes >= 60:
+        return None
+    position = _position(*match.groups())
+    longitude, latitude = position
+    if abs(latitude) > 90 or abs(longitude) > 180:
+        return None
+    return position
+
+
+def _volcano_position(value: str | None) -> dict[str, float] | None:
+    """Return only the advisory's explicit PSN in the shared VAA schema."""
+    match = _COORDINATE.fullmatch(str(value or "").strip().upper())
+    if not match:
+        return None
+    position = _validated_position(match)
+    if position is None:
+        return None
+    longitude, latitude = position
+    return {"latitude": latitude, "longitude": longitude}
+
+
+def _aviation_colour_code(fields: dict[str, str]) -> str | None:
+    """Return only the exact held aviation colour/color field."""
+    value = (
+        fields.get("AVIATION COLOUR CODE")
+        or fields.get("AVIATION COLOR CODE")
+    )
+    normalized = " ".join(str(value or "").upper().split())
+    return normalized or None
+
+
 def _phase(label: str, value: str, issued_at: datetime) -> dict[str, Any]:
     upper = value.upper()
     valid_at = _phase_time(upper, issued_at)
-    coordinates = [
-        _position(*match.groups())
-        for match in _COORDINATE.finditer(upper)
+    coordinate_matches = list(_COORDINATE.finditer(upper))
+    validated_coordinates = [
+        _validated_position(match)
+        for match in coordinate_matches
     ]
+    # A polygon is a single governed geometry.  One invalid vertex withholds
+    # the whole shape; silently dropping or normalising that vertex could draw
+    # a materially different ash area.
+    coordinates = (
+        [position for position in validated_coordinates if position is not None]
+        if all(position is not None for position in validated_coordinates)
+        else []
+    )
     layer = re.search(r"\b(SFC|FL\d{3})/(SFC|FL\d{3})\b", upper)
     state = (
         "not_available"
@@ -285,8 +469,14 @@ def parse_tokyo_vaac_advisory(
 ) -> dict[str, Any]:
     text = _plain_advisory(raw)
     fields = _fields(text)
+    if _is_exercise_advisory(text, fields):
+        raise ValueError("Tokyo VAAC exercise advisory is not operational evidence")
     issued_at = _utc(metadata.get("issued_at_utc"))
-    if issued_at is None or fields.get("VAAC", "").upper() != "TOKYO":
+    if (
+        issued_at is None
+        or fields.get("VAAC", "").upper() != "TOKYO"
+        or not _advisory_identity_matches(fields, metadata)
+    ):
         raise ValueError("Tokyo VAAC advisory identity could not be verified")
     phases: list[dict[str, Any]] = []
     observed = fields.get("OBS VA CLD")
@@ -304,7 +494,10 @@ def parse_tokyo_vaac_advisory(
         **metadata,
         "provider": "jma-tokyo-vaac",
         "vaac": fields.get("VAAC"),
+        "centre": fields.get("VAAC"),
         "volcano": fields.get("VOLCANO") or metadata.get("volcano"),
+        "volcano_position": _volcano_position(fields.get("PSN")),
+        "aviation_colour_code": _aviation_colour_code(fields),
         "area": fields.get("AREA") or metadata.get("area"),
         "advisory_number": (
             fields.get("ADVISORY NR") or metadata.get("advisory_number")
@@ -374,6 +567,7 @@ def fetch_tokyo_vaac_snapshot(
                     "source_url": row["vaa_url"],
                     "error": f"{type(exc).__name__}: {str(exc)[:160]}",
                 })
+        next_advisory_due, next_advisory_notes = advisory_next_receipt(advisories)
         return _govern_tokyo_snapshot({
             "schema_version": "1.0",
             "status": "available" if not errors else "partial",
@@ -387,6 +581,8 @@ def fetch_tokyo_vaac_snapshot(
             "listing_latest_utc": rows[0]["issued_at_utc"] if rows else None,
             "advisory_count": len(advisories),
             "advisories": advisories,
+            "next_advisory_due": next_advisory_due,
+            "next_advisory_notes": next_advisory_notes,
             "errors": errors,
             "source_note": (
                 "Official Tokyo VAAC VAA/VAG evidence for its area only. "
@@ -429,7 +625,10 @@ def live_tokyo_vaac_snapshot(flight: dict[str, Any]) -> dict[str, Any]:
 # them instead of restating them. Exported under public names; the Tokyo
 # behaviour behind them is unchanged.
 advisory_fields = _fields
+advisory_is_exercise = _is_exercise_advisory
 advisory_phase = _phase
+advisory_volcano_position = _volcano_position
+advisory_aviation_colour_code = _aviation_colour_code
 advisory_flight_window = _flight_window
 advisory_iso = _iso
 advisory_utc = _utc
@@ -440,11 +639,15 @@ __all__ = [
     "JMA_VAAC_LIST_PATH",
     "JMA_VAAC_ORIGIN",
     "advisory_cache_seconds",
+    "advisory_aviation_colour_code",
     "advisory_fields",
+    "advisory_is_exercise",
     "advisory_flight_window",
     "advisory_iso",
+    "advisory_next_receipt",
     "advisory_phase",
     "advisory_utc",
+    "advisory_volcano_position",
     "fetch_tokyo_vaac_snapshot",
     "live_tokyo_vaac_snapshot",
     "parse_tokyo_vaac_advisory",

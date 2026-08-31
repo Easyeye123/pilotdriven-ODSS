@@ -694,10 +694,22 @@ def _compact_notam_lines(
             "label": item.get("notam_id") or "NOTAM",
             "text": display_text,
             "notam_id": item.get("notam_id"),
+            "item_e_text": item.get("item_e_text"),
             "source_page": item.get("source_page"),
             "source_role": item.get("source_role"),
             "role": item.get("role"),
             "applicability": item.get("applicability"),
+            "stateAtReference": item.get("stateAtReference"),
+            "referenceAt": item.get("referenceAt"),
+            "minutesDelta": item.get("minutesDelta"),
+            "severity": item.get("severity"),
+            "category": item.get("category"),
+            "pertinence_kind": item.get("pertinence_kind"),
+            **(
+                {"approach_affected": item["approach_affected"]}
+                if isinstance(item.get("approach_affected"), bool)
+                else {}
+            ),
             "signal_family": family,
             "planned_match": (
                 bool(item_runways & runway_basis)
@@ -862,11 +874,20 @@ def _airport_operational_panels(
                 "source_page": data.get("source_page"),
                 "source_role": data.get("source_role"),
                 "role": data.get("role"),
+                "category": data.get("category"),
                 "pertinence_rank": data.get("pertinence_rank"),
                 "pertinence_kind": data.get("pertinence_kind"),
+                **(
+                    {"approach_affected": data["approach_affected"]}
+                    if isinstance(data.get("approach_affected"), bool)
+                    else {}
+                ),
                 "applicability": data.get("applicability"),
                 "window_start_utc": data.get("window_start_utc"),
                 "window_end_utc": data.get("window_end_utc"),
+                "stateAtReference": data.get("stateAtReference"),
+                "referenceAt": data.get("referenceAt"),
+                "minutesDelta": data.get("minutesDelta"),
                 "severity": item.get("severity"),
             })
         metar = _station_source_weather(flight, location, "METAR")
@@ -2924,10 +2945,30 @@ def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
         "unavailable": "unavailable",
         "not_mounted": "not mounted",
     }
+
+    def observed_receipts(item: dict[str, Any]) -> dict[str, Any]:
+        # Preserve only receipts the source contract actually carried.  In
+        # particular, a reached GTS listing is not labelled fresh/stale unless
+        # a governed producer supplied that conclusion.
+        return {
+            key: item.get(key)
+            for key in (
+                "coverage_status",
+                "advisory_count",
+                "source_url",
+                "freshness_status",
+                "listing_latest_utc",
+                "next_advisory_due",
+                "next_advisory_notes",
+            )
+            if key in item
+        }
+
     centres = [
         {
             "centre": str(item.get("centre") or "UNKNOWN").upper(),
             "status": status_copy.get(str(item.get("status") or "").lower(), "unavailable"),
+            **observed_receipts(item),
         }
         for item in ledger
     ]
@@ -2946,18 +2987,25 @@ def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
             for receipt in direct_review.get("responsible_centre_receipts") or []
             if str(receipt.get("centre") or "").strip()
         }
-        responsible_rows = [
-            {
-                "centre": str(centre).strip().upper(),
-                "reached": bool(
-                    receipts_by_centre.get(str(centre).strip().upper(), {}).get(
-                        "reached"
-                    )
+        responsible_rows = []
+        for centre in direct_review.get("responsible_centres") or []:
+            centre_name = str(centre).strip().upper()
+            if not centre_name:
+                continue
+            receipt = receipts_by_centre.get(centre_name, {})
+            responsible_rows.append({
+                "centre": centre_name,
+                "reached": bool(receipt.get("reached")),
+                "coverage_status": receipt.get("coverage_status"),
+                "advisory_count": int(receipt.get("advisory_count") or 0),
+                "source_url": receipt.get("source_url"),
+                "freshness_status": receipt.get("freshness_status"),
+                "listing_latest_utc": receipt.get("listing_latest_utc"),
+                "next_advisory_due": receipt.get("next_advisory_due"),
+                "next_advisory_notes": list(
+                    receipt.get("next_advisory_notes") or []
                 ),
-            }
-            for centre in direct_review.get("responsible_centres") or []
-            if str(centre).strip()
-        ]
+            })
         responsible_line = str(direct_review.get("responsible_line") or "")
         responsible_review_required = bool(
             direct_review.get("responsibility_review_required")
@@ -5651,6 +5699,14 @@ def build_briefing_view(
             dict(entry)
             for entry in (flight.get("airport_surface_index") or [])
             if isinstance(entry, dict)
+        ],
+        # Source-bound surface overlay receipts are composed once here for
+        # dashboard/PDF parity. The PDF may publish their exact textual
+        # shortening state, but never derives or invents geometry from them.
+        "surface_overlays": [
+            dict(overlay)
+            for overlay in (flight.get("surface_overlays") or [])
+            if isinstance(overlay, dict)
         ],
         "alternate_assessment_rows": alternate_assessment_rows,
         "fuel_enroute_airports": [

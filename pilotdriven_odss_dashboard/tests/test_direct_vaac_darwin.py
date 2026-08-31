@@ -85,12 +85,60 @@ def test_advisory_identity_is_verified_from_the_bulletin_itself() -> None:
     advisory = parse_darwin_vaac_advisory(KRAKATAU_TERMINATED, {"file": "fvau05.adrm..txt"})
     assert advisory["provider"] == PROVIDER
     assert advisory["vaac"] == "DARWIN"
+    assert advisory["centre"] == "DARWIN"
     assert advisory["volcano"] == "KRAKATAU 262000"
     assert advisory["advisory_number"] == "2026/116"
     assert advisory["issued_at_utc"] == "2026-08-18T08:00:00+00:00"
+    assert advisory["volcano_position"] == {
+        "latitude": -6.1,
+        "longitude": 105.41667,
+    }
+    assert advisory["aviation_colour_code"] == "ORANGE"
     assert "ADVISORY TERMINATED" in advisory["remarks"]
     assert advisory["phases"] and advisory["phases"][0]["phase"] == "observed"
     assert advisory["phases"][0]["state"] == "not_identifiable"
+
+
+def test_darwin_wmo_header_time_must_match_body_dtg() -> None:
+    mismatched = KRAKATAU_TERMINATED.replace(
+        "FVAU05 ADRM 180800",
+        "FVAU05 ADRM 180801",
+    )
+
+    with pytest.raises(ValueError, match="WMO issue time"):
+        parse_darwin_vaac_advisory(
+            mismatched,
+            {"file": "fvau05.adrm..txt"},
+        )
+
+    malformed = KRAKATAU_TERMINATED.replace("S0606 E10525", "S0660 E10525")
+    assert parse_darwin_vaac_advisory(
+        malformed,
+        {"file": "fvau05.adrm..txt"},
+    )["volcano_position"] is None
+
+
+def test_darwin_wmo_header_must_match_fetched_mirror_slot() -> None:
+    swapped = KRAKATAU_TERMINATED.replace("FVAU05 ADRM", "FVAU04 ADRM")
+
+    with pytest.raises(ValueError, match="mirror slot"):
+        parse_darwin_vaac_advisory(
+            swapped,
+            {"file": "fvau05.adrm..txt"},
+        )
+
+
+def test_darwin_body_dtg_must_be_an_exact_field_value() -> None:
+    malformed = KRAKATAU_TERMINATED.replace(
+        "DTG: 20260818/0800Z",
+        "DTG: INVALID 20260818/0800Z TRAILER",
+    )
+
+    with pytest.raises(ValueError, match="readable DTG"):
+        parse_darwin_vaac_advisory(
+            malformed,
+            {"file": "fvau05.adrm..txt"},
+        )
 
 
 def test_a_bulletin_from_another_centre_is_rejected() -> None:
@@ -107,7 +155,10 @@ def test_a_bulletin_from_another_centre_is_rejected() -> None:
 
 
 def test_snapshot_retains_only_advisories_inside_the_flight_window() -> None:
-    stale = KRAKATAU_TERMINATED.replace("DTG: 20260818/0800Z", "DTG: 20260610/0800Z")
+    stale = KRAKATAU_TERMINATED.replace(
+        "FVAU05 ADRM 180800",
+        "FVAU04 ADRM 100800",
+    ).replace("DTG: 20260818/0800Z", "DTG: 20260610/0800Z")
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -126,6 +177,48 @@ def test_snapshot_retains_only_advisories_inside_the_flight_window() -> None:
     assert snapshot["status"] == "available", snapshot.get("errors")
     assert snapshot["advisory_count"] == 1
     assert snapshot["advisories"][0]["advisory_number"] == "2026/116"
+    assert snapshot["next_advisory_due"] is None
+    assert snapshot["next_advisory_notes"] == [
+        "ADVISORY 2026/116 / KRAKATAU 262000: NO FURTHER ADVISORIES"
+    ]
+
+
+@pytest.mark.parametrize("index_body", ("", "<html>maintenance</html>"))
+def test_zero_recognized_darwin_slots_fail_coverage_closed(index_body) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=index_body)
+
+    snapshot = fetch_darwin_vaac_snapshot(
+        _flight(),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        now=datetime(2026, 8, 18, 8, 30, tzinfo=timezone.utc),
+    )
+
+    assert snapshot["status"] == "unavailable"
+    assert snapshot["coverage_status"] == "unavailable"
+    assert snapshot["advisories"] == []
+    assert "recognized fixed Darwin GTS mirror slot" in snapshot["errors"][0]["error"]
+
+
+def test_darwin_position_identity_and_colour_reach_the_route_ring() -> None:
+    from app.odss.vaa import volcano_proximity_from_snapshots
+
+    advisory = parse_darwin_vaac_advisory(
+        KRAKATAU_TERMINATED,
+        {"file": "fvau05.adrm..txt"},
+    )
+    review = volcano_proximity_from_snapshots(
+        {
+            "route_waypoints": [
+                {"latitude": -6.1, "longitude": 104.0},
+                {"latitude": -6.1, "longitude": 106.0},
+            ],
+        },
+        [{"centre": "DARWIN", "advisories": [advisory]}],
+    )
+
+    assert review["entries"][0]["centre"] == "DARWIN"
+    assert review["entries"][0]["aviation_colour_code"] == "ORANGE"
 
 
 def test_an_unreachable_mirror_fails_closed_rather_than_reporting_no_ash() -> None:

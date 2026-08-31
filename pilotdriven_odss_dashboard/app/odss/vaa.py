@@ -1013,7 +1013,12 @@ def fetch_mounted_vaac_snapshots(
                 if fallback_token.startswith("gts-mirror:")
                 else wifs_for(entry["centre"])
             )
-            if fallback.get("status") == "available":
+            primary_status = str(snapshot.get("status") or "").strip().lower()
+            fallback_status = str(fallback.get("status") or "").strip().lower()
+            if fallback_status == "available" or (
+                primary_status == "unavailable"
+                and fallback_status == "partial"
+            ):
                 snapshot = fallback
         snapshots.append({**snapshot, "centre": entry["centre"]})
     return snapshots
@@ -1057,6 +1062,9 @@ def vaac_centre_ledger(
                 "freshness_status": snapshot.get("freshness_status"),
                 "listing_latest_utc": snapshot.get("listing_latest_utc"),
                 "next_advisory_due": snapshot.get("next_advisory_due"),
+                "next_advisory_notes": list(
+                    snapshot.get("next_advisory_notes") or []
+                ),
             })
         elif mounted_entry:
             rows.append({
@@ -1131,6 +1139,12 @@ def merge_vaac_snapshots(
                 "status": snapshot.get("status"),
                 "source_url": snapshot.get("source_url"),
                 "coverage_status": snapshot.get("coverage_status"),
+                "freshness_status": snapshot.get("freshness_status"),
+                "listing_latest_utc": snapshot.get("listing_latest_utc"),
+                "next_advisory_due": snapshot.get("next_advisory_due"),
+                "next_advisory_notes": list(
+                    snapshot.get("next_advisory_notes") or []
+                ),
             }
             for snapshot in snapshots
         ],
@@ -1249,6 +1263,12 @@ def build_direct_vaa_source_review(
             "reached": status in {"available", "partial"},
             "advisory_count": len(centre_advisories),
             "source_url": (snapshot or {}).get("source_url"),
+            "freshness_status": (snapshot or {}).get("freshness_status"),
+            "listing_latest_utc": (snapshot or {}).get("listing_latest_utc"),
+            "next_advisory_due": (snapshot or {}).get("next_advisory_due"),
+            "next_advisory_notes": list(
+                (snapshot or {}).get("next_advisory_notes") or []
+            ),
         })
 
     reached = [
@@ -1356,7 +1376,7 @@ def _point_to_route_distance_nm(
     longitude: float,
 ) -> float | None:
     """Great-circle distance from a point to the filed route polyline."""
-    from math import asin, atan2, acos, cos, radians, sin
+    from math import asin, atan2, cos, radians, sin
 
     points = [
         (float(wp["latitude"]), float(wp["longitude"]))
@@ -1385,16 +1405,17 @@ def _point_to_route_distance_nm(
             delta13 = d_start / _EARTH_RADIUS_NM
             theta13 = bearing(start, (latitude, longitude))
             theta12 = bearing(start, end)
-            xt = asin(sin(delta13) * sin(theta13 - theta12)) * _EARTH_RADIUS_NM
-            try:
-                along = (
-                    acos(
-                        max(-1.0, min(1.0, cos(delta13) / cos(xt / _EARTH_RADIUS_NM)))
-                    )
-                    * _EARTH_RADIUS_NM
-                )
-            except ValueError:  # pragma: no cover - clamped above
-                along = 0.0
+            xt = asin(max(
+                -1.0,
+                min(1.0, sin(delta13) * sin(theta13 - theta12)),
+            )) * _EARTH_RADIUS_NM
+            # atan2 preserves the along-track sign.  The former acos form
+            # discarded it, so a point behind the segment start could appear
+            # to sit on the route and produce a false corridor hit.
+            along = atan2(
+                sin(delta13) * cos(theta13 - theta12),
+                cos(delta13),
+            ) * _EARTH_RADIUS_NM
             if 0.0 <= along <= segment_nm:
                 candidate = min(candidate, abs(xt))
         best = candidate if best is None else min(best, candidate)
@@ -1443,7 +1464,18 @@ def volcano_proximity_from_snapshots(
                 advisory.get("issued_at_utc") or ""
             ):
                 continue
-            latest_by_volcano[key] = advisory
+            centre = " ".join(
+                str(
+                    advisory.get("centre")
+                    or advisory.get("vaac")
+                    or snapshot.get("centre")
+                    or ""
+                ).upper().split()
+            )
+            latest_by_volcano[key] = {
+                **advisory,
+                "centre": centre or None,
+            }
     entries: list[dict[str, Any]] = []
     for advisory in latest_by_volcano.values():
         position = advisory["volcano_position"]

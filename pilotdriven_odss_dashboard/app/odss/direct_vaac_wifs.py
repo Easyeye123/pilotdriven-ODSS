@@ -30,6 +30,7 @@ from .direct_vaac import (
     advisory_fields,
     advisory_flight_window,
     advisory_iso,
+    advisory_is_exercise,
     advisory_phase,
     advisory_utc,
 )
@@ -142,6 +143,12 @@ def parse_wifs_vaa_collective(text: str) -> tuple[list[dict[str, Any]], list[dic
     records, errors = wifs_tac_records(text)
     for index, record in enumerate(records, start=1):
         fields = advisory_fields(record)
+        if advisory_is_exercise(record, fields):
+            errors.append({
+                "record": str(index),
+                "error": "Exercise VAA is not operational evidence",
+            })
+            continue
         centre = str(fields.get("VAAC") or "").strip().upper()
         issued_at = _issued_at(fields)
         if centre not in WIFS_VAAC_CENTRES or issued_at is None:

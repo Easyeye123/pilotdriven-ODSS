@@ -18,10 +18,11 @@ absent advisory never becomes "no ash".
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 import os
+import re
 from threading import Lock
 import time
 from typing import Any
@@ -30,11 +31,15 @@ import httpx
 
 from .direct_vaac import (
     advisory_cache_seconds,
+    advisory_aviation_colour_code,
     advisory_fields,
     advisory_flight_window,
     advisory_iso,
+    advisory_is_exercise,
+    advisory_next_receipt,
     advisory_phase,
     advisory_utc,
+    advisory_volcano_position,
 )
 from .snapshot_governance import govern_snapshot, mark_snapshot_reused
 
@@ -51,6 +56,14 @@ _MAX_JSON_BYTES = 2 * 1024 * 1024
 _MAX_ADVISORIES = 32
 _CACHE_LOCK = Lock()
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_WMO_HEADER = re.compile(
+    r"(?m)^\s*(?P<wmo>FVAK\d{2})\s+(?P<office>[A-Z]{4})\s+"
+    r"(?P<day>\d{2})(?P<hour>\d{2})(?P<minute>\d{2})\s*$"
+)
+_BODY_DTG = re.compile(
+    r"^(?P<date>\d{6}|\d{8})/"
+    r"(?P<hour>\d{2})(?P<minute>\d{2})Z$"
+)
 
 
 def _bounded_json(response: httpx.Response) -> Any:
@@ -110,7 +123,19 @@ def parse_anchorage_vaac_advisory(
     text = str((payload or {}).get("productText") or "") if isinstance(payload, dict) else ""
     if not text.strip():
         raise ValueError("Anchorage VAAC advisory carried no product text")
+    if not isinstance(payload, dict) or any(
+        not str(metadata.get(key) or "").strip()
+        for key in ("issued_at_utc", "product_id", "wmo_id")
+    ):
+        raise ValueError("Anchorage VAAC listing identity was incomplete")
+    if any(
+        not str(payload.get(key) or "").strip()
+        for key in ("id", "issuingOffice", "issuanceTime", "wmoCollectiveId")
+    ):
+        raise ValueError("Anchorage VAAC detail identity was incomplete")
     fields = advisory_fields(text)
+    if advisory_is_exercise(text, fields):
+        raise ValueError("Anchorage VAAC exercise advisory is not operational evidence")
     issued_at = advisory_utc(
         metadata.get("issued_at_utc")
         or (payload.get("issuanceTime") if isinstance(payload, dict) else None)
@@ -119,6 +144,61 @@ def parse_anchorage_vaac_advisory(
     # fetched it, so a mislabelled or relayed record cannot enter as Anchorage.
     if issued_at is None or fields.get("VAAC", "").strip().upper() != ANCHORAGE_VAAC_NAME:
         raise ValueError("Anchorage VAAC advisory identity could not be verified")
+    listed_product = str(metadata.get("product_id") or "").strip()
+    detail_product = str(payload.get("id") or "").strip()
+    if detail_product != listed_product:
+        raise ValueError("Anchorage VAAC detail product did not match its listing")
+    detail_office = str(payload.get("issuingOffice") or "").strip().upper()
+    if detail_office != ANCHORAGE_ISSUING_OFFICE:
+        raise ValueError("Anchorage VAAC detail office did not match PAWU")
+    detail_issued = advisory_utc(payload.get("issuanceTime"))
+    if detail_issued is None or detail_issued != issued_at:
+        raise ValueError("Anchorage VAAC detail issuance did not match its listing")
+    listed_wmo = str(metadata.get("wmo_id") or "").strip().upper()
+    detail_wmo = str(payload.get("wmoCollectiveId") or "").strip().upper()
+    if detail_wmo != listed_wmo:
+        raise ValueError("Anchorage VAAC detail WMO id did not match its listing")
+
+    header = _WMO_HEADER.search(text)
+    if header is None:
+        raise ValueError("Anchorage VAAC WMO header was not found")
+    if header.group("office") != ANCHORAGE_ISSUING_OFFICE:
+        raise ValueError("Anchorage VAAC WMO header office was not PAWU")
+    if listed_wmo and header.group("wmo") != listed_wmo:
+        raise ValueError("Anchorage VAAC WMO header did not match its listing")
+    if header.group("wmo") != "FVAK22" and not header.group("wmo").startswith("FVAK2"):
+        raise ValueError("Anchorage VAAC WMO header was outside the VAA series")
+    if header.group("day") + header.group("hour") + header.group("minute") != issued_at.strftime("%d%H%M"):
+        raise ValueError("Anchorage VAAC WMO issue time did not match its listing")
+
+    body_match = _BODY_DTG.fullmatch(str(fields.get("DTG") or "").strip().upper())
+    if body_match is None:
+        raise ValueError("Anchorage VAAC advisory DTG could not be verified")
+    date_digits = body_match.group("date")
+    if len(date_digits) == 6:
+        if int(date_digits[:2]) != issued_at.year % 100:
+            raise ValueError("Anchorage VAAC advisory DTG year did not match its listing")
+        year = issued_at.year
+        month = int(date_digits[2:4])
+        day = int(date_digits[4:6])
+    else:
+        year = int(date_digits[:4])
+        month = int(date_digits[4:6])
+        day = int(date_digits[6:8])
+    try:
+        body_issue = datetime(
+            year,
+            month,
+            day,
+            int(body_match.group("hour")),
+            int(body_match.group("minute")),
+            tzinfo=timezone.utc,
+        )
+    except ValueError as exc:
+        raise ValueError("Anchorage VAAC advisory DTG could not be verified") from exc
+    issue_lag = issued_at - body_issue
+    if issue_lag < timedelta(0) or issue_lag > timedelta(hours=6):
+        raise ValueError("Anchorage VAAC advisory DTG was outside its issuance vicinity")
     phases: list[dict[str, Any]] = []
     observed = fields.get("OBS VA CLD")
     if observed:
@@ -135,7 +215,10 @@ def parse_anchorage_vaac_advisory(
         **metadata,
         "provider": PROVIDER,
         "vaac": fields.get("VAAC"),
+        "centre": fields.get("VAAC"),
         "volcano": fields.get("VOLCANO"),
+        "volcano_position": advisory_volcano_position(fields.get("PSN")),
+        "aviation_colour_code": advisory_aviation_colour_code(fields),
         "area": fields.get("AREA"),
         "advisory_number": fields.get("ADVISORY NR"),
         "information_source": fields.get("INFO SOURCE"),
@@ -208,6 +291,7 @@ def fetch_anchorage_vaac_snapshot(
                     "source_url": row["vaa_url"],
                     "error": f"{type(exc).__name__}: {str(exc)[:160]}",
                 })
+        next_advisory_due, next_advisory_notes = advisory_next_receipt(advisories)
         return _govern({
             "schema_version": "1.0",
             "status": "available" if not errors else "partial",
@@ -221,6 +305,8 @@ def fetch_anchorage_vaac_snapshot(
             "listing_latest_utc": rows[0]["issued_at_utc"] if rows else None,
             "advisory_count": len(advisories),
             "advisories": advisories,
+            "next_advisory_due": next_advisory_due,
+            "next_advisory_notes": next_advisory_notes,
             "errors": errors,
             "source_note": (
                 "Official Anchorage VAAC VA ADVISORY evidence for its area only, "

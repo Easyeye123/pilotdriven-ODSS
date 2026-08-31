@@ -27,6 +27,7 @@ from app.odss.combined_brief import (
     T_SMALL,
     WEATHER_AMBER,
     _audit_rev3_v8_briefing_projection,
+    _airport_notam_detail_pages,
     _performance_margin_presentation,
     _performance_selected_presentation,
     _eta_display,
@@ -43,7 +44,9 @@ from app.odss.combined_brief import (
     _operational_terrain_summary,
     _operational_volcano_advisory_selection,
     _route_anchor_entries,
+    _station_card_lines,
     _terrain_table_points,
+    _vaac_ledger_lines,
     combined_briefing_cache_token,
     crop_source_region,
     draw_analysis_page,
@@ -77,6 +80,679 @@ def test_eta_display_keeps_missing_destination_timing_unavailable():
     assert _eta_display("0416Z") == "ETA 0416Z"
     assert _eta_display("--") == "ETA --"
     assert _eta_display(None) == "ETA --"
+
+
+def test_pdf_airport_rows_consume_only_exact_critical_approach_flag():
+    critical = {
+        "kind": "notam",
+        "notam_id": "ALT-ILS/26",
+        "severity": "critical",
+        "approach_affected": True,
+        "applicability": "active",
+        "stateAtReference": "active_at_reference",
+        "text": "ILS RWY 25 U/S",
+        "summary": "ILS RWY 25 U/S",
+        "item_e_text": "ILS RWY 25 U/S",
+    }
+    warning = {
+        "kind": "notam",
+        "notam_id": "ALT-REVIEW/26",
+        "severity": "warning",
+        "approach_affected": False,
+        "text": "Approach wording held for review only",
+        "summary": "Approach wording held for review only",
+        "item_e_text": "Approach wording held for review only",
+    }
+    panel = {
+        "icao": "WIII",
+        "operational_rows": [],
+        "card_summary_lines": [critical, warning],
+        "selected_notams": [critical, warning],
+    }
+
+    card_rows = _station_card_lines(panel)
+    assert card_rows[0] == (
+        "CRITICAL - APPROACH AFFECTED",
+        "WIII ALT-ILS/26 | ILS RWY 25 U/S",
+    )
+    assert card_rows[1] == (
+        "NOTAM",
+        "Approach wording held for review only",
+    )
+
+    detail_pages = _airport_notam_detail_pages({
+        "airport_operational_panels": [panel]
+    })
+    detail_rows = [
+        (label, " ".join(lines))
+        for page in detail_pages
+        for label, lines in page["rows"]
+    ]
+    critical_rows = [
+        value
+        for label, value in detail_rows
+        if label.endswith(" STATUS")
+    ]
+    assert critical_rows == [
+        "CRITICAL - APPROACH AFFECTED | WIII | ALT-ILS/26"
+    ]
+
+
+def test_pdf_vaac_ledger_prints_observed_receipts_without_inferred_freshness():
+    lines = _vaac_ledger_lines(
+        [
+            {
+                "centre": "TOKYO",
+                "status": "reached",
+                "listing_latest_utc": "2026-08-30T12:34:56Z",
+                "next_advisory_due": "2026-08-30T18:00:00Z",
+                "freshness_status": "fresh",
+            },
+            {
+                "centre": "DARWIN",
+                "status": "reached",
+                "listing_latest_utc": "2026-08-30T12:35:00Z",
+                "next_advisory_due": None,
+                "next_advisory_notes": ["NO FURTHER ADVISORIES"],
+            },
+        ],
+        text_width=220.0,
+    )
+    text = " ".join(lines)
+
+    assert "TOKYO: reached" in text
+    assert "latest 2026-08-30T12:34:56Z" in text
+    assert "next due 2026-08-30T18:00:00Z" in text
+    assert "next advisory NO FURTHER ADVISORIES" in text
+    assert "next due NO FURTHER ADVISORIES" not in text
+    assert "fresh" not in text.lower()
+    assert "stale" not in text.lower()
+
+
+def test_operational_downloaded_pdf_shows_exact_critical_approach_flag(
+    tmp_path,
+    monkeypatch,
+):
+    from app.odss import briefing as briefing_module
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    real_build = briefing_module.build_briefing_view
+
+    def critical_approach_view(
+        flight, findings, warnings, timing_view=None, weather_charts=None
+    ):
+        view = real_build(
+            flight,
+            findings,
+            warnings,
+            timing_view=timing_view,
+            weather_charts=weather_charts,
+        )
+        panel = view["airport_operational_panels"][0]
+        def flagged(
+            notam_id: str,
+            item_e: str,
+            page: int,
+            state: str = "active_at_reference",
+            applicability: str = "active",
+        ) -> dict:
+            return {
+                "kind": "notam",
+                "label": item_e,
+                "notam_id": notam_id,
+                "severity": "critical",
+                "approach_affected": True,
+                "text": item_e,
+                "summary": item_e,
+                "item_e_text": item_e,
+                "applicability": applicability,
+                "stateAtReference": state,
+                "source_page": page,
+            }
+
+        primary_flags = [
+            flagged("DEP-ILS-1/26", "ILS RWY 25 U/S", 22),
+            flagged(
+                "DEP-ILS-2/26",
+                "LOC RWY 25 NOT AVBL",
+                23,
+                "begins_after_reference",
+            ),
+            flagged(
+                "DEP-ILS-3/26",
+                "GLS RWY 25 UNUSABLE",
+                24,
+                "unknown_at_reference",
+                "review",
+            ),
+            flagged(
+                "DEP-ILS-ENDED/26",
+                "ILS RWY 25 U/S",
+                25,
+                "ended_before_reference",
+            ),
+        ]
+        panel["selected_notams"] = primary_flags
+        # The compact primary card deliberately receives only two records.
+        # The third, alternate and enroute records must therefore reach the
+        # physical PDF through the lossless operational continuation.
+        panel["card_summary_lines"] = [
+            line
+            for line in panel.get("card_summary_lines") or []
+            if str(line.get("kind") or "").lower() != "notam"
+        ] + primary_flags
+        view["airport_operational_panels"].extend([
+            {
+                "icao": "WIII",
+                "role": "destination alternate",
+                "role_key": "destination_alternate",
+                "roles": ["destination alternate"],
+                "role_keys": ["destination_alternate"],
+                "operational_rows": [],
+                "weather": {},
+                "selected_notams": [
+                    flagged("ALT-ILS/26", "ILS RWY 25 U/S", 25)
+                ],
+                "card_summary_lines": [],
+                "source_pages": [25],
+            },
+            {
+                "icao": "WADD",
+                "role": "EDTO",
+                "role_key": "edto",
+                "roles": ["EDTO"],
+                "role_keys": ["edto"],
+                "operational_rows": [],
+                "weather": {},
+                "selected_notams": [
+                    flagged("ENR-ILS/26", "ILS RWY 09 OUT OF SERVICE", 26)
+                ],
+                "card_summary_lines": [],
+                "source_pages": [26],
+            },
+        ])
+        return view
+
+    monkeypatch.setattr(
+        briefing_module,
+        "build_briefing_view",
+        critical_approach_view,
+    )
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["surface_overlays"] = [{
+        "role": "departure",
+        "icao": str(flight["departure"]).upper(),
+        "mapped": [{
+            "entityType": "runway",
+            "entityRef": "07R",
+            "markClass": "shortening",
+            "notamNumber": "DEP-SHORT/26",
+            "stateAtReference": "active_at_reference",
+            "referenceAt": "2026-07-16T09:45:00+00:00",
+            "referenceInterval": {
+                "startsAt": "2026-07-16T08:00:00+00:00",
+                "endsAt": "2026-07-16T12:00:00+00:00",
+            },
+        }],
+        "reviewRequired": [],
+    }]
+    findings = [
+        finding
+        for finding in sample_findings()
+        if finding["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "critical-approach-operational.pdf"
+
+    render_combined_briefing(flight, findings, [], out)
+
+    document = fitz.open(out)
+    text = " ".join(page.get_text() for page in document)
+    folded = " ".join(text.split())
+    panel_icao = str(
+        critical_approach_view(
+            flight,
+            findings,
+            [],
+        )["airport_operational_panels"][0]["icao"]
+    ).upper()
+    assert "CRITICAL INSTRUMENT APPROACH IMPACTS" in folded
+    assert (
+        f"CRITICAL - APPROACH AFFECTED | {panel_icao} DEP-ILS-1/26"
+        in folded
+    )
+    assert (
+        f"CRITICAL - APPROACH SCHEDULED | {panel_icao} DEP-ILS-2/26"
+        in folded
+    )
+    assert (
+        f"CRITICAL - APPROACH CONDITION REVIEW | "
+        f"{panel_icao} DEP-ILS-3/26"
+        in folded
+    )
+    assert "DEP-ILS-ENDED/26" not in folded
+    assert "WIII ALT-ILS/26" in folded
+    assert "WADD ENR-ILS/26" in folded
+    assert "ILS RWY 09 OUT OF SERVICE" in folded
+    assert "DEP-SHORT/26" in folded
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+
+
+def test_unresolved_approach_schedule_is_critical_review_in_downloaded_pdf(
+    tmp_path,
+) -> None:
+    from app.odss.engines import analyse
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["performance"] = {}
+    flight["deferred_items"] = []
+    flight["fuel"].update({
+        "flight_plan_required_fuel_kg": 79_643,
+        "taxi_fuel_kg": 600,
+    })
+    flight["edto"] = {
+        "entry_actm_minutes": None,
+        "exit_actm_minutes": None,
+        "etp_actm_minutes": [],
+        "airports": [],
+    }
+    flight["notams"] = [{
+        "notam_id": "SCHED-ILS/26",
+        "location": "EBBR",
+        "category": "APPROACH PROCEDURE",
+        "text": "ILS RWY 07R U/S",
+        "valid_from_utc": "2026-07-01T00:00:00+00:00",
+        "valid_to_utc": "2026-07-31T23:59:00+00:00",
+        "schedule": "ON REQUEST EXC PUBLISHED PERIODS",
+        "schedule_review": True,
+        "validity_review": False,
+        "priority_score": 10,
+        "source_page": 22,
+    }]
+    findings, warnings = analyse(flight)
+    source_finding = next(
+        item
+        for item in findings
+        if (item.get("data") or {}).get("notam_id") == "SCHED-ILS/26"
+    )
+    assert source_finding["severity"] == "critical"
+    assert source_finding["data"]["approach_affected"] is True
+    assert source_finding["data"]["applicability"] == "review"
+
+    out = tmp_path / "critical-approach-condition-review.pdf"
+    render_combined_briefing(flight, findings, warnings, out)
+
+    document = fitz.open(out)
+    folded = " ".join(
+        " ".join(page.get_text().split())
+        for page in document
+    )
+    assert "CRITICAL - APPROACH CONDITION REVIEW | EBBR SCHED-ILS/26" in folded
+    assert "ILS RWY 07R U/S" in folded
+    assert "ON REQUEST EXC PUBLISHED PERIODS" in folded
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+
+
+def test_authentic_partial_approach_outage_reaches_dashboard_and_pdf(
+    tmp_path,
+) -> None:
+    from app.odss.engines import analyse
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["performance"] = {}
+    flight["deferred_items"] = []
+    flight["fuel"].update({
+        "flight_plan_required_fuel_kg": 79_643,
+        "taxi_fuel_kg": 600,
+    })
+    flight["edto"] = {
+        "entry_actm_minutes": None,
+        "exit_actm_minutes": None,
+        "etp_actm_minutes": [],
+        "airports": [],
+    }
+    destination = str(flight["destination"]).upper()
+    flight["notams"] = [{
+        "notam_id": "CAT-PARTIAL/26",
+        "location": destination,
+        "category": "APPROACH PROCEDURE",
+        "text": "ILS RWY 25 AVBL, CAT III OPS NOT AVBL",
+        "valid_from_utc": "2026-07-01T00:00:00+00:00",
+        "valid_to_utc": "2026-07-31T23:59:00+00:00",
+        "schedule_review": False,
+        "validity_review": False,
+        "priority_score": 10,
+        "source_page": 22,
+    }]
+    findings, warnings = analyse(flight)
+    source_finding = next(
+        item
+        for item in findings
+        if (item.get("data") or {}).get("notam_id") == "CAT-PARTIAL/26"
+    )
+    assert source_finding["severity"] == "critical"
+    assert source_finding["data"]["approach_affected"] is True
+
+    view = build_briefing_view(flight, findings, warnings)
+    selected = next(
+        item
+        for panel in view["airport_operational_panels"]
+        for item in panel["selected_notams"]
+        if item.get("notam_id") == "CAT-PARTIAL/26"
+    )
+    assert selected["approach_affected"] is True
+    assert selected["item_e_text"] == (
+        "ILS RWY 25 AVBL, CAT III OPS NOT AVBL"
+    )
+
+    out = tmp_path / "authentic-partial-approach-outage.pdf"
+    render_combined_briefing(flight, findings, warnings, out)
+
+    document = fitz.open(out)
+    folded = " ".join(
+        " ".join(page.get_text().split())
+        for page in document
+    )
+    assert (
+        f"CRITICAL - APPROACH AFFECTED | {destination} CAT-PARTIAL/26"
+        in folded
+    )
+    assert "ILS RWY 25 AVBL, CAT III OPS NOT AVBL" in folded
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+
+
+def test_operational_downloaded_pdf_shows_exact_runway_shortening_states(
+    tmp_path,
+):
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    departure = str(flight["departure"]).upper()
+    base = {
+        "entityType": "runway",
+        "entityRef": "20C",
+        "markClass": "shortening",
+        "referenceAt": "2026-08-01T05:35:00+00:00",
+        "referenceInterval": {
+            "startsAt": "2026-08-01T04:00:00+00:00",
+            "endsAt": "2026-08-01T06:00:00+00:00",
+        },
+    }
+    flight["surface_overlays"] = [{
+        "role": "departure",
+        "icao": departure,
+        "mapped": [
+            {
+                **base,
+                "notamNumber": "A1001/26",
+                "stateAtReference": "active_at_reference",
+            },
+            {
+                **base,
+                "notamNumber": "A1002/26",
+                "stateAtReference": "begins_after_reference",
+            },
+            {
+                **base,
+                "notamNumber": "A1003/26",
+                "stateAtReference": "unknown_at_reference",
+            },
+            {
+                **base,
+                "notamNumber": "A1004/26",
+                "stateAtReference": "ended_before_reference",
+            },
+        ],
+        "reviewRequired": [],
+    }, {
+        # Exact ICAO/role binding: this source item must not leak to departure.
+        "role": "departure",
+        "icao": "ZZZZ",
+        "mapped": [{
+            **base,
+            "notamNumber": "WRONG-ICAO/26",
+            "stateAtReference": "active_at_reference",
+        }],
+        "reviewRequired": [],
+    }]
+    findings = [
+        item
+        for item in sample_findings()
+        if item["engine"] != "depressurisation"
+    ]
+    alternate = str(flight["alternates"][0]["airport"]).upper()
+    findings.extend([
+        {
+            "engine": "notam",
+            "severity": "warning",
+            "title": "Alternate runway shortening",
+            "summary": "Declared-distance change requires exact review.",
+            "details": [],
+            "data": {
+                "role": "destination alternate",
+                "location": alternate,
+                "notam_id": "ALT-SHORT/26",
+                "category": "RUNWAY",
+                "priority_score": 20,
+                "pertinence_rank": 1,
+                "pertinence_kind": "runway_approach_restriction",
+                "approach_affected": False,
+                "applicability": "active",
+                "valid_from_utc": "2026-08-01T04:00:00+00:00",
+                "valid_to_utc": "2026-08-01T06:00:00+00:00",
+                "stateAtReference": "active_at_reference",
+                "referenceAt": "2026-08-01T05:35:00+00:00",
+                "raw_text": "RWY 20 TORA REDUCED TO 1800M DUE WIP",
+            },
+        },
+        {
+            "engine": "notam",
+            "severity": "warning",
+            "title": "Unrelated station runway shortening",
+            "summary": "Must not cross station boundaries.",
+            "details": [],
+            "data": {
+                "role": "destination alternate",
+                "location": "ZZZZ",
+                "notam_id": "WRONG-STATION/26",
+                "category": "RUNWAY",
+                "priority_score": 20,
+                "pertinence_rank": 1,
+                "pertinence_kind": "runway_approach_restriction",
+                "approach_affected": False,
+                "applicability": "active",
+                "valid_from_utc": "2026-08-01T04:00:00+00:00",
+                "valid_to_utc": "2026-08-01T06:00:00+00:00",
+                "stateAtReference": "active_at_reference",
+                "referenceAt": "2026-08-01T05:35:00+00:00",
+                "raw_text": "RWY 20 TORA REDUCED TO 1700M",
+            },
+        },
+        {
+            "engine": "notam",
+            "severity": "warning",
+            "title": "SQ322 reduced declared distances",
+            "summary": "Exact reduced declared-distance wording held.",
+            "details": [],
+            "data": {
+                "role": "destination alternate",
+                "location": alternate,
+                "notam_id": "SQ322-REDUCED/26",
+                "category": "RUNWAY",
+                "priority_score": 20,
+                "pertinence_rank": 1,
+                "pertinence_kind": "runway_approach_restriction",
+                "approach_affected": False,
+                "applicability": "active",
+                "valid_from_utc": "2026-08-01T04:00:00+00:00",
+                "valid_to_utc": "2026-08-01T06:00:00+00:00",
+                "stateAtReference": "active_at_reference",
+                "referenceAt": "2026-08-01T05:35:00+00:00",
+                "raw_text": (
+                    "RWY 09L/27R REDUCED RWY DECLARED DISTANCES AND LGT "
+                    "DUE PHASE 3 OF RWY RESURFACING WORKS"
+                ),
+            },
+        },
+        {
+            "engine": "notam",
+            "severity": "warning",
+            "title": "SQ352 intersection takeoff information",
+            "summary": "Intersection TORA information; no shortening claim.",
+            "details": [],
+            "data": {
+                "role": "destination alternate",
+                "location": alternate,
+                "notam_id": "SQ352-INTERSECTION/26",
+                "category": "RUNWAY",
+                "priority_score": 10,
+                "pertinence_rank": 2,
+                "pertinence_kind": "runway_approach_restriction",
+                "approach_affected": False,
+                "applicability": "active",
+                "valid_from_utc": "2026-08-01T04:00:00+00:00",
+                "valid_to_utc": "2026-08-01T06:00:00+00:00",
+                "stateAtReference": "active_at_reference",
+                "referenceAt": "2026-08-01T05:35:00+00:00",
+                "raw_text": (
+                    "TRIAL OPS ON RWY30. DEP FM RWY30 TO LINE UP AT TWY "
+                    "R3 INT (TORA 2509M)"
+                ),
+            },
+        },
+        {
+            "engine": "notam",
+            "severity": "warning",
+            "title": "Type-A intersection distance table",
+            "summary": "Published distance table; no shortening claim.",
+            "details": [],
+            "data": {
+                "role": "destination alternate",
+                "location": alternate,
+                "notam_id": "TYPE-A-DISTANCE/26",
+                "category": "RUNWAY",
+                "priority_score": 10,
+                "pertinence_rank": 2,
+                "pertinence_kind": "runway_approach_restriction",
+                "approach_affected": False,
+                "applicability": "active",
+                "valid_from_utc": "2026-08-01T04:00:00+00:00",
+                "valid_to_utc": "2026-08-01T06:00:00+00:00",
+                "stateAtReference": "active_at_reference",
+                "referenceAt": "2026-08-01T05:35:00+00:00",
+                "raw_text": (
+                    "RWY 08L TYPE A CHART DECLARED DISTANCES: TWY1 TORA "
+                    "3750M, TODA 3900M, ASDA 3750M"
+                ),
+            },
+        },
+        {
+            "engine": "notam",
+            "severity": "warning",
+            "title": "Displaced-threshold reference only",
+            "summary": "Grooving reference; no shortening.",
+            "details": [],
+            "data": {
+                "role": "departure",
+                "location": departure,
+                "notam_id": "REFERENCE-ONLY/26",
+                "category": "RUNWAY",
+                "priority_score": 10,
+                "pertinence_rank": 2,
+                "pertinence_kind": "runway_approach_restriction",
+                "approach_affected": False,
+                "applicability": "active",
+                "valid_from_utc": "2026-08-01T04:00:00+00:00",
+                "valid_to_utc": "2026-08-01T06:00:00+00:00",
+                "stateAtReference": "active_at_reference",
+                "referenceAt": "2026-08-01T05:35:00+00:00",
+                "raw_text": (
+                    "GROOVING FOR RWY 16L/34R PARTLY ERASED DUE TO MAINT "
+                    "LEN: 22.0M BTN 726.8M AND 748.8M FM RWY 34R "
+                    "DISPLACED THR"
+                ),
+            },
+        },
+    ])
+    out = tmp_path / "runway-shortening-operational.pdf"
+
+    render_combined_briefing(flight, findings, [], out)
+
+    document = fitz.open(out)
+    folded = " ".join(
+        " ".join(page.get_text().split())
+        for page in document
+    )
+    assert "RUNWAY SHORTENED / DECLARED DISTANCES" in folded
+    assert f"{departure} A1001/26" in folded
+    assert "ACTIVE AT REFERENCE" in folded
+    assert f"{departure} A1002/26" in folded
+    assert "SCHEDULED - BEGINS AFTER REFERENCE" in folded
+    assert f"{departure} A1003/26" in folded
+    assert "MANUAL REVIEW - TIMING UNRESOLVED" in folded
+    assert f"{alternate} ALT-SHORT/26" in folded
+    assert f"{alternate} SQ322-REDUCED/26" in folded
+    assert "RWY 09L/27R" in folded
+    assert "RWY 20" in folded
+    assert "2026-08-01T04:00:00+00:00 - 2026-08-01T06:00:00+00:00" in folded
+    assert "A1004/26" not in folded
+    assert "WRONG-ICAO/26" not in folded
+    assert "WRONG-STATION/26" not in folded
+    assert (
+        "RUNWAY SHORTENED / DECLARED DISTANCES - VERIFY EXACT DISTANCES | "
+        f"{departure} REFERENCE-ONLY/26"
+    ) not in folded
+    for notam_id in ("SQ352-INTERSECTION/26", "TYPE-A-DISTANCE/26"):
+        assert (
+            "RUNWAY SHORTENED / DECLARED DISTANCES - VERIFY EXACT DISTANCES | "
+            f"{alternate} {notam_id}"
+        ) not in folded
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        ("RWY 25 TORA 1800M CANCELLED", []),
+        ("RWY 25 TORA 1800M RESTORED", []),
+        ("RWY 25 TORA REDUCED TO 1800M NOT CANCELLED", ["25"]),
+        ("RWY 25 TORA REDUCED TO 1800M NOT RESTORED", ["25"]),
+        (
+            "TRIAL OPS ON RWY30. DEP FM RWY30 TO LINE UP AT TWY R3 INT "
+            "(TORA 2509M)",
+            [],
+        ),
+        (
+            "RWY 08L TYPE A CHART DECLARED DISTANCES: TWY1 TORA 3750M, "
+            "TODA 3900M, ASDA 3750M",
+            [],
+        ),
+        ("RWY 25 TORA CHANGED TO 2200M", []),
+        ("RWY 25 TORA 2200M INSTEAD OF 3000M", []),
+        ("RWY 25 CHANGED DECLARED DISTANCES", []),
+        (
+            "RWY 09L/27R REDUCED RWY DECLARED DISTANCES AND LGT DUE "
+            "PHASE 3 OF RWY RESURFACING WORKS",
+            ["09L/27R"],
+        ),
+    ),
+)
+def test_pdf_shortening_matcher_binds_negated_reversals(
+    text: str,
+    expected: list[str],
+) -> None:
+    from app.odss.combined_brief import _runway_shortening_subjects
+
+    assert _runway_shortening_subjects(text) == expected
 
 
 def test_phase_actions_use_actual_phases_and_source_safe_headlines():
@@ -1615,7 +2291,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     }
     assert (
         COMBINED_BRIEFING_SCHEMA_VERSION
-        == "2026-08-28-ofp-classification-v31"
+        == "2026-08-31-surface-shortening-v32"
     )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
@@ -3863,7 +4539,7 @@ def test_operational_weather_page_keeps_first_two_shared_sigmet_dispositions(
     assert "YMMM SIGMET Q01 - SEV TURB DISPOSITION · PROMOTED" in weather
 
 
-def test_weather_vaac_assurance_keeps_full_five_centre_receipt(
+def test_weather_vaac_assurance_keeps_all_nine_centre_receipts(
     tmp_path,
     monkeypatch,
 ):
@@ -3872,9 +4548,18 @@ def test_weather_vaac_assurance_keeps_full_five_centre_receipt(
 
     real_build = briefing_module.build_briefing_view
     responsible_line = (
-        "Responsible for this route: ANCHORAGE, DARWIN, MONTREAL, TOKYO, "
-        "WASHINGTON - NOT reached: ANCHORAGE, DARWIN, MONTREAL, TOKYO, "
-        "WASHINGTON (review gap); boundary segments need review"
+        "All nine governed VAAC centres reached; per-centre receipts follow"
+    )
+    centres = (
+        "ANCHORAGE",
+        "BUENOS AIRES",
+        "DARWIN",
+        "LONDON",
+        "MONTREAL",
+        "TOKYO",
+        "TOULOUSE",
+        "WASHINGTON",
+        "WELLINGTON",
     )
 
     def five_centre_view(
@@ -3894,6 +4579,30 @@ def test_weather_vaac_assurance_keeps_full_five_centre_receipt(
         ]
         vaac_reach = dict(hazards.get("vaac_reach") or {})
         vaac_reach["responsible_line"] = responsible_line
+        vaac_reach["centres"] = [
+                {
+                    "centre": centre,
+                    "status": "reached",
+                    "listing_latest_utc": f"2026-08-30T12:{index:02d}:00Z",
+                    "next_advisory_due": (
+                        None
+                        if centre == "WELLINGTON"
+                        else f"2026-08-30T18:{index:02d}:00Z"
+                    ),
+                    "next_advisory_notes": (
+                        [
+                            "ADVISORY 2026/007 / TESTVOLCANO 999999: "
+                            "NO FURTHER ADVISORIES"
+                        ]
+                        if centre == "WELLINGTON"
+                        else []
+                    ),
+                # The PDF must carry only source receipts, not this interpreted
+                # status field.
+                "freshness_status": "fresh",
+            }
+            for index, centre in enumerate(centres)
+        ]
         hazards["vaac_reach"] = vaac_reach
         view["hazards"] = hazards
         return view
@@ -3914,6 +4623,19 @@ def test_weather_vaac_assurance_keeps_full_five_centre_receipt(
     weather_page = document[5]
     weather_text = " ".join(weather_page.get_text().split())
     assert responsible_line in weather_text
+    hazard_text = " ".join(page.get_text() for page in document)
+    folded_hazard_text = " ".join(hazard_text.split())
+    for index, centre in enumerate(centres):
+        assert f"{centre}: reached" in folded_hazard_text
+        assert f"2026-08-30T12:{index:02d}:00Z" in folded_hazard_text
+        if centre == "WELLINGTON":
+            assert (
+                "next advisory ADVISORY 2026/007 / TESTVOLCANO 999999: "
+                "NO FURTHER ADVISORIES"
+            ) in folded_hazard_text
+            assert "next due NO FURTHER ADVISORIES" not in folded_hazard_text
+        else:
+            assert f"2026-08-30T18:{index:02d}:00Z" in folded_hazard_text
     top_card_sizes = [
         float(span.get("size") or 0.0)
         for block in weather_page.get_text("dict").get("blocks", [])
@@ -5097,7 +5819,7 @@ def test_all_alternates_and_every_selected_notam_detail_reach_pdf(
     for index, icao in enumerate(alternate_icaos, start=1):
         findings.append({
             "engine": "notam",
-            "severity": "warning",
+            "severity": "critical" if index == 1 else "warning",
             "title": f"Alternate NOTAM ALT{index}/26",
             "summary": f"SELECTED SUMMARY {icao}",
             "details": [],
@@ -5109,14 +5831,16 @@ def test_all_alternates_and_every_selected_notam_detail_reach_pdf(
                 "raw_text": f"FULL ITEM E {icao} END-{index}",
                 "valid_from_utc": f"2026-08-{index:02d}T00:00:00Z",
                 "valid_to_utc": f"2026-08-{index:02d}T12:00:00Z",
-                "schedule": f"DAILY 0{index}00-1{index}00",
-                "applicability": "active",
-                "window_start_utc": "2026-08-01T01:00:00Z",
+                    "schedule": f"DAILY 0{index}00-1{index}00",
+                    "applicability": "active",
+                    "stateAtReference": "active_at_reference",
+                    "window_start_utc": "2026-08-01T01:00:00Z",
                 "window_end_utc": "2026-08-01T03:00:00Z",
                 "source_page": 20 + index,
                 "priority_score": 20 - index,
                 "pertinence_rank": index,
                 "pertinence_kind": "runway_approach_restriction",
+                "approach_affected": index == 1,
             },
         })
     out = tmp_path / "all-alternates-and-selected-notams.pdf"
@@ -5142,6 +5866,8 @@ def test_all_alternates_and_every_selected_notam_detail_reach_pdf(
         ):
             assert fact in folded
     assert "ALL SELECTED NOTAM DETAILS" in folded
+    assert "CRITICAL - APPROACH AFFECTED" in folded
+    assert "WSAP | ALT1/26" in folded
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
 

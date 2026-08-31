@@ -22,11 +22,15 @@ import httpx
 
 from .direct_vaac import (
     advisory_cache_seconds,
+    advisory_aviation_colour_code,
     advisory_fields,
     advisory_flight_window,
     advisory_iso,
+    advisory_is_exercise,
+    advisory_next_receipt,
     advisory_phase,
     advisory_utc,
+    advisory_volcano_position,
 )
 from .snapshot_governance import govern_snapshot, mark_snapshot_reused
 
@@ -44,6 +48,7 @@ _ADVISORY_LINK = re.compile(
     re.IGNORECASE,
 )
 _SLUG_TIME = re.compile(r"_(\d{14})$")
+_SLUG_VOLCANO_ID = re.compile(r"^(\d{6})_")
 
 
 def _bounded_content(response: httpx.Response) -> bytes:
@@ -77,7 +82,8 @@ def parse_toulouse_vaac_listing(raw: bytes) -> list[dict[str, Any]]:
         if slug in seen:
             continue
         time_match = _SLUG_TIME.search(slug)
-        if not time_match:
+        volcano_match = _SLUG_VOLCANO_ID.search(slug)
+        if not time_match or not volcano_match:
             continue
         try:
             issued = datetime.strptime(time_match.group(1), "%Y%m%d%H%M%S").replace(
@@ -99,6 +105,7 @@ def parse_toulouse_vaac_listing(raw: bytes) -> list[dict[str, Any]]:
         seen.add(slug)
         rows.append({
             "issued_at_utc": advisory_iso(issued),
+            "volcano_id": volcano_match.group(1),
             "page_url": page_url,
             "vaa_url": vaa_url,
             "vag_url": vag_url,
@@ -125,13 +132,23 @@ def parse_toulouse_vaac_advisory(
     if "VA ADVISORY" not in text.upper():
         raise ValueError("Toulouse VAAC advisory body was not found")
     fields = advisory_fields(text)
+    if advisory_is_exercise(text, fields):
+        raise ValueError("Toulouse VAAC exercise advisory is not operational evidence")
     issued = _issued_at(fields)
     listed = advisory_utc(metadata.get("issued_at_utc"))
+    listed_volcano_id = str(metadata.get("volcano_id") or "").strip()
+    body_volcano_match = re.search(
+        r"\b(\d{6})\s*$",
+        str(fields.get("VOLCANO") or "").strip(),
+    )
     if (
         issued is None
         or listed is None
         or fields.get("VAAC", "").strip().upper() != "TOULOUSE"
-        or abs((issued - listed).total_seconds()) > 2 * 3600
+        or issued != listed.replace(second=0, microsecond=0)
+        or not listed_volcano_id
+        or body_volcano_match is None
+        or body_volcano_match.group(1) != listed_volcano_id
     ):
         raise ValueError("Toulouse VAAC advisory identity could not be verified")
     phases: list[dict[str, Any]] = []
@@ -157,6 +174,8 @@ def parse_toulouse_vaac_advisory(
         "vaac": "TOULOUSE",
         "issued_at_utc": advisory_iso(issued),
         "volcano": fields.get("VOLCANO"),
+        "volcano_position": advisory_volcano_position(fields.get("PSN")),
+        "aviation_colour_code": advisory_aviation_colour_code(fields),
         "area": fields.get("AREA"),
         "advisory_number": fields.get("ADVISORY NR"),
         "information_source": fields.get("INFO SOURCE"),
@@ -236,6 +255,7 @@ def fetch_toulouse_vaac_snapshot(
                     "source_url": str(row["vaa_url"]),
                     "error": f"{type(exc).__name__}: {str(exc)[:160]}",
                 })
+        next_advisory_due, next_advisory_notes = advisory_next_receipt(advisories)
         return _govern({
             "schema_version": "1.0",
             "status": "available" if not errors else "partial",
@@ -250,6 +270,8 @@ def fetch_toulouse_vaac_snapshot(
             "listing_latest_utc": rows[0]["issued_at_utc"] if rows else None,
             "advisory_count": len(advisories),
             "advisories": advisories,
+            "next_advisory_due": next_advisory_due,
+            "next_advisory_notes": next_advisory_notes,
             "errors": errors,
             "source_note": (
                 "Official Toulouse VAAC VAA text and VAG source links for its "

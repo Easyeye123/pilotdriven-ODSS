@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime
 
+import pytest
+
 from app.odss.briefing import (
     _compact_notam_lines,
     _terrain_summary,
@@ -1204,6 +1206,191 @@ def test_overlapping_airport_roles_share_one_panel_and_keep_all_planning_rows() 
     assert [item["icao"] for item in view["fuel_enroute_airports"]] == ["WADD"]
 
 
+def test_approach_criticality_is_machine_readable_on_shared_airport_lines() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{"airport": "WIII", "runway": "25"}]
+    raw_item_e = "ILS AND GP RWY 25 U/S"
+    finding = {
+        "engine": "notam",
+        "severity": "critical",
+        "title": "Alternate WIII NOTAM ALT-ILS/26",
+        "summary": "ILS RWY 25 unavailable during the applicable alternate window.",
+        "details": [],
+        "data": {
+            "role": "destination alternate",
+            "source_role": "destination alternate",
+            "location": "WIII",
+            "notam_id": "ALT-ILS/26",
+            "raw_text": raw_item_e,
+            "category": "APPROACH PROCEDURE",
+            "priority_score": 10,
+            "pertinence_rank": 2,
+            "pertinence_kind": "approach_navaid_closure",
+            "approach_affected": True,
+            "applicability": "active",
+            "valid_from_utc": "2026-07-01T00:00:00+00:00",
+            "valid_to_utc": "2026-09-01T00:00:00+00:00",
+            "window_start_utc": "2026-08-01T02:00:00+00:00",
+            "window_end_utc": "2026-08-01T06:00:00+00:00",
+            "source_page": 25,
+        },
+    }
+
+    view = build_briefing_view(flight, [finding], [])
+    panel = next(
+        row
+        for row in view["airport_operational_panels"]
+        if row["icao"] == "WIII"
+    )
+    selected = panel["selected_notams"][0]
+    compact = next(
+        row
+        for row in panel["card_summary_lines"]
+        if row.get("notam_id") == "ALT-ILS/26"
+    )
+
+    for row in (selected, compact):
+        assert row["notam_id"] == "ALT-ILS/26"
+        assert row["item_e_text"] == raw_item_e
+        assert row["severity"] == "critical"
+        assert row["category"] == "APPROACH PROCEDURE"
+        assert row["pertinence_kind"] == "approach_navaid_closure"
+        assert row["approach_affected"] is True
+
+
+@pytest.mark.parametrize(
+    ("state", "applicability", "expected_label"),
+    (
+        ("active_at_reference", "active", "CRITICAL - APPROACH AFFECTED"),
+        ("begins_after_reference", "active", "CRITICAL - APPROACH SCHEDULED"),
+        (
+            "unknown_at_reference",
+            "review",
+            "CRITICAL - APPROACH CONDITION REVIEW",
+        ),
+    ),
+)
+def test_real_station_card_preserves_approach_timing_state(
+    state,
+    applicability,
+    expected_label,
+) -> None:
+    from app.odss.combined_brief import _station_card_lines
+
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{"airport": "WIII", "runway": "25"}]
+    finding = {
+        "engine": "notam",
+        "severity": "critical",
+        "title": "Alternate WIII NOTAM ALT-ILS-TIME/26",
+        "summary": "Exact ILS condition retained.",
+        "details": [],
+        "data": {
+            "role": "destination alternate",
+            "source_role": "destination alternate",
+            "location": "WIII",
+            "notam_id": "ALT-ILS-TIME/26",
+            "raw_text": "ILS RWY 25 U/S",
+            "category": "APPROACH PROCEDURE",
+            "priority_score": 10,
+            "pertinence_rank": 2,
+            "pertinence_kind": "approach_navaid_closure",
+            "approach_affected": True,
+            "applicability": applicability,
+            "stateAtReference": state,
+            "referenceAt": "2026-08-01T04:00:00+00:00",
+            "minutesDelta": 15,
+            "valid_from_utc": "2026-07-01T00:00:00+00:00",
+            "valid_to_utc": "2026-09-01T00:00:00+00:00",
+            "source_page": 25,
+        },
+    }
+
+    view = build_briefing_view(flight, [finding], [])
+    panel = next(
+        row
+        for row in view["airport_operational_panels"]
+        if row["icao"] == "WIII"
+    )
+    compact = next(
+        row
+        for row in panel["card_summary_lines"]
+        if row.get("notam_id") == "ALT-ILS-TIME/26"
+    )
+
+    assert compact["stateAtReference"] == state
+    assert compact["referenceAt"] == "2026-08-01T04:00:00+00:00"
+    assert compact["minutesDelta"] == 15
+    assert expected_label in {
+        label
+        for label, _ in _station_card_lines(panel)
+    }
+
+
+def test_shared_airport_lines_preserve_absent_approach_flag_as_absent() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{"airport": "WIII", "runway": "25"}]
+    finding = {
+        "engine": "notam",
+        "severity": "critical",
+        "title": "Alternate WIII NOTAM LEGACY-ILS/26",
+        "summary": "Legacy payload retains exact approach source wording.",
+        "details": [],
+        "data": {
+            "role": "destination alternate",
+            "source_role": "destination alternate",
+            "location": "WIII",
+            "notam_id": "LEGACY-ILS/26",
+            "raw_text": "ILS AND GP RWY 25 U/S",
+            "category": "APPROACH PROCEDURE",
+            "priority_score": 10,
+            "pertinence_rank": 2,
+            "pertinence_kind": "approach_navaid_closure",
+            "applicability": "active",
+        },
+    }
+
+    view = build_briefing_view(flight, [finding], [])
+    panel = next(
+        row
+        for row in view["airport_operational_panels"]
+        if row["icao"] == "WIII"
+    )
+    selected = panel["selected_notams"][0]
+    compact = next(
+        row
+        for row in panel["card_summary_lines"]
+        if row.get("notam_id") == "LEGACY-ILS/26"
+    )
+
+    assert "approach_affected" not in selected
+    assert "approach_affected" not in compact
+
+    malformed = {
+        **finding,
+        "data": {
+            **finding["data"],
+            # A string is not a machine boolean.  In particular, Python's
+            # bool("false") must never manufacture a critical flag.
+            "approach_affected": "false",
+        },
+    }
+    malformed_view = build_briefing_view(flight, [malformed], [])
+    malformed_panel = next(
+        row
+        for row in malformed_view["airport_operational_panels"]
+        if row["icao"] == "WIII"
+    )
+    malformed_selected = malformed_panel["selected_notams"][0]
+    malformed_compact = next(
+        row
+        for row in malformed_panel["card_summary_lines"]
+        if row.get("notam_id") == "LEGACY-ILS/26"
+    )
+    assert "approach_affected" not in malformed_selected
+    assert "approach_affected" not in malformed_compact
+
+
 def test_metrics_carry_the_captain() -> None:
     view = build_briefing_view(_flight(LOG_PAGE_LOW), [], [])
     assert view["metrics"]["captain"] == "TESTA B C"
@@ -1767,7 +1954,17 @@ def test_vaac_reach_is_composed_in_the_view_for_every_surface() -> None:
     flight["vaa_review"] = {
         "status": "review_required",
         "vaac_centre_ledger": [
-            {"centre": "Anchorage", "status": "available"},
+            {
+                "centre": "Anchorage",
+                "status": "available",
+                "coverage_status": "anchorage_vaac_area_direct_advisories",
+                "advisory_count": 1,
+                "source_url": "https://example.test/anchorage",
+                "freshness_status": None,
+                "listing_latest_utc": "2026-08-30T12:00:00+00:00",
+                "next_advisory_due": "20260830/1800Z",
+                "next_advisory_notes": ["NO FURTHER ADVISORIES"],
+            },
             {"centre": "Darwin", "status": "partial"},
             {"centre": "Tokyo", "status": "available"},
             {"centre": "London", "status": "unavailable"},
@@ -1777,7 +1974,17 @@ def test_vaac_reach_is_composed_in_the_view_for_every_surface() -> None:
     view = build_briefing_view(flight, [], [])
     reach = view["hazards"]["vaac_reach"]
     assert reach["summary"] == "3/5 reached"
-    assert reach["centres"][0] == {"centre": "ANCHORAGE", "status": "reached"}
+    assert reach["centres"][0] == {
+        "centre": "ANCHORAGE",
+        "status": "reached",
+        "coverage_status": "anchorage_vaac_area_direct_advisories",
+        "advisory_count": 1,
+        "source_url": "https://example.test/anchorage",
+        "freshness_status": None,
+        "listing_latest_utc": "2026-08-30T12:00:00+00:00",
+        "next_advisory_due": "20260830/1800Z",
+        "next_advisory_notes": ["NO FURTHER ADVISORIES"],
+    }
     assert reach["centres"][1] == {"centre": "DARWIN", "status": "partial"}
     assert reach["centres"][4] == {"centre": "WELLINGTON", "status": "not mounted"}
 

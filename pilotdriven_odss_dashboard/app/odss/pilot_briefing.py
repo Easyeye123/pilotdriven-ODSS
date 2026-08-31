@@ -13,7 +13,12 @@ _ROLE_RANK = {
     "informational": 4,
 }
 _CLOSURE_WORD = r"(?:CLSD|CLOSED|NOT\s+AVBL|NOT\s+AVAILABLE|SUSPENDED)"
-_UNAVAILABLE_WORD = rf"(?:{_CLOSURE_WORD}|U/S|UNSERVICEABLE)"
+_UNAVAILABLE_WORD = (
+    rf"(?:{_CLOSURE_WORD}|U/S|UNSERVICEABLE|UNSERVICEABILITY|WITHDRAWN)"
+)
+_NEGATED_UNAVAILABLE_PREFIX = re.compile(
+    r"(?:\bWITHOUT|\bNO|\bNOT)(?:\s+[A-Z0-9/-]+){0,5}\s*$"
+)
 _RUNWAY_ID = r"(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
 _TAXIWAY_ID = r"(?:TWY|TAXIWAY)\s+[A-Z0-9][A-Z0-9/-]*"
 _APPROACH_SYSTEM = (
@@ -60,7 +65,10 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     """
 
     upper = f"{category} {text}".upper()
-    unavailable = bool(re.search(rf"\b{_UNAVAILABLE_WORD}\b", upper))
+    unavailable = any(
+        not _NEGATED_UNAVAILABLE_PREFIX.search(upper[:match.start()])
+        for match in re.finditer(rf"\b{_UNAVAILABLE_WORD}\b", upper)
+    )
     runway_match = re.search(rf"\b{_RUNWAY_ID}\b", upper)
     taxiway_match = re.search(rf"\b{_TAXIWAY_ID}\b", upper)
     runway = bool(runway_match)

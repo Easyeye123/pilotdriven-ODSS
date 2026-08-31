@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import httpx
+import pytest
 
 from app.odss.direct_vaac_toulouse import (
     TOULOUSE_VAAC_ORIGIN,
@@ -52,6 +53,7 @@ def test_toulouse_listing_accepts_only_bounded_official_advisory_links() -> None
 
     assert len(rows) == 1
     assert rows[0]["issued_at_utc"] == "2026-08-18T07:54:33+00:00"
+    assert rows[0]["volcano_id"] == "211060"
     assert rows[0]["vaa_url"].endswith(f"/{SLUG}_vaa.txt")
     assert rows[0]["vag_url"].endswith(f"/{SLUG}_vag.png")
 
@@ -61,10 +63,38 @@ def test_toulouse_advisory_verifies_centre_identity_and_keeps_vag_receipt() -> N
     advisory = parse_toulouse_vaac_advisory(ADVISORY, row)
 
     assert advisory["centre"] == "TOULOUSE"
+    assert advisory["aviation_colour_code"] is None
     assert advisory["advisory_number"] == "2026/105"
+    assert advisory["volcano_position"] == {
+        "latitude": 37.73333,
+        "longitude": 14.98333,
+    }
     assert advisory["phases"][0]["state"] == "not_identifiable"
     assert advisory["phases"][1]["state"] == "no_ash_expected"
     assert len(advisory["raw_sha256"]) == 64
+
+    malformed = ADVISORY.replace(b"N3744 E01459", b"N3760 E01459")
+    assert parse_toulouse_vaac_advisory(
+        malformed,
+        row,
+    )["volcano_position"] is None
+
+
+@pytest.mark.parametrize(
+    ("body", "metadata_change"),
+    (
+        (ADVISORY.replace(b"ETNA 211060", b"ETNA 211061"), {}),
+        (ADVISORY, {"issued_at_utc": "2026-08-18T07:55:33+00:00"}),
+    ),
+)
+def test_toulouse_body_must_match_url_volcano_and_issue_minute(
+    body,
+    metadata_change,
+) -> None:
+    row = {**parse_toulouse_vaac_listing(LISTING)[0], **metadata_change}
+
+    with pytest.raises(ValueError):
+        parse_toulouse_vaac_advisory(body, row)
 
 
 def test_toulouse_fetch_uses_one_listing_and_only_selected_text_records() -> None:
@@ -87,6 +117,10 @@ def test_toulouse_fetch_uses_one_listing_and_only_selected_text_records() -> Non
     assert snapshot["status"] == "available"
     assert snapshot["coverage_status"] == "toulouse_vaac_latest_operational_advisories"
     assert snapshot["advisory_count"] == 1
+    assert snapshot["next_advisory_due"] is None
+    assert snapshot["next_advisory_notes"] == [
+        "ADVISORY 2026/105 / ETNA 211060: NO FURTHER ADVISORIES="
+    ]
     assert [request.url.path for request in requests] == [
         "/docs/",
         f"/advisory/2026/{SLUG}/{SLUG}_vaa.txt",

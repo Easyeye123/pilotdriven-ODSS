@@ -563,6 +563,9 @@ def test_direct_vaa_source_review_is_partial_until_every_responsible_centre_is_r
         "coverage_status": "darwin_vaac_area_direct_advisories",
         "advisory_count": 0,
         "advisories": [],
+        "listing_latest_utc": "2026-08-30T12:00:00+00:00",
+        "next_advisory_due": "20260830/1800Z",
+        "next_advisory_notes": ["NO FURTHER ADVISORIES"],
     }
 
     partial = build_direct_vaa_source_review(
@@ -574,6 +577,15 @@ def test_direct_vaa_source_review_is_partial_until_every_responsible_centre_is_r
     assert partial["reached_responsible_centres"] == ["DARWIN"]
     assert partial["source_status"] == "partial"
     assert partial["applicability_status"] == "not_assessed"
+    darwin_receipt = partial["responsible_centre_receipts"][0]
+    assert darwin_receipt["listing_latest_utc"] == (
+        "2026-08-30T12:00:00+00:00"
+    )
+    assert darwin_receipt["next_advisory_due"] == "20260830/1800Z"
+    assert darwin_receipt["next_advisory_notes"] == [
+        "NO FURTHER ADVISORIES"
+    ]
+    assert darwin_receipt["freshness_status"] is None
 
     complete_sources = build_direct_vaa_source_review(
         flight,
@@ -706,6 +718,12 @@ def test_vaac_reach_uses_explicit_responsible_receipts_not_all_centre_ledger() -
             "centre": "DARWIN",
             "status": "not_mounted",
             "reached": False,
+            "coverage_status": "fetch_not_returned",
+            "advisory_count": 0,
+            "listing_latest_utc": "2026-08-30T12:00:00+00:00",
+            "next_advisory_due": "20260830/1800Z",
+            "next_advisory_notes": ["NO FURTHER ADVISORIES"],
+            "freshness_status": None,
         }],
         "responsible_line": (
             "Responsible for this route: DARWIN - NOT reached: DARWIN "
@@ -718,7 +736,17 @@ def test_vaac_reach_uses_explicit_responsible_receipts_not_all_centre_ledger() -
     summary = _vaac_reach_summary(flight)
 
     assert summary["summary"] == "3/3 reached"  # all-nine audit tally only
-    assert summary["responsible"] == [{"centre": "DARWIN", "reached": False}]
+    assert summary["responsible"] == [{
+        "centre": "DARWIN",
+        "reached": False,
+        "coverage_status": "fetch_not_returned",
+        "advisory_count": 0,
+        "source_url": None,
+        "freshness_status": None,
+        "listing_latest_utc": "2026-08-30T12:00:00+00:00",
+        "next_advisory_due": "20260830/1800Z",
+        "next_advisory_notes": ["NO FURTHER ADVISORIES"],
+    }]
     assert "NOT reached: DARWIN" in summary["responsible_line"]
 
 
@@ -805,7 +833,92 @@ def test_gts_mirror_token_mounts_every_unmounted_centre(monkeypatch) -> None:
     assert by_centre["BUENOS AIRES"]["token"] == "gts-mirror:buenos-aires"
 
 
-def test_ledger_rows_carry_freshness_receipts() -> None:
+def test_partial_gts_fallback_keeps_valid_advisories_and_errors(monkeypatch) -> None:
+    from app.odss import direct_vaac, direct_vaac_gts
+    from app.odss.vaa import fetch_mounted_vaac_snapshots, mounted_vaac_centres
+
+    monkeypatch.setenv(
+        "ODSS_VAAC_ADVISORY_SOURCE",
+        "jma-tokyo,gts-mirror",
+    )
+    monkeypatch.setattr(direct_vaac, "live_tokyo_vaac_snapshot", lambda _flight: {
+        "status": "unavailable",
+        "provider": "jma-tokyo-vaac",
+        "advisories": [],
+        "errors": [{"error": "Tokyo unavailable"}],
+    })
+    partial = {
+        "status": "partial",
+        "provider": "noaa-gts-vaa",
+        "coverage_status": "tokyo_vaac_gts_mirror_advisories",
+        "advisories": [{"advisory_number": "2026/172"}],
+        "errors": [{"error": "one other slot was unreadable"}],
+    }
+    monkeypatch.setattr(
+        direct_vaac_gts,
+        "live_gts_vaac_snapshots",
+        lambda _flight: {"TOKYO": partial},
+    )
+
+    snapshots = fetch_mounted_vaac_snapshots(
+        _flight(),
+        mounted_vaac_centres(),
+    )
+    tokyo = next(item for item in snapshots if item["centre"] == "TOKYO")
+
+    assert tokyo["status"] == "partial"
+    assert tokyo["provider"] == "noaa-gts-vaa"
+    assert tokyo["advisories"] == [{"advisory_number": "2026/172"}]
+    assert tokyo["errors"] == [{"error": "one other slot was unreadable"}]
+
+
+def test_partial_primary_is_not_replaced_by_weaker_partial_fallback(monkeypatch) -> None:
+    from app.odss import direct_vaac, direct_vaac_gts
+    from app.odss.vaa import fetch_mounted_vaac_snapshots, mounted_vaac_centres
+
+    monkeypatch.setenv(
+        "ODSS_VAAC_ADVISORY_SOURCE",
+        "jma-tokyo,gts-mirror",
+    )
+    primary = {
+        "status": "partial",
+        "provider": "jma-tokyo-vaac",
+        "coverage_status": "tokyo_vaac_advisories",
+        "advisories": [{"advisory_number": "2026/173"}],
+        "errors": [{"error": "one JMA detail was unreadable"}],
+    }
+    monkeypatch.setattr(
+        direct_vaac,
+        "live_tokyo_vaac_snapshot",
+        lambda _flight: primary,
+    )
+    monkeypatch.setattr(
+        direct_vaac_gts,
+        "live_gts_vaac_snapshots",
+        lambda _flight: {
+            "TOKYO": {
+                "status": "partial",
+                "provider": "noaa-gts-vaa",
+                "coverage_status": "tokyo_vaac_gts_mirror_advisories",
+                "advisories": [],
+                "errors": [{"error": "mirror index was incomplete"}],
+            }
+        },
+    )
+
+    snapshots = fetch_mounted_vaac_snapshots(
+        _flight(),
+        mounted_vaac_centres(),
+    )
+    tokyo = next(item for item in snapshots if item["centre"] == "TOKYO")
+
+    assert tokyo["status"] == "partial"
+    assert tokyo["provider"] == "jma-tokyo-vaac"
+    assert tokyo["advisories"] == [{"advisory_number": "2026/173"}]
+    assert tokyo["errors"] == [{"error": "one JMA detail was unreadable"}]
+
+
+def test_ledger_rows_carry_observed_receipts_without_inventing_freshness() -> None:
     from app.odss.vaa import vaac_centre_ledger
 
     snapshots = [{
@@ -815,9 +928,9 @@ def test_ledger_rows_carry_freshness_receipts() -> None:
         "coverage_status": "london_vaac_gts_mirror_advisories",
         "advisory_count": 1,
         "source_url": "https://tgftp.nws.noaa.gov/data/raw/fv/",
-        "freshness_status": "fresh",
         "listing_latest_utc": "2026-08-30T12:00:00+00:00",
         "next_advisory_due": "20260830/1800Z",
+        "next_advisory_notes": ["NO FURTHER ADVISORIES"],
     }]
     mounted = [{
         "token": "gts-mirror:london",
@@ -826,9 +939,46 @@ def test_ledger_rows_carry_freshness_receipts() -> None:
     }]
     rows = {row["centre"]: row for row in vaac_centre_ledger(snapshots, mounted)}
     london = rows["LONDON"]
-    assert london["freshness_status"] == "fresh"
+    assert london["freshness_status"] is None
     assert london["listing_latest_utc"] == "2026-08-30T12:00:00+00:00"
     assert london["next_advisory_due"] == "20260830/1800Z"
+    assert london["next_advisory_notes"] == ["NO FURTHER ADVISORIES"]
+
+
+def test_merged_direct_sources_preserve_observed_receipts_without_freshness_claim() -> None:
+    from app.odss.vaa import merge_vaac_snapshots
+
+    merged = merge_vaac_snapshots([
+        {
+            "centre": "LONDON",
+            "provider": "noaa-gts-vaa",
+            "status": "available",
+            "coverage_status": "london_vaac_gts_mirror_advisories",
+            "source_url": "https://tgftp.nws.noaa.gov/data/raw/fv/",
+            "listing_latest_utc": "2026-08-30T12:00:00+00:00",
+            "next_advisory_due": "20260830/1800Z",
+            "next_advisory_notes": ["NO FURTHER ADVISORIES"],
+            "advisories": [],
+            "errors": [],
+        },
+        {
+            "centre": "MONTREAL",
+            "provider": "noaa-gts-vaa",
+            "status": "available",
+            "coverage_status": "montreal_vaac_gts_mirror_advisories",
+            "source_url": "https://tgftp.nws.noaa.gov/data/raw/fv/",
+            "listing_latest_utc": None,
+            "next_advisory_due": None,
+            "advisories": [],
+            "errors": [],
+        },
+    ])
+
+    london = merged["sources"][0]
+    assert london["listing_latest_utc"] == "2026-08-30T12:00:00+00:00"
+    assert london["next_advisory_due"] == "20260830/1800Z"
+    assert london["next_advisory_notes"] == ["NO FURTHER ADVISORIES"]
+    assert london["freshness_status"] is None
 
 
 def test_volcano_proximity_measures_route_distance_from_held_advisories() -> None:
@@ -888,3 +1038,92 @@ def test_volcano_proximity_fails_closed_without_route_geometry() -> None:
     review = volcano_proximity_from_snapshots({"route_waypoints": []}, [])
     assert review["status"] == "route_geometry_unavailable"
     assert review["entries"] == []
+
+
+@pytest.mark.parametrize(
+    ("point", "expected_nm"),
+    (
+        ((0.0, -5.0), 300.2),
+        ((0.0, 15.0), 300.2),
+    ),
+)
+def test_route_distance_uses_endpoint_for_projection_outside_segment(
+    point: tuple[float, float],
+    expected_nm: float,
+) -> None:
+    from app.odss.vaa import _point_to_route_distance_nm
+
+    distance = _point_to_route_distance_nm(
+        [
+            {"latitude": 0.0, "longitude": 0.0},
+            {"latitude": 0.0, "longitude": 10.0},
+        ],
+        point[0],
+        point[1],
+    )
+
+    assert distance == pytest.approx(expected_nm, abs=0.5)
+
+
+def test_route_distance_handles_dateline_and_high_latitude_segments() -> None:
+    from app.odss.vaa import _point_to_route_distance_nm
+
+    dateline = _point_to_route_distance_nm(
+        [
+            {"latitude": 0.0, "longitude": 179.0},
+            {"latitude": 0.0, "longitude": -179.0},
+        ],
+        1.0,
+        180.0,
+    )
+    high_latitude = _point_to_route_distance_nm(
+        [
+            {"latitude": 80.0, "longitude": -10.0},
+            {"latitude": 80.0, "longitude": 10.0},
+        ],
+        81.0,
+        0.0,
+    )
+
+    assert dateline == pytest.approx(60.0, abs=0.5)
+    assert high_latitude is not None
+    assert 40.0 < high_latitude < 60.0
+
+
+@pytest.mark.parametrize(
+    ("snapshot_centre", "advisory_identity"),
+    (
+        ("ANCHORAGE", {"vaac": "ANCHORAGE"}),
+        ("DARWIN", {"vaac": "DARWIN"}),
+        ("TOKYO", {"centre": "TOKYO"}),
+        ("TOULOUSE", {"centre": "TOULOUSE"}),
+    ),
+)
+def test_volcano_ring_keeps_every_dedicated_centre_identity(
+    snapshot_centre: str,
+    advisory_identity: dict[str, str],
+) -> None:
+    from app.odss.vaa import volcano_proximity_from_snapshots
+
+    review = volcano_proximity_from_snapshots(
+        {
+            "route_waypoints": [
+                {"latitude": 0.0, "longitude": 100.0},
+                {"latitude": 0.0, "longitude": 102.0},
+            ],
+        },
+        [{
+            "centre": snapshot_centre,
+            "advisories": [{
+                **advisory_identity,
+                "volcano": f"{snapshot_centre} TEST",
+                "issued_at_utc": "2026-08-30T12:00:00+00:00",
+                "volcano_position": {
+                    "latitude": 1.0,
+                    "longitude": 101.0,
+                },
+            }],
+        }],
+    )
+
+    assert review["entries"][0]["centre"] == snapshot_centre

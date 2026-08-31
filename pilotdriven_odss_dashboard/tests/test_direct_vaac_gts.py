@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 
 from app.odss.direct_vaac_gts import (
     GTS_CENTRES,
@@ -49,9 +50,10 @@ OBS VA CLD: VA NOT IDENTIFIABLE FM SATELLITE DATA
 NXT ADVISORY: NO FURTHER ADVISORIES
 """
 
-# The mirror keeps the last bulletin per slot forever: this 2013-era bulletin
-# is exactly what a freshness gate must refuse to treat as current coverage.
-ANCHORAGE_STALE_2013 = """FVAK21 PANC 011014
+# The mirror keeps the last bulletin per slot forever. This bounded stale
+# fixture keeps its WMO and body issue minutes identical so the freshness gate,
+# rather than an identity mismatch, is what excludes it.
+ANCHORAGE_STALE_2013 = """FVAK21 PANC 011015
 VAAAK1
 VA ADVISORY
 DTG: 20131001/1015Z
@@ -119,6 +121,73 @@ def test_advisory_identity_and_position_parse() -> None:
     assert round(position["longitude"], 2) == -17.33
 
 
+def test_gts_exercise_advisory_is_rejected() -> None:
+    exercise = LONDON_ACTIVE.replace(
+        "VA ADVISORY\n",
+        "VA ADVISORY\nSTATUS: VOLCEX\n",
+    )
+
+    with pytest.raises(ValueError, match="exercise advisory"):
+        parse_gts_vaac_advisory(
+            exercise,
+            {"file": "fvxx01.egrr..txt"},
+            "LONDON",
+        )
+
+
+def test_gts_live_info_source_exer_is_rejected() -> None:
+    exercise = LONDON_ACTIVE.replace(
+        "INFO SOURCE: ICELANDIC MET OFFICE",
+        "INFO SOURCE: EXER.",
+    )
+
+    with pytest.raises(ValueError, match="exercise advisory"):
+        parse_gts_vaac_advisory(
+            exercise,
+            {"file": "fvxx01.egrr..txt"},
+            "LONDON",
+        )
+
+
+def test_gts_wmo_header_time_must_match_body_dtg() -> None:
+    mismatched = LONDON_ACTIVE.replace(
+        "FVXX01 EGRR 301200",
+        "FVXX01 EGRR 301201",
+    )
+
+    with pytest.raises(ValueError, match="WMO issue time"):
+        parse_gts_vaac_advisory(
+            mismatched,
+            {"file": "fvxx01.egrr..txt"},
+            "LONDON",
+        )
+
+
+def test_gts_wmo_header_must_match_fetched_mirror_slot() -> None:
+    swapped = LONDON_ACTIVE.replace("FVXX01 EGRR", "FVXX02 EGRR")
+
+    with pytest.raises(ValueError, match="mirror slot"):
+        parse_gts_vaac_advisory(
+            swapped,
+            {"file": "fvxx01.egrr..txt"},
+            "LONDON",
+        )
+
+
+def test_gts_body_dtg_must_be_an_exact_field_value() -> None:
+    malformed = LONDON_ACTIVE.replace(
+        "DTG: 20260830/1200Z",
+        "DTG: INVALID 20260830/1200Z TRAILER",
+    )
+
+    with pytest.raises(ValueError, match="readable DTG"):
+        parse_gts_vaac_advisory(
+            malformed,
+            {"file": "fvxx01.egrr..txt"},
+            "LONDON",
+        )
+
+
 def test_wrong_centre_signature_is_refused() -> None:
     try:
         parse_gts_vaac_advisory(LONDON_ACTIVE, {"file": "x"}, "TOULOUSE")
@@ -133,6 +202,9 @@ def test_psn_parser_never_invents_positions() -> None:
     assert parse_advisory_psn("N5816 W15459") == {"latitude": 58.2667, "longitude": -154.9833}
     assert parse_advisory_psn("garbled") is None
     assert parse_advisory_psn("N9999 E99999") is None
+    assert parse_advisory_psn("UNKNOWN N0100 E10000") is None
+    assert parse_advisory_psn("N0100 E10000 EXTRA") is None
+    assert parse_advisory_psn("PSN N0100 E10000") is None
 
 
 def test_one_mirror_pass_yields_fresh_centres_and_drops_stale_bulletins() -> None:
@@ -174,6 +246,71 @@ def test_one_mirror_pass_yields_fresh_centres_and_drops_stale_bulletins() -> Non
     assert anchorage["status"] == "available"
     assert anchorage["advisory_count"] == 0
     assert anchorage["listing_latest_utc"] == "2013-10-01T10:15:00+00:00"
+
+
+@pytest.mark.parametrize("index_body", ("", "<html>maintenance</html>"))
+def test_zero_recognized_centre_slots_fail_coverage_closed(index_body) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=index_body)
+
+    snapshots = fetch_gts_vaac_snapshots(
+        _flight(),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        centres=("LONDON",),
+    )
+
+    london = snapshots["LONDON"]
+    assert london["status"] == "unavailable"
+    assert london["coverage_status"] == "unavailable"
+    assert london["advisories"] == []
+    assert "recognized fixed GTS mirror slot" in london["errors"][0]["error"]
+
+
+def test_centre_receipt_uses_the_earliest_held_next_advisory_deadline() -> None:
+    earlier = (
+        LONDON_ACTIVE
+        .replace("FVXX01 EGRR 301200", "FVXX02 EGRR 301130")
+        .replace("DTG: 20260830/1200Z", "DTG: 20260830/1130Z")
+        .replace("ADVISORY NR: 2026/041", "ADVISORY NR: 2026/040")
+        .replace("NXT ADVISORY: 20260830/1800Z", "NXT ADVISORY: 20260830/1700Z")
+    )
+    no_further = (
+        LONDON_ACTIVE
+        .replace("FVXX01 EGRR 301200", "FVXX03 EGRR 301100")
+        .replace("DTG: 20260830/1200Z", "DTG: 20260830/1100Z")
+        .replace("ADVISORY NR: 2026/041", "ADVISORY NR: 2026/039")
+        .replace("NXT ADVISORY: 20260830/1800Z", "NXT ADVISORY: NO FURTHER ADVISORIES")
+    )
+    index = """<html><body><pre>
+<a href="fvxx01.egrr..txt">fvxx01.egrr..txt</a>
+<a href="fvxx02.egrr..txt">fvxx02.egrr..txt</a>
+<a href="fvxx03.egrr..txt">fvxx03.egrr..txt</a>
+</pre></body></html>"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/fv/"):
+            return httpx.Response(200, text=index)
+        if request.url.path.endswith("fvxx01.egrr..txt"):
+            return httpx.Response(200, text=LONDON_ACTIVE)
+        if request.url.path.endswith("fvxx02.egrr..txt"):
+            return httpx.Response(200, text=earlier)
+        if request.url.path.endswith("fvxx03.egrr..txt"):
+            return httpx.Response(200, text=no_further)
+        return httpx.Response(404, text="missing")
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url=NOAA_GTS_ORIGIN,
+    )
+    london = fetch_gts_vaac_snapshots(
+        _flight(), client=client, centres=("LONDON",),
+    )["LONDON"]
+
+    assert london["advisory_count"] == 3
+    assert london["next_advisory_due"] == "20260830/1700Z"
+    assert london["next_advisory_notes"] == [
+        "ADVISORY 2026/039 / GRIMSVOTN 373010: NO FURTHER ADVISORIES"
+    ]
 
 
 def test_unreachable_mirror_fails_every_requested_centre_closed() -> None:

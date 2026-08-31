@@ -157,7 +157,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-28-ofp-classification-v31"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-31-surface-shortening-v32"
 
 
 def combined_briefing_cache_token(
@@ -4009,10 +4009,17 @@ def _airport_notam_detail_pages(
     for panel_data in briefing.get("airport_operational_panels") or []:
         icao = str(panel_data.get("icao") or "----").upper()
         for index, item in enumerate(panel_data.get("selected_notams") or [], start=1):
+            if _is_ended_critical_approach_notice(item):
+                continue
             notam_id = str(item.get("notam_id") or "UNSPECIFIED")
             prefix = f"{icao} {index}"
+            rows.append((f"{prefix} NOTAM ID", notam_id))
+            if _is_critical_approach_notice(item):
+                rows.append((
+                    f"{prefix} STATUS",
+                    f"{_critical_approach_label(item)} | {icao} | {notam_id}",
+                ))
             rows.extend((
-                (f"{prefix} NOTAM ID", notam_id),
                 (
                     f"{prefix} VALIDITY",
                     " - ".join(
@@ -4055,6 +4062,85 @@ def _airport_notam_detail_pages(
                 ),
             ))
     return _detail_page_plans("ALL SELECTED NOTAM DETAILS", rows)
+
+
+def _critical_approach_detail_pages(
+    briefing: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Keep every exact machine-confirmed approach impact in the PDF.
+
+    The operational airport cards are intentionally compact. This lossless
+    continuation consumes only the shared boolean/severity contract, then
+    binds the visible label to the exact ICAO, NOTAM identity and item-E text.
+    It never re-infers criticality from prose.
+    """
+
+    rows: list[tuple[str, str]] = []
+    for panel_data in briefing.get("airport_operational_panels") or []:
+        if not isinstance(panel_data, dict):
+            continue
+        icao = str(panel_data.get("icao") or "----").strip().upper()
+        role = str(panel_data.get("role") or "ROLE NOT HELD").strip()
+        for item in panel_data.get("selected_notams") or []:
+            if not isinstance(item, dict) or not _is_critical_approach_notice(
+                item
+            ):
+                continue
+            notam_id = str(
+                item.get("notam_id") or "UNSPECIFIED"
+            ).strip()
+            prefix = f"{icao} {notam_id}"
+            rows.extend((
+                (
+                    "CRITICAL APPROACH",
+                    f"{_critical_approach_label(item)} | {prefix}",
+                ),
+                ("AIRPORT / ROLE", f"{icao} | {role}"),
+                (
+                    "VALIDITY",
+                    " - ".join(
+                        str(value or "NOT STATED")
+                        for value in (
+                            item.get("valid_from_utc"),
+                            item.get("valid_to_utc"),
+                        )
+                    ),
+                ),
+                (
+                    "APPLICABILITY",
+                    " | ".join(
+                        str(value)
+                        for value in (
+                            item.get("applicability")
+                            or "REVIEW REQUIRED",
+                            item.get("window_start_utc"),
+                            item.get("window_end_utc"),
+                        )
+                        if value not in (None, "")
+                    ),
+                ),
+                (
+                    "SCHEDULE",
+                    str(item.get("schedule") or "NOT SEPARATELY STATED"),
+                ),
+                (
+                    "ITEM E",
+                    str(
+                        item.get("item_e_text")
+                        or "ITEM-E TEXT NOT HELD - REVIEW SOURCE"
+                    ),
+                ),
+                (
+                    "SOURCE",
+                    f"OFP page {item.get('source_page')}"
+                    if item.get("source_page") is not None
+                    else "SOURCE PAGE NOT HELD",
+                ),
+            ))
+    return _detail_page_plans(
+        "CRITICAL INSTRUMENT APPROACH IMPACTS",
+        rows,
+    )
 
 
 def _vaa_detail_pages(
@@ -4449,6 +4535,313 @@ def _edto_status_cards(
     return cards
 
 
+_CRITICAL_APPROACH_LABEL = "CRITICAL - APPROACH AFFECTED"
+_CRITICAL_APPROACH_SCHEDULED_LABEL = "CRITICAL - APPROACH SCHEDULED"
+_CRITICAL_APPROACH_REVIEW_LABEL = "CRITICAL - APPROACH CONDITION REVIEW"
+_RUNWAY_SHORTENING_LABEL = "RWY SHORTENED"
+_RUNWAY_SHORTENING_TEXT = (
+    "RUNWAY SHORTENED / DECLARED DISTANCES - VERIFY EXACT DISTANCES"
+)
+_RUNWAY_SHORTENING_SUBJECT = re.compile(
+    r"\b(?:RWY|RUNWAY)\s*"
+    r"(?P<runway>[0-9]{1,2}[LCR]?(?:\s*/\s*[0-9]{1,2}[LCR]?)?)\b",
+    re.IGNORECASE,
+)
+_RUNWAY_SHORTENING_DISTANCE = r"\d+(?:\.\d+)?\s*(?:M|FT)\b"
+_RUNWAY_SHORTENING_BODY_PATTERNS = (
+    re.compile(
+        rf"^\s*(?:(?:THR|THRESHOLD)\s+DISPLACED"
+        rf"(?:\s+THRESHOLD)?|DISPLACED\s+(?:THR|THRESHOLD))\s+"
+        rf"(?:BY\s+)?{_RUNWAY_SHORTENING_DISTANCE}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b(?:TORA|TODA|ASDA|LDA)\b"
+        rf"\s*(?:(?::|=|IS)\s*)?"
+        rf"(?:REDUCED|SHORTENED|DECREASED)"
+        rf"(?:\s+(?:TO|BY))?\s+{_RUNWAY_SHORTENING_DISTANCE}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^\s*(?:(?:LEN|LENGTH|AVBL\s+LEN(?:GTH)?)\s+)?"
+        rf"(?:SHORTENED|REDUCED)(?:\s+TO)?\s+"
+        rf"{_RUNWAY_SHORTENING_DISTANCE}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^[\s\S]{0,80}\b(?:(?:REDUCED|SHORTENED|DECREASED)\s+"
+        r"(?:(?:RWY|RUNWAY)\s+)?DECLARED\s+DISTANCES?|"
+        r"DECLARED\s+DISTANCES?\s+(?:ARE\s+)?"
+        r"(?:REDUCED|SHORTENED|DECREASED))\b",
+        re.IGNORECASE,
+    ),
+)
+_RUNWAY_SHORTENING_REVERSED = re.compile(
+    r"\b(?:CANCELLED|CANCELED|WITHDRAWN|REVOKED|RESTORED|"
+    r"RETURN(?:ED)?\s+TO\s+(?:NORMAL\s+)?SERVICE|"
+    r"NO\s+LONGER\s+(?:REDUCED|SHORTENED|DISPLACED))\b",
+    re.IGNORECASE,
+)
+_NEGATED_RUNWAY_REVERSAL_PREFIX = re.compile(
+    r"\bNOT(?:\s+(?:YET|CURRENTLY))?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_critical_approach_notice(item: dict[str, Any]) -> bool:
+    """Consume the shared exact flag; never infer criticality from prose."""
+    return (
+        item.get("approach_affected") is True
+        and str(item.get("severity") or "").strip().lower() == "critical"
+        and _critical_approach_timing_state(item) != "ended"
+    )
+
+
+def _critical_approach_timing_state(item: dict[str, Any]) -> str:
+    state = str(
+        item.get("stateAtReference")
+        or item.get("state_at_reference")
+        or ""
+    ).strip().lower()
+    applicability = str(
+        item.get("applicability") or ""
+    ).strip().lower()
+    if state == "ended_before_reference":
+        return "ended"
+    if applicability == "review" or state == "unknown_at_reference":
+        return "review"
+    if state == "begins_after_reference":
+        return "scheduled"
+    if state == "active_at_reference" and applicability == "active":
+        return "active"
+    return "review"
+
+
+def _is_ended_critical_approach_notice(item: dict[str, Any]) -> bool:
+    return (
+        item.get("approach_affected") is True
+        and str(item.get("severity") or "").strip().lower() == "critical"
+        and _critical_approach_timing_state(item) == "ended"
+    )
+
+
+def _critical_approach_label(item: dict[str, Any]) -> str:
+    timing_state = _critical_approach_timing_state(item)
+    if timing_state == "scheduled":
+        return _CRITICAL_APPROACH_SCHEDULED_LABEL
+    if timing_state != "active":
+        return _CRITICAL_APPROACH_REVIEW_LABEL
+    return _CRITICAL_APPROACH_LABEL
+
+
+def _runway_shortening_subjects(value: Any) -> list[str]:
+    """Port the app's bounded declared-distance matcher for PDF parity."""
+
+    exact = str(value or "")
+    subjects = list(_RUNWAY_SHORTENING_SUBJECT.finditer(exact))
+    runways: list[str] = []
+    for index, subject in enumerate(subjects):
+        body_start = subject.end()
+        body_end = (
+            subjects[index + 1].start()
+            if index + 1 < len(subjects)
+            else len(exact)
+        )
+        remaining = exact[body_start:body_end]
+        boundary = re.search(r"[;\r\n]|(?<!\d)\.(?!\d)", remaining)
+        body = remaining[:boundary.start()] if boundary else remaining
+        if any(
+            not _NEGATED_RUNWAY_REVERSAL_PREFIX.search(
+                body[:match.start()]
+            )
+            for match in _RUNWAY_SHORTENING_REVERSED.finditer(body)
+        ):
+            continue
+        if not any(
+            pattern.search(body)
+            for pattern in _RUNWAY_SHORTENING_BODY_PATTERNS
+        ):
+            continue
+        runway = re.sub(r"\s+", "", subject.group("runway").upper())
+        if runway and runway not in runways:
+            runways.append(runway)
+    return runways
+
+
+def _surface_shortening_rows(
+    surface_overlays: list[dict[str, Any]],
+    panel_data: dict[str, Any],
+) -> list[tuple[str, str]]:
+    """Return exact source-held shortening states for one matching station.
+
+    The combined PDF does not draw or derive geometry. It publishes a
+    validated overlay receipt when held, then uses the same strict bounded
+    declared-distance language contract on exact selected item-E text so an
+    alternate can reach the physical PDF even though the legacy geometry API
+    accepts only departure/destination overlays. Ended items remain absent.
+    """
+
+    icao = str(panel_data.get("icao") or "").strip().upper()
+    raw_role_keys = panel_data.get("role_keys")
+    role_keys = {
+        str(value).strip().lower()
+        for value in (
+            raw_role_keys
+            if isinstance(raw_role_keys, list)
+            else [panel_data.get("role_key")]
+        )
+        if value
+    }
+    role_aliases = {
+        "destination_alternate": "alternate",
+        "fuel_enroute": "fuel_enroute_airport",
+    }
+    rows: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_row(
+        *,
+        notam_id: str,
+        entity_ref: str,
+        state: str,
+        reference_at: str = "",
+        starts_at: str = "",
+        ends_at: str = "",
+        schedule: str = "",
+    ) -> None:
+        if state == "ended_before_reference":
+            return
+        identity = (notam_id.upper(), entity_ref.upper())
+        if not notam_id or not entity_ref or identity in seen:
+            return
+        state_label = {
+            "active_at_reference": "ACTIVE AT REFERENCE",
+            "begins_after_reference": "SCHEDULED - BEGINS AFTER REFERENCE",
+            "unknown_at_reference": "MANUAL REVIEW - TIMING UNRESOLVED",
+        }.get(state, "MANUAL REVIEW - TIMING UNRESOLVED")
+        if starts_at and ends_at:
+            period = f"PERIOD {starts_at} - {ends_at}"
+        elif starts_at:
+            period = f"PERIOD FROM {starts_at}"
+        elif ends_at:
+            period = f"PERIOD UNTIL {ends_at}"
+        else:
+            period = "PERIOD UNRESOLVED - MANUAL REVIEW"
+        parts = [
+            _RUNWAY_SHORTENING_TEXT,
+            f"{icao} {notam_id}",
+            f"RWY {entity_ref}",
+            state_label,
+            f"REFERENCE {reference_at}" if reference_at else None,
+            period,
+            f"SCHEDULE {schedule}" if schedule else None,
+        ]
+        seen.add(identity)
+        rows.append((
+            _RUNWAY_SHORTENING_LABEL,
+            " | ".join(part for part in parts if part),
+        ))
+
+    for overlay in surface_overlays:
+        if not isinstance(overlay, dict):
+            continue
+        overlay_icao = str(overlay.get("icao") or "").strip().upper()
+        overlay_role = str(overlay.get("role") or "").strip().lower()
+        overlay_role = role_aliases.get(overlay_role, overlay_role)
+        if overlay_icao != icao or (overlay_role and overlay_role not in role_keys):
+            continue
+        for item in overlay.get("mapped") or []:
+            if not isinstance(item, dict):
+                continue
+            mark_class = str(item.get("markClass") or "").strip().lower()
+            scope = str(item.get("scope") or "").strip().lower()
+            if mark_class != "shortening" and not (
+                scope == "declared_distances"
+                and mark_class in {"scheduled", "locator"}
+            ):
+                continue
+            if str(item.get("entityType") or "").strip().lower() != "runway":
+                continue
+            notam_id = str(item.get("notamNumber") or "").strip()
+            if not notam_id:
+                # A shortening row without its source identity is not safe to
+                # publish as an operational fact.
+                continue
+            entity_ref = str(item.get("entityRef") or "").strip().upper()
+            interval = item.get("referenceInterval")
+            interval = interval if isinstance(interval, dict) else {}
+            add_row(
+                notam_id=notam_id,
+                entity_ref=entity_ref,
+                state=str(item.get("stateAtReference") or "").strip().lower(),
+                reference_at=str(item.get("referenceAt") or "").strip(),
+                starts_at=str(interval.get("startsAt") or "").strip(),
+                ends_at=str(interval.get("endsAt") or "").strip(),
+            )
+
+    for item in panel_data.get("selected_notams") or []:
+        if not isinstance(item, dict):
+            continue
+        notam_id = str(item.get("notam_id") or "").strip()
+        source_text = str(item.get("item_e_text") or "")
+        state = str(item.get("stateAtReference") or "").strip().lower()
+        if str(item.get("applicability") or "").strip().lower() != "active":
+            state = "unknown_at_reference"
+        for entity_ref in _runway_shortening_subjects(source_text):
+            add_row(
+                notam_id=notam_id,
+                entity_ref=entity_ref,
+                state=state,
+                reference_at=str(item.get("referenceAt") or "").strip(),
+                starts_at=str(item.get("valid_from_utc") or "").strip(),
+                ends_at=str(item.get("valid_to_utc") or "").strip(),
+                schedule=str(item.get("schedule") or "").strip(),
+            )
+    return rows
+
+
+def _attach_surface_shortening_rows(
+    briefing: dict[str, Any],
+) -> dict[str, Any]:
+    """Attach PDF-only rows without mutating the shared dashboard contract."""
+
+    projected = dict(briefing)
+    surface_overlays = [
+        overlay
+        for overlay in briefing.get("surface_overlays") or []
+        if isinstance(overlay, dict)
+    ]
+    panels: list[Any] = []
+    for raw_panel in briefing.get("airport_operational_panels") or []:
+        if not isinstance(raw_panel, dict):
+            panels.append(raw_panel)
+            continue
+        panel_data = dict(raw_panel)
+        rows = _surface_shortening_rows(surface_overlays, panel_data)
+        if rows:
+            panel_data["_surface_shortening_rows"] = rows
+        panels.append(panel_data)
+    projected["airport_operational_panels"] = panels
+    return projected
+
+
+def _surface_shortening_detail_pages(
+    briefing: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Paginate every source-bound shortening receipt without geometry."""
+
+    rows = [
+        (label, value)
+        for panel_data in briefing.get("airport_operational_panels") or []
+        if isinstance(panel_data, dict)
+        for label, value in panel_data.get("_surface_shortening_rows") or []
+    ]
+    return _detail_page_plans(
+        "RUNWAY SHORTENING / DECLARED DISTANCES",
+        rows,
+    )
+
+
 def _station_card_lines(panel_data: dict[str, Any]) -> list[tuple[str, str]]:
     """Exact shared source facts, one bounded row per retained record."""
     rows: list[tuple[str, str]] = []
@@ -4476,6 +4869,7 @@ def _station_card_lines(panel_data: dict[str, Any]) -> list[tuple[str, str]]:
         )
         if basis:
             rows.append(("PLAN", basis))
+    rows.extend(panel_data.get("_surface_shortening_rows") or [])
     shared_lines = panel_data.get("card_summary_lines")
     if not isinstance(shared_lines, list):
         raise ValueError(
@@ -4485,7 +4879,17 @@ def _station_card_lines(panel_data: dict[str, Any]) -> list[tuple[str, str]]:
     for item in shared_lines:
         if not isinstance(item, dict) or not str(item.get("text") or "").strip():
             continue
+        if _is_ended_critical_approach_notice(item):
+            continue
         kind = str(item.get("kind") or "").strip().lower()
+        if kind == "notam" and _is_critical_approach_notice(item):
+            notam_id = str(item.get("notam_id") or "UNSPECIFIED")
+            icao = str(panel_data.get("icao") or "----").strip().upper()
+            rows.append((
+                _critical_approach_label(item),
+                f"{icao} {notam_id} | {str(item['text']).strip()}",
+            ))
+            continue
         rows.append((
             # REV3 publishes the operational summary, not the NOTAM identity.
             # Full IDs, validity and item-E remain in selected_notams for the
@@ -4722,6 +5126,19 @@ def _sigmet_card_fragments(
     return fragments
 
 
+def _vaac_centre_receipt_line(item: dict[str, Any]) -> str:
+    """One source-held centre receipt, without interpreting freshness."""
+    receipt = f"{item.get('centre')}: {item.get('status')}"
+    if item.get("listing_latest_utc") not in (None, ""):
+        receipt += f" | latest {item['listing_latest_utc']}"
+    if item.get("next_advisory_due") not in (None, ""):
+        receipt += f" | next due {item['next_advisory_due']}"
+    for note in item.get("next_advisory_notes") or []:
+        if note not in (None, ""):
+            receipt += f" | next advisory {note}"
+    return receipt
+
+
 def _vaac_ledger_lines(
     centres: list[dict[str, Any]],
     *,
@@ -4730,12 +5147,48 @@ def _vaac_ledger_lines(
     """Wrap every shared VAAC centre/status row without fitting or elision."""
     lines: list[str] = []
     for start_index in range(0, len(centres), 3):
-        row = " | ".join(
-            f"{item.get('centre')}: {item.get('status')}"
-            for item in centres[start_index:start_index + 3]
-        )
-        lines.extend(_wrap(row, MONO, T_MICRO, text_width) or [row])
+        selected = centres[start_index:start_index + 3]
+        receipt_rows = [_vaac_centre_receipt_line(item) for item in selected]
+        # Preserve the historical three-centre row exactly when no source
+        # receipt exists.  Once a centre carries an observed receipt, keep
+        # each centre on its own wrapped row so latest/next-due attribution is
+        # unambiguous and continuation planning can paginate every baseline.
+        if any(
+            item.get("listing_latest_utc") not in (None, "")
+            or item.get("next_advisory_due") not in (None, "")
+            or bool(item.get("next_advisory_notes"))
+            for item in selected
+        ):
+            for receipt in receipt_rows:
+                lines.extend(
+                    _wrap(receipt, MONO, T_MICRO, text_width) or [receipt]
+                )
+        else:
+            row = " | ".join(receipt_rows)
+            lines.extend(_wrap(row, MONO, T_MICRO, text_width) or [row])
     return lines
+
+
+def _vaac_receipt_detail_pages(
+    briefing: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Paginate observed GTS centre receipts on the downloaded briefing."""
+    centres = list(
+        (((briefing.get("hazards") or {}).get("vaac_reach") or {}).get(
+            "centres"
+        ) or [])
+    )
+    rows = [
+        ("CENTRE RECEIPT", _vaac_centre_receipt_line(item))
+        for item in centres
+        if isinstance(item, dict)
+        and (
+            item.get("listing_latest_utc") not in (None, "")
+            or item.get("next_advisory_due") not in (None, "")
+            or bool(item.get("next_advisory_notes"))
+        )
+    ]
+    return _detail_page_plans("VAAC SOURCE RECEIPTS", rows)
 
 
 def _hazard_vaac_line_capacity(
@@ -10100,6 +10553,7 @@ def draw_operational_airports_page(
             for line in panel_data.get("card_summary_lines") or []
             if isinstance(line, dict)
             and str(line.get("kind") or "").lower() == "notam"
+            and not _is_ended_critical_approach_notice(line)
         ][:2]
         rows = [
             f"PLAN · {icao} RWY {plan.get('runway') or '--'}",
@@ -10114,10 +10568,18 @@ def draw_operational_airports_page(
             ),
         ]
         for notice in shown_notices:
+            critical_label = (
+                _critical_approach_label(notice)
+                if _is_critical_approach_notice(notice)
+                else None
+            )
+            notice_id = str(notice.get("notam_id") or "UNSPECIFIED")
             rows.append(
                 " · ".join(
                     part
                     for part in (
+                        critical_label,
+                        f"{icao} {notice_id}" if critical_label else None,
                         str(notice.get("label") or "NOTICE"),
                         str(notice.get("text") or ""),
                         (
@@ -12496,6 +12958,7 @@ def render_combined_briefing(
     )
     if include_audit_appendix:
         briefing = _audit_rev3_v8_briefing_projection(flight, briefing)
+    briefing = _attach_surface_shortening_rows(briefing)
     # The authenticated service boundary supplies governed references
     # explicitly. Keeping them outside raw `flight` data prevents an analysis
     # field from silently becoming pilot-visible PDF authority.
@@ -12679,19 +13142,46 @@ def render_combined_briefing(
         operational_airport_index_count = len(
             operational_airport_index_pages
         )
+        operational_critical_approach_pages = (
+            _critical_approach_detail_pages(briefing)
+        )
+        operational_critical_approach_count = len(
+            operational_critical_approach_pages
+        )
+        operational_surface_shortening_pages = (
+            _surface_shortening_detail_pages(briefing)
+        )
+        operational_surface_shortening_count = len(
+            operational_surface_shortening_pages
+        )
         operational_airports_page = (
             operational_mel_first_page + operational_mel_page_count
         )
-        operational_hazards_page = (
-            operational_airports_page + 1 + operational_airport_index_count
+        operational_vaac_receipt_pages = _vaac_receipt_detail_pages(briefing)
+        operational_vaac_receipt_page_count = len(
+            operational_vaac_receipt_pages
         )
-        operational_enroute_page = operational_hazards_page + 1
-        operational_coverage_page = operational_hazards_page + 2
-        operational_terrain_page = operational_hazards_page + 3
+        operational_hazards_page = (
+            operational_airports_page
+            + 1
+            + operational_airport_index_count
+            + operational_critical_approach_count
+            + operational_surface_shortening_count
+        )
+        operational_enroute_page = (
+            operational_hazards_page
+            + 1
+            + operational_vaac_receipt_page_count
+        )
+        operational_coverage_page = operational_enroute_page + 1
+        operational_terrain_page = operational_enroute_page + 2
         operational_page_count = (
             7
             + operational_mel_page_count
             + operational_airport_index_count
+            + operational_critical_approach_count
+            + operational_surface_shortening_count
+            + operational_vaac_receipt_page_count
             + int(has_terrain_annex)
             + eosid_continuation_count
         )
@@ -12905,6 +13395,104 @@ def render_combined_briefing(
                 level=0,
             )
             canvas.showPage()
+        for index, approach_page in enumerate(
+            operational_critical_approach_pages,
+            start=1,
+        ):
+            bookmark = f"sec_airport_critical_approach_{index}"
+            canvas.bookmarkPage(bookmark)
+            draw_shared_detail_page(
+                canvas,
+                flight,
+                page_number=(
+                    operational_airports_page
+                    + operational_airport_index_count
+                    + index
+                ),
+                page_count=operational_page_count,
+                section_label="AIRPORTS / ALTERNATES",
+                section_colour=CRITICAL,
+                section_page_number=(
+                    1 + operational_airport_index_count + index
+                ),
+                section_page_count=(
+                    1
+                    + operational_airport_index_count
+                    + operational_critical_approach_count
+                    + operational_surface_shortening_count
+                ),
+                title=approach_page["title"],
+                rows=approach_page["rows"],
+                source_line=(
+                    "Exact machine-confirmed approach impact, ICAO, NOTAM "
+                    "identity and held item-E text"
+                ),
+                page_family="deep",
+            )
+            canvas.addOutlineEntry(
+                (
+                    "Critical Instrument Approach Impacts"
+                    if index == 1
+                    else (
+                        "Critical Instrument Approach Impacts "
+                        f"{index}/{operational_critical_approach_count}"
+                    )
+                ),
+                bookmark,
+                level=0,
+            )
+            canvas.showPage()
+        for index, shortening_page in enumerate(
+            operational_surface_shortening_pages,
+            start=1,
+        ):
+            bookmark = f"sec_airport_shortening_{index}"
+            canvas.bookmarkPage(bookmark)
+            draw_shared_detail_page(
+                canvas,
+                flight,
+                page_number=(
+                    operational_airports_page
+                    + operational_airport_index_count
+                    + operational_critical_approach_count
+                    + index
+                ),
+                page_count=operational_page_count,
+                section_label="AIRPORTS / ALTERNATES",
+                section_colour=WEATHER_AMBER,
+                section_page_number=(
+                    1
+                    + operational_airport_index_count
+                    + operational_critical_approach_count
+                    + index
+                ),
+                section_page_count=(
+                    1
+                    + operational_airport_index_count
+                    + operational_critical_approach_count
+                    + operational_surface_shortening_count
+                ),
+                title=shortening_page["title"],
+                rows=shortening_page["rows"],
+                source_line=(
+                    "Exact source-held ICAO, NOTAM, runway and timing state; "
+                    "verify declared distances"
+                ),
+                page_family="deep",
+            )
+            canvas.addOutlineEntry(
+                (
+                    "Runway Shortening / Declared Distances"
+                    if index == 1
+                    else (
+                        "Runway Shortening / Declared Distances "
+                        f"{index}/{operational_surface_shortening_count}"
+                    )
+                ),
+                bookmark,
+                level=0,
+            )
+            canvas.showPage()
         draw_operational_hazard_page(
             canvas,
             flight,
@@ -12923,6 +13511,42 @@ def render_combined_briefing(
         )
         canvas.addOutlineEntry("Weather / Route Hazards", "sec_hazard", level=0)
         canvas.showPage()
+        for index, receipt_page in enumerate(
+            operational_vaac_receipt_pages,
+            start=1,
+        ):
+            receipt_bookmark = f"sec_hazard_receipts_{index}"
+            canvas.bookmarkPage(receipt_bookmark)
+            draw_shared_detail_page(
+                canvas,
+                flight,
+                page_number=operational_hazards_page + index,
+                page_count=operational_page_count,
+                section_label="WEATHER / ROUTE HAZARDS",
+                section_colour=COMMS_TEAL,
+                section_page_number=index + 1,
+                section_page_count=1 + operational_vaac_receipt_page_count,
+                title=receipt_page["title"],
+                rows=receipt_page["rows"],
+                source_line=(
+                    "Observed direct VAAC listing receipts from the shared "
+                    "briefing payload"
+                ),
+                page_family="deep",
+            )
+            canvas.addOutlineEntry(
+                (
+                    "VAAC Source Receipts"
+                    if index == 1
+                    else (
+                        "VAAC Source Receipts "
+                        f"{index}/{operational_vaac_receipt_page_count}"
+                    )
+                ),
+                receipt_bookmark,
+                level=0,
+            )
+            canvas.showPage()
         draw_operational_enroute_assurance_page(
             canvas,
             flight,

@@ -1033,6 +1033,11 @@ def _surface_overlay_lines(
     )
     ordered = (
         ("closure", "exact closure", "Closed"),
+        (
+            "shortening",
+            "runway shortened / declared distances - verify exact distances",
+            "Runway shortened / declared distances - verify exact distances",
+        ),
         ("scheduled", "scheduled restriction", "Scheduled"),
         ("equipment", "equipment-unavailable", "Equipment"),
         ("locator", "locator/review", "Review locator"),

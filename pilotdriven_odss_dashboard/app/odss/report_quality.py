@@ -156,6 +156,17 @@ _COMBINED_AIRPORT_INDEX_ENTRY = re.compile(
     r"[·-]\s*(?P<icao>[A-Z]{4})\b",
     re.IGNORECASE,
 )
+_COMBINED_RUNWAY_SHORTENING_TITLE = (
+    "RUNWAY SHORTENING / DECLARED DISTANCES"
+)
+_COMBINED_CRITICAL_APPROACH_TITLE = (
+    "CRITICAL INSTRUMENT APPROACH IMPACTS"
+)
+_COMBINED_VAAC_RECEIPT_TITLE = "VAAC SOURCE RECEIPTS"
+_COMBINED_VAAC_RECEIPT_PAGE = re.compile(
+    r"CONTINUED\s*\(\s*(?P<index>\d+)\s*/\s*(?P<count>\d+)\s*\)",
+    re.IGNORECASE,
+)
 _COMBINED_RETIRED_LABELS = (
     "LEVEL 1",
     "LEVEL 2",
@@ -442,6 +453,122 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                                 "Airport surface/notes entries must match the "
                                 "declared filed-airport count and form one "
                                 "unique ordered 1/N through N/N ICAO list."
+                            ),
+                        ))
+                critical_approach_pages: list[tuple[int, int]] = []
+                while (
+                    cursor < page_count
+                    and _COMBINED_CRITICAL_APPROACH_TITLE
+                    in extracted_pages[cursor].upper()
+                ):
+                    page_match = _COMBINED_VAAC_RECEIPT_PAGE.search(
+                        extracted_pages[cursor]
+                    )
+                    critical_approach_pages.append((
+                        int(page_match.group("index")) if page_match else 0,
+                        int(page_match.group("count")) if page_match else 0,
+                    ))
+                    cursor += 1
+                shortening_pages: list[tuple[int, int]] = []
+                while (
+                    cursor < page_count
+                    and _COMBINED_RUNWAY_SHORTENING_TITLE
+                    in extracted_pages[cursor].upper()
+                ):
+                    page_match = _COMBINED_VAAC_RECEIPT_PAGE.search(
+                        extracted_pages[cursor]
+                    )
+                    if page_match:
+                        shortening_pages.append((
+                            int(page_match.group("index")),
+                            int(page_match.group("count")),
+                        ))
+                    else:
+                        shortening_pages.append((0, 0))
+                    cursor += 1
+                if shortening_pages:
+                    expected_start = (
+                        2
+                        + len(airport_index_pages)
+                        + len(critical_approach_pages)
+                    )
+                    expected_count = (
+                        1
+                        + len(airport_index_pages)
+                        + len(critical_approach_pages)
+                        + len(shortening_pages)
+                    )
+                    if not (
+                        [index for index, _ in shortening_pages]
+                        == list(range(expected_start, expected_count + 1))
+                        and {count for _, count in shortening_pages}
+                        == {expected_count}
+                    ):
+                        violations.append(ReportQualityViolation(
+                            "COMBINED_RUNWAY_SHORTENING_STRUCTURE",
+                            (
+                                "Runway-shortening receipts must form one "
+                                "complete ordered Airports continuation "
+                                "sequence."
+                            ),
+                        ))
+                if critical_approach_pages:
+                    expected_start = 2 + len(airport_index_pages)
+                    expected_count = (
+                        1
+                        + len(airport_index_pages)
+                        + len(critical_approach_pages)
+                        + len(shortening_pages)
+                    )
+                    if not (
+                        [index for index, _ in critical_approach_pages]
+                        == list(range(
+                            expected_start,
+                            expected_start + len(critical_approach_pages),
+                        ))
+                        and {count for _, count in critical_approach_pages}
+                        == {expected_count}
+                    ):
+                        violations.append(ReportQualityViolation(
+                            "COMBINED_CRITICAL_APPROACH_STRUCTURE",
+                            (
+                                "Critical-approach receipts must form one "
+                                "complete ordered Airports continuation "
+                                "sequence."
+                            ),
+                        ))
+            elif flow_index == 2:
+                receipt_pages: list[tuple[int, int]] = []
+                while (
+                    cursor < page_count
+                    and _COMBINED_VAAC_RECEIPT_TITLE
+                    in extracted_pages[cursor].upper()
+                ):
+                    receipt_text = extracted_pages[cursor]
+                    receipt_match = _COMBINED_VAAC_RECEIPT_PAGE.search(
+                        receipt_text
+                    )
+                    if receipt_match:
+                        receipt_pages.append((
+                            int(receipt_match.group("index")),
+                            int(receipt_match.group("count")),
+                        ))
+                    else:
+                        receipt_pages.append((0, 0))
+                    cursor += 1
+                if receipt_pages:
+                    expected_count = len(receipt_pages) + 1
+                    if not (
+                        [index for index, _ in receipt_pages]
+                        == list(range(2, expected_count + 1))
+                        and {count for _, count in receipt_pages}
+                        == {expected_count}
+                    ):
+                        violations.append(ReportQualityViolation(
+                            "COMBINED_VAAC_RECEIPT_STRUCTURE",
+                            (
+                                "VAAC receipt pages must form one complete "
+                                "ordered weather continuation sequence."
                             ),
                         ))
         for page_index in range(cursor, page_count):

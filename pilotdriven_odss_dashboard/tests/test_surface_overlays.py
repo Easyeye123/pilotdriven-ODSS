@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.odss.surface_overlays import (
+    SurfaceMappedFinding,
     SurfaceOverlayRequest,
     SurfaceReviewFinding,
     _styled_surface_overlay,
@@ -21,6 +22,9 @@ from app.odss.pertinent_brief import _surface_overlay_lines
         ("closure", "begins_after_reference", "scheduled"),
         ("scheduled", "begins_after_reference", "scheduled"),
         ("equipment", "active_at_reference", "equipment"),
+        ("shortening", "active_at_reference", "shortening"),
+        ("shortening", "unknown_at_reference", "locator"),
+        ("shortening", "ended_before_reference", None),
         ("locator", "unknown_at_reference", "locator"),
         ("closure", "unknown_at_reference", "locator"),
         (None, None, "locator"),
@@ -157,6 +161,47 @@ def test_styled_surface_overlay_separates_classes_and_omits_ended_marks() -> Non
         item["properties"]["color"] != "#EF4444"
         for item in surface_features[1:]
     )
+
+
+def test_runway_shortening_has_a_strict_amber_review_contract() -> None:
+    parsed = SurfaceMappedFinding.model_validate({
+        "notamNumber": "A1234/26",
+        "entityType": "runway",
+        "entityRef": "34R",
+        "featureIds": ["rwy-34r"],
+        "plainEnglish": "Declared distances changed.",
+        "evidence": "RWY 34R THR DISPLACED 300FT.",
+        "markClass": "shortening",
+        "stateAtReference": "active_at_reference",
+        "referenceAt": "2026-08-01T05:35:00+00:00",
+        "referenceInterval": {
+            "startsAt": "2026-08-01T04:00:00+00:00",
+            "endsAt": "2026-08-01T06:00:00+00:00",
+        },
+        "markers": [_marker(0)],
+    })
+    contract = {
+        "featureCollection": {
+            "type": "FeatureCollection",
+            "features": [_line_feature("rwy-34r", 0)],
+        },
+        "mapped": [parsed.model_dump(mode="json")],
+        "reviewRequired": [],
+    }
+
+    styled = _styled_surface_overlay(contract)
+    runway_style = styled["features"][0]["properties"]
+    marker_style = styled["features"][1]["properties"]
+    text = "\n".join(_surface_overlay_lines(contract, detail_limit=2))
+
+    assert runway_style["color"] == "#F59E0B"
+    assert runway_style["color"] != "#EF4444"
+    assert marker_style["label"] == "R"
+    assert (
+        "runway shortened / declared distances - verify exact distances"
+        in text.lower()
+    )
+    assert "Closed:" not in text
 
 
 def test_surface_overlay_clear_must_be_explicit() -> None:

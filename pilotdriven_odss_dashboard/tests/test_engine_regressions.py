@@ -562,6 +562,587 @@ def test_notams_are_semantically_deduplicated_and_ranked_after_sta_filter() -> N
     assert duplicate["raw_text"] in {"RWY 24L CLSD", "RUNWAY 24L CLOSED"}
 
 
+def test_exact_approach_outages_are_critical_for_every_applicable_airport_role() -> None:
+    valid_from = "2026-07-16T09:00:00+00:00"
+    valid_to = "2026-07-16T15:00:00+00:00"
+    notams = [
+        _record(
+            "ALT-ILS/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-COMMA/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 24, U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-TWO-RUNWAYS/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 24 AND RWY 25 U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-CAT-AFTER-RWY/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 CAT II NOT AVBL",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-CAT-LIST/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 CAT I/II U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-WITHDRAWN/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 WITHDRAWN",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "EDTO-RNP/26",
+            "WADD",
+            valid_from,
+            valid_to,
+            text="RNP APCH RWY 27 NOT AVBL",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "FUEL-LOC/26",
+            "WIMM",
+            valid_from,
+            valid_to,
+            text="THE UNSERVICEABILITY OF ILS AND GP RWY 23",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-LOC-OSC/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="LOC 'LAA' RWY 25 MAY INTERRUPT OR OSCILLATE DUE CRANE",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "EDTO-RNAV/26",
+            "WADD",
+            valid_from,
+            valid_to,
+            text="RNAV RWY 27 NOT AVBL",
+            category="NAVIGATION",
+        ),
+        _record(
+            "FUEL-DME-IAP/26",
+            "WIMM",
+            valid_from,
+            valid_to,
+            text="DME MIM U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-TWY/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="TWY A CLSD",
+            category="TWY",
+        ),
+    ]
+    flight = _flight(notams=notams)
+    flight["edto"]["airports"] = [{
+        "airport": "WADD",
+        "period_start_utc": "2026-07-16T10:30:00+00:00",
+        "period_end_utc": "2026-07-16T11:30:00+00:00",
+    }]
+    flight["fuel_enroute_airports"] = [{
+        "airport": "WIMM",
+        "role": "fuel_enroute_airport",
+    }]
+
+    findings, _ = analyse(flight)
+    by_id = {
+        item["data"]["notam_id"]: item
+        for item in findings
+        if item.get("engine") == "notam"
+    }
+
+    for notam_id, role in (
+        ("ALT-ILS/26", "destination alternate"),
+        ("ALT-ILS-COMMA/26", "destination alternate"),
+        ("ALT-ILS-TWO-RUNWAYS/26", "destination alternate"),
+        ("ALT-ILS-CAT-AFTER-RWY/26", "destination alternate"),
+        ("ALT-ILS-CAT-LIST/26", "destination alternate"),
+        ("ALT-ILS-WITHDRAWN/26", "destination alternate"),
+        ("EDTO-RNP/26", "EDTO"),
+        ("FUEL-LOC/26", "fuel enroute airport"),
+    ):
+        assert by_id[notam_id]["severity"] == "critical"
+        assert by_id[notam_id]["data"]["role"] == role
+        assert by_id[notam_id]["data"]["pertinence_kind"] == (
+            "approach_navaid_closure"
+        )
+        assert by_id[notam_id]["data"]["approach_affected"] is True
+
+    for notam_id, role in (
+        ("ALT-LOC-OSC/26", "destination alternate"),
+        ("EDTO-RNAV/26", "EDTO"),
+        ("FUEL-DME-IAP/26", "fuel enroute airport"),
+    ):
+        assert by_id[notam_id]["severity"] == "critical"
+        assert by_id[notam_id]["data"]["role"] == role
+        assert by_id[notam_id]["data"]["approach_affected"] is True
+
+    assert by_id["ALT-TWY/26"]["severity"] == "warning"
+    assert by_id["ALT-TWY/26"]["data"]["approach_affected"] is False
+
+
+def test_approach_critical_gate_rejects_standalone_navaids_and_papi() -> None:
+    valid_from = "2026-07-16T09:00:00+00:00"
+    valid_to = "2026-07-16T15:00:00+00:00"
+    flight = _flight(notams=[
+        _record(
+            "DEP-ILS-NOT-US/26",
+            "WSSS",
+            valid_from,
+            valid_to,
+            text="ILS RWY 20C NOT U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "DEST-ILS-NOT-WITHDRAWN/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="ILS RWY 24L NOT WITHDRAWN",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-PAPI/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="PAPI RWY 25 U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-VOR/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="VOR ABC U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "ALT-PAPI-CONTEXT/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 AVBL. PAPI RWY 25 U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-AVAILABLE/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 AVBL WHILE RWY 25 CLSD",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-CHECK/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY25 FLIGHT CHECK IN PROGRESS, RWY26 CLSD",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-CHECK-NOCOMMA/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS FLIGHT CHECK IN PROGRESS RWY 26 CLSD",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-CALIBRATION/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS CALIBRATION IN PROGRESS RWY 26 CLSD",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-MONITORED/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY25 SIGNAL MONITORED, TWY A CLSD",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "EDTO-NDB/26",
+            "WADD",
+            valid_from,
+            valid_to,
+            text="NDB DEF U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "EDTO-RNP10/26",
+            "WADD",
+            valid_from,
+            valid_to,
+            text="RNP 10 NOT AVBL",
+            category="NAVIGATION",
+        ),
+        _record(
+            "EDTO-ILS-NO-OSC/26",
+            "WADD",
+            valid_from,
+            valid_to,
+            text="ILS RWY25 NOT EXPECTED TO OSCILLATE",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "FUEL-DME/26",
+            "WIMM",
+            valid_from,
+            valid_to,
+            text="DME GHI U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "FUEL-ILS-NOT-US/26",
+            "WIMM",
+            valid_from,
+            valid_to,
+            text="ILS RWY25 NOT U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "FUEL-ILS-NOT-CURRENTLY-US/26",
+            "WIMM",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 NOT CURRENTLY U/S",
+            category="APPROACH PROCEDURE",
+        ),
+    ])
+    flight["edto"]["airports"] = [{
+        "airport": "WADD",
+        "period_start_utc": "2026-07-16T10:30:00+00:00",
+        "period_end_utc": "2026-07-16T11:30:00+00:00",
+    }]
+    flight["fuel_enroute_airports"] = [{
+        "airport": "WIMM",
+        "role": "fuel_enroute_airport",
+    }]
+
+    findings, _ = analyse(flight)
+    by_id = {
+        item["data"]["notam_id"]: item
+        for item in findings
+        if item.get("engine") == "notam"
+    }
+
+    for notam_id in (
+        "DEP-ILS-NOT-US/26",
+        "DEST-ILS-NOT-WITHDRAWN/26",
+        "ALT-PAPI/26",
+        "ALT-PAPI-CONTEXT/26",
+        "ALT-ILS-AVAILABLE/26",
+        "ALT-ILS-CHECK/26",
+        "ALT-ILS-CHECK-NOCOMMA/26",
+        "ALT-ILS-CALIBRATION/26",
+        "ALT-ILS-MONITORED/26",
+        "ALT-VOR/26",
+        "EDTO-NDB/26",
+        "EDTO-RNP10/26",
+        "EDTO-ILS-NO-OSC/26",
+        "FUEL-DME/26",
+        "FUEL-ILS-NOT-US/26",
+        "FUEL-ILS-NOT-CURRENTLY-US/26",
+    ):
+        assert by_id[notam_id]["severity"] == "warning"
+        assert by_id[notam_id]["data"]["approach_affected"] is False
+
+    for notam_id in (
+        "DEP-ILS-NOT-US/26",
+        "DEST-ILS-NOT-WITHDRAWN/26",
+    ):
+        assert by_id[notam_id]["data"]["pertinence_kind"] == (
+            "runway_approach_restriction"
+        )
+        assert "unavailable" not in by_id[notam_id]["summary"].lower()
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "ILS Z RWY 25 U/S",
+        "ILS Y RWY 25 U/S",
+        "RNP Z RWY 25 NOT AVBL",
+        "RNAV (GNSS) Z RWY 25 NOT AVBL",
+        "ILS 'IPH' 109.9 RWY 24 U/S",
+        "ILS RWY 25 FREQ 109.9MHZ U/S",
+        "ILS RWY 25 109.9MHZ U/S",
+        "LOC RWY 25 109.9 MHZ NOT AVBL",
+        "LLZ RWY 25 U/S",
+        "GP 332.6 MHZ RWY 25 U/S",
+        "GLIDE PATH 332.6 MHZ RWY 25 U/S",
+        "GBAS RWY 25 U/S",
+        "ILS RWY 35 GP UNUSABLE SFC-2900FT",
+        "LOC RWY 16 BC UNUSABLE BEYOND 6DEG RIGHT OF COURSE",
+        "ILS RWY 35L UNREL",
+        "ILS RWY25 UNRELIABLE",
+        "ILS RWY25 FREQ 109.9MHZ U/S",
+        "GLIDE PATH RWY25 U/S",
+        "ILS RWY25 UNAVAILABLE FOR TESTING",
+        "NO APCH OR DEPARTURES TO OR FM RWY 09R/27L WILL TAKE PLACE "
+        "WHEN CRANE IS OPR AT FULL HEIGHT",
+        "LPV MINIMA SHALL BE RAISED TO THE RESPECTIVE LNAV/VNAV MINIMA. "
+        "RNP Z RWY 16, REF AIP AUSTRIA, LOWW AD 2 MAP 13-2-3",
+        "NO APCH TO RWY 25 WILL TAKE PLACE WHEN CRANE IS AT FULL HEIGHT "
+        "AND PAPI NOW AVAILABLE",
+        "NO APCH TO RWY 25 WILL TAKE PLACE WHEN CRANE IS AT FULL HEIGHT "
+        "AND TWY A NOW AVAILABLE",
+        "NO APCH TO RWY 25 WILL TAKE PLACE WHEN CRANE IS AT FULL HEIGHT "
+        "AND ILS RWY 07 NOW AVAILABLE",
+        "LPV MINIMA SHALL BE RAISED TO LNAV/VNAV MINIMA AND PAPI NOW AVAILABLE",
+        "ILS RWY 25 U/S AND VOR ABC NOW AVAILABLE",
+        "ILS RWY 25 U/S AND LOC RWY 07 NOW AVAILABLE",
+        "ILS RWY 25 U/S AND GP NOW AVAILABLE",
+        "ILS RWY 25 U/S AND GBAS NOW AVAILABLE",
+        "ILS RWY 25 U/S AND PAPI NOW AVAILABLE",
+        "ILS RWY 25 U/S AND APPROACH LIGHTING NOW AVAILABLE",
+        "ILS RWY 25 U/S AND TAXIWAY LIGHTS NOW AVAILABLE",
+        "ILS RWY 25 U/S AND RUNWAY LIGHTS NOW AVAILABLE",
+        "ILS RWY 25 U/S NOT CANCELLED",
+        "ILS RWY 25 U/S NOT CANCELED",
+        "ILS RWY 25 U/S NOT REVOKED",
+        "ILS RWY 25 U/S NOT RESTORED",
+        "AUTO-COUPLED APCH SHOULD NOT BE FLOWN",
+        "IAC ILS/VOR/RNAV PROCEDURES SUSPENDED",
+        "IAC ILS/VOR/RNAV PROCEDURES WITHDRAWN",
+        "RWY 22L CAT II/III OPS NOT AVBL",
+        "VOR RWY 07 PROC WITHDRAWN",
+        "ILS RWY 04 ON TEST. DO NOT USE.",
+        "ILS/LOC RWY 13 U/S",
+        "ILS/GP RWY 13 U/S",
+        "ILS GP RWY 32L OUT OF SVC",
+        "ILS RWY 25 PROCEDURE NA",
+        "ILS RWY 25 CAT II/III NA",
+        "ILS RWY 25 AVBL, CAT III OPS NOT AVBL",
+        "ILS RWY 25 LOC AVAILABLE GP U/S",
+        "ILS RWY 25 LOCALIZER AVBL, GLIDE PATH U/S",
+        "ILS RWY 25 AVBL EXCEPT CAT II/III OPS NOT AVBL",
+        "CAT III OPS RWY 25 NOT AVBL",
+        "ILS RWY 25 AVAILABLE. CAT III OPS NOT AVAILABLE",
+    ),
+)
+def test_named_instrument_approach_procedure_outages_are_critical(
+    text: str,
+) -> None:
+    assert engines._instrument_approach_affected(
+        text,
+        "APPROACH PROCEDURE",
+    ) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "RNP 10 NOT AVBL",
+        "ILS Z FLIGHT CHECK IN PROGRESS RWY 26 CLSD",
+        "ILS RWY 34R U/S CANCELLED",
+        "ILS RWY 25 U/S CONDITION CANCELLED, NOW OPERATIONAL",
+        "ILS RWY 25 WAS U/S NOW AVAILABLE",
+        "ILS RWY 25 U/S UNTIL 1200Z THEN AVAILABLE",
+        "ILS RWY 25 U/S REVOKED",
+        "ILS RWY 25 U/S RESTORED",
+        "NO APCH TO RWY 25 WILL TAKE PLACE CONDITION CANCELLED",
+        "LPV MINIMA SHALL BE RAISED TO LNAV/VNAV MINIMA CONDITION CANCELLED",
+        "ILS RWY 25 PROCEDURE NOT NA",
+        "ILS RWY 25 ON TEST. DO NOT USE CONDITION CANCELLED.",
+        "AUTO-COUPLED APCH SHOULD NOT BE FLOWN CONDITION CANCELLED",
+        "SID PROCEDURE SUSPENDED",
+        "STAR PROCEDURE WITHDRAWN",
+    ),
+)
+def test_named_procedure_support_preserves_non_approach_boundaries(
+    text: str,
+) -> None:
+    assert engines._instrument_approach_affected(
+        text,
+        "APPROACH PROCEDURE",
+    ) is False
+
+
+def test_authentic_corpus_approach_wording_reaches_machine_contract() -> None:
+    valid_from = "2026-07-16T09:00:00+00:00"
+    valid_to = "2026-07-16T15:00:00+00:00"
+    flight = _flight(notams=[
+        _record(
+            "1F2548/26",
+            "NZCH",
+            valid_from,
+            valid_to,
+            text="AUTO-COUPLED APCH SHOULD NOT BE FLOWN",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1A2888/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="IAC ILS/VOR/RNAV PROCEDURES SUSPENDED",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1A1312/26",
+            "EKCH",
+            valid_from,
+            valid_to,
+            text="RWY 22L CAT II/III OPS NOT AVBL",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1G681/26",
+            "VOMM",
+            valid_from,
+            valid_to,
+            text="VOR RWY 07 PROC WITHDRAWN",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1A399/26",
+            "VCBI",
+            valid_from,
+            valid_to,
+            text="ILS RWY 04 ON TEST. DO NOT USE.",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "CAT-PARTIAL/26",
+            "VOMM",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 AVBL, CAT III OPS NOT AVBL",
+            category="APPROACH PROCEDURE",
+        ),
+    ])
+    flight["destination"] = "NZCH"
+    flight["alternates"] = [
+        {"airport": "EKCH"},
+        {"airport": "VOMM"},
+        {"airport": "VCBI"},
+    ]
+
+    findings, _ = analyse(flight)
+    by_id = {
+        item["data"]["notam_id"]: item
+        for item in findings
+        if item.get("engine") == "notam"
+    }
+
+    for notam_id in (
+        "1F2548/26",
+        "1A2888/26",
+        "1A1312/26",
+        "1G681/26",
+        "1A399/26",
+        "CAT-PARTIAL/26",
+    ):
+        assert by_id[notam_id]["severity"] == "critical"
+        assert by_id[notam_id]["data"]["approach_affected"] is True
+
+
+def test_authentic_sq322_approach_impacts_are_critical_without_losing_condition() -> None:
+    valid_from = "2026-06-01T00:00:00+00:00"
+    valid_to = "2026-11-03T23:59:00+00:00"
+    flight = _flight(notams=[
+        _record(
+            "1A2085/26",
+            "EGLL",
+            valid_from,
+            valid_to,
+            text=(
+                "LIT CRANE OPR AT PSN 512741N 0002747W (HEATHROW). "
+                "MAX HGT 125FT AGL, 203FT AMSL. NO CRANE OPR IN LVP. "
+                "NO APCH OR DEPARTURES TO OR FM RWY 09R/27L WILL TAKE "
+                "PLACE WHEN CRANE IS OPR AT FULL HEIGHT."
+            ),
+            category="OBSTACLE",
+        ),
+        _record(
+            "1A2954/26",
+            "EGCC",
+            valid_from,
+            valid_to,
+            text="ILS RWY 05L U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1A2951/26",
+            "EGCC",
+            valid_from,
+            valid_to,
+            text="ILS RWY 05L OUT OF SERVICE.",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1A1998/26",
+            "LOWW",
+            valid_from,
+            valid_to,
+            text=(
+                "LPV MINIMA SHALL BE RAISED TO THE RESPECTIVE LNAV/VNAV "
+                "MINIMA. RNP RWY 11. RNP RWY 29. RNP Z RWY 16. RNP RWY 34."
+            ),
+            category="APPROACH PROCEDURE",
+        ),
+    ])
+    flight["destination"] = "EGLL"
+    flight["alternates"] = [{"airport": "EGCC"}]
+    flight["fuel_enroute_airports"] = [{
+        "airport": "LOWW",
+        "role": "fuel_enroute_airport",
+    }]
+
+    findings, _ = analyse(flight)
+    by_id = {
+        item["data"]["notam_id"]: item
+        for item in findings
+        if item.get("engine") == "notam"
+    }
+
+    for notam_id in ("1A2085/26", "1A2954/26", "1A2951/26", "1A1998/26"):
+        assert by_id[notam_id]["severity"] == "critical"
+        assert by_id[notam_id]["data"]["approach_affected"] is True
+    assert "only under the exact condition stated in item E" in by_id[
+        "1A2085/26"
+    ]["summary"]
+    assert "manual review required" in by_id["1A2085/26"]["summary"]
+    assert "closed" not in by_id["1A2085/26"]["summary"].lower()
+    assert "LPV minima are raised" in by_id["1A1998/26"]["summary"]
+
+
 def test_notam_subject_outages_are_not_promoted_to_full_surface_closures() -> None:
     valid_from = "2026-07-16T10:00:00+00:00"
     valid_to = "2026-07-16T14:00:00+00:00"
@@ -641,6 +1222,29 @@ def test_unresolved_notam_schedule_is_review_required_not_declared_active() -> N
     assert item["data"]["applicability"] == "review"
     assert "could not be resolved" in item["summary"]
     assert "review required" in item["summary"]
+    assert "closed or unavailable during" not in item["summary"]
+
+
+def test_exact_approach_outage_survives_unresolved_schedule_as_critical_review() -> None:
+    record = _record(
+        "SCHED-ILS/26",
+        "RJBB",
+        "2026-07-01T00:00:00+00:00",
+        "2026-07-31T23:59:00+00:00",
+        text="ILS RWY 24L U/S",
+        category="APPROACH PROCEDURE",
+    )
+    record["schedule"] = "ON REQUEST EXC PUBLISHED PERIODS"
+    record["schedule_review"] = True
+
+    findings, _ = analyse(_flight(notams=[record]))
+    item = next(row for row in findings if row["engine"] == "notam")
+
+    assert item["severity"] == "critical"
+    assert item["data"]["approach_affected"] is True
+    assert item["data"]["applicability"] == "review"
+    assert item["data"]["schedule_status"] == "review_required"
+    assert "could not be resolved" in item["summary"]
     assert "closed or unavailable during" not in item["summary"]
 
 
