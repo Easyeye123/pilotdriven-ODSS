@@ -22,11 +22,12 @@ _NEGATED_UNAVAILABLE_PREFIX = re.compile(
 _RUNWAY_ID = r"(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
 _TAXIWAY_ID = r"(?:TWY|TAXIWAY)\s+[A-Z0-9][A-Z0-9/-]*"
 _APPROACH_SYSTEM = (
-    r"(?:APPROACH|APCH|ILS|LOC|LOCALIZER|GLIDE\s*PATH|GLIDESLOPE|"
+    r"(?:(?:APPROACH|APCH)(?!\s+(?:LGT(?:S)?|LIGHT(?:S|ING)?))|"
+    r"ILS|LOC|LOCALIZER|GLIDE\s*PATH|GLIDESLOPE|"
     r"DME|VOR|NDB|RNP|PAPI|OCA|OCH|MINIMA)"
 )
 _LIGHTING = (
-    r"(?:LGT|LIGHT|LIGHTS|RCLL|RTHL|RTZL|RENL|HIRL|MIRL|LIRL|"
+    r"(?:LGT|LIGHT|LIGHTS|LIGHTING|RCLL|RTHL|RTZL|RENL|HIRL|MIRL|LIRL|"
     r"TKOF\s+HOLD\s+LGT|LEAD\s+(?:ON|OFF)\s+LGT)"
 )
 _PREFIXED_NOTAM_REFERENCE = re.compile(
@@ -77,6 +78,16 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     )
     taxiway = bool(taxiway_match or re.search(r"\b(?:TAXILANE|STOP\s*BAR)\b", upper))
     lighting = bool(re.search(rf"\b{_LIGHTING}\b", upper))
+    lighting_runway = bool(
+        runway
+        or (
+            lighting
+            and re.search(
+                r"\b(?:RWY|RUNWAY)\s*\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?\b",
+                upper,
+            )
+        )
+    )
     obstacle = bool(re.search(r"\b(?:OBST|OBSTACLES?|CRANES?|POLES?)\b", upper))
 
     airport_closure = bool(
@@ -85,11 +96,21 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
             upper,
         )
     )
-    runway_closure = bool(
-        re.search(
-            rf"\b{_RUNWAY_ID}\s+(?:WILL\s+BE\s+|IS\s+)?{_CLOSURE_WORD}\b",
-            upper,
+    direct_runway_closure = re.search(
+        rf"\b{_RUNWAY_ID}\s+(?:WILL\s+BE\s+|IS\s+)?{_CLOSURE_WORD}\b",
+        upper,
+    )
+    runway_is_other_subject_qualifier = bool(
+        direct_runway_closure
+        and re.search(
+            r"\b(?:APCH\s+LGT|APPROACH\s+LIGHTS?|PAPI|SFL|"
+            r"SEQUENCE(?:D)?\s+(?:FLASHING|FLG)\s+(?:LGT|LIGHTS?)|"
+            r"LGT|LIGHTS?)\s+(?:FOR\s+)?$",
+            upper[:direct_runway_closure.start()],
         )
+    )
+    runway_closure = bool(
+        (direct_runway_closure and not runway_is_other_subject_qualifier)
         or re.search(rf"\bCLOSURE\s+OF\s+{_RUNWAY_ID}\b", upper)
     )
     taxiway_closure = bool(
@@ -128,7 +149,14 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
         return 1, "runway_closure"
     if unavailable and taxiway and lighting and primary_taxiway:
         return 6, "taxiway_restriction"
-    if unavailable and runway and lighting:
+    if unavailable and lighting and (
+        lighting_runway
+        or re.search(
+            r"\b(?:(?:APCH|APPROACH)\s+(?:LGT|LIGHT(?:S|ING)?)|"
+            r"SEQUENCE(?:D)?\s+(?:FLASHING|FLG)\s+(?:LGT|LIGHTS?))\b",
+            upper,
+        )
+    ):
         return 3, "runway_lighting_restriction"
     if obstacle:
         return 8, "obstacle"

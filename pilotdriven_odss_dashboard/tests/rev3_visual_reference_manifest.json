@@ -3,8 +3,8 @@
   "gate": "rev3-raster-pixel-equality",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
-    "filename": "SQ214_REV3_reference_v11_CRITICAL_APPROACH_EVIDENCE.pdf",
-    "sha256": "4c679dfeaa6cd6e71f12a40a32966ffc7b3d492d82376cd09ea64b42eef6027a"
+    "filename": "SQ214_REV3_reference_v12_APPROACH_EVIDENCE_CORRECTED.pdf",
+    "sha256": "8bf7b2095a82cbea7e19fb85427fdcecd04566afa5ba9030c2b1b30c94ce42e2"
   },
   "renderer": {
     "library": "PyMuPDF",
@@ -126,7 +126,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "3c143bdbe99bc587f8b280509a3268b293d19b7c8254e5540e1d45390d456f53"
+      "reference_raster_sha256": "82bc3bcf3db39cf4d3f3b7a03ad90ecc27a3dfcf9871894087cec417f122d1c6"
     },
     {
       "page_number": 15,
@@ -134,7 +134,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "e3eba42c80e36779199bc60999ddd77f0da26da2a2f1974514a963cadb9c4f8a"
+      "reference_raster_sha256": "657a45f5a6a1ac4cdfbeae2092eb5579ac4fe1627f88ec491153f97a1bbe8e5b"
     },
     {
       "page_number": 16,
@@ -142,7 +142,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "65636c0cec94ceb267118e7bfbe8bd090f1bc6bc366abf57dfbe2dcb26d8a1af"
+      "reference_raster_sha256": "0ae80ea6d390c46595850ebd6724020a1e1760f48607cd3888a3a371fd41ac2a"
     },
     {
       "page_number": 17,
@@ -150,7 +150,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "0f68cb1f52aff66b2c738583aeae6133d9373988041eef1450d381150890bce4"
+      "reference_raster_sha256": "dfc151c5c3dea4864ed0726bca7d0349e3e7a71b556c2d294a01085002e8cdff"
     },
     {
       "page_number": 18,
@@ -238,7 +238,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "11a4d6eda06ebd1f016673c3be470e8cbc702aee84eb9984d4fde21c0c5bbfb9"
+      "reference_raster_sha256": "070e3dd9d97870fa36385c57816e5658cfc92443f6e07b5b76a0b095960b89d0"
     },
     {
       "page_number": 29,
@@ -254,7 +254,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "8a73a0031851b50e45410d7bc9f506c2fa7b7d637d64303c5de6afe34101d10a"
+      "reference_raster_sha256": "e72719a44dfa0dc042624b809717b900984c292da3a601faaf7f7231548efb21"
     },
     {
       "page_number": 31,
@@ -262,7 +262,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "67d5adb30155532c9c5a8d5ba8927363ab55124b1acbf8eab5981f9cc9cbe892"
+      "reference_raster_sha256": "b07654ac3d0492b7dd27893ec1814304cf64a638ce97afbed4d2b45a9c3eda5f"
     },
     {
       "page_number": 32,
@@ -270,7 +270,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "7857a43e6e5c5a6e5d89a3fa8e53568b39bb3c455f765afac25a455102daabf1"
+      "reference_raster_sha256": "fcb6a20191b55cf43fc4497d5303d985f6d44b4c4d2e0853d397d291772877f8"
     },
     {
       "page_number": 33,
@@ -294,7 +294,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "a815571c214f54bf4a0852439eeb2762867d552739c4dfffec0c935a67a6e7d8"
+      "reference_raster_sha256": "1f3947dca1f4d07ce5ed646c5989464e41dab8452c3275fe3495ab53d290e4ed"
     },
     {
       "page_number": 36,
@@ -352,7 +352,7 @@
   },
   "provenance": {
     "minted_on": "2026-08-31",
-    "approval_basis": "Boss-directed 30 Aug 2026 critical instrument-approach flag requirement; Codex and independent 31 Aug 2026 review of all 41 pages confirmed exact source retention, deterministic pagination, and no clipping, overlap, or blank-page regression.",
+    "approval_basis": "User-approved REV5.1 critical instrument-approach flag requirement; independently reviewed positive-ownership classifier, authentic 1,152-record replay, 284 focused regressions, 1,253-test ODSS suite, and visual inspection of all 41 rendered pages on 2026-08-31.",
     "combined_briefing_schema_version": "2026-08-31-surface-shortening-v32"
   }
 }

@@ -711,6 +711,119 @@ def test_exact_approach_outages_are_critical_for_every_applicable_airport_role()
     assert by_id["ALT-TWY/26"]["data"]["approach_affected"] is False
 
 
+def test_sequence_flashing_light_outage_does_not_close_available_approach_lights() -> None:
+    valid_from = "2026-07-16T09:00:00+00:00"
+    valid_to = "2026-07-16T15:00:00+00:00"
+    flight = _flight(notams=[
+        _record(
+            "SX55/25",
+            "WMKK",
+            valid_from,
+            valid_to,
+            text=(
+                "SX0055/25 AIP SUPPLEMENT WMKK/KUALA LUMPUR/SEPANG INTL "
+                "SEQUENCE FLASHING LIGHT (SFL) RWY 14R VALIDITY: 27NOV25 - "
+                "UFN THIS AIRAC AIP SUP IS TO INFORM ALL CONCERNED OF THE "
+                "UNSERVICEABILITY OF THE SEQUENCE FLG LGT (SFL) FOR RWY 14R. "
+                "APCH LGT FOR RWY 14R AVBL FOR OPR USE."
+            ),
+            category="RUNWAY",
+        )
+    ])
+    flight["alternates"] = [{"airport": "WMKK"}]
+
+    findings, _ = analyse(flight)
+    item = next(
+        row
+        for row in findings
+        if row.get("engine") == "notam" and row["data"]["notam_id"] == "SX55/25"
+    )
+
+    assert item["severity"] == "warning"
+    assert item["data"]["pertinence_kind"] == "runway_lighting_restriction"
+    assert item["data"]["approach_affected"] is False
+    assert "approach/navaid" not in item["summary"].lower()
+    assert "approach lights are reported available" in item["summary"].lower()
+    assert engines._approach_lights_reported_available(
+        "RWY 27 HIGH INTENSITY APCH LGT FOR RWY 27 AVBL FOR OPR USE"
+    )
+
+    negated_availability = engines._notam_operational_summary(
+        (
+            "SEQUENCE FLASHING LIGHT (SFL) RWY 14R U/S. "
+            "APCH LGT FOR RWY 14R NOT CURRENTLY AVBL."
+        ),
+        "runway_lighting_restriction",
+        "destination alternate",
+    )
+    assert "reported available" not in negated_availability.lower()
+
+    competing_subject = engines._notam_operational_summary(
+        (
+            "SEQUENCE FLASHING LIGHT (SFL) RWY 14R U/S. "
+            "APCH LGT FOR RWY 14R STATUS UNKNOWN. PAPI AVBL FOR OPR USE."
+        ),
+        "runway_lighting_restriction",
+        "destination alternate",
+    )
+    assert "reported available" not in competing_subject.lower()
+
+
+@pytest.mark.parametrize(
+    ("notam_id", "text"),
+    (
+        (
+            "SX23/26",
+            "SX0023/26 AIP SUPPLEMENT LGRP/RODOS/DIAGORAS VALIDITY: "
+            "09JUL26 - 23DEC26 FIRST 180M (20PCT) OF APCH LGT RWY 24 U/S.",
+        ),
+        (
+            "SX40/24",
+            "SX0040/24 AIP SUPPLEMENT VTSS/SONGKHLA/HAT YAI VALIDITY: "
+            "15SEP24 1001UTC - UFN UNSERVICEABILITY OF APCH LGT AND "
+            "SEQUENCED FLG LGT 2.1 SALS AND SEQUENCED FLG LGT OF RWY 08 "
+            "WILL BE U/S. 2.2 SALS AND SEQUENCE FLG LGT OF RWY 26 WILL BE U/S.",
+        ),
+        (
+            "1C3691/26",
+            "THREE SEQUENCE FLASHING LGT 32L U/S. APPLY PROC FOR HIGH "
+            "INTST APCH LGT INOPERATIVE (AIP AD 2.22.4)",
+        ),
+        (
+            "1A2927/26",
+            "APPROACH LIGHTING SYSTEM PALS CAT I RWY 11 U/S DUE TO MAINT",
+        ),
+        (
+            "1A76/26",
+            "APPROACH LIGHTING SYSTEM RWY23 CROSS BAR U/S.",
+        ),
+    ),
+)
+def test_approach_lighting_outages_remain_lighting_warnings(
+    notam_id: str,
+    text: str,
+) -> None:
+    flight = _flight(notams=[
+        _record(
+            notam_id,
+            "WIII",
+            "2026-07-16T09:00:00+00:00",
+            "2026-07-16T15:00:00+00:00",
+            text=text,
+            category="RUNWAY",
+        )
+    ])
+
+    findings, _ = analyse(flight)
+    item = next(row for row in findings if row.get("engine") == "notam")
+
+    assert item["severity"] == "warning"
+    assert item["data"]["approach_affected"] is False
+    assert item["data"]["pertinence_kind"] == "runway_lighting_restriction"
+    assert "lighting" in item["summary"].lower()
+    assert "approach/navaid" not in item["summary"].lower()
+
+
 def test_approach_critical_gate_rejects_standalone_navaids_and_papi() -> None:
     valid_from = "2026-07-16T09:00:00+00:00"
     valid_to = "2026-07-16T15:00:00+00:00"
@@ -740,11 +853,43 @@ def test_approach_critical_gate_rejects_standalone_navaids_and_papi() -> None:
             category="APPROACH PROCEDURE",
         ),
         _record(
+            "ALT-PAPI-DIRECTIONAL/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="PAPI RIGHT SIDE RWY 03 U/S",
+            category="RUNWAY",
+        ),
+        _record(
+            "ALT-PAPI-RWY-FIRST/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="RWY 01L PAPI U/S",
+            category="RUNWAY",
+        ),
+        _record(
             "ALT-VOR/26",
             "WIII",
             valid_from,
             valid_to,
             text="VOR ABC U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "ALT-DVOR-DME/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="DVOR/DME PEL U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "ALT-NDB-FREQ/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="NDB GEL/GERALDTON 359KHZ U/S",
             category="NAVAID",
         ),
         _record(
@@ -754,6 +899,22 @@ def test_approach_critical_gate_rejects_standalone_navaids_and_papi() -> None:
             valid_to,
             text="ILS RWY 25 AVBL. PAPI RWY 25 U/S",
             category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-VOR-PAPI-CONTEXT/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="VOR ABC AVBL. PAPI RWY 25 U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "ALT-APCH-LGT/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="APCH LGT FOR RWY 25 NOT AVBL",
+            category="RUNWAY",
         ),
         _record(
             "ALT-ILS-AVAILABLE/26",
@@ -865,13 +1026,19 @@ def test_approach_critical_gate_rejects_standalone_navaids_and_papi() -> None:
         "DEP-ILS-NOT-US/26",
         "DEST-ILS-NOT-WITHDRAWN/26",
         "ALT-PAPI/26",
+        "ALT-PAPI-DIRECTIONAL/26",
+        "ALT-PAPI-RWY-FIRST/26",
         "ALT-PAPI-CONTEXT/26",
+        "ALT-VOR-PAPI-CONTEXT/26",
+        "ALT-APCH-LGT/26",
         "ALT-ILS-AVAILABLE/26",
         "ALT-ILS-CHECK/26",
         "ALT-ILS-CHECK-NOCOMMA/26",
         "ALT-ILS-CALIBRATION/26",
         "ALT-ILS-MONITORED/26",
         "ALT-VOR/26",
+        "ALT-DVOR-DME/26",
+        "ALT-NDB-FREQ/26",
         "EDTO-NDB/26",
         "EDTO-RNP10/26",
         "EDTO-ILS-NO-OSC/26",
@@ -881,6 +1048,34 @@ def test_approach_critical_gate_rejects_standalone_navaids_and_papi() -> None:
     ):
         assert by_id[notam_id]["severity"] == "warning"
         assert by_id[notam_id]["data"]["approach_affected"] is False
+
+    for notam_id, subject in (
+        ("ALT-PAPI/26", "PAPI"),
+        ("ALT-PAPI-DIRECTIONAL/26", "PAPI RIGHT SIDE RWY 03"),
+        ("ALT-PAPI-RWY-FIRST/26", "PAPI RWY 01L"),
+        ("ALT-VOR/26", "VOR"),
+        ("ALT-DVOR-DME/26", "DME"),
+        ("ALT-NDB-FREQ/26", "NDB"),
+    ):
+        assert by_id[notam_id]["data"]["pertinence_kind"] == (
+            "approach_navaid_closure"
+        )
+        assert subject.lower() in by_id[notam_id]["summary"].lower()
+        assert "unavailable" in by_id[notam_id]["summary"].lower()
+
+    for notam_id, available_subject in (
+        ("ALT-PAPI-CONTEXT/26", "ILS"),
+        ("ALT-VOR-PAPI-CONTEXT/26", "VOR"),
+    ):
+        summary = by_id[notam_id]["summary"]
+        assert "PAPI RWY 25 unavailable" in summary
+        assert f"{available_subject} RWY 25 unavailable" not in summary
+        assert f"{available_subject} unavailable" not in summary
+
+    assert by_id["ALT-APCH-LGT/26"]["data"]["pertinence_kind"] == (
+        "runway_lighting_restriction"
+    )
+    assert "closed" not in by_id["ALT-APCH-LGT/26"]["summary"].lower()
 
     for notam_id in (
         "DEP-ILS-NOT-US/26",
@@ -968,6 +1163,161 @@ def test_named_instrument_approach_procedure_outages_are_critical(
 @pytest.mark.parametrize(
     "text",
     (
+        (
+            "IAC ILS-01 ILS Z RWY 03L DATED 10 JAN 2013 SUSPENDED. "
+            "IAC VOR-01 VOR Z RWY 21R DATED 04 APR 2013 SUSPENDED. "
+            "IAC RNAV-01 RNAV (GNSS) RWY 03R DATED 31 DEC 2020 SUSPENDED."
+        ),
+        (
+            "IAC VOR-02 VOR Y RWY 21R DATED 10 JAN 2013 WITHDRAWN. "
+            "IAC ILS-02 ILS Y RWY 03L DATED 18 AUG 2016 WITHDRAWN."
+        ),
+    ),
+)
+def test_numbered_iac_corpus_outages_are_critical(text: str) -> None:
+    valid_from = "2026-07-16T09:00:00+00:00"
+    valid_to = "2026-07-16T15:00:00+00:00"
+    findings, _ = analyse(_flight(notams=[
+        _record(
+            "1A2888/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text=text,
+            category="APPROACH PROCEDURE",
+        )
+    ]))
+    item = next(row for row in findings if row.get("engine") == "notam")
+
+    assert item["severity"] == "critical"
+    assert item["data"]["approach_affected"] is True
+    assert item["data"]["pertinence_kind"] == "approach_navaid_closure"
+    assert "unavailable" in item["summary"].lower()
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        (
+            "IAP SEATTLE-TACOMA INTL, SEATTLE, WA. ILS RWY 34L "
+            "(SA CAT I AND II), AMDT 1F ... PROCEDURE NA. TEMPORARY CRANE."
+        ),
+        (
+            "IAP ILS RWY 02/20 (CAT A,B,C,D) SUSPENDED DUE ILS CAT I "
+            "RWY 02/20 ON TEST. REF AIP RPLC AD CHART 2-35 TO 2-36."
+        ),
+        "ILS/LOC RWY 13 IUPG FREQ 111.3MHZ U/S DUE TO INTERFERENCE FREQUENCY",
+        "LOC RWY 13R IVP 110.300MHZ U/S.",
+        (
+            "CAT (ROMAN)III ILS RWY 11R IDENT IDMR (LOC 111.300MHZ, "
+            "GP 332.300MHZ,DME IDMR CH50X) NOT AVBL DUE EQUIPMENT REPLACEMENT."
+        ),
+        "INSTRUMENT LANDING SYSTEM (ILS) RWY35R ON TEST, DO NOT USE.",
+        (
+            "ILS RWY23 LLZ MA FREQ 110.3MHZ AND GP FREQ 335.0 MHZ "
+            "ON TEST, DO NOT USE."
+        ),
+        (
+            "DAILY 2200-0630 ILS 'IBS' 110.1 RWY19L ON TEST, DO NOT USE "
+            "FALSE INDICATIONS POSSIBLE."
+        ),
+        "NDB GEL/GERALDTON 359KHZ U/S",
+        "DME 'CGN' CH100Y U/S.",
+        "RWY 14 'SD' 110.3MHZ ILS LOC UNUSABLE SOUTH OF THE 17NM ARC",
+        "RWY 14 CH40X ILS DME UNUSABLE SOUTH OF THE 17NM ARC",
+        "ILS UNREL",
+        "LOC NA",
+        "GP DO NOT USE",
+        "VOR UNSERVICEABILITY",
+        "NDB INOPERATIVE",
+        "DME INTERRUPTED",
+        "VOR INTERRUPTION",
+        "NDB OSCILLATION",
+        "DME DEGRADED",
+        "VOR DEGRADATION",
+        "NDB DOWNGRADED",
+        "DME UNRELIABLE",
+        "VOR UNREL",
+        "NDB NA",
+        "DME DO NOT USE",
+        "VOR SHOULD NOT BE FLOWN",
+        (
+            "LOC IGD 109.5 RWY21 SUBJECT TO INTERRUPTION / POSSIBLE SIGNAL "
+            "OSCILLATION DUE CRANE OPERATIONS."
+        ),
+        "ILS/MM RWY 17 FREQ 75MHZ U/S",
+        "OM (ILS 'FSS') RWY34R COMPLETELY WITHDRAWN",
+        "RWY 24 ILS OM 75MHZ OUT OF SERVICE",
+        "I-PHL INNER MARKER OUT OF SERVICE",
+        "ILS RWY09R INNER MARKER OUT OF SERVICE",
+        "INNER MARKER (ILS I-PHL) OUT OF SERVICE",
+        "MIDDLE MARKER RWY25 U/S",
+        "OUTER MARKER RWY25 U/S",
+        "INNER MARKER U/S",
+        "MIDDLE MARKER U/S",
+        "OUTER MARKER U/S",
+        "IAP ILS RWY34L PROCEDURE NA. SID CANCELLED.",
+        "IAP ILS RWY34L PROCEDURE NA, SID CANCELLED.",
+        "IAP ILS RWY25 SUSPENDED, SID CANCELLED.",
+        "IAC ILS/VOR/RNAV PROCEDURES SUSPENDED, SID CANCELLED",
+        "ILS RWY25 ON TEST DO NOT USE, SID CANCELLED",
+        "ILS RWY25 ON TEST DO NOT USE, ATIS CANCELLED",
+        "LPV APCH Z RWY 07L SUSPENDED",
+        "LPV APCH RNP Y RWY 34 IS SUSPENDED",
+        "ILS AND LOC APCH TEMPO SUSPENDED",
+        "DME READINGS ON ILS/LOC RWY 15 FINAL NOT AVBL",
+        "PROC ILS OR LOC RWY 19R TEMPO WITHDRAWN",
+        "IAP ILS RWY25 CAT I AVAILABLE. ILS RWY25 CAT II PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE, S-ILS 25 CAT II NA.",
+        "IAP ILS RWY25 CAT I AVAILABLE, CAT II PROCEDURE NA.",
+        "IAC ILS-01 ILS Z RWY 06 CAT II DATED 08 DEC 2016 WITHDRAWN",
+        "IAC-23 ILS Z CAT I OR LOC Z RWY 21L PROCEDURES ARE SUSPENDED",
+        "ILS RWY 11R CAT II AND III PROCEDURE WITHDRAWN",
+        "PROC ILS RWY 29L CAT II AND III WITHDRAWN",
+        "ILS RWY 27R SPECIAL AUTH CAT II NA",
+        "IAP ILS CAT I RWY 27 THE G.P INOPERATIVE",
+        "LOC IGD 109.5 RWY 21 SUBJ TO INTRP",
+        "ILS FOR RWY 31L OUT OF SERVICE DUE TO MAINT",
+        "LOC FOR RWY 31R OUT OF SERVICE DUE TO MAINT",
+        (
+            "IAP JOHN F KENNEDY INTL, NEW YORK, NY. ILS OR LOC RWY 22R, "
+            "AMDT 3. PROCEDURE NA EXCEPT FOR ACFT EQUIPPED WITH SUITABLE "
+            "RNAV SYSTEM WITH GPS. JFK VOR/DME OUT OF SERVICE."
+        ),
+    ),
+)
+def test_authentic_published_approach_outage_syntaxes_are_critical(
+    text: str,
+) -> None:
+    assert engines._instrument_approach_affected(
+        text,
+        "APPROACH PROCEDURE",
+    ) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        (
+            "LAS IAP HARRY REID INTL, LAS VEGAS, NV. VOR/DME-A, ORIG-E... "
+            "PROCEDURE NA."
+        ),
+        (
+            "PHL IAP PHILADELPHIA INTL, PHILADELPHIA, PA. ILS Z RWY 9R, "
+            "AMDT 1. S-ILS 9R CAT II NA EXCEPT FOR AIRCRAFT EQUIPPED "
+            "WITH RADIO ALTIMETER."
+        ),
+    ),
+)
+def test_exact_faa_iap_unavailability_is_text_authoritative_across_categories(
+    text: str,
+) -> None:
+    assert engines._instrument_approach_affected(text, "RUNWAY") is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
         "RNP 10 NOT AVBL",
         "ILS Z FLIGHT CHECK IN PROGRESS RWY 26 CLSD",
         "ILS RWY 34R U/S CANCELLED",
@@ -983,6 +1333,64 @@ def test_named_instrument_approach_procedure_outages_are_critical(
         "AUTO-COUPLED APCH SHOULD NOT BE FLOWN CONDITION CANCELLED",
         "SID PROCEDURE SUSPENDED",
         "STAR PROCEDURE WITHDRAWN",
+        "IAP ILS RWY 25 PROCEDURE AVAILABLE. SID PROCEDURE SUSPENDED.",
+        "IAP ILS RWY 25 PROCEDURE AVAILABLE. STAR PROCEDURE WITHDRAWN.",
+        "IAP ILS RWY 25 PROCEDURE AVAILABLE. RUNWAY 25 SUSPENDED.",
+        "IAP ILS RWY34L PROCEDURE NA CONDITION CANCELLED.",
+        "IAP ILS RWY34L PROCEDURE NA. NOTICE CANCELLED.",
+        "IAC ILS RWY25 AVAILABLE, SID PROCEDURE SUSPENDED",
+        "IAC ILS RWY25 AVAILABLE, STAR PROCEDURE WITHDRAWN",
+        "IAC ILS RWY25 NOT SUSPENDED",
+        "IAC ILS RWY25 SUSPENDED CONDITION CANCELLED",
+        "IAC ILS RWY25 SUSPENDED, NOW AVAILABLE",
+        "ILS RWY 25 STATUS UNKNOWN, PAPI ON TEST DO NOT USE",
+        "ILS RWY 25 STATUS UNKNOWN, RWY EDGE LIGHTS ON TEST DO NOT USE",
+        "ILS RWY 25 (PAPI U/S) AVAILABLE",
+        "ILS RWY 25 (RWY EDGE LIGHTS U/S) AVAILABLE",
+        "ILS RWY 25 (TEMPORARY CRANE U/S) AVAILABLE",
+        "ILS RWY25 (PAPI) U/S",
+        "ILS RWY 25 LIGHTS FREQ 100 U/S",
+        "ILS RWY 25 CRANE 123 U/S",
+        "TWY IM U/S",
+        "TWY MM U/S",
+        "TWY OM U/S",
+        "TAXIWAY IM CLOSED",
+        "STAND IM U/S",
+        "APRON IM U/S",
+        "TWY A MIDDLE MARKER RWY25 U/S",
+        "STAND INNER MARKER (ILS I-PHL) OUT OF SERVICE",
+        "ILS RWY25 STATUS UNKNOWN, TAXIWAY A STOP BAR ON TEST DO NOT USE",
+        "ILS RWY25 STATUS UNKNOWN, ATIS ON TEST DO NOT USE",
+        "ILS RWY25 STATUS UNKNOWN, RVR EQUIPMENT ON TEST DO NOT USE",
+        "IAP ILS RWY25 AVAILABLE. DEPARTURE PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. DP KENNEDY FIVE DEPARTURE PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. TAXI PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. RUNWAY PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. PAPI PROCEDURE NA.",
+        "IAP ILS RWY25 STATUS UNKNOWN, DEPARTURE PROCEDURE SUSPENDED",
+        "IAP ILS RWY25 STATUS UNKNOWN, NOISE ABATEMENT PROCEDURE WITHDRAWN",
+        "ILS RWY25 SFL U/S",
+        "ILS RWY25 SALS U/S",
+        "ILS RWY25 MALSR U/S",
+        "ILS RWY25 PALS U/S",
+        "ILS RWY25 SSALR U/S",
+        "ILS RWY25 REIL U/S",
+        "ILS RWY25 TDZL U/S",
+        "ILS RWY25 RCLL U/S",
+        "ILS RWY25 RTIL U/S",
+        "ILS RWY25 TWR 118.1 U/S",
+        "ILS RWY25 ATIS 126.0 U/S",
+        "ILS RWY25 RVR 100 U/S",
+        "ILS SFL RWY25 U/S",
+        "ILS MALSR RWY25 U/S",
+        "ILS PALS RWY25 U/S",
+        "ILS ATIS ON TEST DO NOT USE",
+        "ILS RVR ON TEST DO NOT USE",
+        "ILS TWR ON TEST DO NOT USE",
+        "IAP ILS RWY25 AVAILABLE. DEPARTURE: PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. DEPARTURE CHART PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. ATIS PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. RVR PROCEDURE NA.",
     ),
 )
 def test_named_procedure_support_preserves_non_approach_boundaries(

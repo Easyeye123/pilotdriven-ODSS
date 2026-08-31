@@ -15,14 +15,22 @@ authority for the current reference — this section is prose and has gone
 stale before (30 Aug: a deploy was attempted against v9 while the manifest
 pinned v10).
 
-`SQ214_REV3_reference_v11_CRITICAL_APPROACH_EVIDENCE.pdf`
-(`4c679dfe…6027a`) — the SQ214-PER-SIN-19AUG corpus render under
+`SQ214_REV3_reference_v12_APPROACH_EVIDENCE_CORRECTED.pdf`
+(`8bf7b209…42e2`) — the SQ214-PER-SIN-19AUG corpus render under
 `COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-31-surface-shortening-v32"`,
-minted on 31 Aug 2026. Relative to v10, pages 13–17 and 30–35 add exact
-critical-approach status rows and deterministic operational-priority ordering;
-the other 30 pages are pixel-identical to v10. All 41 pages were inspected as
-a contact sheet, and every changed page was inspected at full size with no
+minted on 31 Aug 2026. It applies the independently reviewed positive-ownership
+instrument-approach classifier: exact IAP/IAC, ILS/LOC/GP/DME, marker and
+partial-category outages are critical, while approach-lighting-only notices do
+not borrow an ILS outage. The 1,152-record replay produced only the three
+intended lighting demotions. All 41 pages were inspected as a contact sheet,
+with the changed airport-detail pages inspected at full size; there is no
 clipping, overlap, blank-page, footer or source-retention regression.
+
+Superseded without deployment:
+`SQ214_REV3_reference_v11_CRITICAL_APPROACH_EVIDENCE.pdf`
+(`4c679dfe…6027a`) — an intermediate candidate that incorrectly promoted the
+WMKK sequence-flashing-light notice despite its explicit statement that the
+approach lights remained available.
 
 Superseded: `SQ214_REV3_reference_v10_VAA_SOURCE_SEPARATION.pdf`
 (`1521203d…b57f`) — the render under

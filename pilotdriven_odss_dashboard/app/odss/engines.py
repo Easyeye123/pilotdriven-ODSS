@@ -45,6 +45,7 @@ _INSTRUMENT_APPROACH_ADVERSE = re.compile(
     r"\b(?:U/S|UNSERVICEAB(?:LE|ILITY)|NOT\s+(?:AVBL|AVAILABLE|"
     r"AUTHORI[ZS]ED|MONITORED)|CLSD|CLOSED|SUSPENDED|INOP(?:ERATIVE)?|"
     r"OUT\s+OF\s+(?:SERVICE|SVC)|UNRELIABLE|INTERRUPT(?:S|ED|ING|ION|IONS)?|"
+    r"INTRP|"
     r"OSCILLAT(?:E|ES|ED|ING|ION|IONS)|DEGRAD(?:ED|ATION)|DOWNGRADED|"
     r"NOT\s+OPERATIONAL|WITHDRAWN|UNUSABLE|UNAVAILABLE|UNREL|NA|"
     r"DO\s+NOT\s+USE|SHOULD\s+NOT\s+BE\s+FLOWN)\b"
@@ -64,31 +65,75 @@ _APPROACH_EQUIPMENT_COMPONENT = (
     r"GLIDEPATH|GLIDESLOPE|GLS|GBAS)"
 )
 _APPROACH_EQUIPMENT_NAME = (
-    rf"{_APPROACH_EQUIPMENT_COMPONENT}"
-    rf"(?:\s*(?:/|\s)\s*{_APPROACH_EQUIPMENT_COMPONENT})*"
+    rf"(?:{_APPROACH_EQUIPMENT_COMPONENT}"
+    rf"(?:\s*(?:/|\s)\s*{_APPROACH_EQUIPMENT_COMPONENT})*|"
+    r"(?:ILS|LOC(?:ALIZER|ALISER)?|LLZ)\s*(?:/|\s)\s*DME)"
 )
 _APPROACH_EQUIPMENT_IDENT = (
     r"(?:['\"][A-Z]{2,5}['\"]|"
-    r"(?!RWY\s*\d|RUNWAY\s*\d|CAT\b|FREQ\b|FREQUENCY\b|BC\b|GP\b)"
-    r"[A-Z]{2,5})"
+    rf"(?!{_INSTRUMENT_APPROACH_ADVERSE.pattern})"
+    rf"(?!{_INSTRUMENT_APPROACH_AVAILABLE.pattern})"
+    r"(?!RWY\s*\d|RUNWAY\s*\d|CAT\b|FREQ\b|FREQUENCY\b|BC\b|"
+    r"ILS\b|LOC(?:ALIZER|ALISER)?\b|LLZ\b|GP\b|GLIDE\b|GLS\b|GBAS\b|"
+    r"DME\b|VOR\b|NDB\b|RNAV\b|RNP\b|PAPI\b|"
+    r"IM\b|MM\b|OM\b|"
+    r"LGT(?:S)?\b|LIGHT(?:S|ING)?\b|CRANES?\b|OBST(?:ACLES?)?\b)"
+    r"(?!NOT\b)"
+    r"[A-Z]{2,5}\b)"
+)
+_APPROACH_PREFIX_IDENT = (
+    r"(?:['\"][A-Z]{2,5}['\"]|"
+    r"I[A-Z]{2,4}(?=\s+(?:FREQ(?:UENCY)?\b|\d|RWY\b|RUNWAY\b|CAT\b))|"
+    r"[A-Z]{2}(?=\s+(?:FREQ(?:UENCY)?\b|\d)))"
 )
 _APPROACH_FREQUENCY = (
-    r"(?:(?:FREQ(?:UENCY)?\s*)?\d{2,3}(?:\.\d{1,3})?\s*(?:MHZ)?)"
+    r"(?:(?:FREQ(?:UENCY)?\s*)?\d{2,3}(?:\.\d{1,3})?(?:\s*MHZ)?)"
+)
+_APPROACH_TECHNICAL_DETAIL = (
+    rf"(?:LOC(?:ALIZER|ALISER)?|LLZ|GP|GLIDE\s*(?:PATH|SLOPE)|DME)"
+    rf"(?:\s+(?:IDENT\s+)?{_APPROACH_EQUIPMENT_IDENT})?"
+    rf"(?:\s+{_APPROACH_FREQUENCY})?"
+    r"(?:\s+CH\d{1,3}[XY]?)?"
+)
+_APPROACH_TECHNICAL_COMPOSITION = (
+    rf"\(\s*{_APPROACH_TECHNICAL_DETAIL}"
+    rf"(?:\s*,\s*{_APPROACH_TECHNICAL_DETAIL}){{1,4}}\s*\)"
+)
+_INSTRUMENT_APPROACH_MARKER = re.compile(
+    rf"\b(?:"
+    rf"ILS(?:\s+{_APPROACH_RUNWAY_REFERENCE})?\s*(?:/|\s)\s*"
+    rf"(?:IM|MM|OM)(?:\s+{_APPROACH_RUNWAY_REFERENCE})?|"
+    rf"(?:IM|MM|OM)\s*\(\s*ILS"
+    rf"(?:\s+{_APPROACH_EQUIPMENT_IDENT})?\s*\)"
+    rf"(?:\s+{_APPROACH_RUNWAY_REFERENCE})?|"
+    rf"I-[A-Z]{{2,5}}\s+(?:INNER|MIDDLE|OUTER)\s+MARKER|"
+    rf"ILS(?:\s+{_APPROACH_RUNWAY_REFERENCE})?\s+"
+    rf"(?:INNER|MIDDLE|OUTER)\s+MARKER|"
+    rf"(?:INNER|MIDDLE|OUTER)\s+MARKER\s*\(\s*ILS"
+    rf"(?:\s+I-[A-Z]{{2,5}})?\s*\)(?:\s+{_APPROACH_RUNWAY_REFERENCE})?|"
+    rf"(?:INNER|MIDDLE|OUTER)\s+MARKER"
+    rf"(?:\s+{_APPROACH_RUNWAY_REFERENCE})?"
+    rf")(?=\s|$)(?:\s+{_APPROACH_FREQUENCY})?"
 )
 _DIRECT_INSTRUMENT_APPROACH_EQUIPMENT = re.compile(
-    rf"\b{_APPROACH_EQUIPMENT_NAME}\b"
-    rf"(?:\s+{_APPROACH_EQUIPMENT_IDENT})?"
+    rf"\b{_APPROACH_EQUIPMENT_NAME}"
+    r"(?![A-Z0-9])"
+    rf"(?:\s+{_APPROACH_PREFIX_IDENT})?"
     rf"(?:\s+{_APPROACH_FREQUENCY})?"
     r"(?:\s+[XYZ])?"
     rf"(?:\s+{_APPROACH_CATEGORY_QUALIFIER})?"
-    rf"(?:\s+{_APPROACH_RUNWAY_REFERENCE}"
+    rf"(?:\s+(?:FOR\s+)?{_APPROACH_RUNWAY_REFERENCE}"
     rf"(?:\s*(?:AND|/)\s*{_APPROACH_RUNWAY_REFERENCE})?)?"
     rf"(?:\s+{_APPROACH_CATEGORY_QUALIFIER})?"
     rf"(?:\s+{_APPROACH_FREQUENCY})?"
+    rf"(?:\s+(?:IDENT\s+{_APPROACH_EQUIPMENT_IDENT}|I[A-Z]{{2,4}})"
+    r"(?=\s+(?:FREQ(?:UENCY)?\b|\d|\()))?"
+    rf"(?:\s+{_APPROACH_FREQUENCY})?"
+    rf"(?:\s*{_APPROACH_TECHNICAL_COMPOSITION})?"
     r"(?:\s+(?:GP|BC))?"
 )
 _EXPLICIT_INSTRUMENT_APPROACH_PROCEDURE = re.compile(
-    r"\b(?:APCH|APPROACH|IAP)\b"
+    r"\b(?:APCH|APPROACH)(?!\s+(?:LGT(?:S)?|LIGHT(?:S|ING)?))\b|\bIAP\b"
 )
 _RNAV_INSTRUMENT_APPROACH_PROCEDURE = re.compile(
     r"(?:\b(?:RNAV|RNP)(?:\s*\([A-Z0-9 ]+\))?(?:\s+AR)?\s+"
@@ -101,6 +146,64 @@ _NAMED_INSTRUMENT_APPROACH_PROCEDURE = re.compile(
     r"(?:ILS|LOC|VOR|NDB|RNAV|RNP)\s+"
     rf"{_APPROACH_RUNWAY_REFERENCE}\s+PROC(?:EDURE)?S?)\b"
 )
+_NUMBERED_IAC_APPROACH_PROCEDURE = re.compile(
+    rf"\bIAC\s+[A-Z0-9-]+\s+(?:ILS|LOC|VOR|NDB|RNAV|RNP)"
+    r"(?:\s*\([A-Z0-9 ]+\))?(?:\s+[WXYZ])?\s+"
+    rf"{_APPROACH_RUNWAY_REFERENCE}"
+    rf"(?:\s+{_APPROACH_CATEGORY_QUALIFIER})?"
+    r"(?:\s+DATED\s+\d{2}\s+[A-Z]{3}\s+\d{4})?\b"
+)
+_IAC_APPROACH_PROCEDURE_LIST = re.compile(
+    r"\bIAC(?:-[A-Z0-9]+)?\b"
+    r"(?:(?!\b(?:SID|STAR)\b).){0,600}"
+    r"\b(?:ILS|LOC|VOR|NDB|RNAV|RNP)\b"
+    r"(?:(?!\b(?:SID|STAR)\b).){0,600}\bPROCEDURES?\b"
+)
+_LPV_APPROACH_PROCEDURE = re.compile(
+    rf"\bLPV\s+APCH(?:\s+RNP)?(?:\s+[XYZ])?\s+"
+    rf"{_APPROACH_RUNWAY_REFERENCE}\b"
+)
+_ILS_LOC_APPROACH_PROCEDURE = re.compile(
+    rf"\b(?:ILS\s+(?:AND|OR)\s+LOC|LOC\s+(?:AND|OR)\s+ILS)\s+"
+    rf"APCH(?:\s+{_APPROACH_RUNWAY_REFERENCE})?(?:\s+TEMPO(?:RARY)?)?\b"
+)
+_PUBLISHED_ILS_LOC_PROCEDURE = re.compile(
+    rf"\bPROC(?:EDURE)?\s+(?:ILS\s+(?:AND|OR)\s+LOC|"
+    rf"LOC\s+(?:AND|OR)\s+ILS)\s+{_APPROACH_RUNWAY_REFERENCE}"
+    rf"(?:\s+TEMPO(?:RARY)?)?\b"
+)
+_ILS_FINAL_DME_READING = re.compile(
+    rf"\b(?:[A-Z]{{2,5}}\s+)?DME\s+READINGS?\s+ON\s+"
+    rf"(?:ILS/LOC|LOC/ILS)\s+{_APPROACH_RUNWAY_REFERENCE}\s+FINAL\b"
+)
+_ILS_CATEGORY_PROCEDURE = re.compile(
+    rf"\b(?:PROC(?:EDURE)?\s+)?ILS\s+{_APPROACH_RUNWAY_REFERENCE}\s+"
+    r"CAT\s+(?:I{1,3}|[123])(?:\s+AND\s+(?:I{1,3}|[123]))?"
+    r"(?:\s+PROC(?:EDURE)?)?\b"
+)
+_ILS_SPECIAL_AUTH_CATEGORY = re.compile(
+    rf"\bILS\s+{_APPROACH_RUNWAY_REFERENCE}\s+SPECIAL\s+AUTH\s+"
+    rf"{_APPROACH_CATEGORY_QUALIFIER}\b"
+)
+_IAP_COMPETING_PROCEDURE = (
+    r"(?:(?:SID|STAR|DP|DEPARTURE|ARRIVAL|TAKEOFF|TAXI|RUNWAY|PAPI|"
+    r"ATIS|RVR|NOISE(?:\s+ABATEMENT)?)(?:\s+[A-Z0-9-]+){0,5}"
+    r"\s*[:,-]?\s+PROC(?:EDURE)?S?)"
+)
+_IAP_PUBLICATION_ADVERSE = re.compile(
+    rf"\bIAP\b(?:(?!\b{_IAP_COMPETING_PROCEDURE}\b).){{0,650}}"
+    r"\b(?:ILS|LOC|VOR|NDB|RNAV|RNP)\b"
+    rf"(?:(?!\b{_IAP_COMPETING_PROCEDURE}\b).){{0,650}}"
+    r"\b(?:PROCEDURE\s+NA|"
+    r"S-(?:ILS|LOC)\s+(?:RWY\s*)?\d{1,2}[LCR]?\s+CAT\s+"
+    r"(?:I{1,3}|[123])(?:\s+AND\s+(?:I{1,3}|[123]))?\s+NA)\b"
+)
+_IAP_CLAUSE_SUSPENSION = re.compile(
+    rf"\bIAP\b(?:(?!\b{_IAP_COMPETING_PROCEDURE}\b).){{0,500}}"
+    r"\b(?:ILS|LOC|VOR|NDB|RNAV|RNP)\b"
+    rf"(?:(?!\b{_IAP_COMPETING_PROCEDURE}\b).){{0,350}}"
+    r"(?<!NOT\s)\b(?:SUSPENDED|WITHDRAWN)\b"
+)
 _CATEGORY_APPROACH_OPERATIONS = re.compile(
     rf"\b(?:{_APPROACH_RUNWAY_REFERENCE}\s+"
     rf"{_APPROACH_CATEGORY_QUALIFIER}\s+(?:OPS|OPERATIONS)|"
@@ -108,19 +211,35 @@ _CATEGORY_APPROACH_OPERATIONS = re.compile(
     rf"{_APPROACH_RUNWAY_REFERENCE}|"
     rf"{_APPROACH_CATEGORY_QUALIFIER}\s+(?:OPS|OPERATIONS))\b"
 )
-_CONVENTIONAL_APPROACH_NAVAID = re.compile(r"\b(?:VOR|NDB|DME)\b")
+_CONVENTIONAL_APPROACH_NAVAID = re.compile(
+    r"\b(?:VOR(?:/DME)?|NDB|DME)\b"
+    rf"(?:\s+{_APPROACH_RUNWAY_REFERENCE}|"
+    rf"\s+(?!(?:RWY|RUNWAY|NOT)\b)"
+    rf"(?!{_INSTRUMENT_APPROACH_ADVERSE.pattern})"
+    rf"(?!{_INSTRUMENT_APPROACH_AVAILABLE.pattern})"
+    r"(?:['\"][A-Z]{2,12}(?:/[A-Z]{2,12})?['\"]|"
+    r"[A-Z]{2,12}(?:/[A-Z]{2,12})?\b))?"
+    r"(?:\s+(?:\d{2,4}(?:\.\d{1,3})?\s*(?:KHZ|MHZ)|CH\d{1,3}[XY]?))?"
+)
 _APPROACH_PROCEDURE_CATEGORY = re.compile(
     r"(?:\b(?:APPROACH|APCH)\s+PROCEDURE\b|\bIAP\b)"
 )
 _PAPI = re.compile(r"\bPAPI\b")
+_PAPI_OPERATIONAL_SUBJECT = re.compile(
+    rf"\bPAPI(?:\s+(?:LEFT|RIGHT)\s+SIDE)?"
+    rf"(?:\s+{_APPROACH_RUNWAY_REFERENCE})?\b"
+)
+_APPROACH_LIGHT_AVAILABLE = re.compile(r"\b(?:AVBL|AVAILABLE)\b")
 _APPROACH_RESTORATION_OTHER_SUBJECT = re.compile(
-    r"\b(?:PAPI|(?:TWY|TAXIWAY)(?:\s+[A-Z0-9-]+)?|"
+    r"\b(?:PAPI|(?:APCH|APPROACH)\s+(?:LGT(?:S)?|LIGHT(?:S|ING)?)|"
+    r"(?:TWY|TAXIWAY)(?:\s+[A-Z0-9-]+)?|"
     r"(?:RWY|RUNWAY)(?:\s*\d{1,2}[LCR]?)?"
     r"(?:\s+LIGHT(?:S|ING)?)?)\b"
 )
 _APPROACH_BINDING_TOKEN = re.compile(r"[A-Z0-9]+(?:/[A-Z0-9]+)?")
 _APPROACH_BINDING_SURFACE_SUBJECT = re.compile(
-    r"\b(?:TWY|TAXIWAY|APRON|STAND|PAPI)\b"
+    r"\b(?:TWY|TAXIWAY|APRON|STAND|PAPI|LGT(?:S)?|LIGHT(?:S|ING)?|"
+    r"CRANES?|OBST(?:ACLES?)?)\b"
 )
 _RNAV_OR_RNP = re.compile(r"\b(?:RNAV|RNP)\b")
 _APPROACH_NON_ADVERSE_ACTIVITY = re.compile(
@@ -132,6 +251,11 @@ _APPROACH_RESTORATION = re.compile(
     r"\b(?:NOW|THEN)\s+(?:AVBL|AVAILABLE|OPERATIONAL|SERVICEABLE)\b|"
     r"\b(?:RESTORED|RETURNED)\s+TO\s+SERVICE\b"
 )
+_APPROACH_RESTORATION_CONNECTOR = re.compile(
+    r"^\s*[,.;:\-]?\s*(?:(?:THIS\s+)?(?:CONDITION|NOTICE|NOTAM)"
+    r"(?:\s+(?:IS|HEREBY))?|(?:HAS|HAVE)\s+BEEN|"
+    r"UNTIL\s+\d{4}(?:UTC|Z)?)?\s*[,.;:\-]?\s*$"
+)
 _NEGATED_RESTORATION_PREFIX = re.compile(
     r"\bNOT(?:\s+(?:YET|CURRENTLY))?\s*$"
 )
@@ -142,16 +266,17 @@ _NO_APPROACH_OPERATIONS = re.compile(
 _APPROACH_MINIMA_RAISED = re.compile(
     r"\b(?:LPV|LNAV(?:/VNAV)?|RNP|RNAV)\s+MINIMA\s+"
     r"(?:SHALL\s+BE\s+)?(?:RAISED|INCREASED)\b"
+    r"(?:\s+TO\s+(?:LPV|LNAV(?:/VNAV)?|RNP|RNAV)\s+MINIMA)?"
 )
 _FORWARD_APPROACH_STATE_BINDING = re.compile(
-    rf"^\s*(?:['\"]?(?:[A-Z]{{2,5}}|[XYZ])['\"]?\s+)?"
-    rf"(?:{_APPROACH_CATEGORY_QUALIFIER}\s+)?"
+    rf"^\s*(?:{_APPROACH_CATEGORY_QUALIFIER}\s+)?"
     rf"(?:{_APPROACH_RUNWAY_REFERENCE}"
     rf"(?:\s*(?:AND|/)\s*{_APPROACH_RUNWAY_REFERENCE})?\s*)?"
     rf"(?:{_APPROACH_CATEGORY_QUALIFIER}\s*)?"
     r"(?:(?:PROC(?:EDURE)?S?|OPS|OPERATIONS)\s*)?"
+    r"(?:COMPLETELY\s+)?"
     r"(?:(?:IS|ARE|MAY|WILL|CAN)(?:\s+BE)?|"
-    r"HAS\s+BEEN|HAVE\s+BEEN)?\s*[,/:\-]?\s*$"
+    r"HAS\s+BEEN|HAVE\s+BEEN|SUBJ(?:ECT)?\s+TO)?\s*[,/:\-]?\s*$"
 )
 _REVERSE_APPROACH_STATE_BINDING = re.compile(
     r"^\s*(?:(?:OF|IN|FOR|AFFECTING)\s*)?$"
@@ -854,7 +979,7 @@ def _associated_taxiway_subject(upper: str) -> str | None:
 
 def _notam_subject(text: str, kind: str) -> str:
     upper = " ".join(text.upper().split())
-    runway_pattern = r"(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
+    runway_pattern = r"(?:RWY|RUNWAY)\s*\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
     taxiway_pattern = r"(?:TWY|TAXIWAY)\s+[A-Z0-9][A-Z0-9/-]*"
     closure_pattern = r"(?:CLSD|CLOSED|NOT\s+AVBL|NOT\s+AVAILABLE|SUSPENDED)"
     if kind == "runway_closure":
@@ -870,6 +995,9 @@ def _notam_subject(text: str, kind: str) -> str:
         match = re.search(rf"\b{runway_pattern}\b", upper)
         return match.group(0).replace("RUNWAY", "RWY") if match else "runway"
     if kind == "approach_navaid_closure":
+        bound_subject = _bound_unavailable_approach_subject(upper)
+        if bound_subject:
+            return bound_subject
         system = re.search(
             r"\b(?:ILS|LOC|LOCALIZER|GLIDE\s*PATH|GLIDESLOPE|DME|VOR|NDB|RNP|PAPI)\b",
             upper,
@@ -955,6 +1083,27 @@ def _notam_subject(text: str, kind: str) -> str:
     return ""
 
 
+def _approach_lights_reported_available(text: str) -> bool:
+    """Accept only a same-clause, directly bound approach-light state."""
+
+    normalized = " ".join(text.upper().split())
+    for clause in re.split(r"(?:\.(?=\s|$)|;|\r?\n)+", normalized):
+        subject = re.search(r"\b(?:APCH|APPROACH)\s+(?:LGT|LIGHTS?)\b", clause)
+        if subject is None:
+            continue
+        for available in _APPROACH_LIGHT_AVAILABLE.finditer(
+            clause,
+            subject.end(),
+        ):
+            between = clause[subject.end():available.start()]
+            if re.fullmatch(
+                r"\s*(?:FOR\s+)?(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?\s*",
+                between,
+            ):
+                return True
+    return False
+
+
 def _notam_operational_summary(
     text: str,
     kind: str,
@@ -1007,6 +1156,17 @@ def _notam_operational_summary(
     if kind == "runway_approach_restriction":
         return f"{subject.title()} restriction applies during the applicable {phase} window."
     if kind == "runway_lighting_restriction":
+        sequence_flashing_lights = re.search(
+            r"\bSEQUENCE(?:D)?\s+(?:FLASHING|FLG)\s+(?:LGT|LIGHTS?)\b",
+            upper,
+        )
+        approach_lights_available = _approach_lights_reported_available(upper)
+        if sequence_flashing_lights and approach_lights_available:
+            return (
+                f"Sequence flashing lights for {subject.upper()} are unserviceable; "
+                "approach lights are reported available by this notice during the "
+                f"applicable {phase} window."
+            )
         return f"Lighting affecting {subject.upper()} is unavailable during the applicable {phase} window."
     if kind == "taxiway_closure":
         return f"{subject.upper()} closed during the applicable {phase} window."
@@ -1055,33 +1215,19 @@ def _adverse_is_restored_before_another_subject(
 ) -> bool:
     """Bind a restoration to the adverse subject immediately before it."""
 
-    restoration = next(
-        (
-            match
-            for match in _APPROACH_RESTORATION.finditer(
-                clause,
-                adverse.end(),
-            )
-            if not _NEGATED_RESTORATION_PREFIX.search(
-                clause[:match.start()]
-            )
-        ),
-        None,
-    )
-    if restoration is None:
-        return False
-    next_subject_starts = [
-        match.start()
-        for pattern in (
-            _DIRECT_INSTRUMENT_APPROACH_EQUIPMENT,
-            _CONVENTIONAL_APPROACH_NAVAID,
-            _EXPLICIT_INSTRUMENT_APPROACH_PROCEDURE,
-            _RNAV_INSTRUMENT_APPROACH_PROCEDURE,
-            _APPROACH_RESTORATION_OTHER_SUBJECT,
-        )
-        for match in pattern.finditer(clause, adverse.end())
-    ]
-    return not next_subject_starts or restoration.start() < min(next_subject_starts)
+    for restoration in _APPROACH_RESTORATION.finditer(
+        clause,
+        adverse.end(),
+    ):
+        if _NEGATED_RESTORATION_PREFIX.search(
+            clause[:restoration.start()]
+        ):
+            continue
+        if _APPROACH_RESTORATION_CONNECTOR.fullmatch(
+            clause[adverse.end():restoration.start()]
+        ):
+            return True
+    return False
 
 
 def _special_approach_state_is_restored(
@@ -1090,13 +1236,6 @@ def _special_approach_state_is_restored(
 ) -> bool:
     """Bind a cancellation/restoration to one prohibition or minima rule."""
 
-    other_subject_patterns = (
-        _DIRECT_INSTRUMENT_APPROACH_EQUIPMENT,
-        _CONVENTIONAL_APPROACH_NAVAID,
-        _EXPLICIT_INSTRUMENT_APPROACH_PROCEDURE,
-        _RNAV_INSTRUMENT_APPROACH_PROCEDURE,
-        _APPROACH_RESTORATION_OTHER_SUBJECT,
-    )
     for restoration in _APPROACH_RESTORATION.finditer(
         clause,
         subject.end(),
@@ -1106,9 +1245,8 @@ def _special_approach_state_is_restored(
         ):
             continue
         between = clause[subject.end():restoration.start()]
-        if any(pattern.search(between) for pattern in other_subject_patterns):
-            continue
-        return True
+        if _APPROACH_RESTORATION_CONNECTOR.fullmatch(between):
+            return True
     return False
 
 
@@ -1130,6 +1268,7 @@ def _binding_has_competing_subject(
         for pattern in (
             _DIRECT_INSTRUMENT_APPROACH_EQUIPMENT,
             _CONVENTIONAL_APPROACH_NAVAID,
+            _INSTRUMENT_APPROACH_MARKER,
             _EXPLICIT_INSTRUMENT_APPROACH_PROCEDURE,
             _RNAV_OR_RNP,
             _NAMED_INSTRUMENT_APPROACH_PROCEDURE,
@@ -1150,17 +1289,17 @@ def _subject_state_are_bound(
     if subject.end() <= state.start():
         if (
             re.fullmatch(r"DO\s+NOT\s+USE", state.group(0))
-            and re.fullmatch(r"\s*ON\s+TEST\s*", between)
+            and re.fullmatch(r"\s*ON\s+TEST\s*,?\s*", between)
         ):
             return True
         return bool(_FORWARD_APPROACH_STATE_BINDING.fullmatch(between))
     return bool(_REVERSE_APPROACH_STATE_BINDING.fullmatch(between))
 
 
-def _subject_has_adverse_state(
+def _subject_adverse_pair(
     clause: str,
     subject_pattern: re.Pattern[str],
-) -> bool:
+) -> tuple[re.Match[str], re.Match[str]] | None:
     adverse_states = [
         match
         for match in _INSTRUMENT_APPROACH_ADVERSE.finditer(clause)
@@ -1171,6 +1310,8 @@ def _subject_has_adverse_state(
     )
     for subject in subject_pattern.finditer(clause):
         for adverse in adverse_states:
+            if subject.start() < adverse.end() and adverse.start() < subject.end():
+                continue
             adverse_gap = _binding_token_gap(clause, subject, adverse)
             if adverse_gap > _MAX_APPROACH_BINDING_TOKENS:
                 continue
@@ -1185,8 +1326,79 @@ def _subject_has_adverse_state(
                 for available in available_states
             ):
                 continue
-            return True
-    return False
+            return subject, adverse
+    return None
+
+
+def _subject_has_adverse_state(
+    clause: str,
+    subject_pattern: re.Pattern[str],
+) -> bool:
+    return _subject_adverse_pair(clause, subject_pattern) is not None
+
+
+def _instrument_marker_adverse_pair(
+    clause: str,
+) -> tuple[re.Match[str], re.Match[str]] | None:
+    """Bind an ILS marker state without borrowing a surface identifier."""
+
+    pair = _subject_adverse_pair(clause, _INSTRUMENT_APPROACH_MARKER)
+    if pair is None:
+        return None
+    subject, _ = pair
+    surface_owner = re.search(
+        r"\b(?:TWY|TAXIWAY|STAND|APRON|INTERSECTION)"
+        r"(?:\s+[A-Z0-9-]+)?\s*$",
+        clause[:subject.start()],
+    )
+    return None if surface_owner else pair
+
+
+def _bound_unavailable_approach_subject(text: str) -> str | None:
+    """Return the exact adverse subject without borrowing an available one."""
+
+    normalized = " ".join(str(text or "").upper().split())
+    clauses = [
+        clause.strip()
+        for clause in re.split(r"(?:\.(?=\s|$)|;|\r?\n)+", normalized)
+        if clause.strip()
+    ]
+    for clause in clauses:
+        pairs = [
+            pair
+            for subject_pattern in (
+                _DIRECT_INSTRUMENT_APPROACH_EQUIPMENT,
+                _CONVENTIONAL_APPROACH_NAVAID,
+                _PAPI_OPERATIONAL_SUBJECT,
+                _RNAV_OR_RNP,
+                _EXPLICIT_INSTRUMENT_APPROACH_PROCEDURE,
+            )
+            if (pair := _subject_adverse_pair(clause, subject_pattern))
+        ]
+        if marker_pair := _instrument_marker_adverse_pair(clause):
+            pairs.append(marker_pair)
+        if not pairs:
+            continue
+        subject, adverse = min(pairs, key=lambda pair: pair[0].start())
+        label = subject.group(0)
+        if not re.search(rf"\b{_APPROACH_RUNWAY_REFERENCE}\b", label):
+            runway = re.search(
+                rf"\b{_APPROACH_RUNWAY_REFERENCE}\b",
+                _text_between(clause, subject, adverse),
+            )
+            if runway is None and label.startswith("PAPI"):
+                runway = re.search(
+                    rf"\b{_APPROACH_RUNWAY_REFERENCE}\s*$",
+                    clause[:subject.start()],
+                )
+            if runway:
+                label = f"{label} {runway.group(0)}"
+        return (
+            label.replace("LOCALIZER", "LOC")
+            .replace("RUNWAY", "RWY")
+            .strip()
+        )
+    return None
 
 
 def _instrument_approach_affected(text: str, category: str) -> bool:
@@ -1205,10 +1417,32 @@ def _instrument_approach_affected(text: str, category: str) -> bool:
     )
     normalized_text = " ".join(str(text or "").upper().split())
     normalized_text = re.sub(
+        r"\bINSTRUMENT\s+LANDING\s+SYSTEM\s*\(ILS\)",
+        "ILS",
+        normalized_text,
+    )
+    normalized_text = re.sub(r"\bG\.P\.?\b", "GP", normalized_text)
+    normalized_text = re.sub(
         r"\bON\s+TEST\.\s+DO\s+NOT\s+USE\b",
         "ON TEST DO NOT USE",
         normalized_text,
     )
+    normalized_text = re.sub(r"\.{2,}", " ", normalized_text)
+    iap_publication_adverse = _IAP_PUBLICATION_ADVERSE.search(normalized_text)
+    if (
+        iap_publication_adverse
+        and not _special_approach_state_is_restored(
+            normalized_text,
+            iap_publication_adverse,
+        )
+    ):
+        return True
+    if iap_publication_adverse:
+        normalized_text = (
+            normalized_text[:iap_publication_adverse.start()]
+            + " "
+            + normalized_text[iap_publication_adverse.end():]
+        )
     clauses = [
         " ".join(clause.upper().split())
         for clause in re.split(
@@ -1218,6 +1452,18 @@ def _instrument_approach_affected(text: str, category: str) -> bool:
         if clause.strip()
     ]
     for clause in clauses:
+        iap_clause_suspension = _IAP_CLAUSE_SUSPENSION.search(clause)
+        if (
+            iap_clause_suspension
+            and not _INSTRUMENT_APPROACH_AVAILABLE.search(
+                iap_clause_suspension.group(0)
+            )
+            and not _special_approach_state_is_restored(
+                clause,
+                iap_clause_suspension,
+            )
+        ):
+            return True
         for special_pattern in (
             _NO_APPROACH_OPERATIONS,
             _APPROACH_MINIMA_RAISED,
@@ -1235,9 +1481,26 @@ def _instrument_approach_affected(text: str, category: str) -> bool:
             _DIRECT_INSTRUMENT_APPROACH_EQUIPMENT,
         ):
             return True
+        if _instrument_marker_adverse_pair(clause):
+            return True
+        for exact_procedure_pattern in (
+            _LPV_APPROACH_PROCEDURE,
+            _ILS_LOC_APPROACH_PROCEDURE,
+            _PUBLISHED_ILS_LOC_PROCEDURE,
+            _ILS_FINAL_DME_READING,
+            _IAC_APPROACH_PROCEDURE_LIST,
+            _ILS_CATEGORY_PROCEDURE,
+            _ILS_SPECIAL_AUTH_CATEGORY,
+        ):
+            if _subject_has_adverse_state(
+                clause,
+                exact_procedure_pattern,
+            ):
+                return True
 
         for named_procedure_pattern in (
             _NAMED_INSTRUMENT_APPROACH_PROCEDURE,
+            _NUMBERED_IAC_APPROACH_PROCEDURE,
             _CATEGORY_APPROACH_OPERATIONS,
         ):
             if (
@@ -2637,11 +2900,11 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             warnings.append(f"{record['notam_id']}: schedule language could not be structured; manual review required.")
         audit_record["validity_status"] = validity_status
         audit_record["schedule_status"] = schedule_status
-        pertinence_rank, pertinence_kind = notam_pertinence(
+        approach_affected = _instrument_approach_affected(
             str(record["text"]),
             str(record["category"]),
         )
-        approach_affected = _instrument_approach_affected(
+        pertinence_rank, pertinence_kind = notam_pertinence(
             str(record["text"]),
             str(record["category"]),
         )

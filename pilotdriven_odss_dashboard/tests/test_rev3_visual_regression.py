@@ -207,8 +207,8 @@ def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
     # 41 page entries of geometry + checksums only; far below any size that could embed the PDF.
     assert PINNED_MANIFEST.stat().st_size < 16_000
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference_v11_CRITICAL_APPROACH_EVIDENCE.pdf",
-        "sha256": "4c679dfeaa6cd6e71f12a40a32966ffc7b3d492d82376cd09ea64b42eef6027a",
+        "filename": "SQ214_REV3_reference_v12_APPROACH_EVIDENCE_CORRECTED.pdf",
+        "sha256": "8bf7b2095a82cbea7e19fb85427fdcecd04566afa5ba9030c2b1b30c94ce42e2",
     }
     assert len(payload["pages"]) == 41
     assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-31-surface-shortening-v32"
