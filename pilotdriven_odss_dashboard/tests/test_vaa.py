@@ -784,3 +784,107 @@ def test_sigmet_label_stays_matched_only_without_monitoring_features() -> None:
     review = evaluate_vaa(_flight(), _snapshot([advisory]), hazard_label="sigmet")
 
     assert review["monitoring_features"] == []
+
+
+def test_gts_mirror_token_mounts_every_unmounted_centre(monkeypatch) -> None:
+    # Boss 30 Aug: one open-mirror token reaches all nine centres; named
+    # connectors stay primary and gain the mirror as fallback.
+    from app.odss.vaa import ICAO_VAAC_CENTRES, mounted_vaac_centres
+
+    monkeypatch.setenv(
+        "ODSS_VAAC_ADVISORY_SOURCE",
+        "jma-tokyo,anchorage,darwin,gts-mirror,wifs-global",
+    )
+    mounted = mounted_vaac_centres()
+    by_centre = {entry["centre"]: entry for entry in mounted}
+    assert set(by_centre) == set(ICAO_VAAC_CENTRES)
+    assert by_centre["TOKYO"]["token"] == "jma-tokyo"
+    assert by_centre["TOKYO"]["fallback_token"] == "gts-mirror:tokyo"
+    assert by_centre["LONDON"]["token"] == "gts-mirror:london"
+    assert by_centre["LONDON"]["fallback_token"] == "wifs-global:london"
+    assert by_centre["BUENOS AIRES"]["token"] == "gts-mirror:buenos-aires"
+
+
+def test_ledger_rows_carry_freshness_receipts() -> None:
+    from app.odss.vaa import vaac_centre_ledger
+
+    snapshots = [{
+        "centre": "LONDON",
+        "provider": "noaa-gts-vaa",
+        "status": "available",
+        "coverage_status": "london_vaac_gts_mirror_advisories",
+        "advisory_count": 1,
+        "source_url": "https://tgftp.nws.noaa.gov/data/raw/fv/",
+        "freshness_status": "fresh",
+        "listing_latest_utc": "2026-08-30T12:00:00+00:00",
+        "next_advisory_due": "20260830/1800Z",
+    }]
+    mounted = [{
+        "token": "gts-mirror:london",
+        "centre": "LONDON",
+        "provider": "noaa-gts-vaa",
+    }]
+    rows = {row["centre"]: row for row in vaac_centre_ledger(snapshots, mounted)}
+    london = rows["LONDON"]
+    assert london["freshness_status"] == "fresh"
+    assert london["listing_latest_utc"] == "2026-08-30T12:00:00+00:00"
+    assert london["next_advisory_due"] == "20260830/1800Z"
+
+
+def test_volcano_proximity_measures_route_distance_from_held_advisories() -> None:
+    from app.odss.vaa import volcano_proximity_from_snapshots
+
+    flight = {
+        "route_waypoints": [
+            {"latitude": 0.0, "longitude": 100.0, "actm_minutes": 0},
+            {"latitude": 0.0, "longitude": 110.0, "actm_minutes": 120},
+        ],
+    }
+    snapshots = [{
+        "advisories": [
+            {
+                "volcano": "NEARBY 000001",
+                "centre": "DARWIN",
+                "advisory_number": "2026/1",
+                "aviation_colour_code": "ORANGE",
+                "issued_at_utc": "2026-08-30T10:00:00+00:00",
+                "next_advisory": "20260830/1600Z",
+                # One degree north of the mid-route parallel: 60 NM.
+                "volcano_position": {"latitude": 1.0, "longitude": 105.0},
+            },
+            {
+                "volcano": "FARAWAY 000002",
+                "centre": "TOKYO",
+                "issued_at_utc": "2026-08-30T09:00:00+00:00",
+                "volcano_position": {"latitude": 40.0, "longitude": 105.0},
+            },
+            {
+                "volcano": "NO POSITION",
+                "centre": "TOKYO",
+                "issued_at_utc": "2026-08-30T09:00:00+00:00",
+                "volcano_position": None,
+            },
+        ],
+    }]
+    review = volcano_proximity_from_snapshots(flight, snapshots)
+    assert review["status"] == "held"
+    assert review["corridor_nm"] == 200.0
+    entries = review["entries"]
+    assert [entry["volcano"] for entry in entries] == [
+        "NEARBY 000001", "FARAWAY 000002",
+    ]
+    near = entries[0]
+    assert 55.0 <= near["distance_nm"] <= 65.0
+    assert near["within_corridor"] is True
+    assert near["aviation_colour_code"] == "ORANGE"
+    far = entries[1]
+    assert far["within_corridor"] is False
+    assert far["distance_nm"] > 2000.0
+
+
+def test_volcano_proximity_fails_closed_without_route_geometry() -> None:
+    from app.odss.vaa import volcano_proximity_from_snapshots
+
+    review = volcano_proximity_from_snapshots({"route_waypoints": []}, [])
+    assert review["status"] == "route_geometry_unavailable"
+    assert review["entries"] == []

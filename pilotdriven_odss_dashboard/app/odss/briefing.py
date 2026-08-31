@@ -5723,6 +5723,13 @@ def build_briefing_view(
             "sigmet_cards": _sigmet_screening_cards(flight),
             "coverage_ledger": coverage_ledger,
             "vaac_reach": _vaac_reach_summary(flight),
+            # REV1 page 2: named advisory volcanoes with route distances and
+            # colour codes; built only from held official advisories.
+            "volcano_proximity": (
+                (flight.get("va_sigmet_review") or {}).get("volcano_proximity")
+                or (flight.get("vaa_review") or {}).get("volcano_proximity")
+                or {}
+            ),
             "weather_chart_selection": _weather_chart_selection(
                 weather_charts,
                 flight,

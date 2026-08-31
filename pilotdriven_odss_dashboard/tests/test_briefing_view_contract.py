@@ -1902,3 +1902,23 @@ def test_vaac_reach_counts_drawn_advisory_polygons() -> None:
     view = build_briefing_view(flight, [], [])
     polygons = view["hazards"]["vaac_reach"]["advisory_polygons"]
     assert polygons == {"affecting": 1, "monitoring": 0}
+
+
+def test_volcano_proximity_rides_the_hazard_view() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["va_sigmet_review"] = {
+        "status": "not_applicable",
+        "volcano_proximity": {
+            "corridor_nm": 200.0,
+            "entries": [{
+                "volcano": "GREAT SITKIN 311120",
+                "distance_nm": 31.5,
+                "within_corridor": True,
+                "aviation_colour_code": "ORANGE",
+            }],
+        },
+    }
+    view = build_briefing_view(flight, [], [])
+    proximity = view["hazards"]["volcano_proximity"]
+    assert proximity["entries"][0]["volcano"].startswith("GREAT SITKIN")
+    assert proximity["entries"][0]["within_corridor"] is True

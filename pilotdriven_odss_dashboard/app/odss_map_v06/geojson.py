@@ -10,6 +10,35 @@ from .contract import MapBounds, MapContract
 from .labels import choose_priority_labels, role_priority
 
 
+def _circle_geometry(
+    latitude: float,
+    longitude: float,
+    radius_nm: float,
+    points: int = 36,
+) -> dict[str, Any]:
+    """A great-circle ring polygon around a point, for proximity display."""
+    from math import asin, atan2, cos, degrees, radians, sin
+
+    delta = radius_nm / 3440.065
+    phi = radians(latitude)
+    lam = radians(longitude)
+    ring: list[list[float]] = []
+    for index in range(points + 1):
+        theta = radians(index * 360.0 / points)
+        phi2 = asin(
+            sin(phi) * cos(delta) + cos(phi) * sin(delta) * cos(theta)
+        )
+        lam2 = lam + atan2(
+            sin(theta) * sin(delta) * cos(phi),
+            cos(delta) - sin(phi) * sin(phi2),
+        )
+        ring.append([
+            round(((degrees(lam2) + 540.0) % 360.0) - 180.0, 5),
+            round(degrees(phi2), 5),
+        ])
+    return {"type": "Polygon", "coordinates": [ring]}
+
+
 def build_map_contract(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -177,6 +206,50 @@ def build_map_contract(
     vaa_features = vaa_features + list(
         va_sigmet_review.get("monitoring_features") or []
     )
+    # REV1 page 2: a proximity ring per advisory volcano near the corridor.
+    # Rings ride the hazards collection tagged volcano_ring/volcano_marker so
+    # the client styles them apart from ash geometry; proximity is not ash.
+    volcano_proximity = va_sigmet_review.get("volcano_proximity") or {}
+    corridor_nm = float(volcano_proximity.get("corridor_nm") or 200.0)
+    for entry in volcano_proximity.get("entries") or []:
+        position = entry.get("position") or {}
+        latitude = position.get("latitude")
+        longitude = position.get("longitude")
+        if latitude is None or longitude is None:
+            continue
+        distance_nm = float(entry.get("distance_nm") or 0.0)
+        if distance_nm > corridor_nm * 3:
+            # Display bound only: distant advisory volcanoes stay in the
+            # review list; drawing every global ring would bury the route.
+            continue
+        properties = {
+            "volcano": entry.get("volcano"),
+            "centre": entry.get("centre"),
+            "aviation_colour_code": entry.get("aviation_colour_code"),
+            "distance_nm": distance_nm,
+            "within_corridor": bool(entry.get("within_corridor")),
+            "corridor_nm": corridor_nm,
+            "not_for_navigation": True,
+        }
+        vaa_features = vaa_features + [
+            {
+                "type": "Feature",
+                "id": f"volcano-ring:{entry.get('volcano')}",
+                "geometry": _circle_geometry(
+                    float(latitude), float(longitude), corridor_nm
+                ),
+                "properties": {**properties, "volcano_ring": True},
+            },
+            {
+                "type": "Feature",
+                "id": f"volcano:{entry.get('volcano')}",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(longitude), float(latitude)],
+                },
+                "properties": {**properties, "volcano_marker": True},
+            },
+        ]
     tropical_cyclone_features = (
         list(tropical_cyclone_review.get("hazard_features") or [])
         if tropical_cyclone_review.get("status") == "affected"
