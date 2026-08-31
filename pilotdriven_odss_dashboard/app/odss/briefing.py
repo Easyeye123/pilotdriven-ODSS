@@ -5686,6 +5686,7 @@ def build_briefing_view(
             "ground_distance_nm": flight.get("ground_distance_nm"),
             "air_distance_nm": flight.get("air_distance_nm"),
             "waypoint_count": len(waypoints),
+            "route_text": flight.get("route_text"),
             "planned_level_profile": flight.get("planned_level_profile"),
         },
         # One flight-identity block for every surface (boss, 21 Aug: "I need

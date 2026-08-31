@@ -2456,23 +2456,25 @@ def _draw_operational_six_box_overview(
         canvas.linkRect(
             "",
             str(action["target"]),
-            (cell_x, confirmation_y, cell_x + cell_w, action_top + 4),
+            (
+                cell_x,
+                confirmation_y + 31,
+                cell_x + cell_w,
+                action_top + 4,
+            ),
             relative=0,
             thickness=0,
         )
 
-    route_prefix = " ".join(
-        str(flight.get("route_text") or "").split()[:8]
-    )
+    route_tokens = str(page_one.get("route_text") or "").split()
+    route_prefix = " ".join(route_tokens[:8])
     profile_tokens = [
         token
-        for token in str(flight.get("planned_level_profile") or "").split("/")
+        for token in str(page_one.get("planned_level_profile") or "").split("/")
         if token
     ]
     profile_prefix = "/".join(profile_tokens[:4])
-    route_receipt = " · FULL ROUTE: DASHBOARD" if len(
-        str(flight.get("route_text") or "").split()
-    ) > 8 else ""
+    route_receipt = " · FULL ROUTE: DASHBOARD" if len(route_tokens) > 8 else ""
     profile_receipt = " · FULL: DASHBOARD" if len(profile_tokens) > 4 else ""
     filed_lines = (
         f"FILED ROUTE · {route_prefix or 'UNAVAILABLE - REVIEW REQUIRED'}{route_receipt}",
@@ -2486,16 +2488,29 @@ def _draw_operational_six_box_overview(
         confirmation_y + 27,
     )
     for index, filed_line in enumerate(filed_lines):
-        if pdfmetrics.stringWidth(filed_line, MONO, 6.7) > full_w - 20:
+        line_y = confirmation_y + 17 - index * 10.5
+        if pdfmetrics.stringWidth(filed_line, MONO, 8.4) > full_w - 20:
             raise ValueError(
                 "Page-1 filed route/profile receipt exceeds readable width."
             )
         canvas.setFillColor(TEXT_SECONDARY)
-        canvas.setFont(MONO, 6.7)
+        canvas.setFont(MONO, 8.4)
         canvas.drawString(
             MARGIN + 10,
-            confirmation_y + 17 - index * 10.5,
+            line_y,
             filed_line,
+        )
+        canvas.linkRect(
+            "",
+            "sec_enroute" if index == 0 else "sec_airports",
+            (
+                MARGIN + 8,
+                line_y - 2,
+                MARGIN + 12 + pdfmetrics.stringWidth(filed_line, MONO, 8.4),
+                line_y + 8,
+            ),
+            relative=0,
+            thickness=0,
         )
 
 
