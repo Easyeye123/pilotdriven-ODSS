@@ -15,8 +15,17 @@ authority for the current reference — this section is prose and has gone
 stale before (30 Aug: a deploy was attempted against v9 while the manifest
 pinned v10).
 
-`SQ214_REV3_reference_v10_VAA_SOURCE_SEPARATION.pdf` (`1521203d…b57f`) — the
-SQ214-PER-SIN-19AUG corpus render under
+`SQ214_REV3_reference_v11_CRITICAL_APPROACH_EVIDENCE.pdf`
+(`4c679dfe…6027a`) — the SQ214-PER-SIN-19AUG corpus render under
+`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-31-surface-shortening-v32"`,
+minted on 31 Aug 2026. Relative to v10, pages 13–17 and 30–35 add exact
+critical-approach status rows and deterministic operational-priority ordering;
+the other 30 pages are pixel-identical to v10. All 41 pages were inspected as
+a contact sheet, and every changed page was inspected at full size with no
+clipping, overlap, blank-page, footer or source-retention regression.
+
+Superseded: `SQ214_REV3_reference_v10_VAA_SOURCE_SEPARATION.pdf`
+(`1521203d…b57f`) — the render under
 `COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-26-vaa-source-separation-v27"`,
 minted on 26 Aug 2026. Relative to v9, page 37 intentionally separates the VA
 SIGMET review from direct VAA source reach and applicability; the other 40

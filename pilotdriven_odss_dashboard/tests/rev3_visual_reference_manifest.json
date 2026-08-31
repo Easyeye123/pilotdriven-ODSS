@@ -3,8 +3,8 @@
   "gate": "rev3-raster-pixel-equality",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
-    "filename": "SQ214_REV3_reference_v10_VAA_SOURCE_SEPARATION.pdf",
-    "sha256": "1521203d92917082f755355cb7b91a177775a423c899a2215f8de3592922b57f"
+    "filename": "SQ214_REV3_reference_v11_CRITICAL_APPROACH_EVIDENCE.pdf",
+    "sha256": "4c679dfeaa6cd6e71f12a40a32966ffc7b3d492d82376cd09ea64b42eef6027a"
   },
   "renderer": {
     "library": "PyMuPDF",
@@ -118,7 +118,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "e8a6778ee44712e4a8d4f3862efccbf5181391a4c9075aab72c3436d0fd7739f"
+      "reference_raster_sha256": "e41fa017fc2fcd39dd4b9b0f4b553411eac593e2636d012e7de09b616b1a1c71"
     },
     {
       "page_number": 14,
@@ -126,7 +126,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "522004d89fc4e86c34d23dd908a0eca43deb264335189dbfc651cf6e59d84b0c"
+      "reference_raster_sha256": "3c143bdbe99bc587f8b280509a3268b293d19b7c8254e5540e1d45390d456f53"
     },
     {
       "page_number": 15,
@@ -134,7 +134,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "16dc39ec3d8bc9580fa8d2735a5cabc1c9e2eefb865359655cdb0150ebe87856"
+      "reference_raster_sha256": "e3eba42c80e36779199bc60999ddd77f0da26da2a2f1974514a963cadb9c4f8a"
     },
     {
       "page_number": 16,
@@ -142,7 +142,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "4525bc72261b902eed5c6e96cd487db57f12a126520781f2dc13aaa35bf575ad"
+      "reference_raster_sha256": "65636c0cec94ceb267118e7bfbe8bd090f1bc6bc366abf57dfbe2dcb26d8a1af"
     },
     {
       "page_number": 17,
@@ -150,7 +150,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "3351309507cf46c26195b2d96ff91aa4506a1f758f789070f9e638d41499e162"
+      "reference_raster_sha256": "0f68cb1f52aff66b2c738583aeae6133d9373988041eef1450d381150890bce4"
     },
     {
       "page_number": 18,
@@ -254,7 +254,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "b60a4adb91122ebeebac17d91d2381e2fb9efa4b773455fae6e9020b44c13372"
+      "reference_raster_sha256": "8a73a0031851b50e45410d7bc9f506c2fa7b7d637d64303c5de6afe34101d10a"
     },
     {
       "page_number": 31,
@@ -262,7 +262,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "b62ac572487b79a7b5015815115a7c4d48d87a8f83035a1e5c0b01ff45714b10"
+      "reference_raster_sha256": "67d5adb30155532c9c5a8d5ba8927363ab55124b1acbf8eab5981f9cc9cbe892"
     },
     {
       "page_number": 32,
@@ -270,7 +270,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "58b5ecfc62f5ce6b2195351b1db9bc7d689f737a3e132c1c34c26d67c410a000"
+      "reference_raster_sha256": "7857a43e6e5c5a6e5d89a3fa8e53568b39bb3c455f765afac25a455102daabf1"
     },
     {
       "page_number": 33,
@@ -278,7 +278,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "9a237ce3cf56dcc08f6ab61d545fbc8cdfdf88dd8541911f87be9cbccd1949d9"
+      "reference_raster_sha256": "6f4920ab901698def76043decf57470c84ed74d306bf0911b5f70f9d1198ff0f"
     },
     {
       "page_number": 34,
@@ -286,7 +286,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "9a4633f552f4e5bc4b835b8b5ef62426bb79b96c9439bbaf84eba4dcc705ac60"
+      "reference_raster_sha256": "7bf96e569225b6c00b1da2d7b0db82f265059cbf64837c1037a25ec21927e151"
     },
     {
       "page_number": 35,
@@ -294,7 +294,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "492e4334abf6c51b2f2c8fbd003df4932832b156f82dd5251b9cf087993f49fd"
+      "reference_raster_sha256": "a815571c214f54bf4a0852439eeb2762867d552739c4dfffec0c935a67a6e7d8"
     },
     {
       "page_number": 36,
@@ -351,8 +351,8 @@
     "max_channel_delta": 0
   },
   "provenance": {
-    "minted_on": "2026-08-26",
-    "approval_basis": "Codex side-by-side review 2026-08-26: page 37 intentionally separates VA SIGMET review from direct VAA source reach and applicability; the other 40 pages are pixel-identical to approved v9, with no clipping or overlap.",
-    "combined_briefing_schema_version": "2026-08-26-vaa-source-separation-v27"
+    "minted_on": "2026-08-31",
+    "approval_basis": "Boss-directed 30 Aug 2026 critical instrument-approach flag requirement; Codex and independent 31 Aug 2026 review of all 41 pages confirmed exact source retention, deterministic pagination, and no clipping, overlap, or blank-page regression.",
+    "combined_briefing_schema_version": "2026-08-31-surface-shortening-v32"
   }
 }

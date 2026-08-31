@@ -207,12 +207,12 @@ def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
     # 41 page entries of geometry + checksums only; far below any size that could embed the PDF.
     assert PINNED_MANIFEST.stat().st_size < 16_000
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference_v10_VAA_SOURCE_SEPARATION.pdf",
-        "sha256": "1521203d92917082f755355cb7b91a177775a423c899a2215f8de3592922b57f",
+        "filename": "SQ214_REV3_reference_v11_CRITICAL_APPROACH_EVIDENCE.pdf",
+        "sha256": "4c679dfeaa6cd6e71f12a40a32966ffc7b3d492d82376cd09ea64b42eef6027a",
     }
     assert len(payload["pages"]) == 41
-    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-26-vaa-source-separation-v27"
-    assert "separates VA SIGMET review from direct VAA source reach" in payload["provenance"]["approval_basis"]
+    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-31-surface-shortening-v32"
+    assert "critical instrument-approach flag requirement" in payload["provenance"]["approval_basis"]
     assert payload["thresholds"] == {
         "max_changed_pixel_ratio": 0.0,
         "max_mean_absolute_error": 0.0,
