@@ -32,7 +32,7 @@ from app.odss.parser import (
     _parse_named_procedure,
     parse_lido,
 )
-from app.odss.pilot_briefing import concise_weather_finding
+from app.odss.pilot_briefing import concise_weather_finding, select_pertinent_notams
 
 
 UTC = timezone.utc
@@ -1313,6 +1313,63 @@ def test_exact_faa_iap_unavailability_is_text_authoritative_across_categories(
     text: str,
 ) -> None:
     assert engines._instrument_approach_affected(text, "RUNWAY") is True
+
+
+def test_conditional_crane_runway_state_is_not_promoted_to_a_closure() -> None:
+    text = (
+        "2130-0330 LIT CRANE OPR WI HOUNSLOW. MAX HGT 246FT AGL. "
+        "CRANE WILL ONLY OPERATE WHEN RWY 09L/27R IS CLSD. "
+        "NO CRANE OPR IN LVP."
+    )
+
+    rank, kind = engines.notam_pertinence(text, "AIRPORT")
+
+    assert (rank, kind) == (8, "obstacle")
+    assert "runway is not reported closed" in engines._notam_operational_summary(
+        text,
+        kind,
+        "destination",
+    ).lower()
+
+
+def test_conditional_crane_approach_prohibition_stays_critical_review() -> None:
+    text = (
+        "LIT CRANE OPR AT HEATHROW. NO APCH OR DEPARTURES TO OR FM "
+        "RWY 09R/27L WILL TAKE PLACE WHEN CRANE IS OPR AT FULL HEIGHT."
+    )
+
+    assert engines._instrument_approach_affected(text, "AIRPORT") is True
+    assert engines._conditional_instrument_approach_impact(text) is True
+
+
+def test_parser_number_prefix_does_not_duplicate_one_notam_identity() -> None:
+    def finding(notam_id: str, raw_text: str) -> dict[str, object]:
+        return {
+            "engine": "notam",
+            "severity": "warning",
+            "title": f"NOTAM {notam_id}",
+            "summary": "Taxiway restriction requires review.",
+            "data": {
+                "role": "destination",
+                "location": "WSSS",
+                "pertinence_kind": "taxiway_restriction",
+                "notam_id": notam_id,
+                "raw_text": raw_text,
+                "valid_from_utc": "2026-08-29T00:00:00Z",
+                "valid_to_utc": "2026-09-01T00:00:00Z",
+                "window_start_utc": "2026-08-29T04:00:00Z",
+                "window_end_utc": "2026-08-29T06:00:00Z",
+                "applicability": "active",
+            },
+        }
+
+    selected = select_pertinent_notams([
+        finding("A2876/26", "A2876/26 TWY A CLSD"),
+        finding("1A2876/26", "1A2876/26 TWY A CLOSED - SOURCE COPY"),
+    ], limit=10)
+
+    assert len(selected) == 1
+    assert selected[0]["data"]["notam_id"] == "A2876/26"
 
 
 @pytest.mark.parametrize(

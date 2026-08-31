@@ -263,6 +263,20 @@ _NO_APPROACH_OPERATIONS = re.compile(
     r"\bNO\s+(?:INSTRUMENT\s+)?(?:APCH(?:ES)?|APPROACH(?:ES)?)\b"
     r".{0,120}\b(?:TAKE\s+PLACE|PERMITTED|AUTHORI[ZS]ED|ALLOWED)\b"
 )
+
+
+def _conditional_instrument_approach_impact(text: str) -> bool:
+    """True when the adverse approach state depends on an unresolved WHEN.
+
+    The impact remains critical evidence, but it must be presented as a
+    condition review rather than an unconditional active outage.
+    """
+
+    normalized = " ".join(str(text or "").upper().split())
+    for adverse in _NO_APPROACH_OPERATIONS.finditer(normalized):
+        if re.match(r"\s+WHEN\b", normalized[adverse.end():]):
+            return True
+    return False
 _APPROACH_MINIMA_RAISED = re.compile(
     r"\b(?:LPV|LNAV(?:/VNAV)?|RNP|RNAV)\s+MINIMA\s+"
     r"(?:SHALL\s+BE\s+)?(?:RAISED|INCREASED)\b"
@@ -2904,6 +2918,10 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             str(record["text"]),
             str(record["category"]),
         )
+        approach_condition_review = bool(
+            approach_affected
+            and _conditional_instrument_approach_impact(str(record["text"]))
+        )
         pertinence_rank, pertinence_kind = notam_pertinence(
             str(record["text"]),
             str(record["category"]),
@@ -2953,6 +2971,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "pertinence_rank": pertinence_rank,
                 "pertinence_kind": pertinence_kind,
                 "approach_affected": approach_affected,
+                "approach_condition_review": approach_condition_review,
                 "applicability": applicability,
                 "validity_status": validity_status,
                 "schedule_status": schedule_status,

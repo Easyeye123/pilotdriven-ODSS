@@ -50,6 +50,13 @@ def normalize_notam_references(value: Any) -> str:
     )
 
 
+def _canonical_notam_identity(value: Any) -> str:
+    """Return one pilot-facing identity for parser-indexed NOTAM labels."""
+
+    normalized = normalize_notam_references(value).strip().upper()
+    return normalized if re.fullmatch(r"[A-Z]{1,3}\d{2,5}/\d{2}", normalized) else ""
+
+
 def pilot_notam_condition(value: Any) -> str:
     """Keep the condition separate from its reference-time applicability."""
 
@@ -109,8 +116,19 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
             upper[:direct_runway_closure.start()],
         )
     )
+    runway_state_is_subordinate_condition = bool(
+        direct_runway_closure
+        and re.search(
+            r"\b(?:ONLY\s+)?WHEN\s*$",
+            upper[:direct_runway_closure.start()],
+        )
+    )
     runway_closure = bool(
-        (direct_runway_closure and not runway_is_other_subject_qualifier)
+        (
+            direct_runway_closure
+            and not runway_is_other_subject_qualifier
+            and not runway_state_is_subordinate_condition
+        )
         or re.search(rf"\bCLOSURE\s+OF\s+{_RUNWAY_ID}\b", upper)
     )
     taxiway_closure = bool(
@@ -236,7 +254,7 @@ def pilot_notam_key(item: dict[str, Any]) -> tuple[str, ...] | None:
     )
 
 
-def notam_sort_key(item: dict[str, Any]) -> tuple[int, int, int, int, int, str]:
+def notam_sort_key(item: dict[str, Any]) -> tuple[int, int, int, int, int, int, str]:
     data = item.get("data") or {}
     rank = data.get("pertinence_rank")
     if rank is None:
@@ -250,12 +268,18 @@ def notam_sort_key(item: dict[str, Any]) -> tuple[int, int, int, int, int, str]:
     # global rank-first order could fill the 24-item pilot view with alternate
     # runway records before a departure taxiway closure was reached.
     primary_airport_band = 0 if role in {"departure", "destination"} else 1
+    printed_notam_id = str(data.get("notam_id") or "").strip().upper()
+    canonical_notam_id = _canonical_notam_identity(printed_notam_id)
+    parser_prefix_penalty = int(
+        bool(canonical_notam_id) and canonical_notam_id != printed_notam_id
+    )
     return (
         primary_airport_band,
         int(rank),
         _ROLE_RANK.get(role, 5),
         -_SEVERITY_RANK.get(str(item.get("severity") or "information"), 0),
         -int(data.get("priority_score") or 0),
+        parser_prefix_penalty,
         str(item.get("title") or ""),
     )
 
@@ -270,10 +294,22 @@ def select_pertinent_notams(
     ordered = sorted(findings, key=notam_sort_key)
     selected: list[dict[str, Any]] = []
     seen: set[tuple[str, ...]] = set()
+    seen_notam_ids: set[tuple[str, str, str]] = set()
     for item in ordered:
+        data = item.get("data") or {}
+        canonical_notam_id = _canonical_notam_identity(data.get("notam_id"))
+        notam_identity = (
+            str(data.get("role") or "informational"),
+            str(data.get("location") or "").upper(),
+            canonical_notam_id,
+        )
+        if canonical_notam_id and notam_identity in seen_notam_ids:
+            continue
         key = pilot_notam_key(item)
         if key is not None and key in seen:
             continue
+        if canonical_notam_id:
+            seen_notam_ids.add(notam_identity)
         if key is not None:
             seen.add(key)
         selected.append(item)

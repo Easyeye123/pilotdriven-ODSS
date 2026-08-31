@@ -21,7 +21,11 @@ from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
 from .deferred_dispatch import build_deferred_dispatch_gates
 from .engines import detect_terrain_events, detect_vws_events
-from .pilot_briefing import prepare_pilot_findings, select_pertinent_notams
+from .pilot_briefing import (
+    normalize_notam_references,
+    prepare_pilot_findings,
+    select_pertinent_notams,
+)
 from .report_sections import level2_page
 
 
@@ -710,6 +714,11 @@ def _compact_notam_lines(
                 if isinstance(item.get("approach_affected"), bool)
                 else {}
             ),
+            **(
+                {"approach_condition_review": item["approach_condition_review"]}
+                if isinstance(item.get("approach_condition_review"), bool)
+                else {}
+            ),
             "signal_family": family,
             "planned_match": (
                 bool(item_runways & runway_basis)
@@ -865,7 +874,7 @@ def _airport_operational_panels(
         for item in selected_findings:
             data = item.get("data") or {}
             selected_notams.append({
-                "notam_id": data.get("notam_id"),
+                "notam_id": normalize_notam_references(data.get("notam_id")),
                 "summary": item.get("summary"),
                 "item_e_text": data.get("raw_text"),
                 "valid_from_utc": data.get("valid_from_utc"),
@@ -880,6 +889,11 @@ def _airport_operational_panels(
                 **(
                     {"approach_affected": data["approach_affected"]}
                     if isinstance(data.get("approach_affected"), bool)
+                    else {}
+                ),
+                **(
+                    {"approach_condition_review": data["approach_condition_review"]}
+                    if isinstance(data.get("approach_condition_review"), bool)
                     else {}
                 ),
                 "applicability": data.get("applicability"),
@@ -942,6 +956,11 @@ def _airport_operational_panels(
         panels.append({
             **specification,
             "weather": {"metar": metar, "taf": taf},
+            "window_weather": _weather_summary(
+                findings,
+                location,
+                compact_role,
+            ),
             "selected_notams": selected_notams,
             "card_summary_lines": card_summary_lines,
             "source_pages": sorted(source_pages),
@@ -2180,11 +2199,13 @@ def _edto_classification_sentence(
         fuel_summary.get("source_classification") or classification
     ).strip().upper()
     return (
-        "OFP P1 classification: STANDARD (interpreted as non-EDTO)."
+        "OFP P1 classification: STANDARD (interpreted as NON-EDTO)."
         if source == "STANDARD" and classification.startswith("NON")
+        else "OFP P1 classification: NON-EDTO."
+        if source == "NON EDTO"
         else f"OFP P1 classification: {source}."
-        if source in {"STANDARD", "NON EDTO", "EDTO"}
-        else "OFP classification requires review."
+        if source in {"STANDARD", "EDTO"}
+        else "EDTO REVIEW REQUIRED - OFP classification unavailable."
     )
 
 
@@ -2206,7 +2227,9 @@ def _edto_operational_rows(
         number = sector.get("number") or index
         entry = sector.get("entry") or "--.--"
         exit_ = sector.get("exit") or "--.--"
-        line = f"ENTRY ACTM {entry} | EXIT ACTM {exit_}"
+        entry_name = str(sector.get("entry_name") or "ENTRY").strip()
+        exit_name = str(sector.get("exit_name") or "EXIT").strip()
+        line = f"{entry_name} ACTM {entry} | {exit_name} ACTM {exit_}"
         if entry == exit_ and entry != "--.--":
             # Canon wording (REV3 p4): a zero-duration boundary contact is a
             # printed OFP fact, and it stays an EDTO flight.
@@ -4013,6 +4036,13 @@ def _overview_projection(
             99,
         ),
     ))
+    if actual_departure_utc is not None:
+        for anchor in timeline:
+            if not anchor.get("utc"):
+                continue
+            anchor["target_cross_over_utc"] = anchor["utc"]
+            anchor["target_cross_over_display"] = anchor["utc_display"]
+            anchor["time_basis"] = "ATOT + parsed OFP ACTM"
     return {
         "chips": chips,
         "departure": departure,
@@ -5266,6 +5296,7 @@ def build_briefing_view(
     masses = flight.get("masses") or {}
     fuel = flight.get("fuel") or {}
     alternates = flight.get("alternates") or []
+    fuel_summary = flight.get("fuel_summary") or {}
 
     departure_panel = _airport_panel(
         flight,
@@ -5367,6 +5398,12 @@ def build_briefing_view(
     edto_sector_view = [
         {
             "number": sector.get("number", index),
+            "entry_name": str(
+                (sector.get("entry") or {}).get("name") or "ENTRY"
+            ),
+            "exit_name": str(
+                (sector.get("exit") or {}).get("name") or "EXIT"
+            ),
             "entry": format_actm(sector.get("entry_actm_minutes")),
             "exit": format_actm(sector.get("exit_actm_minutes")),
             "etps": [
@@ -5628,7 +5665,29 @@ def build_briefing_view(
         # Page-1 fuel/weight summary, arithmetic-verified at parse time. The
         # report's "OFP PAGE 1 - FLIGHT PLAN" panel reads this and must render
         # a review flag whenever state is not "verified".
-        "fuel_summary": flight.get("fuel_summary"),
+        "fuel_summary": fuel_summary or None,
+        # Source-bound inputs for the six-box OFP page-one hierarchy.  This
+        # projection is part of the shared briefing contract: the PDF must not
+        # create facts that the dashboard cannot receive or verify.
+        "page_one": {
+            "date": theme.header_date_label(flight),
+            "scheduled_departure_hhmm": scheduled_etd_hhmm,
+            "scheduled_arrival_hhmm": scheduled_eta_hhmm,
+            "departure": str(flight.get("departure") or "").upper(),
+            "destination": str(flight.get("destination") or "").upper(),
+            "sid": flight.get("sid"),
+            "star": flight.get("star"),
+            "performance": dict(flight.get("performance") or {}),
+            "masses_kg": dict(masses),
+            "fuel_kg": dict(fuel),
+            "alternates": [
+                dict(item) for item in alternates if isinstance(item, dict)
+            ],
+            "ground_distance_nm": flight.get("ground_distance_nm"),
+            "air_distance_nm": flight.get("air_distance_nm"),
+            "waypoint_count": len(waypoints),
+            "planned_level_profile": flight.get("planned_level_profile"),
+        },
         # One flight-identity block for every surface (boss, 21 Aug: "I need
         # the route ID and the route version"). Composed here so the PDF's
         # FLIGHT BASIS card and the web dashboard print the same facts —

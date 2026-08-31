@@ -210,11 +210,11 @@ def test_fuel_enroute_role_reaches_analysis_and_shared_briefing_view() -> None:
     assert station["weather"]["taf"]["text"].startswith("FT 312300")
     assert station["weather"]["metar"]["source_page"] == 3
     assert {item["notam_id"] for item in station["selected_notams"]} == {
-        "1A2868/26",
-        "1A2870/26",
-        "1A2872/26",
+        "A2868/26",
+        "A2870/26",
+        "A2872/26",
         "SX74/25",
-        "1A2574/26",
+        "A2574/26",
     }
     assert any(
         "D-ATIS LIMITED TRIAL" in item["item_e_text"]
@@ -244,15 +244,16 @@ def test_fuel_enroute_role_reaches_analysis_and_shared_briefing_view() -> None:
             "category": "APPROACH PROCEDURE",
             "pertinence_kind": "approach_navaid_closure",
             "approach_affected": True,
+            "approach_condition_review": False,
             "signal_family": "approach_navaid",
             "planned_match": None,
             "different_runway": False,
         },
         {
             "kind": "notam",
-            "label": "1A2574/26",
+            "label": "A2574/26",
             "text": "D-ATIS limited trial; voice ATIS remains primary.",
-            "notam_id": "1A2574/26",
+            "notam_id": "A2574/26",
             "item_e_text": (
                 "D-ATIS LIMITED TRIAL IN PROGRESS. VOICE ATIS REMAINS PRIMARY."
             ),
@@ -267,6 +268,7 @@ def test_fuel_enroute_role_reaches_analysis_and_shared_briefing_view() -> None:
             "category": "AIRPORT",
             "pertinence_kind": "other_operational",
             "approach_affected": False,
+            "approach_condition_review": False,
             "signal_family": "information_service",
             "planned_match": None,
             "different_runway": False,
@@ -312,10 +314,10 @@ def test_compact_card_category_coverage_cannot_drop_full_selected_notams() -> No
         "EX2/26",
         "EX3/26",
         "SX74/25",
-        "1A2574/26",
+        "A2574/26",
     }
     assert [
         item["notam_id"]
         for item in panel["card_summary_lines"]
         if item["kind"] == "notam"
-    ] == ["SX74/25", "1A2574/26"]
+    ] == ["SX74/25", "A2574/26"]

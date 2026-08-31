@@ -40,11 +40,17 @@ def _window_weather_finding() -> dict:
     }
 
 
-def test_overview_prefers_raw_bulletins_on_airport_cards(tmp_path):
-    """18 Aug instruction: the dep/dest cards print the actual METAR and TAF
-    from the CFP; synthesised window prose only appears when no bulletin is
-    held."""
+def test_six_box_overview_reports_source_held_weather_without_inventing_window_prose(
+    tmp_path,
+):
+    """The REV1 hierarchy keeps weather status compact on page one.
+
+    Exact source text remains in the dashboard; the physical PDF names its
+    held source state and must not replace it with synthesised window prose.
+    """
     flight = sample_flight()
+    for page_number, record in enumerate(flight["weather"], start=20):
+        record["source_page"] = page_number
     findings = [
         finding
         for finding in sample_findings()
@@ -57,7 +63,14 @@ def test_overview_prefers_raw_bulletins_on_airport_cards(tmp_path):
 
     with fitz.open(output) as document:
         first_page = document[0].get_text()
-    assert "METAR SA 160630 17007KT" in first_page.replace("\n", " ")
+        airports_page = next(
+            page.get_text()
+            for page in document
+            if "AIRPORTS / ALTERNATES" in page.get_text()
+        )
+    assert first_page.count("WINDOW REVIEW HELD") == 1
+    assert "1 OFP RECORD(S)" not in first_page
+    assert airports_page.count("WEATHER SOURCE · METAR HELD / TAF UNAVAILABLE") == 2
     assert "Forecast overlaps ETA plus or minus one hour." not in first_page
 
 
@@ -76,6 +89,11 @@ def test_overview_falls_back_to_operating_window_weather_primary(tmp_path):
 
     with fitz.open(output) as document:
         first_page = document[0].get_text()
+        airports_page = next(
+            page.get_text()
+            for page in document
+            if "AIRPORTS / ALTERNATES" in page.get_text()
+        )
         undersized = [
             (str(span.get("text") or "").strip(), span.get("size"))
             for block in document[0].get_text("dict").get("blocks", [])
@@ -86,7 +104,8 @@ def test_overview_falls_back_to_operating_window_weather_primary(tmp_path):
             < document[0].rect.height - 30
             and float(span.get("size") or 0.0) < 8.39
         ]
-    assert "Forecast overlaps ETA plus or minus one hour." in first_page
+    assert "WINDOW REVIEW HELD" in first_page
+    assert "Forecast overlaps ETA plus or minus one hour." in airports_page
     assert "Weather review on the hazard assessment page." not in first_page
     assert not undersized
 

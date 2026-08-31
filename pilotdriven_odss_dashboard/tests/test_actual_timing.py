@@ -108,6 +108,17 @@ def test_actual_takeoff_entry_runs_analysis_and_calculates_waypoint_utc(
     }
     assert waypoint_times["BOBI1"] == "1100Z"
     assert waypoint_times["BOBI2"] == "1110Z"
+    target_cross_over_times = {
+        item["display_name"]: item["target_cross_over_display"]
+        for item in analysis["view"]["timing"]["waypoints"]
+    }
+    assert target_cross_over_times == {
+        "BOBI1": "11 JUL 1100Z",
+        "BOBI2": "11 JUL 1110Z",
+    }
+    assert analysis["view"]["timing"]["calculation_basis"] == (
+        "Target cross-over time = ATOT + parsed OFP ACTM."
+    )
     assert any(item["engine"] == "actual_timing" for item in analysis["findings"])
 
     for level in (1, 2):
@@ -120,6 +131,7 @@ def test_actual_takeoff_entry_runs_analysis_and_calculates_waypoint_utc(
             document.close()
         assert "ATOT 11 JUL 1045Z" in report_text
         assert "ATOT + OFP ACTM" in report_text
+        assert "TARGET CROSS-OVER TIME" in report_text
 
 
 def test_waypoint_ata_derives_takeoff_anchor_and_recalculates_route(

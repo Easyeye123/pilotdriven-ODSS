@@ -104,6 +104,12 @@ def _event(
         "utc_iso": when.isoformat(),
         "utc_display": display_utc(when),
         "utc_clock": when.strftime("%H%MZ"),
+        # Boss vocabulary: ATOT + the OFP's accumulated-time (ACTM) offset
+        # yields the target cross-over UTC for this filed point. Keep the
+        # legacy utc_* aliases for backwards-compatible consumers.
+        "target_cross_over_utc": when.isoformat(),
+        "target_cross_over_display": display_utc(when),
+        "target_cross_over_clock": when.strftime("%H%MZ"),
         "day_offset": day_offset,
         "day_label": f"D+{day_offset}" if day_offset >= 0 else f"D{day_offset}",
     }
@@ -150,6 +156,9 @@ def build_timing_view(
             "utc_iso": calculated.isoformat(),
             "utc_display": display_utc(calculated),
             "utc_clock": calculated.strftime("%H%MZ"),
+            "target_cross_over_utc": calculated.isoformat(),
+            "target_cross_over_display": display_utc(calculated),
+            "target_cross_over_clock": calculated.strftime("%H%MZ"),
             "day_offset": (calculated.date() - anchor.date()).days,
         }
         waypoint_times.append(item)
@@ -327,7 +336,7 @@ def build_timing_view(
         "scheduled_departure_utc": scheduled_departure.isoformat(),
         "schedule_difference_minutes": takeoff_difference,
         "reference": timing_reference,
-        "calculation_basis": "Calculated UTC = derived actual takeoff UTC + OFP ACTM.",
+        "calculation_basis": "Target cross-over time = ATOT + parsed OFP ACTM.",
         "events": events,
         "early_calls": early_calls,
         "fir_crossings": fir_crossings,

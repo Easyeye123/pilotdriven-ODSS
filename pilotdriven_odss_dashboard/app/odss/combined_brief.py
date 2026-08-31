@@ -29,10 +29,13 @@ from reportlab.pdfbase.ttfonts import TTFont
 from . import brief_theme as theme
 from .brief_theme import register_fonts
 from .briefing import (
+    _compact_notam_family,
+    _compact_notam_text,
     _edto_classification,
     _edto_classification_sentence,
     _edto_gate_sentence,
 )
+from .pilot_briefing import normalize_notam_references
 from .constants import format_actm
 from .deferred_dispatch import (
     deferred_item_type_for_display,
@@ -392,6 +395,7 @@ def draw_page_chrome(
     section_colour=None,
     show_tabs: bool = False,
     page_family: str = "standard",
+    page_one_status_pill: bool = True,
 ) -> float:
     """Background, header band, footer, SOURCE line. Returns content top y."""
     register_fonts()
@@ -565,7 +569,7 @@ def draw_page_chrome(
             canvas.setFillColor(TEXT)
             canvas.setFont(SANS_BOLD, 10)
             canvas.drawString(690, height - 37.8, block_label)
-    if page_number == 1:
+    if page_number == 1 and page_one_status_pill:
         pill_text = "SOURCE CHECKS OPEN"
         pill_sub = "Current products controlling"
         pill_w = max(
@@ -583,7 +587,7 @@ def draw_page_chrome(
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont(SANS, 6.4)
         canvas.drawCentredString(pill_x + pill_w / 2, top - 24.5, pill_sub)
-    else:
+    elif page_number != 1:
         label = section_label or "FLIGHT BRIEFING"
         canvas.setFillColor(section_colour or SECTION_BLUE)
         canvas.setFont(SANS_BOLD, 9.3)
@@ -1940,6 +1944,507 @@ def _draw_audit_rev3_v8_overview_summary_row(
         row_y -= 11
 
 
+def _draw_operational_six_box_overview(
+    canvas,
+    flight: dict[str, Any],
+    briefing: dict[str, Any],
+    *,
+    content_top: float,
+) -> None:
+    """Draw the boss-selected six-box hierarchy using current OFP facts.
+
+    The REV1 reference contributes structure only. Values are always taken
+    from this flight's parsed OFP/shared briefing, and missing controlled
+    evidence remains visibly unavailable.
+    """
+    width, _ = PAGE_SIZE
+    full_w = width - 2 * MARGIN
+    overview = briefing.get("overview") or {}
+    identity = briefing.get("flight_identity") or {}
+    page_one = briefing.get("page_one") or {}
+    performance = _shared_performance_publication(briefing)
+    held_fuel = briefing.get("fuel_summary")
+    fuel_summary = (
+        held_fuel
+        if isinstance(held_fuel, dict) and held_fuel
+        else {}
+    )
+    source_fuel_rows = fuel_summary.get("rows") or {}
+    source_masses = fuel_summary.get("masses_kg") or {}
+    shared_masses = page_one.get("masses_kg") or {}
+    shared_fuel = page_one.get("fuel_kg") or {}
+    airport_panels = briefing.get("airport_operational_panels") or []
+
+    def unavailable(value: Any, *, suffix: str = "") -> str:
+        if value is None or not str(value).strip():
+            return "UNAVAILABLE - REVIEW REQUIRED"
+        return f"{value}{suffix}"
+
+    def kg(value: Any) -> str:
+        try:
+            return f"{int(value):,} kg"
+        except (TypeError, ValueError):
+            return "UNAVAILABLE - REVIEW REQUIRED"
+
+    def timed_fuel(key: str, *, fallback_fuel_kg: Any = None) -> str:
+        row = source_fuel_rows.get(key) or {}
+        minutes = row.get("time_minutes")
+        fuel_kg = row.get("fuel_kg")
+        if fuel_kg is None:
+            fuel_kg = fallback_fuel_kg
+        if minutes is None and fuel_kg is None:
+            return "UNAVAILABLE - REVIEW REQUIRED"
+        time_display = (
+            format_actm(int(minutes)).replace(".", ":")
+            if minutes is not None
+            else "--:--"
+        )
+        fuel_display = (
+            f"{int(fuel_kg):,} kg"
+            if fuel_kg is not None
+            else "-- kg"
+        )
+        return (
+            f"{time_display} / {fuel_display}"
+        )
+
+    def exact_station_panel(icao: str, role: str) -> dict[str, Any]:
+        normalized_role = role.lower().replace(" ", "_")
+        for candidate in airport_panels:
+            roles = candidate.get("role_keys") or [
+                candidate.get("role_key"),
+                candidate.get("role"),
+            ]
+            normalized_roles = {
+                str(value or "").lower().replace(" ", "_")
+                for value in roles
+            }
+            if (
+                normalized_role in normalized_roles
+                and str(candidate.get("icao") or "").upper() == icao
+            ):
+                return candidate
+        return next(
+            (
+                candidate
+                for candidate in airport_panels
+                if str(candidate.get("icao") or "").upper() == icao
+            ),
+            {},
+        )
+
+    def airport_context(role: str) -> tuple[dict[str, Any], dict[str, Any], str]:
+        station = overview.get(role) or {}
+        icao = str(station.get("icao") or page_one.get(role) or "----").upper()
+        panel_data = exact_station_panel(icao, role)
+        selected = [
+            row
+            for row in panel_data.get("selected_notams") or []
+            if isinstance(row, dict)
+        ]
+        critical = sum(
+            str(row.get("severity") or "").lower() == "critical"
+            for row in selected
+        )
+        notam_state = (
+            f"{critical} CRITICAL / {len(selected)} APPLICABLE"
+            if critical
+            else f"{len(selected)} APPLICABLE NOTAM(S)"
+            if selected
+            else "NO APPLICABLE RECORD HELD"
+        )
+        return station, panel_data, notam_state
+
+    timeline = [
+        row
+        for row in overview.get("timeline") or []
+        if isinstance(row, dict)
+    ]
+    arrival_timeline = next(
+        (row for row in reversed(timeline) if row.get("kind") == "arrival"),
+        {},
+    )
+    filed_eet = arrival_timeline.get("actm_display")
+    schedule_rows = [
+        (
+            "SCHED DEP",
+            f"{str(page_one.get('scheduled_departure_hhmm') or '--').rstrip('Z')}Z",
+        ),
+        (
+            "SCHED ARR",
+            f"{str(page_one.get('scheduled_arrival_hhmm') or '--').rstrip('Z')}Z",
+        ),
+        ("FLIGHT TIME", unavailable(str(filed_eet or "").replace(".", ":"))),
+        (
+            "AIRCRAFT",
+            " / ".join(
+                value
+                for value in (
+                    str(identity.get("aircraft_type") or "").strip(),
+                    str(identity.get("registration") or "").strip(),
+                )
+                if value
+            )
+            or "UNAVAILABLE - REVIEW REQUIRED",
+        ),
+        (
+            "ATOT",
+            str(
+                identity.get("actual_takeoff_hhmm")
+                or "NOT ENTERED"
+            ),
+        ),
+        (
+            "TARGET ARRIVAL",
+            (
+                f"{str(identity.get('eta_hhmm') or '').rstrip('Z')}Z"
+                if str(identity.get("eta_status") or "").lower()
+                == "calculated"
+                else "NOT CALCULATED"
+            ),
+        ),
+        (
+            "TIME BASIS",
+            "TARGET CROSS-OVER TIME = ATOT + OFP ACTM"
+            if identity.get("actual_takeoff_hhmm")
+            else "OFP SCHEDULE / ACTM",
+        ),
+    ]
+
+    departure, departure_panel, departure_notams = airport_context("departure")
+    destination, destination_panel, destination_notams = airport_context(
+        "destination"
+    )
+    departure_plan = departure.get("plan") or {}
+    destination_plan = destination.get("plan") or {}
+    performance_inputs = page_one.get("performance") or {}
+
+    def signed_temperature(value: Any) -> str:
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError):
+            return "--"
+        return f"{'P' if numeric >= 0 else 'M'}{abs(numeric):03d}"
+
+    departure_rows = [
+        (
+            "APT / RWY",
+            f"{theme.airport_code_label(str(departure.get('icao') or '----'))} / "
+            f"{departure_plan.get('runway') or '--'}",
+        ),
+        ("SID", unavailable(departure_plan.get("procedure") or page_one.get("sid"))),
+        (
+            "PLAN TEMP / QNH",
+            f"{signed_temperature(performance_inputs.get('temperature_c'))} / "
+            f"{performance_inputs.get('qnh_hpa') or '--'}",
+        ),
+        ("PLAN WIND", unavailable(performance_inputs.get("wind"))),
+        ("NOTAM", departure_notams),
+    ]
+
+    destination_weather = destination_panel.get("weather") or {}
+    destination_forecast = destination.get("forecast_at_reference") or {}
+    forecast_value = str(
+        destination_forecast.get("applicable_conditions") or ""
+    ).strip()
+    if not forecast_value and isinstance(destination_weather.get("taf"), dict):
+        forecast_value = "TAF HELD - SEE WEATHER DETAIL"
+    if not forecast_value:
+        window_primary = str(
+            (destination_panel.get("window_weather") or {}).get("primary")
+            or ""
+        ).strip()
+        if window_primary and not window_primary.lower().startswith(
+            "no significant"
+        ):
+            forecast_value = "WINDOW REVIEW HELD"
+
+    alternates = [
+        row for row in page_one.get("alternates") or [] if isinstance(row, dict)
+    ]
+    preferred = alternates[0] if alternates else {}
+    destination_rows = [
+        (
+            "APT / RWY",
+            f"{theme.airport_code_label(str(destination.get('icao') or '----'))} / "
+            f"{destination_plan.get('runway') or '--'}",
+        ),
+        ("STAR", unavailable(destination_plan.get("procedure") or page_one.get("star"))),
+        ("TAF AT SCHED ARR", unavailable(forecast_value)),
+        (
+            "ALTN",
+            " / ".join(
+                part
+                for part in (
+                    str(preferred.get("airport") or "").upper(),
+                    str(preferred.get("runway") or ""),
+                )
+                if part
+            )
+            or "UNAVAILABLE - REVIEW REQUIRED",
+        ),
+        ("NOTAM", destination_notams),
+    ]
+
+    pzfw = source_masses.get("pzfw", shared_masses.get("planned_zfw_kg"))
+    ptow = source_masses.get(
+        "ptow", shared_masses.get("planned_takeoff_weight_kg")
+    )
+    plwt = source_masses.get(
+        "plwt", shared_masses.get("planned_landing_weight_kg")
+    )
+    margin = performance.get("margin_kg")
+    mass_rows = [
+        ("PZFW", kg(pzfw)),
+        ("PTOW", kg(ptow)),
+        ("PLWT", kg(plwt)),
+        ("SELECTED RTOW", kg(performance.get("selected_rtow_kg"))),
+        (
+            "RTOW MARGIN",
+            f"{int(margin):+,} kg"
+            if margin is not None
+            else "UNAVAILABLE - REVIEW REQUIRED",
+        ),
+        ("STATUS", str(performance.get("status") or "REVIEW REQUIRED").upper()),
+    ]
+
+    tanks = (source_fuel_rows.get("fuel_in_tanks") or {}).get(
+        "fuel_kg", shared_fuel.get("fuel_in_tanks_kg")
+    )
+    burnoff = (source_fuel_rows.get("burnoff") or {}).get(
+        "fuel_kg", shared_fuel.get("trip_fuel_kg")
+    )
+    taxi_fuel = fuel_summary.get("taxi_fuel_kg")
+    fuel_rows = [
+        (
+            "FUEL IN TANKS",
+            timed_fuel("fuel_in_tanks", fallback_fuel_kg=tanks),
+        ),
+        ("FLT PLAN REQMT", timed_fuel("flt_plan_reqmt")),
+        ("BURNOFF", timed_fuel("burnoff", fallback_fuel_kg=burnoff)),
+        ("STAT CONT", timed_fuel("stat_cont")),
+        ("ALTN FUEL", timed_fuel("altn_fuel")),
+        ("ALTN HOLD", timed_fuel("altn_hold")),
+        (
+            "TAXI FUEL",
+            kg(taxi_fuel),
+        ),
+        ("EXCESS FUEL", timed_fuel("excess_fuel")),
+    ]
+
+    edto = briefing.get("edto") or {}
+    edto_rows = edto.get("operational_rows") or []
+    edto_value = next(
+        (
+            str(row.get("value") or "")
+            for row in edto_rows
+            if str(row.get("label") or "").upper() == "CLASSIFICATION"
+        ),
+        _edto_classification(flight),
+    )
+    classification_display = (
+        "NON-EDTO"
+        if "NON-EDTO" in edto_value.upper()
+        else "EDTO"
+        if "CLASSIFICATION: EDTO" in edto_value.upper()
+        else "REVIEW REQUIRED"
+    )
+    rules_display = str(identity.get("rules") or "").strip()
+    if classification_display != "REVIEW REQUIRED" and (
+        classification_display not in rules_display.upper()
+    ):
+        rules_display = " / ".join(
+            value for value in (classification_display, rules_display) if value
+        )
+    cruise_wind = fuel_summary.get("cruise_wind_component_kt")
+    other_alternates = " ".join(
+        str(row.get("airport") or "").upper() for row in alternates[1:]
+        if str(row.get("airport") or "").strip()
+    )
+    plan_rows = [
+        (
+            "ROUTE / PLAN",
+            " / ".join(
+                value
+                for value in (
+                    str(identity.get("route_id") or "").strip(),
+                    f"P{identity.get('plan_number')}"
+                    if identity.get("plan_number")
+                    else "",
+                )
+                if value
+            )
+            or "UNAVAILABLE - REVIEW REQUIRED",
+        ),
+        (
+            "FLT RULES",
+            unavailable(rules_display or classification_display),
+        ),
+        (
+            "CI / APD",
+            (
+                f"{identity.get('cost_index')} / "
+                f"{identity.get('apd_percent')}%"
+                if identity.get("cost_index") is not None
+                and identity.get("apd_percent") is not None
+                else "UNAVAILABLE - REVIEW REQUIRED"
+            ),
+        ),
+        (
+            "GND / AIR NM",
+            f"{page_one.get('ground_distance_nm') or '--'} / "
+            f"{page_one.get('air_distance_nm') or '--'}",
+        ),
+        (
+            "CRZ COMP",
+            (
+                f"{'P' if int(cruise_wind) >= 0 else 'M'}{abs(int(cruise_wind)):03d}"
+                if cruise_wind is not None
+                else "UNAVAILABLE - REVIEW REQUIRED"
+            ),
+        ),
+        (
+            "ALTN / RWY",
+            " / ".join(
+                part
+                for part in (
+                    str(preferred.get("airport") or "").upper(),
+                    str(preferred.get("runway") or ""),
+                )
+                if part
+            )
+            or "UNAVAILABLE - REVIEW REQUIRED",
+        ),
+        ("APPROACH", unavailable(preferred.get("approach"))),
+        ("OTHER ALTN", other_alternates or "NONE FILED"),
+    ]
+
+    canvas.setFillColor(TEXT)
+    canvas.setFont(SANS_BOLD, 11.2)
+    canvas.drawString(MARGIN, content_top - 4, "OFP PAGE 1 - FLIGHT BRIEFING")
+    canvas.setFillColor(TEXT_MUTED)
+    canvas.setFont(SANS, 8.4)
+    canvas.drawRightString(
+        width - MARGIN,
+        content_top - 4,
+        "PARSED OFP VALUES | MISSING CONTROLLED DATA FAILS CLOSED",
+    )
+
+    grid_top = content_top - 22.0
+    grid_gap = 9.0
+    confirmation_y = 38.0
+    confirmation_h = 100.0
+    grid_bottom = confirmation_y + confirmation_h + 12.0
+    card_h = (grid_top - grid_bottom - grid_gap) / 2.0
+    card_w = (full_w - 2 * grid_gap) / 3.0
+    cards = (
+        ("SCHEDULE", DASH_BLUE, schedule_rows),
+        ("DEPARTURE", DEPARTURE, departure_rows),
+        ("DESTINATION", DESTINATION, destination_rows),
+        ("MASS / PERFORMANCE", DASH_PURPLE, mass_rows),
+        ("FUEL / TIME RESERVES", DASH_GREEN, fuel_rows),
+        ("FLIGHT PLAN / ALTERNATE", DASH_ORANGE, plan_rows),
+    )
+    for index, (title, accent, rows) in enumerate(cards):
+        column, row = index % 3, index // 3
+        card_x = MARGIN + column * (card_w + grid_gap)
+        card_top = grid_top - row * (card_h + grid_gap)
+        card_y = card_top - card_h
+        inner_x, _, inner_w, _ = panel(
+            canvas,
+            card_x,
+            card_y,
+            card_w,
+            card_h,
+            title=title,
+            accent=accent,
+            title_colour=None,
+        )
+        row_y = card_top - 31.0
+        row_leading = 15.2 if len(rows) <= 6 else 13.5
+        label_w = min(
+            88.0,
+            max(
+                62.0,
+                max(
+                    pdfmetrics.stringWidth(str(label), SANS_BOLD, 8.4)
+                    for label, _ in rows
+                ) + 8.0,
+            ),
+        )
+        for label, value in rows:
+            canvas.setFillColor(TEXT_MUTED)
+            canvas.setFont(SANS_BOLD, 8.4)
+            canvas.drawString(inner_x, row_y, str(label))
+            value_lines = _wrap(
+                str(value),
+                MONO_BOLD,
+                8.4,
+                inner_w - label_w,
+            )
+            canvas.setFillColor(TEXT)
+            canvas.setFont(MONO_BOLD, 8.4)
+            for line_index, line in enumerate(value_lines):
+                canvas.drawString(
+                    inner_x + label_w,
+                    row_y - line_index * 9.4,
+                    line,
+                )
+            row_y -= max(row_leading, len(value_lines) * 9.4 + 3.0)
+        if row_y < card_y + 8.0:
+            raise ValueError(f"Page-1 {title} card exceeds readable capacity.")
+
+    actions = _operational_phase_actions(flight, briefing)
+    canvas.setFillColor(_page_colour(canvas, "panel", PANEL))
+    canvas.setStrokeColor(_page_colour(canvas, "border", BORDER))
+    canvas.setLineWidth(0.8)
+    canvas.roundRect(
+        MARGIN, confirmation_y, full_w, confirmation_h, 6, stroke=1, fill=1
+    )
+    canvas.setFillColor(WEATHER_AMBER)
+    canvas.rect(
+        MARGIN,
+        confirmation_y + confirmation_h - 3,
+        full_w,
+        3,
+        stroke=0,
+        fill=1,
+    )
+    canvas.setFont(SANS_BOLD, 9.0)
+    canvas.drawString(
+        MARGIN + 10,
+        confirmation_y + confirmation_h - 18,
+        "ITEMS REQUIRING CONFIRMATION",
+    )
+    action_top = confirmation_y + confirmation_h - 30.0
+    cell_w = full_w / len(actions)
+    for index, action in enumerate(actions):
+        cell_x = MARGIN + index * cell_w
+        if index:
+            canvas.setStrokeColor(_page_colour(canvas, "border", BORDER))
+            canvas.line(cell_x, confirmation_y + 8, cell_x, action_top + 2)
+        canvas.setFillColor(action["accent"])
+        canvas.setFont(SANS_BOLD, 8.4)
+        canvas.drawString(cell_x + 8, action_top - 1, str(action["phase"]))
+        lines = _wrap(
+            str(action["headline"]), SANS_BOLD, 8.4, cell_w - 16
+        )
+        if len(lines) > 4:
+            lines = lines[:3] + ["SEE LINKED SECTION"]
+        line_y = action_top - 15.0
+        canvas.setFillColor(TEXT_SECONDARY)
+        canvas.setFont(SANS_BOLD, 8.4)
+        for line in lines:
+            canvas.drawString(cell_x + 8, line_y, line)
+            line_y -= 10.2
+        canvas.linkRect(
+            "",
+            str(action["target"]),
+            (cell_x, confirmation_y, cell_x + cell_w, action_top + 4),
+            relative=0,
+            thickness=0,
+        )
+
 
 def draw_overview_page(
     canvas,
@@ -1980,9 +2485,18 @@ def draw_overview_page(
         page_number=page_number,
         page_count=page_count,
         source_line=" | ".join(source_parts),
-        show_tabs=True,
+        show_tabs=not operational_readable,
+        page_one_status_pill=not operational_readable,
     )
     canvas.bookmarkPage("sec_overview")
+    if operational_readable:
+        _draw_operational_six_box_overview(
+            canvas,
+            flight,
+            briefing,
+            content_top=content_top,
+        )
+        return
     if not operational_readable:
         # The immutable REV3-v8 audit profile links its Page-2 performance
         # verdict back to this distinct Page-1 destination.
@@ -3880,7 +4394,7 @@ def _detail_page_plans(
     if not rows:
         return []
     if value_width is None:
-        value_width = PAGE_SIZE[0] - 2 * MARGIN - 178.0
+        value_width = PAGE_SIZE[0] - 2 * MARGIN - 192.0
     fragments: list[tuple[str, list[str], int]] = []
     for label, value in rows:
         lines = _wrap(str(value), SANS, T_SMALL, value_width) or [""]
@@ -3905,6 +4419,89 @@ def _detail_page_plans(
         used += cost
     if current:
         pages.append({"title": title, "rows": current})
+    return pages
+
+
+def _detail_record_page_plans(
+    title: str,
+    records: list[tuple[str, list[tuple[str, str]]]],
+    *,
+    value_width: float | None = None,
+) -> list[dict[str, Any]]:
+    """Pack whole audit records; oversized records get isolated continuations.
+
+    A NOTAM must not begin at the bottom of one page and leave its Item E on
+    the next. Records that individually fit are atomic. An exceptionally long
+    source record is split only across dedicated pages carrying the same
+    record key, so no neighbouring NOTAM can be interleaved with it.
+    """
+
+    if value_width is None:
+        value_width = PAGE_SIZE[0] - 2 * MARGIN - 192.0
+
+    def fragments(rows: list[tuple[str, str]]) -> list[tuple[str, list[str], int]]:
+        result: list[tuple[str, list[str], int]] = []
+        max_lines = max(1, DETAIL_PAGE_LINE_BUDGET - 2)
+        for label, value in rows:
+            lines = _wrap(str(value), SANS, T_SMALL, value_width) or [""]
+            for index in range(0, len(lines), max_lines):
+                selected = lines[index:index + max_lines]
+                result.append((
+                    str(label) if index == 0 else f"{label} CONT.",
+                    selected,
+                    len(selected) + 1,
+                ))
+        return result
+
+    pages: list[dict[str, Any]] = []
+    current_rows: list[tuple[str, list[str]]] = []
+    current_keys: list[str] = []
+    current_cost = 0
+
+    def flush() -> None:
+        nonlocal current_rows, current_keys, current_cost
+        if current_rows:
+            pages.append({
+                "title": title,
+                "rows": current_rows,
+                "record_keys": list(current_keys),
+            })
+        current_rows = []
+        current_keys = []
+        current_cost = 0
+
+    for record_key, rows in records:
+        record_fragments = fragments(rows)
+        record_cost = sum(cost for _label, _lines, cost in record_fragments)
+        if record_cost <= DETAIL_PAGE_LINE_BUDGET:
+            if current_rows and current_cost + record_cost > DETAIL_PAGE_LINE_BUDGET:
+                flush()
+            current_rows.extend((label, lines) for label, lines, _cost in record_fragments)
+            current_keys.append(record_key)
+            current_cost += record_cost
+            continue
+
+        flush()
+        page_rows: list[tuple[str, list[str]]] = []
+        page_cost = 0
+        for label, lines, cost in record_fragments:
+            if page_rows and page_cost + cost > DETAIL_PAGE_LINE_BUDGET:
+                pages.append({
+                    "title": title,
+                    "rows": page_rows,
+                    "record_keys": [record_key],
+                })
+                page_rows = []
+                page_cost = 0
+            page_rows.append((label, lines))
+            page_cost += cost
+        if page_rows:
+            pages.append({
+                "title": title,
+                "rows": page_rows,
+                "record_keys": [record_key],
+            })
+    flush()
     return pages
 
 
@@ -4002,18 +4599,53 @@ def _deferred_detail_pages(
     return _detail_page_plans("FULL OFP DEFERRED DECLARATIONS", rows)
 
 
+def _pdf_notam_operational_headline(
+    item: dict[str, Any],
+    *,
+    role: str,
+) -> str:
+    """Prefer reviewed compact wording; never recast an unknown Item E wall."""
+
+    raw = " ".join(str(item.get("item_e_text") or "").split())
+    family = _compact_notam_family(item)
+    candidate = " ".join(_compact_notam_text(
+        item,
+        family,
+        role=role,
+        planned_runways=set(),
+        reference_time=None,
+    ).split())
+    if (
+        not candidate
+        or candidate.upper() == raw.upper()
+        or len(candidate) > 260
+        or re.search(r"\bQ[A-Z]{4}\b", candidate.upper())
+    ):
+        return "Operational source notice requires review; full Item E follows."
+    return candidate if candidate.endswith((".", "!", "?")) else f"{candidate}."
+
+
 def _airport_notam_detail_pages(
     briefing: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    rows: list[tuple[str, str]] = []
+    records: list[tuple[str, list[tuple[str, str]]]] = []
     for panel_data in briefing.get("airport_operational_panels") or []:
         icao = str(panel_data.get("icao") or "----").upper()
+        role = str(panel_data.get("role") or "airport").strip()
         for index, item in enumerate(panel_data.get("selected_notams") or [], start=1):
             if _is_ended_critical_approach_notice(item):
                 continue
-            notam_id = str(item.get("notam_id") or "UNSPECIFIED")
+            notam_id = normalize_notam_references(
+                item.get("notam_id") or "UNSPECIFIED"
+            )
             prefix = f"{icao} {index}"
-            rows.append((f"{prefix} NOTAM ID", notam_id))
+            rows = [
+                (f"{prefix} NOTAM ID", notam_id),
+                (
+                    f"{prefix} OPERATIONAL HEADLINE",
+                    _pdf_notam_operational_headline(item, role=role),
+                ),
+            ]
             if _is_critical_approach_notice(item):
                 rows.append((
                     f"{prefix} STATUS",
@@ -4047,11 +4679,7 @@ def _airport_notam_detail_pages(
                     ),
                 ),
                 (
-                    f"{prefix} SUMMARY",
-                    str(item.get("summary") or "NO SEPARATE SUMMARY HELD"),
-                ),
-                (
-                    f"{prefix} ITEM E",
+                    f"{prefix} RAW ITEM E",
                     str(item.get("item_e_text") or "ITEM-E TEXT NOT HELD - REVIEW SOURCE"),
                 ),
                 (
@@ -4061,7 +4689,8 @@ def _airport_notam_detail_pages(
                     else "SOURCE PAGE NOT HELD",
                 ),
             ))
-    return _detail_page_plans("ALL SELECTED NOTAM DETAILS", rows)
+            records.append((f"{icao}:{notam_id}:{index}", rows))
+    return _detail_record_page_plans("ALL SELECTED NOTAM DETAILS", records)
 
 
 def _critical_approach_detail_pages(
@@ -4245,7 +4874,7 @@ def draw_shared_detail_page(
         title_colour=None,
     )
     ix, iy, iw, ih = inner
-    label_width = 158.0
+    label_width = 172.0
     row_y = content_top - 31.0
     for label, lines in rows:
         required = len(lines) * DETAIL_LINE_HEIGHT + DETAIL_ROW_GAP
@@ -4260,7 +4889,7 @@ def draw_shared_detail_page(
             row_y,
             label,
             MONO_BOLD,
-            T_MICRO,
+            T_OPERATIONAL_FLOOR,
             label_width - 8,
             TEXT_MUTED,
         )
@@ -4598,6 +5227,8 @@ def _is_critical_approach_notice(item: dict[str, Any]) -> bool:
 
 
 def _critical_approach_timing_state(item: dict[str, Any]) -> str:
+    if item.get("approach_condition_review") is True:
+        return "review"
     state = str(
         item.get("stateAtReference")
         or item.get("state_at_reference")
@@ -5126,16 +5757,62 @@ def _sigmet_card_fragments(
     return fragments
 
 
+def _vaac_receipt_timestamp(value: Any) -> str | None:
+    """Render one held VAAC time with a four-digit year and no text bleed.
+
+    Direct VAAC products use both ISO timestamps and the compact
+    ``YYYYMMDD/HHMMZ`` form.  A malformed or prose-contaminated field is
+    never echoed as a deadline; only the bounded timestamp token is used.
+    """
+    from datetime import datetime, timezone
+
+    raw = " ".join(str(value or "").split())
+    if not raw:
+        return None
+    compact = re.search(
+        r"(?<!\d)(\d{4})(\d{2})(\d{2})/(\d{2})(\d{2})Z?(?!\d)",
+        raw,
+    )
+    if compact:
+        try:
+            parsed = datetime(
+                *map(int, compact.groups()),
+                tzinfo=timezone.utc,
+            )
+        except ValueError:
+            return None
+        return parsed.strftime("%Y-%m-%dT%H:%MZ")
+    iso = re.match(
+        r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?$",
+        raw,
+    )
+    if not iso:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+
+
 def _vaac_centre_receipt_line(item: dict[str, Any]) -> str:
     """One source-held centre receipt, without interpreting freshness."""
     receipt = f"{item.get('centre')}: {item.get('status')}"
-    if item.get("listing_latest_utc") not in (None, ""):
-        receipt += f" | latest {item['listing_latest_utc']}"
-    if item.get("next_advisory_due") not in (None, ""):
-        receipt += f" | next due {item['next_advisory_due']}"
+    latest = _vaac_receipt_timestamp(item.get("listing_latest_utc"))
+    if latest:
+        receipt += f" | latest {latest}"
+    else:
+        receipt += " | latest timestamp not held"
+    next_due = _vaac_receipt_timestamp(item.get("next_advisory_due"))
+    if next_due:
+        receipt += f" | next due {next_due}"
     for note in item.get("next_advisory_notes") or []:
         if note not in (None, ""):
             receipt += f" | next advisory {note}"
+    if not next_due and not (item.get("next_advisory_notes") or []):
+        receipt += " | next advisory timing not held"
     return receipt
 
 
@@ -5172,23 +5849,94 @@ def _vaac_ledger_lines(
 def _vaac_receipt_detail_pages(
     briefing: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Paginate observed GTS centre receipts on the downloaded briefing."""
+    """Paginate every governed centre plus dashboard route-map VAA counts."""
+    hazards = briefing.get("hazards") or {}
+    reach = hazards.get("vaac_reach") or {}
+    vaa = briefing.get("vaa") or {}
     centres = list(
-        (((briefing.get("hazards") or {}).get("vaac_reach") or {}).get(
-            "centres"
-        ) or [])
+        reach.get("centres") or []
     )
-    rows = [
+    polygons = reach.get("advisory_polygons") or {}
+    proximity = hazards.get("volcano_proximity") or {}
+    affecting = int(polygons.get("affecting") or 0)
+    monitoring = int(polygons.get("monitoring") or 0)
+    if not (
+        centres
+        or affecting
+        or monitoring
+        or proximity
+        or vaa.get("source_status")
+        or vaa.get("applicability_status")
+        or int(vaa.get("official_advisory_count") or 0)
+    ):
+        # A checklist UNAVAILABLE/NOT QUERIED state is sufficient when no
+        # governed source attempt or route-map receipt exists.  Do not append
+        # a synthetic nine-centre page that shifts every unrelated section.
+        return []
+    proximity_entries = list(proximity.get("entries") or [])
+    within_corridor = sum(
+        1 for item in proximity_entries
+        if isinstance(item, dict) and item.get("within_corridor") is True
+    )
+    corridor_nm = float(proximity.get("corridor_nm") or 200.0)
+    corridor_label = (
+        str(int(corridor_nm))
+        if corridor_nm.is_integer()
+        else str(corridor_nm)
+    )
+    source_status = str(vaa.get("source_status") or "unavailable").replace(
+        "_", " "
+    ).upper()
+    applicability = str(
+        vaa.get("applicability_status") or "not assessed"
+    ).replace("_", " ").upper()
+    rows: list[tuple[str, str]] = [
+        (
+            "DIRECT VAA SOURCE",
+            f"{source_status} · {int(vaa.get('official_advisory_count') or 0)} "
+            f"ADVISORIES HELD · APPLICABILITY {applicability}",
+        ),
+        (
+            "VAA POLYGONS",
+            f"{affecting} AFFECTING · {monitoring} MONITORING · "
+            "DASHBOARD ROUTE-MAP OVERLAY COUNTS",
+        ),
+        (
+            "VOLCANO PROXIMITY",
+            f"{str(proximity.get('status') or 'unavailable').replace('_', ' ').upper()} · "
+            f"{len(proximity_entries)} MARKERS · {within_corridor} WITHIN "
+            f"{corridor_label} NM · PROXIMITY IS NOT ASH PRESENCE",
+        ),
+    ]
+    rows.extend([
         ("CENTRE RECEIPT", _vaac_centre_receipt_line(item))
         for item in centres
         if isinstance(item, dict)
-        and (
-            item.get("listing_latest_utc") not in (None, "")
-            or item.get("next_advisory_due") not in (None, "")
-            or bool(item.get("next_advisory_notes"))
-        )
-    ]
+    ])
     return _detail_page_plans("VAAC SOURCE RECEIPTS", rows)
+
+
+def _operational_edto_detail_pages(
+    briefing: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Keep every shared EDTO sector, ETP, alternate and fuel row in PDF.
+
+    The six-box page carries only the classification/rules summary.  When the
+    parsed OFP has operational EDTO detail, paginate the already-composed
+    shared rows rather than rebuilding or truncating them in the renderer.
+    """
+    rows = _shared_edto_operational_rows(briefing)
+    operational_rows = [
+        (label, value)
+        for label, value in rows
+        if label.strip().upper() not in {"CLASSIFICATION", "GATE"}
+    ]
+    if not operational_rows:
+        return []
+    return _detail_page_plans(
+        "EDTO TIMING / ALTERNATES",
+        rows,
+    )
 
 
 def _hazard_vaac_line_capacity(
@@ -10487,6 +11235,27 @@ def draw_operational_airport_index_page(
         y -= _AIRPORT_INDEX_LINE_ADVANCE
 
 
+def _operational_alternate_matrix_title(
+    *,
+    displayed_alternate_count: int,
+    alternate_count: int,
+    secondary_airport_count: int,
+) -> str:
+    """Name displayed alternate rows separately from canonical panels."""
+    title = "DESTINATION ALTERNATE ASSESSMENT MATRIX"
+    if alternate_count:
+        title += (
+            f" · {displayed_alternate_count}/{alternate_count} ROWS SHOWN"
+        )
+    if secondary_airport_count:
+        panel_label = "PANEL" if secondary_airport_count == 1 else "PANELS"
+        title += (
+            f" · {secondary_airport_count} FILED SECONDARY AIRPORT "
+            f"{panel_label} · FULL DETAIL IN DASHBOARD"
+        )
+    return title
+
+
 def draw_operational_airports_page(
     canvas,
     flight: dict[str, Any],
@@ -10567,6 +11336,14 @@ def draw_operational_airports_page(
                 f"{len(shown_notices)} shown"
             ),
         ]
+        window_weather = panel_data.get("window_weather") or {}
+        window_primary = str(window_weather.get("primary") or "").strip()
+        if (
+            not any(weather.get(kind) for kind in ("metar", "taf"))
+            and window_primary
+            and not window_primary.lower().startswith("no significant")
+        ):
+            rows.insert(2, f"WINDOW REVIEW · {window_primary}")
         for notice in shown_notices:
             critical_label = (
                 _critical_approach_label(notice)
@@ -10645,16 +11422,11 @@ def draw_operational_airports_page(
         if str(panel_data.get("icao") or "").strip().upper()
         not in primary_airports
     )
-    alternate_overflow_count = max(0, len(alternates) - len(displayed_alternates))
-    matrix_title = "DESTINATION ALTERNATE ASSESSMENT MATRIX"
-    if alternate_overflow_count:
-        matrix_title += f" · +{alternate_overflow_count} ALTERNATES IN DASHBOARD"
-    if secondary_airport_count:
-        airport_label = "AIRPORT" if secondary_airport_count == 1 else "AIRPORTS"
-        matrix_title += (
-            f" · {secondary_airport_count} SECONDARY {airport_label} · "
-            "FULL SELECTED DETAIL REMAINS IN DASHBOARD"
-        )
+    matrix_title = _operational_alternate_matrix_title(
+        displayed_alternate_count=len(displayed_alternates),
+        alternate_count=len(alternates),
+        secondary_airport_count=secondary_airport_count,
+    )
     inner = panel(
         canvas,
         MARGIN,
@@ -10677,7 +11449,7 @@ def draw_operational_airports_page(
             (
                 f"EDTO CONTINUATION · {sector_count} "
                 f"SECTOR{'S' if sector_count != 1 else ''} / "
-                f"{len(edto_airports)} ALTN / FULL EDTO: DASHBOARD"
+                f"{len(edto_airports)} ALTN / DETAIL RECEIPT FOLLOWS"
             ),
         )
         header_y -= 14.0
@@ -11695,14 +12467,26 @@ def _operational_coverage_receipt(
     selected_airport_notams = sum(
         len(panel.get("selected_notams") or []) for panel in airport_panels
     )
+    station_window_notams = sum(
+        int(entry.get("notamCount") or 0)
+        for entry in briefing.get("airport_surface_index") or []
+        if isinstance(entry, dict)
+    )
     airport_notam_sources = sum(
         len(panel.get("source_pages") or []) for panel in airport_panels
     )
     if selected_airport_notams:
         airport_notam_state = "FOUND"
         airport_notam_detail = (
-            f"{selected_airport_notams} selected airport NOTAM record(s) held "
-            "with applicability shown in the airport section."
+            f"{selected_airport_notams} OFP-selected role-bound airport "
+            "NOTAM record(s) held"
+            + (
+                f"; {station_window_notams} current station-window record(s) "
+                "are held in the separately published airport index. These "
+                "are different evidence sets and their counts need not match."
+                if station_window_notams
+                else ". Applicability is shown in the airport section."
+            )
         )
     elif airport_notam_sources:
         airport_notam_state = "CHECKED · NO MATCH"
@@ -11919,6 +12703,16 @@ def _operational_coverage_receipt(
     airep_row = _external_cat_receipt(briefing)
     rows.append(airep_row)
 
+    attached_references = [
+        item
+        for item in (
+            (company_briefing_references or {}).get("references") or []
+        )
+        if isinstance(item, dict)
+    ] if isinstance(company_briefing_references, dict) else []
+    reference_status = str(
+        (company_briefing_references or {}).get("status") or ""
+    ).lower() if isinstance(company_briefing_references, dict) else ""
     if exact_extracts:
         references_state = "FOUND"
         references_detail = f"{len(exact_extracts)} exact governed manual extract(s) published."
@@ -11927,9 +12721,20 @@ def _operational_coverage_receipt(
         references_detail = (
             f"{len(candidate_extracts)} governed candidate extract(s) held; none selected."
         )
-    elif isinstance(company_briefing_references, dict) and str(
-        company_briefing_references.get("status") or ""
-    ).lower() == "unavailable":
+    elif reference_status == "available" and attached_references:
+        references_state = "REVIEW REQUIRED"
+        references_detail = (
+            f"{len(attached_references)} approved governed reference "
+            "receipt(s) attached, but none has an exact or explicit "
+            "candidate binding to a supported OFP deferred declaration."
+        )
+    elif reference_status == "available":
+        references_state = "CHECKED · NO MATCH"
+        references_detail = (
+            "Governed company-manual lookup completed with no approved "
+            "reference receipt for this OFP."
+        )
+    elif reference_status == "unavailable":
         references_state = "UNAVAILABLE"
         references_detail = "Governed company-manual references are explicitly unavailable."
     else:
@@ -13139,8 +13944,20 @@ def render_combined_briefing(
         operational_airport_index_pages = _operational_airport_index_pages(
             briefing
         )
+        operational_edto_detail_pages = _operational_edto_detail_pages(
+            briefing
+        )
+        operational_edto_detail_count = len(
+            operational_edto_detail_pages
+        )
         operational_airport_index_count = len(
             operational_airport_index_pages
+        )
+        operational_airport_notam_pages = list(
+            airport_notam_detail_pages
+        )
+        operational_airport_notam_count = len(
+            operational_airport_notam_pages
         )
         operational_critical_approach_pages = (
             _critical_approach_detail_pages(briefing)
@@ -13164,7 +13981,9 @@ def render_combined_briefing(
         operational_hazards_page = (
             operational_airports_page
             + 1
+            + operational_edto_detail_count
             + operational_airport_index_count
+            + operational_airport_notam_count
             + operational_critical_approach_count
             + operational_surface_shortening_count
         )
@@ -13178,7 +13997,9 @@ def render_combined_briefing(
         operational_page_count = (
             7
             + operational_mel_page_count
+            + operational_edto_detail_count
             + operational_airport_index_count
+            + operational_airport_notam_count
             + operational_critical_approach_count
             + operational_surface_shortening_count
             + operational_vaac_receipt_page_count
@@ -13365,6 +14186,49 @@ def render_combined_briefing(
         )
         canvas.addOutlineEntry("Airports / Alternates", "sec_airports", level=0)
         canvas.showPage()
+        for index, edto_detail_page in enumerate(
+            operational_edto_detail_pages,
+            start=1,
+        ):
+            bookmark = f"sec_airports_edto_{index}"
+            canvas.bookmarkPage(bookmark)
+            draw_shared_detail_page(
+                canvas,
+                flight,
+                page_number=operational_airports_page + index,
+                page_count=operational_page_count,
+                section_label="AIRPORTS / ALTERNATES",
+                section_colour=EDTO_GREEN,
+                section_page_number=1 + index,
+                section_page_count=(
+                    1
+                    + operational_edto_detail_count
+                    + operational_airport_index_count
+                    + operational_airport_notam_count
+                    + operational_critical_approach_count
+                    + operational_surface_shortening_count
+                ),
+                title=edto_detail_page["title"],
+                rows=edto_detail_page["rows"],
+                source_line=(
+                    "Shared OFP EDTO classification, sector, ETP, alternate, "
+                    "fuel and checked-period rows"
+                ),
+                page_family="deep",
+            )
+            canvas.addOutlineEntry(
+                (
+                    "EDTO Timing / Alternates"
+                    if index == 1
+                    else (
+                        "EDTO Timing / Alternates "
+                        f"{index}/{operational_edto_detail_count}"
+                    )
+                ),
+                bookmark,
+                level=0,
+            )
+            canvas.showPage()
         for index, airport_index_lines in enumerate(
             operational_airport_index_pages,
             start=1,
@@ -13372,7 +14236,11 @@ def render_combined_briefing(
             draw_operational_airport_index_page(
                 canvas,
                 flight,
-                page_number=operational_airports_page + index,
+                page_number=(
+                    operational_airports_page
+                    + operational_edto_detail_count
+                    + index
+                ),
                 page_count=operational_page_count,
                 lines=airport_index_lines,
                 continuation_number=index,
@@ -13395,6 +14263,59 @@ def render_combined_briefing(
                 level=0,
             )
             canvas.showPage()
+        for index, notam_page in enumerate(
+            operational_airport_notam_pages,
+            start=1,
+        ):
+            bookmark = f"sec_airports_notam_{index}"
+            canvas.bookmarkPage(bookmark)
+            draw_shared_detail_page(
+                canvas,
+                flight,
+                page_number=(
+                    operational_airports_page
+                    + operational_edto_detail_count
+                    + operational_airport_index_count
+                    + index
+                ),
+                page_count=operational_page_count,
+                section_label="AIRPORTS / ALTERNATES",
+                section_colour=DESTINATION,
+                section_page_number=(
+                    1
+                    + operational_edto_detail_count
+                    + operational_airport_index_count
+                    + index
+                ),
+                section_page_count=(
+                    1
+                    + operational_edto_detail_count
+                    + operational_airport_index_count
+                    + operational_airport_notam_count
+                    + operational_critical_approach_count
+                    + operational_surface_shortening_count
+                ),
+                title=notam_page["title"],
+                rows=notam_page["rows"],
+                source_line=(
+                    "Plain-English operational headline first; exact NOTAM "
+                    "validity, schedule, applicability and Item E retained"
+                ),
+                page_family="deep",
+            )
+            canvas.addOutlineEntry(
+                (
+                    "Selected NOTAM Evidence"
+                    if index == 1
+                    else (
+                        "Selected NOTAM Evidence "
+                        f"{index}/{operational_airport_notam_count}"
+                    )
+                ),
+                bookmark,
+                level=0,
+            )
+            canvas.showPage()
         for index, approach_page in enumerate(
             operational_critical_approach_pages,
             start=1,
@@ -13406,18 +14327,26 @@ def render_combined_briefing(
                 flight,
                 page_number=(
                     operational_airports_page
+                    + operational_edto_detail_count
                     + operational_airport_index_count
+                    + operational_airport_notam_count
                     + index
                 ),
                 page_count=operational_page_count,
                 section_label="AIRPORTS / ALTERNATES",
                 section_colour=CRITICAL,
                 section_page_number=(
-                    1 + operational_airport_index_count + index
+                    1
+                    + operational_edto_detail_count
+                    + operational_airport_index_count
+                    + operational_airport_notam_count
+                    + index
                 ),
                 section_page_count=(
                     1
+                    + operational_edto_detail_count
                     + operational_airport_index_count
+                    + operational_airport_notam_count
                     + operational_critical_approach_count
                     + operational_surface_shortening_count
                 ),
@@ -13453,7 +14382,9 @@ def render_combined_briefing(
                 flight,
                 page_number=(
                     operational_airports_page
+                    + operational_edto_detail_count
                     + operational_airport_index_count
+                    + operational_airport_notam_count
                     + operational_critical_approach_count
                     + index
                 ),
@@ -13462,13 +14393,17 @@ def render_combined_briefing(
                 section_colour=WEATHER_AMBER,
                 section_page_number=(
                     1
+                    + operational_edto_detail_count
                     + operational_airport_index_count
+                    + operational_airport_notam_count
                     + operational_critical_approach_count
                     + index
                 ),
                 section_page_count=(
                     1
+                    + operational_edto_detail_count
                     + operational_airport_index_count
+                    + operational_airport_notam_count
                     + operational_critical_approach_count
                     + operational_surface_shortening_count
                 ),

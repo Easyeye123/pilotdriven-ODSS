@@ -34,6 +34,7 @@ from app.odss.combined_brief import (
     _hazard_page_plans,
     _operational_alternate_constraint_assessment,
     _operational_alternate_forecast,
+    _operational_alternate_matrix_title,
     _operational_airport_index_page_fits,
     _operational_airport_index_pages,
     _operational_coverage_receipt,
@@ -161,12 +162,66 @@ def test_pdf_vaac_ledger_prints_observed_receipts_without_inferred_freshness():
     text = " ".join(lines)
 
     assert "TOKYO: reached" in text
-    assert "latest 2026-08-30T12:34:56Z" in text
-    assert "next due 2026-08-30T18:00:00Z" in text
+    assert "latest 2026-08-30T12:34Z" in text
+    assert "next due 2026-08-30T18:00Z" in text
     assert "next advisory NO FURTHER ADVISORIES" in text
     assert "next due NO FURTHER ADVISORIES" not in text
     assert "fresh" not in text.lower()
     assert "stale" not in text.lower()
+
+
+def test_notam_appendix_is_headline_first_and_keeps_each_normal_record_together():
+    long_raw = " ".join(
+        ["TWY A RESTRICTION SOURCE WORDING RETAINED FOR AUDIT"] * 55
+    )
+    pages = _airport_notam_detail_pages({
+        "airport_operational_panels": [{
+            "icao": "WSSS",
+            "role": "destination",
+            "selected_notams": [{
+                "notam_id": "A1001/26",
+                "summary": "Taxiway A restriction requires review.",
+                "item_e_text": long_raw + " END-A1001",
+                "valid_from_utc": "2026-08-31T00:00:00Z",
+                "valid_to_utc": "2026-09-01T00:00:00Z",
+                "applicability": "active",
+                "source_page": 18,
+            }, {
+                "notam_id": "A1002/26",
+                "summary": "QMRLC QXXXX SOURCE CODE WALL",
+                "item_e_text": "QMRLC QXXXX SOURCE CODE WALL END-A1002",
+                "valid_from_utc": "2026-08-31T00:00:00Z",
+                "valid_to_utc": "2026-09-01T00:00:00Z",
+                "applicability": "active",
+                "source_page": 19,
+            }],
+        }],
+    })
+
+    labels = [label for page in pages for label, _lines in page["rows"]]
+    assert labels[:2] == [
+        "WSSS 1 NOTAM ID",
+        "WSSS 1 OPERATIONAL HEADLINE",
+    ]
+    assert "WSSS 1 RAW ITEM E" in labels
+    page_texts = [
+        " ".join(
+            piece
+            for label, lines in page["rows"]
+            for piece in [label, *lines]
+        )
+        for page in pages
+    ]
+    first_id_page = next(i for i, text in enumerate(page_texts) if "A1001/26" in text)
+    first_raw_end_page = next(i for i, text in enumerate(page_texts) if "END-A1001" in text)
+    second_id_page = next(i for i, text in enumerate(page_texts) if "A1002/26" in text)
+    second_raw_end_page = next(i for i, text in enumerate(page_texts) if "END-A1002" in text)
+    assert first_id_page == first_raw_end_page
+    assert second_id_page == second_raw_end_page
+    assert any(
+        "Operational source notice requires review; full Item E follows." in text
+        for text in page_texts
+    )
 
 
 def test_operational_downloaded_pdf_shows_exact_critical_approach_flag(
@@ -1155,20 +1210,27 @@ def rendered(tmp_path):
 
 
 def test_renders_the_full_section_set(rendered):
-    # The boss-facing flow is eight compact operational sections.  This
-    # fixture also carries real terrain events, so the controlled terrain
-    # evidence is appended as page 9 instead of being forced into the core.
-    assert len(rendered) == 9
+    # The boss-facing flow is eight operational sections. This EDTO fixture
+    # also retains its exact sector/ETP/alternate rows on one Airports
+    # continuation and its real terrain evidence on the separate final page.
+    # It has no governed VAAC ledger, so no empty receipt appendix is added.
+    assert len(rendered) == 10
     first = rendered[0].get_text()
-    assert "OFP P1 - ROUTE / LEVELS" in first
-    # The route/levels context remains above the five boss-facing summary
-    # cards and phase-action strip.
-    assert "OFP P1 - ROUTE / LEVELS + ANALYSIS OVERLAY" in first
-    for card in ("PERFORMANCE", "FUEL", "STATUS", "WEATHER", "ALTERNATES"):
+    assert "OFP PAGE 1 - FLIGHT BRIEFING" in first
+    for card in (
+        "SCHEDULE",
+        "DEPARTURE",
+        "DESTINATION",
+        "MASS / PERFORMANCE",
+        "FUEL / TIME RESERVES",
+        "FLIGHT PLAN / ALTERNATE",
+    ):
         assert card in first
+    assert first.count("ITEMS REQUIRING CONFIRMATION") == 1
     for phase in ("RELEASE", "BEFORE PUSH", "ROUTE", "ARRIVAL", "WEATHER"):
         assert phase in first
-    assert "Tanks 118,274 kg" in first.replace(" ", ",")
+    assert "FUEL IN TANKS" in first
+    assert "118,274 kg" in first.replace(" ", ",")
     titles = "\n".join(rendered[n].get_text() for n in range(len(rendered)))
     for expected in (
         "DECISION ANALYSIS",
@@ -1181,13 +1243,26 @@ def test_renders_the_full_section_set(rendered):
         "HIGH TERRAIN EXPOSURE AND DEPRESSURISATION",
     ):
         assert expected in titles
-    weather_page = " ".join(rendered[5].get_text().split())
+    pages = [" ".join(page.get_text().split()) for page in rendered]
+    weather_page = next(
+        page for page in pages if "WEATHER / ROUTE HAZARDS" in page
+    )
     assert "Coverage gaps are source gaps, not NIL findings." in weather_page
-    airports_page = " ".join(rendered[4].get_text().split())
+    airports_page = next(
+        page
+        for page in pages
+        if "DESTINATION ALTERNATE ASSESSMENT MATRIX" in page
+    )
     assert "PLAN · EBBR RWY 07R" in airports_page
     assert "PLAN · WSSS RWY 20R" in airports_page
-    assert "1 SECTOR / 1 ALTN / FULL EDTO: DASHBOARD" in airports_page
-    performance_page = " ".join(rendered[2].get_text().split())
+    assert "1 SECTOR / 1 ALTN / DETAIL RECEIPT FOLLOWS" in airports_page
+    edto_page = next(
+        page for page in pages if "EDTO TIMING / ALTERNATES" in page
+    )
+    assert "SECTOR 1 ENTRY ACTM 09.19 | EXIT ACTM 09.50" in edto_page
+    performance_page = next(
+        page for page in pages if "PERFORMANCE / FUEL / STATUS" in page
+    )
     assert "RUNWAY / CONDITION · EBBR -- / --" in performance_page
 
 
@@ -1198,6 +1273,7 @@ def test_compact_pdf_has_eight_core_outline_entries_plus_real_terrain(rendered):
         "Performance / Fuel / Status",
         "MEL/CDL Evidence",
         "Airports / Alternates",
+        "EDTO Timing / Alternates",
         "Weather / Route Hazards",
         "Enroute / Assurance",
         "Coverage Checklist / CAT-VWS",
@@ -1309,13 +1385,18 @@ def test_operational_pdf_publishes_the_canonical_airport_and_notes_index(tmp_pat
     render_combined_briefing(flight, findings, [], out)
 
     document = fitz.open(out)
-    assert len(document) == 10
-    assert [row[1] for row in document.get_toc()][4:7] == [
+    assert len(document) == 11
+    assert [row[1] for row in document.get_toc()][4:8] == [
         "Airports / Alternates",
+        "EDTO Timing / Alternates",
         "Airport Surface / Notes Index",
         "Weather / Route Hazards",
     ]
-    index_text = " ".join(document[5].get_text().split())
+    index_text = next(
+        " ".join(page.get_text().split())
+        for page in document
+        if "AIRPORT SURFACE / NOTES INDEX" in page.get_text()
+    )
     assert "AIRPORT 1/3 · EBBR · DEPARTURE" in index_text
     assert "AIRPORT 2/3 · FIMP · EDTO / FUEL ENROUTE" in index_text
     assert "AIRPORT 3/3 · WSSS · DESTINATION" in index_text
@@ -1323,7 +1404,11 @@ def test_operational_pdf_publishes_the_canonical_airport_and_notes_index(tmp_pat
     assert "VERSION v25.1 · CYCLE 2608 · SCHEMA 25" in index_text
     assert "SHA256 " + "a" * 64 in index_text
     assert "Exact released Mauritius taxi note." in index_text
-    coverage_text = " ".join(document[-2].get_text().split())
+    coverage_text = next(
+        " ".join(page.get_text().split())
+        for page in document
+        if "COVERAGE CHECKLIST / CAT-VWS" in page.get_text()
+    )
     assert "AIRPORT INTELLIGENCE / AIRPORT NOTES" in coverage_text
     assert "Source unavailable for WSSS" in coverage_text
     physical = scan_physical_pdf(out)
@@ -1609,10 +1694,22 @@ def test_compact_sq910_four_shape_declarations_never_publish_placeholders(
 
     document = fitz.open(output)
     overview_text = " ".join(document[0].get_text().split())
-    assert "MAX FUEL 36,420 vs tanks 43,891 · RECONCILE" in overview_text
-    assert "ENG 2 LATCH · CHECK EACH DEPARTURE" in overview_text
+    assert "ENG 2 LATCH - CHECK EACH DEPARTURE" in overview_text
+    analysis_text = " ".join(next(
+        page.get_text()
+        for page in document
+        if "DECISION ANALYSIS" in page.get_text()
+    ).split())
+    assert "maximum fuel available 36,420 kg" in analysis_text
+    assert "fuel in tanks 43,891 kg" in analysis_text
+    assert "equals -7,471 kg" in analysis_text
 
-    page_text = document[2].get_text().upper()
+    page_text = next(
+        page.get_text().upper()
+        for page in document
+        if "MEL/CDL AND CDDL - DISPATCH CONFIRMATION GATES"
+        in page.get_text()
+    )
     for expected in (
         "SEAT IFE",
         "TRASH COMPACTOR",
@@ -1677,16 +1774,13 @@ def test_overview_destination_schedule_uses_the_cfp_arrival_not_last_waypoint(tm
     assert "1445Z" not in page_text
 
 
-def test_overview_premeasures_dense_destination_before_lossless_alternate(
+def test_six_box_overview_uses_decoded_weather_and_moves_full_alternate_detail(
     tmp_path,
     monkeypatch,
 ):
-    """A seven-line bulletin block can still be dense once the selected
-    operational highlight and preferred-alternate plan are included.
-
-    This is the production shape held by SQ223 on 18 Aug.  Page 1 must choose
-    its wider/taller destination geometry before drawing; failing late would
-    either abort the briefing or tempt a caller to truncate source detail.
+    """The REV1-style first page shows the applicable forecast result, while
+    long raw bulletins and the complete alternate matrix stay with their
+    detailed owners. No source fact may force unreadably small page-one text.
     """
     from app.odss import briefing as briefing_module
     from scripts.run_private_cfp_corpus import scan_physical_pdf
@@ -1717,12 +1811,34 @@ def test_overview_premeasures_dense_destination_before_lossless_alternate(
             "metar": destination_metar,
             "taf": destination_taf,
         })
+        view["overview"]["destination"]["forecast_at_reference"] = {
+            "applicable_conditions": "9999 SCT040",
+            "utc_window": "17 JUL 2200Z - 18 JUL 0000Z",
+            "window_status": "active_at_reference",
+            "source_references": ["OFP p21"],
+        }
         view["overview"]["destination"]["primary_operational_highlight"] = {
             "text": destination_highlight,
             "signal_family": "approach_navaid",
             "notam_id": "1H5709/26",
             "source_page": 22,
         }
+        destination_panel = next(
+            panel
+            for panel in view["airport_operational_panels"]
+            if "destination" in set(panel.get("role_keys") or [])
+        )
+        destination_panel["selected_notams"].append({
+            "notam_id": "H5709/26",
+            "severity": "warning",
+            "approach_affected": False,
+            "applicability": "review",
+            "stateAtReference": "unknown_at_reference",
+            "item_e_text": destination_highlight,
+            "valid_from_utc": "2026-07-17T18:00:00Z",
+            "valid_to_utc": "2026-07-18T02:00:00Z",
+            "source_page": 22,
+        })
         return view
 
     monkeypatch.setattr(
@@ -1750,16 +1866,28 @@ def test_overview_premeasures_dense_destination_before_lossless_alternate(
     document = fitz.open(output)
     overview_text = " ".join(document[0].get_text().split())
     for expected in (
-        destination_metar,
-        destination_taf,
-        destination_highlight,
-        "GET/YGEL/21",
+        "9999 SCT040",
+        "YGEL / 21",
         "VORDME",
-        "242 NM",
         "00:55",
         "4,680 kg",
     ):
         assert " ".join(expected.split()) in overview_text
+    assert destination_metar not in overview_text
+    assert destination_taf not in overview_text
+    all_text = " ".join(
+        " ".join(page.get_text().split()) for page in document
+    )
+    assert destination_highlight in all_text
+    assert "H5709/26" in all_text
+    assert "runway is not reported closed." in all_text
+    airports_text = next(
+        " ".join(page.get_text().split())
+        for page in document
+        if "DESTINATION ALTERNATE ASSESSMENT MATRIX" in page.get_text()
+    )
+    assert "PREFERRED · YGEL" in airports_text
+    assert "242 NM" in airports_text
     physical = scan_physical_pdf(output)
     assert physical["valid"], physical["violations"]
     assert physical["pages"][0]["visible_overlap_count"] == 0
@@ -1812,7 +1940,7 @@ def test_compact_pdf_paginates_deferred_content_and_marks_other_dashboard_detail
     render_combined_briefing(flight, findings, [], output)
 
     document = fitz.open(output)
-    assert len(document) == 10
+    assert len(document) == 11
     mel_pages = _operational_mel_pages(document)
     mel_text = "\n".join(mel_pages)
     assert len(mel_pages) == 2
@@ -1961,8 +2089,12 @@ def test_compact_airport_matrix_keeps_vhhh_without_inventing_preferred_status(
     render_combined_briefing(flight, findings, [], output)
 
     document = fitz.open(output)
-    airport_text = " ".join(document[4].get_text().split())
-    assert len(document) == 9
+    airport_text = next(
+        " ".join(page.get_text().split())
+        for page in document
+        if "DESTINATION ALTERNATE ASSESSMENT MATRIX" in page.get_text()
+    )
+    assert len(document) == 10
     assert "VHHH" in airport_text
     assert "PREFERRED · VHHH" not in airport_text
     physical = scan_physical_pdf(output)
@@ -2057,8 +2189,12 @@ def test_compact_airport_single_alternate_row_keeps_honest_source_status(
     render_combined_briefing(flight, findings, [], output)
 
     document = fitz.open(output)
-    airport_text = " ".join(document[4].get_text().split())
-    assert len(document) == 9
+    airport_text = next(
+        " ".join(page.get_text().split())
+        for page in document
+        if "DESTINATION ALTERNATE ASSESSMENT MATRIX" in page.get_text()
+    )
+    assert len(document) == 10
     assert "PREFERRED · WSAP" in airport_text
     assert "FORECAST UNAVAILABLE - review current controlled weather" in airport_text
     assert "SINGLE-ROW-FINAL selected source fact remains complete" in airport_text
@@ -2314,6 +2450,60 @@ def test_governance_chrome_is_on_every_page(rendered):
         assert "SOURCE" in text
 
 
+def test_operational_page_one_uses_dynamic_six_box_ofp_hierarchy(tmp_path):
+    """The boss-selected REV1 hierarchy is structure, never copied values."""
+    flight = sample_flight()
+    findings = [
+        item
+        for item in sample_findings()
+        if item["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "six-box-ofp-page-one.pdf"
+
+    render_combined_briefing(flight, findings, [], out)
+
+    page_text = " ".join(fitz.open(out)[0].get_text().split())
+    for title in (
+        "SCHEDULE",
+        "DEPARTURE",
+        "DESTINATION",
+        "MASS / PERFORMANCE",
+        "FUEL / TIME RESERVES",
+        "FLIGHT PLAN / ALTERNATE",
+    ):
+        assert title in page_text
+    assert page_text.count("ITEMS REQUIRING CONFIRMATION") == 1
+    assert "SOURCE CHECKS OPEN" not in page_text
+    assert "Flight control summary" not in page_text
+    assert "EBBR" in page_text
+    assert "WSSS" in page_text
+    assert "245,529 kg" in page_text
+    assert "79,643 kg" in page_text
+
+
+def test_operational_page_one_names_atot_actm_target_cross_over_time(tmp_path):
+    flight = sample_flight()
+    findings = [
+        item
+        for item in sample_findings()
+        if item["engine"] != "depressurisation"
+    ]
+    flight["actual_takeoff_utc"] = "2026-07-16T09:52:00+00:00"
+    flight["timing_view"] = build_timing_view(
+        flight,
+        findings,
+        flight["actual_takeoff_utc"],
+    )
+    out = tmp_path / "atot-target-cross-over.pdf"
+
+    render_combined_briefing(flight, findings, [], out)
+
+    page_text = " ".join(fitz.open(out)[0].get_text().split())
+    assert "ATOT 0952Z" in page_text
+    assert "TARGET ARRIVAL 2159Z" in page_text
+    assert "TARGET CROSS-OVER TIME = ATOT + OFP ACTM" in page_text
+
+
 def test_long_airport_copy_never_reaches_the_card_tag(tmp_path):
     # 08 Aug audit: realistic long airport wording could collide with the
     # DEP/DEST tag. The card reserves its tag band now; prove it with copy far
@@ -2360,7 +2550,7 @@ def test_long_airport_copy_never_reaches_the_card_tag(tmp_path):
         ("WSAP", "20", "CAT1DME", 90, 21, 2_036),
     ],
 )
-def test_operational_page1_keeps_the_complete_alternate_fuel_above_summary_cards(
+def test_operational_pdf_keeps_alternate_plan_fuel_and_distance_with_clear_owners(
     tmp_path,
     airport,
     runway,
@@ -2396,12 +2586,18 @@ def test_operational_page1_keeps_the_complete_alternate_fuel_above_summary_cards
 
     render_combined_briefing(flight, findings, [], out)
 
-    page = fitz.open(out)[0]
-    expected = f"{distance_nm} NM · {minutes // 60:02d}:{minutes % 60:02d} · {fuel_kg:,} kg"
-    assert expected in " ".join(page.get_text().split())
-    fuel_rect = page.search_for(f"{fuel_kg:,} kg")[0]
-    lower_summary_top = page.rect.height - (30.0 + 132.0)
-    assert fuel_rect.y1 <= lower_summary_top - 2.0
+    document = fitz.open(out)
+    first = " ".join(document[0].get_text().split())
+    assert f"ALTN FUEL {minutes // 60:02d}:{minutes % 60:02d} / {fuel_kg:,} kg" in first
+    assert f"ALTN / RWY {airport} / {runway}" in first
+    assert f"APPROACH {approach}" in first
+    airports = next(
+        " ".join(page.get_text().split())
+        for page in document
+        if "DESTINATION ALTERNATE ASSESSMENT MATRIX" in page.get_text()
+    )
+    assert f"PREFERRED · {airport}" in airports
+    assert f"{distance_nm} NM" in airports
 
 
 def test_no_deferred_page_never_invents_a_missing_source_or_remedy(rendered):
@@ -2421,7 +2617,11 @@ def test_no_deferred_page_never_invents_a_missing_source_or_remedy(rendered):
 
 
 def test_operational_terrain_seventh_row_stays_above_manual_review_panel(rendered):
-    page = rendered[8]
+    page = next(
+        page
+        for page in rendered
+        if "HIGH TERRAIN EXPOSURE AND DEPRESSURISATION" in page.get_text()
+    )
     matal = next(rect for rect in page.search_for("MATAL") if rect.x0 < 100)
     review = min(page.search_for("MANUAL REVIEW REQUIRED"), key=lambda rect: rect.y0)
     assert matal.y1 + 2.0 <= review.y0
@@ -2463,7 +2663,16 @@ def test_repeated_mel_reference_is_one_gate_and_one_detail_group(tmp_path):
     operational_out = tmp_path / "grouped-deferred-operational.pdf"
     render_combined_briefing(flight, findings, [], operational_out)
     operational_pages = fitz.open(operational_out)
-    assert "2 OFP declaration(s)" in operational_pages[0].get_text()
+    assert operational_pages[0].get_text().count("MEL 25-20-50A") == 1
+    operational_mel = next(
+        page.get_text()
+        for page in operational_pages
+        if "MEL/CDL AND CDDL - DISPATCH CONFIRMATION GATES"
+        in page.get_text()
+    )
+    assert operational_mel.count("MEL 25-20-50A · SOURCE DECLARATION") == 2
+    assert "FIRST CHILLING COMPARTMENT" in operational_mel
+    assert "SECOND CHILLING COMPARTMENT" in operational_mel
     mel_page = next(
         page.get_text()
         for page in pages
@@ -2925,6 +3134,60 @@ def test_operational_coverage_receipt_preserves_explicit_truth_states():
     assert receipt["cat_vws"]["state"] == "INCOMPLETE"
 
 
+def test_operational_coverage_explains_public_window_vs_ofp_selected_notams_and_attached_references():
+    flight = sample_flight()
+    briefing = build_briefing_view(flight, [], [])
+    briefing["airport_operational_panels"] = [
+        {"icao": "WSSS", "selected_notams": [{}, {}]},
+        {"icao": "EGLL", "selected_notams": [{}, {}, {}]},
+    ]
+    briefing["airport_surface_index"] = [
+        {"icao": "WSSS", "notamCount": 120, "notes": {}},
+        {"icao": "EGLL", "notamCount": 82, "notes": {}},
+    ]
+    references = {
+        "status": "available",
+        "references": [
+            _company_manual_reference(
+                section="OM-A 8.3",
+                excerpt="Approved source receipt one.",
+            ),
+            _company_manual_reference(
+                section="OM-A 8.4",
+                excerpt="Approved source receipt two.",
+            ),
+        ],
+    }
+
+    receipt = _operational_coverage_receipt(
+        flight,
+        briefing,
+        [],
+        references,
+    )
+    rows = {row["key"]: row for row in receipt["rows"]}
+
+    assert rows["airport_notam"]["state"] == "FOUND"
+    assert "5 OFP-selected" in rows["airport_notam"]["detail"]
+    assert "202 current station-window" in rows["airport_notam"]["detail"]
+    assert "different evidence sets" in rows["airport_notam"]["detail"]
+    assert rows["governed_references"]["state"] == "REVIEW REQUIRED"
+    assert "2 approved governed reference receipt(s) attached" in rows[
+        "governed_references"
+    ]["detail"]
+
+
+def test_alternate_matrix_title_distinguishes_rows_shown_from_secondary_panels():
+    assert _operational_alternate_matrix_title(
+        displayed_alternate_count=4,
+        alternate_count=5,
+        secondary_airport_count=5,
+    ) == (
+        "DESTINATION ALTERNATE ASSESSMENT MATRIX · 4/5 ROWS SHOWN · "
+        "5 FILED SECONDARY AIRPORT PANELS · FULL DETAIL IN DASHBOARD"
+    )
+
+
 def test_operational_coverage_receipt_reports_airport_note_source_unavailable():
     flight = sample_flight()
     briefing = build_briefing_view(flight, [], [])
@@ -3249,7 +3512,12 @@ def test_boss_flow_operational_blocks_hold_the_8_4pt_readability_floor(rendered)
     # arrival-time basis; selected-card assertions previously missed these.
     assert not undersized_spans(rendered[0], top=90.0)
     assert not undersized_spans(rendered[1], top=90.0)
-    assert not undersized_spans(rendered[5], top=90.0)
+    edto_page = next(
+        page
+        for page in rendered
+        if "EDTO TIMING / ALTERNATES" in page.get_text()
+    )
+    assert not undersized_spans(edto_page, top=90.0)
 
 
 def test_boss_flow_pages_have_no_physical_text_overlap(rendered):
@@ -3261,9 +3529,13 @@ def test_boss_flow_pages_have_no_physical_text_overlap(rendered):
         assert physical["pages"][page_number - 1]["visible_overlap_count"] == 0
 
 
-def test_dense_page1_preserves_a_long_source_taf_at_the_readability_floor(
+def test_six_box_page1_uses_applicable_taf_result_at_the_readability_floor(
     tmp_path,
+    monkeypatch,
 ):
+    from app.odss import briefing as briefing_module
+
+    real_build = briefing_module.build_briefing_view
     flight = sample_flight()
     flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
     long_taf = (
@@ -3280,6 +3552,30 @@ def test_dense_page1_preserves_a_long_source_taf_at_the_readability_floor(
         "text": long_taf,
         "source_page": 21,
     })
+
+    def with_destination_forecast(
+        flight, findings, warnings, timing_view=None, weather_charts=None
+    ):
+        view = real_build(
+            flight,
+            findings,
+            warnings,
+            timing_view=timing_view,
+            weather_charts=weather_charts,
+        )
+        view["overview"]["destination"]["forecast_at_reference"] = {
+            "applicable_conditions": "FM230100 31011KT P6SM SCT060",
+            "utc_window": "23 JUL 0100Z - 23 JUL 0600Z",
+            "window_status": "active_at_reference",
+            "source_references": ["OFP p21"],
+        }
+        return view
+
+    monkeypatch.setattr(
+        briefing_module,
+        "build_briefing_view",
+        with_destination_forecast,
+    )
     findings = [
         item
         for item in sample_findings()
@@ -3292,8 +3588,8 @@ def test_dense_page1_preserves_a_long_source_taf_at_the_readability_floor(
     document = fitz.open(out)
     first_page = document[0]
     extracted = " ".join(first_page.get_text().split())
-    assert "FT 212321 2200/2306" in extracted
     assert "FM230100 31011KT P6SM SCT060" in extracted
+    assert "FT 212321 2200/2306" not in extracted
     undersized = [
         (str(span.get("text") or "").strip(), span.get("size"))
         for block in first_page.get_text("dict").get("blocks", [])
@@ -3317,10 +3613,14 @@ def test_dense_page1_preserves_a_long_source_taf_at_the_readability_floor(
     "dense_stations",
     [("departure",), ("departure", "destination")],
 )
-def test_dense_page1_preserves_departure_and_dual_station_tafs(
+def test_six_box_page1_keeps_destination_forecast_single_owned(
     tmp_path,
     dense_stations,
+    monkeypatch,
 ):
+    from app.odss import briefing as briefing_module
+
+    real_build = briefing_module.build_briefing_view
     flight = sample_flight()
     flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
     long_taf = (
@@ -3338,6 +3638,31 @@ def test_dense_page1_preserves_departure_and_dual_station_tafs(
             "text": long_taf,
             "source_page": 21,
         })
+
+    def with_held_forecasts(
+        flight, findings, warnings, timing_view=None, weather_charts=None
+    ):
+        view = real_build(
+            flight,
+            findings,
+            warnings,
+            timing_view=timing_view,
+            weather_charts=weather_charts,
+        )
+        for role in dense_stations:
+            view["overview"][role]["forecast_at_reference"] = {
+                "applicable_conditions": "FM230100 31011KT P6SM SCT060",
+                "utc_window": "23 JUL 0100Z - 23 JUL 0600Z",
+                "window_status": "active_at_reference",
+                "source_references": ["OFP p21"],
+            }
+        return view
+
+    monkeypatch.setattr(
+        briefing_module,
+        "build_briefing_view",
+        with_held_forecasts,
+    )
     findings = [
         item
         for item in sample_findings()
@@ -3350,8 +3675,10 @@ def test_dense_page1_preserves_departure_and_dual_station_tafs(
     document = fitz.open(out)
     first_page = document[0]
     extracted = " ".join(first_page.get_text().split())
-    assert extracted.count("FT 212321 2200/2306") == len(dense_stations)
-    assert extracted.count("FM230100 31011KT P6SM SCT060") == len(dense_stations)
+    assert "FT 212321 2200/2306" not in extracted
+    assert extracted.count("FM230100 31011KT P6SM SCT060") == (
+        1 if "destination" in dense_stations else 0
+    )
     undersized = [
         (str(span.get("text") or "").strip(), span.get("size"))
         for block in first_page.get_text("dict").get("blocks", [])
@@ -3389,8 +3716,16 @@ def test_page1_wraps_long_edto_alternate_display_without_elision(tmp_path):
 
     render_combined_briefing(flight, findings, [], out)
 
-    first_page = " ".join(fitz.open(out)[0].get_text().split())
-    assert "PGUM RWY24R CIRC VORDME@06L 1035FT/4316M | TOP-UP 0 KG" in first_page
+    document = fitz.open(out)
+    pages = [" ".join(page.get_text().split()) for page in document]
+    detail_page = next(
+        page for page in pages if "EDTO TIMING / ALTERNATES" in page
+    )
+    assert (
+        "EDTO ALTN PGUM/24R | CIRC VORDME@06L | 1035FT/4316M"
+        in detail_page
+    )
+    assert "FUEL EDTO top-up 0 kg." in detail_page
 
 
 def test_operational_overview_uses_true_edto_top_up_and_dashboard_receipt(
@@ -3436,10 +3771,19 @@ def test_operational_overview_uses_true_edto_top_up_and_dashboard_receipt(
 
     render_combined_briefing(flight, findings, [], out)
 
-    first_page = " ".join(fitz.open(out)[0].get_text().split())
-    assert "TOP-UP 71 KG" in first_page
-    assert "TOP-UP 0 KG" not in first_page
-    assert "2 SECTORS / 2 ALTN | FULL EDTO: DASHBOARD" in first_page
+    document = fitz.open(out)
+    pages = [" ".join(page.get_text().split()) for page in document]
+    all_text = " ".join(pages)
+    airports_page = next(
+        page for page in pages if "DESTINATION ALTERNATE ASSESSMENT MATRIX" in page
+    )
+    detail_page = next(
+        page for page in pages if "EDTO TIMING / ALTERNATES" in page
+    )
+    assert "EDTO TOP-UP · 00:01 | 71 kg" in all_text
+    assert "EDTO TOP-UP · 00:01 | 0 kg" not in all_text
+    assert "2 SECTORS / 2 ALTN / DETAIL RECEIPT FOLLOWS" in airports_page
+    assert "FUEL EDTO top-up 71 kg." in detail_page
 
 
 def test_operational_overview_long_route_points_to_dashboard(tmp_path):
@@ -3465,7 +3809,7 @@ def test_operational_overview_long_route_points_to_dashboard(tmp_path):
     assert "AIRPORTS PAGE" not in first_page
 
 
-def test_operational_overview_chips_wrap_before_the_route_map(tmp_path):
+def test_six_box_flight_plan_card_keeps_route_rules_and_cruise_values(tmp_path):
     flight = sample_flight()
     flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
     flight["route_identifier"] = "RTE99"
@@ -3484,28 +3828,19 @@ def test_operational_overview_chips_wrap_before_the_route_map(tmp_path):
     render_combined_briefing(flight, findings, [], out)
 
     page = fitz.open(out)[0]
-    spans = [
-        span
-        for block in page.get_text("dict").get("blocks", [])
-        for line in block.get("lines", [])
-        for span in line.get("spans", [])
-        if str(span.get("text") or "").strip()
-    ]
-    labels = {"RTE99 P11", "EDTO / RVSM", "CI 999", "APD 100%", "CRZ P111"}
-    chips = [span for span in spans if str(span.get("text") or "").strip() in labels]
-    assert {str(span.get("text") or "").strip() for span in chips} == labels
+    text = " ".join(page.get_text().split())
+    for expected in (
+        "ROUTE / PLAN RTE99 / P11",
+        "FLT RULES EDTO / RVSM",
+        "CI / APD 999 / 100%",
+        "CRZ COMP P111",
+    ):
+        assert expected in text
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
 
-    width, _ = PAGE_SIZE
-    full_w = width - 2 * MARGIN
-    departure_w = full_w * 0.20
-    destination_w = full_w * 0.23
-    centre_x = MARGIN + departure_w + 10
-    centre_w = full_w - departure_w - destination_w - 20
-    centre_inner_x = centre_x + 10
-    text_w = centre_w * 0.69 - 11.0
-    map_x = centre_inner_x + text_w + 14
-    assert all(float(span["bbox"][2]) < map_x for span in chips)
-    assert len({round(float(span["bbox"][1]), 1) for span in chips}) >= 2
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+    assert physical["pages"][0]["visible_overlap_count"] == 0
 
 
 @pytest.mark.parametrize(
@@ -3554,7 +3889,7 @@ def test_operational_performance_prints_candidates_and_known_inputs(
     render_combined_briefing(flight, findings, [], out)
 
     document = fitz.open(out)
-    assert len(document) == 9
+    assert len(document) == 10
     performance_page = " ".join(document[2].get_text().split())
     assert "RTOW PERF · 256,906 kg" in performance_page
     assert "RTOW LAND · 252,000 kg" in performance_page
@@ -3658,13 +3993,11 @@ def test_operational_performance_adds_lossless_eosid_continuation_page(
         for page in document[3:]
     )
     assert continuation_count >= 2
-    assert len(document) == 9 + continuation_count
+    # The EDTO fixture retains one exact timing/alternate continuation in
+    # addition to the eight core sections and real terrain page.
+    assert len(document) == 10 + continuation_count
     mel_page_number = 4 + continuation_count
     airports_page_number = 5 + continuation_count
-    overview_text = " ".join(document[0].get_text().split())
-    assert f"Exact evidence on page {mel_page_number}" in overview_text
-    assert f"Full matrix on page {airports_page_number}" in overview_text
-    assert f"OPEN P{airports_page_number}" in overview_text
     assert (
         f"EOSID lossless continuation: {continuation_count} pages start p4"
         in document[2].get_text()
@@ -3765,7 +4098,11 @@ def test_decision_row_reallocates_width_for_one_dense_source_finding(
 
 
 def test_release_gate_separator_rules_do_not_cross_wrapped_text(rendered):
-    page = rendered[6]
+    page = next(
+        page
+        for page in rendered
+        if "NUMBERED RELEASE GATES" in page.get_text()
+    )
     gate_title = page.search_for("NUMBERED RELEASE GATES")[0]
     assurance_title = min(
         page.search_for("SOURCE ASSURANCE"),
@@ -3870,10 +4207,18 @@ def test_compact_capacity_reflows_long_deferred_and_release_gates(
     render_combined_briefing(flight, findings, [], out)
 
     document = fitz.open(out)
-    assert "FINALDEFERREDTAIL" in document[3].get_text()
-    assert "FINALRELEASETAIL" in document[6].get_text()
-    assert "COMPANY BULLETINS / INTAM" in document[6].get_text()
-    for page_index in (3, 6):
+    mel_page_index = next(
+        index
+        for index, page in enumerate(document)
+        if "FINALDEFERREDTAIL" in page.get_text()
+    )
+    enroute_page_index = next(
+        index
+        for index, page in enumerate(document)
+        if "FINALRELEASETAIL" in page.get_text()
+    )
+    assert "COMPANY BULLETINS / INTAM" in document[enroute_page_index].get_text()
+    for page_index in (mel_page_index, enroute_page_index):
         body_sizes = [
             float(span.get("size") or 0.0)
             for block in document[page_index].get_text("dict").get("blocks", [])
@@ -3885,8 +4230,8 @@ def test_compact_capacity_reflows_long_deferred_and_release_gates(
         assert min(body_sizes) >= 8.39
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
-    assert physical["pages"][3]["visible_overlap_count"] == 0
-    assert physical["pages"][6]["visible_overlap_count"] == 0
+    assert physical["pages"][mel_page_index]["visible_overlap_count"] == 0
+    assert physical["pages"][enroute_page_index]["visible_overlap_count"] == 0
 
 
 def test_compact_fir_and_terrain_receipts_are_whole_and_explicit():
@@ -4324,7 +4669,7 @@ def test_lossless_hazard_plan_moves_sigmet_after_full_named_advisories():
     assert len(plans) == 2
 
 
-def test_compact_baseline_is_eight_pages_without_real_terrain_evidence(tmp_path):
+def test_compact_baseline_keeps_core_pages_plus_edto_without_terrain(tmp_path):
     from scripts.run_private_cfp_corpus import scan_physical_pdf
 
     flight = sample_flight()
@@ -4346,20 +4691,30 @@ def test_compact_baseline_is_eight_pages_without_real_terrain_evidence(tmp_path)
     render_combined_briefing(flight, findings, [], out)
 
     document = fitz.open(out)
-    assert len(document) == 8
+    assert len(document) == 9
     assert [row[1] for row in document.get_toc()][-1] == "Coverage Checklist / CAT-VWS"
     expected = " ".join(
         build_briefing_view(flight, findings, [])["terrain"]["summary"].split()
     )
-    assert expected in " ".join(document[6].get_text().split())
-    coverage = " ".join(document[7].get_text().split())
+    enroute = next(
+        " ".join(page.get_text().split())
+        for page in document
+        if "ENROUTE / ASSURANCE" in page.get_text()
+    )
+    assert expected in enroute
+    coverage_page_index = next(
+        index
+        for index, page in enumerate(document)
+        if "COVERAGE CHECKLIST / CAT-VWS" in page.get_text()
+    )
+    coverage = " ".join(document[coverage_page_index].get_text().split())
     assert "COVERAGE CHECKLIST" in coverage
     assert "CAT / VWS EVIDENCE" in coverage
     assert "AIREP / PIREP" in coverage
     assert "NOT QUERIED" in coverage
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
-    assert physical["pages"][7]["visible_overlap_count"] == 0
+    assert physical["pages"][coverage_page_index]["visible_overlap_count"] == 0
 
 
 def test_rev3_audit_path_never_calls_operational_coverage_renderer(
@@ -4394,7 +4749,11 @@ def test_rev3_audit_path_never_calls_operational_coverage_renderer(
 
 
 def test_weather_page_uses_readable_source_status_cards_not_tiny_crops(rendered):
-    weather = rendered[5].get_text()
+    weather = next(
+        page.get_text()
+        for page in rendered
+        if "WEATHER / ROUTE HAZARDS" in page.get_text()
+    )
     assert "OFP WEATHER SOURCE" in weather
     assert "WEATHER-CHART SOURCE STATUS" in weather
     assert "UNAVAILABLE - weather-chart detection did not establish appendix presence" in weather
@@ -4469,7 +4828,11 @@ def test_operational_weather_page_names_the_governed_selected_chart(
     )
 
     document = fitz.open(out)
-    weather = document[5]
+    weather = next(
+        page
+        for page in document
+        if "WEATHER / ROUTE HAZARDS" in page.get_text()
+    )
     text = " ".join(weather.get_text().split())
     assert "SELECTED · SIGWX · FL250-FL600 · VALID 19 AUG 1200Z" in text
     assert "T12:00:00" not in text
@@ -4534,12 +4897,16 @@ def test_operational_weather_page_keeps_first_two_shared_sigmet_dispositions(
     render_combined_briefing(flight, findings, [], out)
 
     document = fitz.open(out)
-    weather = " ".join(document[5].get_text().split())
+    weather = " ".join(next(
+        page.get_text()
+        for page in document
+        if "WEATHER / ROUTE HAZARDS" in page.get_text()
+    ).split())
     assert "YMMM SIGMET P02 - SEV TURB DISPOSITION · NOT PROMOTED" in weather
     assert "YMMM SIGMET Q01 - SEV TURB DISPOSITION · PROMOTED" in weather
 
 
-def test_weather_vaac_assurance_keeps_all_nine_centre_receipts(
+def test_weather_vaac_assurance_keeps_all_nine_centre_receipts_and_map_parity(
     tmp_path,
     monkeypatch,
 ):
@@ -4582,12 +4949,24 @@ def test_weather_vaac_assurance_keeps_all_nine_centre_receipts(
         vaac_reach["centres"] = [
                 {
                     "centre": centre,
-                    "status": "reached",
-                    "listing_latest_utc": f"2026-08-30T12:{index:02d}:00Z",
+                    "status": (
+                        "unavailable" if centre == "LONDON"
+                        else "not mounted" if centre == "MONTREAL"
+                        else "reached"
+                    ),
+                    "listing_latest_utc": (
+                        None
+                        if centre in {"LONDON", "MONTREAL"}
+                        else f"2026-08-30T12:{index:02d}:00Z"
+                    ),
                     "next_advisory_due": (
                         None
-                        if centre == "WELLINGTON"
-                        else f"2026-08-30T18:{index:02d}:00Z"
+                        if centre in {"LONDON", "MONTREAL", "WELLINGTON"}
+                        else (
+                            "20260830/1805Z= NXT ADVISORY TEXT MUST NOT BLEED"
+                            if centre == "TOKYO"
+                            else f"2026-08-30T18:{index:02d}:00Z"
+                        )
                     ),
                     "next_advisory_notes": (
                         [
@@ -4603,8 +4982,27 @@ def test_weather_vaac_assurance_keeps_all_nine_centre_receipts(
             }
             for index, centre in enumerate(centres)
         ]
+        vaac_reach["advisory_polygons"] = {
+            "affecting": 1,
+            "monitoring": 8,
+        }
         hazards["vaac_reach"] = vaac_reach
+        hazards["volcano_proximity"] = {
+            "status": "held",
+            "corridor_nm": 200.0,
+            "entries": [
+                {"volcano": "ALPHA", "within_corridor": True},
+                {"volcano": "BRAVO", "within_corridor": False},
+            ],
+        }
         view["hazards"] = hazards
+        vaa = dict(view.get("vaa") or {})
+        vaa.update({
+            "source_status": "available",
+            "official_advisory_count": 9,
+            "applicability_status": "not_assessed",
+        })
+        view["vaa"] = vaa
         return view
 
     monkeypatch.setattr(briefing_module, "build_briefing_view", five_centre_view)
@@ -4620,22 +5018,42 @@ def test_weather_vaac_assurance_keeps_all_nine_centre_receipts(
     render_combined_briefing(flight, findings, [], out)
 
     document = fitz.open(out)
-    weather_page = document[5]
+    weather_page_index = next(
+        index
+        for index, page in enumerate(document)
+        if "WEATHER / ROUTE HAZARDS" in page.get_text()
+    )
+    weather_page = document[weather_page_index]
     weather_text = " ".join(weather_page.get_text().split())
     assert responsible_line in weather_text
     hazard_text = " ".join(page.get_text() for page in document)
     folded_hazard_text = " ".join(hazard_text.split())
     for index, centre in enumerate(centres):
-        assert f"{centre}: reached" in folded_hazard_text
-        assert f"2026-08-30T12:{index:02d}:00Z" in folded_hazard_text
+        expected_status = (
+            "unavailable" if centre == "LONDON"
+            else "not mounted" if centre == "MONTREAL"
+            else "reached"
+        )
+        assert f"{centre}: {expected_status}" in folded_hazard_text
+        if centre not in {"LONDON", "MONTREAL"}:
+            assert f"2026-08-30T12:{index:02d}Z" in folded_hazard_text
         if centre == "WELLINGTON":
             assert (
                 "next advisory ADVISORY 2026/007 / TESTVOLCANO 999999: "
                 "NO FURTHER ADVISORIES"
             ) in folded_hazard_text
             assert "next due NO FURTHER ADVISORIES" not in folded_hazard_text
-        else:
-            assert f"2026-08-30T18:{index:02d}:00Z" in folded_hazard_text
+        elif centre == "TOKYO":
+            assert "next due 2026-08-30T18:05Z" in folded_hazard_text
+            assert "NXT ADVISORY TEXT MUST NOT BLEED" not in folded_hazard_text
+        elif centre not in {"LONDON", "MONTREAL"}:
+            assert f"2026-08-30T18:{index:02d}Z" in folded_hazard_text
+    assert "DIRECT VAA SOURCE" in folded_hazard_text
+    assert "AVAILABLE · 9 ADVISORIES HELD · APPLICABILITY NOT ASSESSED" in folded_hazard_text
+    assert "VAA POLYGONS" in folded_hazard_text
+    assert "1 AFFECTING · 8 MONITORING · DASHBOARD ROUTE-MAP OVERLAY COUNTS" in folded_hazard_text
+    assert "VOLCANO PROXIMITY" in folded_hazard_text
+    assert "HELD · 2 MARKERS · 1 WITHIN 200 NM" in folded_hazard_text
     top_card_sizes = [
         float(span.get("size") or 0.0)
         for block in weather_page.get_text("dict").get("blocks", [])
@@ -4647,7 +5065,7 @@ def test_weather_vaac_assurance_keeps_all_nine_centre_receipts(
     assert min(top_card_sizes) >= 8.39
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
-    assert physical["pages"][5]["visible_overlap_count"] == 0
+    assert physical["pages"][weather_page_index]["visible_overlap_count"] == 0
 
 
 def test_source_held_charts_intam_and_fir_clocks_reach_compact_pages(tmp_path):
@@ -4720,8 +5138,16 @@ def test_source_held_charts_intam_and_fir_clocks_reach_compact_pages(tmp_path):
     )
 
     document = fitz.open(out)
-    weather = document[5].get_text()
-    enroute = document[6].get_text()
+    weather = next(
+        page.get_text()
+        for page in document
+        if "WEATHER / ROUTE HAZARDS" in page.get_text()
+    )
+    enroute = next(
+        page.get_text()
+        for page in document
+        if "ENROUTE / ASSURANCE" in page.get_text()
+    )
     assert "HELD - 12 raster chart page(s) - OFP pp46-57" in weather
     assert "Route relevance/classification review required" in weather
     assert "No weather-chart appendix detected" not in weather
@@ -5046,13 +5472,17 @@ def test_every_detail_page_has_a_real_overview_return_link(rendered):
 
 def test_decision_analysis_cards_link_to_their_intended_pages(rendered):
     page = rendered[1]
+    outline_pages = {
+        title: page_number - 1
+        for _level, title, page_number in rendered.get_toc()
+    }
     expected_pages = {
-        "Destination NOTAM SX120/25": 4,
-        "Destination Alternate NOTAM 1A1772/26": 4,
-        "Departure NOTAM 1A2469/26": 4,
-        "WEATHER COVERAGE INCOMPLETE": 5,
-        "Early ATC/FIR action before OAKX": 6,
-        "High-MSA event 1": 8,
+        "Destination NOTAM SX120/25": outline_pages["Airports / Alternates"],
+        "Destination Alternate NOTAM 1A1772/26": outline_pages["Airports / Alternates"],
+        "Departure NOTAM 1A2469/26": outline_pages["Airports / Alternates"],
+        "WEATHER COVERAGE INCOMPLETE": outline_pages["Weather / Route Hazards"],
+        "Early ATC/FIR action before OAKX": outline_pages["Enroute / Assurance"],
+        "High-MSA event 1": outline_pages["Terrain / Depressurisation"],
     }
 
     def target_page(link):
@@ -5089,22 +5519,33 @@ def test_overview_return_link_does_not_cover_header_identity(rendered):
 
 
 def test_edto_gate_label_agrees_with_the_cfp_classification(rendered):
-    # The compact flow keeps the EDTO classification and top-up on overview;
-    # it does not manufacture a separate legacy EDTO page.
+    # The six-box page keeps the classification. Exact sector, alternate and
+    # top-up facts retain one deterministic Airports continuation.
     first = rendered[0].get_text()
     assert "EDTO" in first
     assert "NON-EDTO" not in first
-    assert "TOP-UP 0 KG" in first
+    detail = next(
+        page.get_text()
+        for page in rendered
+        if "EDTO TIMING / ALTERNATES" in page.get_text()
+    )
+    assert "EDTO top-up 0 kg" in detail
     text = "\n".join(page.get_text() for page in rendered)
     assert "EDTO / ENROUTE AIRPORTS" not in text
     assert "OFP EDTO TABLE" not in text
-    assert "ENROUTE / ASSURANCE" in rendered[6].get_text()
+    assert any("ENROUTE / ASSURANCE" in page.get_text() for page in rendered)
 
 
-def test_compact_edto_route_context_stays_on_overview(rendered):
+def test_compact_edto_route_context_stays_in_operational_pdf(rendered):
     first = rendered[0].get_text()
     assert "EDTO" in first
-    assert "ENTRY1" in first
+    detail = next(
+        page.get_text()
+        for page in rendered
+        if "EDTO TIMING / ALTERNATES" in page.get_text()
+    )
+    assert "ENTRY ACTM 09.19" in detail
+    assert "EXIT ACTM 09.50" in detail
 
 
 def test_edto_pages_print_every_shared_operational_row_verbatim(
@@ -6086,7 +6527,12 @@ def test_operational_vaa_cards_print_shared_applicability_before_source_excerpt(
 
     render_combined_briefing(flight, findings, [], out)
 
-    page = fitz.open(out)[5]
+    document = fitz.open(out)
+    page_index, page = next(
+        (index, page)
+        for index, page in enumerate(document)
+        if "WEATHER / ROUTE HAZARDS" in page.get_text()
+    )
     text = " ".join(page.get_text().split())
     for index in range(1, 5):
         title = f"TESTVOLCANO-{index} · 1A900{index}/26"
@@ -6108,7 +6554,7 @@ def test_operational_vaa_cards_print_shared_applicability_before_source_excerpt(
     assert "CONTINUED · FULL SOURCE IN DASHBOARD" in text
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
-    assert physical["pages"][5]["visible_overlap_count"] == 0
+    assert physical["pages"][page_index]["visible_overlap_count"] == 0
 
 
 def test_operational_vaa_cards_keep_full_va_sigmet_name_beside_cfp_notices(
@@ -6182,7 +6628,12 @@ def test_operational_vaa_cards_keep_full_va_sigmet_name_beside_cfp_notices(
 
     render_combined_briefing(flight, findings, [], out)
 
-    page = fitz.open(out)[5]
+    document = fitz.open(out)
+    page_index, page = next(
+        (index, page)
+        for index, page in enumerate(document)
+        if "WEATHER / ROUTE HAZARDS" in page.get_text()
+    )
     text = " ".join(page.get_text().split())
     assert full_sigmet_name in text
     assert "VA SIGMET source-held; route applicability remains a crew/dispatch review." in text
@@ -6194,7 +6645,7 @@ def test_operational_vaa_cards_keep_full_va_sigmet_name_beside_cfp_notices(
         )
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
-    assert physical["pages"][5]["visible_overlap_count"] == 0
+    assert physical["pages"][page_index]["visible_overlap_count"] == 0
 
 
 def test_dual_role_station_is_selected_once_per_pdf_section(tmp_path):
@@ -6545,7 +6996,12 @@ def test_hazard_page_prints_one_honest_fallback_when_no_sigmet_cards_exist(
 
     render_combined_briefing(flight, findings, [], out)
 
-    hazard = " ".join(fitz.open(out)[5].get_text().split())
+    document = fitz.open(out)
+    hazard = " ".join(next(
+        page.get_text()
+        for page in document
+        if "WEATHER / ROUTE HAZARDS" in page.get_text()
+    ).split())
     assert hazard.count("ENROUTE SIGMET") == 1
     assert hazard.count(
         "No enroute SIGMET record is printed in this OFP weather package."
@@ -7228,24 +7684,25 @@ def test_tankering_excess_is_written_as_tankering(tmp_path):
 
 
 def test_page_one_carries_the_performance_card_in_place_of_flight_basis(rendered):
-    # Boss, 21 Aug (R2-9): "add PERFORMANCE card to p1 (GPT layout)". The
-    # flight-basis facts already live in the header, chips and footer.
+    # The REV1 hierarchy owns mass/performance in one page-one box; detailed
+    # candidate arithmetic remains on the dedicated Performance page.
     first = rendered[0].get_text()
-    assert "\nPERFORMANCE\n" in first
+    assert "MASS / PERFORMANCE" in first
     assert "OFP P1 - FLIGHT BASIS" not in first
-    assert "RTOW unavailable" in first
-    assert "PTOW 245,529 kg" in first
-    assert "Margin unavailable" in first
+    assert "SELECTED RTOW" in first
+    assert "PTOW" in first and "280,000 kg" in first
+    assert "RTOW MARGIN" in first
 
 
 def test_destination_card_states_the_arrival_basis(rendered):
-    # Boss, 21 Aug (R2-14): "is it based on the flight time?... too small".
+    # ATOT + OFP ACTM is labelled as the target cross-over clock, while the
+    # filed schedule remains visibly distinct.
     first = rendered[0].get_text()
-    assert "ETA 2159Z" in first
+    assert "TARGET ARRIVAL" in first and "2159Z" in first
     assert "STD 0945Z -> STA 2240Z" in first
-    assert "scheduled STA 2240Z" in first
-    assert "filed EET" in first
-    assert "ETA 2240Z" not in first
+    assert "SCHED ARR" in first and "2240Z" in first
+    assert "TARGET CROSS-OVER TIME = ATOT" in first
+    assert "TARGET ARRIVAL 2240Z" not in first
 
 
 def test_decision_timeline_states_its_clock_basis(rendered):

@@ -2710,7 +2710,7 @@ def _page_five(
     )
     timing_status = (
         (
-            "ATOT + OFP ACTM anchors calculated UTC clocks; waypoint UTCs "
+            "TARGET CROSS-OVER TIME = ATOT + OFP ACTM; waypoint UTCs "
             "are calculated, not observed actuals."
         )
         if actual_timing_anchor(flight)

@@ -128,6 +128,16 @@ _COMBINED_BOSS_FLOW_PAGES = (
     ("ENROUTE / ASSURANCE", "NUMBERED RELEASE GATES", "SOURCE ASSURANCE"),
     ("COVERAGE CHECKLIST", "CAT / VWS EVIDENCE", "AIREP / PIREP"),
 )
+_COMBINED_OPERATIONAL_PAGE_ONE_MARKERS = (
+    "OFP PAGE 1 - FLIGHT BRIEFING",
+    "SCHEDULE",
+    "DEPARTURE",
+    "DESTINATION",
+    "MASS / PERFORMANCE",
+    "FUEL / TIME RESERVES",
+    "FLIGHT PLAN / ALTERNATE",
+    "ITEMS REQUIRING CONFIRMATION",
+)
 _COMBINED_EOSID_CONTINUATION_MARKERS = (
     "EOSID / ESCAPE ROUTING",
     "LOSSLESS CONTINUATION",
@@ -162,6 +172,8 @@ _COMBINED_RUNWAY_SHORTENING_TITLE = (
 _COMBINED_CRITICAL_APPROACH_TITLE = (
     "CRITICAL INSTRUMENT APPROACH IMPACTS"
 )
+_COMBINED_EDTO_DETAIL_TITLE = "EDTO TIMING / ALTERNATES"
+_COMBINED_AIRPORT_NOTAM_DETAIL_TITLE = "ALL SELECTED NOTAM DETAILS"
 _COMBINED_VAAC_RECEIPT_TITLE = "VAAC SOURCE RECEIPTS"
 _COMBINED_VAAC_RECEIPT_PAGE = re.compile(
     r"CONTINUED\s*\(\s*(?P<index>\d+)\s*/\s*(?P<count>\d+)\s*\)",
@@ -263,7 +275,16 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
         # add measured continuation pages here; the remaining boss-flow pages
         # keep their order and are validated from the resulting cursor.
         cursor = 0
-        for required_markers in _COMBINED_BOSS_FLOW_PAGES[:3]:
+        for fixed_index, legacy_markers in enumerate(
+            _COMBINED_BOSS_FLOW_PAGES[:3]
+        ):
+            required_markers = (
+                _COMBINED_OPERATIONAL_PAGE_ONE_MARKERS
+                if fixed_index == 0
+                and "OFP PAGE 1 - FLIGHT BRIEFING"
+                in extracted_pages[cursor].upper()
+                else legacy_markers
+            )
             page_text = extracted_pages[cursor].upper()
             missing = [
                 marker for marker in required_markers if marker not in page_text
@@ -370,6 +391,20 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                         ))
                     cursor += 1
             elif flow_index == 1:
+                edto_detail_pages: list[tuple[int, int]] = []
+                while (
+                    cursor < page_count
+                    and _COMBINED_EDTO_DETAIL_TITLE
+                    in extracted_pages[cursor].upper()
+                ):
+                    page_match = _COMBINED_VAAC_RECEIPT_PAGE.search(
+                        extracted_pages[cursor]
+                    )
+                    edto_detail_pages.append((
+                        int(page_match.group("index")) if page_match else 0,
+                        int(page_match.group("count")) if page_match else 0,
+                    ))
+                    cursor += 1
                 declaration = _COMBINED_AIRPORT_INDEX_DECLARATION.search(
                     page_text
                 )
@@ -455,6 +490,20 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                                 "unique ordered 1/N through N/N ICAO list."
                             ),
                         ))
+                airport_notam_pages: list[tuple[int, int]] = []
+                while (
+                    cursor < page_count
+                    and _COMBINED_AIRPORT_NOTAM_DETAIL_TITLE
+                    in extracted_pages[cursor].upper()
+                ):
+                    page_match = _COMBINED_VAAC_RECEIPT_PAGE.search(
+                        extracted_pages[cursor]
+                    )
+                    airport_notam_pages.append((
+                        int(page_match.group("index")) if page_match else 0,
+                        int(page_match.group("count")) if page_match else 0,
+                    ))
+                    cursor += 1
                 critical_approach_pages: list[tuple[int, int]] = []
                 while (
                     cursor < page_count
@@ -489,12 +538,16 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 if shortening_pages:
                     expected_start = (
                         2
+                        + len(edto_detail_pages)
                         + len(airport_index_pages)
+                        + len(airport_notam_pages)
                         + len(critical_approach_pages)
                     )
                     expected_count = (
                         1
+                        + len(edto_detail_pages)
                         + len(airport_index_pages)
+                        + len(airport_notam_pages)
                         + len(critical_approach_pages)
                         + len(shortening_pages)
                     )
@@ -513,10 +566,17 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                             ),
                         ))
                 if critical_approach_pages:
-                    expected_start = 2 + len(airport_index_pages)
+                    expected_start = (
+                        2
+                        + len(edto_detail_pages)
+                        + len(airport_index_pages)
+                        + len(airport_notam_pages)
+                    )
                     expected_count = (
                         1
+                        + len(edto_detail_pages)
                         + len(airport_index_pages)
+                        + len(airport_notam_pages)
                         + len(critical_approach_pages)
                         + len(shortening_pages)
                     )
@@ -533,6 +593,59 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                             "COMBINED_CRITICAL_APPROACH_STRUCTURE",
                             (
                                 "Critical-approach receipts must form one "
+                                "complete ordered Airports continuation "
+                                "sequence."
+                            ),
+                        ))
+                if edto_detail_pages:
+                    expected_count = (
+                        1
+                        + len(edto_detail_pages)
+                        + len(airport_index_pages)
+                        + len(airport_notam_pages)
+                        + len(critical_approach_pages)
+                        + len(shortening_pages)
+                    )
+                    if not (
+                        [index for index, _ in edto_detail_pages]
+                        == list(range(2, 2 + len(edto_detail_pages)))
+                        and {count for _, count in edto_detail_pages}
+                        == {expected_count}
+                    ):
+                        violations.append(ReportQualityViolation(
+                            "COMBINED_EDTO_DETAIL_STRUCTURE",
+                            (
+                                "EDTO timing/alternate receipts must form one "
+                                "complete ordered Airports continuation sequence."
+                            ),
+                        ))
+                if airport_notam_pages:
+                    expected_start = (
+                        2
+                        + len(edto_detail_pages)
+                        + len(airport_index_pages)
+                    )
+                    expected_count = (
+                        1
+                        + len(edto_detail_pages)
+                        + len(airport_index_pages)
+                        + len(airport_notam_pages)
+                        + len(critical_approach_pages)
+                        + len(shortening_pages)
+                    )
+                    if not (
+                        [index for index, _ in airport_notam_pages]
+                        == list(range(
+                            expected_start,
+                            expected_start + len(airport_notam_pages),
+                        ))
+                        and {count for _, count in airport_notam_pages}
+                        == {expected_count}
+                    ):
+                        violations.append(ReportQualityViolation(
+                            "COMBINED_AIRPORT_NOTAM_DETAIL_STRUCTURE",
+                            (
+                                "Selected-NOTAM receipts must form one "
                                 "complete ordered Airports continuation "
                                 "sequence."
                             ),

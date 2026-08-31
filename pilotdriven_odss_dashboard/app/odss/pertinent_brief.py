@@ -2240,7 +2240,7 @@ def _draw_operational_detail(
         sectors=sectors,
         communications=grouped.get("communications", []),
         clock_basis=(
-            f"{briefing['metrics']['clock_basis']} · "
+            "TARGET CROSS-OVER TIME = ATOT + OFP ACTM · "
             f"ATOT {briefing['metrics']['atot']}"
             if briefing["metrics"].get("atot")
             else "OFP ACTM only · ATOT/ATA required for UTC clocks"

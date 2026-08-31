@@ -44,7 +44,10 @@ def test_page_one_labels_scheduled_arrival_sta_without_atot(tmp_path):
     render_combined_briefing(flight, findings, [], output)
 
     first = _page_one_text(output)
-    assert first.count("STA 2240Z") >= 2
+    folded = " ".join(first.split())
+    assert "STD 0945Z -> STA 2240Z" in first
+    assert "SCHED ARR" in first and "2240Z" in first
+    assert "TARGET ARRIVAL NOT CALCULATED" in folded
     assert "ETA 2240Z" not in first
 
 
@@ -61,8 +64,11 @@ def test_page_one_preserves_eta_for_atot_derived_arrival(tmp_path):
     render_combined_briefing(flight, findings, [], output)
 
     first = _page_one_text(output)
-    assert "ETA 2159Z" in first
-    assert "STA 2159Z" not in first
+    assert "TARGET ARRIVAL" in first and "2159Z" in first
+    assert "TIME BASIS" in first
+    assert "TARGET CROSS-OVER TIME = ATOT" in first
+    assert "SCHED ARR" in first and "2240Z" in first
+    assert "TARGET ARRIVAL 2240Z" not in first
 
 
 def test_approach_highlights_distinguish_return_from_arrival(
@@ -99,6 +105,36 @@ def test_approach_highlights_distinguish_return_from_arrival(
             "notam_id": "A1001/26",
             "source_page": 21,
         }
+        for panel in view["airport_operational_panels"]:
+            roles = set(panel.get("role_keys") or [])
+            if "departure" in roles:
+                panel["selected_notams"].append({
+                    "notam_id": "A1001/26",
+                    "severity": "critical",
+                    "approach_affected": True,
+                    "applicability": "active",
+                    "stateAtReference": "active_at_reference",
+                    "item_e_text": (
+                        "ILS RWY 07R UNAVAILABLE FOR A RETURN AFTER DEPARTURE"
+                    ),
+                    "valid_from_utc": "2026-07-16T08:00:00Z",
+                    "valid_to_utc": "2026-07-16T12:00:00Z",
+                    "source_page": 21,
+                })
+            if "destination" in roles:
+                panel["selected_notams"].append({
+                    "notam_id": "B3881/26",
+                    "severity": "critical",
+                    "approach_affected": True,
+                    "applicability": "active",
+                    "stateAtReference": "active_at_reference",
+                    "item_e_text": (
+                        "ILS RWY 24 UNAVAILABLE DURING THE DESTINATION WINDOW"
+                    ),
+                    "valid_from_utc": "2026-07-16T20:00:00Z",
+                    "valid_to_utc": "2026-07-17T02:00:00Z",
+                    "source_page": 22,
+                })
         return view
 
     monkeypatch.setattr(
@@ -111,9 +147,14 @@ def test_approach_highlights_distinguish_return_from_arrival(
 
     render_combined_briefing(flight, findings, [], output)
 
-    first = _page_one_text(output)
-    assert "ARRIVAL APPROACH" in first
-    assert "RETURN APPROACH" in first
+    with fitz.open(output) as document:
+        first = document[0].get_text()
+        all_text = "\n".join(page.get_text() for page in document)
+    assert "ILS RWY 24 UNAVAILABLE" in first
+    assert "REVIEW ARRIVAL PLAN" in first
+    assert "CRITICAL INSTRUMENT APPROACH IMPACTS" in all_text
+    assert "EBBR A1001/26" in all_text
+    assert "WSSS B3881/26" in all_text
 
 
 def test_page_one_phase_strip_has_actions_and_clickable_phase_targets(
@@ -192,12 +233,16 @@ def test_page_one_phase_strip_has_actions_and_clickable_phase_targets(
             assert expected in text
         assert "PHASE ACTION STRIP PERFORMANCE OPEN STATUS OPEN" not in text
 
+        outline_pages = {
+            title: page_number - 1
+            for _level, title, page_number in document.get_toc()
+        }
         expected_pages = {
-            "RELEASE": 2,
-            "BEFORE PUSH": 3,
-            "ROUTE": 6,
-            "ARRIVAL": 4,
-            "WEATHER": 5,
+            "RELEASE": outline_pages["Performance / Fuel / Status"],
+            "BEFORE PUSH": outline_pages["MEL/CDL Evidence"],
+            "ROUTE": outline_pages["Enroute / Assurance"],
+            "ARRIVAL": outline_pages["Airports / Alternates"],
+            "WEATHER": outline_pages["Weather / Route Hazards"],
         }
         for phase, expected_page in expected_pages.items():
             phase_box = page.search_for(phase)[-1]
