@@ -5854,21 +5854,28 @@ def _vaac_receipt_timestamp(value: Any) -> str | None:
 
 
 def _vaac_centre_receipt_line(item: dict[str, Any]) -> str:
-    """One source-held centre receipt, without interpreting freshness."""
+    """One source-held centre receipt, with each timestamp's scope explicit.
+
+    ``listing_latest_utc`` describes the source listing observed when the
+    analysis ran.  ``next_advisory_due`` and ``next_advisory_notes`` come from
+    advisories retained inside the requested flight window.  A historical OFP
+    can therefore have a held-window deadline older than the source listing;
+    labelling the two scopes prevents a false chronological implication.
+    """
     receipt = f"{item.get('centre')}: {item.get('status')}"
     latest = _vaac_receipt_timestamp(item.get("listing_latest_utc"))
     if latest:
-        receipt += f" | latest {latest}"
+        receipt += f" | source latest {latest}"
     else:
-        receipt += " | latest timestamp not held"
+        receipt += " | source latest timestamp not held"
     next_due = _vaac_receipt_timestamp(item.get("next_advisory_due"))
     if next_due:
-        receipt += f" | next due {next_due}"
+        receipt += f" | held-window next due {next_due}"
     for note in item.get("next_advisory_notes") or []:
         if note not in (None, ""):
-            receipt += f" | next advisory {note}"
+            receipt += f" | held-window next advisory {note}"
     if not next_due and not (item.get("next_advisory_notes") or []):
-        receipt += " | next advisory timing not held"
+        receipt += " | held-window next advisory timing not held"
     return receipt
 
 

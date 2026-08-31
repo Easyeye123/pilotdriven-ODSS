@@ -163,8 +163,8 @@ def test_pdf_vaac_ledger_prints_observed_receipts_without_inferred_freshness():
 
     assert "TOKYO: reached" in text
     assert "latest 2026-08-30T12:34Z" in text
-    assert "next due 2026-08-30T18:00Z" in text
-    assert "next advisory NO FURTHER ADVISORIES" in text
+    assert "held-window next due 2026-08-30T18:00Z" in text
+    assert "held-window next advisory NO FURTHER ADVISORIES" in text
     assert "next due NO FURTHER ADVISORIES" not in text
     assert "fresh" not in text.lower()
     assert "stale" not in text.lower()
@@ -5098,15 +5098,22 @@ def test_weather_vaac_assurance_keeps_all_nine_centre_receipts_and_map_parity(
             assert f"2026-08-30T12:{index:02d}Z" in folded_hazard_text
         if centre == "WELLINGTON":
             assert (
-                "next advisory ADVISORY 2026/007 / TESTVOLCANO 999999: "
+                "held-window next advisory ADVISORY 2026/007 / "
+                "TESTVOLCANO 999999: "
                 "NO FURTHER ADVISORIES"
             ) in folded_hazard_text
             assert "next due NO FURTHER ADVISORIES" not in folded_hazard_text
         elif centre == "TOKYO":
-            assert "next due 2026-08-30T18:05Z" in folded_hazard_text
+            assert "held-window next due 2026-08-30T18:05Z" in folded_hazard_text
             assert "NXT ADVISORY TEXT MUST NOT BLEED" not in folded_hazard_text
         elif centre not in {"LONDON", "MONTREAL"}:
-            assert f"2026-08-30T18:{index:02d}Z" in folded_hazard_text
+            assert (
+                f"held-window next due 2026-08-30T18:{index:02d}Z"
+            ) in folded_hazard_text
+        if centre not in {"LONDON", "MONTREAL"}:
+            assert (
+                f"source latest 2026-08-30T12:{index:02d}Z"
+            ) in folded_hazard_text
     assert "DIRECT VAA SOURCE" in folded_hazard_text
     assert "AVAILABLE · 9 ADVISORIES HELD · APPLICABILITY NOT ASSESSED" in folded_hazard_text
     assert "VAA POLYGONS" in folded_hazard_text
