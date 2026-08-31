@@ -207,8 +207,8 @@ def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
     # 46 page entries of geometry + checksums only; far below any size that could embed the PDF.
     assert PINNED_MANIFEST.stat().st_size < 16_000
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference_v13_REV1_SIX_BOX_AND_NOTAM_EVIDENCE.pdf",
-        "sha256": "2f0263253a76cac5b5795b42d1d777c21d0d742b07973f0eed8dd1f3b9f0ccb5",
+        "filename": "SQ214_REV3_reference_v14_VAAC_RECEIPT_SCOPE_LABELS.pdf",
+        "sha256": "099d080ea76a73549e0f9953087d65df9c5043a3421923616c916bea2e26178e",
     }
     assert len(payload["pages"]) == 46
     assert payload["provenance"]["combined_briefing_schema_version"] == "2026-08-31-rev1-six-box-notam-evidence-v33"

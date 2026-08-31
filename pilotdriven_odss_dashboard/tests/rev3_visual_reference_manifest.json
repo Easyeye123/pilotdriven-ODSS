@@ -3,8 +3,8 @@
   "gate": "rev3-raster-pixel-equality",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
-    "filename": "SQ214_REV3_reference_v13_REV1_SIX_BOX_AND_NOTAM_EVIDENCE.pdf",
-    "sha256": "2f0263253a76cac5b5795b42d1d777c21d0d742b07973f0eed8dd1f3b9f0ccb5"
+    "filename": "SQ214_REV3_reference_v14_VAAC_RECEIPT_SCOPE_LABELS.pdf",
+    "sha256": "099d080ea76a73549e0f9953087d65df9c5043a3421923616c916bea2e26178e"
   },
   "renderer": {
     "library": "PyMuPDF",
@@ -342,7 +342,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "8b11e849f8c176bba60943147b9a3a85c48f6607001349487eddc5bd2a37183f"
+      "reference_raster_sha256": "d67b73c60a6a0a3fbc1b41a99e4b95c70b1e1b3373f217f7a72502e74d67c421"
     },
     {
       "page_number": 42,
@@ -350,7 +350,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "43ed49739679604369ee927b01b84f529a58970d83870e59c58dd1df776989bb"
+      "reference_raster_sha256": "bb4bd66883b07b24e72c67ab892fd962c67bb09a261db17cce53ab28ca3f120b"
     },
     {
       "page_number": 43,
@@ -391,8 +391,8 @@
     "max_channel_delta": 0
   },
   "provenance": {
-    "minted_on": "2026-08-31",
-    "approval_basis": "User-approved REV5.1 REV1 six-box page-one structure and complete selected-NOTAM evidence; 23/23 corpus passed and all 46 lossless plus all 39 operational pages were visually inspected on 2026-08-31 with zero clipping, overlap or blank-page violations.",
+    "minted_on": "2026-09-01",
+    "approval_basis": "User-approved REV5.1 REV1 six-box page-one structure and complete selected-NOTAM evidence; all 46 lossless plus all 39 operational pages were previously visually inspected on 2026-08-31. The 2026-09-01 23/23 corpus passed, 44/46 pages remained exact to v13, and the only re-reviewed changes on pages 41-42 were explicit source-latest versus held-window VAAC timestamp scope labels with zero clipping, overlap, blank output or unrelated visual movement.",
     "combined_briefing_schema_version": "2026-08-31-rev1-six-box-notam-evidence-v33"
   }
 }
