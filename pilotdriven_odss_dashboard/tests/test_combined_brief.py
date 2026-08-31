@@ -3609,6 +3609,60 @@ def test_six_box_page1_uses_applicable_taf_result_at_the_readability_floor(
     assert physical["pages"][0]["visible_overlap_count"] == 0
 
 
+def test_six_box_page1_bounds_long_destination_forecast_and_points_to_weather(
+    tmp_path,
+    monkeypatch,
+):
+    """The authentic SQ481 forecast must not overflow the REV1-style card."""
+    from app.odss import briefing as briefing_module
+
+    real_build = briefing_module.build_briefing_view
+    long_conditions = (
+        "wind 150° 8 kt; visibility 10 km or more; few 1500 ft; scattered "
+        "2000 ft · wind 270° 15 kt, gusting 25 kt; visibility 3 km; few "
+        "1200 ft; broken 1500 ft; convection / thunderstorms; low cloud / "
+        "ceiling; gusty surface wind"
+    )
+
+    def with_sq481_destination_forecast(
+        flight, findings, warnings, timing_view=None, weather_charts=None
+    ):
+        view = real_build(
+            flight,
+            findings,
+            warnings,
+            timing_view=timing_view,
+            weather_charts=weather_charts,
+        )
+        view["overview"]["destination"]["forecast_at_reference"] = {
+            "applicable_conditions": long_conditions,
+            "utc_window": "26 AUG 0400Z-0600Z",
+            "window_status": "pertinent",
+            "source_references": ["OFP p14"],
+        }
+        return view
+
+    monkeypatch.setattr(
+        briefing_module,
+        "build_briefing_view",
+        with_sq481_destination_forecast,
+    )
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    findings = [
+        item
+        for item in sample_findings()
+        if item["engine"] != "depressurisation"
+    ]
+    out = tmp_path / "sq481-long-destination-forecast.pdf"
+
+    render_combined_briefing(flight, findings, [], out)
+
+    first_page = " ".join(fitz.open(out)[0].get_text().split())
+    assert "PERTINENT CONDITIONS HELD - SEE WEATHER DETAIL" in first_page
+    assert long_conditions not in first_page
+
+
 @pytest.mark.parametrize(
     "dense_stations",
     [("departure",), ("departure", "destination")],

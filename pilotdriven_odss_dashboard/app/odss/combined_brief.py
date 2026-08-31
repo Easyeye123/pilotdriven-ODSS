@@ -1959,6 +1959,8 @@ def _draw_operational_six_box_overview(
     """
     width, _ = PAGE_SIZE
     full_w = width - 2 * MARGIN
+    grid_gap = 9.0
+    card_w = (full_w - 2 * grid_gap) / 3.0
     overview = briefing.get("overview") or {}
     identity = briefing.get("flight_identity") or {}
     page_one = briefing.get("page_one") or {}
@@ -2159,6 +2161,22 @@ def _draw_operational_six_box_overview(
         ):
             forecast_value = "WINDOW REVIEW HELD"
 
+    # Keep the full decoded forecast in the Weather section. Page 1 is a
+    # dispatch scan card, so a condition set that cannot fit beside its fixed
+    # label becomes an honest status pointer instead of shrinking, clipping or
+    # silently dropping the source evidence. The width mirrors the card's
+    # maximum label column and panel inset below.
+    forecast_value_width = max(80.0, card_w - 20.0 - 88.0)
+    if len(_wrap(forecast_value, MONO_BOLD, 8.4, forecast_value_width)) > 4:
+        forecast_status = str(
+            destination_forecast.get("window_status") or ""
+        ).lower()
+        forecast_value = (
+            "PERTINENT CONDITIONS HELD - SEE WEATHER DETAIL"
+            if forecast_status == "pertinent"
+            else "FORECAST HELD - SEE WEATHER DETAIL"
+        )
+
     alternates = [
         row for row in page_one.get("alternates") or [] if isinstance(row, dict)
     ]
@@ -2331,12 +2349,10 @@ def _draw_operational_six_box_overview(
     )
 
     grid_top = content_top - 22.0
-    grid_gap = 9.0
     confirmation_y = 38.0
     confirmation_h = 100.0
     grid_bottom = confirmation_y + confirmation_h + 12.0
     card_h = (grid_top - grid_bottom - grid_gap) / 2.0
-    card_w = (full_w - 2 * grid_gap) / 3.0
     cards = (
         ("SCHEDULE", DASH_BLUE, schedule_rows),
         ("DEPARTURE", DEPARTURE, departure_rows),
