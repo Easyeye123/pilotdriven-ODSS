@@ -111,3 +111,42 @@ def test_obstacle_notice_naming_an_iap_without_minima_stays_an_obstacle() -> Non
     )
     _, kind = notam_pertinence(text, "Obstacle")
     assert kind == "obstacle"
+
+
+IAP_CATEGORY_ONLY = "RNAV (GPS) RWY 26L, AMDT 2. LPV DA 710/HAT 388 ALL CATS."
+
+
+def test_category_only_iap_token_still_reads_as_a_minima_change() -> None:
+    """All three decisions must search the same string.
+
+    A source block heading can supply the `IAP` category while item E names
+    only the procedure and its minima. The kind, the approach flag and the
+    printed sentence have to agree about that record, or the digest calls it
+    critical while the briefing calls it a generic restriction.
+    """
+
+    rank, kind = notam_pertinence(IAP_CATEGORY_ONLY, "IAP")
+    assert (rank, kind) == (2, "approach_minima_change")
+    assert _instrument_approach_affected(IAP_CATEGORY_ONLY, "IAP") is True
+    assert _notam_operational_summary(
+        IAP_CATEGORY_ONLY,
+        kind,
+        "destination",
+        category="IAP",
+    ) == (
+        "RNAV (GPS) RWY 26L minima changed (DA 710/HAT 388) during the "
+        "applicable destination window."
+    )
+
+
+def test_minima_change_summary_never_falls_through_to_the_generic_line() -> None:
+    """The branch returns for its own kind whatever the wording holds."""
+
+    summary = _notam_operational_summary(
+        "PUBLISHED MINIMA REVISED, SEE CHART.",
+        "approach_minima_change",
+        "departure",
+    )
+    assert "minima" in summary.lower()
+    assert "Operational airport restriction requires review" not in summary
+    assert summary.endswith("during the applicable departure window.")

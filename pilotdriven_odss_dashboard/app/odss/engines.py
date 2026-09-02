@@ -31,8 +31,8 @@ from .deferred_dispatch import (
     deferred_source_declaration_for_display,
 )
 from .pilot_briefing import (
-    _IAP_MINIMA_CHANGE,
     concise_weather_finding,
+    iap_minima_change,
     notam_pertinence,
     notam_sort_key,
     pilot_notam_key,
@@ -1124,6 +1124,8 @@ def _notam_operational_summary(
     kind: str,
     role: str,
     applicability: str = "active",
+    *,
+    category: str = "",
 ) -> str:
     upper = " ".join(text.upper().split())
     if kind == "taxiway_restriction" and "CONSTRUCTION SURVEY LASER" in upper:
@@ -1165,14 +1167,21 @@ def _notam_operational_summary(
     if kind == "airport_closure":
         return f"Entire airport closed or unavailable during the applicable {phase} window."
     if kind == "approach_minima_change":
-        minima_change = _IAP_MINIMA_CHANGE.search(upper)
+        minima_change = iap_minima_change(text, category)
+        cause = " by a temporary crane" if "CRANE" in upper else ""
         if minima_change:
-            cause = " by a temporary crane" if "CRANE" in upper else ""
             return (
                 f"{minima_change.group('procedure')} minima changed "
                 f"({minima_change.group('minima')}){cause} during the "
                 f"applicable {phase} window."
             )
+        # The kind owns this sentence: never fall through to the generic
+        # restriction line, which would contradict the record's own rank.
+        return (
+            "Published approach minima changed; confirm the affected "
+            f"procedure and minima in item E{cause} during the applicable "
+            f"{phase} window."
+        )
     if kind == "runway_closure":
         return f"{subject.title()} closed or unavailable during the applicable {phase} window."
     if kind == "approach_navaid_closure":
@@ -1467,9 +1476,11 @@ def _instrument_approach_affected(text: str, category: str) -> bool:
             + " "
             + normalized_text[iap_publication_adverse.end():]
         )
-    if _IAP_MINIMA_CHANGE.search(normalized_text):
+    if iap_minima_change(text, category):
         # Republished DA/MDA for a named procedure changes the approach the
-        # crew will fly, whatever the underlying cause.
+        # crew will fly, whatever the underlying cause. This reads the record
+        # as received - category included, nothing excised - so it can never
+        # disagree with the kind the same record was given.
         return True
     clauses = [
         " ".join(clause.upper().split())
@@ -2973,6 +2984,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 pertinence_kind,
                 role,
                 applicability,
+                category=str(record["category"]),
             ),
             details,
             {

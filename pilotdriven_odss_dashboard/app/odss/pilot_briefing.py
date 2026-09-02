@@ -55,6 +55,21 @@ _IAP_MINIMA_CHANGE = re.compile(
 )
 
 
+def iap_minima_change(text: Any, category: Any = "") -> "re.Match[str] | None":
+    """Search one haystack - category then item E - for every caller.
+
+    ``notam_pertinence`` has always read the category alongside item E while
+    the summary sentence and the approach flag read item E alone. A record
+    whose only ``IAP`` token comes from its category therefore classified as
+    a minima change, yet printed a generic restriction line and lost its
+    critical severity. One haystack keeps the three decisions in agreement.
+    """
+
+    return _IAP_MINIMA_CHANGE.search(
+        " ".join(f"{category or ''} {text or ''}".upper().split())
+    )
+
+
 def normalize_notam_references(value: Any) -> str:
     """Remove parser-added numeric prefixes from pilot-facing NOTAM IDs."""
 
@@ -173,7 +188,7 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
         return 5, "apron_stand_closure"
     if airport_closure:
         return 0, "airport_closure"
-    if _IAP_MINIMA_CHANGE.search(upper):
+    if iap_minima_change(text, category):
         return 2, "approach_minima_change"
     if unavailable and approach:
         return 2, "approach_navaid_closure"
