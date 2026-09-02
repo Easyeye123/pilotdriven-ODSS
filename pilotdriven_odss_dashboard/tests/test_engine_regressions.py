@@ -1061,8 +1061,8 @@ def test_approach_critical_gate_rejects_standalone_navaids_and_papi() -> None:
             "approach_navaid_closure"
         )
         assert subject.lower() in by_id[notam_id]["summary"].lower()
-        assert "unavailable" in by_id[notam_id]["summary"].lower()
-
+        # Boss 02 Sep 2026: a navaid line states the aid's own state - "unserviceable" for U/S.
+        assert any(word in by_id[notam_id]["summary"].lower() for word in ("unavailable", "unserviceable"))
     for notam_id, available_subject in (
         ("ALT-PAPI-CONTEXT/26", "ILS"),
         ("ALT-VOR-PAPI-CONTEXT/26", "VOR"),

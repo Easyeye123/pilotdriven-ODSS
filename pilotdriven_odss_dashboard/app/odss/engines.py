@@ -1115,6 +1115,58 @@ def _approach_lights_reported_available(text: str) -> bool:
     return False
 
 
+_NAVAID_SUBJECT = re.compile(
+    r"\b((?:ILS|LOC|LLZ|LOCALI[ZS]ER|GP|GS|GLIDE ?PATH|DVOR|VOR|DME|NDB|TACAN|RNAV|RNP|GLS|GBAS|LPV)"
+    r"(?:/(?:DME|GP|LOC|NDB|VOR))?"
+    r"(?:\s+(?:CAT\s+I{1,3}|\(GPS\)|[XYZ]))*)"
+    r"(?:\s*'([A-Z]{2,4})')?"
+    r"(?:\s*(?:RWY|RUNWAY)\s*(\d{2}[LCR]?))?"
+)
+
+
+def _navaid_clause(upper: str) -> tuple[str, str]:
+    """The aid and the state a single clause states about it.
+
+    The aid must open the clause and the state must sit in the same clause, so
+    "ILS RWY 25 AVBL. PAPI RWY 25 U/S" never reads as an ILS outage and a
+    negated "NOT U/S" never reads as unserviceable.
+    """
+    for clause in re.split(r"[.;]\s*", upper):
+        clause = clause.strip(" ,")
+        if not clause:
+            continue
+        state = _navaid_state_phrase(clause)
+        if not state:
+            continue
+        aid = _navaid_subject(clause)
+        if aid:
+            return aid, state
+    return "", ""
+
+
+def _navaid_subject(clause: str) -> str:
+    """The aid as the clause names it — "ILS CAT I RWY 06", "DVOR/DME MNL" — only when the aid opens the clause."""
+    match = _NAVAID_SUBJECT.match(clause)
+    if not match:
+        return ""
+    aid = " ".join(match.group(1).replace("LOCALIZER", "LOC").replace("LOCALISER", "LOC").split())
+    parts = [aid]
+    if match.group(2):
+        parts.append(match.group(2))
+    if match.group(3):
+        parts.append(f"RWY {match.group(3)}")
+    return " ".join(parts)
+
+
+def _navaid_state_phrase(upper: str) -> str:
+    """The state the record states, in the boss's words; empty when it states none."""
+    if re.search(r"(?<!NOT )\bON\s+TEST\b", upper):
+        return "on test, do not use" if re.search(r"\bDO\s+NOT\s+USE\b", upper) else "on test"
+    if re.search(r"(?<!NOT )(?:\bU/S\b|\bUNSERVICEABLE\b|\bUNSERVICEABILITY\b)", upper):
+        return "unserviceable"
+    return ""
+
+
 def _notam_operational_summary(
     text: str,
     kind: str,
@@ -1185,6 +1237,12 @@ def _notam_operational_summary(
         )
     if kind == "runway_closure":
         return f"{subject.title()} closed or unavailable during the applicable {phase} window."
+    if kind in {"approach_navaid_closure", "runway_approach_restriction"}:
+        # Boss 02 Sep 2026: an approach-aid line names the aid, the runway and
+        # its state — "on test", "unserviceable" — never "restriction applies".
+        aid, state = _navaid_clause(upper)
+        if aid and state:
+            return f"{aid} {state} during the applicable {phase} window."
     if kind == "approach_navaid_closure":
         return f"{subject} unavailable during the applicable {phase} window."
     if kind == "runway_approach_restriction":
