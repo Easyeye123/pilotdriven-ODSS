@@ -871,17 +871,49 @@ def _airport_operational_panels(
             ],
         )
 
+    # Boss 03 Sep 00:37: "All the NOTAMs also need to be analysed JUST
+    # summarised critical and don't need to show. Can hide and click to be
+    # active." The engine already analyses every OFP station package; a
+    # station outside the planning roles (an "informational" station) gets a
+    # dashboard-only panel so its critical lines can sit behind its code.
+    # Every PDF and report consumer receives the planning panels only.
+    panelled = {item["icao"] for item in specifications}
+    for item in findings:
+        if item.get("engine") != "notam":
+            continue
+        data = item.get("data") or {}
+        location = str(data.get("location") or "").strip().upper()
+        if not location or location in panelled or data.get("role") != "informational":
+            continue
+        add(
+            "enroute",
+            "enroute",
+            location,
+            {"role": "informational"},
+            source_pages=[
+                page
+                for page in (data.get("source_page"),)
+                if isinstance(page, int)
+            ],
+        )
+        specifications[-1]["dashboard_only"] = True
+        panelled.add(location)
+
     panels: list[dict[str, Any]] = []
     for specification in specifications:
         location = specification["icao"]
         roles = set(specification["roles"])
+        # The engine labels a rest-of-route station's findings "informational".
+        matching_roles = roles | (
+            {"informational"} if specification.get("dashboard_only") else set()
+        )
         applicable_findings = [
             item
             for item in findings
             if item.get("engine") == "notam"
             and str((item.get("data") or {}).get("location") or "").upper()
             == location
-            and (item.get("data") or {}).get("role") in roles
+            and (item.get("data") or {}).get("role") in matching_roles
         ]
         selected_findings = select_pertinent_notams(
             applicable_findings,
@@ -5321,6 +5353,7 @@ def build_briefing_view(
     warnings: list[str],
     timing_view: dict[str, Any] | None = None,
     weather_charts: dict[str, Any] | None = None,
+    include_dashboard_only_panels: bool = False,
 ) -> dict[str, Any]:
     source_findings = list(findings)
     findings = prepare_pilot_findings(findings, notam_limit=24)
@@ -5354,10 +5387,17 @@ def build_briefing_view(
         "destination",
         flight.get("destination_runway"),
     )
-    airport_operational_panels = _airport_operational_panels(
+    # The planning panels drive every projection below; the rest-of-route
+    # (dashboard-only) panels are published to the dashboard alone.
+    all_airport_panels = _airport_operational_panels(
         flight,
         source_findings,
     )
+    airport_operational_panels = [
+        panel
+        for panel in all_airport_panels
+        if not panel.get("dashboard_only")
+    ]
     alternate_assessment_rows = _alternate_assessment_rows(
         flight,
         airport_operational_panels,
@@ -5793,7 +5833,11 @@ def build_briefing_view(
         ],
         "departure": departure_panel,
         "destination": destination_panel,
-        "airport_operational_panels": airport_operational_panels,
+        "airport_operational_panels": (
+            all_airport_panels
+            if include_dashboard_only_panels
+            else airport_operational_panels
+        ),
         # Exact validated airport/notes publication shared by the dashboard
         # and combined PDF. Keep it in the composed view so renderers never
         # create a second product directly from raw flight storage.

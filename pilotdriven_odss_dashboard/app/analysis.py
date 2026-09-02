@@ -151,6 +151,9 @@ def run_odss_analysis(
         warnings,
         timing_view,
         weather_charts,
+        # The dashboard alone shows the rest-of-route station panels (boss
+        # 03 Sep); the PDF and every report keep the planning panels only.
+        include_dashboard_only_panels=True,
     )
     flight_briefing_plan = build_combined_report_plan(flight, findings)
 
