@@ -7802,3 +7802,26 @@ def test_pertinent_notam_lines_follow_the_panel_and_skip_the_highlight():
         "SX98/26 Twy W9 closed.",
     ]
     assert _pertinent_notam_lines({}, skip_notam_id=None, limit=2) == []
+
+
+def test_page_one_highlight_labels_a_minima_change_as_an_approach() -> None:
+    """`approach_minima` inherits `approach_navaid`'s page-one label.
+
+    The compact family split must not turn a published approach fact into a
+    generic operational note on the printed briefing.
+    """
+
+    from app.odss.combined_brief import _operational_highlight_label
+
+    assert _operational_highlight_label("approach_navaid", "RETURN APPROACH") == (
+        "RETURN APPROACH"
+    )
+    assert _operational_highlight_label("approach_minima", "ARRIVAL APPROACH") == (
+        "ARRIVAL APPROACH"
+    )
+    assert _operational_highlight_label("runway_closure", "RETURN APPROACH") == (
+        "RUNWAY STATUS"
+    )
+    assert _operational_highlight_label("obstacle", "RETURN APPROACH") == (
+        "OPERATIONAL NOTE"
+    )

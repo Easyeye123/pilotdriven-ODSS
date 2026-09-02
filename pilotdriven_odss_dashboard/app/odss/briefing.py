@@ -3625,15 +3625,20 @@ def _overview_primary_highlight(
     )
     if panel is None:
         return None
+    # A republished minimum ranks with the approach it changes: before the
+    # compact families were split it *was* an approach_navaid line and held
+    # this slot, and the page-one fact must not move because of the split.
     family_order = (
         {
             "approach_navaid": 0,
+            "approach_minima": 0,
             "runway_closure": 1,
             "runway_restriction": 2,
         }
         if role_key == "departure"
         else {
             "approach_navaid": 0,
+            "approach_minima": 0,
             "runway_closure": 1,
             "runway_restriction": 2,
         }

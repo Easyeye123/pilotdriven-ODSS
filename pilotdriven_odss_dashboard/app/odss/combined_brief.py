@@ -3062,13 +3062,9 @@ def draw_overview_page(
         approach_label: str = "RETURN APPROACH",
     ) -> tuple[str, str]:
         highlight = station.get("primary_operational_highlight") or {}
-        family = str(highlight.get("signal_family") or "")
-        label = (
-            approach_label
-            if family == "approach_navaid"
-            else "RUNWAY STATUS"
-            if family in {"runway_closure", "runway_restriction"}
-            else "OPERATIONAL NOTE"
+        label = _operational_highlight_label(
+            str(highlight.get("signal_family") or ""),
+            approach_label,
         )
         return label, str(highlight.get("text") or "").strip()
 
@@ -13438,6 +13434,22 @@ def draw_operational_terrain_page(
         for line in lines:
             canvas.drawCentredString(ix + iw / 2, row_y, line)
             row_y -= 14.0
+
+
+def _operational_highlight_label(family: str, approach_label: str) -> str:
+    """Name the page-one highlight from its compact family.
+
+    ``approach_minima`` is listed beside ``approach_navaid``: a republished
+    decision altitude is an approach fact, and before the compact families
+    were split it carried this same label. Calling it an operational note
+    would be a quieter word for the same notice.
+    """
+
+    if family in {"approach_navaid", "approach_minima"}:
+        return approach_label
+    if family in {"runway_closure", "runway_restriction"}:
+        return "RUNWAY STATUS"
+    return "OPERATIONAL NOTE"
 
 
 def _audit_rev3_v8_compact_notam_family(item: dict[str, Any]) -> str:

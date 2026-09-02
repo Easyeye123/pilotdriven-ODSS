@@ -2358,3 +2358,42 @@ def test_volcano_proximity_rides_the_hazard_view() -> None:
     proximity = view["hazards"]["volcano_proximity"]
     assert proximity["entries"][0]["volcano"].startswith("GREAT SITKIN")
     assert proximity["entries"][0]["within_corridor"] is True
+
+
+def test_a_minima_change_wins_the_page_one_highlight_like_an_outage() -> None:
+    """The page-one slot ranks by family; the split must not demote minima.
+
+    Before the split an FAA minima record resolved to `approach_navaid` and
+    took the highlight ahead of a runway notice. Its own family must inherit
+    that standing, or the page-one fact silently changes on US flights.
+    """
+
+    from app.odss.briefing import _overview_primary_highlight
+
+    panels = [{
+        "role_keys": ["departure"],
+        "card_summary_lines": [
+            {
+                "kind": "notam",
+                "text": "RWY 20C closed during the applicable departure window.",
+                "signal_family": "runway_closure",
+                "notam_id": "A1/26",
+                "source_page": 5,
+            },
+            {
+                "kind": "notam",
+                "text": (
+                    "RNAV (GPS) RWY 20C minima changed (DA 710/HAT 388) "
+                    "during the applicable departure window."
+                ),
+                "signal_family": "approach_minima",
+                "notam_id": "B2/26",
+                "source_page": 6,
+            },
+        ],
+    }]
+
+    highlight = _overview_primary_highlight(panels, role_key="departure")
+    assert highlight is not None
+    assert highlight["signal_family"] == "approach_minima"
+    assert highlight["notam_id"] == "B2/26"
