@@ -44,30 +44,72 @@ _APPLICABLE_WINDOW_SUFFIX = re.compile(
 # fact is the changed minima, so the notice must not be filed as an obstacle.
 # Both the procedure and its published minima are required: naming a crane
 # near an IAP chart is not, on its own, a minima change.
-_IAP_MINIMA_CHANGE = re.compile(
-    r"\bIAP\b.{0,300}?"
-    r"(?P<procedure>(?:(?:ILS|LOC)\s+(?:OR|AND)\s+)?"
+_IAP_TOKEN = re.compile(r"\bIAP\b")
+_IAP_PROCEDURE_TITLE = re.compile(
+    r"(?:(?:ILS|LOC)\s+(?:OR|AND)\s+)?"
     r"(?:ILS|LOC|VOR|NDB|RNAV(?:\s*\(GPS\))?|RNP)"
-    r"(?:\s+[XYZ])?\s+RWY\s*\d{1,2}[LCR]?)"
-    r".{0,300}?"
-    r"(?P<minima>(?:DA|MDA)\s*\d{2,5}(?:\s*/\s*HAT\s*\d{2,5})?)",
-    re.S,
+    r"(?:\s+[XYZ])?\s+RWY\s*\d{1,2}[LCR]?"
 )
+_IAP_PUBLISHED_MINIMA = re.compile(
+    r"(?:DA|MDA)\s*\d{2,5}(?:\s*/\s*HAT\s*\d{2,5})?"
+)
+# One notice can republish several charts, and a chart can carry more than one
+# minimum.  A procedure or a competing SID/STAR/surface procedure standing
+# between a title and a minimum ends that title's claim on it.
+_IAP_COMPETING_PROCEDURE = (
+    r"(?:(?:SID|STAR|DP|DEPARTURE|ARRIVAL|TAKEOFF|TAXI|RUNWAY|PAPI|"
+    r"ATIS|RVR|NOISE(?:\s+ABATEMENT)?)(?:\s+[A-Z0-9-]+){0,5}"
+    r"\s*[:,-]?\s+PROC(?:EDURE)?S?)"
+)
+_IAP_COMPETING_PROCEDURE_MATCH = re.compile(rf"\b{_IAP_COMPETING_PROCEDURE}\b")
+_IAP_MINIMA_BINDING_SPAN = 300
 
 
-def iap_minima_change(text: Any, category: Any = "") -> "re.Match[str] | None":
-    """Search one haystack - category then item E - for every caller.
+def iap_minima_changes(text: Any, category: Any = "") -> list[tuple[str, str]]:
+    """Return each republished minimum bound to the procedure that owns it.
 
-    ``notam_pertinence`` has always read the category alongside item E while
-    the summary sentence and the approach flag read item E alone. A record
-    whose only ``IAP`` token comes from its category therefore classified as
-    a minima change, yet printed a generic restriction line and lost its
-    critical severity. One haystack keeps the three decisions in agreement.
+    One haystack - category then item E - serves every caller. The kind, the
+    approach flag and the printed sentence read the record as received, so
+    they can never disagree about it.
+
+    Pairing is bound rather than positional: a minimum belongs to the nearest
+    procedure title before it, within one binding span and with no competing
+    procedure in between. Taking the first title and the first altitude after
+    it would print one chart's name against another chart's minimum.
     """
 
-    return _IAP_MINIMA_CHANGE.search(
-        " ".join(f"{category or ''} {text or ''}".upper().split())
-    )
+    haystack = " ".join(f"{category or ''} {text or ''}".upper().split())
+    anchors = [match.end() for match in _IAP_TOKEN.finditer(haystack)]
+    if not anchors:
+        return []
+    procedures = [
+        match
+        for match in _IAP_PROCEDURE_TITLE.finditer(haystack)
+        if any(
+            0 <= match.start() - anchor <= _IAP_MINIMA_BINDING_SPAN
+            for anchor in anchors
+        )
+    ]
+    if not procedures:
+        return []
+    changes: dict[str, str] = {}
+    for minimum in _IAP_PUBLISHED_MINIMA.finditer(haystack):
+        owner = None
+        for procedure in procedures:
+            if procedure.end() > minimum.start():
+                break
+            owner = procedure
+        if owner is None:
+            continue
+        between = haystack[owner.end():minimum.start()]
+        if len(between) > _IAP_MINIMA_BINDING_SPAN:
+            continue
+        if _IAP_COMPETING_PROCEDURE_MATCH.search(between):
+            continue
+        # A chart that republishes both its ILS and its LOC line is one
+        # changed procedure, named once, with the first minimum it prints.
+        changes.setdefault(owner.group(0), minimum.group(0))
+    return list(changes.items())
 
 
 def normalize_notam_references(value: Any) -> str:
@@ -188,7 +230,7 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
         return 5, "apron_stand_closure"
     if airport_closure:
         return 0, "airport_closure"
-    if iap_minima_change(text, category):
+    if iap_minima_changes(text, category):
         return 2, "approach_minima_change"
     if unavailable and approach:
         return 2, "approach_navaid_closure"

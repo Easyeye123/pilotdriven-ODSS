@@ -150,3 +150,55 @@ def test_minima_change_summary_never_falls_through_to_the_generic_line() -> None
     assert "minima" in summary.lower()
     assert "Operational airport restriction requires review" not in summary
     assert summary.endswith("during the applicable departure window.")
+
+
+TWO_PROCEDURES = (
+    "IAP TEST INTL, TESTVILLE, XX. ILS RWY 04L, AMDT 3. "
+    "S-ILS 04L DA 250/HAT 200 ALL CATS. "
+    "RNAV (GPS) RWY 22R, AMDT 1. LPV DA 480/HAT 420 ALL CATS."
+)
+
+
+def test_each_published_minimum_is_named_with_its_own_procedure() -> None:
+    """Pairing must be bound, not positional.
+
+    One notice can republish two charts. Taking the first procedure and the
+    first decision altitude found after it prints one chart's title with
+    another chart's minimum - a wrong fact a crew could fly.
+    """
+
+    _, kind = notam_pertinence(TWO_PROCEDURES, "Approach Procedure")
+    assert kind == "approach_minima_change"
+    assert _notam_operational_summary(TWO_PROCEDURES, kind, "destination") == (
+        "ILS RWY 04L minima changed (DA 250/HAT 200) and "
+        "RNAV (GPS) RWY 22R minima changed (DA 480/HAT 420) "
+        "during the applicable destination window."
+    )
+
+
+def test_a_minimum_binds_to_the_nearest_preceding_procedure() -> None:
+    """A procedure that publishes no minimum of its own is not named."""
+
+    text = (
+        "IAP TEST INTL, TESTVILLE, XX. ILS RWY 16R, AMDT 12. PROCEDURE TURN NA. "
+        "RNAV (GPS) RWY 16C, AMDT 3. LPV DA 400/HAT 200 ALL CATS."
+    )
+    _, kind = notam_pertinence(text, "Approach Procedure")
+    summary = _notam_operational_summary(text, kind, "destination")
+    assert summary == (
+        "RNAV (GPS) RWY 16C minima changed (DA 400/HAT 200) during the "
+        "applicable destination window."
+    )
+    assert "16R" not in summary
+
+
+def test_a_competing_procedure_between_the_two_breaks_the_binding() -> None:
+    """Same tempering idiom the other IAP patterns already use."""
+
+    text = (
+        "IAP TEST INTL, TESTVILLE, XX. ILS RWY 16R, AMDT 12. "
+        "STAR PROCEDURES AMENDED. LPV DA 400/HAT 200 ALL CATS."
+    )
+    _, kind = notam_pertinence(text, "Approach Procedure")
+    assert kind != "approach_minima_change"
+    assert _instrument_approach_affected(text, "Approach Procedure") is False
