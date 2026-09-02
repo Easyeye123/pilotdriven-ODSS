@@ -35,3 +35,33 @@ def test_runway_work_without_an_aid_keeps_the_generic_line():
     assert _summary("RWY 22 WIP CONST EAST SIDE.") == (
         "Rwy 22 restriction applies during the applicable destination window."
     )
+
+
+def test_faa_procedure_notice_names_the_procedure_and_its_note():
+    text = (
+        "IAP LOS ANGELES INTL, LOS ANGELES, CA. ILS OR LOC RWY 7R, AMDT 8A... "
+        "AUTO-PILOT COUPLED APPROACH NA BELOW 800."
+    )
+    assert _summary(text) == (
+        "ILS OR LOC RWY 7R: AUTO-PILOT COUPLED APPROACH NA BELOW 800 during the applicable destination window."
+    )
+
+
+def test_faa_cat_ii_minima_notice_keeps_the_procedure_and_the_rvr_note():
+    text = (
+        "IAP LOS ANGELES INTL, LOS ANGELES, CA. ILS OR LOC RWY 24R, AMDT 26C... "
+        "ILS RWY 24R (CAT II-III), AMDT 26C... S-ILS 24R CAT II RVR 1200. CAT II NOTE: RVR 1000 "
+        "AUTHORIZED WITH SPECIFIC OPSPEC, MSPEC, OR LOA APPROVAL AND USE OF AUTOLAND OR HUD TO TOUCHDOWN."
+    )
+    summary = _summary(text)
+    assert summary.startswith("ILS RWY 24R (CAT II-III): S-ILS 24R CAT II RVR 1200")
+    assert "restriction applies" not in summary.lower()
+
+
+def test_an_ats_route_notice_is_not_an_approach_or_runway_restriction():
+    text = (
+        "FLIGHTS DEPARTING WSSS ON ATS ROUTE N571: ATC MAY ASSIGN FL280 NO-PDC TO TWO SUCCESSIVE "
+        "RNP 2/RNP 4-APPROVED AIRCRAFT OPERATING ON ATS ROUTE N571 WITH 5-MINUTE LONGITUDINAL SEPARATION."
+    )
+    _, kind = notam_pertinence(text)
+    assert kind not in {"runway_approach_restriction", "approach_navaid_closure", "runway_closure"}

@@ -1124,6 +1124,36 @@ _NAVAID_SUBJECT = re.compile(
 )
 
 
+_FAA_PROCEDURE_TITLE = re.compile(r"^(?P<title>.+?),\s*(?:AMDT|ORIG|CHG)\b.*$")
+
+
+def _faa_procedure_line(upper: str) -> tuple[str, str]:
+    """(procedure, note) for an FAA "IAP ..." notice; ("", "") for anything else.
+
+    The notice lists one or more procedure titles with their amendment, each
+    ended by "...", then the chart note. The last title and the first sentence
+    of the note make the line; the note is bounded so it stays one line.
+    """
+    match = re.match(r"^IAP\s+[^.]*\.\s*(?P<body>.+)$", upper)
+    if not match:
+        return "", ""
+    parts = [part.strip(" ,") for part in re.split(r"\.{3}\s*", match.group("body")) if part.strip(" ,")]
+    titles: list[str] = []
+    notes: list[str] = []
+    for part in parts:
+        title = _FAA_PROCEDURE_TITLE.match(part)
+        if title:
+            titles.append(" ".join(title.group("title").split()))
+        else:
+            notes.append(part)
+    if not titles or not notes:
+        return "", ""
+    note = re.split(r"\.\s+", notes[-1].strip())[0].rstrip(".").strip()
+    if len(note) > 100:
+        note = note[:97].rstrip() + "…"
+    return titles[-1], note
+
+
 def _navaid_clause(upper: str) -> tuple[str, str]:
     """The aid and the state a single clause states about it.
 
@@ -1243,6 +1273,11 @@ def _notam_operational_summary(
         aid, state = _navaid_clause(upper)
         if aid and state:
             return f"{aid} {state} during the applicable {phase} window."
+        # FAA procedure notices ("IAP <airport>. ILS OR LOC RWY 7R, AMDT 8A...
+        # <note>") name the procedure and quote the note that changes it.
+        procedure, note = _faa_procedure_line(upper)
+        if procedure and note:
+            return f"{procedure}: {note} during the applicable {phase} window."
     if kind == "approach_navaid_closure":
         return f"{subject} unavailable during the applicable {phase} window."
     if kind == "runway_approach_restriction":
