@@ -478,6 +478,8 @@ def _compact_notam_family(item: dict[str, Any]) -> str:
         return "airport_closure"
     if "ATIS" in raw:
         return "information_service"
+    if kind == "approach_minima_change":
+        return "approach_navaid"
     if kind in {
         "approach_navaid_closure",
         "runway_approach_restriction",
@@ -921,6 +923,26 @@ def _airport_operational_panels(
             if roles & {"EDTO", "fuel enroute airport"}
             else specification["role"]
         )
+        compact_planned_runways = _planned_runways(specification)
+        compact_reference_time = _reference_time_for_roles(
+            flight,
+            set(specification["role_keys"]),
+            selected_notams,
+        )
+        # Publish the compact line and its signal family on every selected
+        # record, not only on the two or three that reach the card. A surface
+        # that shows a different subset then shows identical wording for any
+        # record both surfaces hold, and never re-classifies item E itself.
+        for item in selected_notams:
+            family = _compact_notam_family(item)
+            item["signal_family"] = family
+            item["compact_text"] = _compact_notam_text(
+                item,
+                family,
+                role=compact_role,
+                planned_runways=compact_planned_runways,
+                reference_time=compact_reference_time,
+            )
         card_summary_lines.extend(
             _compact_notam_lines(
                 selected_notams,
@@ -930,12 +952,8 @@ def _airport_operational_panels(
                     if compact_role in {"departure", "destination"}
                     else 2
                 ),
-                planned_runways=_planned_runways(specification),
-                reference_time=_reference_time_for_roles(
-                    flight,
-                    set(specification["role_keys"]),
-                    selected_notams,
-                ),
+                planned_runways=compact_planned_runways,
+                reference_time=compact_reference_time,
             )
         )
         source_pages = {

@@ -6,6 +6,8 @@ from datetime import datetime
 import pytest
 
 from app.odss.briefing import (
+    _COMPACT_ENROUTE_FAMILY_ORDER,
+    _COMPACT_PRIMARY_FAMILY_ORDER,
     _compact_notam_lines,
     _terrain_summary,
     build_briefing_view,
@@ -893,6 +895,110 @@ def test_shared_airport_panels_carry_selected_source_facts_for_every_role() -> N
             "notam",
         ]
         assert panel["card_summary_lines"][-1]["text"] == selected["summary"]
+
+
+def test_every_selected_notam_carries_its_own_compact_line_and_family() -> None:
+    """Consumers must never re-classify item E to build a short line.
+
+    The compact one-liner and its signal family are published on every
+    selected record, not only on the two or three that reach the card, so a
+    surface that shows a different subset shows exactly the same wording as
+    the card for any record they both hold.
+    """
+
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{
+        "airport": "WMKK",
+        "runway": "32L",
+        "approach": "ILS",
+        "minima": "220FT/800M",
+    }]
+    flight["edto"]["airports"] = [{
+        "airport": "WADD",
+        "runway": "27",
+        "approach": "RNP",
+        "minima": "453FT/1900M",
+        "period_start_utc": "2026-08-01T03:00:00+00:00",
+        "period_end_utc": "2026-08-01T04:00:00+00:00",
+    }]
+    role_by_station = {
+        "WSSS": "departure",
+        "VTBS": "destination",
+        "WMKK": "destination alternate",
+        "WADD": "EDTO",
+    }
+    records = (
+        (
+            "RWY 20C CLSD DUE WIP",
+            "RUNWAY",
+            1,
+            "runway_closure",
+        ),
+        (
+            "TWY W1 CLSD DUE MAINT",
+            "TAXIWAY",
+            4,
+            "taxiway_closure",
+        ),
+        (
+            "ILS GP RWY 19L U/S",
+            "NAVAID",
+            2,
+            "approach_navaid_closure",
+        ),
+    )
+    findings = [
+        {
+            "engine": "notam",
+            "severity": "warning",
+            "title": f"{role.title()} NOTAM {station[1:]}{index}/26",
+            "summary": f"Derived summary {station} {index}",
+            "details": [],
+            "data": {
+                "role": role,
+                "location": station,
+                "notam_id": f"{station[1:]}{index}/26",
+                "raw_text": f"{raw_text} AT {station}",
+                "category": category,
+                "priority_score": 5,
+                "pertinence_rank": rank,
+                "pertinence_kind": kind,
+                "applicability": "active",
+                "valid_from_utc": "2026-07-01T00:00:00+00:00",
+                "valid_to_utc": "2026-09-01T00:00:00+00:00",
+                "window_start_utc": "2026-08-01T02:00:00+00:00",
+                "window_end_utc": "2026-08-01T06:00:00+00:00",
+                "source_page": 20 + index,
+            },
+        }
+        for station, role in role_by_station.items()
+        for index, (raw_text, category, rank, kind) in enumerate(records, start=1)
+    ]
+
+    panels = build_briefing_view(flight, findings, [])["airport_operational_panels"]
+    known_families = set(_COMPACT_PRIMARY_FAMILY_ORDER) | set(
+        _COMPACT_ENROUTE_FAMILY_ORDER
+    )
+    assert panels
+    for panel in panels:
+        selected = panel["selected_notams"]
+        assert len(selected) == len(records)
+        by_id = {}
+        for item in selected:
+            assert isinstance(item["compact_text"], str)
+            assert item["compact_text"].strip()
+            assert item["signal_family"] in known_families
+            by_id[item["notam_id"]] = item
+        notam_lines = [
+            line
+            for line in panel["card_summary_lines"]
+            if line["kind"] == "notam"
+        ]
+        assert notam_lines
+        for line in notam_lines:
+            record = by_id[line["notam_id"]]
+            assert line["text"] == record["compact_text"]
+            assert line["signal_family"] == record["signal_family"]
 
 
 def test_alternate_assessment_rows_bind_each_station_to_its_own_sources() -> None:

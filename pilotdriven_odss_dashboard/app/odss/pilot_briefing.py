@@ -39,6 +39,20 @@ _APPLICABLE_WINDOW_SUFFIX = re.compile(
     r"(?:departure|destination|alternate|EDTO|flight) window\.?$",
     re.IGNORECASE,
 )
+# A US "IAP ... <procedure> RWY nn ... DA/MDA nnn[/HAT nnn]" notice republishes
+# approach minima.  The cause is often a temporary crane, but the operational
+# fact is the changed minima, so the notice must not be filed as an obstacle.
+# Both the procedure and its published minima are required: naming a crane
+# near an IAP chart is not, on its own, a minima change.
+_IAP_MINIMA_CHANGE = re.compile(
+    r"\bIAP\b.{0,300}?"
+    r"(?P<procedure>(?:(?:ILS|LOC)\s+(?:OR|AND)\s+)?"
+    r"(?:ILS|LOC|VOR|NDB|RNAV(?:\s*\(GPS\))?|RNP)"
+    r"(?:\s+[XYZ])?\s+RWY\s*\d{1,2}[LCR]?)"
+    r".{0,300}?"
+    r"(?P<minima>(?:DA|MDA)\s*\d{2,5}(?:\s*/\s*HAT\s*\d{2,5})?)",
+    re.S,
+)
 
 
 def normalize_notam_references(value: Any) -> str:
@@ -159,6 +173,8 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
         return 5, "apron_stand_closure"
     if airport_closure:
         return 0, "airport_closure"
+    if _IAP_MINIMA_CHANGE.search(upper):
+        return 2, "approach_minima_change"
     if unavailable and approach:
         return 2, "approach_navaid_closure"
     if taxiway_closure and primary_taxiway:

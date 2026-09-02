@@ -31,6 +31,7 @@ from .deferred_dispatch import (
     deferred_source_declaration_for_display,
 )
 from .pilot_briefing import (
+    _IAP_MINIMA_CHANGE,
     concise_weather_finding,
     notam_pertinence,
     notam_sort_key,
@@ -1163,6 +1164,15 @@ def _notam_operational_summary(
         )
     if kind == "airport_closure":
         return f"Entire airport closed or unavailable during the applicable {phase} window."
+    if kind == "approach_minima_change":
+        minima_change = _IAP_MINIMA_CHANGE.search(upper)
+        if minima_change:
+            cause = " by a temporary crane" if "CRANE" in upper else ""
+            return (
+                f"{minima_change.group('procedure')} minima changed "
+                f"({minima_change.group('minima')}){cause} during the "
+                f"applicable {phase} window."
+            )
     if kind == "runway_closure":
         return f"{subject.title()} closed or unavailable during the applicable {phase} window."
     if kind == "approach_navaid_closure":
@@ -1457,6 +1467,10 @@ def _instrument_approach_affected(text: str, category: str) -> bool:
             + " "
             + normalized_text[iap_publication_adverse.end():]
         )
+    if _IAP_MINIMA_CHANGE.search(normalized_text):
+        # Republished DA/MDA for a named procedure changes the approach the
+        # crew will fly, whatever the underlying cause.
+        return True
     clauses = [
         " ".join(clause.upper().split())
         for clause in re.split(
