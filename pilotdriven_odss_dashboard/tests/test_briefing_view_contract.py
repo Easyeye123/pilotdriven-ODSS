@@ -1086,34 +1086,42 @@ def test_a_navaid_outage_and_a_minima_change_both_reach_the_card() -> None:
         ], panel["icao"]
 
 
-def test_approach_minima_sorts_immediately_after_approach_navaid() -> None:
+def _ranked_families(order: dict[str, int]) -> list[str]:
+    return sorted(order, key=order.__getitem__)
+
+
+def test_enroute_order_puts_approach_minima_immediately_after_approach_navaid() -> None:
     """The new family only splits the slot; it never reorders the rest."""
 
-    for order in (_COMPACT_PRIMARY_FAMILY_ORDER, _COMPACT_ENROUTE_FAMILY_ORDER):
-        assert order["approach_minima"] == order["approach_navaid"] + 1
-        ranked = sorted(order, key=order.__getitem__)
-        assert ranked.index("approach_minima") == ranked.index("approach_navaid") + 1
-        assert [name for name in ranked if name != "approach_minima"] == [
-            "airport_closure",
-            "approach_navaid",
-            "information_service",
-            "runway_closure",
-            "runway_restriction",
-            "taxiway",
-            "apron_stand",
-            "obstacle",
-            "other",
-        ] if order is _COMPACT_ENROUTE_FAMILY_ORDER else [
-            "airport_closure",
-            "runway_closure",
-            "approach_navaid",
-            "runway_restriction",
-            "taxiway",
-            "apron_stand",
-            "information_service",
-            "obstacle",
-            "other",
-        ]
+    assert _ranked_families(_COMPACT_ENROUTE_FAMILY_ORDER) == [
+        "airport_closure",
+        "approach_navaid",
+        "approach_minima",
+        "information_service",
+        "runway_closure",
+        "runway_restriction",
+        "taxiway",
+        "apron_stand",
+        "obstacle",
+        "other",
+    ]
+
+
+def test_primary_order_puts_approach_minima_immediately_after_approach_navaid() -> None:
+    """Pinned as its own assertion: a conditional expression hid this one."""
+
+    assert _ranked_families(_COMPACT_PRIMARY_FAMILY_ORDER) == [
+        "airport_closure",
+        "runway_closure",
+        "approach_navaid",
+        "approach_minima",
+        "runway_restriction",
+        "taxiway",
+        "apron_stand",
+        "information_service",
+        "obstacle",
+        "other",
+    ]
 
 
 def test_alternate_assessment_rows_bind_each_station_to_its_own_sources() -> None:
