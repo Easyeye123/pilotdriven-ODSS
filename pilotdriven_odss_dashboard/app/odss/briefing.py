@@ -298,27 +298,33 @@ def _cfp_weather_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+# A changed minimum and a withdrawn approach aid are different operational
+# facts: one raises the bar, the other removes the approach. The compact card
+# shows one notice per family, so they get one family each - ordered with the
+# outage first - instead of competing for a single approach slot.
 _COMPACT_ENROUTE_FAMILY_ORDER = {
     "airport_closure": 0,
     "approach_navaid": 1,
-    "information_service": 2,
-    "runway_closure": 3,
-    "runway_restriction": 4,
-    "taxiway": 5,
-    "apron_stand": 6,
-    "obstacle": 7,
-    "other": 8,
+    "approach_minima": 2,
+    "information_service": 3,
+    "runway_closure": 4,
+    "runway_restriction": 5,
+    "taxiway": 6,
+    "apron_stand": 7,
+    "obstacle": 8,
+    "other": 9,
 }
 _COMPACT_PRIMARY_FAMILY_ORDER = {
     "airport_closure": 0,
     "runway_closure": 1,
     "approach_navaid": 2,
-    "runway_restriction": 3,
-    "taxiway": 4,
-    "apron_stand": 5,
-    "information_service": 6,
-    "obstacle": 7,
-    "other": 8,
+    "approach_minima": 3,
+    "runway_restriction": 4,
+    "taxiway": 5,
+    "apron_stand": 6,
+    "information_service": 7,
+    "obstacle": 8,
+    "other": 9,
 }
 
 _RUNWAY_TOKEN = re.compile(r"\b(?:RWY\s*)?(\d{2}[LCR]?)\b")
@@ -479,7 +485,7 @@ def _compact_notam_family(item: dict[str, Any]) -> str:
     if "ATIS" in raw:
         return "information_service"
     if kind == "approach_minima_change":
-        return "approach_navaid"
+        return "approach_minima"
     if kind in {
         "approach_navaid_closure",
         "runway_approach_restriction",

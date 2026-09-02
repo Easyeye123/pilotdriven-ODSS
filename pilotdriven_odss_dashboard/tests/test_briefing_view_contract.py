@@ -1001,6 +1001,121 @@ def test_every_selected_notam_carries_its_own_compact_line_and_family() -> None:
             assert line["signal_family"] == record["signal_family"]
 
 
+IAP_MINIMA_TEXT = (
+    "IAP TEST INTL. RNAV (GPS) RWY 34L, AMDT 2. LPV DA 721/HAT 342 ALL CATS. "
+    "TEMPORARY CRANE 260 MSL 3100FT NW OF AD"
+)
+
+
+def test_a_navaid_outage_and_a_minima_change_both_reach_the_card() -> None:
+    """An unserviceable ILS/GP must never be evicted by a changed minimum.
+
+    Both facts are approach facts, but only one of them takes an approach
+    away. They now sit in separate compact families, so the card shows both
+    and puts the outage first - on a departure card (limit 3) and on an
+    EDTO card (limit 2) alike.
+    """
+
+    flight = _flight(LOG_PAGE_LOW)
+    flight["edto"]["airports"] = [{
+        "airport": "WADD",
+        "runway": "27",
+        "approach": "RNP",
+        "minima": "453FT/1900M",
+        "period_start_utc": "2026-08-01T03:00:00+00:00",
+        "period_end_utc": "2026-08-01T04:00:00+00:00",
+    }]
+    role_by_station = {"WSSS": "departure", "WADD": "EDTO"}
+    records = (
+        ("OUT", "ILS/GP RWY 34R U/S", "NAVAID", 2, "approach_navaid_closure"),
+        ("MIN", IAP_MINIMA_TEXT, "APPROACH PROCEDURE", 2, "approach_minima_change"),
+    )
+    findings = [
+        {
+            "engine": "notam",
+            "severity": "critical",
+            "title": f"{role.title()} NOTAM {tag}{index}/26",
+            "summary": f"Derived summary {station} {tag}",
+            "details": [],
+            "data": {
+                "role": role,
+                "location": station,
+                "notam_id": f"{tag}{index}/26",
+                "raw_text": raw_text,
+                "category": category,
+                "priority_score": 5,
+                "pertinence_rank": rank,
+                "pertinence_kind": kind,
+                "approach_affected": True,
+                "applicability": "active",
+                "valid_from_utc": "2026-07-01T00:00:00+00:00",
+                "valid_to_utc": "2026-09-01T00:00:00+00:00",
+                "window_start_utc": "2026-08-01T02:00:00+00:00",
+                "window_end_utc": "2026-08-01T06:00:00+00:00",
+                "source_page": 20 + index,
+            },
+        }
+        for station, role in role_by_station.items()
+        for index, (tag, raw_text, category, rank, kind) in enumerate(records, start=1)
+    ]
+
+    panels = build_briefing_view(flight, findings, [])["airport_operational_panels"]
+    tested = [panel for panel in panels if panel["icao"] in role_by_station]
+    assert {panel["icao"] for panel in tested} == set(role_by_station)
+    for panel in tested:
+        families = {
+            item["notam_id"]: item["signal_family"]
+            for item in panel["selected_notams"]
+        }
+        assert families == {
+            "OUT1/26": "approach_navaid",
+            "MIN2/26": "approach_minima",
+        }
+        notam_lines = [
+            line
+            for line in panel["card_summary_lines"]
+            if line["kind"] == "notam"
+        ]
+        assert [line["signal_family"] for line in notam_lines] == [
+            "approach_navaid",
+            "approach_minima",
+        ], panel["icao"]
+        assert [line["notam_id"] for line in notam_lines] == [
+            "OUT1/26",
+            "MIN2/26",
+        ], panel["icao"]
+
+
+def test_approach_minima_sorts_immediately_after_approach_navaid() -> None:
+    """The new family only splits the slot; it never reorders the rest."""
+
+    for order in (_COMPACT_PRIMARY_FAMILY_ORDER, _COMPACT_ENROUTE_FAMILY_ORDER):
+        assert order["approach_minima"] == order["approach_navaid"] + 1
+        ranked = sorted(order, key=order.__getitem__)
+        assert ranked.index("approach_minima") == ranked.index("approach_navaid") + 1
+        assert [name for name in ranked if name != "approach_minima"] == [
+            "airport_closure",
+            "approach_navaid",
+            "information_service",
+            "runway_closure",
+            "runway_restriction",
+            "taxiway",
+            "apron_stand",
+            "obstacle",
+            "other",
+        ] if order is _COMPACT_ENROUTE_FAMILY_ORDER else [
+            "airport_closure",
+            "runway_closure",
+            "approach_navaid",
+            "runway_restriction",
+            "taxiway",
+            "apron_stand",
+            "information_service",
+            "obstacle",
+            "other",
+        ]
+
+
 def test_alternate_assessment_rows_bind_each_station_to_its_own_sources() -> None:
     flight = _flight(LOG_PAGE_LOW)
     flight["alternates"] = [

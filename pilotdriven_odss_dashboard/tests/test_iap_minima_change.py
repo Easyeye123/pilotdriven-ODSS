@@ -42,11 +42,18 @@ def test_plain_crane_stays_an_obstacle() -> None:
     assert rank == 8
 
 
-def test_iap_minima_change_reads_as_an_approach_navaid_signal() -> None:
+def test_iap_minima_change_reads_as_its_own_approach_minima_signal() -> None:
+    """A changed minimum is not an outage, so it must not share that slot.
+
+    The compact card shows one notice per family. Filing a minima change
+    under ``approach_navaid`` let it evict a real ILS/GP outage from the
+    card; its own family lets both facts appear, outage first.
+    """
+
     assert _compact_notam_family({
         "pertinence_kind": "approach_minima_change",
         "item_e_text": PHNL,
-    }) == "approach_navaid"
+    }) == "approach_minima"
 
 
 def test_iap_minima_change_summary_reports_the_role_window() -> None:
