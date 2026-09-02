@@ -64,3 +64,19 @@ def test_the_pdf_summary_is_unchanged_by_the_dashboard_line():
     assert _notam_operational_summary(text, kind, "destination") == (
         "Rwy 06 restriction applies during the applicable destination window."
     )
+
+
+def test_the_boss_line_reaches_only_the_dashboard_compact_text():
+    from datetime import datetime, timezone
+
+    from app.odss.briefing import _compact_notam_text
+
+    item = {
+        "notam_id": "B4105/26",
+        "pertinence_kind": "runway_approach_restriction",
+        "item_e_text": "ILS CAT I RWY 06 ON TEST, DO NOT USE (AWAITING FLTCK VERIFICATION).",
+        "summary": "Rwy 06 restriction applies during the applicable destination window.",
+    }
+    common = dict(role="destination", planned_runways=set(), reference_time=datetime(2026, 8, 21, 4, 45, tzinfo=timezone.utc))
+    assert _compact_notam_text(item, "approach_navaid", dashboard=True, **common) == "ILS CAT I RWY 06 on test, do not use."
+    assert _compact_notam_text(item, "approach_navaid", **common) == item["summary"]

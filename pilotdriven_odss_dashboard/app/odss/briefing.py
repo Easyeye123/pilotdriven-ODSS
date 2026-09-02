@@ -522,6 +522,7 @@ def _compact_notam_text(
     role: str,
     planned_runways: set[str],
     reference_time: datetime | None,
+    dashboard: bool = False,
 ) -> str:
     """One source-bounded line; fall back to the shared engine summary."""
     raw = " ".join(str(item.get("item_e_text") or "").split())
@@ -592,9 +593,13 @@ def _compact_notam_text(
     # an approach-aid record reads as the boss reads it (aid + state, or the
     # FAA procedure + its note). Dashboard compact text only; the PDF keeps
     # its summary.
-    dashboard_line = notam_dashboard_line(raw, str(item.get("pertinence_kind") or ""))
-    if dashboard_line:
-        return dashboard_line
+    # The line is dashboard-only: the same builder also feeds the PDF's card
+    # summary and airports pages, which must stay byte-identical to the
+    # approved REV3 reference.
+    if dashboard:
+        dashboard_line = notam_dashboard_line(raw, str(item.get("pertinence_kind") or ""))
+        if dashboard_line:
+            return dashboard_line
     return str(item.get("summary") or raw or "Operational notice - review source.")
 
 
@@ -955,6 +960,7 @@ def _airport_operational_panels(
                 role=compact_role,
                 planned_runways=compact_planned_runways,
                 reference_time=compact_reference_time,
+                dashboard=True,
             )
         card_summary_lines.extend(
             _compact_notam_lines(
