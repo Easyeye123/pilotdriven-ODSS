@@ -65,3 +65,13 @@ def test_an_ats_route_notice_is_not_an_approach_or_runway_restriction():
     )
     _, kind = notam_pertinence(text)
     assert kind not in {"runway_approach_restriction", "approach_navaid_closure", "runway_closure"}
+
+
+def test_faa_procedure_notice_with_an_ofp_prefix_still_names_the_procedure():
+    text = (
+        "EST LAX IAP LOS ANGELES INTL, LOS ANGELES, CA. ILS OR LOC RWY 7R, AMDT 8A... "
+        "AUTO-PILOT COUPLED APPROACH NA BELOW 800."
+    )
+    assert _summary(text) == (
+        "ILS OR LOC RWY 7R: AUTO-PILOT COUPLED APPROACH NA BELOW 800 during the applicable destination window."
+    )

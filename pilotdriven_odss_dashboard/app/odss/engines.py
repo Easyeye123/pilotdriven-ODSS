@@ -1134,7 +1134,9 @@ def _faa_procedure_line(upper: str) -> tuple[str, str]:
     ended by "...", then the chart note. The last title and the first sentence
     of the note make the line; the note is bounded so it stays one line.
     """
-    match = re.match(r"^IAP\s+[^.]*\.\s*(?P<body>.+)$", upper)
+    # OFP station packages may prefix the FAA text ("EST LAX IAP …"); the
+    # notice starts at its IAP token.
+    match = re.search(r"\bIAP\s+[^.]*\.\s*(?P<body>.+)$", upper)
     if not match:
         return "", ""
     parts = [part.strip(" ,") for part in re.split(r"\.{3}\s*", match.group("body")) if part.strip(" ,")]
