@@ -1199,6 +1199,29 @@ def _navaid_state_phrase(upper: str) -> str:
     return ""
 
 
+def notam_dashboard_line(text: str, kind: str) -> str:
+    """The boss's own reading of an approach-aid record, for the dashboard card.
+
+    Boss 02 Sep 2026: "instrument approaches being affected such as ILS or VOR
+    not working, or on test or unserviceable". Names the aid, the runway and
+    its state ("ILS CAT I RWY 06 on test, do not use."), or the FAA procedure
+    and its note ("ILS OR LOC RWY 7R: AUTO-PILOT COUPLED APPROACH NA BELOW
+    800."). Empty when the record states neither. The PDF keeps its own
+    summary; this line exists for the dashboard's compact text only, so the
+    approved REV3 reference is untouched.
+    """
+    if kind not in {"approach_navaid_closure", "runway_approach_restriction"}:
+        return ""
+    upper = " ".join(str(text or "").upper().split())
+    aid, state = _navaid_clause(upper)
+    if aid and state:
+        return f"{aid} {state}."
+    procedure, note = _faa_procedure_line(upper)
+    if procedure and note:
+        return f"{procedure}: {note}."
+    return ""
+
+
 def _notam_operational_summary(
     text: str,
     kind: str,
@@ -1269,17 +1292,6 @@ def _notam_operational_summary(
         )
     if kind == "runway_closure":
         return f"{subject.title()} closed or unavailable during the applicable {phase} window."
-    if kind in {"approach_navaid_closure", "runway_approach_restriction"}:
-        # Boss 02 Sep 2026: an approach-aid line names the aid, the runway and
-        # its state — "on test", "unserviceable" — never "restriction applies".
-        aid, state = _navaid_clause(upper)
-        if aid and state:
-            return f"{aid} {state} during the applicable {phase} window."
-        # FAA procedure notices ("IAP <airport>. ILS OR LOC RWY 7R, AMDT 8A...
-        # <note>") name the procedure and quote the note that changes it.
-        procedure, note = _faa_procedure_line(upper)
-        if procedure and note:
-            return f"{procedure}: {note} during the applicable {phase} window."
     if kind == "approach_navaid_closure":
         return f"{subject} unavailable during the applicable {phase} window."
     if kind == "runway_approach_restriction":

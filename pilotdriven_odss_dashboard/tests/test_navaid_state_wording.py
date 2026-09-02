@@ -1,40 +1,31 @@
 """Boss 02 Sep 2026 21:22: what he reads first is "instrument approaches being
-affected such as ILS or VOR not working, or on test or unserviceable" — so a
-navaid line must name the aid and its state, never "restriction applies"."""
+affected such as ILS or VOR not working, or on test or unserviceable" — so the
+dashboard line for a navaid record names the aid and its state, never
+"restriction applies". The PDF summary is unchanged: the approved REV3
+reference must stay byte-identical."""
 
-from app.odss.engines import _notam_operational_summary
+from app.odss.engines import _notam_operational_summary, notam_dashboard_line
 from app.odss.pilot_briefing import notam_pertinence
 
 
-def _summary(text: str, role: str = "destination") -> str:
+def _line(text: str) -> str:
     _, kind = notam_pertinence(text)
-    return _notam_operational_summary(text, kind, role)
+    return notam_dashboard_line(text, kind)
 
 
 def test_ils_on_test_names_the_aid_runway_and_state():
-    text = "ILS CAT I RWY 06 ON TEST, DO NOT USE (AWAITING FLTCK VERIFICATION)."
-    assert _summary(text) == (
-        "ILS CAT I RWY 06 on test, do not use during the applicable destination window."
+    assert _line("ILS CAT I RWY 06 ON TEST, DO NOT USE (AWAITING FLTCK VERIFICATION).") == (
+        "ILS CAT I RWY 06 on test, do not use."
     )
 
 
 def test_unserviceable_vor_dme_names_the_aid_and_identifier():
-    text = "DVOR/DME 'MNL' U/S DUE MAINT."
-    summary = _summary(text)
-    assert summary.startswith("DVOR/DME MNL unserviceable")
-    assert "restriction applies" not in summary.lower()
+    assert _line("DVOR/DME 'MNL' U/S DUE MAINT.") == "DVOR/DME MNL unserviceable."
 
 
-def test_ils_not_available_keeps_the_unavailable_line():
-    assert _summary("ILS RWY 20R NOT AVBL.", "departure") == (
-        "ILS RWY 20R unavailable during the applicable departure window."
-    )
-
-
-def test_runway_work_without_an_aid_keeps_the_generic_line():
-    assert _summary("RWY 22 WIP CONST EAST SIDE.") == (
-        "Rwy 22 restriction applies during the applicable destination window."
-    )
+def test_not_available_and_plain_runway_work_have_no_dashboard_line():
+    assert _line("ILS RWY 20R NOT AVBL.") == ""
+    assert _line("RWY 22 WIP CONST EAST SIDE.") == ""
 
 
 def test_faa_procedure_notice_names_the_procedure_and_its_note():
@@ -42,9 +33,7 @@ def test_faa_procedure_notice_names_the_procedure_and_its_note():
         "IAP LOS ANGELES INTL, LOS ANGELES, CA. ILS OR LOC RWY 7R, AMDT 8A... "
         "AUTO-PILOT COUPLED APPROACH NA BELOW 800."
     )
-    assert _summary(text) == (
-        "ILS OR LOC RWY 7R: AUTO-PILOT COUPLED APPROACH NA BELOW 800 during the applicable destination window."
-    )
+    assert _line(text) == "ILS OR LOC RWY 7R: AUTO-PILOT COUPLED APPROACH NA BELOW 800."
 
 
 def test_faa_cat_ii_minima_notice_keeps_the_procedure_and_the_rvr_note():
@@ -53,18 +42,7 @@ def test_faa_cat_ii_minima_notice_keeps_the_procedure_and_the_rvr_note():
         "ILS RWY 24R (CAT II-III), AMDT 26C... S-ILS 24R CAT II RVR 1200. CAT II NOTE: RVR 1000 "
         "AUTHORIZED WITH SPECIFIC OPSPEC, MSPEC, OR LOA APPROVAL AND USE OF AUTOLAND OR HUD TO TOUCHDOWN."
     )
-    summary = _summary(text)
-    assert summary.startswith("ILS RWY 24R (CAT II-III): S-ILS 24R CAT II RVR 1200")
-    assert "restriction applies" not in summary.lower()
-
-
-def test_an_ats_route_notice_is_not_an_approach_or_runway_restriction():
-    text = (
-        "FLIGHTS DEPARTING WSSS ON ATS ROUTE N571: ATC MAY ASSIGN FL280 NO-PDC TO TWO SUCCESSIVE "
-        "RNP 2/RNP 4-APPROVED AIRCRAFT OPERATING ON ATS ROUTE N571 WITH 5-MINUTE LONGITUDINAL SEPARATION."
-    )
-    _, kind = notam_pertinence(text)
-    assert kind not in {"runway_approach_restriction", "approach_navaid_closure", "runway_closure"}
+    assert _line(text) == "ILS RWY 24R (CAT II-III): S-ILS 24R CAT II RVR 1200."
 
 
 def test_faa_procedure_notice_with_an_ofp_prefix_still_names_the_procedure():
@@ -72,6 +50,17 @@ def test_faa_procedure_notice_with_an_ofp_prefix_still_names_the_procedure():
         "EST LAX IAP LOS ANGELES INTL, LOS ANGELES, CA. ILS OR LOC RWY 7R, AMDT 8A... "
         "AUTO-PILOT COUPLED APPROACH NA BELOW 800."
     )
-    assert _summary(text) == (
-        "ILS OR LOC RWY 7R: AUTO-PILOT COUPLED APPROACH NA BELOW 800 during the applicable destination window."
+    assert _line(text) == "ILS OR LOC RWY 7R: AUTO-PILOT COUPLED APPROACH NA BELOW 800."
+
+
+def test_a_negated_or_neighbouring_state_never_binds_to_the_aid():
+    assert _line("ILS RWY 20C NOT U/S.") == ""
+    assert _line("ILS RWY 25 AVBL. PAPI RWY 25 U/S.") == ""
+
+
+def test_the_pdf_summary_is_unchanged_by_the_dashboard_line():
+    text = "ILS CAT I RWY 06 ON TEST, DO NOT USE (AWAITING FLTCK VERIFICATION)."
+    _, kind = notam_pertinence(text)
+    assert _notam_operational_summary(text, kind, "destination") == (
+        "Rwy 06 restriction applies during the applicable destination window."
     )

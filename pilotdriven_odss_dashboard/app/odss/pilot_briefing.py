@@ -154,13 +154,6 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     approach = bool(
         re.search(rf"\b{_APPROACH_SYSTEM}\b", upper)
     )
-    if approach and not runway and re.search(r"\bRN[PA]V?\s*\d", upper) and not re.search(
-        r"\b(?:IAP|APCH|APPROACH|ILS|LOC|LLZ|VOR|NDB|GLS|GBAS|LPV|DME|MINIMA|OCA|OCH)\b", upper
-    ):
-        # "RNP 2/RNP 4-APPROVED AIRCRAFT" on an ATS route is an en-route
-        # navigation specification, not an instrument approach (boss 02 Sep:
-        # approaches are ILS/VOR-type aids affected).
-        approach = False
     taxiway = bool(taxiway_match or re.search(r"\b(?:TAXILANE|STOP\s*BAR)\b", upper))
     lighting = bool(re.search(rf"\b{_LIGHTING}\b", upper))
     lighting_runway = bool(

@@ -20,7 +20,7 @@ from . import brief_theme as theme
 from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
 from .deferred_dispatch import build_deferred_dispatch_gates
-from .engines import detect_terrain_events, detect_vws_events
+from .engines import detect_terrain_events, detect_vws_events, notam_dashboard_line
 from .pilot_briefing import (
     normalize_notam_references,
     prepare_pilot_findings,
@@ -588,6 +588,13 @@ def _compact_notam_text(
         return (
             f"RWY {runway_label} strip grading WIP; men and equipment present."
         )
+    # Boss 02 Sep 2026: before falling back to the engine's generic sentence,
+    # an approach-aid record reads as the boss reads it (aid + state, or the
+    # FAA procedure + its note). Dashboard compact text only; the PDF keeps
+    # its summary.
+    dashboard_line = notam_dashboard_line(raw, str(item.get("pertinence_kind") or ""))
+    if dashboard_line:
+        return dashboard_line
     return str(item.get("summary") or raw or "Operational notice - review source.")
 
 
