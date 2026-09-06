@@ -250,6 +250,32 @@ def build_map_contract(
                 "properties": {**properties, "volcano_marker": True},
             },
         ]
+    # A source-held NOTAM position is a location marker, not an ash polygon,
+    # proximity finding or current activity claim. Preserve source identity
+    # even when an official VAAC advisory also names the same volcano.
+    for advisory in flight.get("volcanic_advisories") or []:
+        position = advisory.get("volcano_position") or {}
+        if position.get("source") != "ofp_printed_position":
+            continue
+        latitude, longitude = position.get("latitude"), position.get("longitude")
+        if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
+                   for value in (latitude, longitude)):
+            continue
+        if abs(latitude) > 90 or abs(longitude) > 180:
+            continue
+        vaa_features.append({
+            "type": "Feature",
+            "id": f"ofp-volcano:{advisory.get('volcano')}:{advisory.get('notam_id')}",
+            "geometry": {"type": "Point", "coordinates": [longitude, latitude]},
+            "properties": {
+                "volcano_marker": True,
+                "volcano": advisory.get("volcano"),
+                "notam_id": advisory.get("notam_id"),
+                "source_page": advisory.get("source_page"),
+                "source": "ofp_printed_position",
+                "not_for_navigation": True,
+            },
+        })
     tropical_cyclone_features = (
         list(tropical_cyclone_review.get("hazard_features") or [])
         if tropical_cyclone_review.get("status") == "affected"

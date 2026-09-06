@@ -45,7 +45,7 @@ def choose_priority_labels(
         markers,
         key=lambda item: (
             -int(item.get("properties", {}).get("priority", 0)),
-            int(item.get("properties", {}).get("actm_minutes", 0)),
+            int(item.get("properties", {}).get("actm_minutes") or 0),
             str(item.get("properties", {}).get("name", "")),
         ),
     )

@@ -3494,6 +3494,7 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
             "advisory_kind": "CFP_VAA_NOTICE",
             "volcano": volcano,
             "notam_id": notam_id,
+            "volcano_position": advisory.get("volcano_position"),
         })
     for record in flight.get("weather") or []:
         if record.get("record_type") != "VA_SIGMET":

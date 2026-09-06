@@ -271,6 +271,35 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
             })
 
 
+def _cfp_volcano_position(text: str, volcano: str) -> dict[str, Any] | None:
+    """Read a position immediately attached to the named volcano, never ash vertices.
+
+    Accept the OFP's degrees/minutes spelling only. Ambiguous, invalid or
+    missing positions remain unplotted; no catalogue or name lookup is used.
+    """
+    pattern = re.compile(
+        rf"\b{re.escape(volcano)}\b(?:\s+VOLCANO)?\s*"
+        r"(?:\(CAVW\s+[\d -]+\)\s*)?\(?\s*"
+        r"(?P<lat>\d{4})(?P<ns>[NS])\s+"
+        r"(?P<lon>\d{5})(?P<ew>[EW])\b", re.IGNORECASE,
+    )
+    positions = set()
+    for match in pattern.finditer(text):
+        lat, lon = match["lat"], match["lon"]
+        if int(lat[2:]) >= 60 or int(lon[3:]) >= 60:
+            return None
+        latitude = int(lat[:2]) + int(lat[2:]) / 60
+        longitude = int(lon[:3]) + int(lon[3:]) / 60
+        if latitude > 90 or longitude > 180:
+            return None
+        positions.add((latitude * (-1 if match["ns"].upper() == "S" else 1),
+                       longitude * (-1 if match["ew"].upper() == "W" else 1)))
+    if len(positions) != 1:
+        return None
+    latitude, longitude = positions.pop()
+    return {"latitude": latitude, "longitude": longitude, "source": "ofp_printed_position"}
+
+
 def _parse_cfp_volcano_advisories(
     pages: list[str],
     fallback: datetime,
@@ -358,6 +387,7 @@ def _parse_cfp_volcano_advisories(
                     "valid_to_utc": valid_to.isoformat() if valid_to else None,
                     "validity_review": not validity_parsed,
                     "source_page": page_number,
+                    "volcano_position": _cfp_volcano_position(body, volcano),
                 })
                 seen.add(key)
             index = max(cursor, index + 1)
