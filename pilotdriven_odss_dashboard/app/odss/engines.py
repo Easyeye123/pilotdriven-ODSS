@@ -39,6 +39,7 @@ from .pilot_briefing import (
     pilot_notam_key,
 )
 from .reviewed_publications import reviewed_publication_for_notam
+from .report_facts import required_operational_reference_times
 from .weather_timing import summarize_metar_for_window, summarize_taf_for_window
 
 _WEEKDAYS = {name: index for index, name in enumerate(("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"))}
@@ -762,8 +763,7 @@ def _notam_role_window(
     fuel_enroute_airports: set[str] | None = None,
     source_role: str | None = None,
 ) -> tuple[str, datetime, datetime]:
-    departure_utc = datetime.fromisoformat(flight["scheduled_departure_utc"])
-    arrival_utc = datetime.fromisoformat(flight["scheduled_arrival_utc"])
+    departure_utc, arrival_utc = required_operational_reference_times(flight)
     departure_margin = timedelta(
         minutes=_configured_window_minutes("ODSS_NOTAM_DEPARTURE_WINDOW_MINUTES", 60)
     )
@@ -817,10 +817,11 @@ def _notam_reference_at(
     role: str,
     window_start: datetime,
 ) -> datetime:
+    departure_utc, arrival_utc = required_operational_reference_times(flight)
     if role == "departure":
-        return datetime.fromisoformat(flight["scheduled_departure_utc"])
+        return departure_utc
     if role in {"destination", "destination alternate"}:
-        return datetime.fromisoformat(flight["scheduled_arrival_utc"])
+        return arrival_utc
     # EDTO windows use sector entry as their operational reference. Enroute
     # informational records use the beginning of the checked flight window.
     return window_start
@@ -867,8 +868,7 @@ def _weather_role_window(
     fuel_enroute_airports: set[str] | None = None,
     source_role: str | None = None,
 ) -> tuple[str, datetime, datetime]:
-    departure_utc = datetime.fromisoformat(flight["scheduled_departure_utc"])
-    arrival_utc = datetime.fromisoformat(flight["scheduled_arrival_utc"])
+    departure_utc, arrival_utc = required_operational_reference_times(flight)
     preference = _weather_window_preference(flight)
     before = timedelta(minutes=preference["before_minutes"])
     after = timedelta(minutes=preference["after_minutes"])

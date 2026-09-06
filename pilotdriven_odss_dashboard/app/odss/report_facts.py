@@ -43,6 +43,58 @@ def actual_timing_anchor(flight: dict[str, Any]) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def destination_actm_minutes(flight: dict[str, Any]) -> int | None:
+    """Use only the filed destination's held ACTM, never block time."""
+    destination = _clean(flight.get("destination")).lstrip("-").upper()
+    candidates: list[int] = []
+    for point in flight.get("route_waypoints") or []:
+        if not destination or _clean(point.get("name")).lstrip("-").upper() != destination:
+            continue
+        value = point.get("actm_minutes")
+        if isinstance(value, bool) or not re.fullmatch(r"\d+", str(value)):
+            continue
+        candidates.append(int(value))
+    return max(candidates) if candidates else None
+
+
+def operational_reference_times(
+    flight: dict[str, Any],
+) -> tuple[datetime | None, datetime | None]:
+    """Keep the printed schedule intact while assessing the active timing.
+
+    An entered ATOT establishes departure; arrival needs the exact destination
+    ACTM. Missing actual timing evidence cannot silently revert to the schedule.
+    """
+    reference = flight.get("timing_reference") or {}
+    if flight.get("actual_takeoff_utc") or reference.get("actual_takeoff_utc"):
+        departure = actual_timing_anchor(flight)
+        minutes = destination_actm_minutes(flight)
+        return departure, (
+            departure + timedelta(minutes=minutes)
+            if departure is not None and minutes is not None else None
+        )
+
+    def scheduled(key: str) -> datetime | None:
+        try:
+            value = datetime.fromisoformat(str(flight.get(key) or "").replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    return scheduled("scheduled_departure_utc"), scheduled("scheduled_arrival_utc")
+
+
+def required_operational_reference_times(
+    flight: dict[str, Any],
+) -> tuple[datetime, datetime]:
+    departure, arrival = operational_reference_times(flight)
+    if departure is None or arrival is None:
+        raise ValueError("Flight time assessment requires a valid departure and exact destination timing reference")
+    return departure, arrival
+
+
 def actm_utc_clock(flight: dict[str, Any], actm_minutes: Any) -> str | None:
     """Return a UTC clock only when ATOT or waypoint ATA established time zero."""
     try:

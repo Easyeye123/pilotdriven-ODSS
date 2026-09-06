@@ -27,6 +27,10 @@ from .pilot_briefing import (
     select_pertinent_notams,
 )
 from .report_sections import level2_page
+from .report_facts import (
+    destination_actm_minutes as _destination_actm,
+    operational_reference_times,
+)
 
 
 _SEVERITY_RANK = {"information": 0, "unknown": 1, "warning": 2, "critical": 3}
@@ -384,10 +388,11 @@ def _reference_time_for_roles(
     role_keys: set[str],
     selected_notams: list[dict[str, Any]],
 ) -> datetime | None:
+    departure, arrival = operational_reference_times(flight)
     if "departure" in role_keys:
-        return _parse_utc(flight.get("scheduled_departure_utc"))
+        return departure
     if "destination" in role_keys:
-        return _parse_utc(flight.get("scheduled_arrival_utc"))
+        return arrival
     for item in selected_notams:
         start = _parse_utc(item.get("window_start_utc"))
         end = _parse_utc(item.get("window_end_utc"))
@@ -1231,25 +1236,6 @@ def _actm_clock(value: Any) -> str:
     """OFP ACTM ("03.21" / "03:21") as a clock string; empty when not held."""
     match = re.fullmatch(r"(\d{1,2})[.:](\d{2})", str(value or "").strip())
     return f"{int(match.group(1)):02d}:{match.group(2)}" if match else ""
-
-
-def _destination_actm(flight: dict[str, Any]) -> int | None:
-    """Return ACTM only from a waypoint that is the filed destination."""
-    destination = str(flight.get("destination") or "").lstrip("-").upper()
-    if not destination:
-        return None
-    candidates: list[int] = []
-    for waypoint in flight.get("route_waypoints") or []:
-        name = str(waypoint.get("name") or "").lstrip("-").upper()
-        if name != destination:
-            continue
-        try:
-            actm = int(waypoint.get("actm_minutes"))
-        except (TypeError, ValueError):
-            continue
-        if actm >= 0:
-            candidates.append(actm)
-    return max(candidates) if candidates else None
 
 
 def _actual_arrival_hhmm(
@@ -2824,8 +2810,7 @@ def _weather_chart_selection(
             "held_pages": held_pages,
             "classification_incomplete": True,
         }
-    departure_utc = _parse_utc(flight.get("scheduled_departure_utc"))
-    arrival_utc = _parse_utc(flight.get("scheduled_arrival_utc"))
+    departure_utc, arrival_utc = operational_reference_times(flight)
     midpoint = (
         departure_utc + (arrival_utc - departure_utc) / 2
         if departure_utc and arrival_utc
