@@ -85,17 +85,30 @@ def _render_svg(contract: MapContract, *, width: int, height: int) -> str:
     ]
     for feature in contract.hazards_geojson.get("features", []):
         geometry = feature.get("geometry") or {}
+        props = feature.get("properties") or {}
         coordinate_sets = geometry.get("coordinates") or []
+        if geometry.get("type") == "Point":
+            if props.get("volcano_marker") and len(coordinate_sets) == 2:
+                x, y = project(coordinate_sets)
+                name = escape(str(props.get("volcano") or "VOLCANO"))
+                parts.append(
+                    f'<path d="M {x:.1f},{y - 7:.1f} l 7,12 h -14 z" '
+                    'fill="#ffb84d" stroke="#07111f" stroke-width="1"/>'
+                    f'<text x="{x + 9:.1f}" y="{y:.1f}" '
+                    f'fill="#ffb84d" font-family="Arial" font-size="13">{name}</text>'
+                )
+            continue
+        if geometry.get("type") not in ("Polygon", "MultiPolygon"):
+            continue
         polygons = [coordinate_sets] if geometry.get("type") == "Polygon" else coordinate_sets
         for polygon in polygons:
             if not polygon:
                 continue
             ring = polygon[0]
             points = " ".join(f"{x:.1f},{y:.1f}" for x, y in (project(item) for item in ring))
-            parts.append(
-                f'<polygon points="{points}" fill="#ff6b6b" fill-opacity="0.30" '
-                'stroke="#ffb84d" stroke-width="2"/>'
-            )
+            style = ('fill="none" stroke-dasharray="5 4"' if props.get("volcano_ring")
+                     else 'fill="#ff6b6b" fill-opacity="0.30"')
+            parts.append(f'<polygon points="{points}" {style} stroke="#ffb84d" stroke-width="2"/>')
     parts.append(
         f'<polyline points="{polyline}" fill="none" stroke="#dceeff" '
         'stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'

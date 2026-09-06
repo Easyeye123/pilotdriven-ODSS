@@ -40,7 +40,8 @@ def test_ofp_marker_is_source_bound_without_ash_or_proximity_claim():
             "volcano_position": _cfp_volcano_position("MAYON (1315N 12341E)", "MAYON"),
         }, {"volcano": "UNKNOWN", "volcano_position": None}],
     }
-    features = build_map_contract(flight, [], MapSettings(provider="schematic")).hazards_geojson["features"]
+    contract = build_map_contract(flight, [], MapSettings(provider="schematic"))
+    features = contract.hazards_geojson["features"]
     assert len(features) == 1
     marker = features[0]
     assert marker["geometry"]["type"] == "Point"
@@ -48,3 +49,10 @@ def test_ofp_marker_is_source_bound_without_ash_or_proximity_claim():
     assert marker["properties"]["notam_id"] == "A0001/26"
     assert "volcano_ring" not in marker["properties"]
     assert "within_corridor" not in marker["properties"]
+    # Exercise the real offline/PDF fallback, not only the JSON contract:
+    # treating point coordinates as polygon rings used to crash rendering.
+    from app.odss_map_v06.schematic import _render_svg
+    svg = _render_svg(contract, width=800, height=450)
+    assert "MAYON</text>" in svg
+    assert "<path " in svg
+    assert "<polygon " not in svg
