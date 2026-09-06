@@ -12606,8 +12606,8 @@ def _operational_coverage_receipt(
     elif unavailable_icaos:
         airport_notes_state = "UNAVAILABLE"
         airport_notes_detail = (
-            f"Source unavailable for {','.join(unavailable_icaos)}; "
-            f"{len(note_rows)} applicable ICAO(s) checked."
+            f"{len(unavailable_icaos)}/{len(note_rows)} airport sources unavailable; "
+            f"{current_note_count} current package(s). Per-airport states: Airports section."
         )
     elif current_note_count == len(note_rows):
         airport_notes_state = "FOUND"
@@ -12619,7 +12619,7 @@ def _operational_coverage_receipt(
         airport_notes_state = "REVIEW REQUIRED"
         airport_notes_detail = (
             f"{current_note_count}/{len(note_rows)} current released exact-ICAO "
-            f"package(s); review {','.join(review_icaos)}."
+            f"package(s); {len(review_icaos)} require review. Per-airport states: Airports section."
         )
     elif no_match_count == len(note_rows):
         airport_notes_state = "CHECKED · NO MATCH"

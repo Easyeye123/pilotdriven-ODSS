@@ -7825,3 +7825,33 @@ def test_page_one_highlight_labels_a_minima_change_as_an_approach() -> None:
     assert _operational_highlight_label("obstacle", "RETURN APPROACH") == (
         "OPERATIONAL NOTE"
     )
+
+@pytest.mark.parametrize("availability", ["source_unavailable", "review_required"])
+def test_coverage_page_handles_many_airport_notes_gaps_without_blocking_pdf(tmp_path, availability):
+    from reportlab.pdfgen import canvas as reportlab_canvas
+    from app.odss.combined_brief import draw_operational_coverage_page, _operational_coverage_receipt, PAGE_SIZE
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    flight = sample_flight()
+    findings = sample_findings()
+    briefing = build_briefing_view(flight, findings, [])
+    # A long-haul route may list dozens of airports. Detailed airport records
+    # remain in the shared view; the checklist summarizes their coverage.
+    briefing["airport_surface_index"] = [
+        {"icao": f"XA{chr(65 + index // 26)}{chr(65 + index % 26)}", "notes": {
+            "status": "unavailable", "availabilityStatus": availability,
+        }} for index in range(46)
+    ]
+    receipt = _operational_coverage_receipt(flight, briefing, findings, None)
+    row = next(row for row in receipt["rows"] if row["key"] == "airport_intelligence")
+    assert row["state"] == ("UNAVAILABLE" if availability == "source_unavailable" else "REVIEW REQUIRED")
+    assert "46" in row["detail"]
+    assert "Airports section" in row["detail"]
+    out = tmp_path / "airport-notes-coverage.pdf"
+    pdf = reportlab_canvas.Canvas(str(out), pagesize=PAGE_SIZE)
+    pdf.bookmarkPage("sec_overview")
+    draw_operational_coverage_page(pdf, flight, briefing, findings, page_number=1, page_count=1, company_briefing_references=None)
+    pdf.save()
+    assert "46" in fitz.open(out)[0].get_text()
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
