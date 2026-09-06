@@ -1410,7 +1410,8 @@ def test_operational_pdf_publishes_the_canonical_airport_and_notes_index(tmp_pat
         if "COVERAGE CHECKLIST / CAT-VWS" in page.get_text()
     )
     assert "AIRPORT INTELLIGENCE / AIRPORT NOTES" in coverage_text
-    assert "Source unavailable for WSSS" in coverage_text
+    assert "airport sources unavailable" in coverage_text
+    assert "Per-airport states: Airports section." in coverage_text
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
 
@@ -2427,7 +2428,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     }
     assert (
         COMBINED_BRIEFING_SCHEMA_VERSION
-        == "2026-08-31-rev1-six-box-notam-evidence-v33"
+        == "2026-09-06-rev1-personal-notes-v34"
     )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
@@ -3206,7 +3207,8 @@ def test_operational_coverage_receipt_reports_airport_note_source_unavailable():
 
     assert row["label"] == "AIRPORT INTELLIGENCE / AIRPORT NOTES"
     assert row["state"] == "UNAVAILABLE"
-    assert "WSSS" in row["detail"]
+    assert "1/1 airport sources unavailable" in row["detail"]
+    assert "Per-airport states: Airports section." in row["detail"]
 
 
 def test_operational_coverage_receipt_reads_semantic_identity_in_dict_layers():
