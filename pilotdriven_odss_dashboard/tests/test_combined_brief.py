@@ -2428,7 +2428,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     }
     assert (
         COMBINED_BRIEFING_SCHEMA_VERSION
-        == "2026-09-06-rev1-actual-reference-v35"
+        == "2026-09-06-intam-label-v36"
     )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
@@ -4280,7 +4280,8 @@ def test_compact_capacity_reflows_long_deferred_and_release_gates(
         for index, page in enumerate(document)
         if "FINALRELEASETAIL" in page.get_text()
     )
-    assert "COMPANY BULLETINS / INTAM" in document[enroute_page_index].get_text()
+    assert "INTAM" in document[enroute_page_index].get_text()
+    assert "COMPANY BULLETINS" not in document[enroute_page_index].get_text()
     for page_index in (mel_page_index, enroute_page_index):
         body_sizes = [
             float(span.get("size") or 0.0)
@@ -5227,7 +5228,8 @@ def test_source_held_charts_intam_and_fir_clocks_reach_compact_pages(tmp_path):
     assert "contact procedure/frequency unavailable" in normalized_enroute.lower()
     assert "HELD - 21 records - OFP pp39-45" in enroute
     assert "NOT RELEVANCE-SELECTED" in " ".join(enroute.split())
-    assert "COMPANY BULLETINS / INTAM · HELD" in enroute
+    assert "INTAM · HELD" in enroute
+    assert "COMPANY BULLETINS" not in enroute
 
 
 def test_decision_bookkeeping_and_deferred_cards_use_truthful_targets():

@@ -160,7 +160,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-06-rev1-actual-reference-v35"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-06-intam-label-v36"
 
 
 def combined_briefing_cache_token(
@@ -13067,9 +13067,9 @@ def draw_operational_enroute_assurance_page(
             "SOURCE-HELD ACTIONS / INTAM"
             if priority_source_body
             else (
-                "COMPANY BULLETINS / INTAM · HELD"
+                "INTAM · HELD"
                 if intam.get("record_count")
-                else "COMPANY BULLETINS / INTAM"
+                else "INTAM"
             ),
             WEATHER_AMBER,
             intam_body,

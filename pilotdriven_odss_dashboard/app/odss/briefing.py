@@ -5063,7 +5063,7 @@ def _source_assurance_projection(
             "detail": "A coverage state is not a NIL operational finding.",
         },
         {
-            "source": "COMPANY BULLETINS / INTAM",
+            "source": "INTAM",
             "status": "HELD" if intam_records else "NOT HELD",
             "detail": (
                 f"{len(intam_records)} structured source record(s) - "
