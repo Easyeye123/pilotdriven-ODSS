@@ -7855,3 +7855,35 @@ def test_coverage_page_handles_many_airport_notes_gaps_without_blocking_pdf(tmp_
     assert "46" in fitz.open(out)[0].get_text()
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
+
+
+@pytest.mark.parametrize("audit", [False, True])
+def test_combined_report_retains_personal_notes_once_with_context_and_pagination(tmp_path, audit):
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    flight = sample_flight()
+    placements = ["departure", "destination", "communications", "separate"]
+    flight["personal_notes"] = [
+        {"id": index, "placement": placement,
+         "note_text": f"Pilot test note for {placement}. " + "Retain this personal annotation. " * 45,
+         "include_level1": True, "include_level2": index != 0}
+        for index, placement in enumerate(placements)
+    ]
+    out = tmp_path / "personal-notes.pdf"
+    findings = [item for item in sample_findings() if item.get("engine") != "depressurisation"]
+    render_combined_briefing(flight, findings, [], out, include_audit_appendix=audit)
+    with fitz.open(out) as doc:
+        texts = [" ".join(page.get_text().split()) for page in doc]
+        full_text = " ".join(texts)
+        for placement in placements:
+            assert full_text.count(f"Pilot test note for {placement}.") == 1
+        assert full_text.count("Retain this personal annotation.") == 45 * 4
+        assert "Pilot-entered personal notes" in full_text
+        if not audit:
+            toc = {title: page for _, title, page in doc.get_toc()}
+            note_pages = {placement: next(i + 1 for i, text in enumerate(texts) if f"Pilot test note for {placement}." in text) for placement in placements}
+            assert toc["Airports / Alternates"] < note_pages["departure"] < note_pages["destination"] < toc["Weather / Route Hazards"]
+            assert toc["Enroute / Assurance"] < note_pages["communications"] < toc["Coverage Checklist / CAT-VWS"]
+            assert note_pages["separate"] > toc["Coverage Checklist / CAT-VWS"]
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]

@@ -356,6 +356,18 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
         for flow_index, required_markers in enumerate(
             _COMBINED_BOSS_FLOW_PAGES[3:]
         ):
+            # Pilot notes are an additional source-labelled publication, kept
+            # after their chosen section. They never replace a required page.
+            note_contexts = (
+                ("Departure airport section", "Destination airport section")
+                if flow_index == 2 else
+                ("Enroute ATC / communications section",)
+                if flow_index == 4 else ()
+            )
+            while cursor < page_count and _is_combined_personal_note_page(
+                extracted_pages[cursor], note_contexts,
+            ):
+                cursor += 1
             page_text = (
                 extracted_pages[cursor].upper()
                 if cursor < page_count
@@ -686,6 +698,10 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                         ))
         for page_index in range(cursor, page_count):
             page_text = extracted_pages[page_index].upper()
+            if _is_combined_personal_note_page(
+                page_text, ("Separate personal-notes section",),
+            ):
+                continue
             if not (
                 all(marker in page_text for marker in _COMBINED_TERRAIN_MARKERS)
                 or _COMBINED_PROFILE_TITLE in page_text
@@ -844,7 +860,10 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 cursor += 1
 
         while cursor < page_count:
-            if _COMBINED_PROFILE_TITLE not in extracted_pages[cursor].upper():
+            if (
+                _COMBINED_PROFILE_TITLE not in extracted_pages[cursor].upper()
+                and not _is_combined_personal_note_page(extracted_pages[cursor])
+            ):
                 violations.append(ReportQualityViolation(
                     "COMBINED_PROFILE_STRUCTURE",
                     (
@@ -859,6 +878,20 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
         "page_count": page_count,
         "violations": violations,
     }
+
+
+def _is_combined_personal_note_page(
+    text: str, contexts: tuple[str, ...] = (
+        "Departure airport section", "Destination airport section",
+        "Enroute ATC / communications section", "Separate personal-notes section",
+    ),
+) -> bool:
+    upper = " ".join(text.upper().split())
+    return bool(
+        "PILOT-ENTERED PERSONAL NOTES; NOT AN OFP OR GOVERNED PROCEDURE" in upper
+        and "PILOT NOTE " in upper
+        and any(f"PERSONAL NOTES | {context.upper()}" in upper for context in contexts)
+    )
 
 
 def assert_combined_briefing_quality(path: Path) -> dict[str, Any]:

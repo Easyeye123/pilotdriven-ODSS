@@ -160,7 +160,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-31-rev1-six-box-notam-evidence-v33"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-06-rev1-personal-notes-v34"
 
 
 def combined_briefing_cache_token(
@@ -13781,6 +13781,50 @@ def _audit_rev3_v8_briefing_projection(
     return projected
 
 
+def _combined_personal_note_pages(
+    flight: dict[str, Any], placements: set[str],
+) -> list[dict[str, Any]]:
+    """Retain each selected pilot note once in the single combined report."""
+    from ..personal_notes import PERSONAL_NOTE_PLACEMENT_LABELS
+
+    pages = []
+    for placement, label in PERSONAL_NOTE_PLACEMENT_LABELS.items():
+        if placement not in placements:
+            continue
+        notes = [
+            note for note in flight.get("personal_notes") or []
+            if isinstance(note, dict)
+            and note.get("placement") == placement
+            and (note.get("include_level1") or note.get("include_level2"))
+            and str(note.get("note_text") or "").strip()
+        ]
+        pages.extend(_detail_page_plans(
+            f"PERSONAL NOTES | {label}",
+            [(f"PILOT NOTE {index}", str(note["note_text"]))
+             for index, note in enumerate(notes, start=1)],
+        ))
+    return pages
+
+
+def _draw_combined_personal_notes(
+    canvas, flight: dict[str, Any], pages: list[dict[str, Any]],
+    *, first_page: int, page_count: int,
+) -> None:
+    for index, page in enumerate(pages):
+        bookmark = f"personal_notes_{first_page + index}"
+        canvas.bookmarkPage(bookmark)
+        draw_shared_detail_page(
+            canvas, flight, page_number=first_page + index,
+            page_count=page_count, section_label="PERSONAL NOTES",
+            section_colour=COMMS_TEAL, section_page_number=index + 1,
+            section_page_count=len(pages), title=page["title"],
+            rows=page["rows"],
+            source_line="Pilot-entered personal notes; not an OFP or governed procedure",
+        )
+        canvas.addOutlineEntry(page["title"], bookmark, level=0)
+        canvas.showPage()
+
+
 def render_combined_briefing(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -13816,6 +13860,10 @@ def render_combined_briefing(
     )
 
     register_fonts()
+    airport_note_pages = _combined_personal_note_pages(flight, {"departure", "destination"})
+    comms_note_pages = _combined_personal_note_pages(flight, {"communications"})
+    separate_note_pages = _combined_personal_note_pages(flight, {"separate"})
+    all_note_pages = airport_note_pages + comms_note_pages + separate_note_pages
     violations = validate_depressurisation_profile_charts(flight, findings, 2)
     if violations:
         raise DepressurisationProfileChartPublicationError(violations)
@@ -13969,6 +14017,7 @@ def render_combined_briefing(
         + hazard_page_count
         + len(terrain_detail_pages)
         + len(chart_images)
+        + len(all_note_pages)
     )
     terrain_page_number = (
         3
@@ -14065,14 +14114,15 @@ def render_combined_briefing(
             + operational_airport_notam_count
             + operational_critical_approach_count
             + operational_surface_shortening_count
+            + len(airport_note_pages)
         )
         operational_enroute_page = (
             operational_hazards_page
             + 1
             + operational_vaac_receipt_page_count
         )
-        operational_coverage_page = operational_enroute_page + 1
-        operational_terrain_page = operational_enroute_page + 2
+        operational_coverage_page = operational_enroute_page + 1 + len(comms_note_pages)
+        operational_terrain_page = operational_coverage_page + 1
         operational_page_count = (
             7
             + operational_mel_page_count
@@ -14084,6 +14134,7 @@ def render_combined_briefing(
             + operational_vaac_receipt_page_count
             + int(has_terrain_annex)
             + eosid_continuation_count
+            + len(all_note_pages)
         )
         operational_section_pages = {
             "mel_cdl": operational_mel_first_page,
@@ -14507,6 +14558,11 @@ def render_combined_briefing(
                 level=0,
             )
             canvas.showPage()
+        _draw_combined_personal_notes(
+            canvas, flight, airport_note_pages,
+            first_page=operational_hazards_page - len(airport_note_pages),
+            page_count=operational_page_count,
+        )
         draw_operational_hazard_page(
             canvas,
             flight,
@@ -14571,6 +14627,11 @@ def render_combined_briefing(
         )
         canvas.addOutlineEntry("Enroute / Assurance", "sec_enroute", level=0)
         canvas.showPage()
+        _draw_combined_personal_notes(
+            canvas, flight, comms_note_pages,
+            first_page=operational_enroute_page + 1,
+            page_count=operational_page_count,
+        )
         draw_operational_coverage_page(
             canvas,
             flight,
@@ -14606,6 +14667,11 @@ def render_combined_briefing(
                 level=0,
             )
             canvas.showPage()
+        _draw_combined_personal_notes(
+            canvas, flight, separate_note_pages,
+            first_page=operational_page_count - len(separate_note_pages) + 1,
+            page_count=operational_page_count,
+        )
         canvas.save()
         from .report_quality import assert_combined_briefing_quality
 
@@ -14814,6 +14880,11 @@ def render_combined_briefing(
             page_count=page_count,
         )
         canvas.showPage()
+    _draw_combined_personal_notes(
+        canvas, flight, all_note_pages,
+        first_page=page_count - len(all_note_pages) + 1,
+        page_count=page_count,
+    )
     canvas.save()
     from .report_quality import assert_combined_briefing_quality
 

@@ -1792,6 +1792,14 @@ def test_service_personal_notes_are_validated_tenant_scoped_and_regenerated(
         report_text = "\n".join(page.get_text() for page in report)
     assert note_payload["note_text"] in " ".join(report_text.split())
 
+    combined = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/combined", headers=owner_headers,
+    )
+    assert combined.status_code == 200
+    with fitz.open(stream=combined.content, filetype="pdf") as report:
+        combined_text = " ".join(" ".join(page.get_text() for page in report).split())
+    assert combined_text.count(note_payload["note_text"]) == 1
+
     cross_tenant_delete = service_app.delete(
         f"/v1/analyses/{analysis_id}/notes/{added_note['id']}",
         headers=other_headers,
@@ -1809,6 +1817,13 @@ def test_service_personal_notes_are_validated_tenant_scoped_and_regenerated(
     assert deleted.status_code == 200
     assert deleted.json()["notes"] == []
     assert briefing_without_note["personal_notes"] == []
+    combined_after_delete = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/combined", headers=owner_headers,
+    )
+    assert combined_after_delete.status_code == 200
+    with fitz.open(stream=combined_after_delete.content, filetype="pdf") as report:
+        deleted_text = " ".join(" ".join(page.get_text() for page in report).split())
+    assert note_payload["note_text"] not in deleted_text
 
 
 def test_stale_simultaneous_note_loser_never_stages_a_note(
