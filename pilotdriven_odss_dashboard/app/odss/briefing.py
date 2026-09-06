@@ -3638,6 +3638,7 @@ def _overview_forecast_at_reference(
         "timing": selected.get("timing"),
         "window_status": selected.get("window_status"),
         "source_references": list(selected.get("source_references") or []),
+        **({"forecast_source": dict(selected["forecast_source"])} if selected.get("forecast_source") else {}),
     }
 
 

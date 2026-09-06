@@ -2802,6 +2802,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "utc_window": window_label,
             "mechanisms": [],
             "taf_summaries": [],
+            "taf_sources": [],
             "taf_evidence_refs": [],
             "metar_summaries": [],
             "metar_evidence_refs": [],
@@ -2816,6 +2817,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             group["source_references"].append(source_reference)
         if taf_summary:
             group["taf_summaries"].append(taf_summary)
+            group["taf_sources"].append({
+                **source_reference,
+                "raw_text": raw_text,
+                "issued_at_utc": taf_summary.get("issued_at_utc") or record.get("issue_time_utc"),
+                "valid_from_utc": taf_summary.get("valid_from_utc"),
+                "valid_to_utc": taf_summary.get("valid_to_utc"),
+            })
             group["taf_evidence_refs"].append(evidence_ref)
         elif metar_summary:
             group["metar_summaries"].append(metar_summary)
@@ -2856,6 +2864,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         if taf_summary:
             status = taf_summary["status"]
             data = {
+                "forecast_source": group["taf_sources"][-1],
                 "phase": group["phase"],
                 "location": group["location"],
                 "utc_window": group["utc_window"],
@@ -2885,7 +2894,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             if status == "no_significant_overlap":
                 data["flight_effect"] = (
                     "No adverse flight effect is indicated for this window by the "
-                    "OFP TAF; confirm the latest operational weather."
+                    "selected TAF; confirm the latest operational weather."
                 )
             elif status == "review_required":
                 data["flight_effect"] = (

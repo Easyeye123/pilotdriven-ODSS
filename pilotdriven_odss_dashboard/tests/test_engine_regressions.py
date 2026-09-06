@@ -239,6 +239,42 @@ def _flight(
     }
 
 
+def test_forecast_provenance_tracks_the_exact_decoded_taf_not_a_neighbouring_record():
+    from app.odss.briefing import _overview_forecast_at_reference
+    ofp = "TAF RJBB 160500Z 1606/1706 16008KT 9999 SCT020"
+    amended = "TAF AMD RJBB 160930Z 1610/1712 27015G25KT 3000 TSRA BKN015CB"
+    flight = _flight(weather=[
+        {"location": "RJBB", "record_type": "TAF", "text": ofp, "source_page": 12},
+        {"location": "RJBB", "record_type": "TAF", "text": amended,
+         "source": "noaa_awc_live", "provider": "noaa-awc-data-api",
+         "retrieved_at_utc": "2026-07-16T10:00:00Z"},
+        {"location": "RJBB", "record_type": "METAR", "text": "METAR RJBB 161200Z 09005KT 9999 SCT030"},
+    ])
+    findings, _ = analyse(flight)
+    forecast = _overview_forecast_at_reference(findings, location="RJBB", phase="Destination")
+    assert "270°" in forecast["applicable_conditions"]
+    source = forecast["forecast_source"]
+    assert source["raw_text"] == amended
+    assert source["provider"] == "noaa-awc-data-api"
+    assert source["issued_at_utc"] == "2026-07-16T09:30:00+00:00"
+    assert source["valid_from_utc"] == "2026-07-16T10:00:00+00:00"
+    assert source["valid_to_utc"] == "2026-07-17T12:00:00+00:00"
+    assert forecast["utc_window"] == "16 JUL 1100Z-1300Z"
+    assert flight["weather"][0]["text"] == ofp
+
+
+def test_forecast_outside_window_keeps_its_source_and_review_state():
+    from app.odss.briefing import _overview_forecast_at_reference
+    raw = "TAF RJBB 160500Z 1606/1609 16008KT 9999 SCT020"
+    findings, _ = analyse(_flight(weather=[
+        {"location": "RJBB", "record_type": "TAF", "text": raw, "source_page": 12},
+    ]))
+    forecast = _overview_forecast_at_reference(findings, location="RJBB", phase="Destination")
+    assert forecast["window_status"] == "review_required"
+    assert forecast["forecast_source"]["raw_text"] == raw
+    assert forecast["forecast_source"]["source_type"] == "uploaded_cfp"
+
+
 @pytest.mark.parametrize(
     "text",
     (

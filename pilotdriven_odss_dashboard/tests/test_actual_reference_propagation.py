@@ -69,7 +69,7 @@ def test_missing_or_invalid_destination_actm_never_reuses_scheduled_arrival(valu
     flight["route_waypoints"][0]["actm_minutes"] = value
     assert operational_reference_times(flight)[1] is None
     assert _station_forecast_window(flight, "WSSS") is None
-    with pytest.raises(ValueError, match="exact destination timing"):
+    with pytest.raises(ValueError, match="exact destination timing: destination ACTM is missing or invalid"):
         _notam_role_window(flight, "WSSS", set(), {})
 
 

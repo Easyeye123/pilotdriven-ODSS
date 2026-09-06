@@ -9,6 +9,12 @@ from app.odss_map_v06.geojson import build_map_contract
     ("MAYON", "MAYON VOLCANO (1315N 12341E)", (13.25, 123 + 41/60)),
     ("KANLAON", "ERUPTION OF VOLCANO KANLAON (CAVW 0702-02) 1024N 12307E PHILIPPINES", (10.4, 123 + 7/60)),
     ("EXAMPLE", "EXAMPLE (1230S 17930W)", (-12.5, -179.5)),
+    ("KRAKATAU", "VOLCANO: KRAKATAU 262000 PSN: S0606 E10525", (-6.1, 105 + 25/60)),
+    ("KRAKATAU", "C)KRAKATAU 602-00 D)S0606E10525 E)ORANGE", (-6.1, 105 + 25/60)),
+    ("KRAKATAU", "VA ERUPTION MT KRAKATAU PSN S0606 E10525", (-6.1, 105 + 25/60)),
+    ("SEMERU", "C)SEMERU 603-30 D)S0806E11255 E)ORANGE", (-8.1, 112 + 55/60)),
+    ("STROMBOLI", "VOLCANO STROMBOLI ID 211040, PSN COORDINATES 384728N0151246E", (38 + 47/60 + 28/3600, 15 + 12/60 + 46/3600)),
+    ("EXAMPLE", "VOLCANO: EXAMPLE 123456 PSN: S123000 W1793000", (-12.5, -179.5)),
 ])
 def test_position_belongs_to_named_source_volcano(name, text, expected):
     position = _cfp_volcano_position(text, name)
@@ -24,6 +30,14 @@ def test_position_belongs_to_named_source_volcano(name, text, expected):
     "MAYON VOLCANO (9115N 12341E)",
     "MAYON VOLCANO (1315N 18141E)",
     "MAYON (1315N 12341E) MAYON (1415N 12341E)",
+    "MAYON PSN N1399 E12341",
+    "MAYON PSN 131560N1234100E",
+    "MAYON PSN N9001 E12341",
+    "MAYON PSN N1315 E18001",
+    "MAYON OBS VA CLD N1315 E12341",
+    "MAYON ERUPTION. VOLCANO: TAAL 123456 PSN N1315 E12341",
+    "MAYON PSN N1315 E12341 MAYON PSN N1415 E12341",
+    "MAYON PSN N1315 E12341 MAYON PSN N1399 E12341",
 ])
 def test_unverified_or_ambiguous_position_is_not_plotted(text):
     assert _cfp_volcano_position(text, "MAYON") is None

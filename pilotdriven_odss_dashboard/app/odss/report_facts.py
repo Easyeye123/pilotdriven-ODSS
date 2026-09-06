@@ -90,6 +90,10 @@ def required_operational_reference_times(
     flight: dict[str, Any],
 ) -> tuple[datetime, datetime]:
     departure, arrival = operational_reference_times(flight)
+    if departure is not None and arrival is None and (
+        flight.get("actual_takeoff_utc") or (flight.get("timing_reference") or {}).get("actual_takeoff_utc")
+    ):
+        raise ValueError("Flight time assessment requires exact destination timing: destination ACTM is missing or invalid. Arrival cannot be calculated from ATOT; scheduled arrival was not substituted.")
     if departure is None or arrival is None:
         raise ValueError("Flight time assessment requires a valid departure and exact destination timing reference")
     return departure, arrival

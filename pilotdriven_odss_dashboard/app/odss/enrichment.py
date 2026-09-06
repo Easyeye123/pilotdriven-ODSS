@@ -274,26 +274,38 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
 def _cfp_volcano_position(text: str, volcano: str) -> dict[str, Any] | None:
     """Read a position immediately attached to the named volcano, never ash vertices.
 
-    Accept the OFP's degrees/minutes spelling only. Ambiguous, invalid or
+    Accept printed degree/minute and degree/minute/second positions in the
+    named volcano's position field, with prefix or suffix hemispheres.
+    Ambiguous, invalid or
     missing positions remain unplotted; no catalogue or name lookup is used.
     """
     pattern = re.compile(
         rf"\b{re.escape(volcano)}\b(?:\s+VOLCANO)?\s*"
-        r"(?:\(CAVW\s+[\d -]+\)\s*)?\(?\s*"
-        r"(?P<lat>\d{4})(?P<ns>[NS])\s+"
-        r"(?P<lon>\d{5})(?P<ew>[EW])\b", re.IGNORECASE,
+        r"(?:\(CAVW\s+[\d -]+\)|(?:ID\s+)?\d{3,7}(?:-\d{2})?[,;]?)?\s*"
+        r"(?:(?:PSN\s*:?(?:\s*COORDINATES)?|D\))\s*)?\(?\s*"
+        r"(?P<position>[NS]\d{4}(?:\d{2})?\s*[EW]\d{5}(?:\d{2})?"
+        r"|\d{4}(?:\d{2})?[NS]\s*\d{5}(?:\d{2})?[EW])(?![A-Z0-9])",
+        re.IGNORECASE,
     )
     positions = set()
     for match in pattern.finditer(text):
-        lat, lon = match["lat"], match["lon"]
-        if int(lat[2:]) >= 60 or int(lon[3:]) >= 60:
+        position = re.sub(r"\s+", "", match["position"].upper())
+        if position[0] in "NS":
+            coordinates = re.fullmatch(r"([NS])(\d+)([EW])(\d+)", position)
+            ns, lat, ew, lon = coordinates.groups()
+        else:
+            coordinates = re.fullmatch(r"(\d+)([NS])(\d+)([EW])", position)
+            lat, ns, lon, ew = coordinates.groups()
+        lat_minutes, lon_minutes = int(lat[2:4]), int(lon[3:5])
+        lat_seconds, lon_seconds = int(lat[4:] or 0), int(lon[5:] or 0)
+        if max(lat_minutes, lon_minutes, lat_seconds, lon_seconds) >= 60:
             return None
-        latitude = int(lat[:2]) + int(lat[2:]) / 60
-        longitude = int(lon[:3]) + int(lon[3:]) / 60
+        latitude = int(lat[:2]) + lat_minutes / 60 + lat_seconds / 3600
+        longitude = int(lon[:3]) + lon_minutes / 60 + lon_seconds / 3600
         if latitude > 90 or longitude > 180:
             return None
-        positions.add((latitude * (-1 if match["ns"].upper() == "S" else 1),
-                       longitude * (-1 if match["ew"].upper() == "W" else 1)))
+        positions.add((latitude * (-1 if ns == "S" else 1),
+                       longitude * (-1 if ew == "W" else 1)))
     if len(positions) != 1:
         return None
     latitude, longitude = positions.pop()

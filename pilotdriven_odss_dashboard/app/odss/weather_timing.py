@@ -271,10 +271,20 @@ def summarize_taf_for_window(
     text: str,
     window_start: datetime,
     window_end: datetime,
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     parsed = _parse_taf(text, window_start)
     if parsed is None:
         return None
+    # Carry the validity of this exact decoded bulletin to publishing surfaces.
+    # Retrieval time and issue time are not substitutes for forecast coverage.
+    header = re.split(r"\b\d{4}/\d{4}\b", str(text), maxsplit=1)[0]
+    issue_match = re.search(r"\b(\d{6})Z?\b", header)
+    issued = _closest_day_time(issue_match[1], parsed["validity_start"]) if issue_match else None
+    source_timing = {
+        "valid_from_utc": parsed["validity_start"].isoformat(),
+        "valid_to_utc": parsed["validity_end"].isoformat(),
+        "issued_at_utc": issued.isoformat() if issued else None,
+    }
     groups = parsed["groups"]
     coverage_complete = (
         parsed["validity_start"] <= window_start
@@ -332,10 +342,11 @@ def summarize_taf_for_window(
 
     if not coverage_complete or not base_groups:
         return {
+            **source_timing,
             "status": "review_required",
             "applicable_conditions": applicable_conditions,
             "timing": (
-                f"The OFP TAF does not fully cover "
+                f"The selected TAF does not fully cover "
                 f"{_short_range(window_start, window_end)}."
             ),
             "mechanism": "; ".join(mechanisms) or "None safely classified",
@@ -367,6 +378,7 @@ def summarize_taf_for_window(
                 f"for {_short_range(window_start, window_end)}."
             )
         return {
+            **source_timing,
             "status": "pertinent",
             "applicable_conditions": applicable_conditions,
             "timing": timing,
@@ -402,12 +414,13 @@ def summarize_taf_for_window(
             f"{_short_range(window_start, window_end)}."
         )
     return {
+        **source_timing,
         "status": "no_significant_overlap",
         "applicable_conditions": applicable_conditions,
         "timing": timing,
         "mechanism": "None in time-overlapping forecast groups",
         "window_status_text": (
-            "No significant weather group overlaps this window in the OFP forecast."
+            "No significant weather group overlaps this window in the selected forecast."
         ),
     }
 

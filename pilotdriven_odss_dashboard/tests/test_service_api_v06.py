@@ -1229,9 +1229,11 @@ def test_weather_window_regenerates_current_analysis_without_inventing_atot(
     }
 
 
+@pytest.mark.parametrize("missing_actm", [False, True])
 def test_failed_timing_update_returns_non_200_and_restores_previous_reference(
     service_app: TestClient,
     monkeypatch: pytest.MonkeyPatch,
+    missing_actm: bool,
 ) -> None:
     created = service_app.post(
         "/v1/analyses",
@@ -1270,6 +1272,13 @@ def test_failed_timing_update_returns_non_200_and_restores_previous_reference(
     assert {"analysis_path", "level1_report", "level2_report"} <= prior_artifacts.keys()
 
     def fail_analysis(*args, **kwargs):
+        if missing_actm:
+            from app.odss.report_facts import required_operational_reference_times
+            required_operational_reference_times({
+                "actual_takeoff_utc": "2026-07-11T10:42:00Z",
+                "destination": "WSSS", "route_waypoints": [],
+                "scheduled_arrival_utc": "2026-07-11T22:00:00Z",
+            })
         raise RuntimeError("Synthetic timing regeneration failure")
 
     monkeypatch.setattr(main, "run_odss_analysis", fail_analysis)
@@ -1292,7 +1301,8 @@ def test_failed_timing_update_returns_non_200_and_restores_previous_reference(
     restored_flight = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
 
     assert rejected.status_code == 422
-    assert "Synthetic timing regeneration failure" in rejected.json()["detail"]
+    expected_error = "destination ACTM is missing or invalid" if missing_actm else "Synthetic timing regeneration failure"
+    assert expected_error in rejected.json()["detail"]
     assert restored["status"] == "Completed"
     assert briefing["timing"] is None
     assert restored_flight is not None
