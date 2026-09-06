@@ -2502,6 +2502,8 @@ def test_operational_page_one_names_atot_actm_target_cross_over_time(tmp_path):
     page_text = " ".join(fitz.open(out)[0].get_text().split())
     assert "ATOT 0952Z" in page_text
     assert "TARGET ARRIVAL 2159Z" in page_text
+    assert "TAF AT TARGET ARR" in page_text
+    assert "TAF AT SCHED ARR" not in page_text
     assert "TARGET CROSS-OVER TIME = ATOT + OFP ACTM" in page_text
 
 

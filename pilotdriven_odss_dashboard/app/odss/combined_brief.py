@@ -2188,7 +2188,12 @@ def _draw_operational_six_box_overview(
             f"RWY {destination_plan.get('runway') or '--'}",
         ),
         ("STAR", unavailable(destination_plan.get("procedure") or page_one.get("star"))),
-        ("TAF AT SCHED ARR", unavailable(forecast_value)),
+        (
+            "TAF AT TARGET ARR"
+            if str(identity.get("eta_status") or "").lower() == "calculated"
+            else "TAF AT SCHED ARR",
+            unavailable(forecast_value),
+        ),
         (
             "ALTN",
             " / ".join(
