@@ -252,12 +252,18 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
         body = " ".join(volcanic.group("body").split())
         if body and "NO WX DATA" not in body.upper():
             fir = re.search(r"\b([A-Z]{4})\s+[A-Z ]+FIR\b", body)
-            flight["weather"].append({
+            record = {
                 "location": fir.group(1) if fir else "FIR",
                 "record_type": "VA_SIGMET",
                 "text": body,
                 "source_page": _record_source_page(pages, body),
-            })
+            }
+            # Retain the printed section while locating each message on its
+            # own page. The section may span pages and more than one FIR.
+            messages = _split_cfp_va_sigmets(record, pages)
+            if len(messages) > 1:
+                record["messages"] = messages
+            flight["weather"].append(record)
 
     sigmet = re.search(r"(?ms)^SIGMETs:\s*(?P<body>.*?)(?=^Tropical Cyclone SIGMETs:)", text)
     if sigmet:
@@ -313,6 +319,38 @@ def _cfp_volcano_position(text: str, volcano: str) -> dict[str, Any] | None:
     return {"latitude": latitude, "longitude": longitude, "source": "ofp_printed_position"}
 
 
+def _split_cfp_va_sigmets(
+    record: dict[str, Any], pages: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Separate messages by their own WV SIGMET header and '=' terminator.
+
+    An old saved aggregate has no per-message page provenance. Its positions
+    can still be read, but reanalysis is needed to locate the source pages.
+    """
+    text = " ".join(str(record.get("text") or "").split())
+    headers = list(re.finditer(
+        r"\bWV\s+SIGMET\s+[A-Z0-9]+\s+VALID\s+\d{6}/\d{6}\b",
+        text, re.IGNORECASE,
+    ))
+    if len(headers) <= 1:
+        return [{**record, "text": text}]
+    messages = []
+    for index, header in enumerate(headers):
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
+        message = text[header.start():end].strip()
+        terminator = message.find("=")
+        if terminator >= 0:
+            message = message[:terminator + 1]
+        fir = re.search(r"\b([A-Z]{4})\s+[A-Z ]+?FIR\b", message, re.IGNORECASE)
+        messages.append({
+            "record_type": "VA_SIGMET",
+            "location": fir.group(1).upper() if fir else "FIR",
+            "text": message,
+            "source_page": _record_source_page(pages, message) if pages is not None else None,
+        })
+    return messages
+
+
 def ofp_volcano_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
     """Give cards and maps the same source-bound OFP notices, including SIGMETs.
 
@@ -323,9 +361,11 @@ def ofp_volcano_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
     """
     records = [dict(item) for item in flight.get("volcanic_advisories") or []]
     seen = set()
-    for record in flight.get("weather") or []:
-        if record.get("record_type") != "VA_SIGMET":
-            continue
+    sigmets = [message
+               for record in flight.get("weather") or []
+               if record.get("record_type") == "VA_SIGMET"
+               for message in (record.get("messages") or _split_cfp_va_sigmets(record))]
+    for record in sigmets:
         text = " ".join(str(record.get("text") or "").split())
         if not text or text in seen:
             continue
