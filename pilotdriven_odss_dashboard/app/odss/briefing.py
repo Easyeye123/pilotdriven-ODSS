@@ -3479,7 +3479,7 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
                 "a crew/dispatch review."
             ),
             "text": text,
-            "fir": None,
+            "fir": advisory.get("fir"),
             "valid_from": _display_utc(advisory.get("valid_from_utc"), include_year=crosses_year),
             "valid_to": _display_utc(advisory.get("valid_to_utc"), include_year=crosses_year),
             "source_page": advisory.get("source_page"),

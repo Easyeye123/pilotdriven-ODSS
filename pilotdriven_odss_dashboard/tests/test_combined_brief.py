@@ -2428,7 +2428,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     }
     assert (
         COMBINED_BRIEFING_SCHEMA_VERSION
-        == "2026-09-07-sigmet-source-evidence-v38"
+        == "2026-09-08-ashtam-fir-evidence-v39"
     )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
@@ -6595,6 +6595,25 @@ def test_operational_long_sigmet_keeps_all_evidence_on_linked_pdf_pages(tmp_path
     assert any(v.code == "COMBINED_VAAC_RECEIPT_STRUCTURE" for v in invalid["violations"])
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
+
+
+def test_operational_vaa_source_details_keep_the_ashtam_fir(tmp_path):
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    flight["volcanic_advisories"] = [{
+        "volcano": "KRAKATAU", "notam_id": "AX3655/26", "source_page": 29,
+        "text": "AX3655/26 ASHTAM A)WIIF B)2608160210 C)KRAKATAU 602-00 D)S0606 E10525",
+    }]
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "ashtam-fir-source.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    with fitz.open(out) as document:
+        pages = [" ".join(p.get_text().split()) for p in document
+                 if "FULL VOLCANIC-ASH SOURCE DETAILS" in p.get_text()]
+    source = " ".join(pages)
+    assert "VAA 1 FIR WIIF" in source
+    assert "A)WIIF B)2608160210" in source
+    assert "VAA 1 SOURCE PAGE 29" in source
 
 
 def test_operational_vaa_cards_print_shared_applicability_before_source_excerpt(

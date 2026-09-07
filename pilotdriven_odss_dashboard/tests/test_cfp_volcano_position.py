@@ -57,6 +57,25 @@ def test_notice_validity_keeps_years_when_the_range_crosses_a_year():
     assert card["valid_to"] == "26 OCT 2026 0352Z"
 
 
+@pytest.mark.parametrize("text,expected", [
+    ("AX3655/26 ASHTAM A)WIIF B)2608160210 C)KRAKATAU", "WIIF"),
+    ("ASHTAM A) AUCKLAND OCEANIC FIR B)2608160210", "AUCKLAND OCEANIC FIR"),
+    ("ASHTAM B)2608160210 C)KRAKATAU", None),
+    ("ASHTAM A)NIL B)2608160210", None),
+    ("ASHTAM A)WIIF B)2608160210 A)WAAF B)2608160210", None),
+    ("VOLCANIC ACTIVITY ADVISORY A)WIIF B)2608160210", None),
+])
+def test_ashtam_card_keeps_its_own_printed_fir_without_guessing(text, expected):
+    flight = {"volcanic_advisories": [{
+        "volcano": "KRAKATAU", "notam_id": "AX3655/26", "text": text,
+        "source_page": 29,
+    }]}
+    card = _va_cfp_advisories(flight)[0]
+    assert card["fir"] == expected
+    assert card["text"] == text
+    assert "fir" not in flight["volcanic_advisories"][0], "retain the held source record"
+
+
 def test_ofp_marker_is_source_bound_without_ash_or_proximity_claim():
     flight = {
         "route_waypoints": [

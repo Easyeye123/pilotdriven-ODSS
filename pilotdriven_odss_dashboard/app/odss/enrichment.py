@@ -352,6 +352,19 @@ def _split_cfp_va_sigmets(
     return messages
 
 
+def _cfp_ashtam_fir(text: str) -> str | None:
+    """Read ASHTAM item A as printed; do not resolve a FIR from the volcano."""
+    if not re.search(r"\bASHTAM\b", text, re.IGNORECASE):
+        return None
+    fields = re.findall(r"\bA\)\s*(.*?)(?=\b[A-K]\)|$)", text, re.IGNORECASE | re.DOTALL)
+    if len(fields) != 1:
+        return None
+    value = " ".join(fields[0].upper().split())
+    if value in {"NIL", "UNKNOWN", "NOT STATED", "NOT AVAILABLE", "NOT AVBL"}:
+        return None
+    return value if re.fullmatch(r"[A-Z][A-Z0-9 /().'-]{1,119}", value) else None
+
+
 def ofp_volcano_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
     """Give cards and maps the same source-bound OFP notices, including SIGMETs.
 
@@ -360,7 +373,8 @@ def ofp_volcano_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
     Source identity keeps separate SIGMET/ASHTAM evidence selectable even
     when both markers occupy the same coordinates.
     """
-    records = [dict(item) for item in flight.get("volcanic_advisories") or []]
+    records = [{**item, "fir": _cfp_ashtam_fir(str(item.get("text") or ""))}
+               for item in flight.get("volcanic_advisories") or []]
     seen = set()
     sigmets = flight.get("ofp_va_sigmet_messages")
     if sigmets is None:
