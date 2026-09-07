@@ -6126,6 +6126,17 @@ def _hazard_page_plans(
                 "wafc_charts": wafc,
             })
             page_index += 1
+        if any(
+            _hazard_sigmet_card_capacity(plan["sigmet_cards"], plan["vaa_advisories"])
+            < len(plan["sigmet_cards"])
+            for plan in plans
+        ):
+            # Preserve the reviewed audit layout where it fits. Newly
+            # separated source messages can require measured continuations;
+            # the compatibility layout must never create an unreadable PDF.
+            return _hazard_page_plans(
+                sigmet_pages, advisory_pages, wafc_pages, vaac_lines,
+            )
         return plans
 
     base_page_count = max(

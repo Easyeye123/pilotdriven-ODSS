@@ -260,10 +260,10 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
             }
             # Retain the printed section while locating each message on its
             # own page. The section may span pages and more than one FIR.
-            messages = _split_cfp_va_sigmets(record, pages)
-            if len(messages) > 1:
-                record["messages"] = messages
             flight["weather"].append(record)
+            flight.setdefault("ofp_va_sigmet_messages", []).extend(
+                _split_cfp_va_sigmets(record, pages)
+            )
 
     sigmet = re.search(r"(?ms)^SIGMETs:\s*(?P<body>.*?)(?=^Tropical Cyclone SIGMETs:)", text)
     if sigmet:
@@ -361,10 +361,12 @@ def ofp_volcano_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
     """
     records = [dict(item) for item in flight.get("volcanic_advisories") or []]
     seen = set()
-    sigmets = [message
-               for record in flight.get("weather") or []
-               if record.get("record_type") == "VA_SIGMET"
-               for message in (record.get("messages") or _split_cfp_va_sigmets(record))]
+    sigmets = flight.get("ofp_va_sigmet_messages")
+    if sigmets is None:
+        sigmets = [message
+                   for record in flight.get("weather") or []
+                   if record.get("record_type") == "VA_SIGMET"
+                   for message in (record.get("messages") or _split_cfp_va_sigmets(record))]
     for record in sigmets:
         text = " ".join(str(record.get("text") or "").split())
         if not text or text in seen:

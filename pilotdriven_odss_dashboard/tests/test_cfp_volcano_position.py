@@ -137,6 +137,10 @@ def test_each_concatenated_sigmet_keeps_its_own_position_validity_fir_and_page(s
                                   {"name": "B", "latitude": -15, "longitude": 130}]}
     enrich_weather(flight, pages)
     assert len(flight["weather"]) == 1, "preserve the original aggregate weather source"
+    assert flight["weather"][0] == {
+        "record_type": "VA_SIGMET", "location": "WIIF", "source_page": 1,
+        "text": " ".join(messages),
+    }, "derived message metadata must not change the original weather source identity"
     advisories = _va_cfp_advisories(flight)
     assert len(advisories) == 3
     expected = [("MT KRAKATAU", "WIIF", "160805", "161405", -6.1, 105 + 25/60),

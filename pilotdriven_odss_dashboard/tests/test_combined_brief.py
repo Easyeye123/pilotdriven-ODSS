@@ -4711,7 +4711,8 @@ def test_enroute_page_refuses_silent_release_gate_overflow(tmp_path):
         )
 
 
-def test_lossless_hazard_plan_moves_sigmet_after_full_named_advisories():
+@pytest.mark.parametrize("audit_rev3_v8", [False, True])
+def test_lossless_hazard_plan_moves_sigmet_after_full_named_advisories(audit_rev3_v8):
     cards = [
         {"name": f"TEST SIGMET {index}", "_screen_lines": ["ONE", "TWO"]}
         for index in (1, 2)
@@ -4721,7 +4722,7 @@ def test_lossless_hazard_plan_moves_sigmet_after_full_named_advisories():
         "derived": " ".join(["LONG SOURCE-DERIVED ADVISORY RECEIPT"] * 8),
     } for index in (1, 2)]
 
-    plans = _hazard_page_plans([cards], [advisories], [[]], [])
+    plans = _hazard_page_plans([cards], [advisories], [[]], [], audit_rev3_v8=audit_rev3_v8)
 
     planned_names = [
         card["name"]
