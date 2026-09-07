@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from hashlib import sha256
 from datetime import datetime, timezone
 from typing import Any
 
@@ -310,6 +311,36 @@ def _cfp_volcano_position(text: str, volcano: str) -> dict[str, Any] | None:
         return None
     latitude, longitude = positions.pop()
     return {"latitude": latitude, "longitude": longitude, "source": "ofp_printed_position"}
+
+
+def ofp_volcano_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
+    """Give cards and maps the same source-bound OFP notices, including SIGMETs.
+
+    Every position is read from its own record. A nearby ash vertex or a
+    second notice about the same volcano never fills a missing position.
+    Source identity keeps separate SIGMET/ASHTAM evidence selectable even
+    when both markers occupy the same coordinates.
+    """
+    records = [dict(item) for item in flight.get("volcanic_advisories") or []]
+    seen = set()
+    for record in flight.get("weather") or []:
+        if record.get("record_type") != "VA_SIGMET":
+            continue
+        text = " ".join(str(record.get("text") or "").split())
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        names = {name.upper() for name in re.findall(r"\bVA ERUPTION\s+((?:MT|MOUNT)\s+[A-Z]+)", text, re.IGNORECASE)}
+        volcano = next(iter(names)) if len(names) == 1 else None
+        records.append({
+            **record,
+            "advisory_kind": "VA_SIGMET",
+            "volcano": volcano,
+            "notam_id": None,
+            "source_id": f"ofp-va-sigmet:{sha256(text.encode()).hexdigest()[:24]}",
+            "volcano_position": _cfp_volcano_position(text, volcano) if volcano else None,
+        })
+    return records
 
 
 def _parse_cfp_volcano_advisories(

@@ -5,6 +5,7 @@ from math import isfinite
 from typing import Any
 
 from ..odss.constants import edto_sectors
+from ..odss.enrichment import ofp_volcano_records
 from .config import MapSettings
 from .contract import MapBounds, MapContract
 from .labels import choose_priority_labels, role_priority
@@ -253,7 +254,7 @@ def build_map_contract(
     # A source-held NOTAM position is a location marker, not an ash polygon,
     # proximity finding or current activity claim. Preserve source identity
     # even when an official VAAC advisory also names the same volcano.
-    for advisory in flight.get("volcanic_advisories") or []:
+    for advisory in ofp_volcano_records(flight):
         position = advisory.get("volcano_position") or {}
         if position.get("source") != "ofp_printed_position":
             continue
@@ -265,12 +266,13 @@ def build_map_contract(
             continue
         vaa_features.append({
             "type": "Feature",
-            "id": f"ofp-volcano:{advisory.get('volcano')}:{advisory.get('notam_id')}",
+            "id": advisory.get("source_id") or f"ofp-volcano:{advisory.get('volcano')}:{advisory.get('notam_id')}",
             "geometry": {"type": "Point", "coordinates": [longitude, latitude]},
             "properties": {
                 "volcano_marker": True,
                 "volcano": advisory.get("volcano"),
                 "notam_id": advisory.get("notam_id"),
+                "source_id": advisory.get("source_id"),
                 "source_page": advisory.get("source_page"),
                 "source": "ofp_printed_position",
                 "not_for_navigation": True,

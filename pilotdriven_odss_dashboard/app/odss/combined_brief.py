@@ -160,7 +160,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-07-source-evidence-v37"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-07-sigmet-source-evidence-v38"
 
 
 def combined_briefing_cache_token(

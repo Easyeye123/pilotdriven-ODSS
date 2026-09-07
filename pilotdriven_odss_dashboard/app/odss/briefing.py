@@ -21,6 +21,7 @@ from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
 from .deferred_dispatch import build_deferred_dispatch_gates
 from .engines import detect_terrain_events, detect_vws_events, notam_dashboard_line
+from .enrichment import ofp_volcano_records
 from .pilot_briefing import (
     normalize_notam_references,
     prepare_pilot_findings,
@@ -3453,7 +3454,10 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
     "1 OFP advisory"."""
     advisories: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for advisory in flight.get("volcanic_advisories") or []:
+    source_records = ofp_volcano_records(flight)
+    for advisory in source_records:
+        if advisory.get("advisory_kind") == "VA_SIGMET":
+            continue
         volcano = str(advisory.get("volcano") or "UNNAMED VOLCANO").strip().upper()
         notam_id = str(advisory.get("notam_id") or "").strip().upper()
         text = str(advisory.get("text") or "").strip()
@@ -3481,8 +3485,8 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
             "notam_id": notam_id,
             "volcano_position": advisory.get("volcano_position"),
         })
-    for record in flight.get("weather") or []:
-        if record.get("record_type") != "VA_SIGMET":
+    for record in source_records:
+        if record.get("advisory_kind") != "VA_SIGMET":
             continue
         text = str(record.get("text") or "")
         key = " ".join(text.split())
@@ -3518,6 +3522,10 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
             "valid_to": valid.group(2) if valid else None,
             "source_page": record.get("source_page"),
             "advisory_kind": "VA_SIGMET",
+            "volcano": record.get("volcano"),
+            "notam_id": None,
+            "source_id": record.get("source_id"),
+            "volcano_position": record.get("volcano_position"),
         })
     return advisories
 

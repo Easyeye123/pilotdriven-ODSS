@@ -3,6 +3,7 @@ import pytest
 from app.odss.enrichment import _cfp_volcano_position
 from app.odss_map_v06.config import MapSettings
 from app.odss_map_v06.geojson import build_map_contract
+from app.odss.briefing import _va_cfp_advisories
 
 
 @pytest.mark.parametrize("name,text,expected", [
@@ -70,3 +71,46 @@ def test_ofp_marker_is_source_bound_without_ash_or_proximity_claim():
     assert "MAYON</text>" in svg
     assert "<path " in svg
     assert "<polygon " not in svg
+
+
+@pytest.mark.parametrize("position,expected", [
+    ("PSN S0606 E10525", (-6.1, 105 + 25/60)),
+    ("PSN S0699 E10525", None),
+    ("", None),
+])
+def test_sigmet_card_and_map_share_the_record_position(position, expected):
+    flight = {
+        "route_waypoints": [
+            {"name": "A", "latitude": -7, "longitude": 104},
+            {"name": "B", "latitude": -5, "longitude": 106},
+        ],
+        "weather": [{
+            "location": "WIIF", "record_type": "VA_SIGMET", "source_page": 13,
+            "text": f"WIIF JAKARTA FIR WV SIGMET 03 VALID 160805/161405 WIII- "
+                    f"WIIF JAKARTA FIR VA ERUPTION MT KRAKATAU {position} "
+                    "VA CLD OBS AT 0740Z WI S0603 E10531 - S0655 E10521 "
+                    "- S0700 E10445 SFC/FL050 MOV SW 05KT NC=",
+        }],
+        # A second source must never supply the SIGMET's missing/invalid PSN.
+        "volcanic_advisories": [{
+            "volcano": "KRAKATAU", "notam_id": "AX3655/26", "source_page": 29,
+            "text": "C)KRAKATAU 602-00 D)S0606 E10525",
+            "volcano_position": _cfp_volcano_position("KRAKATAU PSN S0606 E10525", "KRAKATAU"),
+        }],
+    }
+    advisory = next(a for a in _va_cfp_advisories(flight) if a["advisory_kind"] == "VA_SIGMET")
+    contract = build_map_contract(flight, [], MapSettings(provider="schematic"))
+    markers = [f for f in contract.hazards_geojson["features"]
+               if f["properties"].get("source_page") == 13]
+    if expected is None:
+        assert advisory.get("volcano_position") is None
+        assert markers == [], "ash vertices or another notice must not stand in for the volcano position"
+    else:
+        assert advisory["volcano_position"]["latitude"] == pytest.approx(expected[0])
+        assert advisory["volcano_position"]["longitude"] == pytest.approx(expected[1])
+        assert len(markers) == 1
+        assert markers[0]["geometry"]["coordinates"] == pytest.approx([expected[1], expected[0]])
+        assert markers[0]["properties"]["source_id"] == advisory["source_id"]
+        assert markers[0]["properties"]["notam_id"] is None
+        assert markers[0]["properties"]["source"] == "ofp_printed_position"
+        assert "volcano_ring" not in markers[0]["properties"]
