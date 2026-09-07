@@ -2106,6 +2106,25 @@ def test_va_advisory_without_readable_polygon_has_no_derived_line() -> None:
     assert view["vaa"]["cfp_advisories"][0]["derived"] is None
 
 
+def test_sigmet_cards_keep_each_message_fir_and_do_not_drop_shared_ids() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    messages = [
+        "WS SIGMET 8 VALID 161000/161300 YMMC- YMMM MELBOURNE FIR SEV TURB FCST ENTIRE FIR NC=",
+        "WS SIGMET 8 VALID 161000/161300 WMKK- WMFC KUALA LUMPUR FIR EMBD TS OBS ENTIRE FIR NC=",
+        "WS SIGMET 8 VALID 161000/161300 WIII- WIIF JAKARTA FIR EMBD TS OBS ENTIRE FIR NC=",
+        "WS SIGMET 8 VALID 161000/161300 EMBD TS OBS ENTIRE FIR NC=",
+    ]
+    record = {"location": "YMMM", "record_type": "SIGMET", "text": " ".join(messages)}
+    flight["weather"] = [record, deepcopy(record)]
+    held = deepcopy(flight["weather"])
+    cards = build_briefing_view(flight, [], [])["hazards"]["sigmet_cards"]
+    assert len(cards) == 4, "same numbers in different FIRs are separate source messages"
+    assert [card["fir"] for card in cards] == ["YMMM", "WMFC", "WIIF", None]
+    assert [card["text"] for card in cards] == messages
+    assert cards[-1]["name"].startswith("FIR UNRESOLVED SIGMET 8")
+    assert flight["weather"] == held
+
+
 def test_sigmet_cards_split_merged_records_and_carry_verdict_reasons() -> None:
     flight = _flight(LOG_PAGE_LOW)
     # One CFP FIR block printing two SIGMETs, exactly as Lido does. ALPHA is

@@ -3181,16 +3181,23 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
         if record.get("record_type") != "SIGMET":
             continue
         text = str(record.get("text") or "")
-        # A OFP FIR block can print several SIGMETs in one record.
-        pieces = re.split(r"(?=\bW[SVC]\s+SIGMET\s+\w+\s+VALID\b)", text)
+        # An OFP section can hold several FIRs. Use each message's own
+        # issuing-office/FIR header, never the first FIR of the whole section.
+        pieces = [piece for piece in re.split(r"(?=\bW[SVC]\s+SIGMET\s+\w+\s+VALID\b)", text)
+                  if re.match(r"W[SVC]\s+SIGMET\b", piece)]
         for piece in pieces:
+            if "=" in piece:
+                piece = piece[:piece.index("=") + 1]
             head = re.search(
                 r"\b(W[SVC])\s+SIGMET\s+(\w+)\s+VALID\s+(\d{6})/(\d{6})", piece
             )
             if not head:
                 continue
-            fir = str(record.get("location") or "").strip().upper()
-            key = f"{fir}-{head.group(2)}-{head.group(3)}"
+            own_fir = re.match(r"\s*[A-Z]{4}\s*-\s*([A-Z]{4})\b", piece[head.end():])
+            fir = own_fir.group(1) if own_fir else None
+            if fir is None and len(pieces) == 1:
+                fir = str(record.get("location") or "").strip().upper() or None
+            key = " ".join(piece.split())
             if key in seen:
                 continue
             seen.add(key)
@@ -3205,7 +3212,7 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
             geometry = _screening_geometry(points, waypoints)
             valid_from = _sigmet_utc(flight, head.group(3))
             valid_to = _sigmet_utc(flight, head.group(4), near=valid_from)
-            name = f"{fir} SIGMET {head.group(2)}"
+            name = f"{fir or 'FIR UNRESOLVED'} SIGMET {head.group(2)}"
             if phenomenon:
                 name += f" - {phenomenon.group(1).strip()}"
             card: dict[str, Any] = {
