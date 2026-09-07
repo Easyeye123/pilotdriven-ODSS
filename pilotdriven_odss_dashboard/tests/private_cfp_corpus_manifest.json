@@ -992,6 +992,49 @@
      "planning_publication": "f0922bd22ec1a619b4a36c480c5312d614570d775f1251fd7e085bc4c7ae2567"
     }
    }
+  },
+  {
+   "case_id": "SQ38-SIN-LAX-29AUG",
+   "filename": "SQ38-29AUG2026-OFP-for-prod-proof.pdf",
+   "source_sha256": "af60b08ad75e2bd1258fd2e327816c6248017f082634a69d83dc130fbc596557",
+   "source_page_count": 108,
+   "flight_number": "SQ38",
+   "departure": "WSSS",
+   "destination": "KLAX",
+   "departure_iata": "SIN",
+   "destination_iata": "LAX",
+   "route_point_count": 98,
+   "route_hash": "90b4d3c146f3b53117e159090cf67bd31f740f891605f40b61bd624fdea30cc1",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 163,
+     "weather": 23,
+     "alternates": 4,
+     "deferred_items": 1,
+     "edto_sectors": 3,
+     "edto_airports": 3,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 98,
+     "flight_planning_etps": 1,
+     "intam_records": 22,
+     "notam_procedure_records": 4,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "6c4a12510b1af6395568b08a516fe1505f861eee19f9356a0e7e5d58bd65464b",
+     "weather": "72554057312331a281a3a99af2ecf2a22a2131e9856cf863a85b371cc5b75fb8",
+     "alternates": "d6ad115323bfb4dae81d85c93c09fb544f94f6ce4bf2606114d76f87ee54e730",
+     "deferred_items": "800fbdc5c3b5ffbfe694d2da627e7a2659a3de11603deebf49216a123344e959",
+     "edto_sectors": "0b3c810d0e0aea93e36bb5e7d7e0e04d409097dd3a8aa7523ab961c27090f3fc",
+     "edto_airports": "8227378ded240bce38d3f42f36628bb5047f599b238762a8980f0d4807d39d16",
+     "fuel_enroute_airports": "2f27912341bb69bffb6a8c6b45ffc86d2601664f5f9765389bd6fd3fa9933809",
+     "route_waypoints": "672aa7f5504f864c054da7d8cc402f5dbe1268c921cf8fa5c9c5c0091f42559f",
+     "flight_planning_etps": "adc5a972ff6dc0553d719b12092392e7ee16a4892e74c299236cb3c0121e3975",
+     "intam_records": "5a093392d912a49bd5bd02ddc5c55dc04981626b7504053920d0b87911400d43",
+     "notam_procedure_records": "00865392bd8ebe8eda30ebc403eb55a24985323c92f3578215a0740293f9270a",
+     "planning_publication": "cec9a750a4b5ae00264b9c47e1c42772d7964de03e8848eb43f7dce242ad481c"
+    }
+   }
   }
  ]
 }

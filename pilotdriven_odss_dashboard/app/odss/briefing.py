@@ -78,9 +78,9 @@ def _parse_utc(value: str | None) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _display_utc(value: str | None) -> str:
+def _display_utc(value: str | None, *, include_year: bool = False) -> str:
     parsed = _parse_utc(value)
-    return parsed.strftime("%d %b %H%MZ").upper() if parsed else "--"
+    return parsed.strftime("%d %b %Y %H%MZ" if include_year else "%d %b %H%MZ").upper() if parsed else "--"
 
 
 def _display_registration(value: str | None) -> str:
@@ -3465,6 +3465,9 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
         if not text or key in seen:
             continue
         seen.add(key)
+        valid_from = _parse_utc(advisory.get("valid_from_utc"))
+        valid_to = _parse_utc(advisory.get("valid_to_utc"))
+        crosses_year = bool(valid_from and valid_to and valid_from.year != valid_to.year)
         advisories.append({
             "name": " · ".join(
                 part
@@ -3477,8 +3480,8 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
             ),
             "text": text,
             "fir": None,
-            "valid_from": _display_utc(advisory.get("valid_from_utc")),
-            "valid_to": _display_utc(advisory.get("valid_to_utc")),
+            "valid_from": _display_utc(advisory.get("valid_from_utc"), include_year=crosses_year),
+            "valid_to": _display_utc(advisory.get("valid_to_utc"), include_year=crosses_year),
             "source_page": advisory.get("source_page"),
             "advisory_kind": "CFP_VAA_NOTICE",
             "volcano": volcano,

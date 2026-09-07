@@ -17,6 +17,7 @@ from app.odss.briefing import _va_cfp_advisories
     ("SEMERU", "C)SEMERU 603-30 D)S0806E11255 E)ORANGE", (-8.1, 112 + 55/60)),
     ("STROMBOLI", "VOLCANO STROMBOLI ID 211040, PSN COORDINATES 384728N0151246E", (38 + 47/60 + 28/3600, 15 + 12/60 + 46/3600)),
     ("EXAMPLE", "VOLCANO: EXAMPLE 123456 PSN: S123000 W1793000", (-12.5, -179.5)),
+    ("GREAT SITKIN", "ADVISORY FOR GREAT SITKIN VOLCANO / 520412N 1760748W / ALEUTIAN ISLANDS", (52 + 4/60 + 12/3600, -(176 + 7/60 + 48/3600))),
 ])
 def test_position_belongs_to_named_source_volcano(name, text, expected):
     position = _cfp_volcano_position(text, name)
@@ -40,9 +41,20 @@ def test_position_belongs_to_named_source_volcano(name, text, expected):
     "MAYON ERUPTION. VOLCANO: TAAL 123456 PSN N1315 E12341",
     "MAYON PSN N1315 E12341 MAYON PSN N1415 E12341",
     "MAYON PSN N1315 E12341 MAYON PSN N1399 E12341",
+    "MAYON VOLCANO / ASH OBS 1315N 12341E",
 ])
 def test_unverified_or_ambiguous_position_is_not_plotted(text):
     assert _cfp_volcano_position(text, "MAYON") is None
+
+
+def test_notice_validity_keeps_years_when_the_range_crosses_a_year():
+    card = _va_cfp_advisories({"volcanic_advisories": [{
+        "volcano": "GREAT SITKIN", "notam_id": "1A1227/25", "text": "SOURCE NOTICE",
+        "valid_from_utc": "2025-10-26T03:52:00+00:00",
+        "valid_to_utc": "2026-10-26T03:52:00+00:00",
+    }]})[0]
+    assert card["valid_from"] == "26 OCT 2025 0352Z"
+    assert card["valid_to"] == "26 OCT 2026 0352Z"
 
 
 def test_ofp_marker_is_source_bound_without_ash_or_proximity_claim():

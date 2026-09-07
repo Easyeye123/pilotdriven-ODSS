@@ -2764,3 +2764,29 @@ RCAA        TAIPEI FIR
     assert "=" not in advisories[0]["text"]
     assert "RCAA" not in advisories[1]["text"]
     assert "AIR TRAFFIC FLOW" not in advisories[1]["text"]
+
+
+@pytest.mark.parametrize("next_heading", ["", "SPEEDAIR CENTRAL\n--------------------\n", "SPEEDAIR CENTRAL\n--------------------\n\n"])
+def test_cfp_volcano_advisory_does_not_absorb_the_next_notice(next_heading: str) -> None:
+    page = f"""
+VAA GREAT SITKIN
+--------------------
+1A1227/25 VALID: 26-OCT-25 0352 - 26-OCT-26 0352
+VOLCANIC ACTIVITY ADVISORY FOR GREAT SITKIN VOLCANO.
+CONTACT ANCHORAGE ARTCC FOR ADDITIONAL INFORMATION.
+F) SFC G) UNL
+
+{next_heading}1A2616/26 VALID: 02-JUN-26 1500 - 31-DEC-26 0700
+DAILY 1500-0700
+UNRELATED AIRSPACE BOUNDARIES HAVE EXTENDED TO THE WEST.
+F) FL055 G) FL230
+"""
+    advisories = _parse_cfp_volcano_advisories([page], datetime(2026, 8, 29, tzinfo=UTC))
+
+    assert len(advisories) == 1
+    assert advisories[0]["notam_id"] == "1A1227/25"
+    assert advisories[0]["text"] == (
+        "VOLCANIC ACTIVITY ADVISORY FOR GREAT SITKIN VOLCANO. "
+        "CONTACT ANCHORAGE ARTCC FOR ADDITIONAL INFORMATION. F) SFC G) UNL"
+    )
+    assert advisories[0]["source_page"] == 1

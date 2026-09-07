@@ -290,7 +290,7 @@ def _cfp_volcano_position(text: str, volcano: str) -> dict[str, Any] | None:
         rf"\b{re.escape(volcano)}\b(?:\s+VOLCANO)?\s*"
         r"(?:\([A-Z][A-Z -]{1,60}\)\s*)?"
         r"(?:\(CAVW\s+[\d -]+\)|(?:ID\s+)?\d{3,7}(?:-\d{2})?[,;]?)?\s*"
-        r"(?:(?:PSN\s*:?(?:\s*COORDINATES)?|D\))\s*)?\(?\s*"
+        r"(?:(?:PSN\s*:?(?:\s*COORDINATES)?|D\))\s*)?(?:\(|/)?\s*"
         r"(?P<position>[NS]\d{4}(?:\d{2})?\s*[EW]\d{5}(?:\d{2})?"
         r"|\d{4}(?:\d{2})?[NS]\s*\d{5}(?:\d{2})?[EW])(?![A-Z0-9])",
         re.IGNORECASE,
@@ -437,6 +437,19 @@ def _parse_cfp_volcano_advisories(
                 stripped = lines[cursor].strip()
                 if _VOLCANO_ADVISORY_HEADING.fullmatch(stripped):
                     break
+                if _NOTAM_START.match(stripped):
+                    break
+                # Named airspace blocks need not carry an ICAO/FIR heading.
+                # Keep their title out of the volcano notice too, but require
+                # the underline and next NOTAM declaration as evidence.
+                if stripped and cursor + 1 < len(lines) and re.fullmatch(
+                    r"[-=]{3,}", lines[cursor + 1].strip(),
+                ):
+                    next_declaration = cursor + 2
+                    while next_declaration < len(lines) and not lines[next_declaration].strip():
+                        next_declaration += 1
+                    if next_declaration < len(lines) and _NOTAM_START.match(lines[next_declaration].strip()):
+                        break
                 # A named FIR heading starts the next NOTAM block.  Without
                 # this boundary the final VAA on a page can absorb unrelated
                 # FIR notices until the footer, corrupting both the evidence
