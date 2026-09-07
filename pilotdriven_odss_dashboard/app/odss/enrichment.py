@@ -288,6 +288,7 @@ def _cfp_volcano_position(text: str, volcano: str) -> dict[str, Any] | None:
     """
     pattern = re.compile(
         rf"\b{re.escape(volcano)}\b(?:\s+VOLCANO)?\s*"
+        r"(?:\([A-Z][A-Z -]{1,60}\)\s*)?"
         r"(?:\(CAVW\s+[\d -]+\)|(?:ID\s+)?\d{3,7}(?:-\d{2})?[,;]?)?\s*"
         r"(?:(?:PSN\s*:?(?:\s*COORDINATES)?|D\))\s*)?\(?\s*"
         r"(?P<position>[NS]\d{4}(?:\d{2})?\s*[EW]\d{5}(?:\d{2})?"
@@ -373,6 +374,12 @@ def ofp_volcano_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         seen.add(text)
         names = {name.upper() for name in re.findall(r"\bVA ERUPTION\s+((?:MT|MOUNT)\s+[A-Z]+)", text, re.IGNORECASE)}
+        # JMA also prints 'MT <name> (<alias>) PSN ...' without the eruption
+        # phrase. Anchor that form to the volcano's own PSN field.
+        names.update(name.upper() for name in re.findall(
+            r"\b((?:MT|MOUNT)\s+[A-Z]+)\s+(?:\([A-Z][A-Z -]{1,60}\)\s+)?PSN\b",
+            text, re.IGNORECASE,
+        ))
         volcano = next(iter(names)) if len(names) == 1 else None
         records.append({
             **record,

@@ -13,6 +13,7 @@ from app.odss.briefing import _va_cfp_advisories
     ("KRAKATAU", "VOLCANO: KRAKATAU 262000 PSN: S0606 E10525", (-6.1, 105 + 25/60)),
     ("KRAKATAU", "C)KRAKATAU 602-00 D)S0606E10525 E)ORANGE", (-6.1, 105 + 25/60)),
     ("KRAKATAU", "VA ERUPTION MT KRAKATAU PSN S0606 E10525", (-6.1, 105 + 25/60)),
+    ("SAKURAJIMA", "VOLCANO: SAKURAJIMA (AIRA CALDERA) 282080 PSN: N3136 E13039", (31.6, 130.65)),
     ("SEMERU", "C)SEMERU 603-30 D)S0806E11255 E)ORANGE", (-8.1, 112 + 55/60)),
     ("STROMBOLI", "VOLCANO STROMBOLI ID 211040, PSN COORDINATES 384728N0151246E", (38 + 47/60 + 28/3600, 15 + 12/60 + 46/3600)),
     ("EXAMPLE", "VOLCANO: EXAMPLE 123456 PSN: S123000 W1793000", (-12.5, -179.5)),
@@ -169,3 +170,19 @@ def test_legacy_concatenated_sigmet_does_not_invent_later_source_pages_or_borrow
     assert records[0]["volcano_position"]["latitude"] == pytest.approx(-6.1)
     assert records[1]["volcano_position"] is None
     assert all(record["source_page"] is None for record in records), "reanalysis must locate each page from the held OFP"
+
+
+@pytest.mark.parametrize("eruption", ["VA ERUPTION ", ""])
+def test_named_sigmet_position_accepts_a_parenthetical_volcano_name(eruption):
+    # Both JMA message forms are present in the private SQ24 source. The
+    # parenthetical name is part of the volcano identity, not an ash vertex.
+    flight = {"weather": [{"record_type": "VA_SIGMET", "location": "RJJJ", "source_page": 19,
+                           "text": "WV SIGMET S03 VALID 150227/150827 RJTD- RJJJ FUKUOKA FIR "
+                           + eruption + "MT SAKURAJIMA (AIRA CALDERA) PSN N3136 E13039 "
+                           "VA CLD OBS AT 0200Z WI N3134 E13039 - N3148 E13028 SFC/FL090="}]}
+    advisory = _va_cfp_advisories(flight)[0]
+    assert advisory["volcano"] == "MT SAKURAJIMA"
+    assert "MT SAKURAJIMA" in advisory["name"]
+    assert advisory["volcano_position"]["latitude"] == pytest.approx(31.6)
+    assert advisory["volcano_position"]["longitude"] == pytest.approx(130.65)
+    assert advisory["source_page"] == 19

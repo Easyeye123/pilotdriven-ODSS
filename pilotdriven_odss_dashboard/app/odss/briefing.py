@@ -3494,12 +3494,12 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
             # The OFP prints its wx list twice; one advisory, one card.
             continue
         seen.add(key)
-        volcano = re.search(r"VA ERUPTION\s+((?:MT|MOUNT)\s+[A-Z]+)", text)
+        volcano_name = record.get("volcano")
         sigmet_id = re.search(r"\bWV\s+SIGMET\s+(\w+)", text)
         valid = re.search(r"\bVALID\s+(\d{6})/(\d{6})", text)
         name = " · ".join(part for part in (
             "VOLCANIC ASH",
-            volcano.group(1) if volcano else None,
+            volcano_name,
             (
                 f"{record.get('location')} WV SIGMET {sigmet_id.group(1)}"
                 if sigmet_id else str(record.get("location") or "")
@@ -3513,7 +3513,7 @@ def _va_cfp_advisories(flight: dict[str, Any]) -> list[dict[str, Any]]:
                 flight.get("planned_level_profile"),
                 flight,
                 official_note=_va_official_note(
-                    flight, volcano.group(1) if volcano else None
+                    flight, volcano_name
                 ),
             ),
             "text": text,
