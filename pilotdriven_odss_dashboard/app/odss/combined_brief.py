@@ -11724,8 +11724,8 @@ def _operational_volcano_advisory_selection(
         for advisory in direct_advisories
     ]
     ofp = [
-        {**advisory, "_publication_source": "ofp"}
-        for advisory in ofp_advisories
+        {**advisory, "_publication_source": "ofp", "_publication_index": index}
+        for index, advisory in enumerate(ofp_advisories, start=1)
     ]
     held = [*direct, *ofp]
     if limit <= 0:
@@ -11759,6 +11759,7 @@ def draw_operational_hazard_page(
     vaac_lines: list[str],
     wafc_charts: list[dict[str, Any]],
     compact_overflow_note: str | None = None,
+    vaa_detail_bookmarks: dict[int, str] | None = None,
 ) -> None:
     """Weather evidence, named OFP volcano advisories and compact gaps."""
     width, _ = PAGE_SIZE
@@ -12085,13 +12086,25 @@ def draw_operational_hazard_page(
             )
             continuation = None
             required_lines = len(applicability_lines) + len(meta_lines)
-            if required_lines >= available_detail_lines:
+            source_capacity = available_detail_lines - required_lines
+            vaa_detail_bookmark = (vaa_detail_bookmarks or {}).get(advisory.get("_publication_index"))
+            ofp_continuation = publication_source == "ofp" and vaa_detail_bookmark
+            if source_capacity < 2 and ofp_continuation:
+                # Long SIGMET screening must remain complete. Its measured
+                # continuation pages hold the whole shared record; the scan
+                # card becomes a link instead of shrinking or dropping facts.
+                applicability_lines, meta_lines, source_lines = [], [], []
+                continuation = "FULL ADVISORY · CONTINUED IN PDF"
+            elif required_lines >= available_detail_lines:
                 raise ValueError(
                     "Operational VAA applicability/source metadata exceeds readable capacity."
                 )
-            source_capacity = available_detail_lines - required_lines
-            if len(source_lines) > source_capacity:
-                continuation = "CONTINUED · FULL SOURCE IN DASHBOARD"
+            elif len(source_lines) > source_capacity:
+                continuation = (
+                    "CONTINUED · FULL SOURCE IN PDF"
+                    if ofp_continuation
+                    else "CONTINUED · FULL SOURCE IN DASHBOARD"
+                )
                 source_capacity -= 1
                 if source_capacity < 1:
                     raise ValueError(
@@ -12118,6 +12131,12 @@ def draw_operational_hazard_page(
                 canvas.setFillColor(ACCENT)
                 canvas.setFont(SANS_BOLD, T_SMALL)
                 canvas.drawString(cell_x + 8.0, line_y, continuation)
+            if ofp_continuation:
+                canvas.linkRect(
+                    "", vaa_detail_bookmark,
+                    (cell_x, cell_top - rendered_cell_h, cell_x + cell_w, cell_top),
+                    relative=0, thickness=0,
+                )
 
         if len(advisories) > len(displayed_advisories):
             canvas.setFillColor(ACCENT)
@@ -14111,6 +14130,16 @@ def render_combined_briefing(
         operational_vaac_receipt_page_count = len(
             operational_vaac_receipt_pages
         )
+        # The compact hazard cards link to every complete OFP advisory. Use
+        # the existing measured paginator, including records beyond the scan.
+        operational_vaa_detail_pages = vaa_detail_pages
+        operational_vaa_detail_count = len(operational_vaa_detail_pages)
+        operational_vaa_bookmarks = {
+            int(match.group(1)): f"sec_hazard_ofp_{page_index}"
+            for page_index, detail_page in enumerate(operational_vaa_detail_pages, start=1)
+            for label, _ in detail_page["rows"]
+            if (match := re.fullmatch(r"VAA (\d+) NAME", label))
+        }
         operational_hazards_page = (
             operational_airports_page
             + 1
@@ -14125,6 +14154,7 @@ def render_combined_briefing(
             operational_hazards_page
             + 1
             + operational_vaac_receipt_page_count
+            + operational_vaa_detail_count
         )
         operational_coverage_page = operational_enroute_page + 1 + len(comms_note_pages)
         operational_terrain_page = operational_coverage_page + 1
@@ -14137,6 +14167,7 @@ def render_combined_briefing(
             + operational_critical_approach_count
             + operational_surface_shortening_count
             + operational_vaac_receipt_page_count
+            + operational_vaa_detail_count
             + int(has_terrain_annex)
             + eosid_continuation_count
             + len(all_note_pages)
@@ -14583,6 +14614,7 @@ def render_combined_briefing(
                 hazard_overflow_count,
                 "hazard record",
             ),
+            vaa_detail_bookmarks=operational_vaa_bookmarks,
         )
         canvas.addOutlineEntry("Weather / Route Hazards", "sec_hazard", level=0)
         canvas.showPage()
@@ -14600,7 +14632,7 @@ def render_combined_briefing(
                 section_label="WEATHER / ROUTE HAZARDS",
                 section_colour=COMMS_TEAL,
                 section_page_number=index + 1,
-                section_page_count=1 + operational_vaac_receipt_page_count,
+                section_page_count=1 + operational_vaac_receipt_page_count + operational_vaa_detail_count,
                 title=receipt_page["title"],
                 rows=receipt_page["rows"],
                 source_line=(
@@ -14621,6 +14653,23 @@ def render_combined_briefing(
                 receipt_bookmark,
                 level=0,
             )
+            canvas.showPage()
+        for index, detail_page in enumerate(operational_vaa_detail_pages, start=1):
+            bookmark = f"sec_hazard_ofp_{index}"
+            canvas.bookmarkPage(bookmark)
+            draw_shared_detail_page(
+                canvas, flight,
+                page_number=operational_hazards_page + operational_vaac_receipt_page_count + index,
+                page_count=operational_page_count,
+                section_label="WEATHER / ROUTE HAZARDS",
+                section_colour=COMMS_TEAL,
+                section_page_number=1 + operational_vaac_receipt_page_count + index,
+                section_page_count=1 + operational_vaac_receipt_page_count + operational_vaa_detail_count,
+                title=detail_page["title"], rows=detail_page["rows"],
+                source_line="Complete OFP advisory records from the shared briefing; source pages identify the original OFP",
+                page_family="deep",
+            )
+            canvas.addOutlineEntry(f"OFP Volcanic-Ash Sources {index}/{operational_vaa_detail_count}", bookmark, level=0)
             canvas.showPage()
         draw_operational_enroute_assurance_page(
             canvas,

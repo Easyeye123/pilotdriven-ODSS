@@ -175,6 +175,7 @@ _COMBINED_CRITICAL_APPROACH_TITLE = (
 _COMBINED_EDTO_DETAIL_TITLE = "EDTO TIMING / ALTERNATES"
 _COMBINED_AIRPORT_NOTAM_DETAIL_TITLE = "ALL SELECTED NOTAM DETAILS"
 _COMBINED_VAAC_RECEIPT_TITLE = "VAAC SOURCE RECEIPTS"
+_COMBINED_OFP_VAA_DETAIL_TITLE = "FULL VOLCANIC-ASH SOURCE DETAILS"
 _COMBINED_VAAC_RECEIPT_PAGE = re.compile(
     r"CONTINUED\s*\(\s*(?P<index>\d+)\s*/\s*(?P<count>\d+)\s*\)",
     re.IGNORECASE,
@@ -666,8 +667,10 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 receipt_pages: list[tuple[int, int]] = []
                 while (
                     cursor < page_count
-                    and _COMBINED_VAAC_RECEIPT_TITLE
-                    in extracted_pages[cursor].upper()
+                    and "WEATHER / ROUTE HAZARDS" in extracted_pages[cursor].upper()
+                    and any(title in extracted_pages[cursor].upper() for title in (
+                        _COMBINED_VAAC_RECEIPT_TITLE, _COMBINED_OFP_VAA_DETAIL_TITLE,
+                    ))
                 ):
                     receipt_text = extracted_pages[cursor]
                     receipt_match = _COMBINED_VAAC_RECEIPT_PAGE.search(
@@ -692,7 +695,7 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                         violations.append(ReportQualityViolation(
                             "COMBINED_VAAC_RECEIPT_STRUCTURE",
                             (
-                                "VAAC receipt pages must form one complete "
+                                "Weather source pages must form one complete "
                                 "ordered weather continuation sequence."
                             ),
                         ))

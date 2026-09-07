@@ -6542,6 +6542,60 @@ def test_all_terrain_events_and_full_vaa_source_text_reach_pdf(
     assert physical["valid"], physical["violations"]
 
 
+def test_operational_long_sigmet_keeps_all_evidence_on_linked_pdf_pages(tmp_path, monkeypatch):
+    from app.odss import briefing as briefing_module
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    real_build = briefing_module.build_briefing_view
+    advisories = [{
+        "name": f"VOLCANIC ASH · MT TESTVOLCANO · WAAF WV SIGMET {index}",
+        "advisory_kind": "VA_SIGMET", "volcano": "MT TESTVOLCANO", "fir": "WAAF",
+        "valid_from": "161000", "valid_to": "161600", "source_page": 16 + index,
+        "derived": "Shared route screening with held time and level qualification. " * 6 + f"SCREENING-END-{index}",
+        "text": "Full source message with its own coordinates and validity. " * 20 + f"SOURCE-END-{index}",
+    } for index in range(1, 6)]
+
+    def source_view(*args, **kwargs):
+        view = real_build(*args, **kwargs)
+        view["vaa"]["cfp_advisories"] = advisories
+        return view
+
+    monkeypatch.setattr(briefing_module, "build_briefing_view", source_view)
+    flight = sample_flight()
+    flight["fuel_summary"] = parse_page1_fuel_summary(SQ23_PAGE1)
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    out = tmp_path / "long-sigmet-linked-continuation.pdf"
+    render_combined_briefing(flight, findings, [], out)
+    with fitz.open(out) as document:
+        text = " ".join(" ".join(p.get_text() for p in document).split())
+        for index in range(1, 6):
+            assert f"SCREENING-END-{index}" in text
+            assert f"SOURCE-END-{index}" in text
+        hazard = next(p for p in document if "NAMED DIRECT / OFP VOLCANO ADVISORIES" in p.get_text())
+        assert "CONTINUED IN PDF" in hazard.get_text()
+        # /Fit page destinations are exposed as named links by some MuPDF
+        # versions. Verify the actual PDF page reference, not that wrapper.
+        destination_refs = [re.search(r"/Dest\s*\[\s*(\d+)\s+0\s+R", document.xref_object(link["xref"]))
+                            for link in hazard.get_links()]
+        source_pages = [p for p in document if "FULL VOLCANIC-ASH SOURCE DETAILS" in p.get_text()]
+        assert any(match and int(match.group(1)) == source_pages[0].xref for match in destination_refs)
+        source_by_ref = {p.xref: " ".join(p.get_text().split()) for p in source_pages}
+        card_targets = [source_by_ref[int(match.group(1))] for match in destination_refs
+                        if match and int(match.group(1)) in source_by_ref]
+        assert len(card_targets) == 4
+        for index, target_text in enumerate(card_targets, start=1):
+            assert f"VAA {index} NAME" in target_text
+        broken = tmp_path / "missing-weather-continuation.pdf"
+        document.delete_page(source_pages[0].number)
+        document.save(broken)
+    from app.odss.report_quality import validate_combined_briefing_pdf
+    invalid = validate_combined_briefing_pdf(broken)
+    assert not invalid["valid"]
+    assert any(v.code == "COMBINED_VAAC_RECEIPT_STRUCTURE" for v in invalid["violations"])
+    physical = scan_physical_pdf(out)
+    assert physical["valid"], physical["violations"]
+
+
 def test_operational_vaa_cards_print_shared_applicability_before_source_excerpt(
     tmp_path,
     monkeypatch,
@@ -6623,7 +6677,7 @@ def test_operational_vaa_cards_print_shared_applicability_before_source_excerpt(
         source_position = text.index("SOURCE TEXT ·", applicability_position)
         assert title_position < applicability_position < source_position
     assert "SOURCE-END-1" not in text
-    assert "CONTINUED · FULL SOURCE IN DASHBOARD" in text
+    assert "CONTINUED · FULL SOURCE IN PDF" in text
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
     assert physical["pages"][page_index]["visible_overlap_count"] == 0
