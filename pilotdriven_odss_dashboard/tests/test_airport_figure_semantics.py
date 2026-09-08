@@ -23,6 +23,8 @@ def _analysis(state):
     ('begins_after_reference',0xFFBC38), ('ended_before_reference',0x50D5EF)])
 def test_physical_runway_colour_follows_flight_state_without_mutating_app(tmp_path, state, expected):
     original = _overlay()
+    original['mapped'] = [{'notamNumber':'A1234/26', 'entityType':'runway', 'featureIds':['way/1'],
+                          'markClass':'closure', 'scope':'whole_entity', 'stateAtReference':'active_at_reference'}]
     before = deepcopy(original)
     analysis = _analysis(state)
     overlay = analysed_airport_overlay(original, analysis)
@@ -35,6 +37,14 @@ def test_physical_runway_colour_follows_flight_state_without_mutating_app(tmp_pa
         assert next(s for s in spans if s['text'] == '01/19')['color'] == expected
         assert check_airport_figure_states(pdf[0], original, analysis) == []
     assert original == before
+
+
+def test_another_active_notice_remains_effective_when_one_closure_ends():
+    original = _overlay()
+    original['mapped'] = [{'notamNumber':'A9999/26', 'entityType':'runway', 'featureIds':['way/1'],
+                          'markClass':'closure', 'scope':'whole_entity', 'stateAtReference':'active_at_reference'}]
+    result = analysed_airport_overlay(original, _analysis('ended_before_reference'))
+    assert result['mapped'][0] == original['mapped'][0]
 
 
 def test_gate_rejects_old_grey_figure_despite_correct_written_consequence(tmp_path):

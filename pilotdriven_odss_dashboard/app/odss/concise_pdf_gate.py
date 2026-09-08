@@ -43,7 +43,9 @@ def check_airport_figure_states(page, overlay, analysis) -> list[dict[str, str]]
                    if set(ref.split("/")) & set(e.get("runways") or [])]
         if not effects:
             continue
-        effects += [e for e in overlay.get("mapped") or [] if ids & set(e.get("featureIds") or [])]
+        evaluated_sources = {e.get("notam_id") for e in effects}
+        effects += [e for e in overlay.get("mapped") or [] if ids & set(e.get("featureIds") or [])
+                    and e.get("notamNumber") not in evaluated_sources]
         active = any(e.get("stateAtReference") == "active_at_reference"
                      and e.get("markClass") == "closure" and e.get("scope") == "whole_entity" for e in effects)
         upcoming = any(e.get("stateAtReference") == "begins_after_reference" for e in effects)

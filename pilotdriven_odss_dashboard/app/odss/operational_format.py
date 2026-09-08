@@ -257,6 +257,19 @@ def analysed_airport_overlay(overlay, analysis):
                        if (f.get("properties") or {}).get("aeroway") == "runway"
                        and set(str((f.get("properties") or {}).get("ref") or "").split("/")) & runways]
         if feature_ids:
+            # The evaluated schedule replaces this source's coarse mark for
+            # these runway features. Other notices remain independent, so an
+            # overlapping active restriction still takes precedence.
+            retained = []
+            for mark in result.get("mapped") or []:
+                if (mark.get("notamNumber") == effect["notam_id"] and mark.get("entityType") == "runway"
+                        and mark.get("markClass") in {"closure", "scheduled"}):
+                    remaining = [fid for fid in mark.get("featureIds") or [] if fid not in feature_ids]
+                    if remaining:
+                        retained.append({**mark, "featureIds": remaining})
+                else:
+                    retained.append(mark)
+            result["mapped"] = retained
             result.setdefault("mapped", []).append({
                 **effect, "notamNumber": effect["notam_id"], "entityType": "runway",
                 "entityRef": "/".join(effect["runways"]), "featureIds": feature_ids,

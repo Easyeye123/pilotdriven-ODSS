@@ -2,7 +2,7 @@
  "schema_version": 1,
  "extraction_contract_version": 2,
  "description": "Private physical-PDF release corpus. Files remain outside git; exact hashes make the gate reproducible and fail closed.",
- "extraction_baseline_policy": "Frozen and reviewed from fresh current full-analysis outputs of the exact SHA-pinned sources with live NOAA AWC disabled. Counts and SHA-256 digests cover all full ordered deterministic records. Any parser change requires deliberate evidence review and explicit remint; the release runner never derives or blesses these values.",
+ "extraction_baseline_policy": "Frozen and reviewed from fresh current full-analysis outputs of the exact SHA-pinned sources with live NOAA AWC disabled. Counts and SHA-256 digests cover all full ordered deterministic records. Any parser change requires deliberate evidence review and explicit remint; the release runner never derives or blesses these values. On 2026-09-09, 22 planning-publication digests were deliberately reminted after independent source-page verification of previously omitted inline PLAN QNH and PLAN WIND values. All source hashes, counts and other extraction digests remain unchanged; wind tokens are retained as printed without conversion.",
  "cases": [
   {
    "case_id": "SQ223-SIN-PER",
@@ -43,7 +43,7 @@
      "flight_planning_etps": "aaecdfb584379fd1a3aafc81264646be44a6cde0dff98d34bccf5b9ceff72c64",
      "intam_records": "dd4f7a08be7b2f5e06f2d67a43f4830c453ff8f4845b4a7fc3b66fecab53e174",
      "notam_procedure_records": "0dcb1f1d458f267ca3230013e2b5a0c8ebfd749b57bd27305415cae18f743449",
-     "planning_publication": "cb80a5a82253bf902f6ddebdecbb6de9ec479efa01f35aba08a570a63dce1785"
+     "planning_publication": "19feddc18047821672e92180586799eec23b2f4ea96c4c41339e68f8eadf8ca3"
     }
    }
   },
@@ -86,7 +86,7 @@
      "flight_planning_etps": "e5a4f69f2481b12d94f77f9ebba9a7b0f15834fafaddf01b497a42bc84664cbf",
      "intam_records": "72ee05763a4c2534c3cccb578dab3b145f56b352b9ba441320c47d818136221d",
      "notam_procedure_records": "303e6da110b7d2b4e8ee91037e261ae65247102f2683a4c3946fb491b84d4214",
-     "planning_publication": "f63a000023f3a7eb0afaa2428798ecdf6b05a7194ef65ae86f262daa0941f978"
+     "planning_publication": "ec24addb0b44ba46d992f1cbfe4b004622ce9c9585a43aa47f373eff20d6dcfe"
     }
    }
   },
@@ -129,7 +129,7 @@
      "flight_planning_etps": "4cf0397bf273f76cba282861907348cb695a30748a9b02d778e655ca56ee0844",
      "intam_records": "d06bdb33f281385042f7b58ea777b88e73e10dde710048fe095a52c7eeb3b5a2",
      "notam_procedure_records": "df40072236cac8efbbc3fb20e8f557a4d4ef06b248100013a3610ea6e0e9abb1",
-     "planning_publication": "d90b9e4f99fc1349706bef06748685e3105c650051673221734de9100061d39f"
+     "planning_publication": "81e857ce472c8a7020068307ff01f4e05f4f8de52a95037417bd9dc744c74706"
     }
    }
   },
@@ -215,7 +215,7 @@
      "flight_planning_etps": "8b464f682668d7b649467fce902930f2ed9c7ca0ef0fab3c60404cd5a3e18f5c",
      "intam_records": "65ef8a0f126b707ec66023dd254bd80bffbeb42f483d2044a408840bd4b6b2e8",
      "notam_procedure_records": "14466838735923a44343f188a70d4c672dcf388a630581195ac187d2c57ade72",
-     "planning_publication": "2516d996532e72f4fa82a55ca83e4b141d78e8d2fbe1634def5358e3f6533490"
+     "planning_publication": "0932aef41a9c1a37055d15b0e671224bf48711f65d04855b4247503c4c15c15f"
     }
    }
   },
@@ -301,7 +301,7 @@
      "flight_planning_etps": "a30172ac419e5cee49fb5b7301e10992f8e6c52bc8f6cdb19ba8ecd41d4600b4",
      "intam_records": "cab900f03ff720d466ef7708fb3ce1367d51ca19eef0476bd5caa64a3e84e68a",
      "notam_procedure_records": "9b25d3d940be2b556f6542b24f425a18ef2923cbd6b8cb092a6f7ddc4f1584a0",
-     "planning_publication": "14ded3c0d9249c92da0718cc07a9448b04db8f39b17e0768e429f83816d2753d"
+     "planning_publication": "2752a79afb9f1f72d1daea4d9c2df2db3a6ce3b313eaab0e34bb25ac20adbb4c"
     }
    }
   },
@@ -344,7 +344,7 @@
      "flight_planning_etps": "7ad1ccd21fa42498db94d7cfe38d45190e180120141c7c7a6c17e6f93eb789b7",
      "intam_records": "1a3d6150908d3e99d9fa2f8fdc4565d14bb1579138d2643b036008516e5f8335",
      "notam_procedure_records": "149f2cc3c64401187f310fed0705d73b6d844d1fe8e96c07cae6681f00f93211",
-     "planning_publication": "2e5cb2c0b2ca97415c2fccf2644c9a26fc4eba79c21beb794551d4c7d41eafb7"
+     "planning_publication": "c22a459844c7f02a835af18756f76ad6427e589b0079de1a2231ae8e3c859906"
     }
    }
   },
@@ -387,7 +387,7 @@
      "flight_planning_etps": "e8e1a11d84ab102107d10636537058a7b9aee0dc65f20d7aefcbe35b3f3fcf1f",
      "intam_records": "b64e24e8dbe14f9139a69655bd881a959f0aabb6b2abd15b3911ab3c4253fb72",
      "notam_procedure_records": "8762207ba133873408533ec804ce887333be2e57c268aa2c99d86d5ff50690fb",
-     "planning_publication": "dd013743225e03af90f9a0a3a7174f72ac7a8ebb532276c517e0000d5e2109f3"
+     "planning_publication": "0ef38f51b4a5a7af6c5be2651a79c853453a636e55a52ab6e4f1756bddd74a58"
     }
    }
   },
@@ -430,7 +430,7 @@
      "flight_planning_etps": "54482314069d3c3fa59f08cf34d7d53b5aa587d85b0c5860c56928045366653d",
      "intam_records": "3beac5c403f08aaabb23cb4bbd5695f8c05d6901b46910961e0da225f9e364ee",
      "notam_procedure_records": "2d6983b27b7b1879173afe43d272c051f1ef720a478a74eb9c921cb66238b296",
-     "planning_publication": "e853e73e1324214ef01165de6fad6435c4386e2de1cb4589e547bb299aa878d0"
+     "planning_publication": "12f4a8692818591d12df28123741822a2a9e4c69b0de8a82908dd9cd8742a6c5"
     }
    }
   },
@@ -473,7 +473,7 @@
      "flight_planning_etps": "2dd51bbe50331b65900957e35d984187f3bf1fde2347691942ee8c2935e8010e",
      "intam_records": "2b982bbd65edd31a015719a494c1a19c222400391cb3a62af5d2faf2cac4a97d",
      "notam_procedure_records": "2d6983b27b7b1879173afe43d272c051f1ef720a478a74eb9c921cb66238b296",
-     "planning_publication": "29fcec825db19388ac200d01dce639ad11f727e0b2aab0c5c4249beb3f8a9ebf"
+     "planning_publication": "cff7d5266043ed05fd6cdf30a81ff2b7aea1f55d355e0924a575a43a4e5296d2"
     }
    }
   },
@@ -516,7 +516,7 @@
      "flight_planning_etps": "bb08e0766ac9ef70c76b3483e522286a3f639f139180226255e39b4200467355",
      "intam_records": "903bccad94d90d9638f5b0408e87d552137a9a47ff696e3a2f6e05489467df83",
      "notam_procedure_records": "a4ac5e939cd635060aa50f5ec276d9ed3d9e252735206da7e5d5a0dc1700a834",
-     "planning_publication": "664862424c371478e0c6778cdb7947165f11ff1b4a993907199a4f5f0a0f8848"
+     "planning_publication": "f89cb10c5f2fb0d8821d4fccdc3942c628600add63930ef5bf35468fa832ae76"
     }
    }
   },
@@ -559,7 +559,7 @@
      "flight_planning_etps": "034cb796ac91b3837c8f0190b5e283c2c2f56eab044d258631655bb20b0165af",
      "intam_records": "48c69703cac36d0684269fba1c22ef601233b2dc93aad1047d417d6e44e03580",
      "notam_procedure_records": "f3d94e937502334cf017a1038a370f3bea0613ba6d07c107737eee5733f5ba74",
-     "planning_publication": "03d4a5f8accf9390a464e04298571be35ab5b1f6c0040c46aae7b20015661f5b"
+     "planning_publication": "c1c2c88e607bf8709b79c8f05c209f3b283b0a0c5dbb0fabb164868a9430bc63"
     }
    }
   },
@@ -602,7 +602,7 @@
      "flight_planning_etps": "11827c46cb95ccfb71914506062412159c0a5f03d381c866c291f77d9985ae91",
      "intam_records": "452669c5f08cf3c325730be6edda0ca3bfe36b3c3d817802c9d787dd9edaa46b",
      "notam_procedure_records": "18d9d40b6dd24db1b7b7495a6dc296d795741e42e901c6b0c1864dd0d3fbd5bc",
-     "planning_publication": "65ba7663c1f6fb295b7e1986f9817f6b45976fdc5ee459361d18825d79bd0a68"
+     "planning_publication": "3c12f4b262f916a7f40604be4f7a4200658af739876e1e921ae4d377855b2366"
     }
    }
   },
@@ -645,7 +645,7 @@
      "flight_planning_etps": "3e6a4e09001f23a5d8b3f573c5f24c6369b495e67c17e2e255ba43e7c4e1ba96",
      "intam_records": "6daa20e7e8af9f03f5fe9dca04b506f5a8b0b7e596ec4f179239b8bb45fb24df",
      "notam_procedure_records": "0dcb1f1d458f267ca3230013e2b5a0c8ebfd749b57bd27305415cae18f743449",
-     "planning_publication": "2f208f0056e00c944a3b17e079f6de2ed770aa3021ecb2928b8af1ee90fe4409"
+     "planning_publication": "616063e8224ff6e872ad1086dc7f9dd296154a9c4ce3505634c2ff2aa877387d"
     }
    }
   },
@@ -731,7 +731,7 @@
      "flight_planning_etps": "6dacd8ccccc4f8ba17489bfb49bd7126563dd40979f9560f0fcf77ee9374bd09",
      "intam_records": "ad53bc86d1c0da11b39e7defc5f034b1d4853ec3c1b835491e6d0af38ab367a9",
      "notam_procedure_records": "5f15acc3bfb56c7ceff09e7908d9e8eecf5395ec796e3830fb51f5ae93d186fe",
-     "planning_publication": "bd4533ac57433e5f8d37980d489b24153e436f4aac4cf93c95c53b819e30c598"
+     "planning_publication": "edd1d9d0ded850ea35f1f1574ad853b65f5d2e17fe386c922618cf6b9f227fd0"
     }
    }
   },
@@ -774,7 +774,7 @@
      "flight_planning_etps": "6351d9c813e999a5e0c59f871835152835e960f9405a20b984d433da90ab8ebb",
      "intam_records": "3c40734c8e3187863b8a45c300f8c3968cdf7750a3ccdb7b8967693199d8e09e",
      "notam_procedure_records": "11525e84826e5dacd2a0ae79886a283b0f7fc04874545d2640163deff7befcfa",
-     "planning_publication": "f4ede56a5a7e16a29e3d997cfeaaa518fd1d54963058351a6e8640ff8f59dc67"
+     "planning_publication": "eef56d90f4b9217df2161bcda7709437c1fab3644c593cee77ef3c7303ee06dc"
     }
    }
   },
@@ -817,7 +817,7 @@
      "flight_planning_etps": "8d5ec37e52fef7de4cf22e165fbd677a636a782de7301e186e3c061d7c41f385",
      "intam_records": "501199b1f7ccb336ef833c06431d745463c3592c7cd1679e86596de60e694fab",
      "notam_procedure_records": "d0ac17138bbdacc4f1c4b36a4f028fb0d192cd70fa6123532f49e7559ee0b6b6",
-     "planning_publication": "6d5789c2fa4bf7b01d1c8b9728b85cc206326a419c275b846da635676c815eca"
+     "planning_publication": "d3f22609c79495e944cc2087b8f0bb22abb5e5812c1ce30dc6615da105c07877"
     }
    }
   },
@@ -860,7 +860,7 @@
      "flight_planning_etps": "95561b4964d9dcd76c3e45132c9d0afc9303f2c7062151713684e7e1c04e128e",
      "intam_records": "3457e705ab4f80b93e5d9ee1878b29b020fe4084d206418d834e5c886dd0362d",
      "notam_procedure_records": "fed9ec750f428f746d362fe8bfe7a32f8e67dde3cb9c9309e7bbb5456164aba0",
-     "planning_publication": "a51db359217d8a87a027d0a1d326852cb9bd30308a8a9261ef82ced2eb8fb6d6"
+     "planning_publication": "022fda05cf8101a435ff9f9d1e6f5963468cc84cb1c84c68413448804e87b0d3"
     }
    }
   },
@@ -903,7 +903,7 @@
      "flight_planning_etps": "02066ab32e4248a3e7ee2da2966530d6e6db361fe9ffbc7f9b47db2fbdbef5e4",
      "intam_records": "8d961c45b46b548e364c3ce54246c5ba79e0fd423b28ed2015d00d422ad30614",
      "notam_procedure_records": "2d6983b27b7b1879173afe43d272c051f1ef720a478a74eb9c921cb66238b296",
-     "planning_publication": "d0c46c40879b4242f2d224fa241bee63cff282f621f51335fe2eec02122fee95"
+     "planning_publication": "2291efce9d7f363eff72482695a61a344edb630aeccd9c3e87baf8cf5cd9f377"
     }
    }
   },
@@ -946,7 +946,7 @@
      "flight_planning_etps": "0ac3590a4577b7def304d13a6493a64aa8527a1fac81723f2e3e81b72904ce24",
      "intam_records": "7c6d7973a579d07c975eb76a7261cc8e54dcf2d946da53ba00d4a0c8830dec6b",
      "notam_procedure_records": "2d6983b27b7b1879173afe43d272c051f1ef720a478a74eb9c921cb66238b296",
-     "planning_publication": "08f85e8bfc6ad5a9d9e2a681cbda11a95f6559b49f8e4f4caf3be3286135ed2c"
+     "planning_publication": "0d8b95278d5f21275ced7d4edd27945aad14f87702e59f0bef82e02111821e3c"
     }
    }
   },
@@ -989,7 +989,7 @@
      "flight_planning_etps": "7c192e35853321c804e9c6cb4424030953ebfb1f2e1d29482db31be26d11b599",
      "intam_records": "98d5cdbe2a575b01649c97b30f62d930c535dae9dc3185b4a746caa9953f1fb5",
      "notam_procedure_records": "172063ecc75fbfcdc8d83028ca45a16d27d093d518eb0a5065ff27dcaa790395",
-     "planning_publication": "f0922bd22ec1a619b4a36c480c5312d614570d775f1251fd7e085bc4c7ae2567"
+     "planning_publication": "377485273137c8f6a6dde829c103316ad0de69d71b8b08ebae8a4d550a83c4dd"
     }
    }
   },
@@ -1032,7 +1032,7 @@
      "flight_planning_etps": "adc5a972ff6dc0553d719b12092392e7ee16a4892e74c299236cb3c0121e3975",
      "intam_records": "5a093392d912a49bd5bd02ddc5c55dc04981626b7504053920d0b87911400d43",
      "notam_procedure_records": "00865392bd8ebe8eda30ebc403eb55a24985323c92f3578215a0740293f9270a",
-     "planning_publication": "cec9a750a4b5ae00264b9c47e1c42772d7964de03e8848eb43f7dce242ad481c"
+     "planning_publication": "98559ab99951784956c50c0b73fdc0614558a11e7ea1b99cae9bf0eaa90ac1c5"
     }
    }
   },
@@ -1075,7 +1075,7 @@
      "flight_planning_etps": "92d481b1153c04fa715ca1e95544726d8bb3a82935167be8ff34464066fb1724",
      "intam_records": "f9f1946ea4b72827368ea999849b1a4de08c2341e43e1fab59470d6d5ddb1370",
      "notam_procedure_records": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-     "planning_publication": "f44048cffd587c79836361452bbf5663dc1460fb799c598554bff89cdb146fb6"
+     "planning_publication": "357b9ae97c6f13a2e264340dc62ff488dd8a7a017a42c37ddc6a93c92c1e929f"
     }
    }
   }

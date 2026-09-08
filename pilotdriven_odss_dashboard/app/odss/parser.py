@@ -124,7 +124,7 @@ def _parse_performance(perf_text: str) -> dict[str, Any]:
             r"^\s*(?:PLAN\s+)?WIND\s*:[ \t]*(?P<value>\S+)",
         ) or _line_value(
             perf_text,
-            r"\bPLAN\s+WIND\s+(?P<value>(?:VRB|\d{3})/?\d{2,3}(?:G\d{2,3})?(?:KT)?)\b",
+            r"\bPLAN\s+WIND\s+(?P<value>(?:VRB/?|\d{2,3}/|\d{3})\d{2,3}(?:G\d{2,3})?(?:KT)?)\b",
         ),
         "packs_on": (
             True

@@ -13,6 +13,8 @@ def test_inline_plan_qnh_and_wind_are_kept_from_performance_source():
     assert result['qnh_hpa'] == 1010
     assert result['wind'] == 'VRB012'
     assert _parse_performance('PLAN QNH1010')['qnh_hpa'] == 1010
+    for token in ('16/008','130/08','35012','VRB005'):
+        assert _parse_performance('PLAN WIND ' + token + ' WIND COMP P01')['wind'] == token
     assert _parse_performance('PLAN QNH PLAN WIND WIND COMP M12')['qnh_hpa'] is None
     assert _parse_performance('PLAN QNH PLAN WIND WIND COMP M12')['wind'] is None
 
