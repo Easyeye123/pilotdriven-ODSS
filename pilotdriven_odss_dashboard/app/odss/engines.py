@@ -690,13 +690,22 @@ def _schedule_weekdays(value: str) -> set[int] | None:
     return {_WEEKDAYS[token] for token in tokens}
 
 
-def _schedule_overlaps(schedule: str, window_start: datetime, window_end: datetime) -> bool | None:
+def _schedule_overlaps(
+    schedule: str, window_start: datetime, window_end: datetime,
+    *, valid_from: datetime | None = None, valid_to: datetime | None = None,
+) -> bool | None:
     months = "JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC"
-    normalized = re.sub(rf",\s*(?=(?:{months})\b)", ";", schedule.upper())
+    # A comma after a time separates dated entries; commas within a date
+    # list do not. Keep unsupported syntax intact so it requires review.
+    normalized = re.sub(
+        rf"(\d{{4}}(?:UTC|Z)?)\s*,\s*(?=(?:{months})\b|\d{{2}}(?:-\d{{2}})?(?:[ ,]+\d{{2}}(?:-\d{{2}})?)*\s+\d{{4}})",
+        r"\1;", schedule.upper(),
+    )
     entries = [entry.strip() for entry in normalized.split(";") if entry.strip()]
     if not entries:
         return None
     parsed_entries = 0
+    overlaps = False
     first_day = (window_start - timedelta(days=1)).date()
     day_count = (window_end.date() - first_day).days + 1
     for entry in entries:
@@ -715,11 +724,19 @@ def _schedule_overlaps(schedule: str, window_start: datetime, window_end: dateti
                 return None
             ranges.append((start_minutes, end_minutes))
         prefix = entry[:matches[0].start()].strip(" ,")
-        date_match = re.fullmatch(rf"({months})\s+(.+)", prefix)
+        date_match = re.fullmatch(rf"(?:({months})\s+)?(\d{{2}}(?:-\d{{2}})?(?:[ ,]+\d{{2}}(?:-\d{{2}})?)*)", prefix)
         month_days: set[int] | None = None
         month_number = None
         if date_match:
-            month_number = MONTHS[date_match.group(1)]
+            month_number = MONTHS.get(date_match.group(1))
+            if month_number is None:
+                # Numbered dates omit the month only within an unambiguous
+                # validity month. Do not turn a cross-month notice into a
+                # recurring monthly closure.
+                anchor_start, anchor_end = valid_from or window_start, valid_to or window_end
+                if (anchor_start.year, anchor_start.month) != (anchor_end.year, anchor_end.month):
+                    return None
+                month_number = anchor_start.month
             date_expression = date_match.group(2)
             if not re.fullmatch(r"\d{2}(?:-\d{2})?(?:[ ,]+\d{2}(?:-\d{2})?)*", date_expression):
                 return None
@@ -732,7 +749,7 @@ def _schedule_overlaps(schedule: str, window_start: datetime, window_end: dateti
                     month_days.update(range(start_day, end_day + 1))
                 else:
                     month_days.add(int(token))
-            if not month_days:
+            if not month_days or not month_days <= set(range(1, 32)):
                 return None
         daily = prefix in {"DAILY", "DLY"}
         weekdays = None if daily or date_match else _schedule_weekdays(prefix)
@@ -741,7 +758,7 @@ def _schedule_overlaps(schedule: str, window_start: datetime, window_end: dateti
         parsed_entries += 1
         for offset in range(day_count):
             day = first_day + timedelta(days=offset)
-            if date_match and (day.month != month_number or day.day not in month_days):
+            if date_match and ((month_number and day.month != month_number) or day.day not in month_days):
                 continue
             if weekdays is not None and day.weekday() not in weekdays:
                 continue
@@ -751,8 +768,8 @@ def _schedule_overlaps(schedule: str, window_start: datetime, window_end: dateti
                 if end_minutes <= start_minutes:
                     occurrence_end += timedelta(days=1)
                 if _intervals_overlap(occurrence_start, occurrence_end, window_start, window_end):
-                    return True
-    return False if parsed_entries == len(entries) else None
+                    overlaps = True
+    return overlaps if parsed_entries == len(entries) else None
 
 
 def _notam_role_window(
@@ -804,6 +821,56 @@ def _notam_role_window(
     return "informational", departure_utc, arrival_utc
 
 
+
+def _notam_role_windows(
+    flight: dict[str, Any], location: str, alternate_airports: set[str],
+    fuel_enroute_airports: set[str], source_role: str,
+) -> list[tuple[str, datetime, datetime]]:
+    """Keep each governed use separate; a gap between uses is not a use."""
+    if location in {flight["departure"], flight["destination"]}:
+        return [_notam_role_window(flight, location, set(), {})]
+    windows = []
+    if source_role == "fuel_enroute_airport" or location in fuel_enroute_airports:
+        windows.append(_notam_role_window(flight, location, set(), {}, {location}))
+    if location in alternate_airports:
+        windows.append(_notam_role_window(flight, location, {location}, {}))
+    for airport in flight["edto"]["airports"]:
+        if airport["airport"] == location:
+            window = ("EDTO", datetime.fromisoformat(airport["period_start_utc"]), datetime.fromisoformat(airport["period_end_utc"]))
+            if window not in windows:
+                windows.append(window)
+    return windows or [_notam_role_window(flight, location, set(), {})]
+
+
+def _assess_notam_window(
+    record: dict[str, Any], flight: dict[str, Any], role: str,
+    start: datetime, end: datetime, valid_from: datetime, valid_to: datetime,
+) -> dict[str, Any]:
+    reference = _notam_reference_at(flight, role, start)
+    state, delta = _notam_reference_state(record, reference, valid_from, valid_to)
+    result = {
+        "role": role, "window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(),
+        "window_label": _utc_window_label(start, end),
+        "referenceAt": reference.isoformat(), "stateAtReference": state, "minutesDelta": delta,
+        "applicability": "active", "validity_status": "overlaps_flight_window", "schedule_status": "not_applicable",
+    }
+    if record.get("validity_review"):
+        result.update(applicability="review", validity_status="review_required")
+    elif not _intervals_overlap(valid_from, valid_to, start, end):
+        result.update(applicability="outside_time_window", validity_status="outside_time_window")
+        return result
+    if record.get("schedule"):
+        active = _schedule_overlaps(record["schedule"], max(start, valid_from), min(end, valid_to), valid_from=valid_from, valid_to=valid_to)
+        if active is False and not record.get("validity_review"):
+            result.update(applicability="outside_schedule", schedule_status="outside_schedule")
+        elif active is None:
+            result.update(applicability="review", schedule_status="review_required")
+        else:
+            result["schedule_status"] = "overlaps_flight_window"
+    elif record.get("schedule_review"):
+        result.update(applicability="review", schedule_status="review_required")
+    return result
+
 def _utc_window_label(window_start: datetime, window_end: datetime) -> str:
     start = window_start.astimezone(timezone.utc)
     end = window_end.astimezone(timezone.utc)
@@ -852,8 +919,11 @@ def _notam_reference_state(
             schedule,
             reference_at,
             reference_at + timedelta(minutes=1),
+            valid_from=valid_from, valid_to=valid_to,
         )
-        if active_at_reference is not True:
+        if active_at_reference is False:
+            return "outside_schedule_at_reference", None
+        if active_at_reference is None:
             return "unknown_at_reference", None
     elif record.get("schedule_review"):
         return "unknown_at_reference", None
@@ -1163,7 +1233,11 @@ def _navaid_clause(upper: str) -> tuple[str, str]:
     "ILS RWY 25 AVBL. PAPI RWY 25 U/S" never reads as an ILS outage and a
     negated "NOT U/S" never reads as unserviceable.
     """
-    for clause in re.split(r"[.;]\s*", upper):
+    # A named PART or a preceding availability assertion starts a new
+    # component clause. A coordinated list (ILS-LOC, GP, DME) stays together.
+    separated = re.sub(r",\s*(?=(?:ILS|LOC|GP|GS|DVOR|VOR|DME|NDB)[ -]+PART\b)", ";", upper)
+    separated = re.sub(r"\b(AVBL|AVAILABLE|U/S|UNSERVICEABLE)\s*,\s*(?=(?:ILS|LOC|GP|GS|DVOR|VOR|DME|NDB)\b)", r"\1;", separated)
+    for clause in re.split(r"[.;]\s*", separated):
         clause = clause.strip(" ,")
         if not clause:
             continue
@@ -1178,11 +1252,16 @@ def _navaid_clause(upper: str) -> tuple[str, str]:
 
 def _navaid_subject(clause: str) -> str:
     """The aid as the clause names it — "ILS CAT I RWY 06", "DVOR/DME MNL" — only when the aid opens the clause."""
+    coordinated = re.match(r"^((?:ILS-LOC|ILS|LOC|GP|GS|DME|VOR|NDB)(?:,\s*(?:ILS-LOC|ILS|LOC|GP|GS|DME|VOR|NDB))+)(?:\s+FOR)?(?:\s+(RWY\s+\d{2}[LCR]?(?:\s+AND\s+RWY\s+\d{2}[LCR]?)?))?\s+(?:U/S|UNSERVICEABLE)\b", clause)
+    if coordinated:
+        return re.sub(r",\s*", ", ", coordinated.group(1)) + (f" {coordinated.group(2)}" if coordinated.group(2) else "")
     match = _NAVAID_SUBJECT.match(clause)
     if not match:
         return ""
     aid = " ".join(match.group(1).replace("LOCALIZER", "LOC").replace("LOCALISER", "LOC").split())
     parts = [aid]
+    if re.match(r"[ -]+PART\b", clause[match.end():]):
+        parts.append("PART")
     if match.group(2):
         parts.append(match.group(2))
     if match.group(3):
@@ -1243,6 +1322,8 @@ def _notam_operational_summary(
             f"Construction survey lasers near taxilanes {locations} require "
             f"operational review during the applicable {phase} window."
         )
+    if kind == "taxiway_restriction" and re.search(r"\bPROC(?:EDURE)?\b", upper) and re.search(r"\bTAXI(?:ING)?\b", upper):
+        return "Published taxi procedure; review the instructions, clearance limits and conditions in item E."
     subject = _notam_subject(text, kind)
     phase = role.replace("destination alternate", "alternate").replace("informational", "flight")
     if applicability == "review":
@@ -1266,6 +1347,13 @@ def _notam_operational_summary(
         return (
             "LPV minima are raised to the stated LNAV/VNAV minima for the "
             f"named RNP approaches during the applicable {phase} window."
+        )
+    if kind not in {"airport_closure", "runway_closure", "taxiway_closure", "apron_stand_closure", "approach_navaid_closure"} and re.search(
+        r"\bPROC(?:EDURE)?S?\s+MAY\s+BE\s+SUSPENDED\b", upper,
+    ):
+        return (
+            "Published procedure may be suspended under the conditions stated in item E; "
+            f"confirm those conditions for the applicable {phase} window (review required)."
         )
     if kind == "airport_closure":
         return f"Entire airport closed or unavailable during the applicable {phase} window."
@@ -2985,28 +3073,27 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     applicable_notams: list[dict[str, Any]] = []
     for record in flight["notams"]:
         location = record["location"]
-        role, window_start, window_end = _notam_role_window(
-            flight,
-            location,
-            alternate_airports,
-            edto_periods,
-            fuel_enroute_airports,
-            str(record.get("source_role") or "") or None,
-        )
         valid_from = datetime.fromisoformat(record["valid_from_utc"])
         valid_to = (
             datetime.fromisoformat(record["valid_to_utc"])
             if record.get("valid_to_utc")
             else datetime.max.replace(tzinfo=timezone.utc)
         )
+        role_applicability = [
+            _assess_notam_window(record, flight, role, start, end, valid_from, valid_to)
+            for role, start, end in _notam_role_windows(
+                flight, location, alternate_airports, fuel_enroute_airports,
+                str(record.get("source_role") or ""),
+            )
+        ]
+        relevant = [row for row in role_applicability if row["applicability"] in {"active", "review"}]
+        assessed = next((row for row in relevant if row["applicability"] == "active"), relevant[0] if relevant else role_applicability[0])
+        role = assessed["role"]
+        window_start = datetime.fromisoformat(assessed["window_start_utc"])
+        window_end = datetime.fromisoformat(assessed["window_end_utc"])
+        reference_at = datetime.fromisoformat(assessed["referenceAt"])
+        state_at_reference, minutes_delta = assessed["stateAtReference"], assessed["minutesDelta"]
         evidence_ref = f"notam:{len(notam_audit_records)}"
-        reference_at = _notam_reference_at(flight, role, window_start)
-        state_at_reference, minutes_delta = _notam_reference_state(
-            record,
-            reference_at,
-            valid_from,
-            valid_to,
-        )
         audit_record = {
             "evidence_ref": evidence_ref,
             "source": "uploaded_cfp",
@@ -3028,34 +3115,18 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "pilot_status": "pending",
         }
         notam_audit_records.append(audit_record)
-        applicability = "active"
-        validity_status = "overlaps_flight_window"
-        if record.get("validity_review"):
-            applicability = "review"
-            validity_status = "review_required"
-            warnings.append(f"{record['notam_id']}: B/C validity could not be parsed; manual review required.")
-        elif not _intervals_overlap(valid_from, valid_to, window_start, window_end):
-            audit_record["pilot_status"] = "outside_time_window"
+        audit_record["role_applicability"] = role_applicability
+        audit_record["validity_status"] = assessed["validity_status"]
+        audit_record["schedule_status"] = assessed["schedule_status"]
+        if not relevant:
+            audit_record["pilot_status"] = assessed["applicability"]
             continue
+        applicability = assessed["applicability"]
+        validity_status = assessed["validity_status"]
+        schedule_status = assessed["schedule_status"]
         schedule = record.get("schedule")
-        schedule_status = "not_applicable"
-        if schedule:
-            schedule_active = _schedule_overlaps(schedule, window_start, window_end)
-            if schedule_active is False:
-                audit_record["pilot_status"] = "outside_schedule"
-                continue
-            if schedule_active is None:
-                applicability = "review"
-                schedule_status = "review_required"
-                warnings.append(f"{record['notam_id']}: D schedule could not be evaluated; manual review required.")
-            else:
-                schedule_status = "overlaps_flight_window"
-        elif record.get("schedule_review"):
-            applicability = "review"
-            schedule_status = "review_required"
-            warnings.append(f"{record['notam_id']}: schedule language could not be structured; manual review required.")
-        audit_record["validity_status"] = validity_status
-        audit_record["schedule_status"] = schedule_status
+        if applicability == "review":
+            warnings.append(f"{record['notam_id']}: B/C validity or schedule could not be resolved; manual review required.")
         approach_affected = _instrument_approach_affected(
             str(record["text"]),
             str(record["category"]),
@@ -3106,6 +3177,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             details,
             {
                 "role": role,
+                "role_applicability": role_applicability,
                 "source_role": record.get("source_role"),
                 "location": location,
                 "notam_id": record["notam_id"],

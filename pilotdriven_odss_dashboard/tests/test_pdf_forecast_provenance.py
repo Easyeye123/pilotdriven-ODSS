@@ -6,7 +6,7 @@ import pytest
 
 from generate_visual_samples import sample_findings, sample_flight
 from app.odss import briefing as briefing_module
-from app.odss.combined_brief import render_combined_briefing
+from app.odss.combined_brief import _render_reference_briefing as render_combined_briefing
 
 SOURCE = {
     "source_type": "official_weather_provider",
@@ -124,3 +124,29 @@ def test_destination_source_link_skips_departure_only_forecast_page(tmp_path, mo
     source_link = next(link for link in doc[0].get_links() if link["from"].intersects(source_rect))
     assert source_link["kind"] == fitz.LINK_GOTO
     assert source_link["page"] == destination_page
+
+
+@pytest.mark.parametrize('source', [SOURCE, None])
+def test_current_nine_page_forecast_keeps_conditions_window_and_provenance(tmp_path, monkeypatch, source):
+    from app.odss.combined_brief import render_combined_briefing as render_current
+    build = briefing_module.build_briefing_view
+    conditions = 'wind 160 degrees 7 kt; visibility 10 km or more'
+    def view(*args, **kwargs):
+        result = build(*args, **kwargs)
+        result['overview']['destination']['forecast_at_reference'] = {
+            'applicable_conditions': conditions, 'utc_window': '16 AUG 1310Z-1510Z',
+            **({'forecast_source': deepcopy(source)} if source else {}),
+        }
+        return result
+    monkeypatch.setattr(briefing_module, 'build_briefing_view', view)
+    path = tmp_path / 'current-forecast.pdf'
+    render_current(sample_flight(), [r for r in sample_findings() if r['engine'] != 'depressurisation'], [], path)
+    with fitz.open(path) as doc:
+        assert len(doc) == 9
+        weather = ' '.join(doc[3].get_text().split())
+        assert conditions in weather and '16 AUG 1310Z-1510Z' in weather
+        if source:
+            assert source['display_title'] in weather
+            assert 'issued 16AUG 0800Z; valid 16AUG 0800Z-17AUG 1200Z' in weather
+        else:
+            assert 'Forecast source, issue and validity times are not held.' in weather

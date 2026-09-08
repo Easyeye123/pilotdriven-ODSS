@@ -160,7 +160,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-08-forecast-source-evidence-v40"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-08-analysed-nine-page-briefing-v42"
 
 
 def combined_briefing_cache_token(
@@ -4761,83 +4761,106 @@ def _airport_notam_detail_pages(
     return _detail_record_page_plans("ALL SELECTED NOTAM DETAILS", records)
 
 
-def _critical_approach_detail_pages(
-    briefing: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Keep every exact machine-confirmed approach impact in the PDF.
+# The operational publication uses the full page width for source prose.
+# It keeps the audit renderer unchanged and retains every selected Item E
+# once. These are measured layout limits, never a cap on records or pages.
+_NOTAM_BODY_SIZE = 9.0
+_NOTAM_LINE_HEIGHT = 11.0
+_NOTAM_PAGE_LINES = 36
 
-    The operational airport cards are intentionally compact. This lossless
-    continuation consumes only the shared boolean/severity contract, then
-    binds the visible label to the exact ICAO, NOTAM identity and item-E text.
-    It never re-infers criticality from prose.
-    """
 
-    rows: list[tuple[str, str]] = []
+def _operational_notam_page_plans(briefing: dict[str, Any]) -> list[dict[str, Any]]:
+    pages: list[dict[str, Any]] = []
+    current: list[dict[str, Any]] = []
+    used = 0
+    width = PAGE_SIZE[0] - 2 * MARGIN - 20.0
+
+    def flush() -> None:
+        nonlocal current, used
+        if current:
+            pages.append({"records": current})
+        current, used = [], 0
+
     for panel_data in briefing.get("airport_operational_panels") or []:
-        if not isinstance(panel_data, dict):
-            continue
-        icao = str(panel_data.get("icao") or "----").strip().upper()
-        role = str(panel_data.get("role") or "ROLE NOT HELD").strip()
+        icao = str(panel_data.get("icao") or "----").upper()
+        role = str(panel_data.get("role") or "airport")
         for item in panel_data.get("selected_notams") or []:
-            if not isinstance(item, dict) or not _is_critical_approach_notice(
-                item
-            ):
+            if _is_ended_critical_approach_notice(item):
                 continue
-            notam_id = str(
-                item.get("notam_id") or "UNSPECIFIED"
-            ).strip()
-            prefix = f"{icao} {notam_id}"
-            rows.extend((
-                (
-                    "CRITICAL APPROACH",
-                    f"{_critical_approach_label(item)} | {prefix}",
-                ),
-                ("AIRPORT / ROLE", f"{icao} | {role}"),
-                (
-                    "VALIDITY",
-                    " - ".join(
-                        str(value or "NOT STATED")
-                        for value in (
-                            item.get("valid_from_utc"),
-                            item.get("valid_to_utc"),
-                        )
-                    ),
-                ),
-                (
-                    "APPLICABILITY",
-                    " | ".join(
-                        str(value)
-                        for value in (
-                            item.get("applicability")
-                            or "REVIEW REQUIRED",
-                            item.get("window_start_utc"),
-                            item.get("window_end_utc"),
-                        )
-                        if value not in (None, "")
-                    ),
-                ),
-                (
-                    "SCHEDULE",
-                    str(item.get("schedule") or "NOT SEPARATELY STATED"),
-                ),
-                (
-                    "ITEM E",
-                    str(
-                        item.get("item_e_text")
-                        or "ITEM-E TEXT NOT HELD - REVIEW SOURCE"
-                    ),
-                ),
-                (
-                    "SOURCE",
-                    f"OFP page {item.get('source_page')}"
-                    if item.get("source_page") is not None
-                    else "SOURCE PAGE NOT HELD",
-                ),
-            ))
-    return _detail_page_plans(
-        "CRITICAL INSTRUMENT APPROACH IMPACTS",
-        rows,
+            identity = f"{icao} {normalize_notam_references(item.get('notam_id') or 'UNSPECIFIED')}"
+            critical = _is_critical_approach_notice(item)
+            header = f"{_critical_approach_label(item)} | {identity}" if critical else identity
+            header += f" | OFP p{item['source_page']}" if item.get("source_page") is not None else " | SOURCE PAGE NOT HELD"
+            headline = _pdf_notam_operational_headline(item, role=role)
+            raw = str(item.get("item_e_text") or "ITEM-E TEXT NOT HELD - REVIEW SOURCE")
+            # A fallback sentence adds no fact beyond the review status.
+            # Exact source text remains visible, including long/unknown records.
+            paragraphs = [] if headline.startswith("Operational source notice requires review;") else [("headline", headline)]
+            paragraphs.append(("timing", f"B/C: {item.get('valid_from_utc') or 'NOT STATED'} - {item.get('valid_to_utc') or 'NOT STATED'} | D: {item.get('schedule') or 'NOT SEPARATELY STATED'}"))
+            assessed_roles = item.get("role_applicability") or [{
+                "role": role,
+                "window_label": " - ".join(str(item.get(k) or "NOT STATED") for k in ("window_start_utc", "window_end_utc")),
+                "applicability": item.get("applicability") or "REVIEW REQUIRED",
+            }]
+            for assessed in assessed_roles:
+                paragraphs.append(("timing", f"{assessed.get('role') or role}: {assessed.get('window_label') or 'WINDOW NOT HELD'} - {assessed.get('applicability') or 'REVIEW REQUIRED'}"))
+            paragraphs.append(("source", f"ITEM E: {raw}"))
+            body = [
+                (style, line)
+                for style, paragraph in paragraphs
+                for line in _wrap(paragraph, SANS, _NOTAM_BODY_SIZE, width)
+            ]
+            heading_lines = _wrap(header, SANS_BOLD, _NOTAM_BODY_SIZE, width)
+            capacity = _NOTAM_PAGE_LINES - len(heading_lines) - 1
+            if capacity < 1:
+                raise ValueError("NOTAM identity exceeds the measured page capacity")
+            if len(heading_lines) + len(body) + 1 <= _NOTAM_PAGE_LINES:
+                cost = len(heading_lines) + len(body) + 1
+                if used + cost > _NOTAM_PAGE_LINES:
+                    flush()
+                current.append({"header": heading_lines, "lines": body, "critical": critical})
+                used += cost
+                continue
+            # Long notices continue with their identity, never interleaved
+            # with another notice or silently clipped to a summary.
+            flush()
+            for offset in range(0, len(body), capacity):
+                continued_header = header + (" | CONTINUED" if offset else "")
+                continued_lines = _wrap(continued_header, SANS_BOLD, _NOTAM_BODY_SIZE, width)
+                if len(continued_lines) > len(heading_lines):
+                    raise ValueError("NOTAM continuation identity exceeds its reserved line budget")
+                pages.append({"records": [{"header": continued_lines, "lines": body[offset:offset + capacity], "critical": critical}]})
+    flush()
+    return pages
+
+
+def draw_operational_notam_page(
+    canvas, flight: dict[str, Any], *, page_number: int, page_count: int,
+    section_page_number: int, section_page_count: int, records: list[dict[str, Any]],
+) -> None:
+    top = draw_page_chrome(
+        canvas, flight, page_number=page_number, page_count=page_count,
+        section_label="AIRPORTS / ALTERNATES" + _continuation_suffix(section_page_number, section_page_count),
+        section_colour=DESTINATION, page_family="deep",
+        source_line="Each selected NOTAM once | exact B/C/D, assessed uses and full Item E | source page references retained",
     )
+    ix, iy, iw, _ = panel(canvas, MARGIN, 30, PAGE_SIZE[0] - 2 * MARGIN, top - 36,
+                          title="SELECTED NOTAM EVIDENCE", accent=DESTINATION, title_colour=None)
+    y = top - 31.0
+    for record in records:
+        canvas.setFillColor(CRITICAL if record["critical"] else TEXT)
+        canvas.setFont(SANS_BOLD, _NOTAM_BODY_SIZE)
+        for line in record["header"]:
+            canvas.drawString(ix, y, line)
+            y -= _NOTAM_LINE_HEIGHT
+        for style, line in record["lines"]:
+            if y < iy + 2:
+                raise ValueError("NOTAM evidence exceeds its measured page capacity")
+            canvas.setFillColor(TEXT_SECONDARY if style != "headline" else TEXT)
+            canvas.setFont(SANS, _NOTAM_BODY_SIZE)
+            canvas.drawString(ix, y, line)
+            y -= _NOTAM_LINE_HEIGHT
+        y -= _NOTAM_LINE_HEIGHT
 
 
 def _vaa_detail_pages(
@@ -5309,7 +5332,7 @@ def _critical_approach_timing_state(item: dict[str, Any]) -> str:
         return "ended"
     if applicability == "review" or state == "unknown_at_reference":
         return "review"
-    if state == "begins_after_reference":
+    if state in {"begins_after_reference", "outside_schedule_at_reference"}:
         return "scheduled"
     if state == "active_at_reference" and applicability == "active":
         return "active"
@@ -13929,17 +13952,37 @@ def render_combined_briefing(
     company_briefing_references: dict[str, Any] | None = None,
     include_audit_appendix: bool = False,
 ) -> None:
-    """Render the one-PDF Flight Briefing to `path`.
+    """Publish the analysed brief; audit output is an explicit internal option."""
+    if include_audit_appendix:
+        return _render_reference_briefing(
+            flight, findings, warnings, path, source_pdf_path=source_pdf_path,
+            weather_charts=weather_charts,
+            company_briefing_references=company_briefing_references,
+            include_audit_appendix=True,
+        )
+    from .operational_format import render_analysed_briefing
+    return render_analysed_briefing(
+        flight, findings, warnings, path, weather_charts=weather_charts,
+        company_briefing_references=company_briefing_references,
+    )
 
-    The production default is the eight-page operational briefing.  A
-    caller that needs the lossless audit publication can opt in to measured
-    continuation pages with ``include_audit_appendix=True``.  Both modes are
-    rendered from the same briefing view; the compact document never swaps in
-    a flight-specific template, reference raster, or fixed source page.
 
-    The depressurisation publication gate runs exactly as it does for the
-    legacy pair: an approved profile whose chart cannot be published fails the
-    render, never degrades it.
+def _render_reference_briefing(
+    flight: dict[str, Any],
+    findings: list[dict[str, Any]],
+    warnings: list[str],
+    path,
+    *,
+    source_pdf_path: str | None = None,
+    weather_charts: dict[str, Any] | None = None,
+    company_briefing_references: dict[str, Any] | None = None,
+    include_audit_appendix: bool = False,
+) -> None:
+    """Internal historical source/raster regression renderer.
+
+    The default historical composition is kept testable while the pinned audit
+    shares its drawing helpers. No service or production download calls this
+    default. Current publication acceptance lives in test_combined_brief.py.
     """
     from pathlib import Path
 
@@ -14180,17 +14223,9 @@ def render_combined_briefing(
         operational_airport_index_count = len(
             operational_airport_index_pages
         )
-        operational_airport_notam_pages = list(
-            airport_notam_detail_pages
-        )
+        operational_airport_notam_pages = _operational_notam_page_plans(briefing)
         operational_airport_notam_count = len(
             operational_airport_notam_pages
-        )
-        operational_critical_approach_pages = (
-            _critical_approach_detail_pages(briefing)
-        )
-        operational_critical_approach_count = len(
-            operational_critical_approach_pages
         )
         operational_surface_shortening_pages = (
             _surface_shortening_detail_pages(briefing)
@@ -14221,7 +14256,6 @@ def render_combined_briefing(
             + operational_edto_detail_count
             + operational_airport_index_count
             + operational_airport_notam_count
-            + operational_critical_approach_count
             + operational_surface_shortening_count
             + len(airport_note_pages)
         )
@@ -14240,7 +14274,6 @@ def render_combined_briefing(
             + operational_edto_detail_count
             + operational_airport_index_count
             + operational_airport_notam_count
-            + operational_critical_approach_count
             + operational_surface_shortening_count
             + operational_vaac_receipt_page_count
             + operational_vaa_detail_count
@@ -14448,7 +14481,6 @@ def render_combined_briefing(
                     + operational_edto_detail_count
                     + operational_airport_index_count
                     + operational_airport_notam_count
-                    + operational_critical_approach_count
                     + operational_surface_shortening_count
                 ),
                 title=edto_detail_page["title"],
@@ -14512,7 +14544,7 @@ def render_combined_briefing(
         ):
             bookmark = f"sec_airports_notam_{index}"
             canvas.bookmarkPage(bookmark)
-            draw_shared_detail_page(
+            draw_operational_notam_page(
                 canvas,
                 flight,
                 page_number=(
@@ -14522,8 +14554,6 @@ def render_combined_briefing(
                     + index
                 ),
                 page_count=operational_page_count,
-                section_label="AIRPORTS / ALTERNATES",
-                section_colour=DESTINATION,
                 section_page_number=(
                     1
                     + operational_edto_detail_count
@@ -14535,16 +14565,9 @@ def render_combined_briefing(
                     + operational_edto_detail_count
                     + operational_airport_index_count
                     + operational_airport_notam_count
-                    + operational_critical_approach_count
                     + operational_surface_shortening_count
                 ),
-                title=notam_page["title"],
-                rows=notam_page["rows"],
-                source_line=(
-                    "Plain-English operational headline first; exact NOTAM "
-                    "validity, schedule, applicability and Item E retained"
-                ),
-                page_family="deep",
+                records=notam_page["records"],
             )
             canvas.addOutlineEntry(
                 (
@@ -14553,61 +14576,6 @@ def render_combined_briefing(
                     else (
                         "Selected NOTAM Evidence "
                         f"{index}/{operational_airport_notam_count}"
-                    )
-                ),
-                bookmark,
-                level=0,
-            )
-            canvas.showPage()
-        for index, approach_page in enumerate(
-            operational_critical_approach_pages,
-            start=1,
-        ):
-            bookmark = f"sec_airport_critical_approach_{index}"
-            canvas.bookmarkPage(bookmark)
-            draw_shared_detail_page(
-                canvas,
-                flight,
-                page_number=(
-                    operational_airports_page
-                    + operational_edto_detail_count
-                    + operational_airport_index_count
-                    + operational_airport_notam_count
-                    + index
-                ),
-                page_count=operational_page_count,
-                section_label="AIRPORTS / ALTERNATES",
-                section_colour=CRITICAL,
-                section_page_number=(
-                    1
-                    + operational_edto_detail_count
-                    + operational_airport_index_count
-                    + operational_airport_notam_count
-                    + index
-                ),
-                section_page_count=(
-                    1
-                    + operational_edto_detail_count
-                    + operational_airport_index_count
-                    + operational_airport_notam_count
-                    + operational_critical_approach_count
-                    + operational_surface_shortening_count
-                ),
-                title=approach_page["title"],
-                rows=approach_page["rows"],
-                source_line=(
-                    "Exact machine-confirmed approach impact, ICAO, NOTAM "
-                    "identity and held item-E text"
-                ),
-                page_family="deep",
-            )
-            canvas.addOutlineEntry(
-                (
-                    "Critical Instrument Approach Impacts"
-                    if index == 1
-                    else (
-                        "Critical Instrument Approach Impacts "
-                        f"{index}/{operational_critical_approach_count}"
                     )
                 ),
                 bookmark,
@@ -14628,7 +14596,6 @@ def render_combined_briefing(
                     + operational_edto_detail_count
                     + operational_airport_index_count
                     + operational_airport_notam_count
-                    + operational_critical_approach_count
                     + index
                 ),
                 page_count=operational_page_count,
@@ -14639,7 +14606,6 @@ def render_combined_briefing(
                     + operational_edto_detail_count
                     + operational_airport_index_count
                     + operational_airport_notam_count
-                    + operational_critical_approach_count
                     + index
                 ),
                 section_page_count=(
@@ -14647,7 +14613,6 @@ def render_combined_briefing(
                     + operational_edto_detail_count
                     + operational_airport_index_count
                     + operational_airport_notam_count
-                    + operational_critical_approach_count
                     + operational_surface_shortening_count
                 ),
                 title=shortening_page["title"],

@@ -2790,3 +2790,32 @@ F) FL055 G) FL230
         "CONTACT ANCHORAGE ARTCC FOR ADDITIONAL INFORMATION. F) SFC G) UNL"
     )
     assert advisories[0]["source_page"] == 1
+
+
+def test_notam_gap_between_two_role_windows_is_not_an_applicable_window():
+    record = _record('GAP1/26','WIII','2026-07-16T14:30:00+00:00','2026-07-16T15:30:00+00:00')
+    flight = _flight(notams=[record])
+    flight['edto']['airports'] = [{'airport':'WIII','period_start_utc':'2026-07-16T16:00:00+00:00','period_end_utc':'2026-07-16T17:00:00+00:00'}]
+    findings, _ = analyse(flight)
+    assert not [item for item in findings if item['engine']=='notam']
+    evaluations=flight['audit_evidence']['notam']['records'][0]['role_applicability']
+    assert [item['applicability'] for item in evaluations] == ['outside_time_window','outside_time_window']
+
+
+def test_notam_role_results_keep_edto_separate_from_an_alternate_window():
+    record = _record('ROLE1/26','WIII','2026-07-16T00:00:00+00:00','2026-07-17T00:00:00+00:00')
+    record['schedule']='16 1600-1700'
+    flight=_flight(notams=[record])
+    flight['edto']['airports']=[{'airport':'WIII','period_start_utc':'2026-07-16T16:00:00+00:00','period_end_utc':'2026-07-16T17:00:00+00:00'}]
+    findings,_=analyse(flight)
+    item=next(item for item in findings if item['engine']=='notam')
+    assert item['data']['role']=='EDTO'
+    assert item['data']['referenceAt']=='2026-07-16T16:00:00+00:00'
+    assert [(row['role'],row['applicability']) for row in item['data']['role_applicability']] == [('destination alternate','outside_schedule'),('EDTO','active')]
+
+
+def test_schedule_overlap_must_also_be_inside_bc_validity():
+    record=_record('CLIP1/26','RJBB','2026-07-16T11:00:00+00:00','2026-07-16T12:00:00+00:00')
+    record['schedule']='DAILY 1300-1400'
+    findings,_=analyse(_flight(notams=[record]))
+    assert not [item for item in findings if item['engine']=='notam']

@@ -2031,7 +2031,7 @@ def test_company_briefing_references_are_tenant_scoped_normalized_and_rendered(
     assert initial_report.status_code == 200
     with fitz.open(stream=initial_report.content, filetype="pdf") as document:
         initial_text = "\n".join(page.get_text() for page in document)
-    assert "MANUAL REVIEW REQUIRED | OFP SOURCE HELD" in initial_text
+    assert "REVIEW RECORD AND RELEASE CONDITIONS" in initial_text
     assert "25-21-08B" not in initial_text
 
     ambiguity = (
@@ -2173,14 +2173,11 @@ def test_company_briefing_references_are_tenant_scoped_normalized_and_rendered(
     assert refreshed_report.content != initial_report.content
     with fitz.open(stream=refreshed_report.content, filetype="pdf") as document:
         refreshed_text = "\n".join(page.get_text() for page in document)
-    for suffix in ("B", "C"):
-        assert refreshed_text.count(
-            f"MEL 25-21-08{suffix} Passenger Seat Meal Table controlled "
-            f"candidate {suffix} extract."
-        ) == 1
-    assert refreshed_text.count(
-        "CANDIDATE ONLY - MANUAL REVIEW REQUIRED"
-    ) == 2
+    assert "MEL 25-21-08B, MEL 25-21-08C; no candidate selected." in refreshed_text
+    assert ambiguity in " ".join(refreshed_text.split())
+    assert confirmation in " ".join(refreshed_text.split())
+    assert "controlled candidate B extract" not in refreshed_text
+    assert "controlled candidate C extract" not in refreshed_text
     assert "EXACT CURRENT-APPROVED EXTRACT" not in refreshed_text
 
     timing = service_app.post(

@@ -23,8 +23,9 @@ _RUNWAY_ID = r"(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
 _TAXIWAY_ID = r"(?:TWY|TAXIWAY)\s+[A-Z0-9][A-Z0-9/-]*"
 _APPROACH_SYSTEM = (
     r"(?:(?:APPROACH|APCH)(?!\s+(?:LGT(?:S)?|LIGHT(?:S|ING)?))|"
-    r"ILS|LOC|LOCALIZER|GLIDE\s*PATH|GLIDESLOPE|"
-    r"DME|VOR|NDB|RNP|PAPI|OCA|OCH|MINIMA)"
+    r"ILS|LOC|LOCALIZER|GP|GS|GLIDE\s*PATH|GLIDESLOPE|"
+    r"DME|DVOR|VOR|NDB|RNP|GLS|PAPI|OCA|OCH|MINIMA|"
+    r"CAT\s+I{1,3}(?:/I{1,3})?(?:\s+AND\s+CAT\s+I{1,3})?\s+(?:OPS|FAC))"
 )
 _LIGHTING = (
     r"(?:LGT|LIGHT|LIGHTS|LIGHTING|RCLL|RTHL|RTZL|RENL|HIRL|MIRL|LIRL|"
@@ -135,6 +136,39 @@ def pilot_notam_condition(value: Any) -> str:
     return _APPLICABLE_WINDOW_SUFFIX.sub(".", normalized)
 
 
+
+def _bound_unavailable(text: str, subject_pattern: str, *, surface: bool = False, state_pattern: str = _UNAVAILABLE_WORD) -> bool:
+    """A current state must belong to its subject, within the same clause.
+
+    Procedure instructions and possible suspensions retain review status.
+    Category labels are not operational assertions and are not searched here.
+    """
+    for clause in re.split(r"\.(?=\s|$)|;", text):
+        for state in re.finditer(rf"\b{state_pattern}\b", clause):
+            if _NEGATED_UNAVAILABLE_PREFIX.search(clause[:state.start()]):
+                continue
+            if re.search(r"\b(?:MAY|MIGHT|COULD)\s+(?:BE\s+)?$", clause[:state.start()]):
+                continue
+            if re.search(r"\b(?:IF|WHEN|UNLESS)\b", clause[:state.start()]):
+                continue
+            for subject in re.finditer(rf"\b{subject_pattern}\b", clause):
+                if surface and re.search(r"\b(?:TWY|TAXIWAY|TXL|TAXILANE|LGT|LIGHTS?|FREQ|CTL|CONTROL)\b", clause[:subject.start()]):
+                    continue
+                between = (clause[subject.end():state.start()] if subject.end() <= state.start()
+                           else clause[state.end():subject.start()] if state.end() <= subject.start() else None)
+                if between is None or len(between.split()) > 12:
+                    continue
+                if state.end() <= subject.start() and not re.fullmatch(r"\s+(?:(?:OF|THE)\s+)*", between):
+                    continue
+                if re.search(r"\b(?:AVBL|AVAILABLE|OPEN|SERVICEABLE|SID|STAR|TAXI|GUIDANCE|LIGHTS?|LGT|IF|WHEN|MAY|MIGHT|COULD)\b", between):
+                    continue
+                if surface and re.search(r"\b(?:TWY|TAXIWAY|TXL|TAXILANE|FREQ|CTL|CONTROL)\b", between):
+                    continue
+                if re.search(r"^[\s,]*(?:(?:NOW\s+)?(?:AVAILABLE|AVBL|RESTORED)|(?:CONDITION|CLOSURE)\s+CANCELLED)\b", clause[state.end():]):
+                    continue
+                return True
+    return False
+
 def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     """Return a stable pilot-facing rank and label for an applicable NOTAM.
 
@@ -190,7 +224,7 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     runway_state_is_subordinate_condition = bool(
         direct_runway_closure
         and re.search(
-            r"\b(?:ONLY\s+)?WHEN\s*$",
+            r"\b(?:ONLY\s+)?WHEN\b[^.;]*$",
             upper[:direct_runway_closure.start()],
         )
     )
@@ -202,24 +236,12 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
         )
         or re.search(rf"\bCLOSURE\s+OF\s+{_RUNWAY_ID}\b", upper)
     )
-    taxiway_closure = bool(
-        re.search(
-            rf"\b{_TAXIWAY_ID}\s+(?:WILL\s+BE\s+|IS\s+)?{_CLOSURE_WORD}\b",
-            upper,
-        )
-        or re.search(rf"\bCLOSURE\s+OF\s+{_TAXIWAY_ID}\b", upper)
-        or (
-            taxiway_match
-            and (not runway_match or taxiway_match.start() < runway_match.start())
-            and re.search(rf"\b{_CLOSURE_WORD}\b", upper[taxiway_match.start():])
-        )
-    )
+    taxiway_closure = _bound_unavailable(text.upper(), r"(?:TWY|TAXIWAY|TXL|TAXILANE)", state_pattern=_CLOSURE_WORD)
     stand_or_apron = bool(
         re.search(r"\b(?:ACFT\s+STAND|STAND|APRON|APN|RAMP|GATE)\b", upper)
     )
-    stand_or_apron_closure = bool(
-        stand_or_apron
-        and re.search(rf"\b(?:CLOSURE|{_CLOSURE_WORD})\b", upper)
+    stand_or_apron_closure = _bound_unavailable(
+        text.upper(), r"(?:ACFT\s+STANDS?|STANDS?|APRON|APN|RAMP|GATE|PRKG\s+PSN\s+BAYS?)", surface=True,
     )
     primary_taxiway = bool(
         taxiway_match
@@ -232,7 +254,7 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
         return 0, "airport_closure"
     if iap_minima_changes(text, category):
         return 2, "approach_minima_change"
-    if unavailable and approach:
+    if approach and _bound_unavailable(text.upper(), _APPROACH_SYSTEM):
         return 2, "approach_navaid_closure"
     if taxiway_closure and primary_taxiway:
         return 4, "taxiway_closure"

@@ -204,15 +204,15 @@ def test_wrong_private_reference_hash_fails_before_comparison(tmp_path: Path) ->
 def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
     payload = json.loads(PINNED_MANIFEST.read_text(encoding="utf-8"))
 
-    # 47 page entries of geometry + checksums only; far below any size that could embed the PDF.
+    # 48 page entries of geometry + checksums only; no proprietary PDF bytes.
     assert PINNED_MANIFEST.stat().st_size < 16_000
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference_v15_FORECAST_SOURCE_EVIDENCE.pdf",
-        "sha256": "79b00251c1076c975308e19231770c7f0be791b6001b33c912d2239dcd7cb6a2",
+        "filename": "SQ214_REV3_reference_v16_NOTAM_SCOPE_AND_SCHEDULE.pdf",
+        "sha256": "6fd26adc80fa0d8077c1ac72e499ed6da2af1e3c93740910afb336d834ba402d",
     }
-    assert len(payload["pages"]) == 47
-    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-09-08-forecast-source-evidence-v40"
-    assert "Independent all46-page comparison preserves operational bodies exactly" in payload["provenance"]["approval_basis"]
+    assert len(payload["pages"]) == 48
+    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-09-08-analysed-nine-page-briefing-v42"
+    assert "independent all-page comparison verifies 36 unchanged bodies" in payload["provenance"]["approval_basis"]
     assert payload["thresholds"] == {
         "max_changed_pixel_ratio": 0.0,
         "max_mean_absolute_error": 0.0,

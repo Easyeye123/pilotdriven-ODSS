@@ -10,7 +10,7 @@ from .constants import MONTHS, OPERATIONAL_KEYWORDS
 _NOTAM_START = re.compile(r"^(?P<id>[A-Z0-9]+/\d{2})\s+VALID:\s+(?P<validity>.+)$")
 _SCHEDULE_LINE = re.compile(
     r"^(?:DAILY|DLY|MON|TUE|WED|THU|FRI|SAT|SUN|"
-    r"JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b"
+    r"JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|\d{2}(?=[ ,\d-]*\s+\d{4}))\b"
 )
 _FUEL_ENROUTE_HEADING = re.compile(
     r"^FUEL\s+ENROUTE\s+AIRPORT(?:\(S\)|S)?\s*:?\s*$",

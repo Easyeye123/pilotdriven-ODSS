@@ -173,7 +173,7 @@ _COMBINED_CRITICAL_APPROACH_TITLE = (
     "CRITICAL INSTRUMENT APPROACH IMPACTS"
 )
 _COMBINED_EDTO_DETAIL_TITLE = "EDTO TIMING / ALTERNATES"
-_COMBINED_AIRPORT_NOTAM_DETAIL_TITLE = "ALL SELECTED NOTAM DETAILS"
+_COMBINED_AIRPORT_NOTAM_DETAIL_TITLES = ("ALL SELECTED NOTAM DETAILS", "SELECTED NOTAM EVIDENCE")
 _COMBINED_VAAC_RECEIPT_TITLE = "VAAC SOURCE RECEIPTS"
 _COMBINED_OFP_VAA_DETAIL_TITLE = "FULL VOLCANIC-ASH SOURCE DETAILS"
 _COMBINED_FORECAST_SOURCE_TITLE = "FORECAST SOURCE / CHECKED WINDOW"
@@ -267,6 +267,12 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 "COMBINED_RETIRED_LABEL",
                 f"Flight Briefing contains retired pilot-facing label: {label}.",
             ))
+
+    if extracted_pages and "FLIGHT BRIEFING - MASTER SUMMARY" in extracted_pages[0]:
+        from .concise_pdf_gate import check_concise_pdf
+        concise = check_concise_pdf(path)
+        violations.extend(ReportQualityViolation(item["code"], item["message"]) for item in concise["violations"])
+        return {"valid": not violations, "page_count": page_count, "violations": violations}
 
     is_boss_flow = (
         page_count >= len(_COMBINED_BOSS_FLOW_PAGES)
@@ -507,8 +513,7 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 airport_notam_pages: list[tuple[int, int]] = []
                 while (
                     cursor < page_count
-                    and _COMBINED_AIRPORT_NOTAM_DETAIL_TITLE
-                    in extracted_pages[cursor].upper()
+                    and any(title in extracted_pages[cursor].upper() for title in _COMBINED_AIRPORT_NOTAM_DETAIL_TITLES)
                 ):
                     page_match = _COMBINED_VAAC_RECEIPT_PAGE.search(
                         extracted_pages[cursor]

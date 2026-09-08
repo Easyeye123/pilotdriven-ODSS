@@ -941,6 +941,7 @@ def _airport_operational_panels(
                 "source_page": data.get("source_page"),
                 "source_role": data.get("source_role"),
                 "role": data.get("role"),
+                "role_applicability": data.get("role_applicability", []),
                 "category": data.get("category"),
                 "pertinence_rank": data.get("pertinence_rank"),
                 "pertinence_kind": data.get("pertinence_kind"),
@@ -1028,8 +1029,17 @@ def _airport_operational_panels(
             for item in selected_notams
             if isinstance(item.get("source_page"), int)
         )
+        checked_windows = []
+        for audit in (flight.get("audit_evidence", {}).get("notam", {}).get("records") or []):
+            if audit.get("location") != location:
+                continue
+            for assessed in audit.get("role_applicability") or []:
+                window = {key: assessed[key] for key in ("role", "window_start_utc", "window_end_utc", "window_label")}
+                if window not in checked_windows:
+                    checked_windows.append(window)
         panels.append({
             **specification,
+            "checked_windows": checked_windows,
             "weather": {"metar": metar, "taf": taf},
             "window_weather": _weather_summary(
                 findings,
@@ -5697,7 +5707,11 @@ def build_briefing_view(
             else None
         ),
     }
+    from .airport_pdf_analysis import airport_pdf_analysis, alternate_pdf_analysis
     return {
+        "publication_format": "analysed-briefing-2026-09-08",
+        "airport_pdf_analysis": airport_pdf_analysis(flight, all_airport_panels),
+        "alternate_pdf_analysis": alternate_pdf_analysis(flight, all_airport_panels),
         "status": "REVIEW REQUIRED" if needs_review else "BRIEFING COMPLETE",
         "status_severity": "warning" if needs_review else "information",
         "generated_at_utc": generated_at.isoformat(),

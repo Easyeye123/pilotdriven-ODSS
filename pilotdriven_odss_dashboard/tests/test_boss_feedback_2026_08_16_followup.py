@@ -18,7 +18,7 @@ from app.odss.combined_brief import (
     _terrain_profile_width,
     _terrain_table_height,
     _time_gate_card_layout,
-    render_combined_briefing,
+    _render_reference_briefing as render_combined_briefing,
 )
 from app.odss.engines import _notam_operational_summary
 from app.odss.pilot_briefing import notam_pertinence

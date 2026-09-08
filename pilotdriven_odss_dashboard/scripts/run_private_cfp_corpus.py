@@ -355,12 +355,13 @@ def check_required_publication_markers(
     required_by_surface = {
         "audit": common,
         "operational": (
-            *common,
-            "RELEASE",
-            "BEFORE PUSH",
-            "ROUTE",
-            "ARRIVAL",
-            "WEATHER",
+            ("FLIGHT BRIEFING - MASTER SUMMARY", "ROUTE HAZARD OVERLAY",
+             "VWS, CAT AND TERRAIN", "FUEL, MASS AND PERFORMANCE",
+             "DEPARTURE SURFACE", "DESTINATION SURFACE",
+             "ALTERNATES AND AIRCRAFT TECHNICAL STATUS",
+             "REVIEW RECORD AND RELEASE CONDITIONS")
+            if "FLIGHT BRIEFING - MASTER SUMMARY" in operational_text.upper()
+            else (*common, "RELEASE", "BEFORE PUSH", "ROUTE", "ARRIVAL", "WEATHER")
         ),
     }
     text_by_surface = {
@@ -1001,7 +1002,18 @@ def check_cross_surface_parity(
             "vaa: CFP carries a VA SIGMET but the operational briefing never "
             "says VOLCANIC ASH"
         )
+    # The current publication compares computed VA consequences. Raw volcano
+    # notices stay in the SHA-pinned parsed input and app source disclosure;
+    # requiring their text here would reintroduce the prohibited appendix.
+    analysed_publication = "FLIGHT BRIEFING - MASTER SUMMARY" in operational_folded
+    if analysed_publication:
+        from app.odss.operational_format import analysed_vaa_lines
+        for consequence in analysed_vaa_lines(view):
+            if not operational_printed(consequence):
+                failures.append(f"vaa: analysed consequence {consequence!r} missing")
     for advisory in (view.get("vaa") or {}).get("cfp_advisories") or []:
+        if analysed_publication:
+            continue
         if advisory.get("advisory_kind") == "CFP_VAA_NOTICE":
             identity = " · ".join(
                 value
@@ -1102,7 +1114,7 @@ def run_case(
         source_pdf_path=str(preflight["source"]),
         weather_charts=payload.get("weather_charts") or {},
         # The private corpus proves lossless publication coverage. Production
-        # callers intentionally use the seven-page operational default.
+        # callers intentionally use the nine-page analysed default.
         include_audit_appendix=True,
     )
     quality = validate_combined_briefing_pdf(combined)
@@ -1118,10 +1130,9 @@ def run_case(
         )
 
     # The lossless appendix above proves parsed-fact coverage, while pilots
-    # download the compact operational document. Render and scan that exact
-    # production shape too: appendix-only QA cannot detect a compact-card
-    # layout that drops or cuts a selected source sentence. Seven pages are
-    # the baseline; real terrain/profile evidence may append pages.
+    # download nine analysed pages. Scan that exact production format and
+    # reject any raw-source reproduction or excess page. Audit-only checks
+    # cannot certify this different publication contract.
     # Keep this name distinct from the lossless ``*_Flight_Briefing.pdf``
     # suffix consumed by the dashboard/PDF fact-parity harness below.
     operational = case_root / f"{case['case_id']}_Operational_Flight_Briefing.pdf"
@@ -1149,6 +1160,16 @@ def run_case(
             f"{case['case_id']} operational report quality failed: "
             + "; ".join(messages)
         )
+    from app.odss.concise_pdf_gate import check_concise_pdf
+    from app.odss.briefing import build_briefing_view
+    publication_view = build_briefing_view(flight, payload["findings"], payload.get("view", {}).get("warnings") or [], timing_view=flight.get("timing_view"))
+    concise_publication = check_concise_pdf(
+        operational, flight=flight,
+        airport_analysis=publication_view["airport_pdf_analysis"],
+        alternate_analysis=publication_view["alternate_pdf_analysis"],
+    )
+    if not concise_publication["valid"]:
+        raise AssertionError(f"{case['case_id']} concise publication failed: {concise_publication['violations']}")
     operational_physical = scan_physical_pdf(operational)
     if not operational_physical["valid"]:
         raise AssertionError(
@@ -1213,6 +1234,7 @@ def run_case(
         "operational_pdf": str(operational.relative_to(output_root)),
         "operational_sha256": sha256_file(operational),
         "operational_page_count": operational_quality["page_count"],
+        "concise_publication": concise_publication,
         "physical_pdf": {
             "page_count": physical["page_count"],
             "outside_text_box_count": sum(
