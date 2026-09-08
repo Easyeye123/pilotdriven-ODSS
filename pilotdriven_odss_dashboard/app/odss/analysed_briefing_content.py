@@ -218,10 +218,10 @@ def release_condition_groups(flight, view, receipt, airport_analysis, alternate_
     operations.extend(airport_review_constraints(view, [*airport_analysis, *alternate_analysis]))
     missing_geometry = [a["icao"] for a in airport_analysis if not any(o.get("icao") == a["icao"] for o in view.get("surface_overlays") or [])]
     if missing_geometry:
-        technical.append("No validated surface figure: " + ", ".join(missing_geometry) + ". Official surface charts remain necessary.")
+        operations.append("No validated surface figure: " + ", ".join(missing_geometry) + ". Official surface charts remain necessary.")
     if "airport_intelligence" in pending:
         stations = list(dict.fromkeys(a["icao"] for a in airport_analysis))
-        technical.append("Released Airport Notes coverage incomplete: " + "/".join(stations) + ".")
+        operations.append("Released Airport Notes coverage incomplete: " + "/".join(stations) + ".")
     if "depressurisation_profile" in pending:
         events = (view.get("terrain") or {}).get("events") or []
         legs = ["-".join(dict.fromkeys([(e.get("first_high") or {}).get("name", "?"), (e.get("last_high") or {}).get("name", "?")])) for e in events]
@@ -233,7 +233,8 @@ def release_condition_groups(flight, view, receipt, airport_analysis, alternate_
         technical.append("Complete route-airspace assessment is not held for the filed route.")
     for key in ("ofp_parse", "flight_timing", "fuel_performance", "vws", "airports_alternates", "airport_notam"):
         if key in pending:
-            technical.append(pending[key]["detail"])
+            target = weather if key == "vws" else operations if key in {"airports_alternates", "airport_notam"} else technical
+            target.append(pending[key]["detail"])
     number = 1
     for key, lines in groups.items():
         groups[key] = []

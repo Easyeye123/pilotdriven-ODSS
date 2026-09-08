@@ -7,7 +7,7 @@ Airport figures use only the supplied validated surface geometry.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import re
 from typing import Any
 
@@ -111,6 +111,7 @@ class Card:
     left_aligned: bool = False
     top_aligned: bool = False
     paragraph_gap: float = 0
+    width_weight: float = 1
 
 
 @dataclass
@@ -145,8 +146,11 @@ def plan_page(title: str, bookmark: str, rows: list[tuple[float, list[Card]]], *
     first = Page(title, bookmark, route_map=route_map, surface_overlay=surface_overlay, airport_role=airport_role)
     top = 232.0 if airport_role else TOP if route_map is None else 213.0
     for height, cards in rows:
-        width = (full_width - GAP * (len(cards) - 1)) / len(cards)
-        for i, card in enumerate(cards):
+        usable_width = full_width - GAP * (len(cards) - 1)
+        total_weight = sum(card.width_weight for card in cards)
+        x = MARGIN
+        for card in cards:
+            width = usable_width * card.width_weight / total_weight
             title_lines = wrap(card.title, width - 20, font="Helvetica-Bold", size=14) if card.title else []
             head_height = len(title_lines) * 16 + 15 if card.title else 0
             available_height = max(LEADING, height - head_height - 17)
@@ -160,7 +164,8 @@ def plan_page(title: str, bookmark: str, rows: list[tuple[float, list[Card]]], *
                 raise ValueError(f"Concise PDF capacity exceeded in {title} / {card.title}: {len(lines)} lines, {capacity} available. No source continuation is permitted.")
             else:
                 shown = lines
-            first.boxes.append(CardBox(card.title, shown, card.accent, MARGIN + i * (width + GAP), top - height, width, height, card.target, card.left_aligned, card.top_aligned, card.paragraph_gap, starts))
+            first.boxes.append(CardBox(card.title, shown, card.accent, x, top - height, width, height, card.target, card.left_aligned, card.top_aligned, card.paragraph_gap, starts))
+            x += width + GAP
         top -= height + GAP
     if top + GAP < BOTTOM - 0.1:
         raise ValueError(f"Reference grid exceeds page: {title}")
@@ -457,18 +462,31 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     if notes:
         conditions["technical"].append("PILOT NOTES: " + " / ".join(notes))
     def review_card(title, paragraphs, accent=AMBER):
-        return Card(title, paragraphs, accent, left_aligned=True, top_aligned=True, paragraph_gap=4)
+        return Card(title, paragraphs, accent, left_aligned=True, top_aligned=True, paragraph_gap=3)
     has_conditions = any(conditions.values())
     publication_state = "PUBLICATION STATE: Conditional briefing; the unresolved assessments above prevent an automated release conclusion."
     if not has_conditions:
         publication_state = "1. PUBLICATION STATE: No unresolved automated source condition; crew operational release remains separate."
-    sections["review"] = plan_page("REVIEW RECORD AND RELEASE CONDITIONS", "sec_coverage", [
+    review_rows = [
         (119, [review_card("SOURCE / CALCULATION REVIEW", completed, CYAN), review_card("SOURCE CONTROL", source_lines, CYAN)]),
         (264, [review_card("WEATHER COVERAGE", conditions["weather"] or ["No unresolved weather-source condition is recorded."]),
                review_card("AIRPORT ASSESSMENTS", conditions["operations"] or ["No unresolved airport assessment is recorded."]),
                review_card("REMAINING RELEASE INPUTS", conditions["technical"] or ["No unresolved aircraft/route source condition is recorded."])]),
         (26, [review_card("", [publication_state])]),
-    ])
+    ]
+    # Keep the reference's three review columns. A long source-bound manual
+    # ambiguity or pilot note may need a wider column, never smaller type or
+    # lost conditions. Try only a few bounded grids, then fail closed.
+    grids = ((1, 1, 1), (1, .8, 1.4), (1.4, .8, 1), (.8, 1.4, 1), (1, .6, 1.6))
+    for weights in grids:
+        rows = list(review_rows)
+        rows[1] = (264, [replace(card, width_weight=weight) for card, weight in zip(review_rows[1][1], weights)])
+        try:
+            sections["review"] = plan_page("REVIEW RECORD AND RELEASE CONDITIONS", "sec_coverage", rows)
+            break
+        except ValueError:
+            if weights == grids[-1]:
+                raise
     return sections
 
 

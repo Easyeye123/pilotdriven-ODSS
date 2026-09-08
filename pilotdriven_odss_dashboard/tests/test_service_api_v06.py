@@ -2177,7 +2177,7 @@ def test_company_briefing_references_are_tenant_scoped_normalized_and_rendered(
     assert refreshed_report.content != initial_report.content
     with fitz.open(stream=refreshed_report.content, filetype="pdf") as document:
         refreshed_text = "\n".join(page.get_text() for page in document)
-    assert "MEL 25-21-08B, MEL 25-21-08C; no candidate selected." in refreshed_text
+    assert "MEL 25-21-08B, MEL 25-21-08C; no candidate selected." in " ".join(refreshed_text.split())
     assert ambiguity in " ".join(refreshed_text.split())
     assert confirmation in " ".join(refreshed_text.split())
     assert "controlled candidate B extract" not in refreshed_text
