@@ -226,7 +226,9 @@ def release_condition_groups(flight, view, receipt, airport_analysis, alternate_
         conditions = " ".join(dict.fromkeys(clean(e.get("ambiguity_reason")) + " " + clean(e.get("confirmation_required")) for e in candidates))
         technical.append(f"MEL/CDL candidates: {names}; no candidate selected. {conditions}")
     operations.extend(airport_review_constraints(view, [*airport_analysis, *alternate_analysis]))
-    missing_geometry = [a["icao"] for a in airport_analysis if not any(o.get("icao") == a["icao"] for o in view.get("surface_overlays") or [])]
+    missing_geometry = [a["icao"] for a in airport_analysis if not any(
+        o.get("icao") == a["icao"] and o.get("role") == a["role"] and o.get("bounds")
+        and (o.get("featureCollection") or {}).get("features") for o in view.get("surface_overlays") or [])]
     if missing_geometry:
         operations.append("No validated surface figure: " + ", ".join(missing_geometry) + ". Official surface charts remain necessary.")
     if "airport_intelligence" in pending:

@@ -244,6 +244,26 @@ def draw_page(canvas, flight, view, page: Page, number: int, count: int) -> None
             start -= LEADING
 
 
+def analysed_airport_overlay(overlay, analysis):
+    """Bind evaluated runway consequences to existing, supplied geometry only."""
+    from copy import deepcopy
+    result = deepcopy(overlay) if overlay else None
+    if result is None:
+        return None
+    features = (result.get("featureCollection") or {}).get("features") or []
+    for effect in analysis.get("surface_effects") or []:
+        runways = set(effect.get("runways") or [])
+        feature_ids = [f.get("id") for f in features
+                       if (f.get("properties") or {}).get("aeroway") == "runway"
+                       and set(str((f.get("properties") or {}).get("ref") or "").split("/")) & runways]
+        if feature_ids:
+            result.setdefault("mapped", []).append({
+                **effect, "notamNumber": effect["notam_id"], "entityType": "runway",
+                "entityRef": "/".join(effect["runways"]), "featureIds": feature_ids,
+            })
+    return result
+
+
 def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=None) -> None:
     """Draw supplied geometry only; a scheduled/unknown mark is not a closure."""
     from .surface_overlays import surface_mark_presentation
@@ -262,7 +282,10 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
         if presentation in {"closure", "scheduled", "shortening"}:
             for feature_id in mark.get("featureIds") or []:
                 # Partial extents must not paint the whole supplied way red.
-                marks[feature_id] = presentation if mark.get("scope") == "whole_entity" else "scheduled"
+                state = presentation if mark.get("scope") == "whole_entity" else "scheduled"
+                priority = {None: 0, "scheduled": 1, "shortening": 2, "closure": 3}
+                if priority[state] > priority[marks.get(feature_id)]:
+                    marks[feature_id] = state
     west, south, east, north = (bounds[k] for k in ("west", "south", "east", "north"))
     if east <= west or north <= south:
         raise ValueError("Airport figure bounds are invalid")
@@ -325,7 +348,7 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
             raise ValueError(f"Airport figure has no readable label position for {ref}")
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(MUTED)
-    canvas.drawString(x, y + 4, "OSM reference · cyan: planned runway · red: active whole closure · amber: scheduled/partial/shortened")
+    canvas.drawString(x, y + 4, "OSM reference · cyan: planned runway · red: unavailable to this flight · amber: scheduled/partial/shortened")
 
 
 def build_sections(flight, view, findings, references=None) -> dict[str, list[Page]]:
@@ -435,6 +458,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         runway_lines = [r["text"] for r in analysed["lines"] if r["family"] in {"runway", "approach"}]
         taxi_lines = [r["text"] for r in analysed["lines"] if r["family"] == "taxiway"]
         overlay = next((o for o in view.get("surface_overlays") or [] if o.get("icao") == analysed["icao"] and o.get("role") == role), None)
+        overlay = analysed_airport_overlay(overlay, analysed)
         sections[role] = plan_page(f"{text(analysed['icao'])} {role.upper()} SURFACE", f"sec_{role}", [(184, [Card(f"PLANNED RWY {text(analysed['planned_runway'])} - FLIGHT-SPECIFIC CONSEQUENCES", runway_lines + taxi_lines or ["No supported closure consequence was established for the planned movement. No gate, exit or taxi route is inferred."], AMBER)])], surface_overlay=overlay, airport_role=role)
     alternates = view.get("alternate_assessment_rows") or []
     from .airport_pdf_analysis import alternate_pdf_analysis

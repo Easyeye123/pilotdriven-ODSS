@@ -117,11 +117,14 @@ def _parse_performance(perf_text: str) -> dict[str, Any]:
         ),
         "qnh_hpa": _int_group(
             perf_text,
-            r"(?:PLAN\s+QNH|^\s*QNH\s*:[ \t]*)(\d+)\s*(?:HPA)?\b",
+            r"(?:PLAN\s+QNH\s*|^\s*QNH\s*:[ \t]*)(\d+)\s*(?:HPA)?\b",
         ),
         "wind": _line_value(
             perf_text,
             r"^\s*(?:PLAN\s+)?WIND\s*:[ \t]*(?P<value>\S+)",
+        ) or _line_value(
+            perf_text,
+            r"\bPLAN\s+WIND\s+(?P<value>(?:VRB|\d{3})/?\d{2,3}(?:G\d{2,3})?(?:KT)?)\b",
         ),
         "packs_on": (
             True

@@ -402,13 +402,13 @@ def _reference_time_for_roles(
     return None
 
 
-def _compact_runway_schedule_text(
+def _runway_schedule_at_reference(
     item: dict[str, Any],
     *,
     role: str,
     planned_runways: set[str],
     reference_time: datetime | None,
-) -> str | None:
+) -> dict[str, Any] | None:
     """Summarise an explicit source schedule for the planned runway.
 
     The source can carry multiple dated runway regimes in one AIP supplement.
@@ -462,25 +462,37 @@ def _compact_runway_schedule_text(
             "ETD" if role == "departure" else "REFERENCE"
         )
         reference_display = reference_time.strftime("%H%MZ")
+        def evaluated(text: str, state: str) -> dict[str, Any]:
+            return {"text": text, "runways": sorted(schedule_runways),
+                    "referenceAt": reference_time.isoformat(),
+                    "referenceInterval": {"startsAt": closure_start.isoformat(), "endsAt": closure_end.isoformat()},
+                    "stateAtReference": state}
         if reference_time < closure_start:
             delta_minutes = int((closure_start - reference_time).total_seconds() // 60)
-            return (
+            return evaluated(
                 f"RWY {runway_label} closes {start_text}-{end_text}Z; "
                 f"{reference_label} {reference_display} precedes closure by "
-                f"{delta_minutes // 60}h{delta_minutes % 60:02d}."
+                f"{delta_minutes // 60}h{delta_minutes % 60:02d}.", "begins_after_reference"
             )
         if reference_time < closure_end:
-            return (
+            return evaluated(
                 f"RWY {runway_label} closes {start_text}-{end_text}Z; "
-                f"{reference_label} {reference_display} is within the closure."
+                f"{reference_label} {reference_display} is within the closure.", "active_at_reference"
             )
         delta_minutes = int((reference_time - closure_end).total_seconds() // 60)
-        return (
+        return evaluated(
             f"RWY {runway_label} closure {start_text}-{end_text}Z ends "
             f"{delta_minutes // 60}h{delta_minutes % 60:02d} before "
-            f"{reference_label} {reference_display}."
+            f"{reference_label} {reference_display}.", "ended_before_reference"
         )
     return None
+
+
+def _compact_runway_schedule_text(item: dict[str, Any], *, role: str,
+                                  planned_runways: set[str], reference_time: datetime | None) -> str | None:
+    result = _runway_schedule_at_reference(item, role=role, planned_runways=planned_runways,
+                                          reference_time=reference_time)
+    return result["text"] if result else None
 
 
 def _compact_notam_family(item: dict[str, Any]) -> str:

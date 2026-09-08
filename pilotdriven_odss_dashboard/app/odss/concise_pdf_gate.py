@@ -26,6 +26,42 @@ def normalized(value: Any) -> str:
     return " ".join(re.sub(r"[^A-Z0-9]+", " ", str(value).upper()).split())
 
 
+def check_airport_figure_states(page, overlay, analysis) -> list[dict[str, str]]:
+    """Check published runway label colours against evaluated flight effects.
+
+    This reads the physical PDF, independently of the drawing's mark merge.
+    Unknown geometry stays unresolved; it cannot justify invented strokes.
+    """
+    expected = {}
+    for feature in (overlay.get("featureCollection") or {}).get("features") or []:
+        props = feature.get("properties") or {}
+        ref = str(props.get("ref") or "")
+        if props.get("aeroway") != "runway" or not ref:
+            continue
+        ids = {feature.get("id"), props.get("featureId")}
+        effects = [e for e in analysis.get("surface_effects") or []
+                   if set(ref.split("/")) & set(e.get("runways") or [])]
+        if not effects:
+            continue
+        effects += [e for e in overlay.get("mapped") or [] if ids & set(e.get("featureIds") or [])]
+        active = any(e.get("stateAtReference") == "active_at_reference"
+                     and e.get("markClass") == "closure" and e.get("scope") == "whole_entity" for e in effects)
+        upcoming = any(e.get("stateAtReference") == "begins_after_reference" for e in effects)
+        if active or upcoming:
+            expected[ref] = 0xFF5267 if active else 0xFFBC38
+    spans = [span for block in page.get_text("dict")["blocks"] for line in block.get("lines", []) for span in line["spans"]]
+    violations = []
+    for ref, colour in expected.items():
+        labels = [s for s in spans if s["text"].strip() == ref]
+        if not labels or any(s["color"] != colour for s in labels):
+            violations.append({"code": "RUNWAY_FIGURE_STATE", "message": f"{analysis.get('icao')} runway {ref} figure does not match its flight-time consequence."})
+        rgb = tuple(((colour >> shift) & 255) / 255 for shift in (16, 8, 0))
+        if not any(d.get("color") and abs(d.get("width", 0) - 3.2) < 0.05
+                   and all(abs(a-b) < 0.01 for a,b in zip(d["color"], rgb)) for d in page.get_drawings()):
+            violations.append({"code": "RUNWAY_FIGURE_STROKE", "message": f"{analysis.get('icao')} runway {ref} has no stroke matching its flight-time state."})
+    return violations
+
+
 def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=None, alternate_analysis=None, closing_lines=None) -> dict[str, Any]:
     violations = []
     with fitz.open(path) as pdf:
@@ -100,6 +136,10 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
             violations.append({"code": "RAW_ITEM_E_IN_BODY", "message": "Source Item E copied into PDF: " + ", ".join(sorted(set(raw_hits)))})
         for airport in [*(airport_analysis or []), *(alternate_analysis or [])]:
             index = 5 if airport.get("role") == "departure" else 6 if airport.get("role") == "destination" else 7
+            if index in {5, 6} and index < len(pdf) and view is not None:
+                overlay = next((o for o in view.get("surface_overlays") or []
+                                if o.get("icao") == airport.get("icao") and o.get("role") == airport.get("role")), {})
+                violations.extend(check_airport_figure_states(pdf[index], overlay, airport))
             page_text = folded_pages[index] if index < len(pages) else ""
             for line in airport.get("lines") or []:
                 if normalized(line["text"]) not in page_text:

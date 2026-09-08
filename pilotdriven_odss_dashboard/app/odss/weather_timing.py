@@ -179,6 +179,31 @@ def _short_range(starts_at: datetime, ends_at: datetime) -> str:
     return f"{starts_at:%Y-%m-%d %H:%MZ}-{ends_at:%Y-%m-%d %H:%MZ}"
 
 
+def select_taf_for_window(summaries: list[dict[str, Any]], window_start: datetime,
+                          window_end: datetime) -> int | None:
+    """Prefer actual window coverage, then overlap and latest issue time.
+
+    Provider/retrieval order cannot promote a forecast for a different period.
+    An incomplete-only choice retains its original coverage warning.
+    """
+    def instant(value):
+        try:
+            result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return result if result.tzinfo else None
+        except (TypeError, ValueError):
+            return None
+
+    def rank(index):
+        summary = summaries[index]
+        start, end = instant(summary.get("valid_from_utc")), instant(summary.get("valid_to_utc"))
+        overlap = max(0, (min(end, window_end) - max(start, window_start)).total_seconds()) if start and end else 0
+        complete = bool(start and end and start <= window_start and window_end <= end)
+        issue = instant(summary.get("issued_at_utc"))
+        return complete, overlap, issue or datetime.min.replace(tzinfo=timezone.utc), index
+
+    return max(range(len(summaries)), key=rank, default=None)
+
+
 def _parse_taf(text: str, reference: datetime) -> dict[str, Any] | None:
     normalized = re.sub(r"\s+", " ", str(text or "").upper()).strip()
     validity_match = re.search(r"\b(\d{4}/\d{4})\b", normalized)

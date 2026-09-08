@@ -40,7 +40,7 @@ from .pilot_briefing import (
 )
 from .reviewed_publications import reviewed_publication_for_notam
 from .report_facts import required_operational_reference_times
-from .weather_timing import summarize_metar_for_window, summarize_taf_for_window
+from .weather_timing import select_taf_for_window, summarize_metar_for_window, summarize_taf_for_window
 
 _WEEKDAYS = {name: index for index, name in enumerate(("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"))}
 _TIME_RANGE = re.compile(r"\b(\d{4})(?:UTC|Z)?\s*(?:-|TO)\s*(\d{4})(?:UTC|Z)?\b")
@@ -2888,6 +2888,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "phase": phase,
             "location": location,
             "utc_window": window_label,
+            "window_start": window_start,
+            "window_end": window_end,
             "mechanisms": [],
             "taf_summaries": [],
             "taf_sources": [],
@@ -2948,11 +2950,12 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         )
 
     for group in weather_groups.values():
-        taf_summary = group["taf_summaries"][-1] if group["taf_summaries"] else None
+        taf_index = select_taf_for_window(group["taf_summaries"], group["window_start"], group["window_end"])
+        taf_summary = group["taf_summaries"][taf_index] if taf_index is not None else None
         if taf_summary:
             status = taf_summary["status"]
             data = {
-                "forecast_source": group["taf_sources"][-1],
+                "forecast_source": group["taf_sources"][taf_index],
                 "phase": group["phase"],
                 "location": group["location"],
                 "utc_window": group["utc_window"],

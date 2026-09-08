@@ -12,9 +12,10 @@ from datetime import datetime
 import re
 from typing import Any
 
+from .airport_taxi_consequences import taxi_routing_scopes
+
 
 _SURFACE = re.compile(r"\b(?:RWY|RUNWAY)\s*((?:0[1-9]|[12]\d|3[0-6])[LCR]?(?:\s*/\s*(?:0[1-9]|[12]\d|3[0-6])[LCR]?)?)", re.I)
-_TWY = re.compile(r"\b(?:TWY|TAXIWAY|TXL|TAXILANE)\s+([A-Z](?:\d{1,2}[A-Z]?)?)(?=\b)", re.I)
 _KINDS = {"airport_closure", "runway_closure", "runway_approach_restriction", "taxiway_closure", "approach_navaid_closure"}
 
 
@@ -62,6 +63,7 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
     unresolved = []
     excluded = []
     source_ids = []
+    surface_effects = []
     for notice in panel.get("selected_notams") or []:
         notice_id = str(notice.get("notam_id") or "").strip()
         if not notice_id:
@@ -83,7 +85,7 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         # The shared dashboard already resolves explicit dated runway regimes
         # inside complex supplements. Reuse that analysis, never its generic
         # summary/raw fallback, even when other clauses remain unresolved.
-        from .briefing import _compact_runway_schedule_text
+        from .briefing import _runway_schedule_at_reference
         assessed = next((r for r in notice.get("role_applicability") or [] if r.get("role") == role), notice)
         raw = str(notice.get("item_e_text") or "")
         runways = list(dict.fromkeys(m.replace(" ", "").upper() for m in _SURFACE.findall(raw)))
@@ -92,12 +94,14 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         # Reuse the existing date/weekday/time evaluator for each source-named
         # pair, while keeping the actual planned runway explicit.
         for runway in runways:
-            schedule_line = _compact_runway_schedule_text(
+            schedule = _runway_schedule_at_reference(
                 notice, role=role, planned_runways=set(runway.split("/")),
                 reference_time=_time(assessed.get("referenceAt") or notice.get("referenceAt")),
             )
-            if not schedule_line:
+            if not schedule:
                 continue
+            schedule_line = schedule["text"]
+            surface_effects.append({**schedule, "notam_id": notice_id, "markClass": "closure", "scope": "whole_entity"})
             if planned and not set(planned.split("/")) & set(runway.split("/")):
                 schedule_line += f" Planned RWY {planned} differs from this affected runway."
             groups[("runway", schedule_line, "scheduled")] = {
@@ -142,7 +146,7 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
             consequence = f"Airport use is restricted {timing}; the planned movement depends on reopening."
             family = "runway"
         elif kind == "taxiway_closure":
-            taxiways = list(dict.fromkeys(_TWY.findall(raw.upper())))
+            taxiways = taxi_routing_scopes(raw)
             if not taxiways:
                 unresolved.append(notice_id)
                 continue
@@ -161,6 +165,10 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
             civil = bool(civil_runways)
             if civil:
                 runways = civil_runways
+                surface_effects.append({"runways": sorted({end for pair in runways for end in pair.split("/")}),
+                                        "notam_id": notice_id, "markClass": "closure", "scope": "whole_entity",
+                                        "stateAtReference": assessed.get("stateAtReference"),
+                                        "referenceAt": assessed.get("referenceAt") or notice.get("referenceAt")})
             runway_label = "RWY " + ", ".join(runways)
             closed = kind == "runway_closure"
             if civil:
@@ -225,7 +233,8 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         row["consequence"] = prefix + row['timing'] + ": " + "; ".join(row["segments"]) + "."
         row["text"] = row["consequence"]
         lines.append(row)
-    return {"icao": panel.get("icao"), "role": role, "planned_runway": planned or None, "lines": lines, "unresolved_ids": unresolved, "supporting_ids": excluded, "selected_ids": source_ids}
+    return {"icao": panel.get("icao"), "role": role, "planned_runway": planned or None, "lines": lines,
+            "surface_effects": surface_effects, "unresolved_ids": unresolved, "supporting_ids": excluded, "selected_ids": source_ids}
 
 
 def airport_pdf_analysis(flight: dict[str, Any], panels: list[dict[str, Any]]) -> list[dict[str, Any]]:
