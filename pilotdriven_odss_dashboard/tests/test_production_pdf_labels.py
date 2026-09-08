@@ -37,6 +37,9 @@ def test_master_links_point_to_current_detail_owners(tmp_path):
     with fitz.open(render(tmp_path)) as doc:
         destinations = {link.get('page') for link in doc[0].get_links()}
         assert {2, 4, 6, 8} <= destinations
-        assert doc[5].get_text().count('DEPARTURE SURFACE') == 1
-        assert doc[6].get_text().count('DESTINATION SURFACE') == 1
+        # Each section is named in its heading and in the corrected footer.
+        assert doc[5].get_text().count('DEPARTURE SURFACE') == 2
+        assert doc[6].get_text().count('DESTINATION SURFACE') == 2
+        assert 'PAGE 6/9 · EBBR DEPARTURE SURFACE' in doc[5].get_text()
+        assert 'PAGE 7/9 · WSSS DESTINATION SURFACE' in doc[6].get_text()
         assert 'REVIEW RECORD AND RELEASE CONDITIONS' in doc[8].get_text()

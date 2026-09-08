@@ -153,8 +153,20 @@ def release_conditions(flight, view, receipt, airport_analysis, alternate_analys
     declared = view.get("deferred_dispatch_gates") or []
     if declared:
         names = ", ".join(dict.fromkeys(re.sub(r"\s*REVIEW REQUIRED", "", clean(g.get("title"))) for g in declared))
-        candidates = [e for e in extracts if e.get("match_status") == "candidate"]
-        result.append(f"Confirm {names} against this aircraft's operative Tech Log and applicable procedures; " + ("governed candidates remain unselected." if candidates else "record completion of the actions on page 8."))
+        result.append(f"Confirm {names} against this aircraft's operative Tech Log and applicable procedures; record completion of the actions on page 8.")
+    # Keep the source-bound choice and the exact fact needed to resolve it
+    # together. A generic Tech Log reminder would lose the candidate boundary.
+    candidate_groups = {}
+    for extract in extracts:
+        if extract.get("match_status") == "candidate":
+            candidate_groups.setdefault(extract.get("deferred_entry_id"), []).append(extract)
+    for candidates in candidate_groups.values():
+        names = ", ".join(dict.fromkeys(f"{e['item_type']} {e['reference']}" for e in candidates))
+        conditions = " ".join(dict.fromkeys(
+            clean(e.get("ambiguity_reason")) + " " + clean(e.get("confirmation_required"))
+            for e in candidates
+        ))
+        result.append(f"MEL/CDL candidates: {names}; no candidate selected. {conditions}")
     airports = []
     for row in [*airport_analysis, *alternate_analysis]:
         if row.get("unresolved_ids"):
