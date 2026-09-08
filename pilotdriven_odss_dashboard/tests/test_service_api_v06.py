@@ -2023,6 +2023,10 @@ def test_company_briefing_references_are_tenant_scoped_normalized_and_rendered(
     item = briefing["flight"]["deferred_items"][0]
     assert item["classification_status"] == "unresolved"
     deferred_entry_id = item["deferred_entry_id"]
+    consequence_rows = briefing["briefing"]["deferred_pdf_analysis"]
+    assert consequence_rows
+    assert 0 in {index for row in consequence_rows for index in row["source_item_indices"]}
+    assert all(row["text"] and row["source_gate_ids"] for row in consequence_rows)
 
     initial_report = service_app.get(
         f"/v1/analyses/{analysis_id}/reports/combined",

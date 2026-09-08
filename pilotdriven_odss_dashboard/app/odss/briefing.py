@@ -5687,9 +5687,14 @@ def build_briefing_view(
         ),
     }
     from .airport_pdf_analysis import airport_pdf_analysis, alternate_pdf_analysis
+    from .analysed_briefing_content import deferred_consequence_rows
     from .concise_pdf_gate import PUBLICATION_FORMAT
     return {
         "publication_format": PUBLICATION_FORMAT,
+        "deferred_pdf_analysis": deferred_consequence_rows({
+            "deferred_dispatch_gates": deferred_dispatch_gates,
+            "fuel_summary": fuel_summary,
+        }),
         "airport_pdf_analysis": airport_pdf_analysis(flight, all_airport_panels),
         "alternate_pdf_analysis": alternate_pdf_analysis(flight, all_airport_panels),
         "status": "REVIEW REQUIRED" if needs_review else "BRIEFING COMPLETE",

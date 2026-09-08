@@ -15,7 +15,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from .analysed_briefing_content import cyclone_content, deferred_consequences, release_conditions
+from .analysed_briefing_content import cyclone_content, release_conditions
 from .analysed_briefing_map import build_publication_map, draw_publication_map
 from .constants import format_actm
 
@@ -425,7 +425,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         analysis = next((p for p in alternate_analysis if p["icao"] == a.get("airport")), {"lines": [], "unresolved_ids": []})
         alternate_lines.append(f"{text(a.get('airport'))}/{text(a.get('runway'))} {str(a.get('role') or 'alternate').upper()} · {text(a.get('approach'))} · MIN {text(a.get('minima'))} · {text(a.get('distance_nm'))} NM / {text(a.get('time_minutes'))} min / {kg(a.get('fuel_kg'))}.")
         alternate_lines.extend(r["text"] for r in analysis["lines"])
-    deferred = deferred_consequences(view)
+    deferred = [row["text"] for row in view["deferred_pdf_analysis"]]
     sections["alternates"] = plan_page("ALTERNATES AND AIRCRAFT TECHNICAL STATUS", "sec_alternates", [
         (223, [Card("ALTERNATE PLANS / FLIGHT-WINDOW CONSEQUENCES", alternate_lines or ["No alternate rows are held."])]),
         (204, [Card("CDDL / MEL ITEMS", deferred or ["No supported deferred declaration was parsed from OFP page 1."], AMBER, left_aligned=True)]),

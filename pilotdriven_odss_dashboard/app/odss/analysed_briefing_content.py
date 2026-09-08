@@ -60,7 +60,7 @@ def cyclone_content(flight):
     return {"lines": lines, "markers": markers, "time_matched": bool(markers)}
 
 
-def deferred_consequences(view):
+def deferred_consequence_rows(view):
     """Bind practical consequences to typed source segments, not MEL numbers.
 
     A reference number never determines an effect. Only explicit, non-negated
@@ -110,7 +110,8 @@ def deferred_consequences(view):
             effects.append("The declaration does not establish the permitted configuration or flight limitation; its exact effect remains open in the closing release record.")
         subject = "; ".join(dict.fromkeys(subjects))
         rows.append({"title": title, "subject": subject, "consequences": list(dict.fromkeys(effects)),
-                     "references": gate.get("references") or [], "source_item_indices": gate.get("source_item_indices") or []})
+                     "references": gate.get("references") or [], "source_item_indices": gate.get("source_item_indices") or [],
+                     "gate_id": gate.get("gate_id")})
     # Several gates can share a single action; publish their identities once.
     grouped = {}
     for row in rows:
@@ -125,8 +126,17 @@ def deferred_consequences(view):
         # ground lavatories, aircraft performance).
         unresolved = consequences[0].startswith("The declaration does not establish")
         identity = f"{titles}: " + (("; ".join(subjects) + ". ") if unresolved else "")
-        lines.append(identity + " ".join(consequences))
+        lines.append({
+            "text": identity + " ".join(consequences),
+            "references": list(dict.fromkeys(reference for row in group for reference in row["references"])),
+            "source_item_indices": list(dict.fromkeys(index for row in group for index in row["source_item_indices"])),
+            "source_gate_ids": list(dict.fromkeys(row["gate_id"] for row in group if row["gate_id"])),
+        })
     return lines
+
+
+def deferred_consequences(view):
+    return [row["text"] for row in deferred_consequence_rows(view)]
 
 
 def release_conditions(flight, view, receipt, airport_analysis, alternate_analysis, extracts):
