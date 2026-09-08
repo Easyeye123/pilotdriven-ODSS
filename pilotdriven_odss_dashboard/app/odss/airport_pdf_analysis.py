@@ -110,7 +110,8 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
             component = re.search(r"\b(ILS|DME|VOR|LOC|GP|GS|NDB|GLS)(?:[ -]+PART)\b", raw, re.I)
             systems = [aid for aid in dict.fromkeys(re.findall(r"\b(?:ILS|DME|VOR|LOC|GP|GS|NDB|GLS)\b", raw.upper()))
                        if _bound_unavailable(raw.upper(), re.escape(aid))]
-            subject = component.group(1).upper() if component else "/".join(systems)
+            component_name = component.group(1).upper() if component else None
+            subject = component_name if component_name in systems else "/".join(systems)
             if not subject:
                 unresolved.append(notice_id)
                 continue

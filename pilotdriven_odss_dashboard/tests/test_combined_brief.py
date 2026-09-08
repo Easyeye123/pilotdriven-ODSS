@@ -164,3 +164,10 @@ def test_notam_id_outside_consequence_is_rejected(published, tmp_path):
         doc.save(path)
     result = check_concise_pdf(path, airport_analysis=[])
     assert 'NON_INLINE_NOTAM_ID' in {v['code'] for v in result['violations']}
+
+
+def test_available_component_does_not_override_a_separate_outage():
+    result = analyse(notice('DME PART AVAILABLE; ILS RWY 02L U/S'))
+    line = result['lines'][0]['text']
+    assert 'ILS' in line
+    assert 'DME' not in line
