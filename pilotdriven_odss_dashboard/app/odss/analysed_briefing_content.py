@@ -139,69 +139,110 @@ def deferred_consequences(view):
     return [row["text"] for row in deferred_consequence_rows(view)]
 
 
-def release_conditions(flight, view, receipt, airport_analysis, alternate_analysis, extracts):
-    """A numbered action list driven by unresolved states of this flight."""
+def airport_review_constraints(view, analyses):
+    """Name the unresolved conclusion, never publish raw clauses or counts.
+
+    These labels describe gaps in the existing assessment. They do not turn
+    an unrecognised clause into a closure or declare a runway available.
+    """
+    from .airport_pdf_analysis import _SURFACE
+    result = []
+    for analysis in analyses:
+        ids = set(analysis.get("unresolved_ids") or [])
+        if not ids:
+            continue
+        panel = next((p for p in view.get("airport_operational_panels") or [] if p.get("icao") == analysis.get("icao")), {})
+        topics = []
+        for notice in panel.get("selected_notams") or []:
+            if notice.get("notam_id") not in ids:
+                continue
+            raw = clean(notice.get("item_e_text")).upper()
+            runways = list(dict.fromkeys(m.replace(" ", "") for m in _SURFACE.findall(raw)))
+            scope = "RWY " + "/".join(dict.fromkeys(r for pair in runways for r in pair.split("/"))) if runways else "planned movement"
+            if "RETIL" in raw:
+                topic = f"{scope} exit-lighting effect"
+            elif re.search(r"\b(?:LOC|LOCALISER|LOCALIZER)\b", raw) and re.search(r"\b(?:INTRP|OSCILLATIONS|INTERFERENCE)\b", raw):
+                topic = f"{scope} localizer interference"
+            elif "FRICTION" in raw:
+                topic = f"{scope} braking-performance effect"
+            elif re.search(r"\b\d+-MIN\s+INSPECTION\b", raw):
+                topic = "short-inspection timing"
+            elif route := re.search(r"\bATS ROUTE\s+([A-Z]\d+)\b", raw):
+                topic = f"{route.group(1)} clearance/equipment applicability"
+            else:
+                names = {"runway_closure": "runway closure timing", "taxiway_closure": "taxiway restriction extent", "approach_navaid_closure": "approach-aid serviceability", "runway_approach_restriction": "runway/procedure restrictions"}
+                topic = names.get(notice.get('pertinence_kind'), 'obstacle effects on the approach' if notice.get('approach_affected') else 'movement restriction scope')
+            topics.append(topic)
+        if not topics:
+            topics = ["source-linked movement assessment"]
+        planned = clean(analysis.get("planned_runway"))
+        role = "alternate" if analysis.get("role") == "destination alternate" else clean(analysis.get("role"))
+        result.append(f"{analysis['icao']} {role}" + (f" RWY {planned}" if planned else "") + ": unresolved " + "; ".join(dict.fromkeys(topics)) + ".")
+    return result
+
+
+def release_condition_groups(flight, view, receipt, airport_analysis, alternate_analysis, extracts):
+    """Specific source limits, grouped for a readable single closing page."""
     complete = {"HELD", "FOUND", "CHECKED · NO MATCH", "CHECKED · NO TRIGGER", "NOT APPLICABLE"}
     pending = {r["key"]: r for r in receipt["rows"] if r["state"] not in complete}
-    result = []
+    groups = {"weather": [], "operations": [], "technical": []}
+    weather, operations, technical = groups.values()
     weather_keys = {"metar_taf": "METAR/TAF", "sigmet": "SIGMET", "vaa_vaac": "VAA/VAAC", "tropical_cyclone": "TC advisory/SIGMET"}
     missing = [label for key, label in weather_keys.items() if key in pending]
     if missing:
-        result.append(f"Obtain {', '.join(missing)} covering {window_label(flight)} on {flight.get('departure', '?')}-{flight.get('destination', '?')}; held coverage does not close that flight window.")
+        weather.append(f"{flight.get('departure', '?')}-{flight.get('destination', '?')} {window_label(flight)}: complete {', '.join(missing)} coverage is not established.")
     unresolved_sigmets = [clean(r.get("name")) for r in (view.get("hazards") or {}).get("sigmet_cards") or []
                           if r.get("disposition") == "REVIEW REQUIRED" and "does not intersect the polygon" not in str(r.get("screening") or "")]
     unassessed_ash = [clean(r.get("volcano") or r.get("name")) for r in (view.get("vaa") or {}).get("cfp_advisories") or []
                      if r.get("advisory_kind") == "CFP_VAA_NOTICE"]
     if unresolved_sigmets or unassessed_ash:
         affected = list(dict.fromkeys(filter(None, unresolved_sigmets + unassessed_ash)))
-        result.append("Resolve the held advisory applicability for " + ", ".join(affected) + "; source geometry, timing or a route-specific ash assessment is incomplete.")
+        weather.append(", ".join(affected) + ": held advisory route/time/level assessment is incomplete (page 4).")
     cat = [label for key, label in (("wafs_sigwx", "WAFS/SIGWX"), ("airep_pirep", "AIREP/PIREP")) if key in pending]
     if cat:
         vws = (view.get("terrain") or {}).get("vws_review") or {}
         near = clean(vws.get("maximum_waypoint"))
-        result.append(f"Complete route-specific {' and '.join(cat)} corroboration" + (f" around {near} (OFP maximum VWS {vws.get('maximum_display')})" if near else "") + "; OFP VWS alone does not establish CAT.")
+        weather.append((f"VWS {vws.get('maximum_display')} at {near}: " if near else "CAT: ") + f"{' and '.join(cat)} corroboration missing; VWS alone does not establish CAT.")
     declared = view.get("deferred_dispatch_gates") or []
     if declared:
         names = ", ".join(dict.fromkeys(re.sub(r"\s*REVIEW REQUIRED", "", clean(g.get("title"))) for g in declared))
-        result.append(f"Confirm {names} against this aircraft's operative Tech Log and applicable procedures; record completion of the actions on page 8.")
-    # Keep the source-bound choice and the exact fact needed to resolve it
-    # together. A generic Tech Log reminder would lose the candidate boundary.
+        technical.append(f"{names}: operative Tech Log confirmation and completion of page 8 actions are not recorded in this briefing.")
     candidate_groups = {}
     for extract in extracts:
         if extract.get("match_status") == "candidate":
             candidate_groups.setdefault(extract.get("deferred_entry_id"), []).append(extract)
     for candidates in candidate_groups.values():
         names = ", ".join(dict.fromkeys(f"{e['item_type']} {e['reference']}" for e in candidates))
-        conditions = " ".join(dict.fromkeys(
-            clean(e.get("ambiguity_reason")) + " " + clean(e.get("confirmation_required"))
-            for e in candidates
-        ))
-        result.append(f"MEL/CDL candidates: {names}; no candidate selected. {conditions}")
-    airports = []
-    for row in [*airport_analysis, *alternate_analysis]:
-        if row.get("unresolved_ids"):
-            airports.append(f"{row['icao']} ({len(row['unresolved_ids'])})")
-    if airports:
-        result.append("Resolve flight-window or scope ambiguities in the app: " + ", ".join(dict.fromkeys(airports)) + "; check the planned movement against current NOTAM/ATIS.")
+        conditions = " ".join(dict.fromkeys(clean(e.get("ambiguity_reason")) + " " + clean(e.get("confirmation_required")) for e in candidates))
+        technical.append(f"MEL/CDL candidates: {names}; no candidate selected. {conditions}")
+    operations.extend(airport_review_constraints(view, [*airport_analysis, *alternate_analysis]))
     missing_geometry = [a["icao"] for a in airport_analysis if not any(o.get("icao") == a["icao"] for o in view.get("surface_overlays") or [])]
     if missing_geometry:
-        result.append("Obtain official surface charts for " + ", ".join(missing_geometry) + "; this pack has no validated surface figure for them.")
+        technical.append("No validated surface figure: " + ", ".join(missing_geometry) + ". Official surface charts remain necessary.")
     if "airport_intelligence" in pending:
         stations = list(dict.fromkeys(a["icao"] for a in airport_analysis))
-        result.append("Check current Airport Notes for " + "/".join(stations) + "; their applicable released coverage is incomplete.")
+        technical.append("Released Airport Notes coverage incomplete: " + "/".join(stations) + ".")
     if "depressurisation_profile" in pending:
         events = (view.get("terrain") or {}).get("events") or []
-        legs = [f"{(e.get('first_high') or {}).get('name', '?')}-{(e.get('last_high') or {}).get('name', '?')}" for e in events]
-        result.append("Bind the controlled escape/depressurisation profile for " + ", ".join(legs) + "; high MSA does not define an escape procedure.")
+        legs = ["-".join(dict.fromkeys([(e.get("first_high") or {}).get("name", "?"), (e.get("last_high") or {}).get("name", "?")])) for e in events]
+        technical.append("Escape/depressurisation profile not bound" + (": " + ", ".join(legs) if legs else "") + "; high MSA alone is not an escape procedure.")
     if "edto" in pending:
         stations = list(dict.fromkeys(clean(a.get("airport")) for a in (view.get("edto") or {}).get("airports") or []))
-        result.append("Resolve EDTO suitability" + (" for " + "/".join(stations) if stations else " for the held route declaration") + " across the checked periods on page 2.")
+        technical.append("EDTO checked-period suitability unresolved" + (": " + "/".join(stations) if stations else "") + " (page 2).")
     if "enroute_notam" in pending:
-        firs = list(dict.fromkeys(clean(w.get("fir_boundary")) for w in flight.get("route_waypoints") or [] if w.get("fir_boundary")))
-        result.append("Obtain bounded enroute NOTAM coverage for " + ("/".join(firs) or "the filed route") + "; no complete route-airspace assessment is held.")
+        technical.append("Complete route-airspace assessment is not held for the filed route.")
     for key in ("ofp_parse", "flight_timing", "fuel_performance", "vws", "airports_alternates", "airport_notam"):
         if key in pending:
-            result.append(pending[key]["detail"])
-    if not result:
-        result = ["No unresolved automated source condition is recorded for this flight; record the crew's operational release separately."]
-    return [f"{i}. {line}" for i, line in enumerate(dict.fromkeys(result), 1)]
+            technical.append(pending[key]["detail"])
+    number = 1
+    for key, lines in groups.items():
+        groups[key] = []
+        for line in dict.fromkeys(lines):
+            groups[key].append(f"{number}. {line}")
+            number += 1
+    return groups
+
+
+def release_conditions(flight, view, receipt, airport_analysis, alternate_analysis, extracts):
+    groups = release_condition_groups(flight, view, receipt, airport_analysis, alternate_analysis, extracts)
+    return [line for lines in groups.values() for line in lines] or ["1. No unresolved automated source condition is recorded; crew operational release remains separate."]

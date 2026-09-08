@@ -165,3 +165,47 @@ def test_stuck_seat_armrest_needs_a_configuration_decision_not_an_invented_seat_
     assert 'Seat 12A needs a seating-configuration decision' in result
     assert 'seat blocked' not in result.lower() and 'dispatch permitted' not in result.lower()
     assert 'seating-configuration decision' not in ' '.join(deferred_consequences(_deferred('SEAT 12A ARMREST NOT STUCK')))
+
+
+def test_closing_page_uses_named_sections_and_attaches_body_to_heading(tmp_path):
+    from app.odss.concise_pdf_gate import check_concise_pdf
+    path = tmp_path / 'flight.pdf'
+    render_combined_briefing(sample_flight(), _findings(), [], path)
+    with fitz.open(path) as doc:
+        page = doc[8]
+        assert 'BEFORE RELEASE' not in page.get_text()
+        assert 'WEATHER COVERAGE' in page.get_text()
+        title, body = page.search_for('WEATHER COVERAGE')[0], page.search_for('1.')[0]
+        assert 0 < body.y0 - title.y1 < 25
+        assert len(page.search_for('PUBLICATION STATE')) == 1
+    assert check_concise_pdf(path)['valid']
+
+
+def test_missing_closing_condition_is_rejected(tmp_path):
+    from app.odss.concise_pdf_gate import check_concise_pdf
+    path = tmp_path / 'flight.pdf'
+    render_combined_briefing(sample_flight(), _findings(), [], path)
+    result = check_concise_pdf(path, closing_lines=['A required source-bound condition that was lost.'])
+    assert 'REVIEW_CONDITION_PARITY' in {v['code'] for v in result['violations']}
+
+
+def test_airport_closing_record_names_unresolved_conclusions_without_counts():
+    from app.odss.analysed_briefing_content import airport_review_constraints
+    analyses = [{'icao':'WSSS', 'role':'destination', 'planned_runway':'20R', 'unresolved_ids':['A1234/26']}]
+    view = {'airport_operational_panels':[{'icao':'WSSS','selected_notams':[
+        {'notam_id':'A1234/26','item_e_text':'A 5-MIN INSPECTION CONDUCTED WITHIN A LARGER WINDOW', 'pertinence_kind':'runway_closure'}]}]}
+    line = airport_review_constraints(view, analyses)[0]
+    assert 'WSSS destination RWY 20R' in line and 'short-inspection timing' in line
+    assert '(1)' not in line and 'A1234/26' not in line and 'CONDUCTED' not in line
+
+
+def test_departure_route_notice_does_not_become_an_arrival_release_condition():
+    from app.odss.airport_pdf_analysis import analyse_airport_for_pdf
+    panel = {'icao':'WSSS','selected_notams':[
+        {'notam_id':'A1234/26','item_e_text':'FLIGHTS DEPARTING WSSS ON ATS ROUTE N571: EQUIPMENT CONDITIONS APPLY', 'pertinence_kind':'runway_approach_restriction'}]}
+    for role, route in [('destination',None), ('destination alternate',None), ('departure','WSSS/20C DCT BOBAG N884 YPPH/21')]:
+        result = analyse_airport_for_pdf(panel, role=role, planned_runway='20C', route_text=route)
+        assert result['unresolved_ids'] == []
+        assert result['supporting_ids'] == ['A1234/26']
+    for route in [None, 'WSSS/20C N571 ABCDE']:
+        assert analyse_airport_for_pdf(panel, role='departure', planned_runway='20C', route_text=route)['unresolved_ids'] == ['A1234/26']

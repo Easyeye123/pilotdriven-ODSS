@@ -15,7 +15,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from .analysed_briefing_content import cyclone_content, release_conditions
+from .analysed_briefing_content import cyclone_content, release_condition_groups
 from .analysed_briefing_map import build_publication_map, draw_publication_map
 from .constants import format_actm
 
@@ -109,6 +109,8 @@ class Card:
     accent: Any = field(default_factory=lambda: CYAN)
     target: str | None = None
     left_aligned: bool = False
+    top_aligned: bool = False
+    paragraph_gap: float = 0
 
 
 @dataclass
@@ -122,6 +124,9 @@ class CardBox:
     height: float
     target: str | None = None
     left_aligned: bool = False
+    top_aligned: bool = False
+    paragraph_gap: float = 0
+    paragraph_starts: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -142,15 +147,20 @@ def plan_page(title: str, bookmark: str, rows: list[tuple[float, list[Card]]], *
     for height, cards in rows:
         width = (full_width - GAP * (len(cards) - 1)) / len(cards)
         for i, card in enumerate(cards):
-            title_lines = wrap(card.title, width - 20, font="Helvetica-Bold", size=14)
-            head_height = len(title_lines) * 16 + 15
-            capacity = max(1, int((height - head_height - 17) // LEADING))
-            lines = [line for p in card.paragraphs for line in wrap(p, width - 28)]
-            if len(lines) > capacity:
+            title_lines = wrap(card.title, width - 20, font="Helvetica-Bold", size=14) if card.title else []
+            head_height = len(title_lines) * 16 + 15 if card.title else 0
+            available_height = max(LEADING, height - head_height - 17)
+            capacity = int(available_height // LEADING)
+            lines, starts = [], []
+            for paragraph in card.paragraphs:
+                starts.append(len(lines))
+                lines.extend(wrap(paragraph, width - 28))
+            gap_height = max(0, len(starts) - 1) * card.paragraph_gap
+            if len(lines) * LEADING + gap_height > available_height + .01:
                 raise ValueError(f"Concise PDF capacity exceeded in {title} / {card.title}: {len(lines)} lines, {capacity} available. No source continuation is permitted.")
             else:
                 shown = lines
-            first.boxes.append(CardBox(card.title, shown, card.accent, MARGIN + i * (width + GAP), top - height, width, height, card.target, card.left_aligned))
+            first.boxes.append(CardBox(card.title, shown, card.accent, MARGIN + i * (width + GAP), top - height, width, height, card.target, card.left_aligned, card.top_aligned, card.paragraph_gap, starts))
         top -= height + GAP
     if top + GAP < BOTTOM - 0.1:
         raise ValueError(f"Reference grid exceeds page: {title}")
@@ -205,19 +215,21 @@ def draw_page(canvas, flight, view, page: Page, number: int, count: int) -> None
         canvas.roundRect(box.x, box.y, box.width, box.height, 8, stroke=1, fill=1)
         if box.target:
             canvas.linkRect(f"Open {box.title} detail", box.target, (box.x, box.y, box.x + box.width, box.y + box.height), relative=0, thickness=0)
-        title_lines = wrap(box.title, box.width - 20, font="Helvetica-Bold", size=14)
+        title_lines = wrap(box.title, box.width - 20, font="Helvetica-Bold", size=14) if box.title else []
         canvas.setFont("Helvetica-Bold", 14)
         canvas.setFillColor(box.accent)
         baseline = box.y + box.height - 23
         for line in title_lines:
             canvas.drawCentredString(box.x + box.width / 2, baseline, line)
             baseline -= 16
-        body_top = baseline - 8
+        body_top = baseline - 8 if box.title else box.y + box.height - 16
         body_bottom = box.y + 14
-        start = body_top - max(0, (body_top - body_bottom - (len(box.lines) - 1) * LEADING) / 2)
+        start = body_top if box.top_aligned else body_top - max(0, (body_top - body_bottom - (len(box.lines) - 1) * LEADING) / 2)
         canvas.setFont("Helvetica", BODY)
         canvas.setFillColor(WHITE)
-        for line in box.lines:
+        for index, line in enumerate(box.lines):
+            if index and index in box.paragraph_starts:
+                start -= box.paragraph_gap
             if start < box.y + 10:
                 raise ValueError(f"Card body exceeds measured capacity: {box.title}")
             if box.left_aligned:
@@ -335,7 +347,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     mass_lines = [f"PZFW {kg(masses.get('pzfw'))} · PTOW {kg(masses.get('ptow'))}", f"PLWT {kg(masses.get('plwt'))}", f"Selected RTOW {kg(perf.get('selected_rtow_kg'))} · margin {kg(perf.get('margin_kg'))}"]
     fuel_summary_lines = [f"FLT PLAN REQMT {amount('flt_plan_reqmt')} · EXCESS {amount('excess_fuel')}", f"BURNOFF {amount('burnoff')} · STAT CONT {amount('stat_cont')}", f"ALTN FUEL {amount('altn_fuel')} · ALTN HOLD {amount('altn_hold')}", f"TAXI FUEL {kg(fuel.get('taxi_fuel_kg'))}"]
     sections["summary"] = plan_page("FLIGHT BRIEFING - MASTER SUMMARY", "sec_overview", [
-        (126, [Card("FLIGHT", [f"{text(view.get('flight_number'))} · {text(identity.get('registration'))} · {text(identity.get('aircraft_type'))}", f"{text(flight.get('departure'))}/{text(flight.get('departure_runway'))} to {text(flight.get('destination'))}/{text(flight.get('destination_runway'))}", text(identity.get("rules")), f"CRUISE CI {text(identity.get('cost_index'))}"]), Card("TIME", [f"SCHED DEP {clock(identity.get('etd_hhmm'))} · SCHED ARR {clock(identity.get('scheduled_eta_hhmm'))}", f"Block {text(identity.get('block'))} · Flight Time {text((view.get('metrics') or {}).get('eet'))}", (f"ATOT {clock(identity.get('actual_takeoff_hhmm'))} · TARGET ARRIVAL {clock(identity.get('eta_hhmm'))}" if identity.get("actual_takeoff_hhmm") else "TARGET ARRIVAL NOT CALCULATED"), "Clocks: ATOT + OFP ACTM"]), Card("ROUTE / LEVELS", [f"SID {text(one.get('sid'))} · STAR {text(one.get('star'))}", f"Route distance: {text(one.get('ground_distance_nm'))} NM", f"Levels: {text((view.get('metrics') or {}).get('cruise'))}. Filed track on page 2."])]),
+        (126, [Card("FLIGHT", [f"{text(view.get('flight_number'))} · {text(identity.get('registration'))} · {text(identity.get('aircraft_type'))}", f"{text(flight.get('departure'))}/{text(flight.get('departure_runway'))} to {text(flight.get('destination'))}/{text(flight.get('destination_runway'))}", text(identity.get("rules")), f"CRUISE CI {text(identity.get('cost_index'))}"]), Card("TIME", [f"SCHED DEP {clock(identity.get('etd_hhmm'))} · SCHED ARR {clock(identity.get('scheduled_eta_hhmm'))}", f"Block {text(identity.get('block'))} · Flight Time {text((view.get('metrics') or {}).get('eet'))}", (f"ATOT {clock(identity.get('actual_takeoff_hhmm'))} · TARGET ARRIVAL {clock(identity.get('eta_hhmm'))}" if identity.get("actual_takeoff_hhmm") else "ATOT not entered · TARGET ARRIVAL NOT CALCULATED"), "Clocks: ATOT + OFP ACTM"]), Card("ROUTE / LEVELS", [f"SID {text(one.get('sid'))} · STAR {text(one.get('star'))}", f"Route distance: {text(one.get('ground_distance_nm'))} NM", f"Levels: {text((view.get('metrics') or {}).get('cruise'))}. Filed track on page 2."])]),
         (126, [Card("FUEL IN TANKS - " + amount("fuel_in_tanks"), fuel_summary_lines, GREEN, "sec_performance"), Card("MASS / PERFORMANCE", mass_lines, GREEN, "sec_performance")]),
         (157, [Card("VWS / TERRAIN", [vws_summary, terrain_summary], AMBER, "sec_terrain"), Card("ARRIVAL SURFACE", [f"Planned {text(flight.get('destination'))} RWY {text(flight.get('destination_runway'))}", f"{len(airport_analysis[1]['lines'])} analysed surface/approach consequence(s).", "Open the arrival page for flight-time effects and inline notice IDs."], RED, "sec_destination"), Card("RELEASE CONDITIONS", ["Review record and source checks on page 9.", "Current weather, airport surface state and operative aircraft limitations must be confirmed before use."], AMBER, "sec_coverage")]),
     ])
@@ -430,20 +442,32 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         (223, [Card("ALTERNATE PLANS / FLIGHT-WINDOW CONSEQUENCES", alternate_lines or ["No alternate rows are held."])]),
         (204, [Card("CDDL / MEL ITEMS", deferred or ["No supported deferred declaration was parsed from OFP page 1."], AMBER, left_aligned=True)]),
     ])
-    completed_groups = {}
-    for row in receipt["rows"]:
-        if row["state"] in {"HELD", "FOUND", "CHECKED · NO MATCH", "CHECKED · NO TRIGGER", "NOT APPLICABLE"}:
-            completed_groups.setdefault(row["state"], []).append(row["label"])
-    completed = [f"{state.replace('NO TRIGGER', 'NO THRESHOLD EXCEEDANCE')}: {', '.join(labels)}." for state, labels in completed_groups.items()]
+    checks = {row["key"]: row for row in receipt["rows"]}
+    completed = [f"{label}: {success if checks[key]['state'] == 'HELD' else 'incomplete'}."
+                 for key, label, success in (("ofp_parse", "Flight / aircraft identity", "recorded"),
+                                             ("flight_timing", "Scheduled departure / arrival UTC", "recorded"),
+                                             ("fuel_performance", "Fuel arithmetic / performance", "verified"))]
+    edto_result = {"NOT APPLICABLE": "not applicable", "HELD": "assessment recorded"}.get(checks["edto"]["state"], "assessment incomplete")
+    completed.append(f"EDTO: {edto_result}.")
     from .governed_deferred_extract import governed_deferred_extracts
     extracts = governed_deferred_extracts(view.get("deferred_source_items"), references)
-    pending_lines = release_conditions(flight, view, receipt, airport_analysis, alternate_analysis, extracts)
-    source_lines = [f"Bound governed extracts: {len(extracts)}. Exact text and applicability remain in the app."] if extracts else []
-    source_lines += [f"OFP {text(identity.get('ofp'))} · {text(view.get('flight_number'))} · {text(view.get('flight_date'))}", f"Report generated {text(view.get('generated_at_display'))}.", "Complete original NOTAMs remain in the app under Show full NOTAM. PDF airport lines are flight-specific consequences with inline IDs."]
+    conditions = release_condition_groups(flight, view, receipt, airport_analysis, alternate_analysis, extracts)
+    source_lines = [f"OFP {text(identity.get('ofp'))} · {text(view.get('flight_number'))} · {text(view.get('flight_date'))}", f"Generated {text(view.get('generated_at_display'))}.", "Source checks and full NOTAMs: app / Show full NOTAM."]
     notes = [str(n.get("note_text")) for n in flight.get("personal_notes") or [] if (n.get("include_level1") or n.get("include_level2")) and n.get("note_text")]
+    if notes:
+        conditions["technical"].append("PILOT NOTES: " + " / ".join(notes))
+    def review_card(title, paragraphs, accent=AMBER):
+        return Card(title, paragraphs, accent, left_aligned=True, top_aligned=True, paragraph_gap=4)
+    has_conditions = any(conditions.values())
+    publication_state = "PUBLICATION STATE: Conditional briefing; the unresolved assessments above prevent an automated release conclusion."
+    if not has_conditions:
+        publication_state = "1. PUBLICATION STATE: No unresolved automated source condition; crew operational release remains separate."
     sections["review"] = plan_page("REVIEW RECORD AND RELEASE CONDITIONS", "sec_coverage", [
-        (269, [Card("BEFORE RELEASE", pending_lines, AMBER, left_aligned=True)]),
-        (158, [Card("SOURCE / CALCULATION REVIEW", completed, GREEN), Card("SOURCE CONTROL", source_lines + (["PILOT NOTES: " + " / ".join(notes)] if notes else []) + ["Conditional briefing. Crew operational release remains separate."])]),
+        (119, [review_card("SOURCE / CALCULATION REVIEW", completed, CYAN), review_card("SOURCE CONTROL", source_lines, CYAN)]),
+        (264, [review_card("WEATHER COVERAGE", conditions["weather"] or ["No unresolved weather-source condition is recorded."]),
+               review_card("AIRPORT ASSESSMENTS", conditions["operations"] or ["No unresolved airport assessment is recorded."]),
+               review_card("REMAINING RELEASE INPUTS", conditions["technical"] or ["No unresolved aircraft/route source condition is recorded."])]),
+        (26, [review_card("", [publication_state])]),
     ])
     return sections
 
@@ -473,7 +497,8 @@ def render_analysed_briefing(flight, findings, warnings, path, *, weather_charts
         draw_page(canvas, flight, view, page, number, len(pages))
         canvas.showPage()
     canvas.save()
-    result = check_concise_pdf(target, flight=flight, view=view, airport_analysis=airport_pdf_analysis(flight, view.get("airport_operational_panels") or []), alternate_analysis=alternate_pdf_analysis(flight, view.get("airport_operational_panels") or []))
+    closing_lines = [" ".join(box.lines) for page in sections["review"] for box in page.boxes]
+    result = check_concise_pdf(target, flight=flight, view=view, airport_analysis=airport_pdf_analysis(flight, view.get("airport_operational_panels") or []), alternate_analysis=alternate_pdf_analysis(flight, view.get("airport_operational_panels") or []), closing_lines=closing_lines)
     if not result["valid"]:
         target.unlink(missing_ok=True)
         raise ValueError("Concise briefing publication failed: " + "; ".join(v["message"] for v in result["violations"]))

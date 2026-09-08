@@ -26,7 +26,7 @@ def normalized(value: Any) -> str:
     return " ".join(re.sub(r"[^A-Z0-9]+", " ", str(value).upper()).split())
 
 
-def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=None, alternate_analysis=None) -> dict[str, Any]:
+def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=None, alternate_analysis=None, closing_lines=None) -> dict[str, Any]:
     violations = []
     with fitz.open(path) as pdf:
         if pdf.embfile_count():
@@ -59,6 +59,20 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                 violations.append({"code": "WRONG_SECTION_FOOTER", "message": f"Page {index + 1} is labelled as the master summary."})
         if len(pages) == MAX_BRIEFING_PAGES and not re.search(r"\b1\.\s", pages[8]):
             violations.append({"code": "RELEASE_ACTION_LIST", "message": "Closing release actions must be numbered."})
+        if len(pages) == MAX_BRIEFING_PAGES:
+            review = pdf[8]
+            for title in ("SOURCE / CALCULATION REVIEW", "SOURCE CONTROL", "WEATHER COVERAGE", "AIRPORT ASSESSMENTS", "REMAINING RELEASE INPUTS", "PUBLICATION STATE"):
+                if normalized(title) not in folded_pages[8]:
+                    violations.append({"code": "REVIEW_RECORD_STRUCTURE", "message": f"Closing page omits its compact {title} section."})
+            for line in closing_lines or []:
+                if normalized(line) not in folded_pages[8]:
+                    violations.append({"code": "REVIEW_CONDITION_PARITY", "message": "A source-bound closing condition is missing from the PDF."})
+            if re.search(r"\b[A-Z]{4}\s*\(\d+\)", pages[8]):
+                violations.append({"code": "UNEXPLAINED_AIRPORT_COUNT", "message": "Closing conditions must name the missing assessment, not airport record counts."})
+            titles = review.search_for("WEATHER COVERAGE")
+            first = review.search_for("1.")
+            if titles and first and first[0].y0 < review.rect.height - 70 and first[0].y0 - titles[0].y1 > 35:
+                violations.append({"code": "REVIEW_BODY_ALIGNMENT", "message": "Closing conditions are detached from their section heading."})
         if len(pages) > 7:
             for item in (flight or {}).get("deferred_items") or []:
                 remark = normalized(item.get("company_remark"))

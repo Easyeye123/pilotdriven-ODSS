@@ -55,7 +55,7 @@ def _timing(record: dict[str, Any], role: str) -> tuple[str | None, str]:
     return None, "unresolved reference time"
 
 
-def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway: Any) -> dict[str, Any]:
+def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway: Any, route_text: str | None = None) -> dict[str, Any]:
     """Group equal consequences, retaining every contributing inline ID."""
     planned = str(planned_runway or "").strip().upper()
     groups: OrderedDict[tuple[str, str, str], dict[str, Any]] = OrderedDict()
@@ -67,6 +67,15 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         if not notice_id:
             continue
         source_ids.append(notice_id)
+        # A notice explicitly limited to departures on one named ATS route
+        # must not create an unresolved arrival/other-route release condition.
+        # The raw dashboard record remains available under its existing rules.
+        departure_scope = re.match(r"^\s*FLIGHTS DEPARTING ([A-Z]{4}) ON ATS ROUTE ([A-Z]\d+)\s*:", str(notice.get("item_e_text") or ""), re.I)
+        if departure_scope and departure_scope.group(1).upper() == str(panel.get("icao") or "").upper():
+            route = departure_scope.group(2).upper()
+            if role != "departure" or (route_text and not re.search(r"\b" + re.escape(route) + r"\b", route_text.upper())):
+                excluded.append(notice_id)
+                continue
         kind = str(notice.get("pertinence_kind") or "")
         if kind not in _KINDS and notice.get("approach_affected") is not True:
             excluded.append(notice_id)
@@ -203,7 +212,7 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
 def airport_pdf_analysis(flight: dict[str, Any], panels: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [analyse_airport_for_pdf(
         next((p for p in panels if p.get("icao") == flight.get(role)), {"icao": flight.get(role)}),
-        role=role, planned_runway=flight.get(f"{role}_runway"),
+        role=role, planned_runway=flight.get(f"{role}_runway"), route_text=flight.get("route_text"),
     ) for role in ("departure", "destination")]
 
 
@@ -221,5 +230,5 @@ def alternate_pdf_analysis(flight: dict[str, Any], panels: list[dict[str, Any]])
             runways = _notam_runway_designators(notice.get("item_e_text"))
             if not runways or str(alternate.get("runway")) in runways:
                 notices.append(notice)
-        result.append(analyse_airport_for_pdf({**panel, "selected_notams": notices}, role="destination alternate", planned_runway=alternate.get("runway")))
+        result.append(analyse_airport_for_pdf({**panel, "selected_notams": notices}, role="destination alternate", planned_runway=alternate.get("runway"), route_text=flight.get("route_text")))
     return result

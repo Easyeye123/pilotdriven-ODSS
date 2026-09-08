@@ -52,6 +52,7 @@ REQUIRED_CASE_IDS = frozenset({
     "SQ910-SIN-MNL-21AUG",
     "SQ481-JNB-SIN-25AUG",
     "SQ38-SIN-LAX-29AUG",
+    "SQ605-ICN-SIN-08SEP",
 })
 DEFERRED_TYPES = {"MEL", "CDL", "CDDL"}
 DEFERRED_REFERENCE = re.compile(r"^[A-Z0-9]+(?:-[A-Z0-9]+)+$")

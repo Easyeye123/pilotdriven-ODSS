@@ -1035,6 +1035,49 @@
      "planning_publication": "cec9a750a4b5ae00264b9c47e1c42772d7964de03e8848eb43f7dce242ad481c"
     }
    }
+  },
+  {
+   "case_id": "SQ605-ICN-SIN-08SEP",
+   "filename": "SQ60508092026ICN.pdf",
+   "source_sha256": "b3e6b7917734e061570ece7701564e153264dd33562fcd347a0d1feb0bafd24e",
+   "source_page_count": 93,
+   "flight_number": "SQ605",
+   "departure": "RKSI",
+   "destination": "WSSS",
+   "departure_iata": "ICN",
+   "destination_iata": "SIN",
+   "route_point_count": 68,
+   "route_hash": "7e9461a340554cfccfe822fdf320fd2c85de9c49bba0c325566fa80d0c2a1bd6",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 128,
+     "weather": 77,
+     "alternates": 3,
+     "deferred_items": 4,
+     "edto_sectors": 0,
+     "edto_airports": 0,
+     "fuel_enroute_airports": 17,
+     "route_waypoints": 68,
+     "flight_planning_etps": 1,
+     "intam_records": 22,
+     "notam_procedure_records": 0,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "944717d6f2989b0481972142dd33d465a321a55335b732330c1c8af68a413a8e",
+     "weather": "27ff922455f9c50b61034e746dfcefa2e98c4a75ffdea49e2cff3babe6a8c69d",
+     "alternates": "dfc2fa79712104a41aa8c4dabc4610bc25751b182f37a66eaedc092ca1c80289",
+     "deferred_items": "5ae75ea85c6e4a30f2d85ff45c51495cccfe756c7170d63027a8eb89bdaa1b6a",
+     "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "fuel_enroute_airports": "4cf25d72bb8dd94798870b0a10cdd22202181c01243df5cde746c76903e80c32",
+     "route_waypoints": "4284f71140133a38db48747dfa032ba41abaf2effafddd219b02541346c9da6d",
+     "flight_planning_etps": "92d481b1153c04fa715ca1e95544726d8bb3a82935167be8ff34464066fb1724",
+     "intam_records": "f9f1946ea4b72827368ea999849b1a4de08c2341e43e1fab59470d6d5ddb1370",
+     "notam_procedure_records": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "planning_publication": "f44048cffd587c79836361452bbf5663dc1460fb799c598554bff89cdb146fb6"
+    }
+   }
   }
  ]
 }

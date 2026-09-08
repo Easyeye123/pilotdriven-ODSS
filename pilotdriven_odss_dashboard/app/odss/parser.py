@@ -1120,7 +1120,8 @@ def _utc_nearest(reference: datetime, hhmm: str) -> datetime:
 _EXPLICIT_NIL_EDTO = re.compile(
     r"\b(?:EDTO|ETOPS)(?:\s+(?:STATUS|APPLICABILITY))?\s*[:=-]?\s*"
     r"(?:NIL|N/?A|NOT\s+APPLICABLE)\b|"
-    r"\b(?:NIL|NOT\s+APPLICABLE)\s+(?:EDTO|ETOPS)\b",
+    r"\b(?:NIL|NOT\s+APPLICABLE)\s+(?:EDTO|ETOPS)\b|"
+    r"\bSUMMARY\s+NON[ -]+(?:EDTO|ETOPS)\s+CFP\b",
     re.IGNORECASE,
 )
 
