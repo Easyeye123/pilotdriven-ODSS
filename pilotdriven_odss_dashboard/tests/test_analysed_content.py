@@ -92,6 +92,34 @@ def test_a_negated_uplift_instruction_does_not_create_an_action():
     assert 'Catering must arrange' not in result
 
 
+def test_shared_mel_number_keeps_distinct_defects_and_unknown_siblings():
+    from app.odss.analysed_briefing_content import deferred_consequence_rows
+    view = _deferred('GALLEY CHILLER TO UPLIFT DRY ICE')
+    gate = view['deferred_dispatch_gates'][0]
+    gate.update(gate_id='same-reference', source_item_indices=[0, 1, 2])
+    gate['source_segments'][0]['source_item_index'] = 0
+    gate['source_segments'] += [
+        {'item_type':'MEL', 'source_item_index':1, 'description':'CARGO ACCESS PANEL',
+         'source_text':'FWD CARGO DOOR CTRL ACCESS PNL NOT FLUSH WHEN CLOSED TO INSPECT HST CONDITION AND REAPPLIED'},
+        {'item_type':'MEL', 'source_item_index':2, 'description':'UNASSESSED CABIN DEFECT', 'source_text':'UNASSESSED CABIN DEFECT'},
+    ]
+    rows = deferred_consequence_rows(view)
+    assert len(rows) == 3
+    assert [r['source_item_indices'] for r in rows] == [[0], [1], [2]]
+    assert 'dry-ice uplift' in rows[0]['text']
+    assert 'HST inspection and reapplication' in rows[1]['text']
+    assert 'UNASSESSED CABIN DEFECT' in rows[2]['text']
+    assert 'does not establish' in rows[2]['text']
+
+
+def test_missing_waste_latch_has_no_invented_securing_or_use_allowance():
+    result = ' '.join(deferred_consequences(_deferred('AFT GALLEY LH WASTE CONTAINER DOOR IN GALLEY LATCH MISSING')))
+    assert 'Waste-container door retention' in result
+    assert 'does not establish an acceptable securing method or permission to use it' in result
+    negated = ' '.join(deferred_consequences(_deferred('WASTE CONTAINER DOOR LATCH NOT MISSING')))
+    assert 'Waste-container door retention' not in negated
+
+
 def test_release_list_is_scoped_to_unresolved_inputs_without_zero_counts():
     flight = {'departure':'WSSS','destination':'YPPH','scheduled_departure_utc':'2026-07-11T10:30:00Z','scheduled_arrival_utc':'2026-07-11T15:30:00Z'}
     receipt = {'rows':[{'key':'tropical_cyclone','state':'REVIEW REQUIRED','detail':'Gap'},

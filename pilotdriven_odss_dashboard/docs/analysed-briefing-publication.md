@@ -8,7 +8,7 @@ The default combined download follows the supplied SQ605 REV1 layout in nine lan
 
 The explicit internal audit renderer remains for historical regression and the pinned REV3 raster contract; no service download requests its appendix. Historical drawing tests are in `test_reference_brief_composition.py`. Production format acceptance is in `test_combined_brief.py`; historical tests alone cannot certify a current download.
 
-The v45 report cache revision invalidates older combined PDFs. A release must pass the guarded script and then fresh signed-in browser/download checks. Local fixtures and the private audit are not production proof.
+The v46 report cache revision invalidates older combined PDFs. A release must pass the guarded script and then fresh signed-in browser/download checks. Local fixtures and the private audit are not production proof.
 
 The exact historical raster gate re-renders the SHA-pinned private analysis in `tests/rev3_replay_input_manifest.json` with the current renderer and original source PDF. Store `SQ214_REV3_v16_analysis.json` beside the approved reference, or set `PILOTDRIVEN_REV3_ANALYSIS_JSON`. Missing or changed input fails the release. The original reference PDF, raster checksums and zero-difference thresholds remain unchanged. This isolates historical layout from changing NOAA responses. The full source-to-PDF corpus still performs fresh analysis and remains mandatory before the replay; its output is never replaced by a historical capture.
 
@@ -18,4 +18,4 @@ The exact historical raster gate re-renders the SHA-pinned private analysis in `
 
 Publication checks also bind the level profile, cyclone consequence, hazard key and deferred consequences to their owning PDF pages. Section footers must name their section and unsupported replacement glyphs are rejected. These are additional gates; the airport analysis in the app and historical audit renderer remain intact.
 
-The shared `deferred_pdf_analysis` model holds each consequence with its declared references, existing gate IDs and source-item indices. The app parity check requires that analysed line on page 8 and accounts for every source-bound gate. Distinct declarations may share an OFP source row, so their gate IDs remain separate. Original descriptions and remarks remain covered by the dashboard checks; they are not demanded back into the concise PDF.
+The shared `deferred_pdf_analysis` model holds each consequence with its declared references, existing gate IDs and source-item indices. Each source segment is analysed before grouping identical consequences: a recognised action cannot hide another defect sharing its MEL number. The app parity check requires each analysed line on page 8 and accounts for every gate/source-item pair. Distinct declarations may share an OFP source row, so their gate IDs remain separate. Original descriptions and remarks remain covered by the dashboard checks; they are not demanded back into the concise PDF.

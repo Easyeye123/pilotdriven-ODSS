@@ -73,13 +73,14 @@ def deferred_consequence_rows(view):
         title = clean(gate.get("title"))
         # Titles from unresolved declarations may contain an old UI warning.
         title = re.sub(r"\s*REVIEW REQUIRED\s*", "", title, flags=re.I).strip() or "Deferred item"
-        effects = []
-        subjects = []
-        for source in sources:
+        for source in sources or [{}]:
+            # A shared MEL reference can cover different physical defects.
+            # Analyse every segment before grouping identical consequences;
+            # one recognised action must not hide an unassessed sibling.
+            effects = []
+            subjects = []
             description = clean(source.get("description"))
             raw = clean(source.get("source_text") or " ".join((description, clean(source.get("restriction"))))).upper()
-            if not raw:
-                continue
             subject = re.sub(r"^(?:MAINT ENTRY\s*:?\s*|WAC FOUND\s*)+", "", description, flags=re.I).strip(" :")
             if subject:
                 subjects.append(subject)
@@ -91,6 +92,13 @@ def deferred_consequence_rows(view):
                 effects.append("Waste handling needs the source-requested trash bags for the unavailable compactor; the declaration supplies no aircraft performance penalty.")
             if "DO NOT USE LAVATORIES ON GROUND" in raw:
                 effects.append("Ground turnaround must avoid using the affected lavatories; the source restriction is specific to ground use.")
+            if ("FWD CARGO DOOR CTRL ACCESS PNL NOT FLUSH" in raw
+                    and "TO INSPECT HST CONDITION AND REAPPLIED" in raw
+                    and not re.search(r"\b(?:DO NOT|NOT TO)\s+INSPECT\b", raw)):
+                effects.append("Forward cargo-door control-panel fit needs maintenance acceptance, including the source-requested HST inspection and reapplication; completion and an acceptable panel condition are not established.")
+            if ("WASTE CONTAINER DOOR" in raw and "LATCH MISSING" in raw
+                    and not re.search(r"\b(?:LATCH (?:IS )?NOT MISSING|NO MISSING LATCH)\b", raw)):
+                effects.append("Waste-container door retention needs a permitted-configuration decision for the missing latch; the declaration does not establish an acceptable securing method or permission to use it.")
             seat = re.search(r"\bSEAT\s+(\d{1,2}[A-K])\b", raw)
             if seat and re.search(r"\bARMREST\b[^.]*\bSTUCK\b", raw) and not re.search(r"\b(?:NOT|NO LONGER)\s+STUCK\b", raw):
                 effects.append(f"Seat {seat.group(1)} needs a seating-configuration decision for its stuck armrest before allocation; the declaration does not establish an occupied-seat allowance.")
@@ -104,14 +112,16 @@ def deferred_consequence_rows(view):
                 effects.append(f"The declaration limits ZFW to {limit_kg:,.0f} kg. {comparison}")
             if source.get("item_type") == "CDL":
                 effects.append("Reconcile this deferred external component with the approved CDL performance allowance for this aircraft; the declaration alone does not quantify a fuel or weight correction.")
-        if not effects:
-            # Keep an unanalysable defect identifiable, but do not reproduce
-            # its prose or invent an airworthiness/dispatch conclusion.
-            effects.append("The declaration does not establish the permitted configuration or flight limitation; its exact effect remains open in the closing release record.")
-        subject = "; ".join(dict.fromkeys(subjects))
-        rows.append({"title": title, "subject": subject, "consequences": list(dict.fromkeys(effects)),
-                     "references": gate.get("references") or [], "source_item_indices": gate.get("source_item_indices") or [],
-                     "gate_id": gate.get("gate_id")})
+            if not effects:
+                # Keep an unanalysable defect identifiable, but do not invent
+                # an airworthiness/dispatch conclusion.
+                effects.append("The declaration does not establish the permitted configuration or flight limitation; its exact effect remains open in the closing release record.")
+            subject = "; ".join(dict.fromkeys(subjects))
+            indices = ([source["source_item_index"]] if isinstance(source.get("source_item_index"), int)
+                       else gate.get("source_item_indices") or [])
+            rows.append({"title": title, "subject": subject, "consequences": list(dict.fromkeys(effects)),
+                         "references": gate.get("references") or [], "source_item_indices": indices,
+                         "gate_id": gate.get("gate_id")})
     # Several gates can share a single action; publish their identities once.
     grouped = {}
     for row in rows:
