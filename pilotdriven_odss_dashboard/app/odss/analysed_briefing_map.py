@@ -64,6 +64,8 @@ def build_publication_map(flight, view):
         in_time = bool(when and begin and end and begin <= when <= end)
         kind = "VA" if row.get("advisory_kind") == "VA_SIGMET" else "WX"
         label = row.get("volcano") or row.get("name") or kind
+        if kind == "VA":
+            label = f"{label} SIGMET ash area"
         events.append({"kind": kind, "label": str(label), "polygon": polygon,
                        "short_label": (f"{row.get('fir', '?')}/{row.get('sigmet_id', '?')}" if kind == "WX" else str(label)),
                        "distance_nm": round(screening["closest_nm"]),
@@ -109,7 +111,9 @@ def build_publication_map(flight, view):
         first, last, maximum = (event[k] for k in ("first_high", "last_high", "maximum"))
         if maximum.get("latitude") is None or maximum.get("longitude") is None:
             continue
-        events.append({"kind": "VWS", "label": f"{first['name']}-{last['name']} samples; max {maximum['vws']:03d}",
+        sample_label = (f"{first['name']} sample" if first['name'] == last['name']
+                        else f"{first['name']}-{last['name']} samples")
+        events.append({"kind": "VWS", "label": f"{sample_label}; max {maximum['vws']:03d}",
                        "position": maximum, "source_id": "ofp-vws:" + str(maximum['name']),
                        "time_matched": True})
     events.extend(cyclone_content(flight)["markers"])

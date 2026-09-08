@@ -367,7 +367,9 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     for event in terrain.get("events") or []:
         first, last, maximum, drop = (event.get(k) or {} for k in ("first_high", "last_high", "maximum", "drop"))
         msa = maximum.get("msa_hundreds_ft")
-        terrain_lines.append(f"{text(first.get('name'))}-{text(last.get('name'))}: max {int(msa) * 100:,} ft at {text(maximum.get('name'))}; next threshold drop {text(drop.get('name'))}." if msa is not None else "A terrain event is held without a resolved maximum.")
+        span = (text(first.get('name')) if first.get('name') == last.get('name')
+                else f"{text(first.get('name'))}-{text(last.get('name'))}")
+        terrain_lines.append(f"{span}: max {int(msa) * 100:,} ft at {text(maximum.get('name'))}; next threshold drop {text(drop.get('name'))}." if msa is not None else "A terrain event is held without a resolved maximum.")
     vws_events = [f"{text(f.get('title'))}: {text(f.get('summary'))}" for f in findings if f.get("engine") == "vws"]
     sections["terrain"] = plan_page("VWS, CAT AND TERRAIN", "sec_terrain", [
         (153, [Card("OFP VWS EVENT", vws_events or [vws_summary], AMBER), Card("INTERPRETATION", ["OFP samples describe the printed waypoint values; they do not establish continuous conditions between every waypoint.", "OFP VWS is not a CAT measurement. Missing samples do not demonstrate continuous low VWS."])]),

@@ -8,7 +8,9 @@ The default combined download follows the supplied SQ605 REV1 layout in nine lan
 
 The explicit internal audit renderer remains for historical regression and the pinned REV3 raster contract; no service download requests its appendix. Historical drawing tests are in `test_reference_brief_composition.py`. Production format acceptance is in `test_combined_brief.py`; historical tests alone cannot certify a current download.
 
-The v43 report cache revision invalidates older combined PDFs. A release must pass the guarded script and then fresh signed-in browser/download checks. Local fixtures and the private audit are not production proof.
+The v45 report cache revision invalidates older combined PDFs. A release must pass the guarded script and then fresh signed-in browser/download checks. Local fixtures and the private audit are not production proof.
+
+The exact historical raster gate re-renders the SHA-pinned private analysis in `tests/rev3_replay_input_manifest.json` with the current renderer and original source PDF. Store `SQ214_REV3_v16_analysis.json` beside the approved reference, or set `PILOTDRIVEN_REV3_ANALYSIS_JSON`. Missing or changed input fails the release. The original reference PDF, raster checksums and zero-difference thresholds remain unchanged. This isolates historical layout from changing NOAA responses. The full source-to-PDF corpus still performs fresh analysis and remains mandatory before the replay; its output is never replaced by a historical capture.
 
 `analysed_briefing_map.py` draws held CFP polygons, the existing matched live hazard areas (including polygon holes), OFP VWS events, and time-matched cyclone centres on the filed route. IDs join each marker to a readable key. A volcano point is never turned into an ash area. The map distinguishes passage validity and matched live route/time/level evidence; it does not infer weather clearance. The complete source level profile is printed, including a single-level profile. Passage screening uses entered ATOT where held and checks both ends of validity.
 

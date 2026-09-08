@@ -64,7 +64,10 @@ def test_ash_and_vws_are_on_the_route_map_and_sources_are_not_mutated():
     result = build_publication_map(flight, view)
     assert {e['kind'] for e in result['publication_events']} == {'VA', 'VWS'}
     assert result['publication_events'][0]['time_matched'] is True
+    assert result['publication_events'][0]['label'] == 'TEST SIGMET ash area'
     assert 'BBB' in result['publication_events'][1]['label']
+    assert 'BBB-BBB' not in result['publication_events'][1]['label']
+    assert 'BBB sample;' in result['publication_events'][1]['label']
     assert view == original
 
 
