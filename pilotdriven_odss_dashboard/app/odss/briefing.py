@@ -2473,16 +2473,11 @@ def _sigmet_utc(flight: dict[str, Any], ddhhmm: str, near: datetime | None = Non
 
 
 def _clock_from_actm(flight: dict[str, Any], actm: float | None) -> datetime | None:
-    raw = str((flight or {}).get("scheduled_departure_utc") or "").replace("Z", "+00:00")
+    from .vaa import _flight_anchor
     if actm is None:
         return None
-    try:
-        base = datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-    if base.tzinfo is None:
-        base = base.replace(tzinfo=timezone.utc)
-    return base + timedelta(minutes=float(actm))
+    base = _flight_anchor(flight)
+    return base + timedelta(minutes=float(actm)) if base else None
 
 
 def _validated_profile_coverage(
@@ -3417,39 +3412,23 @@ def _va_derived_screening(
     # asserted beyond the data: both clauses drop out when the OFP does not
     # carry the inputs.
     timing = ""
-    valid_to = re.search(r"\bVALID\s+\d{6}/(\d{2})(\d{2})(\d{2})", text)
-    departure = None
-    raw_departure = str((flight or {}).get("scheduled_departure_utc") or "").replace("Z", "+00:00")
-    if raw_departure:
-        try:
-            departure = datetime.fromisoformat(raw_departure)
-            if departure.tzinfo is None:
-                departure = departure.replace(tzinfo=timezone.utc)
-        except ValueError:
-            departure = None
+    validity = re.search(r"\bVALID\s+(\d{6})/(\d{6})", text)
+    from .vaa import _flight_anchor
+    departure = _flight_anchor(flight or {})
     if passage_actm is not None and departure is not None:
         passage_utc = departure + timedelta(minutes=passage_actm)
         timing = f"; route passes ~{passage_utc:%H%M}Z"
-        if valid_to:
-            day, hour, minute = (int(g) for g in valid_to.groups())
-            candidates = []
-            for month_offset in (-1, 0, 1):
-                month_index = passage_utc.month - 1 + month_offset
-                year = passage_utc.year + month_index // 12
-                month = month_index % 12 + 1
-                try:
-                    candidates.append(passage_utc.replace(
-                        year=year, month=month, day=day, hour=hour, minute=minute
-                    ))
-                except ValueError:
-                    continue
-            if candidates:
-                expiry = min(candidates, key=lambda item: abs(item - passage_utc))
+        if validity:
+            begin = _sigmet_utc(flight or {}, validity.group(1))
+            expiry = _sigmet_utc(flight or {}, validity.group(2), near=begin)
+            if begin and expiry:
                 delta = round((passage_utc - expiry).total_seconds() / 60.0)
                 # A validity nowhere near the flight day is bad input, not a
                 # sentence: the comparison only prints within a day.
                 if abs(delta) <= 24 * 60:
                     timing += (
+                        f", {round((begin - passage_utc).total_seconds() / 60)} min before the SIGMET's {begin:%H%M}Z start"
+                        if passage_utc < begin else
                         f", {delta} min after the SIGMET's {expiry:%H%M}Z expiry"
                         if delta > 0 else
                         f", inside the SIGMET's validity (to {expiry:%H%M}Z)"

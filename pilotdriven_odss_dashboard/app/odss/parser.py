@@ -1616,7 +1616,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         # sector or checked-period airport was parsed.
         has_timing_data=bool(entry_match and exit_match),
     )
-    level_match = re.search(r"^[A-Z]{3}/\d{3}(?:/.*)$", page1, re.MULTILINE)
+    level_match = re.search(r"^[A-Z]{3}/\d{3}(?:/.*)?$", page1, re.MULTILINE)
     route_identifier_match = re.search(
         r"\bRTE\s+NO\s+(?P<route_identifier>\S+)",
         page1,

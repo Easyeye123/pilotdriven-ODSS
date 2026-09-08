@@ -69,6 +69,13 @@ def test_waypoint_log_start_is_detected_by_content_not_offset() -> None:
     assert _waypoint_log_start(legacy) == 6
 
 
+def test_single_cruise_level_is_retained_without_a_step_change() -> None:
+    pages = _cfp_pages_with_log_from(5)
+    pages[0] += "\nSIN/400\n"
+    flight = parse_lido(pages, "single-level.pdf")
+    assert flight["planned_level_profile"] == "SIN/400"
+
+
 def test_waypoint_log_start_falls_back_to_legacy_offset_without_log() -> None:
     assert _waypoint_log_start([PROSE_PAGE] * 9) == 6
 

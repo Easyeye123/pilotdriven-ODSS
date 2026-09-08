@@ -15,7 +15,8 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from .briefing import draw_route_map_pdf
+from .analysed_briefing_content import cyclone_content, deferred_consequences, release_conditions
+from .analysed_briefing_map import build_publication_map, draw_publication_map
 from .constants import format_actm
 
 SIZE = landscape(A4)
@@ -107,6 +108,7 @@ class Card:
     paragraphs: list[str]
     accent: Any = field(default_factory=lambda: CYAN)
     target: str | None = None
+    left_aligned: bool = False
 
 
 @dataclass
@@ -119,6 +121,7 @@ class CardBox:
     width: float
     height: float
     target: str | None = None
+    left_aligned: bool = False
 
 
 @dataclass
@@ -147,7 +150,7 @@ def plan_page(title: str, bookmark: str, rows: list[tuple[float, list[Card]]], *
                 raise ValueError(f"Concise PDF capacity exceeded in {title} / {card.title}: {len(lines)} lines, {capacity} available. No source continuation is permitted.")
             else:
                 shown = lines
-            first.boxes.append(CardBox(card.title, shown, card.accent, MARGIN + i * (width + GAP), top - height, width, height, card.target))
+            first.boxes.append(CardBox(card.title, shown, card.accent, MARGIN + i * (width + GAP), top - height, width, height, card.target, card.left_aligned))
         top -= height + GAP
     if top + GAP < BOTTOM - 0.1:
         raise ValueError(f"Reference grid exceeds page: {title}")
@@ -181,7 +184,10 @@ def draw_chrome(canvas, flight: dict[str, Any], view: dict[str, Any], title: str
     canvas.setFillColor(MUTED)
     canvas.setFont("Helvetica", 9)
     canvas.drawString(MARGIN, 13, "PilotDriven Flight Briefing · UTC · NOT FOR NAVIGATION")
-    canvas.drawRightString(width - MARGIN, 13, f"PAGE {number}/{count} · MASTER SUMMARY")
+    footer = title.replace("FLIGHT BRIEFING - ", "")
+    if stringWidth(f"PAGE {number}/{count} · {footer}", "Helvetica", 9) > width * .52:
+        footer = " / ".join(title.split(", ")[:2]) if number == 4 else f"SECTION {number}"
+    canvas.drawRightString(width - MARGIN, 13, f"PAGE {number}/{count} · {footer}")
     canvas.linkRect("Return to master summary", "sec_overview", (width - 210, 6, width - MARGIN, 26), relative=0, thickness=0)
 
 
@@ -190,10 +196,7 @@ def draw_page(canvas, flight, view, page: Page, number: int, count: int) -> None
     canvas.bookmarkPage(page.bookmark, fit="XYZ", left=0, top=SIZE[1], zoom=0)
     canvas.addOutlineEntry(page.title, page.bookmark, level=0)
     if page.route_map is not None:
-        route = dict(page.route_map)
-        route["pdf_label_size"] = 9.0
-        route["pdf_note_size"] = 9.0
-        draw_route_map_pdf(canvas, route, MARGIN, 233, SIZE[0] - 2 * MARGIN, TOP - 233)
+        draw_publication_map(canvas, page.route_map, MARGIN, 233, SIZE[0] - 2 * MARGIN, TOP - 233)
     if page.airport_role:
         draw_airport_figure(canvas, page.surface_overlay, MARGIN, 250, SIZE[0] - 2 * MARGIN, TOP - 250, planned_runway=flight.get(f"{page.airport_role}_runway"))
     for box in page.boxes:
@@ -217,7 +220,10 @@ def draw_page(canvas, flight, view, page: Page, number: int, count: int) -> None
         for line in box.lines:
             if start < box.y + 10:
                 raise ValueError(f"Card body exceeds measured capacity: {box.title}")
-            canvas.drawCentredString(box.x + box.width / 2, start, line)
+            if box.left_aligned:
+                canvas.drawString(box.x + 14, start, line)
+            else:
+                canvas.drawCentredString(box.x + box.width / 2, start, line)
             start -= LEADING
 
 
@@ -286,6 +292,13 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
                 continue
             if any(box[0] < b[2] and box[2] > b[0] and box[1] < b[3] and box[3] > b[1] for b in occupied):
                 continue
+            # A padded opaque plate prevents runway/taxiway strokes crossing
+            # the glyphs. Labels retain leaders to their measured positions.
+            canvas.setStrokeColor(colour)
+            canvas.setLineWidth(.5)
+            canvas.line(lx, ly, px, py + 3)
+            canvas.setFillColor(BG)
+            canvas.roundRect(box[0], box[1], box[2]-box[0], box[3]-box[1], 2, fill=1, stroke=0)
             canvas.setFillColor(colour)
             canvas.setFont("Helvetica-Bold", 9)
             canvas.drawCentredString(px, py, ref)
@@ -332,7 +345,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     for r in flight.get("flight_planning_etps") or []:
         route_clocks.append(f"{text(r.get('label'))} {text(r.get('from'))}/{text(r.get('to'))}: {text(r.get('distance_nm'))} NM; EET {text(r.get('eet_token'))}.")
     edto_windows = [f"{text(r.get('airport'))}/{text(r.get('runway'))}: {text(r.get('approach'))} {text(r.get('minima'))}; {text(r.get('period'))}." for r in edto.get("airports") or []]
-    sections["route"] = plan_page("ROUTE HAZARD OVERLAY", "sec_route", [(165, [Card("ROUTE / EDTO CLOCKS", route_clocks or [text(identity.get("rules")), "No EDTO or additional planning ETP is held."], CYAN), Card("EDTO AIRPORT WINDOWS", edto_windows or ["No EDTO airport window is held."], AMBER)])], route_map=view.get("route_map") or {})
+    sections["route"] = plan_page("ROUTE HAZARD OVERLAY", "sec_route", [(165, [Card("ROUTE / EDTO CLOCKS", route_clocks or [text(identity.get("rules")), "No EDTO or additional planning ETP is held."], CYAN), Card("EDTO AIRPORT WINDOWS", edto_windows or ["No EDTO airport window is held."], AMBER)])], route_map=build_publication_map(flight, view))
     terrain_lines = []
     for event in terrain.get("events") or []:
         first, last, maximum, drop = (event.get(k) or {} for k in ("first_high", "last_high", "maximum", "drop"))
@@ -359,26 +372,15 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         elif conditions:
             terminal.append("Forecast source, issue and validity times are not held.")
     sigmets = []
-    unresolved_sigmet_count = 0
-    outside = 0
     for card in hazards.get("sigmet_cards") or []:
         screening = str(card.get("screening") or "")
-        if "does not intersect the polygon" in screening:
-            outside += 1
-        elif card.get("disposition") == "REVIEW REQUIRED":
-            unresolved_sigmet_count += 1
-        else:
+        if "does not intersect the polygon" not in screening and card.get("disposition") != "REVIEW REQUIRED":
             analysed = screening.replace("The polygon crosses the route about ", "Route intersection ").replace("inside the product's validity", "within validity")
             analysed = re.sub(r"\s*(?:NOT PROMOTED\.|PROMOTED - review required\.)$", "", analysed)
             analysed = re.sub(r"Route intersection .*?, but the product ", "Product ", analysed)
             sigmets.append(f"{text(card.get('name'))}: {analysed or 'Flight applicability is not established.'}")
-    tc_lines = []
-    for finding in findings:
-        if finding.get("engine") == "tropical_cyclone":
-            tc_lines.extend(str(line) for line in finding.get("details") or [] if "centre movement" in str(line) or "track" in str(line).lower() and "unavailable" not in str(line).lower())
-    vaa_rows = (view.get("vaa") or {}).get("cfp_advisories") or []
+    tc_lines = cyclone_content(flight)["lines"]
     vaa_lines = analysed_vaa_lines(view)
-    unassessed_vaa_count = sum(row.get("advisory_kind") == "CFP_VAA_NOTICE" for row in vaa_rows)
     sections["weather"] = plan_page("WEATHER, SIGMET, TROPICAL CYCLONE AND VOLCANIC ASH", "sec_hazards", [
         (239, [Card("TERMINAL WEATHER", terminal), Card("SIGMET", sigmets or ["No route-specific SIGMET consequence was established from the held records."], AMBER)]),
         (188, [Card("TROPICAL CYCLONE", tc_lines or ["No governed route-specific cyclone consequence was established from the held sources."], AMBER), Card("VOLCANIC ASH", vaa_lines or ["No route-specific ash consequence was established from the held sources."], GREEN)]),
@@ -419,47 +421,29 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     from .airport_pdf_analysis import alternate_pdf_analysis
     alternate_analysis = alternate_pdf_analysis(flight, view.get("airport_operational_panels") or [])
     alternate_lines = []
-    alternate_unresolved = []
     for a in alternates:
         analysis = next((p for p in alternate_analysis if p["icao"] == a.get("airport")), {"lines": [], "unresolved_ids": []})
         alternate_lines.append(f"{text(a.get('airport'))}/{text(a.get('runway'))} {str(a.get('role') or 'alternate').upper()} · {text(a.get('approach'))} · MIN {text(a.get('minima'))} · {text(a.get('distance_nm'))} NM / {text(a.get('time_minutes'))} min / {kg(a.get('fuel_kg'))}.")
         alternate_lines.extend(r["text"] for r in analysis["lines"])
-        if analysis["unresolved_ids"]:
-            alternate_unresolved.append(f"{a.get('airport')} ({len(analysis['unresolved_ids'])})")
-    deferred = [" · ".join(unique([r.get("source_declaration"), r.get("description"), r.get("company_remark")])) for r in view.get("deferred_source_items") or []]
+    deferred = deferred_consequences(view)
     sections["alternates"] = plan_page("ALTERNATES AND AIRCRAFT TECHNICAL STATUS", "sec_alternates", [
         (223, [Card("ALTERNATE PLANS / FLIGHT-WINDOW CONSEQUENCES", alternate_lines or ["No alternate rows are held."])]),
-        (204, [Card("CDDL / MEL ITEMS", deferred or ["No supported deferred declaration was parsed from OFP page 1."], AMBER)]),
+        (204, [Card("CDDL / MEL ITEMS", deferred or ["No supported deferred declaration was parsed from OFP page 1."], AMBER, left_aligned=True)]),
     ])
     completed_groups = {}
     for row in receipt["rows"]:
         if row["state"] in {"HELD", "FOUND", "CHECKED · NO MATCH", "CHECKED · NO TRIGGER", "NOT APPLICABLE"}:
             completed_groups.setdefault(row["state"], []).append(row["label"])
     completed = [f"{state.replace('NO TRIGGER', 'NO THRESHOLD EXCEEDANCE')}: {', '.join(labels)}." for state, labels in completed_groups.items()]
-    pending = [r["label"] for r in receipt["rows"] if r["state"] not in {"HELD", "FOUND", "CHECKED · NO MATCH", "CHECKED · NO TRIGGER", "NOT APPLICABLE"}]
-    pending_lines = ["Confirm " + ", ".join(pending) + "."] if pending else ["No unresolved automated source check is recorded; operational release remains with the crew."]
     from .governed_deferred_extract import governed_deferred_extracts
     extracts = governed_deferred_extracts(view.get("deferred_source_items"), references)
-    candidates = [e for e in extracts if e.get("match_status") == "candidate"]
-    if candidates:
-        pending_lines.append("MEL/CDL candidates: " + ", ".join(unique([f"{e['item_type']} {e['reference']}" for e in candidates])) + "; no candidate selected.")
-        pending_lines.extend(unique([str(e.get("ambiguity_reason") or "") + " " + str(e.get("confirmation_required") or "") for e in candidates]))
-    if alternate_unresolved:
-        pending_lines.append("Alternate applicability/scope unresolved: " + ", ".join(alternate_unresolved) + ".")
-    if unresolved_sigmet_count or unassessed_vaa_count:
-        pending_lines.append(f"Unresolved source applicability: {unresolved_sigmet_count} SIGMET geometry record(s), {unassessed_vaa_count} OFP volcano notice(s).")
-    for a in airport_analysis:
-        if a["unresolved_ids"]:
-            pending_lines.append(f"{a['icao']}: {len(a['unresolved_ids'])} notice applicability/scope checks remain unresolved in the app.")
-        if not next((o for o in view.get("surface_overlays") or [] if o.get("icao") == a["icao"]), None):
-            pending_lines.append(f"{a['icao']} surface geometry not held.")
+    pending_lines = release_conditions(flight, view, receipt, airport_analysis, alternate_analysis, extracts)
     source_lines = [f"Bound governed extracts: {len(extracts)}. Exact text and applicability remain in the app."] if extracts else []
     source_lines += [f"OFP {text(identity.get('ofp'))} · {text(view.get('flight_number'))} · {text(view.get('flight_date'))}", f"Report generated {text(view.get('generated_at_display'))}.", "Complete original NOTAMs remain in the app under Show full NOTAM. PDF airport lines are flight-specific consequences with inline IDs."]
     notes = [str(n.get("note_text")) for n in flight.get("personal_notes") or [] if (n.get("include_level1") or n.get("include_level2")) and n.get("note_text")]
     sections["review"] = plan_page("REVIEW RECORD AND RELEASE CONDITIONS", "sec_coverage", [
-        (181, [Card("BEFORE RELEASE", pending_lines, AMBER)]),
-        (141, [Card("SOURCE / CALCULATION REVIEW", completed, GREEN), Card("SOURCE CONTROL", source_lines + (["PILOT NOTES: " + " / ".join(notes)] if notes else []))]),
-        (87, [Card("PUBLICATION STATE", ["CONDITIONAL BRIEFING - VERIFICATION REQUIRED", "For structured crew review. Unresolved checks remain open. Use the current OFP, operative Tech Log, approved manuals, NOTAM, ATIS and aviation-weather products."], AMBER)]),
+        (269, [Card("BEFORE RELEASE", pending_lines, AMBER, left_aligned=True)]),
+        (158, [Card("SOURCE / CALCULATION REVIEW", completed, GREEN), Card("SOURCE CONTROL", source_lines + (["PILOT NOTES: " + " / ".join(notes)] if notes else []) + ["Conditional briefing. Crew operational release remains separate."])]),
     ])
     return sections
 
@@ -489,7 +473,7 @@ def render_analysed_briefing(flight, findings, warnings, path, *, weather_charts
         draw_page(canvas, flight, view, page, number, len(pages))
         canvas.showPage()
     canvas.save()
-    result = check_concise_pdf(target, flight=flight, airport_analysis=airport_pdf_analysis(flight, view.get("airport_operational_panels") or []), alternate_analysis=alternate_pdf_analysis(flight, view.get("airport_operational_panels") or []))
+    result = check_concise_pdf(target, flight=flight, view=view, airport_analysis=airport_pdf_analysis(flight, view.get("airport_operational_panels") or []), alternate_analysis=alternate_pdf_analysis(flight, view.get("airport_operational_panels") or []))
     if not result["valid"]:
         target.unlink(missing_ok=True)
         raise ValueError("Concise briefing publication failed: " + "; ".join(v["message"] for v in result["violations"]))

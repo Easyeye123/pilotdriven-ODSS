@@ -8,7 +8,7 @@ from typing import Any
 import fitz
 
 MAX_BRIEFING_PAGES = 9
-PUBLICATION_FORMAT = "analysed-briefing-2026-09-08"
+PUBLICATION_FORMAT = "analysed-briefing-2026-09-09"
 PAGE_TITLES = (
     "FLIGHT BRIEFING - MASTER SUMMARY",
     "ROUTE HAZARD OVERLAY",
@@ -26,7 +26,7 @@ def normalized(value: Any) -> str:
     return " ".join(re.sub(r"[^A-Z0-9]+", " ", str(value).upper()).split())
 
 
-def check_concise_pdf(path: Path, *, flight=None, airport_analysis=None, alternate_analysis=None) -> dict[str, Any]:
+def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=None, alternate_analysis=None) -> dict[str, Any]:
     violations = []
     with fitz.open(path) as pdf:
         if pdf.embfile_count():
@@ -34,6 +34,36 @@ def check_concise_pdf(path: Path, *, flight=None, airport_analysis=None, alterna
         pages = [page.get_text() for page in pdf]
         folded_pages = [normalized(page) for page in pages]
         body = " ".join(folded_pages)
+        from .analysed_briefing_content import cyclone_content, deferred_consequences, level_profile_label
+        profile = level_profile_label(flight or {})
+        if profile != "Level profile not held" and (len(pages) < 2 or normalized(profile) not in folded_pages[1]):
+            violations.append({"code": "LEVEL_PROFILE_PARITY", "message": "The source-held level profile is missing from the route page."})
+        if flight and flight.get("planned_level_profile") and "SEE OFP" in body:
+            violations.append({"code": "LEVEL_PROFILE_PLACEHOLDER", "message": "A held level profile was replaced by See OFP."})
+        if flight is not None and len(pages) > 3:
+            for line in cyclone_content(flight)["lines"]:
+                if normalized(line) not in folded_pages[3]:
+                    violations.append({"code": "CYCLONE_TIME_DISTANCE_PARITY", "message": "The weather page omits the flight-matched cyclone distance or its flight-window coverage condition."})
+        if view is not None and len(pages) > 7:
+            from .analysed_briefing_map import build_publication_map
+            for event in build_publication_map(flight or {}, view)["publication_events"]:
+                if not re.search(r"\b" + re.escape(event["id"]) + r"\b", pages[1]):
+                    violations.append({"code": "ROUTE_HAZARD_KEY_PARITY", "message": f"The route page omits held hazard {event['id']}."})
+            for line in deferred_consequences(view):
+                if normalized(line) not in folded_pages[7]:
+                    violations.append({"code": "DEFERRED_CONSEQUENCE_PARITY", "message": "The aircraft status page omits a source-bound consequence."})
+        for index, page in enumerate(pages):
+            if "\ufffd" in page or "\u25a0" in page:
+                violations.append({"code": "UNSUPPORTED_GLYPH", "message": f"Page {index + 1} contains a replacement glyph."})
+            if index and "MASTER SUMMARY" in page:
+                violations.append({"code": "WRONG_SECTION_FOOTER", "message": f"Page {index + 1} is labelled as the master summary."})
+        if len(pages) == MAX_BRIEFING_PAGES and not re.search(r"\b1\.\s", pages[8]):
+            violations.append({"code": "RELEASE_ACTION_LIST", "message": "Closing release actions must be numbered."})
+        if len(pages) > 7:
+            for item in (flight or {}).get("deferred_items") or []:
+                remark = normalized(item.get("company_remark"))
+                if len(remark.split()) >= 8 and remark in folded_pages[7]:
+                    violations.append({"code": "COPIED_DEFERRED_REMARK", "message": "Technical status repeats a source remark instead of its consequence."})
         if len(pages) != MAX_BRIEFING_PAGES:
             violations.append({"code": "CONCISE_PAGE_CEILING", "message": f"Expected nine analysed pages; found {len(pages)}. No source appendix is permitted."})
         for index, title in enumerate(PAGE_TITLES):
