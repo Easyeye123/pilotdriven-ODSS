@@ -160,7 +160,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-08-ashtam-fir-evidence-v39"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-08-forecast-source-evidence-v40"
 
 
 def combined_briefing_cache_token(
@@ -2208,6 +2208,11 @@ def _draw_operational_six_box_overview(
         ),
         ("NOTAM", destination_notams),
     ]
+    if str(destination_forecast.get("applicable_conditions") or "").strip():
+        source_label = _forecast_source_label(destination_forecast)
+        if len(_wrap(source_label, MONO_BOLD, 8.4, forecast_value_width)) > 3:
+            source_label = "SOURCE DETAILS IN WEATHER"
+        destination_rows.insert(3, ("TAF SOURCE >", source_label))
 
     pzfw = source_masses.get("pzfw", shared_masses.get("planned_zfw_kg"))
     ptow = source_masses.get(
@@ -2403,13 +2408,19 @@ def _draw_operational_six_box_overview(
                 8.4,
                 inner_w - label_w,
             )
-            canvas.setFillColor(TEXT)
+            canvas.setFillColor(ACCENT if label == "TAF SOURCE >" else TEXT)
             canvas.setFont(MONO_BOLD, 8.4)
             for line_index, line in enumerate(value_lines):
                 canvas.drawString(
                     inner_x + label_w,
                     row_y - line_index * 9.4,
                     line,
+                )
+            if title == "DESTINATION" and label == "TAF SOURCE >":
+                canvas.linkRect(
+                    "", "sec_forecast_source_destination",
+                    (inner_x, row_y - max(row_leading, len(value_lines) * 9.4), inner_x + inner_w, row_y + 10),
+                    relative=0, thickness=0,
                 )
             row_y -= max(row_leading, len(value_lines) * 9.4 + 3.0)
         if row_y < card_y + 8.0:
@@ -5908,6 +5919,53 @@ def _vaac_ledger_lines(
             row = " | ".join(receipt_rows)
             lines.extend(_wrap(row, MONO, T_MICRO, text_width) or [row])
     return lines
+
+
+def _forecast_source_label(forecast: dict[str, Any]) -> str:
+    source = forecast.get("forecast_source") or {}
+    return str(
+        source.get("display_title")
+        or ("Uploaded OFP" if source.get("source_type") == "uploaded_cfp" else source.get("provider"))
+        or "Forecast source details unavailable"
+    ).strip()
+
+
+def _forecast_source_detail_pages(briefing: dict[str, Any]) -> list[dict[str, Any]]:
+    """Publish the exact shared assessment receipt without re-decoding a TAF.
+
+    Records stay atomic where they fit; long raw forecasts continue with the
+    same station identity. Never fill missing provenance from adjacent OFP
+    weather, because that can be a different forecast from the assessed one.
+    """
+    records = []
+    for role in ("departure", "destination"):
+        station = (briefing.get("overview") or {}).get(role) or {}
+        forecast = station.get("forecast_at_reference") or {}
+        conditions = str(forecast.get("applicable_conditions") or "").strip()
+        if not conditions:
+            continue
+        source = forecast.get("forecast_source") or {}
+        identity = f"{role.upper()} {station.get('icao') or '----'}"
+        rows = [
+            ("ASSESSMENT", identity),
+            ("FORECAST", conditions),
+            ("SOURCE", _forecast_source_label(forecast)),
+            ("CHECKED WINDOW", str(forecast.get("utc_window") or "not held")),
+            ("ISSUED", _vaac_receipt_timestamp(source.get("issued_at_utc")) or "not held"),
+            ("VALID FROM", _vaac_receipt_timestamp(source.get("valid_from_utc")) or "not held"),
+            ("VALID TO", _vaac_receipt_timestamp(source.get("valid_to_utc")) or "not held"),
+        ]
+        if forecast.get("window_status") == "review_required":
+            rows.append(("COVERAGE", "Coverage incomplete - review required"))
+        pages = source.get("pages") or ([source["source_page"]] if source.get("source_page") else [])
+        if source.get("source_type") == "uploaded_cfp" and pages:
+            rows.append(("SOURCE PAGE", ", ".join(f"OFP p{page}" for page in pages)))
+        rows.append(("EXACT FORECAST", str(source.get("raw_text") or "Exact decoded forecast text not held")))
+        records.append((identity, rows))
+    pages = _detail_record_page_plans("FORECAST SOURCE / CHECKED WINDOW", records)
+    for page in pages:
+        page["title"] += " | " + " / ".join(page["record_keys"])
+    return pages
 
 
 def _vaac_receipt_detail_pages(
@@ -14037,7 +14095,13 @@ def render_combined_briefing(
         audit_rev3_v8=include_audit_appendix,
     )
     vaa_detail_pages = _vaa_detail_pages(briefing)
-    hazard_page_count = len(hazard_pages) + len(vaa_detail_pages)
+    forecast_detail_pages = _forecast_source_detail_pages(briefing)
+    forecast_role_pages: dict[str, int] = {}
+    for index, detail_page in enumerate(forecast_detail_pages, start=1):
+        for role in ("departure", "destination"):
+            if any(key.startswith(role.upper() + " ") for key in detail_page["record_keys"]):
+                forecast_role_pages.setdefault(role, index)
+    hazard_page_count = len(hazard_pages) + len(vaa_detail_pages) + len(forecast_detail_pages)
     terrain_detail_pages = _terrain_detail_pages(briefing, findings)
     # REV3 canon order (boss, 20 Aug): dashboard, critical analysis, CDDL/CDL,
     # EDTO, airports, weather, terrain - the tab strip's seven sections. The
@@ -14166,6 +14230,7 @@ def render_combined_briefing(
             + 1
             + operational_vaac_receipt_page_count
             + operational_vaa_detail_count
+            + len(forecast_detail_pages)
         )
         operational_coverage_page = operational_enroute_page + 1 + len(comms_note_pages)
         operational_terrain_page = operational_coverage_page + 1
@@ -14179,6 +14244,7 @@ def render_combined_briefing(
             + operational_surface_shortening_count
             + operational_vaac_receipt_page_count
             + operational_vaa_detail_count
+            + len(forecast_detail_pages)
             + int(has_terrain_annex)
             + eosid_continuation_count
             + len(all_note_pages)
@@ -14643,7 +14709,7 @@ def render_combined_briefing(
                 section_label="WEATHER / ROUTE HAZARDS",
                 section_colour=COMMS_TEAL,
                 section_page_number=index + 1,
-                section_page_count=1 + operational_vaac_receipt_page_count + operational_vaa_detail_count,
+                section_page_count=1 + operational_vaac_receipt_page_count + operational_vaa_detail_count + len(forecast_detail_pages),
                 title=receipt_page["title"],
                 rows=receipt_page["rows"],
                 source_line=(
@@ -14675,12 +14741,31 @@ def render_combined_briefing(
                 section_label="WEATHER / ROUTE HAZARDS",
                 section_colour=COMMS_TEAL,
                 section_page_number=1 + operational_vaac_receipt_page_count + index,
-                section_page_count=1 + operational_vaac_receipt_page_count + operational_vaa_detail_count,
+                section_page_count=1 + operational_vaac_receipt_page_count + operational_vaa_detail_count + len(forecast_detail_pages),
                 title=detail_page["title"], rows=detail_page["rows"],
                 source_line="Complete OFP advisory records from the shared briefing; source pages identify the original OFP",
                 page_family="deep",
             )
             canvas.addOutlineEntry(f"OFP Volcanic-Ash Sources {index}/{operational_vaa_detail_count}", bookmark, level=0)
+            canvas.showPage()
+        for index, detail_page in enumerate(forecast_detail_pages, start=1):
+            bookmark = f"sec_forecast_source_{index}"
+            canvas.bookmarkPage(bookmark, fit="XYZ", left=0, top=PAGE_SIZE[1], zoom=0)
+            for role, first_page in forecast_role_pages.items():
+                if index == first_page:
+                    canvas.bookmarkPage(f"sec_forecast_source_{role}", fit="XYZ", left=0, top=PAGE_SIZE[1], zoom=0)
+            draw_shared_detail_page(
+                canvas, flight,
+                page_number=operational_enroute_page - len(forecast_detail_pages) + index - 1,
+                page_count=operational_page_count,
+                section_label="WEATHER / ROUTE HAZARDS", section_colour=WEATHER_AMBER,
+                section_page_number=1 + operational_vaac_receipt_page_count + operational_vaa_detail_count + index,
+                section_page_count=1 + operational_vaac_receipt_page_count + operational_vaa_detail_count + len(forecast_detail_pages),
+                title=detail_page["title"], rows=detail_page["rows"],
+                source_line="Exact forecast and assessment window held in the shared briefing; separate from OFP bulletins",
+                page_family="deep",
+            )
+            canvas.addOutlineEntry(f"Forecast source {index}/{len(forecast_detail_pages)}", bookmark, level=0)
             canvas.showPage()
         draw_operational_enroute_assurance_page(
             canvas,
@@ -14906,6 +14991,25 @@ def render_combined_briefing(
             source_line="Complete shared OFP volcanic-ash source records",
             page_family="deep",
         )
+        canvas.showPage()
+        next_page_number += 1
+    for index, detail_page in enumerate(forecast_detail_pages, start=1):
+        bookmark = f"sec_forecast_source_{index}"
+        canvas.bookmarkPage(bookmark, fit="XYZ", left=0, top=PAGE_SIZE[1], zoom=0)
+        for role, first_page in forecast_role_pages.items():
+            if index == first_page:
+                canvas.bookmarkPage(f"sec_forecast_source_{role}", fit="XYZ", left=0, top=PAGE_SIZE[1], zoom=0)
+        draw_shared_detail_page(
+            canvas, flight,
+            page_number=next_page_number, page_count=page_count,
+            section_label="OPERATIONAL HAZARD ASSESSMENT", section_colour=WEATHER_AMBER,
+            section_page_number=len(hazard_pages) + len(vaa_detail_pages) + index,
+            section_page_count=hazard_page_count,
+            title=detail_page["title"], rows=detail_page["rows"],
+            source_line="Exact forecast and assessment window held in the shared briefing; separate from OFP bulletins",
+            page_family="deep",
+        )
+        canvas.addOutlineEntry(f"Forecast source {index}/{len(forecast_detail_pages)}", bookmark, level=0)
         canvas.showPage()
         next_page_number += 1
     draw_terrain_page(

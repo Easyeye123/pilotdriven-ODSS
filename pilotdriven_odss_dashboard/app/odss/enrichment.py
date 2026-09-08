@@ -193,30 +193,81 @@ def _extract_station_block(weather_text: str, icao: str) -> str:
     return match.group("body").strip() if match else ""
 
 
-def _parse_station_weather(icao: str, block: str) -> list[dict[str, str]]:
-    records: list[dict[str, str]] = []
+def _parse_station_weather(
+    icao: str, block: str, *, source_pages: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     current_type: str | None = None
     current_lines: list[str] = []
 
     def flush() -> None:
         nonlocal current_type, current_lines
         if current_type and current_lines:
-            records.append({
+            record = {
                 "location": icao,
                 "record_type": current_type,
                 "text": " ".join(x.strip() for x in current_lines if x.strip()),
-            })
+            }
+            if source_pages is not None:
+                needle = " ".join(record["text"].upper().split())
+                matches = [
+                    index for index, page in enumerate(source_pages, start=1)
+                    if needle in " ".join(page.split()).upper()
+                ]
+                if not matches:
+                    # A report can continue on another page. Use its first
+                    # printed line only when the full message spans pages.
+                    start = " ".join(current_lines[0].split()).upper()
+                    matches = [
+                        index for index, page in enumerate(source_pages, start=1)
+                        if start in " ".join(page.split()).upper()
+                    ]
+                if len(matches) > 1:
+                    # NIL / WX NOT AVAILABLE may repeat at many airports.
+                    # Require this station's printed header to disambiguate.
+                    header = re.compile(
+                        rf"(?m)^\s*{re.escape(icao)}\s*/\s*[A-Z0-9]{{3}}\b",
+                        re.IGNORECASE,
+                    )
+                    matches = [index for index in matches if header.search(source_pages[index - 1])]
+                record["source_page"] = matches[0] if len(matches) == 1 else None
+            records.append(record)
         current_type, current_lines = None, []
 
     for raw in block.splitlines():
-        line = raw.strip()
-        if re.match(r"^(SA|FT|FC)\s+", line):
+        # PDF layout may append the document footer to an unfinished weather
+        # row. Strip that furniture without ending a valid page continuation.
+        line = re.sub(
+            r"\b[A-Z0-9]{2,3}\s+\d{1,4}/\d{1,2}[A-Z]{3}\d{2}/[A-Z]{3,4}-[A-Z]{3,4}"
+            r"(?:\s+Reg:\s*\S+\s+OFP:\s*\S+)?(?:\s+Page\s+\d+\s+of\s+\d+)?",
+            "", raw, flags=re.IGNORECASE,
+        )
+        line = re.sub(r"\bPage\s+\d+\s+of\s+\d+\s*$", "", line, flags=re.IGNORECASE).strip()
+        if not line or line.upper() == "AIRPORT WX LIST":
+            continue
+        if re.match(
+            r"^(?:AIRPORTLIST ENDED|AIRMET|SIGMET|Tropical Cyclone|Volcanic Ash|Space Weather)",
+            line, flags=re.IGNORECASE,
+        ):
+            break
+        remaining = line
+        while remaining:
+            if re.match(r"^(SA|FT|FC)\s+", remaining):
+                flush()
+                token = remaining[:2]
+                current_type = {"SA": "METAR", "FT": "TAF", "FC": "TAF"}[token]
+            if not current_type:
+                break
+            # Keep the explicit message terminator, then close the product so
+            # following list material cannot become METAR/TAF source text.
+            terminator = remaining.find("=")
+            current_lines.append(remaining if terminator < 0 else remaining[:terminator + 1])
+            if terminator < 0:
+                break
             flush()
-            token = line[:2]
-            current_type = {"SA": "METAR", "FT": "TAF", "FC": "TAF"}[token]
-            current_lines = [line]
-        elif current_type and line and not line.startswith(("SIA ", "Page ")):
-            current_lines.append(line)
+            remaining = remaining[terminator + 1:].strip()
+            if not re.match(r"^(SA|FT|FC)\s+", remaining):
+                break
     flush()
     return records
 
@@ -234,9 +285,10 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
     if "EDDM/MUC" in text:
         locations.append("EDDM")
     for icao in dict.fromkeys(locations):
-        records = _parse_station_weather(icao, _extract_station_block(text, icao))
+        records = _parse_station_weather(
+            icao, _extract_station_block(text, icao), source_pages=pages,
+        )
         for record in records:
-            record["source_page"] = _record_source_page(pages, record["text"])
             if icao in fuel_icaos:
                 record["source_role"] = "fuel_enroute_airport"
         flight["weather"].extend(records)

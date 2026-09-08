@@ -12,9 +12,10 @@ dynamic instead of per-country:
   publish their issued warning bulletins on the WMO GTS, mirrored publicly by
   NOAA (tgftp.nws.noaa.gov). The engine reads the mirror's warning-family
   indexes once per cache window, keeps the files whose issuing centre matches
-  the airport's ICAO country prefix, and serves the authority's own bulletin
-  text with NOAA named as the host. A country that publishes nothing there is
-  reported as exactly that — never guessed.
+  the airport's ICAO country prefix as discovery candidates. Only messages
+  explicitly naming the affected airport are attached to that airport, with
+  NOAA named as the host. An issuing centre is never the affected airport by
+  inference; unmatched or unresolved messages cannot establish all-clear.
 * **Official authority APIs (config rows, richer where they exist):** some
   authorities publish structured warnings on their own official endpoints.
   Singapore's MSS heavy-rain / localised-thunderstorm warnings are served via
@@ -80,6 +81,11 @@ _TIMEOUT_SECONDS = 12.0
 _ICAO = re.compile(r"^[A-Z]{4}$")
 # WMO abbreviated heading line inside a bulletin: TTAAII CCCC DDHHMM
 _WMO_HEADING = re.compile(r"\b([A-Z]{4}\d{2})\s+([A-Z]{4})\s+(\d{6})\b")
+_WARNING_START = re.compile(
+    r"(?m)^[ \t]*([A-Z]{4})\s+(AD|WS)\s+WRNG\s+(\d+)\b"
+)
+_WARNING_VALIDITY = re.compile(r"\bVALID\s+(\d{6}/\d{6}|TL\s+\d{6})\b")
+_WARNING_CANCELLATION = re.compile(r"\bCNL\s+(?:AD|WS)\s+WRNG\b")
 
 _CACHE: dict[str, tuple[float, Any]] = {}
 _CACHE_LOCK = Lock()
@@ -243,6 +249,28 @@ def _bulletin_is_nil(text: str) -> bool:
     return bool(re.fullmatch(r"(?:[A-Z]{4}\d{2}\s+[A-Z]{4}\s+\d{6}\s*)?NIL[\s=.]*", body))
 
 
+def _warning_messages(text: str) -> tuple[list[tuple[re.Match[str], str]], bool]:
+    """Split terminated messages, or consecutive explicit airport headers.
+
+    The start must be a message/line start, not an airport mentioned in prose
+    or the final airport in an unsupported multi-airport location field.
+    Cancellation continuation lines remain inside their enclosing message.
+    """
+    messages: list[tuple[re.Match[str], str]] = []
+    unresolved = False
+    for match in re.finditer(r"[^=]+=?", text):
+        part = match.group(0).strip()
+        if not part:
+            continue
+        starts = list(_WARNING_START.finditer(part))
+        if not starts or part[:starts[0].start()].strip():
+            unresolved = True
+        for position, start in enumerate(starts):
+            end = starts[position + 1].start() if position + 1 < len(starts) else len(part)
+            messages.append((start, part[start.start():end].strip()))
+    return messages, unresolved
+
+
 def _gts_bulletins_for_station(
     client: httpx.Client,
     icao: str,
@@ -255,6 +283,8 @@ def _gts_bulletins_for_station(
     attempted = 0
     failed = 0
     nil_count = 0
+    source_receipts: list[dict[str, Any]] = []
+    reason_codes: set[str] = set()
     max_age = _max_bulletin_age_hours()
     for family, rows in index.items():
         for filename, centre in rows:
@@ -265,6 +295,13 @@ def _gts_bulletins_for_station(
             attempted += 1
             url = f"{GTS_MIRROR_ORIGIN}/data/raw/{family}/{filename}"
             cache_key = f"gts-bulletin:{url}"
+            receipt: dict[str, Any] = {
+                "source_url": url,
+                "status": "review_required",
+                "affected_airports": [],
+                "reason_codes": [],
+            }
+            source_receipts.append(receipt)
             body = _cached(cache_key)
             if body is None:
                 try:
@@ -273,31 +310,71 @@ def _gts_bulletins_for_station(
                     body = None
                 if body is None:
                     failed += 1
+                    receipt["status"] = "unavailable"
+                    receipt["reason_codes"] = ["bulletin_fetch_failed"]
+                    reason_codes.add("bulletin_fetch_failed")
                     continue
                 _store(cache_key, body)
             text = str(body).strip()
-            if not text or _bulletin_is_nil(text):
-                nil_count += 1
-                continue
-            heading = _WMO_HEADING.search(text)
-            issued = _estimate_issued_utc(heading.group(3) if heading else None, now)
-            # A heading the age estimate cannot resolve is not evidence of a
-            # current warning either; the mirror keeps stale files forever.
-            if issued is None or (now - issued).total_seconds() > max_age * 3600.0:
-                nil_count += 1
-                continue
-            bulletins.append({
-                "provider": f"{centre.lower()}-issued-warning-via-noaa-gts",
-                "header": heading.group(1) + " " + heading.group(2) if heading else filename,
-                "issued_utc_estimate": _iso(issued),
-                "raw_text": text[:4000],
-                "source_url": url,
-            })
+            headings = list(_WMO_HEADING.finditer(text))
+            source_reasons: set[str] = set()
+            affected_airports: set[str] = set()
+            matched_count = 0
+            if not headings:
+                source_reasons.add("bulletin_issue_not_current")
+            for position, heading in enumerate(headings):
+                end = headings[position + 1].start() if position + 1 < len(headings) else len(text)
+                envelope = text[heading.start():end].strip()
+                issued = _estimate_issued_utc(heading.group(3), now)
+                # The public mirror persists files indefinitely. Old or
+                # unresolved issuance is missing current evidence, never NIL.
+                if issued is None or (now - issued).total_seconds() > max_age * 3600.0:
+                    source_reasons.add("bulletin_issue_not_current")
+                    continue
+                if _bulletin_is_nil(envelope):
+                    nil_count += 1
+                    source_reasons.add("airport_scope_unresolved")
+                    continue
+                messages, unresolved = _warning_messages(text[heading.end():end])
+                if unresolved or not messages:
+                    source_reasons.add("airport_scope_unresolved")
+                for start, message in messages:
+                    airport, message_type, _sequence = start.groups()
+                    affected_airports.add(airport)
+                    if airport != icao:
+                        continue
+                    validity = _WARNING_VALIDITY.search(message)
+                    if validity is None:
+                        source_reasons.add("warning_validity_unresolved")
+                    # Keep source text and source validity, without claiming
+                    # this issued message is active for the flight's window.
+                    matched_count += 1
+                    bulletins.append({
+                        "provider": f"{heading.group(2).lower()}-issued-warning-via-noaa-gts",
+                        "header": heading.group(1) + " " + heading.group(2),
+                        "issued_utc_estimate": _iso(issued),
+                        "affected_airport": airport,
+                        "scope": "aerodrome",
+                        "message_type": f"{message_type} WRNG",
+                        "message_status": "cancellation" if _WARNING_CANCELLATION.search(message) else "warning",
+                        "validity_period_raw": " ".join(validity.group(1).split()) if validity else None,
+                        "validity_assessment": "not_assessed",
+                        "raw_text": heading.group(0) + "\n" + message,
+                        "source_url": url,
+                    })
+            if affected_airports and not matched_count:
+                source_reasons.add("other_airport_messages_only")
+            receipt["affected_airports"] = sorted(affected_airports)
+            receipt["reason_codes"] = sorted(source_reasons)
+            receipt["status"] = "warning_messages_held" if matched_count else "review_required"
+            reason_codes.update(source_reasons)
     return {
         "bulletins": bulletins,
         "attempted": attempted,
         "failed": failed,
         "nil": nil_count,
+        "source_receipts": source_receipts,
+        "reason_codes": sorted(reason_codes),
     }
 
 
@@ -349,6 +426,7 @@ def _hko_warnsum_warnings(
         warnings.append({
             "provider": row["provider"],
             "header": row["authority"],
+            "scope": "authority_area",
             "issued_utc_estimate": _iso(issued),
             "raw_text": name[:4000],
             "source_url": url,
@@ -401,6 +479,7 @@ def _data_gov_sg_warnings(
         warnings.append({
             "provider": row["provider"],
             "header": row["authority"],
+            "scope": "authority_area",
             "issued_utc_estimate": _iso(issued),
             "raw_text": raw_text[:4000],
             "source_url": url,
@@ -457,9 +536,9 @@ def enrich_aerodrome_warnings(
                 else {"bulletins": [], "attempted": 0, "failed": 0, "nil": 0}
             )
             receipts = [{
-                "source_url": bulletin["source_url"],
+                **receipt,
                 "retrieved_at_utc": _iso(retrieved_at),
-            } for bulletin in gts["bulletins"]]
+            } for receipt in gts.get("source_receipts", [])]
             warnings = list(gts["bulletins"])
             api_status: str | None = None
             row = AUTHORITY_API_ROWS.get(icao[:2]) or AUTHORITY_API_ROWS.get(icao[0])
@@ -469,6 +548,8 @@ def enrich_aerodrome_warnings(
                 receipts.append({
                     "source_url": api_result["source_url"],
                     "retrieved_at_utc": _iso(retrieved_at),
+                    "scope": "authority_area",
+                    "status": api_status,
                 })
                 warnings.extend(api_result["warnings"])
             checked_anything = gts["attempted"] > 0 or api_status is not None
@@ -485,7 +566,12 @@ def enrich_aerodrome_warnings(
                 status = "unavailable"
             elif not checked_anything and index is None:
                 status = "unavailable"
-            elif api_status == "no_active_warning" or gts["nil"] > 0:
+            elif any(
+                receipt["status"] == "review_required"
+                for receipt in gts.get("source_receipts", [])
+            ):
+                status = "review_required"
+            elif api_status == "no_active_warning":
                 status = "no_active_warning"
             else:
                 # The country publishes nothing under this airport's prefix on
@@ -495,6 +581,7 @@ def enrich_aerodrome_warnings(
                 "status": status,
                 "warnings": warnings,
                 "source_receipts": receipts,
+                "reason_codes": gts.get("reason_codes", []),
             }
         review = {
             "schema_version": "1.0",
