@@ -106,6 +106,27 @@ def test_future_closure_is_tied_to_planned_movement_time():
     assert 'planned RWY 02L is affected' in line
 
 
+def test_other_runway_schedule_still_has_a_flight_time_consequence():
+    record = notice('RWY 02C/20C WILL BE CLSD BTN 1730UTC TO 2130UTC EV TUE AND FRI FM 30SEP25 TO 31MAR27',
+                    pertinence_kind='runway_closure', approach_affected=False,
+                    referenceAt='2026-09-08T21:00:00Z', applicability='review', stateAtReference='unknown_at_reference')
+    line = analyse(record, runway='20R')['lines'][0]['text']
+    assert '02C/20C closes 1730-2130Z' in line and '2100Z is within the closure' in line
+    assert 'Planned RWY 20R differs' in line
+    assert 'A1/26' in line
+    record['referenceAt'] = '2026-09-07T21:00:00Z'
+    assert analyse(record, runway='20R')['lines'] == []
+
+
+def test_will_not_be_available_for_civil_use_is_not_lost():
+    record = notice('RWY 02R/20L WILL NOT BE AVBL FOR CIV USE. RWY 02L/20R REMAINS AVAILABLE.',
+                    pertinence_kind='runway_approach_restriction', approach_affected=False)
+    line = analyse(record, runway='20R')['lines'][0]['text']
+    assert '02R/20L not available for civil use at arrival 11 JUL 1030Z' in line
+    assert 'this does not close planned RWY 20R' in line
+    assert 'RWY 02R/20L, 02L/20R not available' not in line
+
+
 def test_unknown_schedule_has_one_closing_owner():
     result = analyse(notice('ILS RWY 02L U/S DLY AT TIMES ADVISED', stateAtReference='unknown_at_reference', applicability='review'))
     assert result['lines'] == [] and result['unresolved_ids'] == ['A1/26']

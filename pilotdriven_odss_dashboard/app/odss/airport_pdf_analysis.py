@@ -85,16 +85,28 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         # summary/raw fallback, even when other clauses remain unresolved.
         from .briefing import _compact_runway_schedule_text
         assessed = next((r for r in notice.get("role_applicability") or [] if r.get("role") == role), notice)
-        schedule_line = _compact_runway_schedule_text(
-            notice, role=role, planned_runways=set(planned.split("/")) - {""},
-            reference_time=_time(assessed.get("referenceAt") or notice.get("referenceAt")),
-        )
-        if schedule_line:
+        raw = str(notice.get("item_e_text") or "")
+        runways = list(dict.fromkeys(m.replace(" ", "").upper() for m in _SURFACE.findall(raw)))
+        has_schedule = False
+        # Other runway closures affect the available options for this flight.
+        # Reuse the existing date/weekday/time evaluator for each source-named
+        # pair, while keeping the actual planned runway explicit.
+        for runway in runways:
+            schedule_line = _compact_runway_schedule_text(
+                notice, role=role, planned_runways=set(runway.split("/")),
+                reference_time=_time(assessed.get("referenceAt") or notice.get("referenceAt")),
+            )
+            if not schedule_line:
+                continue
+            if planned and not set(planned.split("/")) & set(runway.split("/")):
+                schedule_line += f" Planned RWY {planned} differs from this affected runway."
             groups[("runway", schedule_line, "scheduled")] = {
                 "family": "runway", "consequence": schedule_line,
-                "state": "scheduled", "timing": "dated planned-runway schedule",
+                "state": "scheduled", "timing": "dated runway schedule",
                 "notam_ids": [notice_id], "source_pages": [notice.get("source_page")],
             }
+            has_schedule = True
+        if has_schedule:
             # Other unresolved clauses retain their single closing receipt.
             if assessed.get("applicability") == "review":
                 unresolved.append(notice_id)
@@ -107,8 +119,6 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
             continue
         # This never prints the matched raw clause. Only identifiers and the
         # classifier's bounded result enter a consequence template.
-        raw = str(notice.get("item_e_text") or "")
-        runways = list(dict.fromkeys(m.replace(" ", "").upper() for m in _SURFACE.findall(raw)))
         if notice.get("approach_affected") or kind == "approach_navaid_closure":
             from .pilot_briefing import _bound_unavailable, _APPROACH_SYSTEM
             # The dashboard's approach flag also admits signal interference.
@@ -141,8 +151,17 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
             consequence = f"Taxi access involving {', '.join(taxiways)} is constrained {timing}."
             family = "taxiway"
         elif runways:
+            civil_runways = list(dict.fromkeys(
+                match.group(1).replace(" ", "").upper()
+                for match in re.finditer(
+                    _SURFACE.pattern + r"\s*(?:IS\s+|WILL\s+)?NOT\s+(?:BE\s+)?(?:AVBL|AVAILABLE)\s+(?:FOR\s+)?CIV(?:IL)?\s+USE\b",
+                    raw, re.I,
+                )
+            ))
+            civil = bool(civil_runways)
+            if civil:
+                runways = civil_runways
             runway_label = "RWY " + ", ".join(runways)
-            civil = bool(re.search(r"\b(?:NOT\s+AVBL|NOT\s+AVAILABLE)\s+(?:FOR\s+)?CIV(?:IL)?\s+USE\b", raw, re.I))
             closed = kind == "runway_closure"
             if civil:
                 operation = "not available for civil use"
