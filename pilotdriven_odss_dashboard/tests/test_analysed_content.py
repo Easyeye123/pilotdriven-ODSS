@@ -157,6 +157,7 @@ def test_same_area_with_different_validities_is_not_silently_deduplicated():
 
 
 def test_live_matched_area_and_hole_survive_without_unrelated_dates():
+    from app.odss.analysed_briefing_map import event_description
     flight = sample_flight()
     flight.update(scheduled_departure_utc='2026-08-16T09:00:00Z', scheduled_arrival_utc='2026-08-16T14:00:00Z')
     view = build_briefing_view(flight, [], [])
@@ -167,6 +168,8 @@ def test_live_matched_area_and_hole_survive_without_unrelated_dates():
     result = build_publication_map(flight, view)
     live = next(e for e in result['publication_events'] if e['source_id']=='live-ash')
     assert len(live['rings']) == 2 and live['level_matched'] is True
+    assert live['route_intersects'] is True and live['time_matched'] is True
+    assert 'affects flight: route/time/level match' in event_description(live)
     view['route_map']['hazard_features'][0]['properties']['valid_from_utc'] = '2026-09-08T10:00:00Z'
     assert all(e['source_id']!='live-ash' for e in build_publication_map(flight,view)['publication_events'])
 
@@ -187,6 +190,8 @@ def test_weather_marker_names_and_key_preserve_type_validity_and_uncertainty():
     assert 'route does not cross area' in event_description(event)
     event['level_matched'] = True
     assert 'affects flight' not in event_description(event)
+    event['route_intersects'] = None
+    assert 'affects flight' not in event_description(event)
     event['route_intersects'] = True
     assert 'route/time/level match' in event_description(event)
 
@@ -203,10 +208,35 @@ def test_missing_inside_fix_times_do_not_establish_route_nonintersection():
         view['hazards']['sigmet_cards'] = [{'phenomenon':'TS','fir':'SYNTHETIC','sigmet_id':'2',
             'valid_from':'160900','valid_to':'161200', 'text':'WI N0030 E10000 - N0130 E10000 - N0130 E10200 - N0030 E10200 - N0030 E10000'}]
         event = next(e for e in build_publication_map(flight,view)['publication_events'] if e['kind']=='WX')
-        assert event['route_intersects'] is None
+        assert event['route_intersects'] is True
         assert 'distance_nm' not in event
         assert 'route does not cross' not in event_description(event)
         assert 'affects flight' not in event_description(event)
+
+
+def test_map_uses_full_crossing_leg_time_bounds_and_explicit_spatial_result():
+    flight = sample_flight()
+    flight.update(route_waypoints=[
+        {'name':'AAA','latitude':1,'longitude':99,'actm_minutes':0},
+        {'name':'BBB','latitude':1,'longitude':103,'actm_minutes':120},
+    ], scheduled_departure_utc='2026-08-16T09:00:00Z')
+    view = build_briefing_view(flight, [], [])
+    # The nearest-point estimate can lie inside validity while the full filed
+    # leg spans 0900-1100Z. That does not establish crossing-time applicability.
+    card = {'phenomenon':'TS','fir':'SYNTHETIC','sigmet_id':'2',
+            'valid_from':'160930','valid_to':'161000',
+            'text':'WI N0030 E10000 - N0130 E10000 - N0130 E10200 - N0030 E10200'}
+    view['hazards']['sigmet_cards'] = [card]
+    event = next(e for e in build_publication_map(flight, view)['publication_events'] if e['kind'] == 'WX')
+    assert event['route_intersects'] is True
+    assert event['time_matched'] is False
+    card.update(valid_from='160800', valid_to='161200')
+    event = next(e for e in build_publication_map(flight, view)['publication_events'] if e['kind'] == 'WX')
+    assert event['time_matched'] is True
+    flight['route_waypoints'][0]['latitude'] = 3
+    flight['route_waypoints'][1]['latitude'] = 3
+    event = next(e for e in build_publication_map(flight, view)['publication_events'] if e['kind'] == 'WX')
+    assert event['route_intersects'] is False
 
 
 def _dense_publication_map(count):

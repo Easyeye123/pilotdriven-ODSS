@@ -63,7 +63,7 @@ def event_description(event):
                           else f"{begin:%d%b %H%MZ}-{end:%d%b %H%MZ}").upper())
         else:
             parts.append("validity not held")
-        if event.get("level_matched") and event.get("time_matched") and event.get("route_intersects") is not False:
+        if event.get("level_matched") and event.get("time_matched") and event.get("route_intersects") is True:
             parts.append("affects flight: route/time/level match")
         elif event.get("route_intersects") is False:
             parts.append("route does not cross area")
@@ -98,7 +98,11 @@ def build_publication_map(flight, view):
         when = anchor + timedelta(minutes=actm) if anchor and actm is not None else None
         begin = _sigmet_utc(flight, str(row.get("valid_from") or ""))
         end = _sigmet_utc(flight, str(row.get("valid_to") or ""), near=begin)
-        in_time = bool(when and begin and end and begin <= when <= end)
+        crossing = screening.get("crossing_actm")
+        passage_start = anchor + timedelta(minutes=crossing[0]) if anchor and crossing else None
+        passage_end = anchor + timedelta(minutes=crossing[1]) if anchor and crossing else None
+        in_time = bool(begin and end and begin < end and passage_start and passage_end
+                       and begin <= passage_start and passage_end <= end)
         kind = "VA" if row.get("advisory_kind") == "VA_SIGMET" else "WX"
         label = row.get("volcano") or row.get("name") or kind
         if kind == "VA":
@@ -113,9 +117,8 @@ def build_publication_map(flight, view):
                        "time_utc": when.isoformat() if when else None,
                        "time_matched": in_time, "valid_from_utc": begin.isoformat() if begin else None,
                        "valid_to_utc": end.isoformat() if end else None,
-                       # A held inside-fix time proves an intersection. Its
-                       # absence does not prove disjoint route segments.
-                       "route_intersects": True if screening.get("crossing_actm") is not None else None,
+                       # Geometry is explicit even when ACTM is unavailable.
+                       "route_intersects": screening["route_intersects"],
                        "source_id": row.get("source_id") or row.get("name"),
                        "place": screening["closest_place"]})
     # Preserve the existing live matcher output as well as the held CFP
@@ -147,7 +150,8 @@ def build_publication_map(flight, view):
                                "valid_from_utc": begin.isoformat(), "valid_to_utc": finish.isoformat(),
                                "polygon": rings[0], "rings": rings,
                                "position": {"latitude": position.y, "longitude": position.x},
-                               "time_matched": True, "level_matched": True, "source_id": source_id})
+                               "time_matched": True, "level_matched": True,
+                               "route_intersects": True, "source_id": source_id})
         except (TypeError, ValueError) as exc:
             raise ValueError("Matched route hazard has no valid publication geometry") from exc
     # Existing VWS threshold and grouping, not a new threshold from REV1.
