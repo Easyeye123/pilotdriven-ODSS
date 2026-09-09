@@ -10,6 +10,31 @@ from app.odss.concise_pdf_gate import normalized
 from app.odss.weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
 
 
+def test_five_expired_sigmets_and_six_ash_results_fit_one_weather_page():
+    from app.odss.briefing import build_briefing_view
+    from app.odss.operational_format import build_sections
+    flight = sample_flight()
+    flight.update(scheduled_departure_utc='2026-09-08T14:50:00Z', scheduled_arrival_utc='2026-09-08T21:00:00Z')
+    view = build_briefing_view(flight, [], [])
+    view['hazards']['sigmet_cards'] = [
+        {'fir': 'RJJJ', 'sigmet_id': f'C{i:02d}', 'phenomenon': 'EMBD TS',
+         'valid_from': '081018', 'valid_to': f'0814{i:02d}',
+         'screening': f'The filed route does not intersect the polygon. Closest deterministic screening distance is approximately {236+i} NM northeast. NOT PROMOTED.'}
+        for i in range(5)]
+    view['vaa']['cfp_advisories'] = [
+        {'volcano': f'VOLCANO {i}', 'advisory_kind': 'VA_SIGMET',
+         'derived': 'Closest 300 NM between AAA and BBB; route passes after the advisory validity ended at 1300Z.'} for i in range(6)]
+    sections = build_sections(flight, view, [])
+    assert sum(len(pages) for pages in sections.values()) == 9
+    page = sections['weather'][0]
+    body = ' '.join(line for box in page.boxes for line in box.lines)
+    for i in range(5):
+        assert f'C{i:02d}' in body and f'{236+i} NM' in body and f'{50-i} min' in body
+    for i in range(6):
+        assert f'VOLCANO {i}' in body
+    assert body.count('successor SIGMET') == 1
+
+
 def test_physical_pdf_explains_non_edto_excluded_sigmet_and_unassessed_ash(tmp_path):
     flight = sample_flight()
     flight.update(scheduled_departure_utc='2026-09-08T14:50:00Z',
@@ -32,8 +57,8 @@ def test_physical_pdf_explains_non_edto_excluded_sigmet_and_unassessed_ash(tmp_p
         route, weather = normalized(doc[1].get_text()), normalized(doc[3].get_text())
         assert 'NOT APPLICABLE THIS FLIGHT IS NON EDTO' in route
         assert 'OUTSIDE FILED ROUTE' in weather and 'RJJJ C03' in weather
-        assert '32 MIN BEFORE SCHEDULED DEPARTURE' in weather
-        assert 'VALID 08SEP 1018Z 08SEP 1418Z' in weather
+        assert 'EXPIRED BEFORE SCHEDULED DEPARTURE 08SEP 1450Z' in weather
+        assert 'C03 08SEP 1018 1418Z 32 MIN' in weather
         assert 'SUCCESSOR SIGMET COVERAGE' in weather
         assert 'DARWIN TOKYO REACHED' in weather
         assert '2 DIRECT VAAC ADVISORIES' in weather
@@ -88,7 +113,7 @@ def test_sigmet_expiry_uses_valid_source_utc_and_handles_month_rollover(departur
             'screening': 'The filed route does not intersect the polygon. NOT PROMOTED.'}
     result = ' '.join(sigmet_lines({'scheduled_departure_utc': departure}, {'hazards': {'sigmet_cards': [card]}}))
     if expected:
-        assert expected + ' before scheduled departure' in result
+        assert expected in result and 'Expired before scheduled departure' in result
     else:
         assert 'expired' not in result
 

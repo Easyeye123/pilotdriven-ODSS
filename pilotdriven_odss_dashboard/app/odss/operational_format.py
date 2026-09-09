@@ -412,10 +412,19 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         elif conditions:
             terminal.append("Forecast source, issue and validity times are not held.")
     tc_lines = cyclone_content(flight)["lines"]
-    sections["weather"] = plan_page("WEATHER, SIGMET, TROPICAL CYCLONE AND VOLCANIC ASH", "sec_hazards", [
-        (239, [Card("TERMINAL WEATHER", terminal), Card("SIGMET", sigmet_lines(flight, view), AMBER, left_aligned=True, top_aligned=True)]),
-        (188, [Card("TROPICAL CYCLONE", tc_lines or ["No governed route-specific cyclone consequence was established from the held sources."], AMBER), Card("VOLCANIC ASH", volcanic_ash_lines(flight, view), AMBER, left_aligned=True, top_aligned=True)]),
-    ])
+    weather_top = [Card("TERMINAL WEATHER", terminal), Card("SIGMET", sigmet_lines(flight, view), AMBER, left_aligned=True, top_aligned=True)]
+    weather_bottom = [Card("TROPICAL CYCLONE", tc_lines or ["No governed route-specific cyclone consequence was established from the held sources."], AMBER), Card("VOLCANIC ASH", volcanic_ash_lines(flight, view), AMBER, left_aligned=True, top_aligned=True)]
+    # Trade up to four text lines between rows before declaring overflow.
+    # Keep the reference's four cards, page height and readable type size.
+    for shift in (0, -2, 2, -4, 4):
+        try:
+            sections["weather"] = plan_page("WEATHER, SIGMET, TROPICAL CYCLONE AND VOLCANIC ASH", "sec_hazards", [
+                (239 + shift * LEADING, weather_top), (188 - shift * LEADING, weather_bottom),
+            ])
+            break
+        except ValueError:
+            if shift == 4:
+                raise
     fuel_lines = [f"{label} {amount(key)}" for key, label in (("burnoff", "BURNOFF"), ("stat_cont", "STAT CONT"), ("altn_fuel", "ALTN FUEL"), ("altn_hold", "ALTN HOLD"))]
     for key, label in (("dest_hold_top_up", "DEST HOLD TOP-UP"), ("edto_top_up", "EDTO TOP-UP")):
         if (fuel_rows.get(key) or {}).get("fuel_kg"):

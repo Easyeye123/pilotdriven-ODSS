@@ -51,7 +51,7 @@ def edto_window_lines(flight, view):
 def sigmet_lines(flight, view):
     from .briefing import _sigmet_utc
 
-    lines, outside, unreadable, expired = _matched_lines(flight, view, ash=False), [], [], []
+    lines, outside, unreadable, expired = _matched_lines(flight, view, ash=False), [], [], {}
     departure = _utc(flight.get('scheduled_departure_utc'))
     for card in (view.get('hazards') or {}).get('sigmet_cards') or []:
         ref = f"{clean(card.get('fir')) or 'FIR unresolved'}/{clean(card.get('sigmet_id')) or 'ID unresolved'}"
@@ -76,14 +76,18 @@ def sigmet_lines(flight, view):
         end = _sigmet_utc(flight, card.get('valid_to'), near=start)
         if departure and start and end and start < end < departure:
             minutes = (departure - end).total_seconds() / 60
-            expired.append(f"{ref} valid {start:%d%b %H%MZ}-{end:%d%b %H%MZ}; "
-                           f"expired {minutes:g} min before scheduled departure.")
+            validity = (f'{start:%d%b %H%M}-{end:%H%MZ}' if start.date() == end.date()
+                        else f'{start:%d%b %H%MZ}-{end:%d%b %H%MZ}').upper()
+            fir, identifier = ref.split('/', 1)
+            expired.setdefault(fir, []).append(f'{identifier} {validity} ({minutes:g} min)')
     if outside:
         lines.append('Outside filed route: ' + '; '.join(outside) + '.')
     if unreadable:
         lines.append('Unreadable source polygon: ' + ', '.join(unreadable) + '; route applicability unresolved.')
-    lines.extend(expired)
     if expired:
+        lines.append(f'Expired before scheduled departure {departure:%d%b %H%MZ} '
+                     '(validity UTC; minutes early):')
+        lines.extend(f"{fir}: {'; '.join(records)}." for fir, records in expired.items())
         lines.append('These expired records do not establish successor SIGMET coverage for this flight.')
     if not lines:
         lines = [f'No flight-specific SIGMET screening result is held for {window_label(flight)}. '
