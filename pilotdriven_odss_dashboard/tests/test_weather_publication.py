@@ -22,6 +22,7 @@ def test_physical_pdf_explains_non_edto_excluded_sigmet_and_unassessed_ash(tmp_p
          'WS SIGMET C03 VALID 081018/081418 RJTD- RJJJ FUKUOKA FIR EMBD TS OBS '
          'WI N5000 E16000 - N5100 E16000 - N5100 E16100 - N5000 E16000 TOP FL510 MOV NNE 10KT='}]
     flight['direct_vaa_source_review'] = {'source_status': 'partial', 'applicability_status': 'not_assessed',
+        'responsible_centre_receipts': [{'centre': 'DARWIN', 'reached': True}, {'centre': 'TOKYO', 'reached': True}],
         'official_advisories': [{'volcano': 'TEST A'}, {'volcano': 'TEST B'}]}
     original = deepcopy(flight)
     findings = [f for f in sample_findings() if f['engine'] != 'depressurisation']
@@ -32,6 +33,9 @@ def test_physical_pdf_explains_non_edto_excluded_sigmet_and_unassessed_ash(tmp_p
         assert 'NOT APPLICABLE THIS FLIGHT IS NON EDTO' in route
         assert 'OUTSIDE FILED ROUTE' in weather and 'RJJJ C03' in weather
         assert '32 MIN BEFORE SCHEDULED DEPARTURE' in weather
+        assert 'VALID 08SEP 1018Z 08SEP 1418Z' in weather
+        assert 'SUCCESSOR SIGMET COVERAGE' in weather
+        assert 'DARWIN TOKYO REACHED' in weather
         assert '2 DIRECT VAAC ADVISORIES' in weather
         assert 'APPLICABILITY HAS NOT BEEN ASSESSED' in weather
         assert len(doc) == 9

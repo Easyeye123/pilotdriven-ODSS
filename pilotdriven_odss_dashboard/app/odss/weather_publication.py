@@ -76,12 +76,15 @@ def sigmet_lines(flight, view):
         end = _sigmet_utc(flight, card.get('valid_to'), near=start)
         if departure and start and end and start < end < departure:
             minutes = (departure - end).total_seconds() / 60
-            expired.append(f"{ref} expired {minutes:g} min before scheduled departure.")
+            expired.append(f"{ref} valid {start:%d%b %H%MZ}-{end:%d%b %H%MZ}; "
+                           f"expired {minutes:g} min before scheduled departure.")
     if outside:
         lines.append('Outside filed route: ' + '; '.join(outside) + '.')
     if unreadable:
         lines.append('Unreadable source polygon: ' + ', '.join(unreadable) + '; route applicability unresolved.')
     lines.extend(expired)
+    if expired:
+        lines.append('These expired records do not establish successor SIGMET coverage for this flight.')
     if not lines:
         lines = [f'No flight-specific SIGMET screening result is held for {window_label(flight)}. '
                  'This does not establish that no SIGMET applies.']
@@ -99,9 +102,13 @@ def volcanic_ash_lines(flight, view):
         lines.append(f"{clean(row.get('volcano') or row.get('name')) or 'Unnamed advisory'}: {derived}")
     direct = flight.get('direct_vaa_source_review') or (flight.get('vaa_review') or {}).get('direct_vaa_source_review') or {}
     count = len(direct.get('official_advisories') or [])
+    reached = [clean(r.get('centre')) for r in direct.get('responsible_centre_receipts') or []
+               if r.get('reached') is True and clean(r.get('centre'))]
+    centres = '/'.join(dict.fromkeys(reached))
     if count and direct.get('applicability_status') == 'not_assessed':
         noun = 'advisory' if count == 1 else 'advisories'
-        lines.append(f'{count} direct VAAC {noun} held; route/time/level applicability has not been assessed.')
+        prefix = f'{centres} reached; ' if centres else ''
+        lines.append(f'{prefix}{count} direct VAAC {noun} held; route/time/level applicability has not been assessed.')
     if direct.get('source_status') == 'partial':
         lines.append('Direct VAAC coverage is partial; the held evidence does not establish an ash-free flight.')
     if not lines:
