@@ -175,3 +175,10 @@ def test_source_polygon_rejects_later_forecast_fallback_and_partial_coordinate_l
 def test_initial_forecast_polygon_is_supported():
     from app.odss.analysed_briefing_map import source_polygon
     assert source_polygon('EMBD TS FCST WI S0100 W00100 - S0100 E00100 - N0100 E00100 - N0100 W00100 TOP FL470=') == SQUARE
+
+
+@pytest.mark.parametrize('layer', ['8000FT/FL210', '4000M/FL220', '8250FT', '4500M', '3500/9000M', '8000/12000FT', 'SFC/9900FT', 'FL140/250'])
+def test_polygon_ends_before_supported_geometric_height_or_flight_level(layer):
+    from app.odss.sigmet_geometry import source_polygon
+    source = 'EMBD TS FCST WI S0100 W00100 - S0100 E00100 - N0100 E00100 - N0100 W00100 '
+    assert source_polygon(source + layer + ' MOV E 25KT NC=') == SQUARE

@@ -22,7 +22,7 @@ def source_polygon(value):
     if not within:
         return []
     area = source[within.end():]
-    end = re.search(r'\b(?:TOP|SFC|FL\d{2,3}|ABV|BLW|MOV|STNR|NC|WKN|INTSF|FCST|OBS)\b|=', area)
+    end = re.search(r'\b(?:TOP|SFC|FL\d{2,3}|\d{4,5}(?:M|FT|/\d{4,5}(?:M|FT))|ABV|BLW|MOV|STNR|NC|WKN|INTSF|FCST|OBS)\b|=', area)
     area = (area[:end.start()] if end else area).strip()
     # Validate the entire area: a malformed fourth point must not turn a
     # four-sided area into a valid-looking three-point prefix.
