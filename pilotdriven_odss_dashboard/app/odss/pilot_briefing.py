@@ -205,9 +205,6 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     restrictions, and ground-movement restrictions ahead of obstacles.
     """
 
-    if retired_taxiway_lighting_summary(text):
-        return 4, "surface_identity_review"
-
     upper = f"{category} {text}".upper()
     unavailable = any(
         not _NEGATED_UNAVAILABLE_PREFIX.search(upper[:match.start()])
@@ -291,6 +288,26 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
         return 4, "taxiway_closure"
     if runway_closure:
         return 1, "runway_closure"
+    if retired_taxiway_lighting_summary(text):
+        # Keep independent affirmative restrictions ahead of this review.
+        # The runway named in a supplement heading is not a light outage,
+        # but a separately source-bound unavailable aid still is.
+        if taxiway_closure:
+            return 4, "taxiway_closure"
+        lighting_clauses = [
+            clause for clause in re.split(r"\.(?=\s|$)|;", text.upper())
+            if _bound_unavailable(clause, _LIGHTING)
+            and re.search(
+                rf"\b{_LIGHTING}(?:\s+(?:FOR\s+)?{_RUNWAY_ID})?\s+(?:IS\s+|ARE\s+)?{_UNAVAILABLE_WORD}\b",
+                clause,
+            )
+            and not retired_taxiway_lighting_summary(clause)
+        ]
+        if lighting_clauses:
+            # Resolve a separate outage in its own clause; a preceding retired
+            # taxiway must not become the subject of a runway-light outage.
+            return min((notam_pertinence(clause) for clause in lighting_clauses), key=lambda row: row[0])
+        return 4, "surface_identity_review"
     if unavailable and taxiway and lighting and primary_taxiway:
         return 6, "taxiway_restriction"
     if unavailable and lighting and (

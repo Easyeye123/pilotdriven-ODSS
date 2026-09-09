@@ -26,3 +26,18 @@ def test_no_retired_pavement_inference_from_conditional_negated_future_or_unrela
         result = _notam_operational_summary(source, 'runway_lighting_restriction', 'destination')
         assert 'identifies' not in result
     assert 'Lighting affecting' in _notam_operational_summary('RWY 01/19 EDGE LGT U/S', 'runway_lighting_restriction', 'destination')
+
+
+def test_retired_pavement_cannot_suppress_a_separate_direct_restriction():
+    base = 'Taxiway K2 was decommissioned. Visual aids of the decommissioned taxiway were removed. '
+    for clause, kind in [
+        ('RWY 07R CLSD DUE WIP.', 'runway_closure'),
+        ('ILS RWY 07R U/S.', 'approach_navaid_closure'),
+        ('TWY Z CLSD.', 'taxiway_closure'),
+        ('RWY 07R EDGE LGT U/S.', 'runway_lighting_restriction'),
+        ('AIRPORT CLSD.', 'airport_closure'),
+    ]:
+        assert notam_pertinence(base + clause)[1] == kind, clause
+        assert notam_pertinence(clause + base)[1] == kind, clause
+    assert notam_pertinence(base + 'RWY 07R NOT CLSD.')[1] == 'surface_identity_review'
+    assert notam_pertinence(base + 'FIXED RED LGT INSTL HAVE BEEN PLACED IN AREAS THAT ARE CLSD.')[1] == 'surface_identity_review'
