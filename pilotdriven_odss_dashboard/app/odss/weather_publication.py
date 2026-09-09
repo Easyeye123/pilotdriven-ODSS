@@ -49,24 +49,41 @@ def edto_window_lines(flight, view):
 
 
 def sigmet_lines(flight, view):
-    from .briefing import _sigmet_utc
+    from .briefing import _sigmet_screening_cards, _sigmet_utc
 
     lines, outside, unreadable, expired = _matched_lines(flight, view, ash=False), [], [], {}
     departure = _utc(flight.get('scheduled_departure_utc'))
+    rechecked_cards = None
     for card in (view.get('hazards') or {}).get('sigmet_cards') or []:
+        if 'route_intersection' not in card:
+            # Older producers mistook missing timed inside fixes for no spatial
+            # crossing. Re-screen the identical original message for a newly
+            # rendered PDF; never rewrite the held card or original saved PDF.
+            if rechecked_cards is None:
+                rechecked_cards = {
+                    (row.get('fir'), row.get('sigmet_id'), clean(row.get('text'))): row
+                    for row in _sigmet_screening_cards(flight)
+                }
+            key = (card.get('fir'), card.get('sigmet_id'), clean(card.get('text')))
+            card = rechecked_cards.get(key) or {
+                **card, 'route_intersection': 'unresolved',
+                'screening': 'Legacy spatial verdict cannot be verified from its original source; route applicability unresolved.',
+            }
         ref = f"{clean(card.get('fir')) or 'FIR unresolved'}/{clean(card.get('sigmet_id')) or 'ID unresolved'}"
         screening = clean(card.get('screening'))
-        if 'does not intersect the polygon' in screening:
+        if card.get('route_intersection') == 'outside':
             distance = re.search(r'approximately (\d+) NM ([a-z]+)', screening)
             suffix = f" ({distance[1]} NM {distance[2]})" if distance else ''
             outside.append(ref + suffix)
-        elif screening.startswith('No readable polygon'):
+        elif card.get('route_intersection') == 'unresolved' or screening.startswith('No readable polygon'):
             unreadable.append(ref)
         else:
             analysed = re.sub(r'\s*(?:NOT PROMOTED\.|PROMOTED - review required\.)$', '', screening)
             # Keep the route-passage UTC interval; ACTM remains when UTC is absent.
             analysed = re.sub(r'The polygon crosses the route about ACTM \S+ / (\d{4}-\d{4}Z)', r'Route crossing \1', analysed)
             analysed = analysed.replace('The polygon crosses the route about ', 'Route crossing ')
+            analysed = analysed.replace('The polygon crosses the route within filed leg bounds ', 'Crossing leg bounds ')
+            analysed = analysed.replace('The source polygon intersects the filed route, but crossing timing is unresolved because intersecting legs lack complete ordered ACTM values.', 'Route intersection; crossing timing unresolved (incomplete or unordered ACTM).')
             analysed = analysed.replace("inside the product's validity", 'within validity')
             analysed = re.sub(r'Route crossing .*?, but the product ', 'Product ', analysed)
             lines.append(f"{ref} ({clean(card.get('phenomenon')) or 'phenomenon unresolved'}): "
@@ -83,7 +100,7 @@ def sigmet_lines(flight, view):
     if outside:
         lines.append('Outside filed route: ' + '; '.join(outside) + '.')
     if unreadable:
-        lines.append('Unreadable source polygon: ' + ', '.join(unreadable) + '; route applicability unresolved.')
+        lines.append('Source polygon or route geometry unavailable: ' + ', '.join(unreadable) + '; route applicability unresolved.')
     if expired:
         lines.append(f'Expired before scheduled departure {departure:%d%b %H%MZ} '
                      '(validity UTC; minutes early):')

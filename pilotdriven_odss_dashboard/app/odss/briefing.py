@@ -7,7 +7,7 @@ from functools import lru_cache
 import gzip
 from html import escape
 import json
-from math import cos, radians
+from math import cos, isfinite, radians
 from pathlib import Path
 import re
 from typing import Any
@@ -2370,90 +2370,92 @@ def _screening_geometry(
     points: list[tuple[float, float]],
     waypoints: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    """Deterministic route-vs-polygon screening: closest approach to the route
-    LINE (legs vs vertices and edges vs fixes) plus the crossing window when
-    route legs actually enter the polygon. Local equirectangular frames -
-    screening precision, not navigation."""
-    held = [
-        (float(w["latitude"]), float(w["longitude"]),
-         str(w.get("name") or "").lstrip("-"), w.get("actm_minutes"))
-        for w in waypoints
-        if w.get("latitude") is not None and w.get("longitude") is not None
-    ]
-    if len(points) < 3 or not held:
+    """Screen complete filed legs, keeping geometry independent of timing.
+
+    Crossing times are conservative bounds from the intersecting legs' fixes,
+    not interpolated entry/exit predictions. Local equirectangular distance is
+    screening precision only. Invalid geometry is never repaired or bridged.
+    """
+    from shapely.geometry import LineString, Point, Polygon
+    from shapely.ops import nearest_points
+    from .vaa import _unwrap
+
+    def coordinate(lat, lon):
+        try:
+            lat, lon = float(lat), float(lon)
+        except (TypeError, ValueError):
+            return None
+        return (lat, lon) if isfinite(lat) and isfinite(lon) and abs(lat) <= 90 and abs(lon) <= 180 else None
+
+    def actm(value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if isfinite(number) and number >= 0 else None
+
+    if len(points) < 3 or len(waypoints) < 2:
         return None
-
-    def seg(px, py, ax, ay, bx, by):
-        dx, dy = bx - ax, by - ay
-        length_sq = dx * dx + dy * dy
-        t = 0.0 if length_sq == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length_sq))
-        cx, cy = ax + t * dx, ay + t * dy
-        return ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5, t
-
-    def inside(lat, lon):
-        crossings = 0
-        for j in range(len(points)):
-            (alat, alon), (blat, blon) = points[j], points[(j + 1) % len(points)]
-            if (alat > lat) != (blat > lat):
-                lon_cross = alon + (lat - alat) * (blon - alon) / (blat - alat)
-                if lon_cross > lon:
-                    crossings += 1
-        return crossings % 2 == 1
-
+    held = []
+    for waypoint in waypoints:
+        position = coordinate(waypoint.get("latitude"), waypoint.get("longitude"))
+        if position is None:
+            return None
+        held.append((*position, str(waypoint.get("name") or "").lstrip("-"), actm(waypoint.get("actm_minutes"))))
+    ring = []
+    for lat, lon in points:
+        position = coordinate(lat, lon)
+        if position is None:
+            return None
+        lat, lon = position
+        ring.append((_unwrap(lon, ring[-1][0]) if ring else lon, lat))
+    polygon = Polygon(ring)
+    if not polygon.is_valid or polygon.is_empty or polygon.area == 0 or polygon.bounds[2] - polygon.bounds[0] >= 180:
+        return None
+    ring_center = (polygon.bounds[0] + polygon.bounds[2]) / 2
     best: tuple[float, str, float | None] | None = None
+    intersects = False
+    crossing_bounds = []
+    timing_complete = True
+    bearing = None
     for i in range(len(held) - 1):
         lat1, lon1, name1, actm1 = held[i]
         lat2, lon2, name2, actm2 = held[i + 1]
+        lon2 = _unwrap(lon2, lon1)
+        if abs(lon2 - lon1) == 180:
+            return None  # shortest leg is ambiguous
+        shift = 360 * round(((lon1 + lon2) / 2 - ring_center) / 360)
+        local_ring = [(lon + shift, lat) for lon, lat in ring]
+        leg = LineString([(lon1, lat1), (lon2, lat2)]) if (lon1, lat1) != (lon2, lat2) else Point(lon1, lat1)
+        touches = leg.intersects(Polygon(local_ring))
+        if touches:
+            intersects = True
+            if actm1 is None or actm2 is None or actm2 < actm1:
+                timing_complete = False
+            else:
+                crossing_bounds.extend((actm1, actm2))
         ref = (lat1 + lat2) / 2.0
         ax, ay = _screening_xy(lat1, lon1, ref)
         bx, by = _screening_xy(lat2, lon2, ref)
-        for (plat, plon) in points:
-            px, py = _screening_xy(plat, plon, ref)
-            nm, t = seg(px, py, ax, ay, bx, by)
-            if best is None or nm < best[0]:
-                place = name1 if t <= 0.05 else name2 if t >= 0.95 else f"between {name1} and {name2}"
-                passage = (
-                    float(actm1) + t * (float(actm2) - float(actm1))
-                    if actm1 is not None and actm2 is not None else None
-                )
-                best = (nm, place if place.startswith("between") else f"near {place}", passage)
-    for lat, lon, name, actm in held:
-        for j in range(len(points)):
-            p1, p2 = points[j], points[(j + 1) % len(points)]
-            ax, ay = _screening_xy(p1[0], p1[1], lat)
-            bx, by = _screening_xy(p2[0], p2[1], lat)
-            px, py = _screening_xy(lat, lon, lat)
-            nm, _ = seg(px, py, ax, ay, bx, by)
-            if best is None or nm < best[0]:
-                best = (nm, f"near {name}", float(actm) if actm is not None else None)
+        metric_leg = LineString([(ax, ay), (bx, by)]) if (ax, ay) != (bx, by) else Point(ax, ay)
+        metric_polygon = Polygon([_screening_xy(lat, lon, ref) for lon, lat in local_ring])
+        route_point, polygon_point = nearest_points(metric_leg, metric_polygon)
+        nm = 0.0 if touches else route_point.distance(polygon_point)
+        if best is None or nm < best[0]:
+            t = metric_leg.project(route_point, normalized=True) if metric_leg.geom_type == "LineString" else 0.0
+            place = name1 if t <= 0.05 else name2 if t >= 0.95 else f"between {name1} and {name2}"
+            passage = actm1 + t * (actm2 - actm1) if actm1 is not None and actm2 is not None and actm2 >= actm1 else None
+            best = (nm, place if place.startswith("between") else f"near {place}", passage)
+            d_lat, d_lon = polygon.centroid.y - (lat1 + lat2) / 2, polygon.centroid.x + shift - (lon1 + lon2) / 2
+            bearing = ("south" if d_lat < 0 else "north") if abs(d_lat) >= abs(d_lon) else ("west" if d_lon < 0 else "east")
     if best is None:
         return None
-
-    # Crossing window: contiguous run of fixes inside the polygon, expressed
-    # in ACTM minutes. Fix-resolution is deliberate: no interpolated entry
-    # point is invented between fixes.
-    inside_actms = [
-        actm for (lat, lon, name, actm) in held
-        if actm is not None and inside(lat, lon)
-    ]
-    crossing = (min(inside_actms), max(inside_actms)) if inside_actms else None
-
-    # Rough cardinal from the route toward the polygon for the no-intersect
-    # sentence ("approximately 751 NM south").
-    mid_lat = sum(p[0] for p in points) / len(points)
-    mid_lon = sum(p[1] for p in points) / len(points)
-    route_lat = sum(h[0] for h in held) / len(held)
-    route_lon = sum(h[1] for h in held) / len(held)
-    d_lat, d_lon = mid_lat - route_lat, mid_lon - route_lon
-    if abs(d_lat) >= abs(d_lon):
-        bearing = "south" if d_lat < 0 else "north"
-    else:
-        bearing = "west" if d_lon < 0 else "east"
     return {
         "closest_nm": best[0],
         "closest_place": best[1],
         "closest_passage_actm": best[2],
-        "crossing_actm": crossing,
+        "route_intersects": intersects,
+        "crossing_actm": (min(crossing_bounds), max(crossing_bounds)) if timing_complete and crossing_bounds else None,
         "bearing": bearing,
     }
 
@@ -3246,15 +3248,17 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
                 "text": " ".join(piece.split()),
             }
             if geometry is None:
+                card["route_intersection"] = "unresolved"
                 card["disposition"] = "REVIEW REQUIRED"
                 card["screening"] = (
-                    "No readable polygon in the OFP record - deterministic "
+                    "Source polygon or filed route geometry is incomplete or invalid - deterministic "
                     "screening unavailable; review the original SIGMET."
                 )
                 cards.append(card)
                 continue
+            card["route_intersection"] = "intersects" if geometry["route_intersects"] else "outside"
             crossing = geometry["crossing_actm"]
-            if crossing is None:
+            if not geometry["route_intersects"]:
                 card["disposition"] = "NOT PROMOTED"
                 card["screening"] = (
                     "The filed route does not intersect the polygon. Closest "
@@ -3264,34 +3268,54 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
                 )
                 cards.append(card)
                 continue
+            if crossing is None:
+                card["disposition"] = "REVIEW REQUIRED"
+                card["screening"] = (
+                    "The source polygon intersects the filed route, but crossing timing is unresolved "
+                    "because intersecting legs lack complete ordered ACTM values."
+                )
+                cards.append(card)
+                continue
             entry_utc = _clock_from_actm(flight, crossing[0])
             exit_utc = _clock_from_actm(flight, crossing[1])
             window = (
-                f"about ACTM {int(crossing[0]) // 60:02d}:{int(crossing[0]) % 60:02d}"
+                f"within filed leg bounds ACTM {int(crossing[0]) // 60:02d}:{int(crossing[0]) % 60:02d}"
                 f"-{int(crossing[1]) // 60:02d}:{int(crossing[1]) % 60:02d}"
             )
             if entry_utc and exit_utc:
                 window += f" / {entry_utc:%H%M}-{exit_utc:%H%M}Z"
-            if valid_to and entry_utc and valid_to <= entry_utc:
+            if not (valid_from and valid_to and valid_from < valid_to and entry_utc and exit_utc):
+                card["disposition"] = "REVIEW REQUIRED"
+                card["screening"] = (
+                    f"The polygon crosses the route {window}; UTC passage or product validity "
+                    "is unresolved, so time applicability cannot be established."
+                )
+            elif valid_to < entry_utc:
                 gap = round((entry_utc - valid_to).total_seconds() / 60.0)
                 card["disposition"] = "NOT PROMOTED"
                 card["screening"] = (
                     f"The polygon crosses the route {window}, but the product "
-                    f"expires {gap} minutes before route entry. NOT PROMOTED."
+                    f"expires {gap} minutes before the earliest possible crossing. NOT PROMOTED."
                 )
-            elif valid_from and exit_utc and valid_from >= exit_utc:
+            elif valid_from > exit_utc:
                 gap = round((valid_from - exit_utc).total_seconds() / 60.0)
                 card["disposition"] = "NOT PROMOTED"
                 card["screening"] = (
                     f"The polygon crosses the route {window}, but the product "
-                    f"only becomes valid {gap} minutes after route exit. "
+                    f"only becomes valid {gap} minutes after the latest possible crossing. "
                     "NOT PROMOTED."
                 )
-            else:
+            elif valid_from <= entry_utc and exit_utc <= valid_to:
                 card["disposition"] = "PROMOTED"
                 card["screening"] = (
                     f"The polygon crosses the route {window} inside the "
                     "product's validity. PROMOTED - review required."
+                )
+            else:
+                card["disposition"] = "REVIEW REQUIRED"
+                card["screening"] = (
+                    f"The polygon crosses the route {window}; this interval overlaps the product's validity. "
+                    "Exact crossing timing is unresolved."
                 )
             cards.append(card)
     return cards

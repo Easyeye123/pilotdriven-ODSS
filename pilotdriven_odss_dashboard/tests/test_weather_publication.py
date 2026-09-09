@@ -17,7 +17,7 @@ def test_five_expired_sigmets_and_six_ash_results_fit_one_weather_page():
     flight.update(scheduled_departure_utc='2026-09-08T14:50:00Z', scheduled_arrival_utc='2026-09-08T21:00:00Z')
     view = build_briefing_view(flight, [], [])
     view['hazards']['sigmet_cards'] = [
-        {'fir': 'RJJJ', 'sigmet_id': f'C{i:02d}', 'phenomenon': 'EMBD TS',
+        {'fir': 'RJJJ', 'sigmet_id': f'C{i:02d}', 'phenomenon': 'EMBD TS', 'route_intersection': 'outside',
          'valid_from': '081018', 'valid_to': f'0814{i:02d}',
          'screening': f'The filed route does not intersect the polygon. Closest deterministic screening distance is approximately {236+i} NM northeast. NOT PROMOTED.'}
         for i in range(5)]
@@ -90,7 +90,7 @@ def test_applicable_edto_preserves_windows_and_names_missing_windows():
 
 def test_sigmet_keeps_intersections_and_unreadable_polygons_without_raw_text():
     cards = [
-        {'fir': 'WSSS', 'sigmet_id': '1', 'phenomenon': 'EMBD TS', 'text': 'RAW SOURCE MUST STAY IN APP',
+        {'fir': 'WSSS', 'sigmet_id': '1', 'phenomenon': 'EMBD TS', 'route_intersection': 'intersects', 'text': 'RAW SOURCE MUST STAY IN APP',
          'screening': "The polygon crosses the route about ACTM 01:00-01:10 / 1030-1040Z inside the product's validity. PROMOTED - review required."},
         {'fir': 'WSSS', 'sigmet_id': '2', 'disposition': 'REVIEW REQUIRED',
          'screening': 'No readable polygon in the OFP record - deterministic screening unavailable; review the original SIGMET.'},
