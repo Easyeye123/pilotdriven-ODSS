@@ -1008,8 +1008,8 @@ def check_cross_surface_parity(
     # requiring their text here would reintroduce the prohibited appendix.
     analysed_publication = "FLIGHT BRIEFING - MASTER SUMMARY" in operational_folded
     if analysed_publication:
-        from app.odss.operational_format import analysed_vaa_lines
-        for consequence in analysed_vaa_lines(view):
+        from app.odss.weather_publication import volcanic_ash_lines
+        for consequence in volcanic_ash_lines(flight, view):
             if not operational_printed(consequence):
                 failures.append(f"vaa: analysed consequence {consequence!r} missing")
     for advisory in (view.get("vaa") or {}).get("cfp_advisories") or []:
@@ -1165,7 +1165,7 @@ def run_case(
     from app.odss.briefing import build_briefing_view
     publication_view = build_briefing_view(flight, payload["findings"], payload.get("view", {}).get("warnings") or [], timing_view=flight.get("timing_view"))
     concise_publication = check_concise_pdf(
-        operational, flight=flight,
+        operational, flight=flight, view=publication_view,
         airport_analysis=publication_view["airport_pdf_analysis"],
         alternate_analysis=publication_view["alternate_pdf_analysis"],
     )

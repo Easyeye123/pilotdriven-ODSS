@@ -79,6 +79,25 @@ def test_complete_output_passes() -> None:
         assert result["valid"], result["failures"]
 
 
+def test_analysed_publication_checks_current_ash_projection() -> None:
+    from app.odss.weather_publication import volcanic_ash_lines
+
+    flight = _flight(LOG_PAGE_LOW)
+    flight["direct_vaa_source_review"] = {
+        "source_status": "partial",
+        "applicability_status": "not_assessed",
+        "official_advisories": [{"volcano": "TEST"}],
+    }
+    view = build_briefing_view(flight, [], [])
+    base = _passing_text(flight) + "\nFLIGHT BRIEFING - MASTER SUMMARY\n"
+    text = base + "\n".join(volcanic_ash_lines(flight, view))
+    complete = check_cross_surface_parity(flight, [], [], text, unit_output_text=text)
+    assert complete["valid"], complete["failures"]
+    omitted = check_cross_surface_parity(flight, [], [], base, unit_output_text=base)
+    assert not omitted["valid"]
+    assert any("vaa: analysed consequence" in failure for failure in omitted["failures"])
+
+
 def test_edto_operational_rows_retain_real_edto_sector_and_fuel_facts() -> None:
     rows = _edto_operational_rows(
         "EDTO",
