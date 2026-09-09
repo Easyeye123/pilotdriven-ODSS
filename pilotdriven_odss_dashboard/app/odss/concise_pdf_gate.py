@@ -83,6 +83,15 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                 if normalized(line) not in folded_pages[3]:
                     violations.append({"code": "CYCLONE_TIME_DISTANCE_PARITY", "message": "The weather page omits the flight-matched cyclone distance or its flight-window coverage condition."})
         if view is not None and len(pages) > 7:
+            from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
+            for index, code, lines in (
+                (1, 'EDTO_WINDOW_PARITY', edto_window_lines(flight or {}, view)),
+                (3, 'SIGMET_SCREENING_PARITY', sigmet_lines(flight or {}, view)),
+                (3, 'ASH_ASSESSMENT_PARITY', volcanic_ash_lines(flight or {}, view)),
+            ):
+                for line in lines:
+                    if normalized(line) not in folded_pages[index]:
+                        violations.append({'code': code, 'message': f'Page {index + 1} omits a source-bound assessment: {line}'})
             from .analysed_briefing_map import build_publication_map
             for event in build_publication_map(flight or {}, view)["publication_events"]:
                 if not re.search(r"\b" + re.escape(event["id"]) + r"\b", pages[1]):

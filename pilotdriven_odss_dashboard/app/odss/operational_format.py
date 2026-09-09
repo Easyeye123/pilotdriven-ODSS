@@ -8,7 +8,6 @@ Airport figures use only the supplied validated surface geometry.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-import re
 from typing import Any
 
 from reportlab.lib import colors
@@ -18,6 +17,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from .analysed_briefing_content import cyclone_content, release_condition_groups
 from .analysed_briefing_map import build_publication_map, draw_publication_map
 from .constants import format_actm
+from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
 
 SIZE = landscape(A4)
 MARGIN = 28.0
@@ -63,19 +63,6 @@ def utc_label(value: Any) -> str:
 
 def unique(values: list[Any]) -> list[str]:
     return list(dict.fromkeys(str(v).strip() for v in values if v is not None and str(v).strip()))
-
-
-def analysed_vaa_lines(view: dict[str, Any]) -> list[str]:
-    """Publish computed route/time consequences, excluding raw volcano notices."""
-    lines = []
-    for row in (view.get("vaa") or {}).get("cfp_advisories") or []:
-        if row.get("advisory_kind") == "CFP_VAA_NOTICE":
-            continue
-        derived = text(row.get("derived"), "Applicability not established")
-        derived = re.sub(r"\. Flight-analysis screening of the OFP advisory polygon.*$", ".", derived)
-        derived = derived.replace("Closest approach ", "Closest ").replace("the SIGMET's validity", "validity")
-        lines.append(f"{text(row.get('volcano') or row.get('name'))}: {derived}")
-    return lines
 
 
 def wrap(value: str, width: float, *, font: str = "Helvetica", size: float = BODY) -> list[str]:
@@ -378,7 +365,6 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     inputs = perf.get("inputs") or {}
     terrain = view.get("terrain") or {}
     vws = terrain.get("vws_review") or {}
-    hazards = view.get("hazards") or {}
     receipt = _operational_coverage_receipt(flight, view, findings, references)
     airport_analysis = airport_pdf_analysis(flight, view.get("airport_operational_panels") or [])
     amount = lambda key: kg((fuel_rows.get(key) or {}).get("fuel_kg"))
@@ -397,8 +383,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     route_clocks = [f"S{r.get('number')}: {text(r.get('entry_name'))} {text(r.get('entry'))} / {text(r.get('exit_name'))} {text(r.get('exit'))}; ETP ACTM {', '.join(r.get('etps') or []) or 'not held'}." for r in edto.get("sectors") or []]
     for r in flight.get("flight_planning_etps") or []:
         route_clocks.append(f"{text(r.get('label'))} {text(r.get('from'))}/{text(r.get('to'))}: {text(r.get('distance_nm'))} NM; EET {text(r.get('eet_token'))}.")
-    edto_windows = [f"{text(r.get('airport'))}/{text(r.get('runway'))}: {text(r.get('approach'))} {text(r.get('minima'))}; {text(r.get('period'))}." for r in edto.get("airports") or []]
-    sections["route"] = plan_page("ROUTE HAZARD OVERLAY", "sec_route", [(165, [Card("ROUTE / EDTO CLOCKS", route_clocks or [text(identity.get("rules")), "No EDTO or additional planning ETP is held."], CYAN), Card("EDTO AIRPORT WINDOWS", edto_windows or ["No EDTO airport window is held."], AMBER)])], route_map=build_publication_map(flight, view))
+    sections["route"] = plan_page("ROUTE HAZARD OVERLAY", "sec_route", [(165, [Card("ROUTE / EDTO CLOCKS", route_clocks or [text(identity.get("rules")), "No EDTO or additional planning ETP is held."], CYAN), Card("EDTO AIRPORT WINDOWS", edto_window_lines(flight, view), AMBER)])], route_map=build_publication_map(flight, view))
     terrain_lines = []
     for event in terrain.get("events") or []:
         first, last, maximum, drop = (event.get(k) or {} for k in ("first_high", "last_high", "maximum", "drop"))
@@ -426,19 +411,10 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
             terminal.append(f"{label}; issued {utc_label(source.get('issued_at_utc'))}; valid {utc_label(source.get('valid_from_utc'))}-{utc_label(source.get('valid_to_utc'))}.")
         elif conditions:
             terminal.append("Forecast source, issue and validity times are not held.")
-    sigmets = []
-    for card in hazards.get("sigmet_cards") or []:
-        screening = str(card.get("screening") or "")
-        if "does not intersect the polygon" not in screening and card.get("disposition") != "REVIEW REQUIRED":
-            analysed = screening.replace("The polygon crosses the route about ", "Route intersection ").replace("inside the product's validity", "within validity")
-            analysed = re.sub(r"\s*(?:NOT PROMOTED\.|PROMOTED - review required\.)$", "", analysed)
-            analysed = re.sub(r"Route intersection .*?, but the product ", "Product ", analysed)
-            sigmets.append(f"{text(card.get('name'))}: {analysed or 'Flight applicability is not established.'}")
     tc_lines = cyclone_content(flight)["lines"]
-    vaa_lines = analysed_vaa_lines(view)
     sections["weather"] = plan_page("WEATHER, SIGMET, TROPICAL CYCLONE AND VOLCANIC ASH", "sec_hazards", [
-        (239, [Card("TERMINAL WEATHER", terminal), Card("SIGMET", sigmets or ["No route-specific SIGMET consequence was established from the held records."], AMBER)]),
-        (188, [Card("TROPICAL CYCLONE", tc_lines or ["No governed route-specific cyclone consequence was established from the held sources."], AMBER), Card("VOLCANIC ASH", vaa_lines or ["No route-specific ash consequence was established from the held sources."], GREEN)]),
+        (239, [Card("TERMINAL WEATHER", terminal), Card("SIGMET", sigmet_lines(flight, view), AMBER, left_aligned=True, top_aligned=True)]),
+        (188, [Card("TROPICAL CYCLONE", tc_lines or ["No governed route-specific cyclone consequence was established from the held sources."], AMBER), Card("VOLCANIC ASH", volcanic_ash_lines(flight, view), AMBER, left_aligned=True, top_aligned=True)]),
     ])
     fuel_lines = [f"{label} {amount(key)}" for key, label in (("burnoff", "BURNOFF"), ("stat_cont", "STAT CONT"), ("altn_fuel", "ALTN FUEL"), ("altn_hold", "ALTN HOLD"))]
     for key, label in (("dest_hold_top_up", "DEST HOLD TOP-UP"), ("edto_top_up", "EDTO TOP-UP")):
