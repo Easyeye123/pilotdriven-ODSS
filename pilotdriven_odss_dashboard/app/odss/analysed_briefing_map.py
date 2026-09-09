@@ -13,30 +13,12 @@ from reportlab.lib import colors
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from .analysed_briefing_content import cyclone_content, flight_window, level_profile_label
-from .briefing import (_SIGMET_POINT, _screening_geometry, _sigmet_utc,
+from .briefing import (_screening_geometry, _sigmet_utc,
                        _projected_land_segments, project_route_map)
 from .vaa import _flight_anchor, _unwrap, _utc
+from .sigmet_geometry import source_polygon
 
 _EMPTY_HAZARD_KEY = "No mapped hazard geometry is held for this route. Coverage conditions are on page 9."
-
-
-def source_polygon(value):
-    # An explicit WI polygon only. A volcano/TC position or movement vector
-    # is not an area. Stop before a forecast/movement/layer declaration.
-    match = re.search(r"\bWI\s+((?:[NS]\d{4}\s+[EW]\d{5}\s*(?:-\s*)?){3,})", str(value or ""))
-    if not match:
-        return []
-    points = []
-    for ns, latd, latm, ew, lond, lonm in _SIGMET_POINT.findall(match.group(1)):
-        if (int(latm) >= 60 or int(lonm) >= 60 or int(latd) > 90 or int(lond) > 180
-                or (int(latd) == 90 and int(latm)) or (int(lond) == 180 and int(lonm))):
-            return []
-        points.append(((int(latd) + int(latm) / 60) * (-1 if ns == "S" else 1),
-                       (int(lond) + int(lonm) / 60) * (-1 if ew == "W" else 1)))
-    from shapely.geometry import Polygon
-    if len(points) < 3 or not Polygon(points).is_valid or Polygon(points).area == 0:
-        return []
-    return points
 
 
 def phenomenon_label(value):

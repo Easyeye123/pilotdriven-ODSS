@@ -165,3 +165,17 @@ def test_gate_rejects_missing_weather_and_edto_text(tmp_path, page_index, code):
     result = check_concise_pdf(changed, flight=flight, view=view)
     assert not result['valid']
     assert code in {v['code'] for v in result['violations']}
+
+
+@pytest.mark.parametrize('ending,expected', [
+    ("inside the product's validity. PROMOTED - review required.", 'within validity.'),
+    (', but the product expires 135 minutes before the earliest possible crossing. NOT PROMOTED.', '; expires 135 min before earliest bound.'),
+    (', but the product only becomes valid 81 minutes after the latest possible crossing. NOT PROMOTED.', '; starts 81 min after latest bound.'),
+])
+def test_concise_sigmet_retains_utc_leg_bounds_and_time_exclusion(ending, expected):
+    card = {'fir': 'WSSS', 'sigmet_id': '1', 'phenomenon': 'EMBD TS', 'route_intersection': 'intersects',
+            'screening': 'The polygon crosses the route within filed leg bounds ACTM 01:35-02:07 / 1030-1102Z ' + ending}
+    line = sigmet_lines({}, {'hazards': {'sigmet_cards': [card]}})[0]
+    assert 'WSSS/1 (EMBD TS): Crossing leg bounds 1030-1102Z' in line
+    assert expected in line
+    assert 'ACTM' not in line

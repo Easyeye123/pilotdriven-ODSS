@@ -83,6 +83,11 @@ def sigmet_lines(flight, view):
             analysed = re.sub(r'The polygon crosses the route about ACTM \S+ / (\d{4}-\d{4}Z)', r'Route crossing \1', analysed)
             analysed = analysed.replace('The polygon crosses the route about ', 'Route crossing ')
             analysed = analysed.replace('The polygon crosses the route within filed leg bounds ', 'Crossing leg bounds ')
+            analysed = re.sub(r'Crossing leg bounds ACTM \S+ / (\d{4}-\d{4}Z)', r'Crossing leg bounds \1', analysed)
+            analysed = re.sub(r'\s*, but the product expires (\d+) minutes before the earliest possible crossing\.',
+                              r'; expires \1 min before earliest bound.', analysed)
+            analysed = re.sub(r'\s*, but the product only becomes valid (\d+) minutes after the latest possible crossing\.',
+                              r'; starts \1 min after latest bound.', analysed)
             analysed = analysed.replace('The source polygon intersects the filed route, but crossing timing is unresolved because intersecting legs lack complete ordered ACTM values.', 'Route intersection; crossing timing unresolved (incomplete or unordered ACTM).')
             analysed = analysed.replace("inside the product's validity", 'within validity')
             analysed = re.sub(r'Route crossing .*?, but the product ', 'Product ', analysed)

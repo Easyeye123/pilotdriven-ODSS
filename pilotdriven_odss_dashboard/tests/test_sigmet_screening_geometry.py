@@ -139,3 +139,39 @@ def test_legacy_verdict_without_identical_source_is_unverified(changed_source):
         flight["weather"] = []
     lines = " ".join(sigmet_lines(flight, {"hazards": {"sigmet_cards": [card]}}))
     assert "Outside filed route" not in lines and "unresolved" in lines
+
+
+@pytest.mark.parametrize("area", [
+    "NE OF LINE N0407 E10342 - N0456 E10134 - N0552 E10129",
+    "APRX 30NM WID LINE BTN N0407 E10342 - N0456 E10134 - N0552 E10129",
+    "WI N0065 E10000 - N0100 E10000 - N0200 E10100",
+])
+def test_unreadable_or_non_polygon_source_never_becomes_closed_triangle(area):
+    flight = flight_for([fix(0, -2, 0), fix(0, 2, 20)])
+    flight['weather'][0]['text'] = (
+        f"WS SIGMET 1 VALID 111000/111100 WSSS- WSJC SINGAPORE FIR EMBD TS OBS {area} TOP FL450 NC="
+    )
+    card = _sigmet_screening_cards(flight)[0]
+    assert card['route_intersection'] == 'unresolved'
+    assert card['disposition'] == 'REVIEW REQUIRED'
+    assert 'does not intersect' not in card['screening']
+
+
+def test_source_polygon_stops_before_forecast_and_excludes_volcano_position():
+    from app.odss.analysed_briefing_map import source_polygon
+    source = 'PSN N0200 E00200 WI S0100 W00100 - S0100 E00100 - N0100 E00100 - N0100 W00100 SFC/FL100 FCST WI N0300 E00300 - N0300 E00400 - N0400 E00400'
+    assert source_polygon(source) == SQUARE
+
+
+@pytest.mark.parametrize('source', [
+    'EMBD TS OBS NE OF LINE N0407 E10342 - N0456 E10134 - N0552 E10129 TOP FL470 NC FCST AT 1100Z WI S0100 W00100 - S0100 E00100 - N0100 E00100 - N0100 W00100=',
+    'EMBD TS OBS WI S0100 W00100 - S0100 E00100 - N0100 E00100 - N0100 W0010 TOP FL470=',
+])
+def test_source_polygon_rejects_later_forecast_fallback_and_partial_coordinate_list(source):
+    from app.odss.analysed_briefing_map import source_polygon
+    assert source_polygon(source) == []
+
+
+def test_initial_forecast_polygon_is_supported():
+    from app.odss.analysed_briefing_map import source_polygon
+    assert source_polygon('EMBD TS FCST WI S0100 W00100 - S0100 E00100 - N0100 E00100 - N0100 W00100 TOP FL470=') == SQUARE

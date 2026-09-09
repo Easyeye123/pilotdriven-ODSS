@@ -28,6 +28,7 @@ from .pilot_briefing import (
     select_pertinent_notams,
 )
 from .report_sections import level2_page
+from .sigmet_geometry import source_polygon
 from .report_facts import (
     destination_actm_minutes as _destination_actm,
     operational_reference_times,
@@ -2358,7 +2359,6 @@ def _edto_operational_rows(
 
 
 
-_SIGMET_POINT = re.compile(r"([NS])(\d{2})(\d{2})\s+([EW])(\d{3})(\d{2})")
 _SIGMET_LAYER = re.compile(r"\b(SFC|\d{4,5}FT|FL\d{3})/((?:FL)?\d{3})\b")
 
 
@@ -3223,12 +3223,7 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
             phenomenon = re.search(r"FIR\s+([A-Z][A-Z ]+?)\s+(?:FCST|OBS)\b", piece)
             layer = _SIGMET_LAYER.search(piece)
             movement = re.search(r"\bMOV\s+([NSEW]{1,3})\s+(\d{1,3})\s*KT", piece)
-            points = [
-                (-(int(m[1]) + int(m[2]) / 60.0) if m[0] == "S" else int(m[1]) + int(m[2]) / 60.0,
-                 -(int(m[4]) + int(m[5]) / 60.0) if m[3] == "W" else int(m[4]) + int(m[5]) / 60.0)
-                for m in _SIGMET_POINT.findall(piece)
-            ]
-            geometry = _screening_geometry(points, waypoints)
+            geometry = _screening_geometry(source_polygon(piece), waypoints)
             valid_from = _sigmet_utc(flight, head.group(3))
             valid_to = _sigmet_utc(flight, head.group(4), near=valid_from)
             name = f"{fir or 'FIR UNRESOLVED'} SIGMET {head.group(2)}"
