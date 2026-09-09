@@ -209,6 +209,54 @@ def test_missing_inside_fix_times_do_not_establish_route_nonintersection():
         assert 'affects flight' not in event_description(event)
 
 
+def _dense_publication_map(count):
+    flight = sample_flight()
+    route = build_publication_map(flight, build_briefing_view(flight, [], []))
+    route['publication_events'] = [dict(
+        id=f'WX{i}', kind='WX', marker_label=f'Thunderstorms {i}',
+        label=f'SYNTHETIC/{i}', polygon=[(60, 100), (61, 100), (61, 101)],
+        position={'latitude':60, 'longitude':100},
+        valid_from_utc='2026-09-08T21:45:00Z', valid_to_utc='2026-09-09T01:00:00Z',
+    ) for i in range(1, count + 1)]
+    return route
+
+
+def test_dense_route_key_preserves_every_description_at_readable_size(tmp_path, monkeypatch):
+    from reportlab.pdfgen.canvas import Canvas
+    from app.odss import analysed_briefing_map as maps
+    from app.odss.operational_format import SIZE, MARGIN, TOP
+    route = _dense_publication_map(12)
+    projected_widths = []
+    project = maps.project_route_map
+    def record_projection(route, width, *args):
+        projected_widths.append(width)
+        return project(route, width, *args)
+    monkeypatch.setattr(maps, 'project_route_map', record_projection)
+    path = tmp_path / 'dense-map.pdf'
+    canvas = Canvas(str(path), pagesize=SIZE)
+    maps.draw_publication_map(canvas, route, MARGIN, 233, SIZE[0] - 2*MARGIN, TOP - 233)
+    canvas.save()
+    assert min(projected_widths) >= 320
+    with fitz.open(path) as doc:
+        text = ' '.join(doc[0].get_text().split())
+        for event in route['publication_events']:
+            assert maps.event_description(event) in text
+        spans = [span for block in doc[0].get_text('dict')['blocks'] if 'lines' in block
+                 for line in block['lines'] for span in line['spans']]
+        assert min(span['size'] for span in spans) >= 9
+
+
+def test_unrepresentable_route_key_still_rejects_publication(tmp_path):
+    import pytest
+    from reportlab.pdfgen.canvas import Canvas
+    from app.odss.analysed_briefing_map import draw_publication_map
+    from app.odss.operational_format import SIZE, MARGIN, TOP
+    canvas = Canvas(str(tmp_path/'overflow.pdf'), pagesize=SIZE)
+    with pytest.raises(ValueError, match='Route hazard key exceeds readable capacity'):
+        draw_publication_map(canvas, _dense_publication_map(60), MARGIN, 233,
+                             SIZE[0] - 2*MARGIN, TOP - 233)
+
+
 def test_incomplete_held_advisory_is_a_closing_condition_even_if_live_sources_are_complete():
     view = {'vaa':{'cfp_advisories':[{'advisory_kind':'CFP_VAA_NOTICE','volcano':'SEMERU'}]}}
     lines = release_conditions({}, view, {'rows':[]}, [], [], [])

@@ -17,6 +17,8 @@ from .briefing import (_SIGMET_POINT, _screening_geometry, _sigmet_utc,
                        _projected_land_segments, project_route_map)
 from .vaa import _flight_anchor, _unwrap, _utc
 
+_EMPTY_HAZARD_KEY = "No mapped hazard geometry is held for this route. Coverage conditions are on page 9."
+
 
 def source_polygon(value):
     # An explicit WI polygon only. A volcano/TC position or movement vector
@@ -170,11 +172,35 @@ def build_publication_map(flight, view):
     return route
 
 
+def publication_key_width(route, width, height):
+    """Fit complete descriptions before projection; retain a usable map width."""
+    from .operational_format import wrap
+    # Reserve the off-frame suffix before projection so a wider key cannot
+    # cause a newly off-frame event to overflow. Font size and content stay fixed.
+    descriptions = [event_description(event) + "; off frame."
+                    for event in route.get("publication_events") or []] or [_EMPTY_HAZARD_KEY]
+    maximum = width - 12 - 320
+    candidates = [246.0]
+    while candidates[-1] + 16 < maximum:
+        candidates.append(candidates[-1] + 16)
+    if maximum > candidates[-1]:
+        candidates.append(maximum)
+    # Match the key header, map footer and bottom inset used below; retaining
+    # a full final line advance leaves a little additional baseline clearance.
+    available_height = height - 31 - 37 - 8
+    for key_width in candidates:
+        required = sum(len(wrap(value, key_width - 10, size=9)) * 11 + 3
+                       for value in descriptions)
+        if key_width <= maximum and required <= available_height:
+            return key_width
+    raise ValueError("Route hazard key exceeds readable capacity")
+
+
 def draw_publication_map(canvas, route, x, y, width, height):
     from .operational_format import wrap
     # Reserve a right-hand key so annotations never obscure dense waypoint
     # labels or disappear because of a label-placement heuristic.
-    key_width = 246.0
+    key_width = publication_key_width(route, width, height)
     map_width = width - key_width - 12
     plot_height = height - 37
     projection = project_route_map(route, map_width, plot_height, 20)
@@ -288,7 +314,7 @@ def draw_publication_map(canvas, route, x, y, width, height):
     canvas.drawString(kx, ky, "FLIGHT HAZARD KEY")
     ky -= 17
     if not entries:
-        entries = [("No mapped hazard geometry is held for this route. Coverage conditions are on page 9.", colors.HexColor("#B1C0CD"))]
+        entries = [(_EMPTY_HAZARD_KEY, colors.HexColor("#B1C0CD"))]
     for value, colour in entries:
         lines = wrap(value, key_width - 10, size=9)
         canvas.setFillColor(colour)
