@@ -35,6 +35,7 @@ from .pilot_briefing import (
     concise_weather_finding,
     iap_minima_changes,
     notam_pertinence,
+    retired_taxiway_lighting_summary,
     notam_sort_key,
     pilot_notam_key,
 )
@@ -1384,6 +1385,8 @@ def _notam_operational_summary(
         return f"{subject} unavailable during the applicable {phase} window."
     if kind == "runway_approach_restriction":
         return f"{subject.title()} restriction applies during the applicable {phase} window."
+    if kind == "surface_identity_review":
+        return retired_taxiway_lighting_summary(text) or "Pavement identity and availability are unverified."
     if kind == "runway_lighting_restriction":
         sequence_flashing_lights = re.search(
             r"\bSEQUENCE(?:D)?\s+(?:FLASHING|FLG)\s+(?:LGT|LIGHTS?)\b",

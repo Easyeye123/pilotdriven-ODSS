@@ -1078,6 +1078,92 @@
      "planning_publication": "357b9ae97c6f13a2e264340dc62ff488dd8a7a017a42c37ddc6a93c92c1e929f"
     }
    }
+  },
+  {
+   "case_id": "SQ606-SIN-ICN-06SEP",
+   "filename": "SQ60606092026SIN.pdf",
+   "source_sha256": "eb48aa102321295fffcd78561d673a30c078f6638e4bb4a2a0ee766461661ba7",
+   "source_page_count": 103,
+   "flight_number": "SQ606",
+   "departure": "WSSS",
+   "destination": "RKSI",
+   "departure_iata": "SIN",
+   "destination_iata": "ICN",
+   "route_point_count": 81,
+   "route_hash": "9586ee2e089888937b0e9d9306574f57cbab8b4f47abd5bf214f3954fb4e3e1f",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 28,
+     "weather": 8,
+     "alternates": 1,
+     "deferred_items": 3,
+     "edto_sectors": 0,
+     "edto_airports": 0,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 81,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 0,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "d925c0d7bdef4ac3a9a8f91bfab9597fcb25f7f5a28a61dd877871fc97605efd",
+     "weather": "c66dcaa0ddd841305823da5ea0d42c8309af0812a9ef2222460c06a4f9704d86",
+     "alternates": "6bb27d13deeda3ea68776e36bd35eecae89237755f90a95ae6d0af942ddc50da",
+     "deferred_items": "4bc32c554eba33f42037c053d9ce344076bc629ace2c68e8690ba9871953e7ad",
+     "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "fuel_enroute_airports": "81a1928d695e7e626a7770d370d3d84897887bd4a37dd13f16b3ed1c684a7a5d",
+     "route_waypoints": "81c2f0f1360566dffbc7ca8b4b11b9607db68e6ee4c50ba380253f755ad4a64c",
+     "flight_planning_etps": "140989dbb65f07e79e7a330026d2e29938051c3e621ff3316862b029cc094f5f",
+     "intam_records": "d07cefe73468f8b19e6966655bbb5b0687d969b610dfb99124d81580a4562c71",
+     "notam_procedure_records": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "planning_publication": "706b91342b80204bacbcdda7a4ab6fe7972df432d74c3f1c6e096edc5ed6a40a"
+    }
+   }
+  },
+  {
+   "case_id": "SQ882-SIN-HKG-09SEP",
+   "filename": "lido-briefing_SQ_882_09Sep2026_SIN_HKG.pdf",
+   "source_sha256": "f8f4830798e23d419eda49f50e397cf18cabe9b67660393aacc3793fac145469",
+   "source_page_count": 71,
+   "flight_number": "SQ882",
+   "departure": "WSSS",
+   "destination": "VHHH",
+   "departure_iata": "SIN",
+   "destination_iata": "HKG",
+   "route_point_count": 44,
+   "route_hash": "258e2639bd9c5dcb56b308b576b752e367154ee6f3105d6d15bf6b2121050364",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 58,
+     "weather": 16,
+     "alternates": 4,
+     "deferred_items": 0,
+     "edto_sectors": 0,
+     "edto_airports": 0,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 44,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 0,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "7c05be9e6dc533b3c02343434d24c22160deab07506955d31cc663d0a2313a25",
+     "weather": "2ad9c17b52b623b41cb94124c2b97caf00a554d7d3a1e051851fe093340abead",
+     "alternates": "ce23f35b1f6d5d82f977a526ec999f588893a4dd91ab6da0a20992002e4451b9",
+     "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "fuel_enroute_airports": "e6bb64d15c6ae65de9fc2198f3226b43bd76182b4387bd5d2befe2954a8a534d",
+     "route_waypoints": "7cd82f7bbff7c30c1ac5fdd8f0e102a5bbec27218a0b38a9bc7d1d456800669a",
+     "flight_planning_etps": "2a380f44efc0f49e415c67aa4540e58ffa84eb6a3137282a22146e37050aebac",
+     "intam_records": "e6a63b1b48f48d7565655d972e1fa3b9a76ffab54977b5aaff36ad166a2750f5",
+     "notam_procedure_records": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "planning_publication": "2b9a943e57974cddc6127125994ba227dfa2eadc83308fb62d77c8849ae87b4b"
+    }
+   }
   }
  ]
 }

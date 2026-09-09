@@ -92,9 +92,9 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                 for line in lines:
                     if normalized(line) not in folded_pages[index]:
                         violations.append({'code': code, 'message': f'Page {index + 1} omits a source-bound assessment: {line}'})
-            from .analysed_briefing_map import build_publication_map
+            from .analysed_briefing_map import build_publication_map, event_description
             for event in build_publication_map(flight or {}, view)["publication_events"]:
-                if not re.search(r"\b" + re.escape(event["id"]) + r"\b", pages[1]):
+                if normalized(event_description(event)) not in folded_pages[1]:
                     violations.append({"code": "ROUTE_HAZARD_KEY_PARITY", "message": f"The route page omits held hazard {event['id']}."})
             for line in deferred_consequences(view):
                 if normalized(line) not in folded_pages[7]:

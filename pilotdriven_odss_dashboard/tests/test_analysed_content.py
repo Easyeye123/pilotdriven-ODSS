@@ -171,6 +171,44 @@ def test_live_matched_area_and_hole_survive_without_unrelated_dates():
     assert all(e['source_id']!='live-ash' for e in build_publication_map(flight,view)['publication_events'])
 
 
+def test_weather_marker_names_and_key_preserve_type_validity_and_uncertainty():
+    from app.odss.analysed_briefing_map import phenomenon_label, event_description
+    assert phenomenon_label('EMBD TS') == 'Thunderstorms'
+    assert phenomenon_label('SEV TURB') == 'Severe turbulence'
+    assert phenomenon_label('UNKNOWN') == 'Weather advisory'
+    event = dict(id='WX1', marker_label='Thunderstorms 1', label='VHHK SIGMET 2', polygon=[[0,0]],
+                 valid_from_utc='2026-09-09T00:00:00Z', valid_to_utc='2026-09-09T04:00:00Z',
+                 route_intersects=True, time_matched=True)
+    line = event_description(event)
+    assert 'Thunderstorms 1' in line and 'VHHK SIGMET 2' in line
+    assert '09SEP 0000-0400Z' in line
+    assert 'relevance unverified' in line and 'affects flight' not in line and 'WX1' not in line
+    event['route_intersects'] = False
+    assert 'route does not cross area' in event_description(event)
+    event['level_matched'] = True
+    assert 'affects flight' not in event_description(event)
+    event['route_intersects'] = True
+    assert 'route/time/level match' in event_description(event)
+
+
+def test_missing_inside_fix_times_do_not_establish_route_nonintersection():
+    from app.odss.analysed_briefing_map import event_description
+    for waypoints in [
+        [{'name':'AAA','latitude':1,'longitude':99,'actm_minutes':0}, {'name':'BBB','latitude':1,'longitude':103,'actm_minutes':120}],
+        [{'name':'AAA','latitude':1,'longitude':101}, {'name':'BBB','latitude':1,'longitude':103}],
+    ]:
+        flight = sample_flight()
+        flight.update(route_waypoints=waypoints, scheduled_departure_utc='2026-08-16T09:00:00Z')
+        view = build_briefing_view(flight, [], [])
+        view['hazards']['sigmet_cards'] = [{'phenomenon':'TS','fir':'SYNTHETIC','sigmet_id':'2',
+            'valid_from':'160900','valid_to':'161200', 'text':'WI N0030 E10000 - N0130 E10000 - N0130 E10200 - N0030 E10200 - N0030 E10000'}]
+        event = next(e for e in build_publication_map(flight,view)['publication_events'] if e['kind']=='WX')
+        assert event['route_intersects'] is None
+        assert 'distance_nm' not in event
+        assert 'route does not cross' not in event_description(event)
+        assert 'affects flight' not in event_description(event)
+
+
 def test_incomplete_held_advisory_is_a_closing_condition_even_if_live_sources_are_complete():
     view = {'vaa':{'cfp_advisories':[{'advisory_kind':'CFP_VAA_NOTICE','volcano':'SEMERU'}]}}
     lines = release_conditions({}, view, {'rows':[]}, [], [], [])

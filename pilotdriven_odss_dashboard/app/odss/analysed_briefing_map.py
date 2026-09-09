@@ -37,6 +37,41 @@ def source_polygon(value):
     return points
 
 
+def phenomenon_label(value):
+    """Expand held ICAO phenomenon codes without inferring severity."""
+    words = str(value or "").upper().replace("_", " ")
+    names = {"TS": "Thunderstorms", "TC": "Tropical cyclone", "VA": "Volcanic ash",
+             "TURB": "Turbulence", "ICE": "Icing", "MTW": "Mountain waves",
+             "DS": "Duststorm", "SS": "Sandstorm"}
+    for code, name in names.items():
+        if re.search(rf"\b{code}\b", words):
+            return ("Severe " + name.lower()) if re.search(r"\bSEV\b", words) else name
+    if words in {"VOLCANIC ASH", "TROPICAL CYCLONE"}:
+        return words.capitalize()
+    return "Weather advisory"
+
+
+def event_description(event):
+    parts = [event.get("marker_label") or event["id"],
+             event.get("short_label") or event["label"]]
+    if event.get("polygon"):
+        begin, end = _utc(event.get("valid_from_utc")), _utc(event.get("valid_to_utc"))
+        if begin and end:
+            parts.append((f"{begin:%d%b %H%M}-{end:%H%MZ}" if begin.date() == end.date()
+                          else f"{begin:%d%b %H%MZ}-{end:%d%b %H%MZ}").upper())
+        else:
+            parts.append("validity not held")
+        if event.get("level_matched") and event.get("time_matched") and event.get("route_intersects") is not False:
+            parts.append("affects flight: route/time/level match")
+        elif event.get("route_intersects") is False:
+            parts.append("route does not cross area")
+        else:
+            parts.append("flight relevance unverified")
+    if event.get("distance_nm") is not None:
+        parts.append(f"~{event['distance_nm']:.0f} NM from route")
+    return "; ".join(str(part) for part in parts if part)
+
+
 def build_publication_map(flight, view):
     route = deepcopy(view.get("route_map") or {})
     # A server snapshot may only contain the route. Compose every layer from
@@ -67,11 +102,18 @@ def build_publication_map(flight, view):
         if kind == "VA":
             label = f"{label} SIGMET ash area"
         events.append({"kind": kind, "label": str(label), "polygon": polygon,
+                       "phenomenon_label": "Volcanic ash" if kind == "VA" else phenomenon_label(row.get("phenomenon")),
                        "short_label": (f"{row.get('fir', '?')}/{row.get('sigmet_id', '?')}" if kind == "WX" else str(label)),
-                       "distance_nm": round(screening["closest_nm"]),
+                       # The legacy fix/vertex distance is not area-to-route
+                       # distance when a leg crosses between outside fixes.
+                       # Do not publish it as a distance from this hazard area.
                        "position": {"latitude": sum(p[0] for p in polygon) / len(polygon), "longitude": sum(p[1] for p in polygon) / len(polygon)},
                        "time_utc": when.isoformat() if when else None,
-                       "time_matched": in_time, "valid_to_utc": end.isoformat() if end else None,
+                       "time_matched": in_time, "valid_from_utc": begin.isoformat() if begin else None,
+                       "valid_to_utc": end.isoformat() if end else None,
+                       # A held inside-fix time proves an intersection. Its
+                       # absence does not prove disjoint route segments.
+                       "route_intersects": True if screening.get("crossing_actm") is not None else None,
                        "source_id": row.get("source_id") or row.get("name"),
                        "place": screening["closest_place"]})
     # Preserve the existing live matcher output as well as the held CFP
@@ -99,6 +141,8 @@ def build_publication_map(flight, view):
                 position = part.representative_point()
                 source_id = str(properties.get("advisory_id") or feature.get("id") or "held advisory")
                 events.append({"kind": kind, "label": source_id, "short_label": source_id,
+                               "phenomenon_label": phenomenon_label(properties.get("hazard_code") or properties.get("hazard")),
+                               "valid_from_utc": begin.isoformat(), "valid_to_utc": finish.isoformat(),
                                "polygon": rings[0], "rings": rings,
                                "position": {"latitude": position.y, "longitude": position.x},
                                "time_matched": True, "level_matched": True, "source_id": source_id})
@@ -119,6 +163,7 @@ def build_publication_map(flight, view):
     events.extend(cyclone_content(flight)["markers"])
     for i, event in enumerate(events, 1):
         event["id"] = f"{event['kind']}{i}"
+        event["marker_label"] = f"{event.get('phenomenon_label') or {'VA':'Volcanic ash','TC':'Cyclone','VWS':'VWS'}.get(event['kind'], 'Weather advisory')} {i}"
     route["publication_events"] = events
     route["level_profile"] = level_profile_label(flight)
     route["vws_summary"] = vws.get("summary")
@@ -169,7 +214,7 @@ def draw_publication_map(canvas, route, x, y, width, height):
             continue
         canvas.setStrokeColor(colors.HexColor(palette[event["kind"]]))
         canvas.setFillColor(colors.Color(1, .7, .2, alpha=.25))
-        canvas.setDash([] if event.get("time_matched") else [3, 2])
+        canvas.setDash([] if event.get("level_matched") else [3, 2])
         path = canvas.beginPath()
         for ring in event.get("rings") or [polygon]:
             path.moveTo(*xy({"latitude": ring[0][0], "longitude": ring[0][1]}))
@@ -227,13 +272,9 @@ def draw_publication_map(canvas, route, x, y, width, height):
         if visible:
             canvas.setFillColor(colour)
             canvas.circle(px, py, 3.5, fill=1, stroke=0)
-            if not label(px, py, event["id"], colour):
+            if not label(px, py, event.get("marker_label") or event["id"], colour):
                 raise ValueError(f"Hazard marker has no readable label: {event['id']}")
-        description = f"{event['id']} {event.get('short_label') or event['label']}"
-        if event.get("distance_nm") is not None:
-            description += f"; ~{event['distance_nm']:.0f} NM"
-        if event.get("polygon"):
-            description += "; route/time/level match" if event.get("level_matched") else "; in validity" if event.get("time_matched") else "; time not matched"
+        description = event_description(event)
         if not visible:
             description += "; off frame"
         entries.append((description + ".", colour))
@@ -260,7 +301,7 @@ def draw_publication_map(canvas, route, x, y, width, height):
         ky -= 3
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(colors.HexColor("#B1C0CD"))
-    note = "VA: ash / WX: SIGMET / TC: cyclone / VWS: OFP samples. NM: route distance. Dashed: passage validity not matched."
+    note = "VWS: OFP samples. NM: distance from route. Dashed area: flight applicability not fully verified."
     canvas.drawString(x + 5, y + 24, note)
     profile = wrap("Level profile: " + route.get("level_profile", "not held"), width - 10, size=9)
     if len(profile) > 2:

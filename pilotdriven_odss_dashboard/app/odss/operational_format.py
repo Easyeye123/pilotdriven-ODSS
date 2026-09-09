@@ -95,8 +95,8 @@ class Card:
     paragraphs: list[str]
     accent: Any = field(default_factory=lambda: CYAN)
     target: str | None = None
-    left_aligned: bool = False
-    top_aligned: bool = False
+    left_aligned: bool = True
+    top_aligned: bool = True
     paragraph_gap: float = 0
     width_weight: float = 1
 
@@ -111,8 +111,8 @@ class CardBox:
     width: float
     height: float
     target: str | None = None
-    left_aligned: bool = False
-    top_aligned: bool = False
+    left_aligned: bool = True
+    top_aligned: bool = True
     paragraph_gap: float = 0
     paragraph_starts: list[int] = field(default_factory=list)
 

@@ -169,6 +169,34 @@ def _bound_unavailable(text: str, subject_pattern: str, *, surface: bool = False
                 return True
     return False
 
+def retired_taxiway_lighting_summary(text: str) -> str:
+    """Removed aids belonging to retired pavement do not establish a runway-light outage.
+
+    Recognise only an affirmative named-pavement clause plus its explicit
+    associated-aids context. Completion and current geometry remain unverified.
+    """
+    upper = " ".join(text.upper().split())
+    if not re.search(r"\bVISUAL AIDS OF THE DECOMMISSIONED (?:TWY|TAXIWAYS?)\b", upper):
+        return ""
+    ref = r"[A-Z]{1,3}\d{0,2}"
+    feature = r"(?:TWY|TAXIWAY)"
+    subject = rf"(?:THE\s+)?(?:FORMER\s+)?(?:(?:SECTION|PART|PORTION)\s+OF\s+)?{feature}\s+{ref}(?:\s+(?:BTN|BETWEEN)\s+(?:{feature}\s+)?{ref}\s+AND\s+(?:{feature}\s+)?{ref})?"
+    clause = re.search(rf"\b({subject}(?:\s+AND\s+{subject})*)\s+(?:(?:HAD|HAS|HAVE)\s+BEEN|IS|ARE|WAS|WERE)\s+DECOMMISSIONED\b", upper)
+    prefix = upper[max(0, clause.start()-60):clause.start()] if clause else ""
+    if not clause or re.search(r"\b(?:NOT|IF|WHEN|UNLESS)\s*$", prefix):
+        return ""
+    if re.search(r"\b(?:LIGHTS?|LGT|MARKINGS?|SIGNS?|VISUAL AIDS)\s+(?:AT|ON|OF|FOR)\s*$", prefix):
+        return ""
+    labels = []
+    for part in re.finditer(subject, clause.group(1)):
+        label = re.sub(r"\b(?:THE|FORMER|SECTION|PART|PORTION|OF|AND|BETWEEN)\b", lambda m: m.group().lower(), part.group())
+        label = re.sub(r"\b(?:TWY|TAXIWAY)\b", "taxiway", label)
+        label = re.sub(r"\bBTN\b", "between", label)
+        labels.append(label.removeprefix("the "))
+    return (f"The held notice identifies {' and '.join(labels)} as decommissioned. "
+            "Current pavement identity and availability are unverified.")
+
+
 def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     """Return a stable pilot-facing rank and label for an applicable NOTAM.
 
@@ -176,6 +204,9 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     airport/runway/approach-system unavailability ahead of ground-movement
     restrictions, and ground-movement restrictions ahead of obstacles.
     """
+
+    if retired_taxiway_lighting_summary(text):
+        return 4, "surface_identity_review"
 
     upper = f"{category} {text}".upper()
     unavailable = any(
