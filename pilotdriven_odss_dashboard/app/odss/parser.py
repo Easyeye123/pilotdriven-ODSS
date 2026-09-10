@@ -1129,6 +1129,46 @@ _EXPLICIT_NIL_EDTO = re.compile(
 )
 
 
+# The Lido header line continues with the flight identity ("PAGE  1 OF 11
+# SIA882 SIN/HKG 10SEP26"); the briefing-package footer ("Page 2 of 75") ends
+# the line, so the negative lookahead keeps footers from posing as headers.
+_LIDO_PAGE_HEADER_RE = re.compile(
+    r"^\s*PAGE\s+(\d+)\s+OF\s+(\d+)\b(?![ \t]*$)",
+    re.MULTILINE | re.IGNORECASE,
+)
+_LIDO_PACKAGE_FOOTER_RE = re.compile(r"^\s*Page\s+\d+\s+of\s+\d+\s*$", re.MULTILINE)
+
+
+def _lido_logical_page_groups(cfp_pages: list[str]) -> list[list[int]]:
+    """Group physical CFP pages into the Lido logical pages they print.
+
+    Lido prints ``PAGE n OF total`` once per logical page. When the page-1
+    remarks block is long (David's SQ882 OFP of 10 Sep 2026 carried three
+    MEL/CDL entries) the briefing package overflows that logical page onto a
+    second physical PDF page that carries only the package footer
+    (``Page k of N``). Such a footer-bearing, header-less page continues the
+    preceding logical page; the fuel ladder lives there. Any other header-less
+    page keeps its own group, so physical page numbering and the fail-closed
+    sequence proof are unchanged for every other layout.
+    """
+    groups: list[list[int]] = []
+    for index, text in enumerate(cfp_pages):
+        if (
+            groups
+            and not _LIDO_PAGE_HEADER_RE.search(text)
+            and _LIDO_PAGE_HEADER_RE.search(cfp_pages[groups[-1][0]])
+            and _LIDO_PACKAGE_FOOTER_RE.search(text)
+        ):
+            groups[-1].append(index)
+            continue
+        groups.append([index])
+    return groups
+
+
+def _lido_logical_page_text(cfp_pages: list[str], group: list[int]) -> str:
+    return "\n".join(cfp_pages[index] for index in group)
+
+
 def _complete_standard_lido_cfp_page_span(
     cfp_pages: list[str],
 ) -> tuple[int, int] | None:
@@ -1149,20 +1189,19 @@ def _complete_standard_lido_cfp_page_span(
     ):
         return None
 
+    # One logical Lido page may span two physical pages (page-1 overflow);
+    # the sequence proof counts logical pages, each led by its printed header.
+    logical_pages = _lido_logical_page_groups(cfp_pages)
     page_headers: list[tuple[int, int]] = []
-    for page in cfp_pages:
-        header = re.search(
-            r"^\s*PAGE\s+(\d+)\s+OF\s+(\d+)\b",
-            page,
-            re.MULTILINE | re.IGNORECASE,
-        )
+    for group in logical_pages:
+        header = _LIDO_PAGE_HEADER_RE.search(cfp_pages[group[0]])
         if not header:
             return None
         page_headers.append((int(header.group(1)), int(header.group(2))))
 
     declared_total = page_headers[0][1]
     if (
-        declared_total != len(cfp_pages)
+        declared_total != len(logical_pages)
         or any(total != declared_total for _, total in page_headers)
         or [number for number, _ in page_headers]
         != list(range(1, declared_total + 1))
@@ -1457,7 +1496,9 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         raise ValueError("OFP section not detected")
     cfp_start, cfp_end = sections["cfp"]
     cfp_pages = pages[cfp_start:cfp_end]
-    page1 = cfp_pages[0]
+    # Logical page 1 may overflow onto a footer-only physical page; the fuel
+    # ladder and masses are read from the whole logical page.
+    page1 = _lido_logical_page_text(cfp_pages, _lido_logical_page_groups(cfp_pages)[0])
     flight_rules_match = re.search(
         r"\bFLT\s+RULES\s*:\s*(?P<rules>[A-Z0-9]+(?:\s*/\s*[A-Z0-9]+)*)",
         page1,

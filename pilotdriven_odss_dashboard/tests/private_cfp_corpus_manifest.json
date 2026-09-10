@@ -1164,6 +1164,49 @@
      "planning_publication": "2b9a943e57974cddc6127125994ba227dfa2eadc83308fb62d77c8849ae87b4b"
     }
    }
+  },
+  {
+   "case_id": "SQ882-SIN-HKG-10SEP",
+   "filename": "lido-briefing_SQ_882_10Sep2026_SIN_HKG.pdf",
+   "source_sha256": "c726965632255c08ac146160c6971f3b313a17d9c217c98e0ccd9044961447e6",
+   "source_page_count": 75,
+   "flight_number": "SQ882",
+   "departure": "WSSS",
+   "destination": "VHHH",
+   "departure_iata": "SIN",
+   "destination_iata": "HKG",
+   "route_point_count": 44,
+   "route_hash": "1ac2adc0dd663813343f798c16f9ce405bed09bfd7a65dd8aea71b5f62039787",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 62,
+     "weather": 16,
+     "alternates": 4,
+     "deferred_items": 5,
+     "edto_sectors": 0,
+     "edto_airports": 0,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 44,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 0,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "f8329845fe2bad0f8fd25dc185d5788973d854638f1af1df8bc4571371448b0a",
+     "weather": "3a2137cfd6ebf4ddc2d5ee21911f6ce9db58b598c4ad73e8ed59ea23940fcfd9",
+     "alternates": "d86a50b8b15e8bdca86a6a50ea6f703b1b27e58221df26afea25692260828bf1",
+     "deferred_items": "bc794fe59e458f541f49c87d0db5ef2ae3bbb28b3176a41bb0570824f5a8571b",
+     "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "fuel_enroute_airports": "662a8ee4588e72c5963e9af1f3434049af9a8336aeeed7b731614558b3abce48",
+     "route_waypoints": "06e4c4c32111aa2cf041e25489a9900ed8b706a885c13eb072b6022482160bed",
+     "flight_planning_etps": "afc5a853574185919b6a5dfa00777a40926940df3fd7e8257b9818c49d68d37d",
+     "intam_records": "8995d6e2777c43a98b1af352fb6b5b5fac018e0b1887284b4641f3f88c960abd",
+     "notam_procedure_records": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "planning_publication": "00c103c9f7e785be09c741f620603f045dbd203fe7356d1eb626a27cf1a87288"
+    }
+   }
   }
  ]
 }
