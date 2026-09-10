@@ -3,8 +3,8 @@
   "gate": "rev3-raster-pixel-equality",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
-    "filename": "SQ214_REV3_reference_v16_NOTAM_SCOPE_AND_SCHEDULE.pdf",
-    "sha256": "6fd26adc80fa0d8077c1ac72e499ed6da2af1e3c93740910afb336d834ba402d"
+    "filename": "SQ214_REV3_reference_v17_SIGMET_LEG_BOUNDS.pdf",
+    "sha256": "a4a62fb5da7e4553c0afa825c1ec333a32388ef51f018fa939b3a736a0956ac3"
   },
   "renderer": {
     "library": "PyMuPDF",
@@ -30,7 +30,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "850eb6ba1c0f6aee7a1e2c5584b4d555540f7eae6804311f77be4013c4b3d4b0"
+      "reference_raster_sha256": "5c4eaa9ec0d3bbee8bde3a09375e5825d9fd69e638f272590483a54e1e5f6406"
     },
     {
       "page_number": 3,
@@ -350,7 +350,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "a705997d62637ceb4b383b31211347d216faa764d0658b47e1dbc9b06364e6b3"
+      "reference_raster_sha256": "ddd128bee191b7bb4c24c666fa44910565b24775af8063019a742d03e71f94eb"
     },
     {
       "page_number": 43,
@@ -407,8 +407,8 @@
     "max_channel_delta": 0
   },
   "provenance": {
-    "minted_on": "2026-09-08",
-    "approval_basis": "Engineering acceptance within user-authorized NOTAM scope and schedule corrections. Explicit v15 failure; independent all-page comparison verifies 36 unchanged bodies and reviews 12 airport change/reflow positions. Evidence: output/pd-fb-fixes-20260908/REV3-v16-REVIEW.md. Nine-page production is separately checked; exact raster thresholds remain zero.",
-    "combined_briefing_schema_version": "2026-09-08-analysed-nine-page-briefing-v42"
+    "minted_on": "2026-09-10",
+    "approval_basis": "Engineering acceptance of the SIGMET screening follow-up (ODSS 23b33b8: filed-leg crossing bounds, WI-only area grammar, geometric height boundaries). Explicit v16 failure on release-13 pages 2 and 42; independent all-page comparison verifies 46 unchanged pages and that both changed pages differ only in the SIGMET D06 leg-bounds timing sentence, NOT PROMOTED verdict unchanged. Evidence: output/pd-david-repair-20260910/release-13/release-gates/rev3-visual-regression-receipt.json and rev3-visual-diffs. Nine-page production is separately checked; exact raster thresholds remain zero.",
+    "combined_briefing_schema_version": "2026-09-09-flight-window-surface-semantics-v47"
   }
 }

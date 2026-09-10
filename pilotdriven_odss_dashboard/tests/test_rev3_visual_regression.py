@@ -207,12 +207,12 @@ def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
     # 48 page entries of geometry + checksums only; no proprietary PDF bytes.
     assert PINNED_MANIFEST.stat().st_size < 16_000
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference_v16_NOTAM_SCOPE_AND_SCHEDULE.pdf",
-        "sha256": "6fd26adc80fa0d8077c1ac72e499ed6da2af1e3c93740910afb336d834ba402d",
+        "filename": "SQ214_REV3_reference_v17_SIGMET_LEG_BOUNDS.pdf",
+        "sha256": "a4a62fb5da7e4553c0afa825c1ec333a32388ef51f018fa939b3a736a0956ac3",
     }
     assert len(payload["pages"]) == 48
-    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-09-08-analysed-nine-page-briefing-v42"
-    assert "independent all-page comparison verifies 36 unchanged bodies" in payload["provenance"]["approval_basis"]
+    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-09-09-flight-window-surface-semantics-v47"
+    assert "independent all-page comparison verifies 46 unchanged pages" in payload["provenance"]["approval_basis"]
     assert payload["thresholds"] == {
         "max_changed_pixel_ratio": 0.0,
         "max_mean_absolute_error": 0.0,
