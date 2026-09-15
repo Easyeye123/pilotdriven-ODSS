@@ -18,7 +18,9 @@ from .briefing import (_screening_geometry, _sigmet_utc,
 from .vaa import _flight_anchor, _unwrap, _utc
 from .sigmet_geometry import source_polygon
 
-_EMPTY_HAZARD_KEY = "No mapped hazard geometry is held for this route. Coverage conditions are on page 9."
+_MAP_NOTE = ("VWS: OFP samples. NM: distance from route. "
+             "Dashed area: flight applicability not fully verified.")
+_EMPTY_HAZARD_KEY = "No mapped hazard geometry is held for this route. Coverage conditions are on the assurance page."
 
 
 def phenomenon_label(value):
@@ -182,13 +184,30 @@ def publication_key_width(route, width, height):
     raise ValueError("Route hazard key exceeds readable capacity")
 
 
-def draw_publication_map(canvas, route, x, y, width, height):
+def publication_key_entries(route):
+    """Readable hazard descriptions in plotted order, with their mark colour."""
+    palette = {"VA": "#FFBC38", "WX": "#EB83D9", "TC": "#FF5267", "VWS": "#50D5EF"}
+    entries = [(event_description(event) + ".", colors.HexColor(palette[event["kind"]]))
+               for event in route.get("publication_events") or []]
+    return entries or [(_EMPTY_HAZARD_KEY, colors.HexColor("#B1C0CD"))]
+
+
+def draw_publication_map(canvas, route, x, y, width, height, *, show_key=True):
     from .operational_format import wrap
     # Reserve a right-hand key so annotations never obscure dense waypoint
-    # labels or disappear because of a label-placement heuristic.
-    key_width = publication_key_width(route, width, height)
-    map_width = width - key_width - 12
-    plot_height = height - 37
+    # labels or disappear because of a label-placement heuristic. The
+    # overview map publishes its key on the weather / route hazards page, so
+    # the schematic itself can use the full width between the two stations.
+    key_width = publication_key_width(route, width, height) if show_key else 0.0
+    map_width = width - key_width - 12 if show_key else width - 6
+    # Measure the footer caption before projecting: a narrower schematic wraps
+    # it onto a second line and must not write over the neighbouring column.
+    footer = wrap(_MAP_NOTE, width - 10, size=9) + wrap(
+        "Level profile: " + route.get("level_profile", "not held"), width - 10, size=9)
+    if len(footer) > 4:
+        raise ValueError("Route map footer exceeds readable capacity")
+    footer_height = 11 * len(footer) + 4
+    plot_height = height - footer_height
     projection = project_route_map(route, map_width, plot_height, 20)
     points, frame = projection.get("points") or [], projection.get("frame") or {}
     canvas.saveState()
@@ -200,7 +219,7 @@ def draw_publication_map(canvas, route, x, y, width, height):
         canvas.drawString(x + 10, y + height / 2, "Route coordinates unavailable")
         canvas.restoreState()
         return
-    bottom = y + 37
+    bottom = y + footer_height
     def xy(position):
         lon = _unwrap(float(position["longitude"]), frame["center_longitude"])
         return (x + frame["offset_x"] + (lon * frame["longitude_factor"] - frame["min_x"]) * frame["scale"],
@@ -294,12 +313,15 @@ def draw_publication_map(canvas, route, x, y, width, height):
     for point in points[1:-1]:
         if point.get("label"):
             label(x + point["x"], bottom + point["y"], str(point["display_name"]), colors.HexColor("#B1C0CD"))
+    if not show_key:
+        entries = []
     canvas.setFont("Helvetica-Bold", 10)
     canvas.setFillColor(colors.HexColor("#50D5EF"))
     kx, ky = x + map_width + 14, y + height - 14
-    canvas.drawString(kx, ky, "FLIGHT HAZARD KEY")
+    if show_key:
+        canvas.drawString(kx, ky, "FLIGHT HAZARD KEY")
     ky -= 17
-    if not entries:
+    if not entries and show_key:
         entries = [(_EMPTY_HAZARD_KEY, colors.HexColor("#B1C0CD"))]
     for value, colour in entries:
         lines = wrap(value, key_width - 10, size=9)
@@ -313,11 +335,8 @@ def draw_publication_map(canvas, route, x, y, width, height):
         ky -= 3
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(colors.HexColor("#B1C0CD"))
-    note = "VWS: OFP samples. NM: distance from route. Dashed area: flight applicability not fully verified."
-    canvas.drawString(x + 5, y + 24, note)
-    profile = wrap("Level profile: " + route.get("level_profile", "not held"), width - 10, size=9)
-    if len(profile) > 2:
-        raise ValueError("Route level profile exceeds readable capacity")
-    for i, line in enumerate(profile):
-        canvas.drawString(x + 5, y + 13 - i * 11, line)
+    baseline = y + 2 + 11 * (len(footer) - 1)
+    for line in footer:
+        canvas.drawString(x + 5, baseline, line)
+        baseline -= 11
     canvas.restoreState()

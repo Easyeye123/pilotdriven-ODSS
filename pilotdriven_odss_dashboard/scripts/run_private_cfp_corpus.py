@@ -1117,7 +1117,7 @@ def run_case(
         source_pdf_path=str(preflight["source"]),
         weather_charts=payload.get("weather_charts") or {},
         # The private corpus proves lossless publication coverage. Production
-        # callers intentionally use the nine-page analysed default.
+        # callers intentionally use the six-page analysed default.
         include_audit_appendix=True,
     )
     quality = validate_combined_briefing_pdf(combined)
@@ -1133,7 +1133,7 @@ def run_case(
         )
 
     # The lossless appendix above proves parsed-fact coverage, while pilots
-    # download nine analysed pages. Scan that exact production format and
+    # download six analysed pages. Scan that exact production format and
     # reject any raw-source reproduction or excess page. Audit-only checks
     # cannot certify this different publication contract.
     # Keep this name distinct from the lossless ``*_Flight_Briefing.pdf``
@@ -1149,14 +1149,17 @@ def run_case(
         include_audit_appendix=False,
     )
     operational_quality = validate_combined_briefing_pdf(operational)
-    if not operational_quality["valid"] or operational_quality["page_count"] < 7:
+    from app.odss.concise_pdf_gate import MAX_BRIEFING_PAGES
+    if (not operational_quality["valid"]
+            or operational_quality["page_count"] != MAX_BRIEFING_PAGES):
         messages = [
             item.message
             for item in operational_quality["violations"]
         ]
-        if operational_quality["page_count"] < 7:
+        if operational_quality["page_count"] != MAX_BRIEFING_PAGES:
             messages.append(
-                "Production Flight Briefing must contain at least 7 pages; "
+                "Production Flight Briefing must be David's "
+                f"{MAX_BRIEFING_PAGES}-page reference format; "
                 f"generated {operational_quality['page_count']}."
             )
         raise AssertionError(

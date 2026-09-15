@@ -1,4 +1,4 @@
-"""Production nine-page publication acceptance; historical audit is separate."""
+"""Production six-page publication acceptance; historical audit is separate."""
 from copy import deepcopy
 
 import fitz
@@ -6,7 +6,9 @@ import pytest
 
 from generate_visual_samples import sample_findings, sample_flight
 from app.odss.combined_brief import render_combined_briefing
-from app.odss.concise_pdf_gate import check_concise_pdf, PAGE_TITLES, normalized
+from app.odss.concise_pdf_gate import (AIRPORTS_PAGE, ASSURANCE_PAGE,
+                                       MAX_BRIEFING_PAGES, NAV_RIBBON,
+                                       PAGE_TITLES, check_concise_pdf, normalized)
 from app.odss.operational_format import Card, plan_page
 from app.odss.airport_pdf_analysis import analyse_airport_for_pdf
 from scripts.run_private_cfp_corpus import scan_physical_pdf
@@ -23,12 +25,16 @@ def published(tmp_path):
     return path
 
 
-def test_production_has_nine_readable_pages_and_working_navigation(published):
+def test_production_has_six_readable_pages_and_working_navigation(published):
     assert check_concise_pdf(published, flight=sample_flight())['valid']
     with fitz.open(published) as doc:
-        assert len(doc) == 9 and len(doc.get_toc()) == 9
-        for title, page in zip(PAGE_TITLES, doc):
-            assert normalized(title) in normalized(page.get_text())
+        assert len(doc) == MAX_BRIEFING_PAGES
+        assert len(doc.get_toc()) == MAX_BRIEFING_PAGES
+        for index, (title, page) in enumerate(zip(PAGE_TITLES, doc)):
+            folded = normalized(page.get_text())
+            assert normalized(title) in folded
+            assert all(normalized(item) in folded for item in NAV_RIBBON)
+            assert normalized(f'Page {index + 1} of 6') in folded
             for block in page.get_text('dict')['blocks']:
                 for line in block.get('lines', []):
                     for span in line['spans']:
@@ -61,7 +67,7 @@ def test_publication_gate_rejects_regressions(published, tmp_path, mutation, cod
             doc.embfile_add('source.txt', raw.encode())
         else:
             value = {'raw_record': raw, 'copied_run': ' '.join(raw.split()[:18]), 'raw_label': 'ITEM E', 'warning': 'REVIEW REQUIRED'}[mutation]
-            doc[5].insert_textbox(fitz.Rect(30, 115, 810, 220), value, fontsize=10)
+            doc[AIRPORTS_PAGE].insert_textbox(fitz.Rect(30, 115, 810, 220), value, fontsize=10)
         doc.save(target)
     result = check_concise_pdf(target, flight={'notams': [{'notam_id': 'A1/26', 'text': raw}]})
     assert code in {v['code'] for v in result['violations']}
@@ -172,7 +178,7 @@ def test_split_geometry_has_one_readable_label_per_runway(tmp_path):
 def test_short_item_e_record_is_also_rejected(published, tmp_path):
     path = tmp_path / 'short-source.pdf'
     with fitz.open(published) as doc:
-        doc[5].insert_text((30, 140), 'RWY 02L CLSD')
+        doc[AIRPORTS_PAGE].insert_text((30, 140), 'RWY 02L CLSD')
         doc.save(path)
     result = check_concise_pdf(path, flight={'notams': [{'notam_id': 'A1/26', 'text': 'RWY 02L CLSD'}]})
     assert 'RAW_ITEM_E_IN_BODY' in {v['code'] for v in result['violations']}
@@ -181,7 +187,7 @@ def test_short_item_e_record_is_also_rejected(published, tmp_path):
 def test_notam_id_outside_consequence_is_rejected(published, tmp_path):
     path = tmp_path / 'stray-id.pdf'
     with fitz.open(published) as doc:
-        doc[8].insert_text((30, 140), 'A9999/26')
+        doc[ASSURANCE_PAGE].insert_text((30, 140), 'A9999/26')
         doc.save(path)
     result = check_concise_pdf(path, airport_analysis=[])
     assert 'NON_INLINE_NOTAM_ID' in {v['code'] for v in result['violations']}

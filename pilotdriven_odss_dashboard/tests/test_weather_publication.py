@@ -6,7 +6,8 @@ import pytest
 
 from generate_visual_samples import sample_flight, sample_findings
 from app.odss.combined_brief import render_combined_briefing
-from app.odss.concise_pdf_gate import normalized
+from app.odss.concise_pdf_gate import (MAX_BRIEFING_PAGES, WEATHER_PAGE,
+                                       normalized)
 from app.odss.weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
 
 
@@ -25,9 +26,9 @@ def test_five_expired_sigmets_and_six_ash_results_fit_one_weather_page():
         {'volcano': f'VOLCANO {i}', 'advisory_kind': 'VA_SIGMET',
          'derived': 'Closest 300 NM between AAA and BBB; route passes after the advisory validity ended at 1300Z.'} for i in range(6)]
     sections = build_sections(flight, view, [])
-    assert sum(len(pages) for pages in sections.values()) == 9
+    assert sum(len(pages) for pages in sections.values()) == MAX_BRIEFING_PAGES
     page = sections['weather'][0]
-    body = ' '.join(line for box in page.boxes for line in box.lines)
+    body = ' '.join(line for box in page.boxes for _, items in box.rows for line, *_ in items)
     for i in range(5):
         assert f'C{i:02d}' in body and f'{236+i} NM' in body and f'{50-i} min' in body
     for i in range(6):
@@ -54,8 +55,8 @@ def test_physical_pdf_explains_non_edto_excluded_sigmet_and_unassessed_ash(tmp_p
     path = tmp_path / 'briefing.pdf'
     render_combined_briefing(flight, findings, [], path)
     with fitz.open(path) as doc:
-        route, weather = normalized(doc[1].get_text()), normalized(doc[3].get_text())
-        assert 'NOT APPLICABLE THIS FLIGHT IS NON EDTO' in route
+        weather = normalized(doc[WEATHER_PAGE].get_text())
+        assert 'NOT APPLICABLE THIS FLIGHT IS NON EDTO' in weather
         assert 'OUTSIDE FILED ROUTE' in weather and 'RJJJ C03' in weather
         assert 'EXPIRED BEFORE SCHEDULED DEPARTURE 08SEP 1450Z' in weather
         assert 'C03 08SEP 1018 1418Z 32 MIN' in weather
@@ -63,7 +64,7 @@ def test_physical_pdf_explains_non_edto_excluded_sigmet_and_unassessed_ash(tmp_p
         assert 'DARWIN TOKYO REACHED' in weather
         assert '2 DIRECT VAAC ADVISORIES' in weather
         assert 'APPLICABILITY HAS NOT BEEN ASSESSED' in weather
-        assert len(doc) == 9
+        assert len(doc) == MAX_BRIEFING_PAGES
     assert flight == original
 
 
@@ -147,7 +148,8 @@ def test_live_matched_weather_is_preserved_but_monitoring_and_later_weather_are_
 
 
 @pytest.mark.parametrize('page_index,code', [
-    (1, 'EDTO_WINDOW_PARITY'), (3, 'SIGMET_SCREENING_PARITY'), (3, 'ASH_ASSESSMENT_PARITY'),
+    (WEATHER_PAGE, 'EDTO_WINDOW_PARITY'), (WEATHER_PAGE, 'SIGMET_SCREENING_PARITY'),
+    (WEATHER_PAGE, 'ASH_ASSESSMENT_PARITY'),
 ])
 def test_gate_rejects_missing_weather_and_edto_text(tmp_path, page_index, code):
     from app.odss.briefing import build_briefing_view

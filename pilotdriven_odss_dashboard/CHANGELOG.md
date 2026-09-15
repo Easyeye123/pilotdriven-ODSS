@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Rebuilt the downloaded Flight Briefing to David's six-page reference format: OVERVIEW, DECISION ANALYSIS, PERFORMANCE / FUEL AND TECHNICAL STATUS, AIRPORTS / ALTERNATES, WEATHER / ROUTE HAZARDS and ENROUTE / INTAM / ASSURANCE, each with the navigation ribbon and the footer triplet.
+- Publishes the ranked decision findings the engine already computes as severity-pilled cards with a flight-phase decision timeline; no finding is invented and nothing unevidenced is promoted.
+- Relocates every published fact rather than dropping it: the surface figures and per-airport NOTAM analysis move to AIRPORTS / ALTERNATES, deferred declarations to the technical status card, the route hazard key to WEATHER / ROUTE HAZARDS, and VWS/CAT/terrain plus the review record to the closing page.
+- Fails closed on capacity as before: column width and a bounded body ladder are tried first, and publication is refused rather than truncating a source-bound line or printing below the readable floor.
+
 - Added a bounded official Météo-France Toulouse VAAC VAA/VAG connector and an authenticated WIFS global TCA connector covering all seven ICAO TCACs.
 - Keeps direct advisory gaps fail-closed: TC track context never substitutes for TCA coverage, and missing WIFS credentials never become a NIL or all-clear result.
 

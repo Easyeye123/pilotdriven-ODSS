@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 import fitz
 
 from generate_visual_samples import sample_flight, sample_findings
+from app.odss.concise_pdf_gate import (AIRPORTS_PAGE, ASSURANCE_PAGE,
+                                        WEATHER_PAGE)
 from app.odss.combined_brief import render_combined_briefing
 from app.odss.analysed_briefing_content import cyclone_content, deferred_consequences, release_conditions
 from app.odss.analysed_briefing_map import build_publication_map, source_polygon
@@ -19,15 +21,15 @@ def test_unrelated_cyclone_movement_is_not_published(tmp_path):
         'summary': 'Source coverage incomplete', 'details': ['UNRELATED centre movement: 14 degrees at 7.2 kt']}]
     render_combined_briefing(sample_flight(), findings, [], path)
     with fitz.open(path) as doc:
-        assert 'UNRELATED centre movement' not in doc[3].get_text()
+        assert 'UNRELATED centre movement' not in doc[WEATHER_PAGE].get_text()
 
 
 def test_footer_names_the_section_and_release_actions_are_numbered(tmp_path):
     path = tmp_path / 'flight.pdf'
     render_combined_briefing(sample_flight(), _findings(), [], path)
     with fitz.open(path) as doc:
-        assert 'MASTER SUMMARY' not in doc[3].get_text()
-        assert '1.' in doc[8].get_text()
+        assert 'PAGE 4 OF 6' in ' '.join(doc[AIRPORTS_PAGE].get_text().split())
+        assert '1.' in doc[ASSURANCE_PAGE].get_text()
 
 
 def test_cyclone_requires_a_time_matched_distance_and_uses_no_invented_radius():
@@ -299,9 +301,9 @@ def test_removed_cyclone_content_fails_the_release_gate(tmp_path):
     flight = sample_flight()
     render_combined_briefing(flight, _findings(), [], path)
     with fitz.open(path) as doc:
-        for rect in doc[3].search_for('No time-matched cyclone centre-distance result'):
-            doc[3].add_redact_annot(rect)
-        doc[3].apply_redactions()
+        for rect in doc[WEATHER_PAGE].search_for('No time-matched cyclone centre-distance result'):
+            doc[WEATHER_PAGE].add_redact_annot(rect)
+        doc[WEATHER_PAGE].apply_redactions()
         doc.save(changed)
     result = check_concise_pdf(changed, flight=flight)
     assert 'CYCLONE_TIME_DISTANCE_PARITY' in {v['code'] for v in result['violations']}
@@ -319,7 +321,7 @@ def test_closing_page_uses_named_sections_and_attaches_body_to_heading(tmp_path)
     path = tmp_path / 'flight.pdf'
     render_combined_briefing(sample_flight(), _findings(), [], path)
     with fitz.open(path) as doc:
-        page = doc[8]
+        page = doc[ASSURANCE_PAGE]
         assert 'BEFORE RELEASE' not in page.get_text()
         assert 'WEATHER COVERAGE' in page.get_text()
         title, body = page.search_for('WEATHER COVERAGE')[0], page.search_for('1.')[0]

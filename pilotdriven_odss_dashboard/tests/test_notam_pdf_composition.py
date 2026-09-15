@@ -2,7 +2,7 @@
 import fitz
 
 from app.odss.combined_brief import render_combined_briefing
-from app.odss.concise_pdf_gate import check_concise_pdf
+from app.odss.concise_pdf_gate import AIRPORTS_PAGE, MAX_BRIEFING_PAGES, check_concise_pdf
 from generate_visual_samples import sample_flight, sample_findings
 
 
@@ -30,11 +30,11 @@ def test_many_source_records_become_grouped_consequences_without_raw_appendix(tm
     output = tmp_path / 'operational.pdf'
     render_combined_briefing(flight, findings, [], output)
     with fitz.open(output) as pdf:
-        assert len(pdf) == 9
+        assert len(pdf) == MAX_BRIEFING_PAGES
         text = ' '.join(p.get_text() for p in pdf)
         assert 'SOURCE MAINTENANCE RECORD' not in text
         assert 'END-EVIDENCE' not in text
-        assert 'DME' in pdf[5].get_text()
+        assert 'DME' in pdf[AIRPORTS_PAGE].get_text()
         for record in records:
-            assert pdf[5].get_text().count(record['notam_id']) == 1
+            assert pdf[AIRPORTS_PAGE].get_text().count(record['notam_id']) == 1
     assert check_concise_pdf(output, flight=flight)['valid']

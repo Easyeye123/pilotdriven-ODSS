@@ -207,7 +207,7 @@ def release_condition_groups(flight, view, receipt, airport_analysis, alternate_
                      if r.get("advisory_kind") == "CFP_VAA_NOTICE"]
     if unresolved_sigmets or unassessed_ash:
         affected = list(dict.fromkeys(filter(None, unresolved_sigmets + unassessed_ash)))
-        weather.append(", ".join(affected) + ": held advisory route/time/level assessment is incomplete (page 4).")
+        weather.append(", ".join(affected) + ": held advisory route/time/level assessment is incomplete (weather / route hazards page).")
     cat = [label for key, label in (("wafs_sigwx", "WAFS/SIGWX"), ("airep_pirep", "AIREP/PIREP")) if key in pending]
     if cat:
         vws = (view.get("terrain") or {}).get("vws_review") or {}
@@ -216,7 +216,7 @@ def release_condition_groups(flight, view, receipt, airport_analysis, alternate_
     declared = view.get("deferred_dispatch_gates") or []
     if declared:
         names = ", ".join(dict.fromkeys(re.sub(r"\s*REVIEW REQUIRED", "", clean(g.get("title"))) for g in declared))
-        technical.append(f"{names}: operative Tech Log confirmation and completion of page 8 actions are not recorded in this briefing.")
+        technical.append(f"{names}: operative Tech Log confirmation and completion of the technical status actions are not recorded in this briefing.")
     candidate_groups = {}
     for extract in extracts:
         if extract.get("match_status") == "candidate":
@@ -240,7 +240,7 @@ def release_condition_groups(flight, view, receipt, airport_analysis, alternate_
         technical.append("Escape/depressurisation profile not bound" + (": " + ", ".join(legs) if legs else "") + "; high MSA alone is not an escape procedure.")
     if "edto" in pending:
         stations = list(dict.fromkeys(clean(a.get("airport")) for a in (view.get("edto") or {}).get("airports") or []))
-        technical.append("EDTO checked-period suitability unresolved" + (": " + "/".join(stations) if stations else "") + " (page 2).")
+        technical.append("EDTO checked-period suitability unresolved" + (": " + "/".join(stations) if stations else "") + " (weather / route hazards page).")
     if "enroute_notam" in pending:
         technical.append("Complete route-airspace assessment is not held for the filed route.")
     for key in ("ofp_parse", "flight_timing", "fuel_performance", "vws", "airports_alternates", "airport_notam"):

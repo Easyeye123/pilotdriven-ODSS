@@ -2035,7 +2035,7 @@ def test_company_briefing_references_are_tenant_scoped_normalized_and_rendered(
     assert initial_report.status_code == 200
     with fitz.open(stream=initial_report.content, filetype="pdf") as document:
         initial_text = "\n".join(page.get_text() for page in document)
-    assert "REVIEW RECORD AND RELEASE CONDITIONS" in initial_text
+    assert "ENROUTE / INTAM / ASSURANCE" in initial_text
     assert "25-21-08B" not in initial_text
 
     ambiguity = (

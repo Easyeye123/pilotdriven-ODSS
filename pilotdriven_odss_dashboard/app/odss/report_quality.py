@@ -212,12 +212,17 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
             ],
         }
 
+    from .concise_pdf_gate import MAX_BRIEFING_PAGES
+
     pages = list(reader.pages)
     page_count = len(pages)
-    if page_count < 7:
+    # The production download is David's six-page reference format; the
+    # historical lossless audit composition is longer and is checked below.
+    if page_count < MAX_BRIEFING_PAGES:
         violations.append(ReportQualityViolation(
             "COMBINED_PAGE_CONTRACT",
-            f"Flight Briefing must contain at least 7 pages; generated {page_count}.",
+            f"Flight Briefing must contain at least {MAX_BRIEFING_PAGES} pages; "
+            f"generated {page_count}.",
         ))
 
     extracted_pages: list[str] = []
@@ -268,7 +273,7 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 f"Flight Briefing contains retired pilot-facing label: {label}.",
             ))
 
-    if extracted_pages and "FLIGHT BRIEFING - MASTER SUMMARY" in extracted_pages[0]:
+    if extracted_pages and "FLIGHT BRIEFING | PAGE 1 OF 6" in " ".join(extracted_pages[0].split()):
         from .concise_pdf_gate import check_concise_pdf
         concise = check_concise_pdf(path)
         violations.extend(ReportQualityViolation(item["code"], item["message"]) for item in concise["violations"])

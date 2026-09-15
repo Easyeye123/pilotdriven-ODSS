@@ -1,4 +1,13 @@
-"""Mandatory publication checks for the analysed nine-page briefing."""
+"""Mandatory publication checks for the reference six-page briefing.
+
+David's 9 Sep 2026 review sent four reference briefings and ruled: "This
+format from beginning has always been this. Get this right, and then we talk
+about tweaking from this." The published download is therefore six pages in
+his order, each carrying the navigation ribbon and the footer triplet. These
+checks are the answer to "how do you ensure that the standard does not
+degenerate": the physical PDF is read back and rejected if the structure,
+the ribbon, the footer or any source-bound line has drifted.
+"""
 from __future__ import annotations
 
 import re
@@ -7,19 +16,31 @@ from typing import Any
 
 import fitz
 
-MAX_BRIEFING_PAGES = 9
-PUBLICATION_FORMAT = "analysed-briefing-2026-09-09"
+MAX_BRIEFING_PAGES = 6
+PUBLICATION_FORMAT = "analysed-briefing-2026-09-15"
 PAGE_TITLES = (
-    "FLIGHT BRIEFING - MASTER SUMMARY",
-    "ROUTE HAZARD OVERLAY",
-    "VWS, CAT AND TERRAIN",
-    "WEATHER, SIGMET, TROPICAL CYCLONE AND VOLCANIC ASH",
-    "FUEL, MASS AND PERFORMANCE",
-    "DEPARTURE SURFACE",
-    "DESTINATION SURFACE",
-    "ALTERNATES AND AIRCRAFT TECHNICAL STATUS",
-    "REVIEW RECORD AND RELEASE CONDITIONS",
+    "OVERVIEW",
+    "DECISION ANALYSIS",
+    "PERFORMANCE, FUEL AND TECHNICAL STATUS",
+    "AIRPORTS / ALTERNATES",
+    "WEATHER / ROUTE HAZARDS",
+    "ENROUTE / INTAM / ASSURANCE",
 )
+NAV_RIBBON = (
+    "OVERVIEW",
+    "ANALYSIS",
+    "PERF / FUEL / TECH",
+    "AIRPORTS",
+    "WEATHER",
+    "ENROUTE / INTAM",
+)
+# Which physical page owns each source-bound projection after the rebuild.
+OVERVIEW_PAGE = 0
+ANALYSIS_PAGE = 1
+PERFORMANCE_PAGE = 2
+AIRPORTS_PAGE = 3
+WEATHER_PAGE = 4
+ASSURANCE_PAGE = 5
 
 
 def normalized(value: Any) -> str:
@@ -74,59 +95,73 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
         body = " ".join(folded_pages)
         from .analysed_briefing_content import cyclone_content, deferred_consequences, level_profile_label
         profile = level_profile_label(flight or {})
-        if profile != "Level profile not held" and (len(pages) < 2 or normalized(profile) not in folded_pages[1]):
-            violations.append({"code": "LEVEL_PROFILE_PARITY", "message": "The source-held level profile is missing from the route page."})
+        if profile != "Level profile not held" and (not pages or normalized(profile) not in folded_pages[OVERVIEW_PAGE]):
+            violations.append({"code": "LEVEL_PROFILE_PARITY", "message": "The source-held level profile is missing from the overview route map."})
         if flight and flight.get("planned_level_profile") and "SEE OFP" in body:
             violations.append({"code": "LEVEL_PROFILE_PLACEHOLDER", "message": "A held level profile was replaced by See OFP."})
-        if flight is not None and len(pages) > 3:
+        if flight is not None and len(pages) > WEATHER_PAGE:
             for line in cyclone_content(flight)["lines"]:
-                if normalized(line) not in folded_pages[3]:
+                if normalized(line) not in folded_pages[WEATHER_PAGE]:
                     violations.append({"code": "CYCLONE_TIME_DISTANCE_PARITY", "message": "The weather page omits the flight-matched cyclone distance or its flight-window coverage condition."})
-        if view is not None and len(pages) > 7:
+        if view is not None and len(pages) > ASSURANCE_PAGE:
             from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
             for index, code, lines in (
-                (1, 'EDTO_WINDOW_PARITY', edto_window_lines(flight or {}, view)),
-                (3, 'SIGMET_SCREENING_PARITY', sigmet_lines(flight or {}, view)),
-                (3, 'ASH_ASSESSMENT_PARITY', volcanic_ash_lines(flight or {}, view)),
+                (WEATHER_PAGE, 'EDTO_WINDOW_PARITY', edto_window_lines(flight or {}, view)),
+                (WEATHER_PAGE, 'SIGMET_SCREENING_PARITY', sigmet_lines(flight or {}, view)),
+                (WEATHER_PAGE, 'ASH_ASSESSMENT_PARITY', volcanic_ash_lines(flight or {}, view)),
             ):
                 for line in lines:
                     if normalized(line) not in folded_pages[index]:
                         violations.append({'code': code, 'message': f'Page {index + 1} omits a source-bound assessment: {line}'})
             from .analysed_briefing_map import build_publication_map, event_description
             for event in build_publication_map(flight or {}, view)["publication_events"]:
-                if normalized(event_description(event)) not in folded_pages[1]:
-                    violations.append({"code": "ROUTE_HAZARD_KEY_PARITY", "message": f"The route page omits held hazard {event['id']}."})
+                if normalized(event_description(event)) not in folded_pages[WEATHER_PAGE]:
+                    violations.append({"code": "ROUTE_HAZARD_KEY_PARITY", "message": f"The weather / route hazards page omits held hazard {event['id']}."})
             for line in deferred_consequences(view):
-                if normalized(line) not in folded_pages[7]:
-                    violations.append({"code": "DEFERRED_CONSEQUENCE_PARITY", "message": "The aircraft status page omits a source-bound consequence."})
+                if normalized(line) not in folded_pages[PERFORMANCE_PAGE]:
+                    violations.append({"code": "DEFERRED_CONSEQUENCE_PARITY", "message": "The technical status card omits a source-bound consequence."})
         for index, page in enumerate(pages):
-            if "\ufffd" in page or "\u25a0" in page:
+            folded = folded_pages[index]
+            if "�" in page or "■" in page:
                 violations.append({"code": "UNSUPPORTED_GLYPH", "message": f"Page {index + 1} contains a replacement glyph."})
-            if index and "MASTER SUMMARY" in page:
-                violations.append({"code": "WRONG_SECTION_FOOTER", "message": f"Page {index + 1} is labelled as the master summary."})
-        if len(pages) == MAX_BRIEFING_PAGES and not re.search(r"\b1\.\s", pages[8]):
+            if index < MAX_BRIEFING_PAGES:
+                for item in NAV_RIBBON:
+                    if normalized(item) not in folded:
+                        violations.append({"code": "MISSING_NAV_RIBBON", "message": f"Page {index + 1} does not carry the {item} ribbon entry."})
+                if normalized(f"FLIGHT BRIEFING PAGE {index + 1} OF {MAX_BRIEFING_PAGES}") not in folded:
+                    violations.append({"code": "WRONG_SECTION_FOOTER", "message": f"Page {index + 1} is not labelled as page {index + 1} of {MAX_BRIEFING_PAGES}."})
+                if normalized(f"Page {index + 1} of {MAX_BRIEFING_PAGES}") not in folded:
+                    violations.append({"code": "MISSING_PAGE_FOOTER", "message": f"Page {index + 1} has no footer page number."})
+        if len(pages) == MAX_BRIEFING_PAGES and not re.search(r"\b1\.\s", pages[ASSURANCE_PAGE]):
             violations.append({"code": "RELEASE_ACTION_LIST", "message": "Closing release actions must be numbered."})
         if len(pages) == MAX_BRIEFING_PAGES:
-            review = pdf[8]
+            review = pdf[ASSURANCE_PAGE]
             for title in ("SOURCE / CALCULATION REVIEW", "SOURCE CONTROL", "WEATHER COVERAGE", "AIRPORT ASSESSMENTS", "REMAINING RELEASE INPUTS", "PUBLICATION STATE"):
-                if normalized(title) not in folded_pages[8]:
+                if normalized(title) not in folded_pages[ASSURANCE_PAGE]:
                     violations.append({"code": "REVIEW_RECORD_STRUCTURE", "message": f"Closing page omits its compact {title} section."})
             for line in closing_lines or []:
-                if normalized(line) not in folded_pages[8]:
+                if normalized(line) not in folded_pages[ASSURANCE_PAGE]:
                     violations.append({"code": "REVIEW_CONDITION_PARITY", "message": "A source-bound closing condition is missing from the PDF."})
-            if re.search(r"\b[A-Z]{4}\s*\(\d+\)", pages[8]):
+            if re.search(r"\b[A-Z]{4}\s*\(\d+\)", pages[ASSURANCE_PAGE]):
                 violations.append({"code": "UNEXPLAINED_AIRPORT_COUNT", "message": "Closing conditions must name the missing assessment, not airport record counts."})
             titles = review.search_for("WEATHER COVERAGE")
-            first = review.search_for("1.")
-            if titles and first and first[0].y0 < review.rect.height - 70 and first[0].y0 - titles[0].y1 > 35:
-                violations.append({"code": "REVIEW_BODY_ALIGNMENT", "message": "Closing conditions are detached from their section heading."})
-        if len(pages) > 7:
+            if titles:
+                title = titles[0]
+                # The numbered conditions must sit under their own heading, in
+                # their own column. A number elsewhere on the page is not this
+                # card's first condition.
+                below = [hit for hit in review.search_for("1.")
+                         if hit.y0 > title.y1 and hit.x0 < title.x1 and hit.x1 > title.x0 - 12]
+                nearest = min((hit.y0 - title.y1 for hit in below), default=None)
+                if nearest is None or nearest > 35:
+                    violations.append({"code": "REVIEW_BODY_ALIGNMENT", "message": "Closing conditions are detached from their section heading."})
+        if len(pages) > PERFORMANCE_PAGE:
             for item in (flight or {}).get("deferred_items") or []:
                 remark = normalized(item.get("company_remark"))
-                if len(remark.split()) >= 8 and remark in folded_pages[7]:
+                if len(remark.split()) >= 8 and remark in folded_pages[PERFORMANCE_PAGE]:
                     violations.append({"code": "COPIED_DEFERRED_REMARK", "message": "Technical status repeats a source remark instead of its consequence."})
         if len(pages) != MAX_BRIEFING_PAGES:
-            violations.append({"code": "CONCISE_PAGE_CEILING", "message": f"Expected nine analysed pages; found {len(pages)}. No source appendix is permitted."})
+            violations.append({"code": "CONCISE_PAGE_CEILING", "message": f"Expected six analysed pages; found {len(pages)}. No source appendix is permitted."})
         for index, title in enumerate(PAGE_TITLES):
             if index >= len(pages) or normalized(title) not in folded_pages[index]:
                 violations.append({"code": "CONCISE_SECTION_ORDER", "message": f"Page {index + 1} must contain {title}."})
@@ -146,8 +181,8 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
         if raw_hits:
             violations.append({"code": "RAW_ITEM_E_IN_BODY", "message": "Source Item E copied into PDF: " + ", ".join(sorted(set(raw_hits)))})
         for airport in [*(airport_analysis or []), *(alternate_analysis or [])]:
-            index = 5 if airport.get("role") == "departure" else 6 if airport.get("role") == "destination" else 7
-            if index in {5, 6} and index < len(pdf) and view is not None:
+            index = AIRPORTS_PAGE
+            if airport.get("role") in {"departure", "destination"} and index < len(pdf) and view is not None:
                 overlay = next((o for o in view.get("surface_overlays") or []
                                 if o.get("icao") == airport.get("icao") and o.get("role") == airport.get("role")), {})
                 violations.extend(check_airport_figure_states(pdf[index], overlay, airport))
@@ -158,18 +193,49 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
         if airport_analysis is not None:
             remaining = folded_pages.copy()
             for airport in [*airport_analysis, *(alternate_analysis or [])]:
-                index = 5 if airport.get("role") == "departure" else 6 if airport.get("role") == "destination" else 7
-                if index < len(remaining):
-                    for line in airport.get("lines") or []:
-                        remaining[index] = remaining[index].replace(normalized(line["text"]), "")
+                # The overview station columns publish the same analysed
+                # consequence lines, so a notice named there is explained too.
+                for index in (OVERVIEW_PAGE, AIRPORTS_PAGE):
+                    if index < len(remaining):
+                        for line in airport.get("lines") or []:
+                            remaining[index] = remaining[index].replace(normalized(line["text"]), "")
+            # A ranked decision finding is analysed text with its own source
+            # tag, so the notice it names is explained where it is printed.
+            ranked_ids = {
+                normalized(found)
+                for item in (view or {}).get("decision_findings") or []
+                for field in ("title", "summary", "source_reference")
+                for found in re.findall(r"\b[A-Z]{1,3}\d{2,5}/\d{2}\b", str(item.get(field) or ""))
+            }
             for index, page in enumerate(pages):
                 for notice_id in re.findall(r"\b[A-Z]{1,3}\d{2,5}/\d{2}\b", page):
+                    if index == ANALYSIS_PAGE and normalized(notice_id) in ranked_ids:
+                        continue
                     if re.search(r"\b" + re.escape(normalized(notice_id)) + r"\b", remaining[index]):
                         violations.append({"code": "NON_INLINE_NOTAM_ID", "message": f"Page {index + 1} contains a NOTAM ID outside an analysed consequence: {notice_id}."})
-        for index, page in enumerate(pages[:8]):
+        for index, page in enumerate(pages[:ASSURANCE_PAGE]):
             # The single mandatory header is allowed; repeated item-level
-            # review labels are not. Source gaps belong to closing page 9.
+            # review labels are not. Source gaps belong to the closing page.
+            # A ranked decision finding carries the engine's own wording with
+            # its source tag, so its analysed sentence is not an item badge.
             without_header = page.replace("BRIEFING FOR CREW REVIEW - CURRENT SOURCE VERIFICATION REQUIRED", "")
+            if index == ANALYSIS_PAGE:
+                # Every line on the ranked page is engine analysis carrying its
+                # own severity pill and source tag, so its wording is not an
+                # item-level badge. Only text that is not a published finding
+                # is checked here.
+                without_header = " ".join(without_header.split())
+                findings_text = " ".join(
+                    " ".join(str(item.get(field) or "").split())
+                    for item in (view or {}).get("decision_findings") or []
+                    for field in ("title", "summary", "source_reference"))
+                if view is None or re.search(r"\bREVIEW REQUIRED\b", findings_text, re.I):
+                    continue
+                for item in (view or {}).get("decision_findings") or []:
+                    for field in ("title", "summary", "source_reference"):
+                        value = " ".join(str(item.get(field) or "").split())
+                        if value:
+                            without_header = without_header.replace(value, "")
             if re.search(r"\bREVIEW REQUIRED\b", without_header, re.I):
                 violations.append({"code": "REPEATED_ITEM_WARNING", "message": f"Page {index + 1} repeats an item-level review warning."})
         for page in pdf:

@@ -1,5 +1,8 @@
 """Current production time labels and fixed-page navigation."""
 import fitz
+
+from app.odss.concise_pdf_gate import (AIRPORTS_PAGE, ASSURANCE_PAGE,
+                                       PERFORMANCE_PAGE, WEATHER_PAGE)
 from generate_visual_samples import sample_findings, sample_flight
 from app.odss.combined_brief import render_combined_briefing
 from app.odss.timing import build_timing_view
@@ -19,9 +22,10 @@ def render(tmp_path, *, atot=None):
 def test_scheduled_arrival_does_not_become_calculated_eta(tmp_path):
     with fitz.open(render(tmp_path)) as doc:
         first = ' '.join(doc[0].get_text().split())
-        assert 'SCHED ARR 2240Z' in first
-        assert 'TARGET ARRIVAL NOT CALCULATED' in first
+        assert 'STA 2240Z' in first
         assert 'TARGET ARRIVAL 2240Z' not in first
+        assert 'ATOT not entered' in first
+        assert 'TARGET ARRIVAL NOT CALCULATED' in first
 
 
 def test_atot_derived_target_stays_distinct_from_schedule(tmp_path):
@@ -29,17 +33,15 @@ def test_atot_derived_target_stays_distinct_from_schedule(tmp_path):
         first = ' '.join(doc[0].get_text().split())
         assert 'ATOT 0952Z' in first
         assert 'TARGET ARRIVAL 2159Z' in first
-        assert 'SCHED ARR 2240Z' in first
-        assert 'ATOT + OFP ACTM' in first
+        assert 'STA 2240Z' in first
 
 
-def test_master_links_point_to_current_detail_owners(tmp_path):
+def test_overview_links_point_to_current_detail_owners(tmp_path):
     with fitz.open(render(tmp_path)) as doc:
         destinations = {link.get('page') for link in doc[0].get_links()}
-        assert {2, 4, 6, 8} <= destinations
-        # Each section is named in its heading and in the corrected footer.
-        assert doc[5].get_text().count('DEPARTURE SURFACE') == 2
-        assert doc[6].get_text().count('DESTINATION SURFACE') == 2
-        assert 'PAGE 6/9 · EBBR DEPARTURE SURFACE' in doc[5].get_text()
-        assert 'PAGE 7/9 · WSSS DESTINATION SURFACE' in doc[6].get_text()
-        assert 'REVIEW RECORD AND RELEASE CONDITIONS' in doc[8].get_text()
+        assert {PERFORMANCE_PAGE, AIRPORTS_PAGE, WEATHER_PAGE} <= destinations
+        # Each relocated section is named on the page that now owns it.
+        assert 'DEPARTURE SURFACE' in doc[AIRPORTS_PAGE].get_text()
+        assert 'DESTINATION SURFACE' in doc[AIRPORTS_PAGE].get_text()
+        assert 'FLIGHT BRIEFING | PAGE 4 OF 6' in ' '.join(doc[AIRPORTS_PAGE].get_text().split())
+        assert 'ENROUTE / INTAM / ASSURANCE' in doc[ASSURANCE_PAGE].get_text()

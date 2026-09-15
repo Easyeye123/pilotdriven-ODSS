@@ -1,9 +1,17 @@
-"""Landscape card composition from the supplied September briefing reference.
+"""Six-page Flight Briefing composition in David's reference format.
 
-This module projects the existing governed briefing view. It does not analyse
-weather, infer aircraft limitations, or import facts from a reference flight.
-Cards use a fixed readable type size and fail closed on capacity overflow.
-Airport figures use only the supplied validated surface geometry.
+9 Sep 2026: "This format from beginning has always been this. Get this right,
+and then we talk about tweaking from this." His references
+(SQ910_21AUG2026, SQ481_25AUG2026 REV5, SQ38_28AUG2026) are six landscape
+pages - OVERVIEW, DECISION ANALYSIS, PERFORMANCE / FUEL / TECH,
+AIRPORTS / ALTERNATES, WEATHER / ROUTE HAZARDS, ENROUTE / INTAM / ASSURANCE -
+each carrying the navigation ribbon and the footer triplet.
+
+This module projects the existing governed briefing view into that format. It
+does not analyse weather, infer aircraft limitations, or import facts from a
+reference flight. Cards fail closed on capacity overflow: text is never
+truncated to fit and body type never drops below the published readable
+floor.
 """
 from __future__ import annotations
 
@@ -15,17 +23,23 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from .analysed_briefing_content import cyclone_content, release_condition_groups
-from .analysed_briefing_map import build_publication_map, draw_publication_map
+from .analysed_briefing_map import (build_publication_map, draw_publication_map,
+                                    publication_key_entries)
 from .constants import format_actm
 from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
 
 SIZE = landscape(A4)
 MARGIN = 28.0
-GAP = 18.0
-TOP = 493.0
-BOTTOM = 48.0
-BODY = 10.5
-LEADING = 12.8
+GAP = 11.0
+TOP = 494.0
+BOTTOM = 40.0
+# Readable floor for every published glyph is 8.9pt; the body ladder never
+# goes below 9.0 and a page that still does not fit fails closed.
+BODY = 9.6
+LEADING = 11.6
+BODY_LADDER = ((9.6, 11.6), (9.3, 11.2), (9.0, 10.8), (9.0, 10.3))
+LABEL = 9.0
+CARD_TITLE = 11.0
 BG = colors.HexColor("#061321")
 PANEL = colors.HexColor("#102237")
 BORDER = colors.HexColor("#315269")
@@ -35,6 +49,9 @@ CYAN = colors.HexColor("#50D5EF")
 GREEN = colors.HexColor("#42D6A3")
 AMBER = colors.HexColor("#FFBC38")
 RED = colors.HexColor("#FF5267")
+VIOLET = colors.HexColor("#B48CF2")
+CREW_REVIEW = "BRIEFING FOR CREW REVIEW - CURRENT SOURCE VERIFICATION REQUIRED"
+FOOTER_DISCLAIMER = "UTC · NOT FOR NAVIGATION"
 
 
 def text(value: Any, missing: str = "Not held") -> str:
@@ -89,146 +106,490 @@ def wrap(value: str, width: float, *, font: str = "Helvetica", size: float = BOD
     return lines
 
 
+# Registry suffixes that repeat on nearly every name and cost header width.
+_NAME_NOISE = {"INTERNATIONAL", "AIRPORT", "REGIONAL", "MUNICIPAL", "FIELD"}
+
+
+def airport_short_name(icao: Any) -> str:
+    """Registry name without its repeated suffix words; ICAO stays beside it."""
+    words = [word for word in airport_name(icao).split() if word not in _NAME_NOISE]
+    return " ".join(words) or airport_name(icao)
+
+
+def airport_name(icao: Any) -> str:
+    """Airport name from the pinned offline registry; never inferred."""
+    from .brief_theme import _airport_local_registry
+    entry = _airport_local_registry().get(str(icao or "").upper()) or {}
+    name = str(entry.get("name") or "").strip()
+    return name.upper() if name else "NAME NOT HELD"
+
+
 @dataclass
 class Card:
     title: str
-    paragraphs: list[str]
+    paragraphs: list[str] = field(default_factory=list)
     accent: Any = field(default_factory=lambda: CYAN)
     target: str | None = None
     left_aligned: bool = True
     top_aligned: bool = True
     paragraph_gap: float = 0
     width_weight: float = 1
+    kind: str = "text"
+    payload: Any = None
+    tag: str | None = None
 
 
 @dataclass
 class CardBox:
-    title: str
-    lines: list[str]
-    accent: Any
+    card: Card
     x: float
     y: float
     width: float
     height: float
-    target: str | None = None
-    left_aligned: bool = True
-    top_aligned: bool = True
-    paragraph_gap: float = 0
-    paragraph_starts: list[int] = field(default_factory=list)
+    rows: list[tuple[float, list[tuple]]] = field(default_factory=list)
 
 
 @dataclass
 class Page:
     title: str
     bookmark: str
+    ribbon_index: int = 0
+    assurance: str = ""
+    aliases: tuple[str, ...] = ()
     boxes: list[CardBox] = field(default_factory=list)
-    route_map: dict[str, Any] | None = None
-    surface_overlay: dict[str, Any] | None = None
-    airport_role: str | None = None
+    body: float = BODY
+    leading: float = LEADING
 
 
-def plan_page(title: str, bookmark: str, rows: list[tuple[float, list[Card]]], *, route_map=None, surface_overlay=None, airport_role=None) -> list[Page]:
-    """Enforce the reference grid at fixed type size; never spill source text."""
-    full_width = SIZE[0] - 2 * MARGIN
-    first = Page(title, bookmark, route_map=route_map, surface_overlay=surface_overlay, airport_role=airport_role)
-    top = 232.0 if airport_role else TOP if route_map is None else 213.0
-    for height, cards in rows:
-        usable_width = full_width - GAP * (len(cards) - 1)
-        total_weight = sum(card.width_weight for card in cards)
-        x = MARGIN
-        for card in cards:
-            width = usable_width * card.width_weight / total_weight
-            title_lines = wrap(card.title, width - 20, font="Helvetica-Bold", size=14) if card.title else []
-            head_height = len(title_lines) * 16 + 15 if card.title else 0
-            available_height = max(LEADING, height - head_height - 17)
-            capacity = int(available_height // LEADING)
-            lines, starts = [], []
-            for paragraph in card.paragraphs:
-                starts.append(len(lines))
-                lines.extend(wrap(paragraph, width - 28))
-            gap_height = max(0, len(starts) - 1) * card.paragraph_gap
-            if len(lines) * LEADING + gap_height > available_height + .01:
-                raise ValueError(f"Concise PDF capacity exceeded in {title} / {card.title}: {len(lines)} lines, {capacity} available. No source continuation is permitted.")
+def title_layout(card: Card, width: float) -> tuple[float, list[str]]:
+    """Fit the card title beside its provenance tag before wrapping it."""
+    reserved = stringWidth(card.tag, "Helvetica-Bold", LABEL) + 12 if card.tag else 0
+    available = width - 20 - reserved
+    size = CARD_TITLE
+    while size > 9.0 and stringWidth(card.title, "Helvetica-Bold", size) > available:
+        size -= 0.25
+    return size, wrap(card.title, available, font="Helvetica-Bold", size=size)
+
+
+def head_height(card: Card, width: float) -> float:
+    if not card.title:
+        return 0.0
+    size, lines = title_layout(card, width)
+    return len(lines) * (size + 2.5) + 5.0
+
+
+def card_rows(card: Card, width: float, body: float, leading: float) -> list[tuple[float, list[tuple]]]:
+    """One entry per baseline: (gap_before, [(text, font, size, colour, align)]).
+
+    ``align`` is ``left``/``right``/``centre`` inside the card's inner box.
+    """
+    inner = width - 28
+    rows: list[tuple[float, list[tuple]]] = []
+
+    def para(value, font="Helvetica", size=None, colour=WHITE, gap=0.0, align="left"):
+        size = body if size is None else size
+        for index, line in enumerate(wrap(str(value), inner, font=font, size=size)):
+            rows.append(((gap if index == 0 else 0.0), [(line, font, size, colour, align)]))
+
+    if card.kind == "station":
+        icao, name, blocks = card.payload
+        rows.append((0.0, [(str(icao), "Helvetica-Bold", 13.0, card.accent, "left")]))
+        para(name, size=body, colour=MUTED, gap=2.0)
+        for label, values in blocks:
+            single = values[0] if len(values) == 1 else None
+            if single is not None and (stringWidth(label, "Helvetica-Bold", LABEL)
+                                       + stringWidth(str(single), "Helvetica", body) + 8) <= inner:
+                rows.append((4.0, [(label, "Helvetica-Bold", LABEL, card.accent, "left"),
+                                   (str(single), "Helvetica", body, WHITE, "offset")]))
+                continue
+            para(label, font="Helvetica-Bold", size=LABEL, colour=card.accent, gap=4.0)
+            for value in values:
+                para(value, colour=WHITE)
+        return rows
+    if card.kind == "tile":
+        for label, value in card.payload or []:
+            label_width = stringWidth(str(label), "Helvetica-Bold", LABEL)
+            value_width = stringWidth(str(value), "Helvetica-Bold", body)
+            if label_width + value_width + 8 <= inner:
+                rows.append((2.0, [(str(label), "Helvetica-Bold", LABEL, MUTED, "left"),
+                                   (str(value), "Helvetica-Bold", body, WHITE, "right")]))
             else:
-                shown = lines
-            first.boxes.append(CardBox(card.title, shown, card.accent, x, top - height, width, height, card.target, card.left_aligned, card.top_aligned, card.paragraph_gap, starts))
+                para(label, font="Helvetica-Bold", size=LABEL, colour=MUTED, gap=2.0)
+                para(value, font="Helvetica-Bold", colour=WHITE)
+        for note in card.paragraphs:
+            para(note, colour=MUTED, gap=5.0)
+        return rows
+    if card.kind == "strip":
+        status, detail = card.payload
+        rows.append((0.0, [(str(status), "Helvetica-Bold", body, card.accent, "centre")]))
+        for line in detail:
+            para(line, colour=MUTED, gap=1.0, align="centre")
+        return rows
+    if card.kind == "finding":
+        pill, headline, summary, source = card.payload
+        # The headline is wrapped once, at the width it is drawn beside the
+        # severity pill: a second measurement would drop or repeat words.
+        indent = stringWidth(pill, "Helvetica-Bold", LABEL) + 20
+        headline_lines = wrap(str(headline), inner - indent, font="Helvetica-Bold", size=body)
+        rows.append((0.0, [(pill, "Helvetica-Bold", LABEL, BG, "pill"),
+                           (headline_lines[0] if headline_lines else "",
+                            "Helvetica-Bold", body, WHITE, "pill-text")]))
+        for line in headline_lines[1:]:
+            rows.append((0.0, [(line, "Helvetica-Bold", body, WHITE, "left")]))
+        para(summary, colour=MUTED, gap=4.0)
+        para(source, size=LABEL, colour=card.accent, gap=3.0, align="right")
+        return rows
+    for index, paragraph in enumerate(card.paragraphs):
+        para(paragraph, colour=WHITE, gap=card.paragraph_gap if index else 0.0)
+    return rows
+
+
+def rows_height(rows, leading: float) -> float:
+    return sum(gap + leading for gap, _ in rows)
+
+
+def card_height(card: Card, width: float, body: float, leading: float) -> float:
+    if card.kind in {"map", "figure", "timeline"}:
+        return 0.0
+    rows = card_rows(card, width, body, leading)
+    # 6pt above the title and 4pt of clearance under the last baseline.
+    return head_height(card, width) + rows_height(rows, leading) + 10.0
+
+
+def row_widths(cards: list[Card], full_width: float) -> list[float]:
+    usable = full_width - GAP * (len(cards) - 1)
+    total = sum(card.width_weight for card in cards)
+    return [usable * card.width_weight / total for card in cards]
+
+
+def plan_page(title: str, bookmark: str, rows: list[tuple[Any, list[Card]]], *,
+              ribbon_index: int = 0, assurance: str = "", aliases: tuple[str, ...] = (),
+              body: float = BODY, leading: float = LEADING) -> list[Page]:
+    """Fit the reference grid at a readable size; never spill source text.
+
+    A row height may be a fixed number, ``None`` (measured from its content)
+    or ``(minimum, preferred)`` for a drawn figure that may be compressed to
+    give measured text the room it needs. Slack is shared out so the page
+    reads as a full page rather than a short column.
+    """
+    full_width = SIZE[0] - 2 * MARGIN
+    page = Page(title, bookmark, ribbon_index=ribbon_index, assurance=assurance,
+                aliases=aliases, body=body, leading=leading)
+    budget = TOP - BOTTOM - GAP * (len(rows) - 1)
+    lows: list[float] = []
+    highs: list[float] = []
+    for height, cards in rows:
+        widths = row_widths(cards, full_width)
+        needed = max([card_height(card, width, body, leading)
+                      for card, width in zip(cards, widths)] or [0.0])
+        if height is None:
+            lows.append(needed)
+            highs.append(needed)
+        elif isinstance(height, tuple):
+            lows.append(max(height[0], needed))
+            highs.append(max(height[1], needed))
+        else:
+            if needed > height + 0.01:
+                raise ValueError(
+                    f"Concise PDF capacity exceeded in {title}: {needed:.0f}pt of "
+                    f"content in a {height:.0f}pt row. No source continuation is permitted.")
+            lows.append(float(height))
+            highs.append(float(height))
+    if sum(lows) > budget + 0.01:
+        raise ValueError(
+            f"Concise PDF capacity exceeded in {title}: {sum(lows):.0f}pt of content "
+            f"in {budget:.0f}pt of page. No source continuation is permitted.")
+    heights = list(lows)
+    slack = budget - sum(heights)
+    wanted = sum(high - low for low, high in zip(lows, highs))
+    if wanted > 0:
+        share = min(1.0, slack / wanted)
+        heights = [low + (high - low) * share for low, high in zip(lows, highs)]
+        slack = budget - sum(heights)
+    if slack > 0 and heights:
+        heights = [height + slack / len(heights) for height in heights]
+    top = TOP
+    for (_, cards), height in zip(rows, heights):
+        widths = row_widths(cards, full_width)
+        x = MARGIN
+        for card, width in zip(cards, widths):
+            box = CardBox(card, x, top - height, width, height)
+            if card.kind not in {"map", "figure", "timeline"}:
+                box.rows = card_rows(card, width, body, leading)
+            page.boxes.append(box)
             x += width + GAP
         top -= height + GAP
-    if top + GAP < BOTTOM - 0.1:
-        raise ValueError(f"Reference grid exceeds page: {title}")
-    return [first]
+    return [page]
 
 
-def draw_chrome(canvas, flight: dict[str, Any], view: dict[str, Any], title: str, number: int, count: int) -> None:
+def plan_page_flexible(title, bookmark, rows_for, *, variants=(0,), **kwargs) -> list[Page]:
+    """Try each grid variant on the readable body ladder before failing closed.
+
+    Column width, not type size, is the first lever: a dense source-bound card
+    is given more of the row before the body steps down, and the body never
+    steps below the published readable floor.
+    """
+    last: ValueError | None = None
+    for variant in variants:
+        for body, leading in BODY_LADDER:
+            try:
+                return plan_page(title, bookmark, rows_for(body, leading, variant),
+                                 body=body, leading=leading, **kwargs)
+            except ValueError as exc:
+                last = exc
+    raise last
+
+
+def draw_chrome(canvas, flight: dict[str, Any], view: dict[str, Any], page: Page,
+                number: int, count: int) -> None:
+    from .concise_pdf_gate import NAV_RIBBON
     width, height = SIZE
+    identity = view.get("flight_identity") or {}
     canvas.setFillColor(BG)
     canvas.rect(0, 0, width, height, fill=1, stroke=0)
-    # Two distinct lines prevent long section titles colliding with identity.
-    identity = view.get("flight_identity") or {}
+
+    canvas.setFillColor(CYAN)
+    canvas.setFont("Helvetica-Bold", 12.5)
+    canvas.drawString(MARGIN, height - 24, "PILOTDRIVEN")
     canvas.setFillColor(MUTED)
-    canvas.setFont("Helvetica", 9)
-    canvas.drawRightString(width - MARGIN, height - 20, " · ".join((text(view.get("flight_number")), text(view.get("route_label")), text(view.get("flight_date")), f"OFP {text(identity.get('ofp'), 'unavailable')}")))
-    size = 23.0
-    while size > 16 and stringWidth(title, "Helvetica-Bold", size) > width - 2 * MARGIN:
-        size -= 0.25
-    if stringWidth(title, "Helvetica-Bold", size) > width - 2 * MARGIN:
-        raise ValueError(f"Section title exceeds readable width: {title}")
-    canvas.setFont("Helvetica-Bold", size)
+    canvas.setFont("Helvetica", LABEL)
+    canvas.drawString(MARGIN, height - 37, FOOTER_DISCLAIMER)
+
     canvas.setFillColor(WHITE)
-    canvas.drawString(MARGIN, height - 47, title)
-    canvas.setFillColor(colors.HexColor("#573900"))
-    canvas.roundRect(MARGIN, height - 78, width - 2 * MARGIN, 23, 5, fill=1, stroke=0)
-    canvas.setFont("Helvetica-Bold", 11)
-    canvas.setFillColor(AMBER)
-    canvas.drawCentredString(width / 2, height - 70, "BRIEFING FOR CREW REVIEW - CURRENT SOURCE VERIFICATION REQUIRED")
-    canvas.setStrokeColor(BORDER)
-    canvas.line(MARGIN, 29, width - MARGIN, 29)
+    canvas.setFont("Helvetica-Bold", 15)
+    canvas.drawString(MARGIN + 150, height - 24, text(view.get("flight_number")))
+    canvas.setFont("Helvetica", 10)
+    canvas.drawString(MARGIN + 150, height - 37, text(view.get("route_label")))
     canvas.setFillColor(MUTED)
-    canvas.setFont("Helvetica", 9)
-    canvas.drawString(MARGIN, 13, "PilotDriven Flight Briefing · UTC · NOT FOR NAVIGATION")
-    footer = title.replace("FLIGHT BRIEFING - ", "")
-    if stringWidth(f"PAGE {number}/{count} · {footer}", "Helvetica", 9) > width * .52:
-        footer = " / ".join(title.split(", ")[:2]) if number == 4 else f"SECTION {number}"
-    canvas.drawRightString(width - MARGIN, 13, f"PAGE {number}/{count} · {footer}")
-    canvas.linkRect("Return to master summary", "sec_overview", (width - 210, 6, width - MARGIN, 26), relative=0, thickness=0)
+    canvas.setFont("Helvetica", LABEL)
+    names = (f"{airport_short_name(flight.get('departure'))} to "
+             f"{airport_short_name(flight.get('destination'))}")
+    if stringWidth(names, "Helvetica", LABEL) <= 268:
+        canvas.drawString(MARGIN + 150, height - 48, names)
+
+    canvas.setFillColor(WHITE)
+    canvas.setFont("Helvetica-Bold", 10.5)
+    canvas.drawString(MARGIN + 430, height - 24, text(view.get("flight_date")))
+    # The schedule, the filed plan and the ATOT-derived target all stay on the
+    # page: a calculated arrival is never printed as if it were the schedule.
+    actual = identity.get("actual_takeoff_hhmm")
+    schedule = " | ".join((
+        f"ETD {clock(identity.get('etd_hhmm'))}",
+        f"STA {clock(identity.get('scheduled_eta_hhmm'))}",
+        f"SCHED {text(identity.get('block'))}",
+        f"FPL EET {text((view.get('metrics') or {}).get('eet'))}"))
+    clocks = " | ".join((
+        f"CI{text(identity.get('cost_index'))}", text(identity.get("rules")),
+        f"ATOT {clock(actual)}" if actual else "ATOT not entered",
+        f"TARGET ARRIVAL {clock(identity.get('eta_hhmm'))}" if actual
+        else "TARGET ARRIVAL NOT CALCULATED"))
+    available = width - MARGIN - (MARGIN + 430)
+    lines: list[str] = []
+    for part in schedule.split(" | ") + clocks.split(" | "):
+        joined = f"{lines[-1]} | {part}" if lines else part
+        if lines and stringWidth(joined, "Helvetica", LABEL) <= available:
+            lines[-1] = joined
+        else:
+            lines.append(part)
+    if len(lines) > 2 or any(stringWidth(line, "Helvetica", LABEL) > available for line in lines):
+        raise ValueError("Flight identity header exceeds the readable width: " + " | ".join(lines))
+    canvas.setFont("Helvetica", LABEL)
+    for index, line in enumerate(lines):
+        canvas.setFillColor(WHITE if index == 0 else MUTED)
+        canvas.drawString(MARGIN + 430, height - 37 - index * 11, line)
+    canvas.setFillColor(WHITE)
+    canvas.setFont("Helvetica", LABEL)
+    canvas.drawRightString(width - MARGIN, height - 24, " | ".join((
+        text(identity.get("aircraft_type")), text(identity.get("registration")),
+        f"OFP {text(identity.get('ofp'), 'unavailable')}")))
+
+    # Navigation ribbon: the reference underlines the active section.
+    ribbon_y = height - 66
+    x = MARGIN
+    for index, item in enumerate(NAV_RIBBON):
+        active = index == page.ribbon_index
+        canvas.setFont("Helvetica-Bold" if active else "Helvetica", 9.5)
+        canvas.setFillColor(WHITE if active else MUTED)
+        canvas.drawString(x, ribbon_y, item)
+        item_width = stringWidth(item, "Helvetica-Bold" if active else "Helvetica", 9.5)
+        if active:
+            canvas.setStrokeColor(CYAN)
+            canvas.setLineWidth(1.6)
+            canvas.line(x, ribbon_y - 4.5, x + item_width, ribbon_y - 4.5)
+        x += item_width + 10
+        if index < len(NAV_RIBBON) - 1:
+            canvas.setFillColor(BORDER)
+            canvas.setFont("Helvetica", 9.5)
+            canvas.drawString(x, ribbon_y, "·")
+            x += 10
+    canvas.setFillColor(MUTED)
+    canvas.setFont("Helvetica", 9.5)
+    canvas.drawRightString(width - MARGIN, ribbon_y,
+                           f"FLIGHT BRIEFING | PAGE {number} OF {count}")
+    canvas.setStrokeColor(BORDER)
+    canvas.setLineWidth(0.6)
+    canvas.line(MARGIN, ribbon_y - 11, width - MARGIN, ribbon_y - 11)
+
+    canvas.setFillColor(WHITE)
+    size = 12.5
+    while size > 9.6 and stringWidth(page.title, "Helvetica-Bold", size) > 430:
+        size -= 0.25
+    canvas.setFont("Helvetica-Bold", size)
+    canvas.drawString(MARGIN, height - 93, page.title)
+    canvas.setFillColor(AMBER)
+    canvas.setFont("Helvetica-Bold", LABEL)
+    canvas.drawRightString(width - MARGIN, height - 93, CREW_REVIEW)
+
+    canvas.setStrokeColor(BORDER)
+    canvas.line(MARGIN, 30, width - MARGIN, 30)
+    left = " | ".join((
+        text(view.get("flight_number")), text(view.get("flight_date")),
+        f"{text(flight.get('departure'))}-{text(flight.get('destination'))}",
+        f"{text(identity.get('aircraft_type'))} {text(identity.get('registration'))}",
+        f"OFP {text(identity.get('ofp'), 'unavailable')}"))
+    right = f"Page {number} of {count}"
+    centre = page.assurance
+    canvas.setFont("Helvetica", LABEL)
+    left_width = stringWidth(left, "Helvetica", LABEL)
+    centre_width = stringWidth(centre, "Helvetica", LABEL)
+    right_width = stringWidth(right, "Helvetica", LABEL)
+    if left_width + centre_width + right_width + 24 > width - 2 * MARGIN:
+        raise ValueError(f"Footer triplet exceeds the readable page width on page {number}")
+    start = MARGIN + left_width + 12
+    end = width - MARGIN - right_width - 12
+    centre_x = width / 2 - centre_width / 2
+    if centre_x < start or centre_x + centre_width > end:
+        centre_x = start + (end - start - centre_width) / 2
+    canvas.setFillColor(MUTED)
+    canvas.drawString(MARGIN, 19, left)
+    canvas.setFillColor(CYAN)
+    canvas.drawString(centre_x, 19, centre)
+    canvas.setFillColor(MUTED)
+    canvas.drawRightString(width - MARGIN, 19, right)
+    canvas.linkRect("Return to overview", "sec_overview",
+                    (width - 150, 10, width - MARGIN, 28), relative=0, thickness=0)
+
+
+def draw_severity_pill(canvas, x, y, label, accent) -> float:
+    label_width = stringWidth(label, "Helvetica-Bold", LABEL)
+    canvas.setFillColor(accent)
+    canvas.roundRect(x, y - 3, label_width + 12, LABEL + 6, 3, fill=1, stroke=0)
+    canvas.setFillColor(BG)
+    canvas.setFont("Helvetica-Bold", LABEL)
+    canvas.drawString(x + 6, y, label)
+    return label_width + 12
+
+
+def draw_decision_timeline(canvas, entries, x, y, width, height) -> None:
+    """Dots for DEP, waypoints, ETP, TOD and arrival, annotated and staggered."""
+    if not entries:
+        canvas.setFillColor(MUTED)
+        canvas.setFont("Helvetica", LABEL)
+        canvas.drawString(x, y + height / 2, "No route anchor is held in the OFP for a decision timeline.")
+        return
+    rail = y + height / 2
+    canvas.setStrokeColor(BORDER)
+    canvas.setLineWidth(1.0)
+    canvas.line(x, rail, x + width, rail)
+    step = width / max(1, len(entries) - 1) if len(entries) > 1 else 0
+    for index, entry in enumerate(entries):
+        cx = x + (index * step if len(entries) > 1 else width / 2)
+        accent = {"DEP": GREEN}.get(str(entry.get("label")), CYAN)
+        above = index % 2 == 0
+        canvas.setFillColor(accent)
+        canvas.circle(cx, rail, 3.4, stroke=0, fill=1)
+        label = str(entry.get("label") or "")
+        sub = str(entry.get("sub") or "")
+        when = " · ".join(part for part in (str(entry.get("time") or "--"), sub) if part)
+        lines = [(label, "Helvetica-Bold", accent), (when, "Helvetica", MUTED)]
+        widest = max(stringWidth(value, font, LABEL) for value, font, _ in lines)
+        if widest > 2 * step - 6 and len(entries) > 1:
+            raise ValueError("Decision timeline labels exceed the readable step width")
+        baseline = rail + 9 if above else rail - 9 - LABEL
+        for value, font, colour in lines:
+            if baseline > y + height - LABEL or baseline < y:
+                raise ValueError("Decision timeline annotation exceeds its panel")
+            value_width = stringWidth(value, font, LABEL)
+            canvas.setFillColor(colour)
+            canvas.setFont(font, LABEL)
+            canvas.drawString(min(max(x, cx - value_width / 2), x + width - value_width),
+                              baseline, value)
+            baseline += 10.5 if above else -10.5
 
 
 def draw_page(canvas, flight, view, page: Page, number: int, count: int) -> None:
-    draw_chrome(canvas, flight, view, page.title, number, count)
+    draw_chrome(canvas, flight, view, page, number, count)
     canvas.bookmarkPage(page.bookmark, fit="XYZ", left=0, top=SIZE[1], zoom=0)
+    # Evidence destinations named by the engine keep resolving after the
+    # nine-page sections were folded into six.
+    for alias in page.aliases:
+        canvas.bookmarkPage(alias, fit="XYZ", left=0, top=SIZE[1], zoom=0)
     canvas.addOutlineEntry(page.title, page.bookmark, level=0)
-    if page.route_map is not None:
-        draw_publication_map(canvas, page.route_map, MARGIN, 233, SIZE[0] - 2 * MARGIN, TOP - 233)
-    if page.airport_role:
-        draw_airport_figure(canvas, page.surface_overlay, MARGIN, 250, SIZE[0] - 2 * MARGIN, TOP - 250, planned_runway=flight.get(f"{page.airport_role}_runway"))
     for box in page.boxes:
+        card = box.card
         canvas.setFillColor(PANEL)
         canvas.setStrokeColor(BORDER)
-        canvas.roundRect(box.x, box.y, box.width, box.height, 8, stroke=1, fill=1)
-        if box.target:
-            canvas.linkRect(f"Open {box.title} detail", box.target, (box.x, box.y, box.x + box.width, box.y + box.height), relative=0, thickness=0)
-        title_lines = wrap(box.title, box.width - 20, font="Helvetica-Bold", size=14) if box.title else []
-        canvas.setFont("Helvetica-Bold", 14)
-        canvas.setFillColor(box.accent)
-        baseline = box.y + box.height - 23
-        for line in title_lines:
-            canvas.drawCentredString(box.x + box.width / 2, baseline, line)
-            baseline -= 16
-        body_top = baseline - 8 if box.title else box.y + box.height - 16
-        body_bottom = box.y + 14
-        start = body_top if box.top_aligned else body_top - max(0, (body_top - body_bottom - (len(box.lines) - 1) * LEADING) / 2)
-        canvas.setFont("Helvetica", BODY)
-        canvas.setFillColor(WHITE)
-        for index, line in enumerate(box.lines):
-            if index and index in box.paragraph_starts:
-                start -= box.paragraph_gap
-            if start < box.y + 10:
-                raise ValueError(f"Card body exceeds measured capacity: {box.title}")
-            if box.left_aligned:
-                canvas.drawString(box.x + 14, start, line)
-            else:
-                canvas.drawCentredString(box.x + box.width / 2, start, line)
-            start -= LEADING
+        canvas.roundRect(box.x, box.y, box.width, box.height, 6, stroke=1, fill=1)
+        if card.target:
+            canvas.linkRect(f"Open {card.title} detail", card.target,
+                            (box.x, box.y, box.x + box.width, box.y + box.height),
+                            relative=0, thickness=0)
+        top = box.y + box.height - 6
+        if card.title:
+            size, title_lines = title_layout(card, box.width)
+            canvas.setFont("Helvetica-Bold", size)
+            canvas.setFillColor(card.accent)
+            baseline = top - size
+            for line in title_lines:
+                canvas.drawString(box.x + 14, baseline, line)
+                baseline -= size + 2.5
+            if card.tag:
+                canvas.setFont("Helvetica-Bold", LABEL)
+                canvas.setFillColor(MUTED)
+                canvas.drawRightString(box.x + box.width - 14, top - size, card.tag)
+            top = baseline + size - 5.0
+        if card.kind == "map":
+            draw_publication_map(canvas, card.payload, box.x + 6, box.y + 6,
+                                 box.width - 12, top - box.y - 6, show_key=False)
+            continue
+        if card.kind == "figure":
+            overlay, planned_runway = card.payload
+            draw_airport_figure(canvas, overlay, box.x + 6, box.y + 6, box.width - 12,
+                                top - box.y - 6, planned_runway=planned_runway)
+            continue
+        if card.kind == "timeline":
+            draw_decision_timeline(canvas, card.payload, box.x + 22, box.y + 8,
+                                   box.width - 44, top - box.y - 10)
+            continue
+        inner_left = box.x + 14
+        inner_right = box.x + box.width - 14
+        baseline = top - page.leading
+        for gap, items in box.rows:
+            baseline -= gap
+            if baseline < box.y + 3.99:
+                raise ValueError(f"Card body exceeds measured capacity: {card.title}")
+            pill_x = inner_left
+            cursor_x = inner_left
+            for value, font, size, colour, align in items:
+                if align == "pill":
+                    pill_x = inner_left + draw_severity_pill(canvas, inner_left, baseline,
+                                                             value, card.accent) + 8
+                    cursor_x = pill_x
+                    continue
+                canvas.setFont(font, size)
+                canvas.setFillColor(colour)
+                if align == "offset":
+                    canvas.drawString(cursor_x, baseline, value)
+                elif align == "right":
+                    canvas.drawRightString(inner_right, baseline, value)
+                elif align == "centre":
+                    canvas.drawCentredString(box.x + box.width / 2, baseline, value)
+                elif align == "pill-text":
+                    canvas.drawString(pill_x, baseline, value)
+                else:
+                    canvas.drawString(inner_left, baseline, value)
+                    cursor_x = inner_left + stringWidth(value, font, size) + 6
+            baseline -= page.leading
 
 
 def analysed_airport_overlay(overlay, analysis):
@@ -273,7 +634,7 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     if not all(isinstance(bounds.get(k), (int, float)) for k in ("west", "south", "east", "north")):
         canvas.setFillColor(MUTED)
         canvas.setFont("Helvetica", BODY)
-        canvas.drawCentredString(x + width / 2, y + height / 2, "Airport surface geometry is not held in this analysis.")
+        canvas.drawString(x + 6, y + height - 14, "Airport surface geometry is not held in this analysis.")
         return
     marks = {}
     for mark in overlay.get("mapped") or []:
@@ -348,13 +709,85 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
             raise ValueError(f"Airport figure has no readable label position for {ref}")
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(MUTED)
-    canvas.drawString(x, y + 4, "OSM reference · cyan: planned runway · red: unavailable to this flight · amber: scheduled/partial/shortened")
+    canvas.drawString(x, y + 4, "OSM reference · cyan: planned · red: unavailable · amber: scheduled/partial")
+
+
+def fitted_lines(values: list[str], width: float, body: float, budget: int,
+                 pointer: str) -> list[str]:
+    """Take whole source lines while they fit; never cut one in half."""
+    kept: list[str] = []
+    used = 0
+    for value in values:
+        needed = len(wrap(value, width - 28, size=body))
+        if used + needed > budget:
+            kept.append(pointer)
+            break
+        kept.append(value)
+        used += needed
+    return kept
+
+
+def split_card(card: Card, columns: int = 2) -> list[Card]:
+    """Share one card's paragraphs across columns; nothing is dropped.
+
+    A long source-bound list reads better in two columns than in one tall
+    narrow one, and it keeps the page inside the reference's six pages.
+    """
+    paragraphs = list(card.paragraphs)
+    if len(paragraphs) < columns * 2:
+        return [card]
+    size = -(-len(paragraphs) // columns)
+    parts = []
+    for index in range(columns):
+        chunk = paragraphs[index * size:(index + 1) * size]
+        if not chunk:
+            continue
+        parts.append(replace(
+            card, paragraphs=chunk,
+            title=card.title if index == 0 else f"{card.title} (CONT)",
+            tag=card.tag if index == 0 else None))
+    return parts
+
+
+def grid_rows(cards: dict, grid, gap: float) -> list[tuple[Any, list[Card]]]:
+    """Build one candidate row layout; a ``key*2`` entry splits that card."""
+    rows = []
+    for row in grid:
+        built: list[Card] = []
+        for key, weight in row:
+            name, _, columns = key.partition("*")
+            card = cards[name](gap, weight)
+            built.extend(split_card(card, int(columns)) if columns else [card])
+        rows.append((None, built))
+    return rows
+
+
+SEVERITY_PILLS = {
+    "critical": ("MAJOR", RED),
+    "warning": ("MODERATE", AMBER),
+    "unknown": ("REVIEW", VIOLET),
+    "information": ("INFO", CYAN),
+}
+
+
+def deferred_gate_value(row: dict[str, Any]) -> str:
+    """Name the declaration kind, or its gate, without repeating the title."""
+    kinds = "/".join(row.get("item_types") or [])
+    title = text(row.get("title"), "")
+    if len(kinds) >= 3 and not title.upper().startswith(kinds.upper()):
+        return kinds
+    status = str(row.get("status") or "")
+    return "CONFIRM" if "confirmation" in status else (kinds or "HELD")
+
+
+def severity_pill(value: Any) -> tuple[str, Any]:
+    return SEVERITY_PILLS.get(str(value or "information").lower(), ("INFO", CYAN))
 
 
 def build_sections(flight, view, findings, references=None) -> dict[str, list[Page]]:
-    """Nine analysed pages; warnings have one closing owner, raw stays in app."""
-    from .airport_pdf_analysis import airport_pdf_analysis
-    from .combined_brief import _operational_coverage_receipt
+    """David's six reference pages; every published fact keeps an owner."""
+    from .airport_pdf_analysis import airport_pdf_analysis, alternate_pdf_analysis
+    from .combined_brief import _operational_coverage_receipt, _route_anchor_entries
 
     identity = view.get("flight_identity") or {}
     one = view.get("page_one") or {}
@@ -367,23 +800,279 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     vws = terrain.get("vws_review") or {}
     receipt = _operational_coverage_receipt(flight, view, findings, references)
     airport_analysis = airport_pdf_analysis(flight, view.get("airport_operational_panels") or [])
+    alternate_analysis = alternate_pdf_analysis(flight, view.get("airport_operational_panels") or [])
     amount = lambda key: kg((fuel_rows.get(key) or {}).get("fuel_kg"))
-    sections = {}
+    states = {r["key"]: r["state"] for r in receipt["rows"]}
+    sections: dict[str, list[Page]] = {}
+    route_map = build_publication_map(flight, view)
+
     vws_summary = f"{int(vws.get('event_count') or 0)} event(s) at the analysed {text(vws.get('threshold'))} threshold. Maximum {text(vws.get('maximum_display'))} at {text(vws.get('maximum_waypoint'))}, ACTM {text(vws.get('maximum_actm_display'))}."
     terrain_summary = f"{len(terrain.get('events') or [])} high-MSA event(s); controlled-profile status is in the closing review record."
-    mass_lines = [f"PZFW {kg(masses.get('pzfw'))} · PTOW {kg(masses.get('ptow'))}", f"PLWT {kg(masses.get('plwt'))}", f"Selected RTOW {kg(perf.get('selected_rtow_kg'))} · margin {kg(perf.get('margin_kg'))}"]
-    fuel_summary_lines = [f"FLT PLAN REQMT {amount('flt_plan_reqmt')} · EXCESS {amount('excess_fuel')}", f"BURNOFF {amount('burnoff')} · STAT CONT {amount('stat_cont')}", f"ALTN FUEL {amount('altn_fuel')} · ALTN HOLD {amount('altn_hold')}", f"TAXI FUEL {kg(fuel.get('taxi_fuel_kg'))}"]
-    sections["summary"] = plan_page("FLIGHT BRIEFING - MASTER SUMMARY", "sec_overview", [
-        (126, [Card("FLIGHT", [f"{text(view.get('flight_number'))} · {text(identity.get('registration'))} · {text(identity.get('aircraft_type'))}", f"{text(flight.get('departure'))}/{text(flight.get('departure_runway'))} to {text(flight.get('destination'))}/{text(flight.get('destination_runway'))}", text(identity.get("rules")), f"CRUISE CI {text(identity.get('cost_index'))}"]), Card("TIME", [f"SCHED DEP {clock(identity.get('etd_hhmm'))} · SCHED ARR {clock(identity.get('scheduled_eta_hhmm'))}", f"Block {text(identity.get('block'))} · Flight Time {text((view.get('metrics') or {}).get('eet'))}", (f"ATOT {clock(identity.get('actual_takeoff_hhmm'))} · TARGET ARRIVAL {clock(identity.get('eta_hhmm'))}" if identity.get("actual_takeoff_hhmm") else "ATOT not entered · TARGET ARRIVAL NOT CALCULATED"), "Clocks: ATOT + OFP ACTM"]), Card("ROUTE / LEVELS", [f"SID {text(one.get('sid'))} · STAR {text(one.get('star'))}", f"Route distance: {text(one.get('ground_distance_nm'))} NM", f"Levels: {text((view.get('metrics') or {}).get('cruise'))}. Filed track on page 2."])]),
-        (126, [Card("FUEL IN TANKS - " + amount("fuel_in_tanks"), fuel_summary_lines, GREEN, "sec_performance"), Card("MASS / PERFORMANCE", mass_lines, GREEN, "sec_performance")]),
-        (157, [Card("VWS / TERRAIN", [vws_summary, terrain_summary], AMBER, "sec_terrain"), Card("ARRIVAL SURFACE", [f"Planned {text(flight.get('destination'))} RWY {text(flight.get('destination_runway'))}", f"{len(airport_analysis[1]['lines'])} analysed surface/approach consequence(s).", "Open the arrival page for flight-time effects and inline notice IDs."], RED, "sec_destination"), Card("RELEASE CONDITIONS", ["Review record and source checks on page 9.", "Current weather, airport surface state and operative aircraft limitations must be confirmed before use."], AMBER, "sec_coverage")]),
-    ])
-    states = {r["key"]: r["state"] for r in receipt["rows"]}
+    deferred = [row["text"] for row in view["deferred_pdf_analysis"]]
+
+    # ---------------------------------------------------------------- page 1
+    def station(role: str, accent, extra: list[tuple[str, list[str]]]) -> Card:
+        station_view = view.get(role) or {}
+        weather = station_view.get("weather") or {}
+        analysed = next((a for a in airport_analysis if a["role"] == role), {"lines": []})
+        pertinent = [line["text"] for line in analysed["lines"]]
+        blocks = [("PLAN", [f"RWY {text(flight.get(f'{role}_runway'))} / "
+                            f"{text(one.get('sid' if role == 'departure' else 'star'))}"])]
+        blocks += extra
+        blocks += [("METAR", [text(weather.get("metar"))]), ("TAF", [text(weather.get("taf"))])]
+        blocks.append(("PERTINENT", fitted_lines(
+            pertinent, 180, BODY, 4, "Full analysis: AIRPORTS page.")
+            or ["No analysed constraint is held for the planned movement."]))
+        return Card("DEPARTURE" if role == "departure" else "DESTINATION", [], accent,
+                    tag="CFP P1", kind="station", width_weight=1.25,
+                    payload=(text(station_view.get("icao")),
+                             airport_short_name(station_view.get("icao")), blocks),
+                    target="sec_airports")
+
+    tiles = [
+        Card("PERFORMANCE", [f"{text(inputs.get('runway_condition'))} RWY {text(inputs.get('runway'))}; "
+                             f"EOSID {text(inputs.get('eosid'))}."],
+             CYAN, "sec_performance", tag="CFP P1", kind="tile", payload=[
+                 ("PTOW", kg(masses.get("ptow"))), ("RTOW", kg(perf.get("selected_rtow_kg"))),
+                 ("MARGIN", kg(perf.get("margin_kg"))), ("PLWT", kg(masses.get("plwt"))),
+                 ("FLAPS", text(inputs.get("flap_setting")))]),
+        Card("FUEL", [f"Arithmetic {text(fuel.get('state'))}."],
+             GREEN, "sec_performance", tag="CFP P1", kind="tile", payload=[
+                 ("BLOCK", amount("fuel_in_tanks")), ("FPL REQ", amount("flt_plan_reqmt")),
+                 ("EXCESS", amount("excess_fuel")), ("BURNOFF", amount("burnoff")),
+                 ("TAXI", kg(fuel.get("taxi_fuel_kg")))]),
+        Card("TECH STATUS", [f"{len(deferred)} consequence(s) on PERF / FUEL / TECH."],
+             AMBER, "sec_performance", tag="CFP P1", kind="tile",
+             payload=[(text(row.get("title")), deferred_gate_value(row))
+                      for row in view.get("deferred_dispatch_gates") or []][:5]
+             or [("DEFERRED", "None parsed")]),
+        Card("WEATHER / HAZARDS", ["No data is a gap, not NIL."],
+             VIOLET, "sec_hazard", tag="CFP P1", kind="tile", payload=[
+                 ("SIGMET", "HELD" if (view.get("hazards") or {}).get("sigmet_cards") else "NO DATA"),
+                 ("VA", "HELD" if ((view.get("vaa") or {}).get("cfp_advisories")) else "NO DATA"),
+                 ("TC", "HELD" if cyclone_content(flight)["time_matched"] else "NO DATA"),
+                 ("PLOTTED", str(len(route_map.get("publication_events") or []))),
+                 ("VWS MAX", text(vws.get("maximum_display")))]),
+        Card("ALTN / ROUTE", [f"{text(one.get('ground_distance_nm'))} NM filed."],
+             RED, "sec_airports", tag="CFP P1", kind="tile", payload=[
+                 ("PRIMARY", f"{text((one.get('alternates') or [{}])[0].get('airport'))}/{text((one.get('alternates') or [{}])[0].get('runway'))}"),
+                 ("APPROACH", text((one.get("alternates") or [{}])[0].get("approach"))),
+                 ("DIST", f"{text((one.get('alternates') or [{}])[0].get('distance_nm'))} NM"),
+                 ("ALTN FUEL", amount("altn_fuel")), ("ALTN HOLD", amount("altn_hold"))]),
+    ]
+    gate_by_label = {str(row.get("label")): row for row in view.get("release_gates") or []}
+    strip = []
+    for heading, label in (("RELEASE", "PERFORMANCE"), ("BEFORE PUSH", "STATUS"),
+                           ("ROUTE", "ROUTE"), ("ARRIVAL", "AIRPORTS"), ("WEATHER", "WEATHER")):
+        gate = gate_by_label.get(label) or {}
+        status = str(gate.get("status") or "NOT HELD")
+        accent = {"CRITICAL": RED, "OPEN": AMBER, "WARNING": AMBER, "REVIEW": VIOLET}.get(status, GREEN)
+        strip.append(Card(heading, [], accent, gate.get("target"), kind="strip",
+                          payload=(status, [])))
+
+    overview_grids = ((1.25, 2.05), (1.45, 1.65), (1.65, 1.25))
+
+    def overview_rows(body, leading, variant=0):
+        station_weight, map_weight = overview_grids[variant]
+        return [
+            (None, [replace(station("departure", CYAN, [("SCHEDULE", [f"{clock(identity.get('etd_hhmm'))} / {text(view.get('flight_date'))}"])]),
+                            width_weight=station_weight),
+                    Card("CFP ROUTE - PERTINENT DECISION GATES", [], CYAN, tag="SCHEMATIC",
+                         kind="map", payload=route_map, width_weight=map_weight),
+                    replace(station("destination", RED, [("EET / SCHED", [f"{text((view.get('metrics') or {}).get('eet'))} / {clock(identity.get('scheduled_eta_hhmm'))}"])]),
+                            width_weight=station_weight)]),
+            (None, tiles),
+            ((44.0, 52.0), strip),
+        ]
+    sections["overview"] = plan_page_flexible(
+        "OVERVIEW", "sec_overview", overview_rows, ribbon_index=0, aliases=("sec_route", "sec_summary"),
+        variants=tuple(range(len(overview_grids))),
+        assurance="CFP P1 PRIORITISED | SOURCE FACTS + LABELLED ANALYSIS | AI AUTHORITY: NONE")
+
+    # ---------------------------------------------------------------- page 2
+    decision = list(view.get("decision_findings") or [])
+    finding_cards = []
+    for item in decision:
+        pill, accent = severity_pill(item.get("severity"))
+        finding_cards.append(Card("", [], accent, item.get("target"), kind="finding", payload=(
+            pill, str(item.get("title") or "Review item"),
+            str(item.get("summary") or "Review required."),
+            "SOURCE · " + str(item.get("source_reference") or "Uploaded OFP"))))
+    if not finding_cards:
+        finding_cards = [Card("NO RANKED FINDING", [
+            "The analysis holds no ranked decision finding for this flight. Source coverage "
+            "conditions remain on the ENROUTE / INTAM / ASSURANCE page."], CYAN)]
+    anchors = _route_anchor_entries(flight, view)
+
+    def analysis_rows(body, leading, variant=0):
+        rows: list[tuple[Any, list[Card]]] = []
+        for index in range(0, len(finding_cards), 2):
+            rows.append((None, finding_cards[index:index + 2]))
+        rows.append(((106.0, 132.0), [Card(
+            "FLIGHT-PHASE DECISION TIMELINE", [], CYAN, kind="timeline", payload=anchors,
+            tag=text(identity.get("timeline_basis"), "OFP ACTM"))]))
+        return rows
+    sections["analysis"] = plan_page_flexible(
+        "DECISION ANALYSIS", "sec_analysis", analysis_rows, ribbon_index=1, aliases=("sec_time",),
+        assurance="SEVERITY REVIEW | DIRECT SOURCE FACTS + EXPLICIT INFERENCES")
+
+    # ---------------------------------------------------------------- page 3
+    switch = lambda key: "ON" if inputs.get(key) is True else "OFF" if inputs.get(key) is False else "not held"
+    rtow = [f"RWY {text(inputs.get('runway'))} · {text(inputs.get('runway_condition'))} · FLAPS {text(inputs.get('flap_setting'))}",
+            f"PACKS {switch('packs_on')} · ANTI-ICE {switch('anti_ice_on')}",
+            f"TEMP {text(inputs.get('temperature_c'))} C · QNH {text(inputs.get('qnh_hpa'))} · WIND {text(inputs.get('wind'))}",
+            *[f"{r.get('label')} {kg(r.get('limit_kg'))}" for r in perf.get("candidate_limits") or []],
+            f"Selected RTOW {kg(perf.get('selected_rtow_kg'))}",
+            f"RTOW - PTOW: {kg(perf.get('margin_kg'))} · MLGW {kg(inputs.get('maximum_landing_weight_kg'))}",
+            f"MAX FUEL AVAILABLE {kg(inputs.get('maximum_fuel_available_kg'))}"]
+    fuel_lines = [f"{label} {amount(key)}" for key, label in (("burnoff", "BURNOFF"), ("stat_cont", "STAT CONT"), ("altn_fuel", "ALTN FUEL"), ("altn_hold", "ALTN HOLD"))]
+    for key, label in (("dest_hold_top_up", "DEST HOLD TOP-UP"), ("edto_top_up", "EDTO TOP-UP")):
+        if (fuel_rows.get(key) or {}).get("fuel_kg"):
+            fuel_lines.append(f"{label} {amount(key)}")
+    fuel_lines += [f"TAXI FUEL {kg(fuel.get('taxi_fuel_kg'))}", f"FLT PLAN REQMT {amount('flt_plan_reqmt')}",
+                   f"FUEL IN TANKS {amount('fuel_in_tanks')}", f"Arithmetic: {text(fuel.get('state'))}"]
+    derived = fuel.get("derived_fuel_kg") or {}
+    fuel_lines += [f"Tanks - taxi: {kg(derived.get('takeoff'))}",
+                   f"Less burnoff: {kg(derived.get('landing'))} at destination."]
+    if fuel.get("tanker_return_sector_req_kg") is not None:
+        fuel_lines.append(f"Return-sector requirement: {kg(fuel['tanker_return_sector_req_kg'])}.")
+    mass_checks = {c.get('name'): c.get('passed') for c in fuel.get('checks') or []}
+    mass_equations = [f"PZFW {kg(masses.get('pzfw'))} + tanks {amount('fuel_in_tanks')} - taxi {kg(fuel.get('taxi_fuel_kg'))}",
+                      f"PTOW {kg(masses.get('ptow'))}",
+                      f"PLWT {kg(masses.get('plwt'))} · burnoff {amount('burnoff')}",
+                      "Mass identities: " + ("verified" if all(mass_checks.get(k) is True for k in ('mass_landing_identity', 'mass_takeoff_identity')) else "not reconciled")]
+    sensitivity = perf.get("planning_sensitivity") or {}
+    margins = [f"ZFW +1,000 kg: ADD {kg(sensitivity.get('zfw_change_burn_add_kg_per_1000'))}",
+               f"ZFW -1,000 kg: LESS {kg(sensitivity.get('zfw_change_burn_less_kg_per_1000'))}"]
+    for row in fuel.get("excess_breakdown") or []:
+        if row.get("fuel_kg") or str(row.get("label")).upper() == "MEL":
+            margins.append(f"{text(row.get('label'))}: {kg(row.get('fuel_kg'))}")
+    lower = sensitivity.get("lower_cruise_sensitivity") or {}
+    if lower:
+        margins.append(f"Cruise -{text(lower.get('offset_ft'))} ft: ADD {kg(lower.get('burn_add_kg'))}; TIME {text(lower.get('time_display'))}.")
+
+    def performance_rows(body, leading, variant=0):
+        return [
+            (None, [Card("TAKE-OFF / LANDING PERFORMANCE", rtow, CYAN, tag="CFP P1", width_weight=1.0),
+                    Card("FUEL PLAN / MASS CHAIN", fuel_lines, GREEN, tag="CFP P1", width_weight=1.0),
+                    Card("TECHNICAL STATUS", deferred or ["No supported deferred declaration was parsed from OFP page 1."],
+                         AMBER, tag="CFP P1", width_weight=1.35, paragraph_gap=2.0)]),
+            (None, [Card("RECONCILIATION / SOURCE CONTROL", mass_equations + margins, CYAN,
+                         tag="CALCULATED", width_weight=1.6),
+                    Card("CONTROL", [f"EOSID: {text(inputs.get('eosid'))}",
+                                     "Destination fuel arithmetic is not discretionary holding fuel. Protect alternate fuel and reserves under controlled policy."],
+                         AMBER, width_weight=1.0, paragraph_gap=2.0)]),
+        ]
+    sections["performance"] = plan_page_flexible(
+        "PERFORMANCE, FUEL AND TECHNICAL STATUS", "sec_performance", performance_rows,
+        ribbon_index=2, aliases=("sec_mel_cdl", "sec_status"), assurance="ARITHMETIC RECONCILED | SOURCE LINES CARRY THEIR OWN EXCEPTIONS")
+
+    # ---------------------------------------------------------------- page 4
+    figures, airport_cards = [], []
+    for analysed in airport_analysis:
+        role = analysed["role"]
+        overlay = next((o for o in view.get("surface_overlays") or []
+                        if o.get("icao") == analysed["icao"] and o.get("role") == role), None)
+        overlay = analysed_airport_overlay(overlay, analysed)
+        figures.append(Card(f"{text(analysed['icao'])} {role.upper()} SURFACE", [],
+                            CYAN if role == "departure" else RED, tag="OSM", kind="figure",
+                            payload=(overlay, flight.get(f"{role}_runway"))))
+        airport_cards.append(Card(
+            f"{text(analysed['icao'])} {role.upper()} · PLANNED RWY {text(analysed['planned_runway'])}",
+            [r["text"] for r in analysed["lines"]]
+            or ["No supported closure consequence was established for the planned movement. No gate, exit or taxi route is inferred."],
+            CYAN if role == "departure" else RED, f"sec_{role}", paragraph_gap=2.0))
+    alternate_lines = []
+    for row in view.get("alternate_assessment_rows") or []:
+        analysis = next((p for p in alternate_analysis if p["icao"] == row.get("airport")), {"lines": []})
+        alternate_lines.append(f"{text(row.get('airport'))}/{text(row.get('runway'))} {str(row.get('role') or 'alternate').upper()} · {text(row.get('approach'))} · MIN {text(row.get('minima'))} · {text(row.get('distance_nm'))} NM / {text(row.get('time_minutes'))} min / {kg(row.get('fuel_kg'))}.")
+        alternate_lines.extend(r["text"] for r in analysis["lines"])
+
+    def airport_rows(body, leading, variant=0):
+        return [
+            ((104.0, 158.0), figures or [Card("AIRPORT SURFACE", ["No airport figure is held."], CYAN)]),
+            (None, airport_cards or [Card("AIRPORTS", ["No airport analysis is held."], CYAN)]),
+            (None, [Card("ALTERNATE PLANS / FLIGHT-WINDOW CONSEQUENCES",
+                         alternate_lines or ["No alternate rows are held."], AMBER,
+                         tag="CFP P2", paragraph_gap=2.0)]),
+        ]
+    sections["airports"] = plan_page_flexible(
+        "AIRPORTS / ALTERNATES", "sec_airports", airport_rows, ribbon_index=3, aliases=("sec_departure", "sec_destination", "sec_alternates"),
+        assurance="AIRPORT / ALTERNATE APPLICABILITY | FLIGHT-TIME CONSEQUENCES ONLY")
+
+    # ---------------------------------------------------------------- page 5
+    terminal = []
+    for role in ("departure", "destination"):
+        station_view = view.get(role) or {}
+        terminal.append(f"{text(station_view.get('icao'))} METAR: {text((station_view.get('weather') or {}).get('metar'))}")
+        forecast = ((view.get("overview") or {}).get(role) or {}).get("forecast_at_reference") or {}
+        conditions = forecast.get("applicable_conditions")
+        if conditions:
+            terminal.append(f"{text(station_view.get('icao'))} forecast {text(forecast.get('utc_window'))}: {conditions}")
+        source = forecast.get("forecast_source") or {}
+        if source:
+            label = source.get('display_title') or ('Uploaded OFP' if source.get('source_type') == 'uploaded_cfp' else 'Source not held')
+            terminal.append(f"{label}; issued {utc_label(source.get('issued_at_utc'))}; valid {utc_label(source.get('valid_from_utc'))}-{utc_label(source.get('valid_to_utc'))}.")
+        elif conditions:
+            terminal.append("Forecast source, issue and validity times are not held.")
+    tc_lines = cyclone_content(flight)["lines"]
+    hazard_lines = ["Plotted positions are on the OVERVIEW route map where they fall inside its frame."]
+    hazard_lines += [value for value, _ in publication_key_entries(route_map)]
     edto = view.get("edto") or {}
     route_clocks = [f"S{r.get('number')}: {text(r.get('entry_name'))} {text(r.get('entry'))} / {text(r.get('exit_name'))} {text(r.get('exit'))}; ETP ACTM {', '.join(r.get('etps') or []) or 'not held'}." for r in edto.get("sectors") or []]
     for r in flight.get("flight_planning_etps") or []:
         route_clocks.append(f"{text(r.get('label'))} {text(r.get('from'))}/{text(r.get('to'))}: {text(r.get('distance_nm'))} NM; EET {text(r.get('eet_token'))}.")
-    sections["route"] = plan_page("ROUTE HAZARD OVERLAY", "sec_route", [(165, [Card("ROUTE / EDTO CLOCKS", route_clocks or [text(identity.get("rules")), "No EDTO or additional planning ETP is held."], CYAN), Card("EDTO AIRPORT WINDOWS", edto_window_lines(flight, view), AMBER)])], route_map=build_publication_map(flight, view))
+
+    weather_cards = {
+        "terminal": lambda gap, weight: Card("TERMINAL WEATHER", terminal, CYAN, tag="CFP WX",
+                                             width_weight=weight, paragraph_gap=gap),
+        "sigmet": lambda gap, weight: Card("SIGMET", sigmet_lines(flight, view), AMBER,
+                                           width_weight=weight, paragraph_gap=gap),
+        "cyclone": lambda gap, weight: Card("TROPICAL CYCLONE", tc_lines
+                                            or ["No governed route-specific cyclone consequence was established from the held sources."],
+                                            AMBER, width_weight=weight, paragraph_gap=gap),
+        "ash": lambda gap, weight: Card("VOLCANIC ASH", volcanic_ash_lines(flight, view), AMBER,
+                                        width_weight=weight, paragraph_gap=gap),
+        "key": lambda gap, weight: Card("FLIGHT HAZARD KEY", hazard_lines, VIOLET,
+                                        width_weight=weight, paragraph_gap=gap),
+        "clocks": lambda gap, weight: Card("ROUTE / EDTO CLOCKS", route_clocks
+                                           or [text(identity.get("rules")), "No EDTO or additional planning ETP is held."],
+                                           CYAN, width_weight=weight, paragraph_gap=gap),
+        "edto": lambda gap, weight: Card("EDTO AIRPORT WINDOWS", edto_window_lines(flight, view),
+                                         AMBER, width_weight=weight, paragraph_gap=gap),
+    }
+    # A long-haul package can hold a dozen screened hazards: give the loaded
+    # card the full row before the body steps down. Nothing is dropped.
+    weather_grids = (
+        ((("terminal", 1.25), ("sigmet", 1.0)), (("cyclone", 1.0), ("ash", 1.0)),
+         (("key", 1.4), ("clocks", 1.0), ("edto", 1.0)), 2.0),
+        ((("terminal", 1.0), ("sigmet", 1.4)), (("key", 1.0),),
+         (("cyclone", 1.0), ("ash", 1.4), ("clocks", 0.8), ("edto", 0.8)), 2.0),
+        ((("terminal", 1.0), ("sigmet", 1.0), ("cyclone", 1.0)), (("key", 1.0),),
+         (("ash", 1.4), ("clocks", 1.0), ("edto", 1.0)), 2.0),
+        ((("terminal", 1.0),), (("sigmet", 1.0), ("key", 1.6)),
+         (("cyclone", 1.0), ("ash", 1.0), ("clocks", 1.0), ("edto", 1.0)), 2.0),
+        ((("terminal", 1.0), ("sigmet", 1.0)), (("key*2", 1.0),),
+         (("cyclone", 1.0), ("ash", 1.0), ("clocks", 1.0), ("edto", 1.0)), 2.0),
+        ((("terminal*2", 1.0),), (("sigmet", 1.0), ("key", 1.0)),
+         (("cyclone", 1.0), ("ash", 1.0), ("clocks", 1.0), ("edto", 1.0)), 2.0),
+        ((("terminal", 1.0), ("sigmet", 1.0)), (("key*2", 1.0),),
+         (("edto", 1.0), ("ash", 1.0)), (("cyclone", 1.0), ("clocks", 1.0)), 2.0),
+        ((("terminal", 1.0), ("sigmet", 1.4)), (("key", 1.0),),
+         (("cyclone", 1.0), ("ash", 1.4), ("clocks", 0.8), ("edto", 0.8)), 0.0),
+        ((("terminal", 1.0), ("sigmet", 1.0)), (("key*2", 1.0),),
+         (("edto", 1.0), ("ash", 1.0)), (("cyclone", 1.0), ("clocks", 1.0)), 0.0),
+    )
+
+    def weather_rows(body, leading, variant=0):
+        *grid, gap = weather_grids[variant]
+        return grid_rows(weather_cards, grid, gap)
+    sections["weather"] = plan_page_flexible(
+        "WEATHER / ROUTE HAZARDS", "sec_hazard", weather_rows, ribbon_index=4,
+        aliases=("sec_hazards", "sec_weather"), variants=tuple(range(len(weather_grids))),
+        assurance="WEATHER SOURCE REVIEW | COVERAGE GAPS ARE NOT NIL | LIVE PRODUCTS CONTROL")
+
+    # ---------------------------------------------------------------- page 6
     terrain_lines = []
     for event in terrain.get("events") or []:
         first, last, maximum, drop = (event.get(k) or {} for k in ("first_high", "last_high", "maximum", "drop"))
@@ -392,85 +1081,19 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                 else f"{text(first.get('name'))}-{text(last.get('name'))}")
         terrain_lines.append(f"{span}: max {int(msa) * 100:,} ft at {text(maximum.get('name'))}; next threshold drop {text(drop.get('name'))}." if msa is not None else "A terrain event is held without a resolved maximum.")
     vws_events = [f"{text(f.get('title'))}: {text(f.get('summary'))}" for f in findings if f.get("engine") == "vws"]
-    sections["terrain"] = plan_page("VWS, CAT AND TERRAIN", "sec_terrain", [
-        (153, [Card("OFP VWS EVENT", vws_events or [vws_summary], AMBER), Card("INTERPRETATION", ["OFP samples describe the printed waypoint values; they do not establish continuous conditions between every waypoint.", "OFP VWS is not a CAT measurement. Missing samples do not demonstrate continuous low VWS."])]),
-        (166, [Card("EXTERNAL CAT REVIEW", [f"OFP VWS: {text(vws.get('maximum_display'))} maximum.", f"WAFS/SIGWX evidence: {'held' if states['wafs_sigwx'] in {'HELD', 'FOUND'} else 'not established'}.", f"AIREP/PIREP retrieval: {'held' if states['airep_pirep'] in {'HELD', 'FOUND'} else 'not established'}.", "Source-check completion is recorded on page 9."], AMBER), Card("HIGH MSA", terrain_lines or [text(terrain.get("summary"))], RED)]),
-        (90, [Card("OPERATIONAL CONSEQUENCE", [terrain_summary, "Use the source-held event positions to distinguish turbulence sampling from terrain exposure; neither establishes a controlled escape procedure."], AMBER)]),
-    ])
-    terminal = []
-    for role in ("departure", "destination"):
-        station = view.get(role) or {}
-        terminal.append(f"{text(station.get('icao'))} METAR: {text((station.get('weather') or {}).get('metar'))}")
-        forecast = ((view.get("overview") or {}).get(role) or {}).get("forecast_at_reference") or {}
-        conditions = forecast.get("applicable_conditions")
-        if conditions:
-            terminal.append(f"{text(station.get('icao'))} forecast {text(forecast.get('utc_window'))}: {conditions}")
-        source = forecast.get("forecast_source") or {}
-        if source:
-            label = source.get('display_title') or ('Uploaded OFP' if source.get('source_type') == 'uploaded_cfp' else 'Source not held')
-            terminal.append(f"{label}; issued {utc_label(source.get('issued_at_utc'))}; valid {utc_label(source.get('valid_from_utc'))}-{utc_label(source.get('valid_to_utc'))}.")
-        elif conditions:
-            terminal.append("Forecast source, issue and validity times are not held.")
-    tc_lines = cyclone_content(flight)["lines"]
-    weather_top = [Card("TERMINAL WEATHER", terminal), Card("SIGMET", sigmet_lines(flight, view), AMBER, left_aligned=True, top_aligned=True)]
-    weather_bottom = [Card("TROPICAL CYCLONE", tc_lines or ["No governed route-specific cyclone consequence was established from the held sources."], AMBER), Card("VOLCANIC ASH", volcanic_ash_lines(flight, view), AMBER, left_aligned=True, top_aligned=True)]
-    # Trade up to four text lines between rows before declaring overflow.
-    # Keep the reference's four cards, page height and readable type size.
-    for shift in (0, -2, 2, -4, 4):
-        try:
-            sections["weather"] = plan_page("WEATHER, SIGMET, TROPICAL CYCLONE AND VOLCANIC ASH", "sec_hazards", [
-                (239 + shift * LEADING, weather_top), (188 - shift * LEADING, weather_bottom),
-            ])
-            break
-        except ValueError:
-            if shift == 4:
-                raise
-    fuel_lines = [f"{label} {amount(key)}" for key, label in (("burnoff", "BURNOFF"), ("stat_cont", "STAT CONT"), ("altn_fuel", "ALTN FUEL"), ("altn_hold", "ALTN HOLD"))]
-    for key, label in (("dest_hold_top_up", "DEST HOLD TOP-UP"), ("edto_top_up", "EDTO TOP-UP")):
-        if (fuel_rows.get(key) or {}).get("fuel_kg"):
-            fuel_lines.append(f"{label} {amount(key)}")
-    fuel_lines += [f"TAXI FUEL {kg(fuel.get('taxi_fuel_kg'))}", f"FLT PLAN REQMT {amount('flt_plan_reqmt')}", f"Arithmetic: {text(fuel.get('state'))}"]
-    derived = fuel.get("derived_fuel_kg") or {}
-    mass_checks = {c.get('name'): c.get('passed') for c in fuel.get('checks') or []}
-    mass_equations = [f"PZFW {kg(masses.get('pzfw'))} + tanks {amount('fuel_in_tanks')} - taxi {kg(fuel.get('taxi_fuel_kg'))}", f"PTOW {kg(masses.get('ptow'))}", f"PLWT {kg(masses.get('plwt'))} · burnoff {amount('burnoff')}", "Mass identities: " + ("verified" if all(mass_checks.get(k) is True for k in ('mass_landing_identity', 'mass_takeoff_identity')) else "not reconciled")]
-    dest_fuel = [f"Tanks - taxi: {kg(derived.get('takeoff'))}", f"Less burnoff: {kg(derived.get('landing'))} at destination.", f"ALTN FUEL {amount('altn_fuel')} · ALTN HOLD {amount('altn_hold')}"]
-    switch = lambda key: "ON" if inputs.get(key) is True else "OFF" if inputs.get(key) is False else "not held"
-    rtow = [f"RWY {text(inputs.get('runway'))} · {text(inputs.get('runway_condition'))} · FLAPS {text(inputs.get('flap_setting'))}", f"PACKS {switch('packs_on')} · ANTI-ICE {switch('anti_ice_on')}", f"TEMP {text(inputs.get('temperature_c'))} C · QNH {text(inputs.get('qnh_hpa'))} · WIND {text(inputs.get('wind'))}", *[f"{r.get('label')} {kg(r.get('limit_kg'))}" for r in perf.get("candidate_limits") or []], f"Selected RTOW {kg(perf.get('selected_rtow_kg'))}"]
-    sensitivity = perf.get("planning_sensitivity") or {}
-    margins = [f"RTOW - PTOW: {kg(perf.get('margin_kg'))} · MLGW {kg(inputs.get('maximum_landing_weight_kg'))}", f"MAX FUEL AVAILABLE {kg(inputs.get('maximum_fuel_available_kg'))}", f"ZFW +1,000 kg: ADD {kg(sensitivity.get('zfw_change_burn_add_kg_per_1000'))}", f"ZFW -1,000 kg: LESS {kg(sensitivity.get('zfw_change_burn_less_kg_per_1000'))}"]
-    for row in fuel.get("excess_breakdown") or []:
-        if row.get("fuel_kg") or str(row.get("label")).upper() == "MEL":
-            margins.append(f"{text(row.get('label'))}: {kg(row.get('fuel_kg'))}")
-    lower = sensitivity.get("lower_cruise_sensitivity") or {}
-    if lower:
-        margins.append(f"Cruise -{text(lower.get('offset_ft'))} ft: ADD {kg(lower.get('burn_add_kg'))}; TIME {text(lower.get('time_display'))}.")
-    if fuel.get("tanker_return_sector_req_kg") is not None:
-        dest_fuel.append(f"Return-sector requirement: {kg(fuel['tanker_return_sector_req_kg'])}.")
-    sections["performance"] = plan_page("FUEL, MASS AND PERFORMANCE", "sec_performance", [
-        (170, [Card("FUEL RECONCILIATION", fuel_lines, GREEN), Card("MASS RECONCILIATION", mass_equations, GREEN), Card("DESTINATION FUEL", dest_fuel)]),
-        (160, [Card("RTOW", rtow), Card("MARGINS / SENSITIVITY", margins)]),
-        (79, [Card("CONTROL", [f"EOSID: {text(inputs.get('eosid'))}", "Destination fuel arithmetic is not discretionary holding fuel. Protect alternate fuel and reserves under controlled policy."], AMBER)]),
-    ])
-    for analysed in airport_analysis:
-        role = analysed["role"]
-        runway_lines = [r["text"] for r in analysed["lines"] if r["family"] in {"runway", "approach"}]
-        taxi_lines = [r["text"] for r in analysed["lines"] if r["family"] == "taxiway"]
-        overlay = next((o for o in view.get("surface_overlays") or [] if o.get("icao") == analysed["icao"] and o.get("role") == role), None)
-        overlay = analysed_airport_overlay(overlay, analysed)
-        sections[role] = plan_page(f"{text(analysed['icao'])} {role.upper()} SURFACE", f"sec_{role}", [(184, [Card(f"PLANNED RWY {text(analysed['planned_runway'])} - FLIGHT-SPECIFIC CONSEQUENCES", runway_lines + taxi_lines or ["No supported closure consequence was established for the planned movement. No gate, exit or taxi route is inferred."], AMBER)])], surface_overlay=overlay, airport_role=role)
-    alternates = view.get("alternate_assessment_rows") or []
-    from .airport_pdf_analysis import alternate_pdf_analysis
-    alternate_analysis = alternate_pdf_analysis(flight, view.get("airport_operational_panels") or [])
-    alternate_lines = []
-    for a in alternates:
-        analysis = next((p for p in alternate_analysis if p["icao"] == a.get("airport")), {"lines": [], "unresolved_ids": []})
-        alternate_lines.append(f"{text(a.get('airport'))}/{text(a.get('runway'))} {str(a.get('role') or 'alternate').upper()} · {text(a.get('approach'))} · MIN {text(a.get('minima'))} · {text(a.get('distance_nm'))} NM / {text(a.get('time_minutes'))} min / {kg(a.get('fuel_kg'))}.")
-        alternate_lines.extend(r["text"] for r in analysis["lines"])
-    deferred = [row["text"] for row in view["deferred_pdf_analysis"]]
-    sections["alternates"] = plan_page("ALTERNATES AND AIRCRAFT TECHNICAL STATUS", "sec_alternates", [
-        (223, [Card("ALTERNATE PLANS / FLIGHT-WINDOW CONSEQUENCES", alternate_lines or ["No alternate rows are held."])]),
-        (204, [Card("CDDL / MEL ITEMS", deferred or ["No supported deferred declaration was parsed from OFP page 1."], AMBER, left_aligned=True)]),
-    ])
+    enroute_lines = vws_events or [vws_summary]
+    enroute_lines += terrain_lines or [text(terrain.get("summary"))]
+    enroute_lines.append(terrain_summary)
+    interpretation = [
+        "OFP samples describe the printed waypoint values; they do not establish continuous conditions "
+        "between every waypoint. OFP VWS is not a CAT measurement. Missing samples do not demonstrate "
+        "continuous low VWS.",
+        f"OFP VWS: {text(vws.get('maximum_display'))} maximum. "
+        f"WAFS/SIGWX evidence: {'held' if states['wafs_sigwx'] in {'HELD', 'FOUND'} else 'not established'}. "
+        f"AIREP/PIREP retrieval: {'held' if states['airep_pirep'] in {'HELD', 'FOUND'} else 'not established'}. "
+        "Use the source-held event positions to distinguish turbulence sampling from terrain exposure; "
+        "neither establishes a controlled escape procedure.",
+    ]
     checks = {row["key"]: row for row in receipt["rows"]}
     completed = [f"{label}: {success if checks[key]['state'] == 'HELD' else 'incomplete'}."
                  for key, label, success in (("ofp_parse", "Flight / aircraft identity", "recorded"),
@@ -481,36 +1104,71 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     from .governed_deferred_extract import governed_deferred_extracts
     extracts = governed_deferred_extracts(view.get("deferred_source_items"), references)
     conditions = release_condition_groups(flight, view, receipt, airport_analysis, alternate_analysis, extracts)
-    source_lines = [f"OFP {text(identity.get('ofp'))} · {text(view.get('flight_number'))} · {text(view.get('flight_date'))}", f"Generated {text(view.get('generated_at_display'))}.", "Source checks and full NOTAMs: app / Show full NOTAM."]
+    source_lines = [f"OFP {text(identity.get('ofp'))} · {text(view.get('flight_number'))} · {text(view.get('flight_date'))}",
+                    f"Generated {text(view.get('generated_at_display'))}."]
+    unavailable = [text(row.get("source")) for row in view.get("source_assurance") or []
+                   if str(row.get("status") or "").upper() != "HELD"]
+    source_lines.append("SOURCE ASSURANCE: "
+                        + (", ".join(unavailable) + " not held." if unavailable
+                           else "every listed source record is held."))
+    source_lines.append("Source checks and full NOTAMs: app / Show full NOTAM.")
     notes = [str(n.get("note_text")) for n in flight.get("personal_notes") or [] if (n.get("include_level1") or n.get("include_level2")) and n.get("note_text")]
     if notes:
         conditions["technical"].append("PILOT NOTES: " + " / ".join(notes))
-    def review_card(title, paragraphs, accent=AMBER):
-        return Card(title, paragraphs, accent, left_aligned=True, top_aligned=True, paragraph_gap=3)
     has_conditions = any(conditions.values())
-    publication_state = "PUBLICATION STATE: Conditional briefing; the unresolved assessments above prevent an automated release conclusion."
+    # The card is titled PUBLICATION STATE; the sentence must not repeat the
+    # label. With no numbered condition anywhere, this line carries the 1.
+    publication_state = ("Conditional briefing; the unresolved assessments above prevent an "
+                         "automated release conclusion.")
     if not has_conditions:
-        publication_state = "1. PUBLICATION STATE: No unresolved automated source condition; crew operational release remains separate."
-    review_rows = [
-        (119, [review_card("SOURCE / CALCULATION REVIEW", completed, CYAN), review_card("SOURCE CONTROL", source_lines, CYAN)]),
-        (264, [review_card("WEATHER COVERAGE", conditions["weather"] or ["No unresolved weather-source condition is recorded."]),
-               review_card("AIRPORT ASSESSMENTS", conditions["operations"] or ["No unresolved airport assessment is recorded."]),
-               review_card("REMAINING RELEASE INPUTS", conditions["technical"] or ["No unresolved aircraft/route source condition is recorded."])]),
-        (26, [review_card("", [publication_state])]),
-    ]
-    # Keep the reference's three review columns. A long source-bound manual
-    # ambiguity or pilot note may need a wider column, never smaller type or
-    # lost conditions. Try only a few bounded grids, then fail closed.
-    grids = ((1, 1, 1), (1, .8, 1.4), (1.4, .8, 1), (.8, 1.4, 1), (1, .6, 1.6))
-    for weights in grids:
-        rows = list(review_rows)
-        rows[1] = (264, [replace(card, width_weight=weight) for card, weight in zip(review_rows[1][1], weights)])
-        try:
-            sections["review"] = plan_page("REVIEW RECORD AND RELEASE CONDITIONS", "sec_coverage", rows)
-            break
-        except ValueError:
-            if weights == grids[-1]:
-                raise
+        publication_state = ("1. No unresolved automated source condition; crew operational "
+                             "release remains separate.")
+
+    # Enroute review, the airport/weather conditions and the closing record all
+    # share one page. Whichever block a flight has loaded gets the wide column
+    # first; type size steps down only after that, and no condition is dropped.
+    closing_cards = {
+        "enroute": lambda gap, weight: Card("OFP VWS, CAT AND TERRAIN", enroute_lines + interpretation,
+                                            AMBER, "sec_terrain", width_weight=weight, paragraph_gap=gap),
+        "review": lambda gap, weight: Card("SOURCE / CALCULATION REVIEW", completed, CYAN,
+                                           width_weight=weight, paragraph_gap=gap),
+        "airports": lambda gap, weight: Card("AIRPORT ASSESSMENTS", conditions["operations"]
+                                             or ["No unresolved airport assessment is recorded."],
+                                             AMBER, width_weight=weight, paragraph_gap=gap),
+        "weather": lambda gap, weight: Card("WEATHER COVERAGE", conditions["weather"]
+                                            or ["No unresolved weather-source condition is recorded."],
+                                            AMBER, width_weight=weight, paragraph_gap=gap),
+        "control": lambda gap, weight: Card("SOURCE CONTROL", source_lines, CYAN,
+                                            width_weight=weight, paragraph_gap=gap),
+        "remaining": lambda gap, weight: Card("REMAINING RELEASE INPUTS", conditions["technical"]
+                                              or ["No unresolved aircraft/route source condition is recorded."],
+                                              AMBER, width_weight=weight, paragraph_gap=gap),
+        "state": lambda gap, weight: Card("PUBLICATION STATE", [publication_state], CYAN,
+                                          width_weight=weight, paragraph_gap=gap),
+    }
+    closing_grids = (
+        ((("enroute", 1.9), ("review", 1.0)), (("airports", 1.9), ("weather", 1.0)),
+         (("control", 1.2), ("remaining", 1.0), ("state", 0.9)), 2.0),
+        ((("enroute", 1.9), ("review", 1.0)), (("airports", 1.0), ("weather", 1.0), ("control", 1.0)),
+         (("remaining", 2.2), ("state", 1.0)), 2.0),
+        ((("enroute", 1.0), ("review", 1.0)), (("airports", 2.6), ("weather", 1.0)),
+         (("control", 1.0), ("remaining", 1.0), ("state", 0.8)), 2.0),
+        ((("enroute", 2.6), ("review", 1.0)), (("airports", 1.0), ("weather", 1.6)),
+         (("control", 1.0), ("remaining", 1.0), ("state", 0.8)), 2.0),
+        ((("enroute", 1.9), ("review", 1.0)), (("airports", 1.0), ("weather", 1.0), ("state", 0.8)),
+         (("remaining", 1.6), ("control", 1.0)), 2.0),
+        ((("enroute", 1.9), ("review", 1.0)), (("airports", 1.0), ("weather", 1.0), ("control", 1.0)),
+         (("remaining", 2.2), ("state", 1.0)), 0.0),
+    )
+
+    def assurance_rows(body, leading, variant=0):
+        *grid, gap = closing_grids[variant]
+        return grid_rows(closing_cards, grid, gap)
+    sections["assurance"] = plan_page_flexible(
+        "ENROUTE / INTAM / ASSURANCE", "sec_coverage", assurance_rows, ribbon_index=5,
+        aliases=("sec_enroute", "sec_terrain", "sec_intam"),
+        variants=tuple(range(len(closing_grids))),
+        assurance="TWO-PASS REVIEW TARGET | SOURCE TRACEABILITY | COMMAND AUTHORITY UNCHANGED")
     return sections
 
 
@@ -527,19 +1185,19 @@ def render_analysed_briefing(flight, findings, warnings, path, *, weather_charts
         raise DepressurisationProfileChartPublicationError(profile_violations)
     view = build_briefing_view(flight, findings, warnings, timing_view=flight.get("timing_view"), weather_charts=weather_charts)
     sections = build_sections(flight, view, findings, company_briefing_references)
-    pages = [page for group in sections.values() for page in group]
+    order = ("overview", "analysis", "performance", "airports", "weather", "assurance")
+    pages = [page for key in order for page in sections[key]]
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     canvas = pdf_canvas.Canvas(str(target), pagesize=SIZE)
     canvas.setTitle(f"Flight Briefing {text(view.get('flight_number'))} {text(view.get('flight_date'))}")
     canvas.setSubject(PUBLICATION_FORMAT)
     for number, page in enumerate(pages, 1):
-        if page.airport_role == "departure":
-            canvas.bookmarkPage("sec_airports")
         draw_page(canvas, flight, view, page, number, len(pages))
         canvas.showPage()
     canvas.save()
-    closing_lines = [" ".join(box.lines) for page in sections["review"] for box in page.boxes]
+    closing_lines = [" ".join(line for _, items in box.rows for line, *_ in items)
+                     for page in sections["assurance"] for box in page.boxes]
     result = check_concise_pdf(target, flight=flight, view=view, airport_analysis=airport_pdf_analysis(flight, view.get("airport_operational_panels") or []), alternate_analysis=alternate_pdf_analysis(flight, view.get("airport_operational_panels") or []), closing_lines=closing_lines)
     if not result["valid"]:
         target.unlink(missing_ok=True)

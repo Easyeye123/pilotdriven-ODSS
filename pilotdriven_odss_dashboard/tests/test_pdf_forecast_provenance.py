@@ -6,6 +6,7 @@ import pytest
 
 from generate_visual_samples import sample_findings, sample_flight
 from app.odss import briefing as briefing_module
+from app.odss.concise_pdf_gate import MAX_BRIEFING_PAGES, WEATHER_PAGE
 from app.odss.combined_brief import _render_reference_briefing as render_combined_briefing
 
 SOURCE = {
@@ -127,7 +128,7 @@ def test_destination_source_link_skips_departure_only_forecast_page(tmp_path, mo
 
 
 @pytest.mark.parametrize('source', [SOURCE, None])
-def test_current_nine_page_forecast_keeps_conditions_window_and_provenance(tmp_path, monkeypatch, source):
+def test_current_six_page_forecast_keeps_conditions_window_and_provenance(tmp_path, monkeypatch, source):
     from app.odss.combined_brief import render_combined_briefing as render_current
     build = briefing_module.build_briefing_view
     conditions = 'wind 160 degrees 7 kt; visibility 10 km or more'
@@ -142,8 +143,8 @@ def test_current_nine_page_forecast_keeps_conditions_window_and_provenance(tmp_p
     path = tmp_path / 'current-forecast.pdf'
     render_current(sample_flight(), [r for r in sample_findings() if r['engine'] != 'depressurisation'], [], path)
     with fitz.open(path) as doc:
-        assert len(doc) == 9
-        weather = ' '.join(doc[3].get_text().split())
+        assert len(doc) == MAX_BRIEFING_PAGES
+        weather = ' '.join(doc[WEATHER_PAGE].get_text().split())
         assert conditions in weather and '16 AUG 1310Z-1510Z' in weather
         if source:
             assert source['display_title'] in weather
