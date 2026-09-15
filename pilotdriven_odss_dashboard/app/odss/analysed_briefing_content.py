@@ -60,6 +60,18 @@ def cyclone_content(flight):
     return {"lines": lines, "markers": markers, "time_matched": bool(markers)}
 
 
+def deferred_item_label(value, fallback="Deferred item"):
+    """Publish a declaration's identity without the app's item-level badge.
+
+    ``build_deferred_dispatch_gates`` falls back to "<TYPE> REVIEW REQUIRED"
+    when a declaration cannot be resolved to a subject or a reference. That is
+    an in-app review badge, not an analysed statement, and the published
+    briefing rejects repeated item-level badges on its analysed pages.
+    """
+    cleaned = re.sub(r"\s*REVIEW REQUIRED\s*", " ", str(value or ""), flags=re.I)
+    return " ".join(cleaned.split()).strip(" -") or fallback
+
+
 def deferred_consequence_rows(view):
     """Bind practical consequences to typed source segments, not MEL numbers.
 
@@ -70,9 +82,8 @@ def deferred_consequence_rows(view):
     rows = []
     for gate in view.get("deferred_dispatch_gates") or []:
         sources = gate.get("source_segments") or []
-        title = clean(gate.get("title"))
         # Titles from unresolved declarations may contain an old UI warning.
-        title = re.sub(r"\s*REVIEW REQUIRED\s*", "", title, flags=re.I).strip() or "Deferred item"
+        title = deferred_item_label(clean(gate.get("title")))
         for source in sources or [{}]:
             # A shared MEL reference can cover different physical defects.
             # Analyse every segment before grouping identical consequences;
@@ -138,6 +149,9 @@ def deferred_consequence_rows(view):
         identity = f"{titles}: " + (("; ".join(subjects) + ". ") if unresolved else "")
         lines.append({
             "text": identity + " ".join(consequences),
+            # The analysed sentences on their own, so a caller that already
+            # names the item (a ranked decision card) does not repeat it.
+            "consequences": list(consequences),
             "references": list(dict.fromkeys(reference for row in group for reference in row["references"])),
             "source_item_indices": list(dict.fromkeys(index for row in group for index in row["source_item_indices"])),
             "source_gate_ids": list(dict.fromkeys(row["gate_id"] for row in group if row["gate_id"])),

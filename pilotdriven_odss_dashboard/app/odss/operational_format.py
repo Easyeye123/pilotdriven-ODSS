@@ -22,7 +22,8 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from .analysed_briefing_content import cyclone_content, release_condition_groups
+from .analysed_briefing_content import (cyclone_content, deferred_item_label,
+                                        release_condition_groups)
 from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
 from .constants import format_actm
@@ -820,9 +821,17 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                             f"{text(one.get('sid' if role == 'departure' else 'star'))}"])]
         blocks += extra
         blocks += [("METAR", [text(weather.get("metar"))]), ("TAF", [text(weather.get("taf"))])]
-        blocks.append(("PERTINENT", fitted_lines(
-            pertinent, 180, BODY, 4, "Full analysis: AIRPORTS page.")
-            or ["No analysed constraint is held for the planned movement."]))
+        # The nine-page ARRIVAL SURFACE card counted the analysed consequences
+        # for the arrival. The count stays published, and now also says where
+        # the ones that do not fit this column are printed in full.
+        counted = (f"{len(pertinent)} analysed surface/approach consequence(s). "
+                   "Full analysis: AIRPORTS page.")
+        kept = fitted_lines(pertinent, 180, BODY, 4, counted)
+        if kept and kept[-1] != counted:
+            kept.append(counted)
+        blocks.append(("PERTINENT", kept
+                       or ["No analysed constraint is held for the planned movement.",
+                           counted]))
         return Card("DEPARTURE" if role == "departure" else "DESTINATION", [], accent,
                     tag="CFP P1", kind="station", width_weight=1.25,
                     payload=(text(station_view.get("icao")),
@@ -843,7 +852,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                  ("TAXI", kg(fuel.get("taxi_fuel_kg")))]),
         Card("TECH STATUS", [f"{len(deferred)} consequence(s) on PERF / FUEL / TECH."],
              AMBER, "sec_performance", tag="CFP P1", kind="tile",
-             payload=[(text(row.get("title")), deferred_gate_value(row))
+             payload=[(deferred_item_label(row.get("title")), deferred_gate_value(row))
                       for row in view.get("deferred_dispatch_gates") or []][:5]
              or [("DEFERRED", "None parsed")]),
         Card("WEATHER / HAZARDS", ["No data is a gap, not NIL."],
@@ -1081,7 +1090,10 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                 else f"{text(first.get('name'))}-{text(last.get('name'))}")
         terrain_lines.append(f"{span}: max {int(msa) * 100:,} ft at {text(maximum.get('name'))}; next threshold drop {text(drop.get('name'))}." if msa is not None else "A terrain event is held without a resolved maximum.")
     vws_events = [f"{text(f.get('title'))}: {text(f.get('summary'))}" for f in findings if f.get("engine") == "vws"]
-    enroute_lines = vws_events or [vws_summary]
+    # The nine-page briefing published the threshold summary on page 1 and the
+    # events on the terrain page. ``vws_events or [vws_summary]`` published one
+    # or the other; both are source-bound, so both are published here.
+    enroute_lines = [vws_summary, *vws_events]
     enroute_lines += terrain_lines or [text(terrain.get("summary"))]
     enroute_lines.append(terrain_summary)
     interpretation = [
@@ -1123,6 +1135,12 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     if not has_conditions:
         publication_state = ("1. No unresolved automated source condition; crew operational "
                              "release remains separate.")
+    # The nine-page RELEASE CONDITIONS card carried this caveat on page 1. Page
+    # 1 is now the reference overview, so the caveat moves to the page that
+    # owns the release record; it is a safety statement, not chrome.
+    release_state = [publication_state,
+                     "Current weather, airport surface state and operative aircraft "
+                     "limitations must be confirmed before use."]
 
     # Enroute review, the airport/weather conditions and the closing record all
     # share one page. Whichever block a flight has loaded gets the wide column
@@ -1143,7 +1161,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         "remaining": lambda gap, weight: Card("REMAINING RELEASE INPUTS", conditions["technical"]
                                               or ["No unresolved aircraft/route source condition is recorded."],
                                               AMBER, width_weight=weight, paragraph_gap=gap),
-        "state": lambda gap, weight: Card("PUBLICATION STATE", [publication_state], CYAN,
+        "state": lambda gap, weight: Card("PUBLICATION STATE", release_state, CYAN,
                                           width_weight=weight, paragraph_gap=gap),
     }
     closing_grids = (

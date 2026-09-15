@@ -4201,6 +4201,7 @@ def _decision_finding_projection(
     limit: int = 6,
     performance_rows: list[dict[str, str]] | None = None,
     deferred_gates: list[dict[str, Any]] | None = None,
+    deferred_consequences: list[dict[str, Any]] | None = None,
     airport_panels: list[dict[str, Any]] | None = None,
     coverage_rows: list[dict[str, str]] | None = None,
     route_airspace: dict[str, Any] | None = None,
@@ -4314,21 +4315,35 @@ def _decision_finding_projection(
         default=None,
     )
     if material_gate:
+        from .analysed_briefing_content import deferred_item_label
+
         declarations = [
             str(segment.get("source_declaration") or "").strip()
             for segment in material_gate.get("source_segments") or []
             if isinstance(segment, dict)
             and str(segment.get("source_declaration") or "").strip()
         ]
+        # ``gate["summary"]`` is the source declaration's own wording - the
+        # block-capital company remark off the OFP. David, 9 Sep 2026 21:28:
+        # "by copying in blocks and capital is very hard to read". The ranked
+        # card publishes the analysed consequence the engine already derives
+        # for this gate; the remark itself is never republished.
+        gate_consequences = [
+            sentence
+            for row in deferred_consequences or []
+            if isinstance(row, dict)
+            and material_gate.get("gate_id") in (row.get("source_gate_ids") or [])
+            for sentence in row.get("consequences") or []
+        ]
         material_rows.append({
             "engine": "deferred_dispatch_gate",
             "severity": "warning",
             "title": (
-                f"{material_gate.get('title') or 'Deferred item'} - "
+                f"{deferred_item_label(material_gate.get('title'))} - "
                 "dispatch confirmation"
             ),
-            "summary": str(
-                material_gate.get("summary")
+            "summary": (
+                " ".join(dict.fromkeys(gate_consequences))
                 or "Dispatch confirmation is required."
             ),
             "source_reference": " · ".join(
@@ -5595,10 +5610,17 @@ def build_briefing_view(
     )
     coverage_ledger = _weather_coverage_ledger(flight)
     route_airspace = _route_airspace_projection(flight)
+    from .analysed_briefing_content import deferred_consequence_rows
+
+    deferred_pdf_analysis = deferred_consequence_rows({
+        "deferred_dispatch_gates": deferred_dispatch_gates,
+        "fuel_summary": fuel_summary,
+    })
     decision_findings = _decision_finding_projection(
         findings,
         performance_rows=performance_reconciliation,
         deferred_gates=deferred_dispatch_gates,
+        deferred_consequences=deferred_pdf_analysis,
         airport_panels=airport_operational_panels,
         coverage_rows=coverage_ledger,
         route_airspace=route_airspace,
@@ -5718,14 +5740,10 @@ def build_briefing_view(
         ),
     }
     from .airport_pdf_analysis import airport_pdf_analysis, alternate_pdf_analysis
-    from .analysed_briefing_content import deferred_consequence_rows
     from .concise_pdf_gate import PUBLICATION_FORMAT
     return {
         "publication_format": PUBLICATION_FORMAT,
-        "deferred_pdf_analysis": deferred_consequence_rows({
-            "deferred_dispatch_gates": deferred_dispatch_gates,
-            "fuel_summary": fuel_summary,
-        }),
+        "deferred_pdf_analysis": deferred_pdf_analysis,
         "airport_pdf_analysis": airport_pdf_analysis(flight, all_airport_panels),
         "alternate_pdf_analysis": alternate_pdf_analysis(flight, all_airport_panels),
         "status": "REVIEW REQUIRED" if needs_review else "BRIEFING COMPLETE",

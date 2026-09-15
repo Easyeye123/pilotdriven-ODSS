@@ -32,7 +32,11 @@ import pytest
 
 from app.analysis import run_odss_analysis
 from app.odss.briefing import build_briefing_view
-from app.odss.combined_brief import render_combined_briefing
+from app.odss.combined_brief import (
+    COMBINED_BRIEFING_SCHEMA_VERSION,
+    combined_briefing_cache_token,
+    render_combined_briefing,
+)
 from app.odss.concise_pdf_gate import (
     MAX_BRIEFING_PAGES,
     NAV_RIBBON,
@@ -40,17 +44,32 @@ from app.odss.concise_pdf_gate import (
     check_concise_pdf,
     normalized,
 )
+from app.odss.operational_format import text as published_value
 from scripts.run_private_cfp_corpus import scan_physical_pdf
 
 
 CORPUS = Path(__file__).resolve().parents[2] / "private_cfp_corpus"
 
-# The three flights David sent reference briefings for on 9 Sep 2026.
+# The three flights David sent reference briefings for on 9 Sep 2026, plus the
+# SIN-HKG flight from his 9 Sep video, whose analysed prose says "...; review
+# required." - the wording that must not be mistaken for an item-level badge.
 CORPUS_CASES = {
     "SQ910": "SQ91021082026SIN.pdf",
     "SQ481": "SQ48125082026JNB.pdf",
     "SQ38": "SQ38-29AUG2026-OFP-for-prod-proof.pdf",
+    "SQ882": "lido-briefing_SQ_882_09Sep2026_SIN_HKG.pdf",
 }
+
+# The publication schema the nine-page briefing was deployed under. David's own
+# test path is a SAVED pack: the analysis JSON, and therefore its snapshot
+# hash, does not change when he re-opens it after a deployment.
+NINE_PAGE_SCHEMA_VERSION = "2026-09-09-flight-window-surface-semantics-v47"
+
+# The page-1 release caveat the nine-page briefing published.
+RELEASE_CAVEAT = (
+    "Current weather, airport surface state and operative aircraft limitations "
+    "must be confirmed before use."
+)
 
 _RENDERED: dict[str, dict] = {}
 
@@ -83,6 +102,7 @@ def rendered(flight_key: str, tmp_path_factory) -> dict:
     with fitz.open(path) as document:
         pages = [page.get_text() for page in document]
     _RENDERED[flight_key] = {
+        "key": flight_key,
         "path": path, "flight": flight, "findings": findings,
         "view": view, "pages": pages,
         "folded": [normalized(page) for page in pages],
@@ -238,3 +258,142 @@ def test_publication_gate_and_physical_scan_accept_the_new_format(briefing):
                 for line in block.get("lines", []):
                     for span in line["spans"]:
                         assert span["size"] >= 8.9, span["text"]
+
+
+def test_a_saved_pack_cannot_keep_serving_the_cached_nine_page_pdf():
+    """His test path is 'open the saved pack, press Download PDF'.
+
+    ``COMBINED_BRIEFING_SCHEMA_VERSION`` is the only version input to the
+    report-file cache key, and ``REPORT_DIR/flight_<id>_combined_<token>.pdf``
+    lives on the persistent ODSS data volume. A publication contract that goes
+    from nine pages to six without bumping it serves him the old nine-page
+    file for every flight he had already rendered - "you keep saying fixed and
+    when I test it doesn't work".
+    """
+    assert COMBINED_BRIEFING_SCHEMA_VERSION != NINE_PAGE_SCHEMA_VERSION
+    snapshot = "an-analysis-snapshot-that-did-not-change"
+    assert combined_briefing_cache_token(snapshot, 7) != combined_briefing_cache_token(
+        snapshot, 7, schema_version=NINE_PAGE_SCHEMA_VERSION
+    )
+
+
+def test_no_page_copies_a_raw_deferred_source_remark(briefing):
+    """'by copying in blocks and capital is very hard to read' - 9 Sep 21:28.
+
+    The analysed consequence for every deferred item is published on the
+    performance / technical page. The source remark itself never is.
+    """
+    for item in briefing["flight"].get("deferred_items") or []:
+        remark = normalized(item.get("company_remark"))
+        if len(remark.split()) < 8:
+            continue
+        for index, folded in enumerate(briefing["folded"]):
+            assert remark not in folded, (
+                f"page {index + 1} publishes the raw source remark instead of "
+                f"its analysed consequence: {item.get('company_remark')}"
+            )
+
+
+def test_the_gate_rejects_a_copied_source_remark_on_the_decision_page(briefing, tmp_path):
+    """The check that exists to stop this must cover the page it lands on."""
+    remarks = [
+        str(item.get("company_remark"))
+        for item in briefing["flight"].get("deferred_items") or []
+        if len(normalized(item.get("company_remark")).split()) >= 8
+    ]
+    if not remarks:
+        pytest.skip("this flight holds no long deferred source remark")
+    stamped = tmp_path / "remark-stamped.pdf"
+    with fitz.open(briefing["path"]) as document:
+        document[1].insert_text(
+            (40, 330), remarks[0], fontsize=9.0, fontname="helv",
+        )
+        document.save(stamped)
+    codes = [
+        violation["code"]
+        for violation in check_concise_pdf(stamped, flight=briefing["flight"])["violations"]
+    ]
+    assert "COPIED_DEFERRED_REMARK" in codes
+
+
+def test_analysed_prose_saying_review_required_is_not_an_item_badge(briefing):
+    """Real analysed prose ends '...; review required.' on most corpus flights.
+
+    Switching the whole item-badge check off for page 2 whenever that wording
+    appears is a weakened gate, not a more precise one.
+    """
+    if briefing["key"] == "SQ882":
+        # Keeps this case honest: if the engine ever stops publishing the
+        # wording, the test stops proving anything and must be re-pointed.
+        assert re.search(r"\breview required\b", briefing["pages"][1]), (
+            "SQ882 is in this suite because its analysed page-2 prose says "
+            "'...; review required.' - re-point this case if that changes"
+        )
+    view = briefing["view"]
+    with_view = check_concise_pdf(
+        briefing["path"], flight=briefing["flight"], view=view,
+        airport_analysis=view["airport_pdf_analysis"],
+        alternate_analysis=view["alternate_pdf_analysis"],
+    )
+    # report_quality dispatches with the path alone; the gate must still work.
+    without_view = check_concise_pdf(briefing["path"])
+    for result in (with_view, without_view):
+        assert not [
+            violation for violation in result["violations"]
+            if violation["code"] == "REPEATED_ITEM_WARNING"
+        ], result["violations"]
+
+
+def test_a_repeated_item_badge_on_page_two_is_still_rejected(briefing, tmp_path):
+    """And the badge itself is caught, with or without the analysis view."""
+    stamped = tmp_path / "badge-stamped.pdf"
+    with fitz.open(briefing["path"]) as document:
+        document[1].insert_text(
+            (40, 330), "CDDL REVIEW REQUIRED", fontsize=9.0, fontname="helv",
+        )
+        document.save(stamped)
+    view = briefing["view"]
+    calls = (
+        {},
+        {
+            "flight": briefing["flight"], "view": view,
+            "airport_analysis": view["airport_pdf_analysis"],
+            "alternate_analysis": view["alternate_pdf_analysis"],
+        },
+    )
+    for kwargs in calls:
+        codes = [
+            violation["code"]
+            for violation in check_concise_pdf(stamped, **kwargs)["violations"]
+        ]
+        assert "REPEATED_ITEM_WARNING" in codes, codes
+
+
+def test_the_release_caveat_from_the_nine_page_brief_is_still_published(briefing):
+    """Relocated, not deleted: the caveat now sits with the release record."""
+    assert normalized(RELEASE_CAVEAT) in briefing["folded"][5]
+
+
+def test_the_analysed_surface_consequence_count_is_still_published(briefing):
+    """The nine-page ARRIVAL SURFACE card counted them; page 1 still does."""
+    for role in ("departure", "destination"):
+        analysed = next(
+            item for item in briefing["view"]["airport_pdf_analysis"]
+            if item["role"] == role
+        )
+        assert normalized(
+            f"{len(analysed['lines'])} analysed surface/approach consequence(s)"
+        ) in briefing["folded"][0], role
+
+
+def test_the_vws_threshold_summary_is_still_published(briefing):
+    """``vws_events or [vws_summary]`` dropped it whenever events existed."""
+    vws = (briefing["view"].get("terrain") or {}).get("vws_review") or {}
+    summary = (
+        f"{int(vws.get('event_count') or 0)} event(s) at the analysed "
+        f"{published_value(vws.get('threshold'))} threshold. Maximum "
+        f"{published_value(vws.get('maximum_display'))} at "
+        f"{published_value(vws.get('maximum_waypoint'))}, ACTM "
+        f"{published_value(vws.get('maximum_actm_display'))}."
+    )
+    assert normalized(summary) in briefing["folded"][5]

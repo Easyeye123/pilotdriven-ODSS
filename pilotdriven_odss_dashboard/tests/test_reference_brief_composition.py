@@ -2428,12 +2428,12 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     }
     assert (
         COMBINED_BRIEFING_SCHEMA_VERSION
-        == "2026-09-09-flight-window-surface-semantics-v47"
+        == "2026-09-15-six-page-reference-briefing-v48"
     )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
         7,
-        schema_version="2026-09-07-source-evidence-v37",
+        schema_version="2026-09-09-flight-window-surface-semantics-v47",
     )
 
 
@@ -5427,6 +5427,7 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
             "source_reference": "Uploaded OFP performance inputs",
         }],
         deferred_gates=[{
+            "gate_id": "deferred-dispatch-gate-1",
             "title": "IN SIA/00-017 R1",
             "category": "operational-restriction",
             "status": "dispatch-confirmation-required",
@@ -5435,6 +5436,19 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
                 "LOOSE; CONDITION TO BE CHECKED PRIOR EVERY DEPARTURE"
             ),
             "source_segments": [{"source_declaration": "DD IN SIA/00-017 R1"}],
+        }],
+        deferred_consequences=[{
+            "text": (
+                "IN SIA/00-017 R1: The source makes inspection a condition of "
+                "every departure; carry that check into this flight's "
+                "turnaround and operative Tech Log."
+            ),
+            "consequences": [
+                "The source makes inspection a condition of every departure; "
+                "carry that check into this flight's turnaround and operative "
+                "Tech Log."
+            ],
+            "source_gate_ids": ["deferred-dispatch-gate-1"],
         }],
         airport_panels=airport_panels,
         coverage_rows=[
@@ -5460,7 +5474,14 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
     ]["title"]
     assert by_engine["deferred_dispatch_gate"]["target"] == "sec_mel_cdl"
     assert "IN SIA/00-017 R1" in by_engine["deferred_dispatch_gate"]["title"]
-    assert "ENG 2 FAN COWLS LATCH" in by_engine[
+    # The ranked card publishes the analysed consequence, never the source
+    # declaration's own block-capital remark. David, 9 Sep 2026 21:28:
+    # "by copying in blocks and capital is very hard to read".
+    assert by_engine["deferred_dispatch_gate"]["summary"] == (
+        "The source makes inspection a condition of every departure; carry "
+        "that check into this flight's turnaround and operative Tech Log."
+    )
+    assert "ENG 2 FAN COWLS LATCH" not in by_engine[
         "deferred_dispatch_gate"
     ]["summary"]
     assert by_engine["weather_coverage"]["target"] == "sec_hazard"
@@ -5512,7 +5533,13 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
         communications=[],
     )
     release_by_label = {gate["label"]: gate for gate in release_gates}
-    assert "ENG 2 FAN COWLS LATCH" in release_by_label["STATUS"]["detail"]
+    # The STATUS gate reuses the ranked deferred finding, so it now carries the
+    # analysed consequence rather than the declaration's own capitalised remark.
+    assert release_by_label["STATUS"]["detail"] == (
+        "The source makes inspection a condition of every departure; carry "
+        "that check into this flight's turnaround and operative Tech Log."
+    )
+    assert "ENG 2 FAN COWLS LATCH" not in release_by_label["STATUS"]["detail"]
     assert "TRASH COMPACTOR" not in release_by_label["STATUS"]["detail"]
     assert "1B3881/26" in release_by_label["AIRPORTS"]["detail"]
     assert "ILS RWY 24 unavailable" in release_by_label["AIRPORTS"]["detail"]

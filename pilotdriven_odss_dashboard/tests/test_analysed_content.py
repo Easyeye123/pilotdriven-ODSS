@@ -324,10 +324,18 @@ def test_closing_page_uses_named_sections_and_attaches_body_to_heading(tmp_path)
         page = doc[ASSURANCE_PAGE]
         assert 'BEFORE RELEASE' not in page.get_text()
         assert 'WEATHER COVERAGE' in page.get_text()
-        title, body = page.search_for('WEATHER COVERAGE')[0], page.search_for('1.')[0]
-        assert 0 < body.y0 - title.y1 < 25
+        # The first numbered condition must sit under this heading, in this
+        # heading's own column. A bare search for '1.' matches published
+        # figures elsewhere on the page ('... ACTM 00.41.'), which is why the
+        # publication gate scopes the same rule to the column.
+        title = page.search_for('WEATHER COVERAGE')[0]
+        below = [hit for hit in page.search_for('1.')
+                 if hit.y0 > title.y1 and hit.x0 < title.x1 and hit.x1 > title.x0 - 12]
+        assert below and 0 < min(hit.y0 for hit in below) - title.y1 < 25
         assert len(page.search_for('PUBLICATION STATE')) == 1
-    assert check_concise_pdf(path)['valid']
+    result = check_concise_pdf(path)
+    assert result['valid'], result['violations']
+    assert 'REVIEW_BODY_ALIGNMENT' not in {v['code'] for v in result['violations']}
 
 
 def test_missing_closing_condition_is_rejected(tmp_path):

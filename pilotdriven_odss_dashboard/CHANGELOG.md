@@ -6,6 +6,10 @@
 - Publishes the ranked decision findings the engine already computes as severity-pilled cards with a flight-phase decision timeline; no finding is invented and nothing unevidenced is promoted.
 - Relocates every published fact rather than dropping it: the surface figures and per-airport NOTAM analysis move to AIRPORTS / ALTERNATES, deferred declarations to the technical status card, the route hazard key to WEATHER / ROUTE HAZARDS, and VWS/CAT/terrain plus the review record to the closing page.
 - Fails closed on capacity as before: column width and a bounded body ladder are tried first, and publication is refused rather than truncating a source-bound line or printing below the readable floor.
+- Bumped `COMBINED_BRIEFING_SCHEMA_VERSION` to `2026-09-15-six-page-reference-briefing-v48` so a saved analysis cannot keep serving its cached nine-page PDF from persistent report storage after the deployment.
+- Publishes the analysed consequence for the ranked deferred item instead of the declaration's block-capital company remark, and the publication gate now rejects a copied source remark on every page rather than only the technical page.
+- Makes the repeated item-badge check precise instead of skippable: it matches the block-capital `REVIEW REQUIRED` badge on every analysed page, with or without an analysis view, and no longer switches itself off when analysed prose happens to say "review required".
+- Keeps three statements the rebuild had dropped: the release caveat that current weather, airport surface state and operative aircraft limitations must be confirmed before use; the analysed surface/approach consequence count on the overview station columns; and the OFP VWS threshold summary alongside the VWS events.
 
 - Added a bounded official Météo-France Toulouse VAAC VAA/VAG connector and an authenticated WIFS global TCA connector covering all seven ICAO TCACs.
 - Keeps direct advisory gaps fail-closed: TC track context never substitutes for TCA coverage, and missing WIFS credentials never become a NIL or all-clear result.

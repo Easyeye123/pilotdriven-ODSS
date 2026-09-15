@@ -155,11 +155,17 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                 nearest = min((hit.y0 - title.y1 for hit in below), default=None)
                 if nearest is None or nearest > 35:
                     violations.append({"code": "REVIEW_BODY_ALIGNMENT", "message": "Closing conditions are detached from their section heading."})
-        if len(pages) > PERFORMANCE_PAGE:
-            for item in (flight or {}).get("deferred_items") or []:
-                remark = normalized(item.get("company_remark"))
-                if len(remark.split()) >= 8 and remark in folded_pages[PERFORMANCE_PAGE]:
-                    violations.append({"code": "COPIED_DEFERRED_REMARK", "message": "Technical status repeats a source remark instead of its consequence."})
+        # The raw company remark belongs in the app, not in the published
+        # briefing - on any page. The ranked decision page prints deferred
+        # items too, so a check bound to the technical page alone cannot see
+        # the block-capital copy David objected to.
+        for item in (flight or {}).get("deferred_items") or []:
+            remark = normalized(item.get("company_remark"))
+            if len(remark.split()) < 8:
+                continue
+            for index, folded in enumerate(folded_pages):
+                if remark in folded:
+                    violations.append({"code": "COPIED_DEFERRED_REMARK", "message": f"Page {index + 1} repeats a deferred source remark instead of its consequence."})
         if len(pages) != MAX_BRIEFING_PAGES:
             violations.append({"code": "CONCISE_PAGE_CEILING", "message": f"Expected six analysed pages; found {len(pages)}. No source appendix is permitted."})
         for index, title in enumerate(PAGE_TITLES):
@@ -216,27 +222,18 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
         for index, page in enumerate(pages[:ASSURANCE_PAGE]):
             # The single mandatory header is allowed; repeated item-level
             # review labels are not. Source gaps belong to the closing page.
-            # A ranked decision finding carries the engine's own wording with
-            # its source tag, so its analysed sentence is not an item badge.
-            without_header = page.replace("BRIEFING FOR CREW REVIEW - CURRENT SOURCE VERIFICATION REQUIRED", "")
-            if index == ANALYSIS_PAGE:
-                # Every line on the ranked page is engine analysis carrying its
-                # own severity pill and source tag, so its wording is not an
-                # item-level badge. Only text that is not a published finding
-                # is checked here.
-                without_header = " ".join(without_header.split())
-                findings_text = " ".join(
-                    " ".join(str(item.get(field) or "").split())
-                    for item in (view or {}).get("decision_findings") or []
-                    for field in ("title", "summary", "source_reference"))
-                if view is None or re.search(r"\bREVIEW REQUIRED\b", findings_text, re.I):
-                    continue
-                for item in (view or {}).get("decision_findings") or []:
-                    for field in ("title", "summary", "source_reference"):
-                        value = " ".join(str(item.get(field) or "").split())
-                        if value:
-                            without_header = without_header.replace(value, "")
-            if re.search(r"\bREVIEW REQUIRED\b", without_header, re.I):
+            #
+            # The badge this rejects is a block-capital label produced by the
+            # renderers ("CDDL REVIEW REQUIRED", "DEFERRED ITEM - REVIEW
+            # REQUIRED", "UNAVAILABLE - REVIEW REQUIRED"). Analysed engine
+            # prose asks for the same thing in sentence case - "...could not
+            # be resolved for the applicable departure window; review
+            # required." - and is published, source-tagged, on the ranked
+            # page. Matching the capitalised badge tells them apart on every
+            # page, needs no analysis view, and never switches the check off.
+            without_header = " ".join(
+                page.replace("BRIEFING FOR CREW REVIEW - CURRENT SOURCE VERIFICATION REQUIRED", "").split())
+            if re.search(r"\bREVIEW REQUIRED\b", without_header):
                 violations.append({"code": "REPEATED_ITEM_WARNING", "message": f"Page {index + 1} repeats an item-level review warning."})
         for page in pdf:
             for link in page.get_links():
