@@ -110,7 +110,7 @@ def test_shared_mel_number_keeps_distinct_defects_and_unknown_siblings():
     assert [r['source_item_indices'] for r in rows] == [[0], [1], [2]]
     assert 'dry-ice uplift' in rows[0]['text']
     assert 'HST inspection and reapplication' in rows[1]['text']
-    assert 'UNASSESSED CABIN DEFECT' in rows[2]['text']
+    assert 'Unassessed cabin defect' in rows[2]['text']
     assert 'does not establish' in rows[2]['text']
 
 
@@ -366,3 +366,46 @@ def test_departure_route_notice_does_not_become_an_arrival_release_condition():
         assert result['supporting_ids'] == ['A1234/26']
     for route in [None, 'WSSS/20C N571 ABCDE']:
         assert analyse_airport_for_pdf(panel, role='departure', planned_runway='20C', route_text=route)['unresolved_ids'] == ['A1234/26']
+
+
+def test_a_block_capital_defect_is_cased_without_losing_source_shorthand():
+    """David, 9 Sep 2026 21:28: "by copying in blocks and capital is very hard
+    to read". The answer is sentence case; dropping the subject leaves a card
+    that never says what is wrong with the aircraft.
+    """
+    from app.odss.analysed_briefing_content import deferred_subject
+    assert deferred_subject('ENG 2 FAN COWLS LATCH ACCESS PANEL AFT-MOST LATCH IS LOOSE.') == (
+        'Eng 2 fan cowls latch access panel aft-most latch is loose.')
+    # Shorthand the source wrote stays shorthand: no vowel, a digit, a single
+    # letter, or a listed abbreviation that would otherwise read as a word.
+    assert deferred_subject('MAINT ENTRY: WAC FOUND RH WING FTE PANEL 3 SEAL TORN') == (
+        'RH wing FTE panel 3 seal torn')
+    assert deferred_subject('D4L COMMS PA HANDSET INOP.') == 'D4L comms PA handset inop.'
+    assert deferred_subject('ATTENDANT CREW SEAT DOOR 3R I/B DIFFICULT') == (
+        'Attendant crew seat door 3R I/B difficult')
+    assert deferred_subject('SEAT IFE (YCL), AUDIO JACK, NO AUDIO') == (
+        'Seat IFE (YCL), audio jack, no audio')
+    assert deferred_subject('AFT GALLEY HEATER FAULT FC2161F1FK') == (
+        'Aft galley heater fault FC2161F1FK')
+    # A source that already wrote mixed case is readable and is untouched.
+    assert deferred_subject('Bay 21 WIP with a 43 ft crane.') == 'Bay 21 WIP with a 43 ft crane.'
+    assert deferred_subject(None) == ''
+
+
+def test_an_analysed_deferred_item_still_names_the_defect_it_analysed():
+    result = ' '.join(deferred_consequences(_deferred('GALLEY CHILLER NOT COLD. PLSE UPLIFT DRY ICE')))
+    assert 'Galley chiller.' in result
+    assert 'Catering must arrange' in result
+    assert 'GALLEY CHILLER' not in result
+
+
+def test_a_declared_interim_repair_is_published_without_a_serviceability_claim():
+    result = ' '.join(deferred_consequences(_deferred(
+        'ENG 2 FAN COWLS LATCH IS LOOSE. HST APPLIED, CONDITION TO BE CHECKED PRIOR EVERY DEPARTURE')))
+    assert 'The declaration records HST applied as an interim condition' in result
+    assert 'does not establish how long that condition stays acceptable' in result
+    # No conclusion about airworthiness, and never the remark itself.
+    assert 'serviceable' not in result.lower()
+    assert 'PRIOR EVERY DEPARTURE' not in result
+    negated = ' '.join(deferred_consequences(_deferred('ENG 2 LATCH LOOSE. HST NOT APPLIED')))
+    assert 'HST applied as an interim condition' not in negated

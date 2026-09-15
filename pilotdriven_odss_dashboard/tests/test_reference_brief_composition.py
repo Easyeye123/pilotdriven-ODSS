@@ -5435,7 +5435,13 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
                 "ENG 2 FAN COWLS LATCH ACCESS PANEL AFT-MOST LATCH IS "
                 "LOOSE; CONDITION TO BE CHECKED PRIOR EVERY DEPARTURE"
             ),
-            "source_segments": [{"source_declaration": "DD IN SIA/00-017 R1"}],
+            "source_segments": [{
+                "source_declaration": "DD IN SIA/00-017 R1",
+                "description": (
+                    "ENG 2 FAN COWLS LATCH ACCESS PANEL AFT-MOST LATCH IS "
+                    "LOOSE."
+                ),
+            }],
         }],
         deferred_consequences=[{
             "text": (
@@ -5473,10 +5479,20 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
         "performance_reconciliation"
     ]["title"]
     assert by_engine["deferred_dispatch_gate"]["target"] == "sec_mel_cdl"
-    assert "IN SIA/00-017 R1" in by_engine["deferred_dispatch_gate"]["title"]
-    # The ranked card publishes the analysed consequence, never the source
-    # declaration's own block-capital remark. David, 9 Sep 2026 21:28:
-    # "by copying in blocks and capital is very hard to read".
+    # The headline says what is wrong with the aircraft, in sentence case, the
+    # way his reference card does; the declaration's reference stays on the
+    # card's SOURCE tag. David, 9 Sep 2026 21:28: "by copying in blocks and
+    # capital is very hard to read" - which is answered by casing the subject,
+    # not by deleting it.
+    assert by_engine["deferred_dispatch_gate"]["title"] == (
+        "Eng 2 fan cowls latch access panel aft-most latch is loose - "
+        "dispatch confirmation"
+    )
+    assert "IN SIA/00-017 R1" in by_engine[
+        "deferred_dispatch_gate"
+    ]["source_reference"]
+    # The body publishes the analysed consequence, never the source
+    # declaration's own block-capital remark.
     assert by_engine["deferred_dispatch_gate"]["summary"] == (
         "The source makes inspection a condition of every departure; carry "
         "that check into this flight's turnaround and operative Tech Log."
@@ -5533,11 +5549,14 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
         communications=[],
     )
     release_by_label = {gate["label"]: gate for gate in release_gates}
-    # The STATUS gate reuses the ranked deferred finding, so it now carries the
-    # analysed consequence rather than the declaration's own capitalised remark.
+    # The STATUS gate reuses the ranked deferred finding's headline and body,
+    # the way the AIRPORTS gate does: the cased defect, then its consequence,
+    # and never the declaration's own capitalised remark.
     assert release_by_label["STATUS"]["detail"] == (
-        "The source makes inspection a condition of every departure; carry "
-        "that check into this flight's turnaround and operative Tech Log."
+        "Eng 2 fan cowls latch access panel aft-most latch is loose - "
+        "dispatch confirmation: The source makes inspection a condition of "
+        "every departure; carry that check into this flight's turnaround and "
+        "operative Tech Log."
     )
     assert "ENG 2 FAN COWLS LATCH" not in release_by_label["STATUS"]["detail"]
     assert "TRASH COMPACTOR" not in release_by_label["STATUS"]["detail"]

@@ -397,3 +397,125 @@ def test_the_vws_threshold_summary_is_still_published(briefing):
         f"{published_value(vws.get('maximum_actm_display'))}."
     )
     assert normalized(summary) in briefing["folded"][5]
+
+
+def _deferred_finding(briefing) -> dict:
+    """The ranked deferred-declaration card on the DECISION ANALYSIS page."""
+    return next(
+        (
+            finding
+            for finding in briefing["view"].get("decision_findings") or []
+            if str(finding.get("engine") or "") == "deferred_dispatch_gate"
+        ),
+        {},
+    )
+
+
+def _gate_subjects(briefing) -> list[str]:
+    from app.odss.analysed_briefing_content import deferred_subject
+
+    return [
+        subject
+        for gate in briefing["view"].get("deferred_dispatch_gates") or []
+        for segment in gate.get("source_segments") or []
+        if (subject := deferred_subject(segment.get("description")).rstrip(" .;"))
+    ]
+
+
+def test_the_decision_card_says_what_is_wrong_with_the_aircraft(briefing):
+    """His reference card names the defect; ours named a document number.
+
+    ``SQ910_21AUG2026_Flight_Briefing.pdf`` page 2 publishes this same item as
+    "Engine 2 latch is a release gate - The aft-most fan-cowl latch
+    access-panel latch is loose. HST is applied; the condition is to be checked
+    before every departure", tagged "CFP p1 / IN SIA/00-017 R1". Ours printed
+    "IN SIA/00-017 R1 - dispatch confirmation" over a consequence sentence,
+    with no statement of the defect anywhere in the six pages. The answer to
+    "by copying in blocks and capital is very hard to read" (9 Sep 21:28) is
+    sentence case, not deletion of the subject.
+    """
+    if not (briefing["view"].get("deferred_dispatch_gates") or []):
+        pytest.skip("this flight holds no deferred declaration")
+    finding = _deferred_finding(briefing)
+    assert finding, "a deferred declaration must reach the ranked decision page"
+    subjects = _gate_subjects(briefing)
+    assert subjects, "a declaration with a description must yield a subject"
+    headline = str(finding.get("title") or "")
+    assert any(subject in headline for subject in subjects), (
+        f"the decision card headline names no defect: {headline!r}"
+    )
+    # It is on the page he circled in green, not only in the view.
+    assert normalized(headline) in briefing["folded"][1], headline
+    # ...and it is analysed text, never the declaration's block capitals.
+    card = f"{headline} {finding.get('summary')}"
+    for gate in briefing["view"]["deferred_dispatch_gates"]:
+        for segment in gate.get("source_segments") or []:
+            description = " ".join(str(segment.get("description") or "").split())
+            if description.isupper() and len(description.split()) >= 2:
+                assert description not in card, description
+
+
+def test_every_deferred_defect_is_published_in_sentence_case(briefing):
+    """Relocated, not deleted - and readable where it lands.
+
+    Round 2 dropped the subject for every declaration whose effect a rule could
+    analyse, which is most of them. Each one is published again, cased.
+    """
+    from app.odss.analysed_briefing_content import (deferred_consequences,
+                                                    deferred_subject)
+
+    body = " ".join(briefing["folded"])
+    analysed = " ".join(deferred_consequences(briefing["view"]))
+    for item in briefing["flight"].get("deferred_items") or []:
+        description = " ".join(str(item.get("description") or "").split())
+        subject = deferred_subject(description).rstrip(" .;")
+        if not subject:
+            continue
+        assert subject in analysed, (
+            f"the analysed projection does not say what is wrong with the "
+            f"aircraft: {subject!r}"
+        )
+        assert normalized(subject) in body, (
+            f"no page publishes it: {subject!r}"
+        )
+        if description.rstrip(" .;") != subject:
+            assert description.rstrip(" .;") not in analysed, description
+
+
+def test_the_status_release_gate_still_names_the_deferred_defect(briefing):
+    """The web release gate lost the defect identity in round 2 as well.
+
+    BEFORE PUSH on page 1 and the app's STATUS gate read from this row; a
+    detail that carries only the consequence does not say what is deferred.
+    """
+    if not (briefing["view"].get("deferred_dispatch_gates") or []):
+        pytest.skip("this flight holds no deferred declaration")
+    finding = _deferred_finding(briefing)
+    status = next(
+        gate
+        for gate in briefing["view"]["release_gates"]
+        if gate["label"] == "STATUS"
+    )
+    assert str(finding.get("title") or "") in status["detail"]
+    assert str(finding.get("summary") or "") in status["detail"]
+    assert any(subject in status["detail"] for subject in _gate_subjects(briefing))
+
+
+def test_the_sq910_card_names_the_engine_2_fan_cowl_latch(briefing):
+    """The exact strings a reader searched his own flight for and did not find."""
+    if briefing["key"] != "SQ910":
+        pytest.skip("his reference briefing was made from the SQ910 21 Aug OFP")
+    body = "\n".join(briefing["pages"])
+    for phrase in ("eng 2", "fan cowl", "latch", "hst"):
+        assert phrase in body.lower(), phrase
+    defect = "Eng 2 fan cowls latch access panel aft-most latch is loose"
+    # The card itself, free of line wrapping, and the page it is drawn on.
+    assert _deferred_finding(briefing)["title"] == f"{defect} - dispatch confirmation"
+    assert normalized(defect) in briefing["folded"][1]
+    # Round 1 named it in the source's block capitals, which he objected to.
+    assert "ENG 2 FAN COWLS LATCH" not in body
+    # Round 2's fix stands: the company remark itself is still not republished.
+    assert normalized(
+        "HST APPLIED, CONDITION TO BE CHECKED PRIOR EVERY DEPARTURE TO APPLY "
+        "WHENEVER NECESSARY"
+    ) not in " ".join(briefing["folded"])

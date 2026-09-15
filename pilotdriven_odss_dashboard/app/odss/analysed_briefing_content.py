@@ -72,6 +72,64 @@ def deferred_item_label(value, fallback="Deferred item"):
     return " ".join(cleaned.split()).strip(" -") or fallback
 
 
+# Abbreviations that carry a vowel and would otherwise read as an English
+# word once lowercased. Everything else that has no vowel, carries a digit or
+# is a single letter is already recognised as source shorthand.
+_SOURCE_ABBREVIATIONS = frozenset({
+    "ACARS", "ADIRU", "APU", "ATA", "AUX", "AVOD", "ECAM", "EDTO", "EICAS",
+    "ELT", "ETOPS", "FTE", "IATA", "ICAO", "IDG", "IFE", "IRU", "MAF", "NPE",
+    "OXY", "PA", "PAX", "VCRU", "WAC",
+})
+_SOURCE_ENTRY_PREFIX = re.compile(r"^(?:MAINT ENTRY\s*:?\s*|WAC FOUND\s*)+", re.I)
+_SENTENCE_START = re.compile(r"(^|[.!?]\s+)([a-z])")
+
+
+def _readable_word(match: re.Match[str]) -> str:
+    """Lower a block-capital source word unless it is source shorthand.
+
+    Punctuation splits the word, so "AFT-MOST" cases as two words while
+    "I/B", "D4L" and "FC2161F1FK" keep the shorthand the source wrote.
+    """
+    word = match.group(0)
+    if not word.isupper():
+        return word
+    if len(word) == 1 or any(character.isdigit() for character in word):
+        return word
+    if word in _SOURCE_ABBREVIATIONS:
+        return word
+    if not set("AEIOU") & set(word):
+        return word
+    return word.lower()
+
+
+def source_subject_sentence(value) -> str:
+    """Publish a declaration's own subject in sentence case, not block capitals.
+
+    David, 9 Sep 2026 21:28: "by copying in blocks and capital is very hard to
+    read". His reference briefing still names the defect - "The aft-most
+    fan-cowl latch access-panel latch is loose" - so the answer to the block
+    capitals is to case them, never to drop the subject: a deferred card that
+    does not say what is wrong with the aircraft is not a finding.
+
+    Nothing is added or re-worded: this only changes letter case, and only for
+    words the source wrote in full capitals that are not source shorthand.
+    """
+    subject = clean(value)
+    if not subject or subject != subject.upper():
+        # A source that already wrote mixed case is readable as it stands;
+        # only block capitals are re-cased, and only ever in case.
+        return subject
+    cased = re.sub(r"[A-Za-z0-9]+", _readable_word, subject)
+    return _SENTENCE_START.sub(lambda match: match.group(1) + match.group(2).upper(), cased)
+
+
+def deferred_subject(value) -> str:
+    """The declaration's identification of the defect, made readable."""
+    return source_subject_sentence(
+        _SOURCE_ENTRY_PREFIX.sub("", clean(value)).strip(" :")
+    )
+
+
 def deferred_consequence_rows(view):
     """Bind practical consequences to typed source segments, not MEL numbers.
 
@@ -92,7 +150,7 @@ def deferred_consequence_rows(view):
             subjects = []
             description = clean(source.get("description"))
             raw = clean(source.get("source_text") or " ".join((description, clean(source.get("restriction"))))).upper()
-            subject = re.sub(r"^(?:MAINT ENTRY\s*:?\s*|WAC FOUND\s*)+", "", description, flags=re.I).strip(" :")
+            subject = deferred_subject(description)
             if subject:
                 subjects.append(subject)
             # Explicit uplift is a catering action, never an inferred MEL
@@ -115,6 +173,13 @@ def deferred_consequence_rows(view):
                 effects.append(f"Seat {seat.group(1)} needs a seating-configuration decision for its stuck armrest before allocation; the declaration does not establish an occupied-seat allowance.")
             if re.search(r"\b(?:CHECKED|INSPECT\w*)\b.*\b(?:PRIOR|BEFORE)\s+(?:TO\s+)?EVERY\s+DEPARTURE\b", raw):
                 effects.append("The source makes inspection a condition of every departure; carry that check into this flight's turnaround and operative Tech Log.")
+            # An interim repair the declaration records is part of the state of
+            # the aircraft, not a conclusion about it: publish that it is
+            # applied and decline to say how long it stays acceptable.
+            if (re.search(r"\bHST\s+(?:IS\s+|HAS\s+BEEN\s+)?(?:RE-?)?APPLIED\b", raw)
+                    and not re.search(r"\bHST\b[^.]*\b(?:NOT|NEVER)\s+(?:RE-?)?APPLIED\b", raw)
+                    and not any("HST" in effect for effect in effects)):
+                effects.append("The declaration records HST applied as an interim condition; it does not establish how long that condition stays acceptable.")
             limit = re.search(r"\bZFW RESTRICTED TO\s+([\d,]+)\s*KGS?\b", raw)
             if limit:
                 limit_kg = int(limit.group(1).replace(",", ""))
@@ -142,13 +207,19 @@ def deferred_consequence_rows(view):
     for consequences, group in grouped.items():
         titles = "; ".join(dict.fromkeys(r["title"] for r in group))
         subjects = list(dict.fromkeys(r["subject"] for r in group if r["subject"]))
-        # Subjects only identify an otherwise unassessed item. Supported
-        # effects already identify the affected operation (catering, waste,
-        # ground lavatories, aircraft performance).
-        unresolved = consequences[0].startswith("The declaration does not establish")
-        identity = f"{titles}: " + (("; ".join(subjects) + ". ") if unresolved else "")
+        # The subject is what is wrong with the aircraft, and it is published
+        # whether or not a rule could analyse it. An analysed consequence that
+        # does not say what it is a consequence OF is not a finding: David's
+        # own reference card names the defect ("The aft-most fan-cowl latch
+        # access-panel latch is loose") before it states the condition.
+        subject = "; ".join(value.rstrip(" .;") for value in subjects)
+        identity = f"{titles}: " + (f"{subject}. " if subject else "")
         lines.append({
             "text": identity + " ".join(consequences),
+            # The declaration's own subject, for a caller that lays the card
+            # out itself (the ranked decision page) instead of printing
+            # ``text``.
+            "subject": subject,
             # The analysed sentences on their own, so a caller that already
             # names the item (a ranked decision card) does not repeat it.
             "consequences": list(consequences),

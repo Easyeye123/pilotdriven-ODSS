@@ -4315,7 +4315,8 @@ def _decision_finding_projection(
         default=None,
     )
     if material_gate:
-        from .analysed_briefing_content import deferred_item_label
+        from .analysed_briefing_content import (deferred_item_label,
+                                                deferred_subject)
 
         declarations = [
             str(segment.get("source_declaration") or "").strip()
@@ -4335,13 +4336,27 @@ def _decision_finding_projection(
             and material_gate.get("gate_id") in (row.get("source_gate_ids") or [])
             for sentence in row.get("consequences") or []
         ]
+        # The headline states what is wrong with the aircraft, in sentence
+        # case, the way his reference card does ("Engine 2 latch ... The
+        # aft-most fan-cowl latch access-panel latch is loose"). Answering the
+        # block capitals by deleting the subject leaves a card that names an
+        # internal document and no defect; the declaration's reference stays
+        # on the card's SOURCE tag, where his reference prints it too.
+        gate_subjects = []
+        for segment in material_gate.get("source_segments") or []:
+            if not isinstance(segment, dict):
+                continue
+            subject = deferred_subject(segment.get("description")).rstrip(" .;")
+            if subject and subject not in gate_subjects:
+                gate_subjects.append(subject)
+        headline = (
+            "; ".join(gate_subjects)
+            or deferred_item_label(material_gate.get("title"))
+        )
         material_rows.append({
             "engine": "deferred_dispatch_gate",
             "severity": "warning",
-            "title": (
-                f"{deferred_item_label(material_gate.get('title'))} - "
-                "dispatch confirmation"
-            ),
+            "title": f"{headline} - dispatch confirmation",
             "summary": (
                 " ".join(dict.fromkeys(gate_consequences))
                 or "Dispatch confirmation is required."
@@ -4993,10 +5008,23 @@ def _release_gate_projection(
         {
             "label": "STATUS",
             "status": "OPEN" if technical_decision or technical else "NOT SELECTED",
-            "detail": str(
-                (technical_decision or {}).get("summary")
-                or (technical or {}).get("summary")
-                or "No deferred declaration is printed on OFP page 1."
+            # Like the AIRPORTS gate, this reuses the ranked finding's own
+            # headline and body. The headline is the defect; a gate detail
+            # that carries only the consequence does not say what is deferred.
+            "detail": (
+                ": ".join(
+                    part
+                    for part in (
+                        str(technical_decision.get("title") or "").strip(),
+                        str(technical_decision.get("summary") or "").strip(),
+                    )
+                    if part
+                )
+                if technical_decision
+                else str(
+                    (technical or {}).get("summary")
+                    or "No deferred declaration is printed on OFP page 1."
+                )
             ),
             "target": "sec_mel_cdl",
         },
