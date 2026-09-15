@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "gate": "boss-reference-format-conformance",
+  "provenance": "Structure read out of David Chan's own reference Flight Briefings, sent 9 Sep 2026 21:17 SGT with 'This format from beginning has always been this. Get this right, and then we talk about tweaking from this.' Re-mint with scripts/mint_reference_conformance.py; never hand-edit to match what we happen to render.",
+  "minted_from": [
+    {
+      "filename": "SQ910_21AUG2026_Flight_Briefing.pdf",
+      "sha256": "cb4a6c2a731a1df7466cd55c9390281633aff0b9ef22ae8f4bc92959e5796a44",
+      "role": "primary"
+    },
+    {
+      "filename": "SQ910_21AUG2026_DARK_LARGE_TEXT.pdf",
+      "sha256": "64cd7904343ad63cf08f9174da831de959acfd6cfbf4a8a79471b31e28c83d8c",
+      "role": "corroborating"
+    }
+  ],
+  "reference_structure": {
+    "page_count": 6,
+    "page_size_points": [
+      841.89,
+      595.276
+    ],
+    "nav_ribbon": [
+      "OVERVIEW",
+      "ANALYSIS",
+      "PERF / FUEL / TECH",
+      "AIRPORTS",
+      "WEATHER",
+      "ENROUTE / INTAM"
+    ],
+    "nav_ribbon_reference_pages": [
+      1
+    ],
+    "page_marker_template": "FLIGHT BRIEFING | PAGE {page} OF {count}",
+    "footer_identity_field_count": 5,
+    "footer_identity_tail_pattern": "OFP \\d+/\\d+/\\d+",
+    "footer_page_template": "Page {page} of {count}",
+    "pages": [
+      {
+        "page_number": 1,
+        "titles": [
+          "OVERVIEW"
+        ],
+        "footer_assurance_lead": "CFP P1 PRIORITISED"
+      },
+      {
+        "page_number": 2,
+        "titles": [
+          "DECISION ANALYSIS",
+          "DECISION ANALYSIS"
+        ],
+        "footer_assurance_lead": "SEVERITY REVIEW"
+      },
+      {
+        "page_number": 3,
+        "titles": [
+          "PERFORMANCE / FUEL / TECH",
+          "PERFORMANCE, FUEL AND TECHNICAL STATUS"
+        ],
+        "footer_assurance_lead": "ARITHMETIC RECONCILED"
+      },
+      {
+        "page_number": 4,
+        "titles": [
+          "AIRPORTS / ALTERNATES",
+          "AIRPORTS AND ALTERNATES"
+        ],
+        "footer_assurance_lead": "AIRPORT / ALTERNATE APPLICABILITY"
+      },
+      {
+        "page_number": 5,
+        "titles": [
+          "WEATHER / ROUTE HAZARDS",
+          "WEATHER AND ROUTE HAZARDS"
+        ],
+        "footer_assurance_lead": "WEATHER SOURCE REVIEW"
+      },
+      {
+        "page_number": 6,
+        "titles": [
+          "ENROUTE / INTAM / ASSURANCE",
+          "ENROUTE, SELECTED INTAM AND SOURCE ASSURANCE"
+        ],
+        "footer_assurance_lead": "TWO-PASS REVIEW TARGET"
+      }
+    ],
+    "overview": {
+      "columns": [
+        "DEPARTURE",
+        "DESTINATION"
+      ],
+      "column_fields": {
+        "departure": [
+          "PLAN",
+          "SCHEDULE",
+          "METAR",
+          "TAF",
+          "PERTINENT"
+        ],
+        "destination": [
+          "PLAN",
+          "EET / SCHED",
+          "METAR",
+          "TAF TEMPO",
+          "PERTINENT"
+        ]
+      },
+      "route_panel": "CFP ROUTE - PERTINENT DECISION GATES",
+      "tile_provenance_tag": "CFP P1",
+      "tiles": [
+        "PERFORMANCE",
+        "FUEL",
+        "TECH STATUS",
+        "WEATHER / HAZARDS",
+        "ALTN / ROUTE"
+      ],
+      "strip": [
+        "RELEASE",
+        "BEFORE PUSH",
+        "ROUTE",
+        "ARRIVAL",
+        "WEATHER"
+      ],
+      "route_panel_reference_drawing_count": 62,
+      "tile_provenance_tag_variants": [
+        "CFP P1",
+        "P1"
+      ]
+    },
+    "analysis": {
+      "severity_pill_vocabulary": [
+        "MAJOR",
+        "MODERATE"
+      ],
+      "grid_columns": 2,
+      "timeline_heading": "FLIGHT-PHASE DECISION TIMELINE",
+      "timeline_departure_stop": "DEP",
+      "timeline_terminal_stop_is_destination": true,
+      "timeline_reference_stop_count": 9
+    }
+  },
+  "contract_extensions": {
+    "nav_ribbon_on_every_page": true,
+    "nav_ribbon_active_item_tracks_page": true,
+    "analysis_timeline_minimum_stops": 3,
+    "overview_route_panel_minimum_drawings": 20,
+    "_why": {
+      "nav_ribbon_on_every_page": "His reference prints the ribbon on page 1 and the active section name in the masthead of pages 2-6. The 9 Sep fix round required the ribbon on every page, which is a superset of his file, so it is declared here rather than claimed as his ruling.",
+      "nav_ribbon_active_item_tracks_page": "Derived in spirit from page 1, where exactly one ribbon item is emphasised; applied per page because the ribbon is now on every page.",
+      "analysis_timeline_minimum_stops": "His timeline holds nine stops, but the count is flight-specific. Three is the structural floor: departure, at least one enroute gate, arrival.",
+      "overview_route_panel_minimum_drawings": "His centre panel is a drawn schematic, not prose. One document cannot evidence a minimum vector count; 20 is the floor that separates a drawn route from an empty panel."
+    }
+  }
+}

@@ -1176,6 +1176,28 @@ def run_case(
     )
     if not concise_publication["valid"]:
         raise AssertionError(f"{case['case_id']} concise publication failed: {concise_publication['violations']}")
+    # David, 9 Sep 2026: "So you have to check and make sure the memory losses
+    # and standard established does not degenerate. How do you ensure that???"
+    # Every corpus flight's download is compared with the structure read out of
+    # his own reference briefings, not with our own constants.
+    from app.odss.reference_conformance import (
+        check_reference_conformance,
+        load_manifest,
+    )
+    reference_manifest = load_manifest()
+    reference_format = check_reference_conformance(
+        operational,
+        structure=reference_manifest["reference_structure"],
+        contract_extensions=reference_manifest.get("contract_extensions") or {},
+    )
+    if not reference_format["valid"]:
+        raise AssertionError(
+            f"{case['case_id']} download drifted from David's reference format: "
+            + "; ".join(
+                f"{item['code']}: {item['message']}"
+                for item in reference_format["violations"]
+            )
+        )
     operational_physical = scan_physical_pdf(operational)
     if not operational_physical["valid"]:
         raise AssertionError(
