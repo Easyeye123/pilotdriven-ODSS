@@ -71,10 +71,6 @@ class Span:
     def folded(self) -> str:
         return normalized(self.text)
 
-    @property
-    def centre(self) -> float:
-        return (self.x0 + self.x1) / 2
-
 
 def page_spans(page) -> list[Span]:
     out: list[Span] = []
@@ -125,7 +121,7 @@ def _head_word(label: str) -> str:
     return folded.split(" ")[0] if folded else ""
 
 
-def _is_word_label(text: str) -> str | bool:
+def _is_word_label(text: str) -> bool:
     """A section or field label: capitals and separators, never a data value."""
     stripped = " ".join(str(text).split())
     return bool(stripped) and stripped == stripped.upper() and not re.search(r"\d", stripped)
@@ -558,11 +554,17 @@ def _check_overview(page, spans: Sequence[Span], structure: dict[str, Any],
     folded_page = normalized(page.get_text())
     violations: list[dict[str, str]] = []
 
-    tag_folded = normalized(overview["tile_provenance_tag"])
+    tag_spellings = {
+        normalized(item)
+        for item in (
+            overview.get("tile_provenance_tag_variants")
+            or [overview["tile_provenance_tag"]]
+        )
+    }
     header = None
     for row in rows(spans):
         # The provenance tags share this row; they are not column headings.
-        bold = [span for span in row if span.bold and span.folded != tag_folded]
+        bold = [span for span in row if span.bold and span.folded not in tag_spellings]
         texts = [span.folded for span in bold]
         if (
             len(bold) >= 3
@@ -628,13 +630,7 @@ def _check_overview(page, spans: Sequence[Span], structure: dict[str, Any],
 
     # Both of his renders are the reference: the large-text one abbreviates the
     # tag to hold the tile width, so either spelling is his format.
-    tags = [
-        normalized(item)
-        for item in (
-            overview.get("tile_provenance_tag_variants")
-            or [overview["tile_provenance_tag"]]
-        )
-    ]
+    tags = sorted(tag_spellings)
     tag_rows = [
         (tag, row)
         for tag in tags
