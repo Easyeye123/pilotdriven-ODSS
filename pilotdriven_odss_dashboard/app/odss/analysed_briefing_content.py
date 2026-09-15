@@ -72,34 +72,36 @@ def deferred_item_label(value, fallback="Deferred item"):
     return " ".join(cleaned.split()).strip(" -") or fallback
 
 
-# Abbreviations that carry a vowel and would otherwise read as an English
-# word once lowercased. Everything else that has no vowel, carries a digit or
-# is a single letter is already recognised as source shorthand.
-_SOURCE_ABBREVIATIONS = frozenset({
-    "ACARS", "ADIRU", "APU", "ATA", "AUX", "AVOD", "ECAM", "EDTO", "EICAS",
-    "ELT", "ETOPS", "FTE", "IATA", "ICAO", "IDG", "IFE", "IRU", "MAF", "NPE",
-    "OXY", "PA", "PAX", "VCRU", "WAC",
-})
 _SOURCE_ENTRY_PREFIX = re.compile(r"^(?:MAINT ENTRY\s*:?\s*|WAC FOUND\s*)+", re.I)
 _SENTENCE_START = re.compile(r"(^|[.!?]\s+)([a-z])")
+_WORD = re.compile(r"[A-Za-z0-9]+")
 
 
 def _readable_word(match: re.Match[str]) -> str:
-    """Lower a block-capital source word unless it is source shorthand.
+    """Lower a block-capital source word only when it is ordinary English.
+
+    The test is ``plain_english.is_plain_english_word``: a dictionary for words
+    of five letters and longer, a hand-checked safe list for the two-to-four
+    letter band where abbreviations live. Anything it does not recognise - and
+    that is every abbreviation - is left exactly as the source wrote it.
+
+    The rule this replaced ran the other way: lower any word that carries a
+    vowel unless it was one of 25 listed abbreviations. That destroyed every
+    vowel-carrying abbreviation outside the list ("MEL" -> "mel", "NEF" ->
+    "nef", "ILS" -> "Ils", "CAT II/III" -> "cat ii/iii"), because vowel
+    presence measures nothing about whether a token is an abbreviation.
 
     Punctuation splits the word, so "AFT-MOST" cases as two words while
     "I/B", "D4L" and "FC2161F1FK" keep the shorthand the source wrote.
     """
+    from .plain_english import is_plain_english_word
+
     word = match.group(0)
     if not word.isupper():
         return word
     if len(word) == 1 or any(character.isdigit() for character in word):
         return word
-    if word in _SOURCE_ABBREVIATIONS:
-        return word
-    if not set("AEIOU") & set(word):
-        return word
-    return word.lower()
+    return word.lower() if is_plain_english_word(word) else word
 
 
 def source_subject_sentence(value) -> str:
@@ -112,22 +114,200 @@ def source_subject_sentence(value) -> str:
     does not say what is wrong with the aircraft is not a finding.
 
     Nothing is added or re-worded: this only changes letter case, and only for
-    words the source wrote in full capitals that are not source shorthand.
+    words the source wrote in full capitals that are recognised English.
     """
     subject = clean(value)
     if not subject or subject != subject.upper():
         # A source that already wrote mixed case is readable as it stands;
         # only block capitals are re-cased, and only ever in case.
         return subject
-    cased = re.sub(r"[A-Za-z0-9]+", _readable_word, subject)
+    cased = _WORD.sub(_readable_word, subject)
     return _SENTENCE_START.sub(lambda match: match.group(1) + match.group(2).upper(), cased)
 
 
-def deferred_subject(value) -> str:
-    """The declaration's identification of the defect, made readable."""
-    return source_subject_sentence(
-        _SOURCE_ENTRY_PREFIX.sub("", clean(value)).strip(" :")
+# ---------------------------------------------------------------------------
+# What may be published as a declaration's subject
+#
+# The OFP's deferred table is a form. Its "description" cell holds whatever the
+# engineer typed, wrapped at the cell edge with the remainder pushed into the
+# company-remark cell, and it carries the form's own furniture: a repeated
+# drop-down label, an "OTHERS (PLS ENTER COMMENTS)" placeholder, a manual
+# section heading. Publishing that cell unconditionally puts mid-sentence
+# fragments on the page he circled in green - "Both VCRU (101HW & 103HW)
+# removed as per", "LH wing, slat #6 lower seal found" - which is his 9 Sep
+# 20:52 "Why are the MEL/CDL content repeated?" and 21:23 "This is also rubbish
+# generated" in a new shape.
+#
+# So a subject is published only when it stands on its own. When it does not,
+# the row keeps the declaration reference and the analysed consequence, and
+# says nothing it cannot stand behind.
+# ---------------------------------------------------------------------------
+
+# Words that leave a phrase open, so a subject ending in one was cut by the
+# form and is not a statement.
+_OPEN_TAIL_WORDS = frozenset({
+    # Articles, prepositions, conjunctions and auxiliaries.
+    "A", "AN", "THE", "AND", "OR", "NOR", "BUT", "AS", "AT", "BY", "FOR",
+    "FROM", "IN", "INTO", "OF", "ON", "ONTO", "OUT", "OVER", "PER", "TO",
+    "UNDER", "UP", "UPON", "VIA", "WITH", "WITHIN", "WITHOUT", "THAN", "THEN",
+    "THAT", "WHICH", "WHEN", "WHILE", "IF", "SO", "PLUS", "DUE", "BOTH",
+    "EACH", "ALL", "ANY", "NO", "NOT", "IS", "ARE", "WAS", "WERE", "BE",
+    "BEEN", "BEING", "HAS", "HAVE", "HAD", "WILL", "SHALL", "MUST", "MAY",
+    "CAN", "DO", "DOES", "DID", "X",
+    # Participles of discovery: the form habitually breaks the line between
+    # what was found and what was found wrong with it ("... SLAT #6 LOWER SEAL
+    # FOUND" + remark "DETERIORATED (QTY: 04 OFF)").
+    "FOUND", "NOTED", "REPORTED", "OBSERVED", "SUSPECTED", "DEEMED",
+    # Attributive only in this domain: the sibling row in the same OFP writes
+    # "CHILLING COMPARTMENT", so a subject ending in CHILLING is half a
+    # compound.
+    "CHILLING",
+})
+# The final word, only when it stands alone: the trailing "A" of a MEL
+# reference such as "25-20-50A" is a suffix letter, not the article.
+_TRAILING_WORD = re.compile(r"(?:^|[^A-Za-z0-9])([A-Za-z]+)\s*$")
+_SEGMENT_SPLIT = re.compile(r"(\s*,\s*|\s*;\s*|\s+X\s+)")
+_FORM_PLACEHOLDER = re.compile(
+    r"\(\s*(?:PLS|PLEASE)\b[^)]*\)|\bENTER\s+COMMENTS?\b"
+    r"|\b(?:PLS|PLEASE)\s+(?:SPECIFY|STATE)\b|\bSELECT\s+ONE\b",
+    re.I,
+)
+# What the drop-down leaves behind once its instruction is removed.
+_UNSELECTED_OPTION = frozenset({"OTHER", "OTHERS"})
+# A subject that only cites other paperwork is provenance, not a defect. These
+# tokens are stripped before asking whether anything is left.
+_REFERENCE_TOKEN = re.compile(
+    r"^(?:CDL|CDDL|MEL|IFEDDL|DDL|EDDL|IN|EN|NPE|MAF|REF|REFER|WRT|ITEM|NO|NR"
+    r"|AND|OR|X|TO|R\d*|[-#/&.]+|[0-9][0-9A-Z/.\-]*)$",
+    re.I,
+)
+_MANUAL_HEADING = re.compile(
+    r"^SECTION\b|\bPREAMBLE\b|\bREV\s*\d|\bREVISION\s*\d|\bCHAPTER\s*\d",
+    re.I,
+)
+
+
+def _normalised_label(value: str) -> str:
+    """Compare a segment with a gate title without plural or spacing noise."""
+    words = [word.rstrip("S") for word in _WORD.findall(clean(value).upper())]
+    return " ".join(words)
+
+
+def _subject_segments(subject: str) -> list[tuple[str, str]]:
+    """Split on the form's own separators, keeping each separator verbatim.
+
+    The separator is part of what the source wrote (the OFP writes " X " for
+    "and"), so it is carried through rather than normalised away.
+    """
+    parts = _SEGMENT_SPLIT.split(subject)
+    segments: list[tuple[str, str]] = [("", parts[0])] if parts else []
+    for index in range(1, len(parts) - 1, 2):
+        segments.append((parts[index], parts[index + 1]))
+    return segments
+
+
+def _without_label_prefix(segment: str, normalised: str, label: str) -> str:
+    """Strip a leading restatement of the gate title from one segment."""
+    if not label or not normalised.startswith(label + " "):
+        return segment
+    pattern = (
+        r"^\W*"
+        + r"\W+".join(re.escape(word) + "S?" for word in label.split())
+        + r"\W+"
     )
+    trimmed = re.sub(pattern, "", segment, count=1, flags=re.I)
+    if len(_WORD.findall(trimmed)) < 2 or not trimmed[:1].isalnum():
+        # "AIR CHILLERS" + "INOP" leaves a single token; keep the source's
+        # phrase rather than publish a bare word.
+        return segment
+    return trimmed
+
+
+def _collapse_form_furniture(subject: str, item_label: str) -> str:
+    """Drop a repeated drop-down label, a form placeholder and the gate title.
+
+    The OFP writes the selected drop-down twice ("TRASH COMPACTOR, TRASH
+    COMPACTOR, NO POWER") and leaves the unselected "OTHERS (PLS ENTER
+    COMMENTS)" behind. The gate the row is published under already names the
+    item, so a segment that only restates it is repetition.
+    """
+    segments = _subject_segments(subject)
+    label = _normalised_label(item_label)
+    kept: list[tuple[str, str]] = []
+    for index, (separator, segment) in enumerate(segments):
+        normalised = _normalised_label(segment)
+        if not normalised:
+            continue
+        residue = {
+            word.upper()
+            for word in _WORD.findall(_FORM_PLACEHOLDER.sub(" ", segment))
+        }
+        if _FORM_PLACEHOLDER.search(segment) and residue <= _UNSELECTED_OPTION:
+            continue
+        if label and normalised == label:
+            continue
+        if label:
+            # "AIR CHILLERS: AIR chillers inop" repeats the gate's own name.
+            # Drop the restated opening, but only when what is left still
+            # stands as a statement of its own.
+            segment = _without_label_prefix(segment, normalised, label)
+            normalised = _normalised_label(segment)
+            if not normalised:
+                continue
+        if any(_normalised_label(text) == normalised for _, text in kept):
+            continue
+        # A segment the next one repeats in full is the form's label again.
+        if any(
+            _normalised_label(text).startswith(normalised + " ")
+            for _, text in segments[index + 1:]
+        ):
+            continue
+        kept.append((separator if kept else "", segment))
+    return "".join(f"{separator}{segment}" for separator, segment in kept)
+
+
+def _is_self_contained(subject: str) -> bool:
+    """True when the subject stands on its own as a statement of the defect."""
+    if not subject or not re.search(r"[A-Za-z]", subject):
+        return False
+    if not subject[0].isalnum():
+        # "- GALLEY WASTE COMPARTMENT ACCESS DOOR INSTALLED)" is a slice out of
+        # the middle of the cell, not the start of a statement.
+        return False
+    if subject.count("(") != subject.count(")") or subject.count("[") != subject.count("]"):
+        return False
+    if subject.rstrip()[-1] in ",;:/-&+(":
+        return False
+    if _MANUAL_HEADING.search(subject):
+        # "SECTION MEL AND CMS REV 18NOV 25" is a manual heading, not a defect.
+        return False
+    trailing = _TRAILING_WORD.search(subject)
+    if trailing and trailing.group(1).upper() in _OPEN_TAIL_WORDS:
+        return False
+    if _FORM_PLACEHOLDER.search(subject):
+        return False
+    if not [
+        word
+        for word in _WORD.findall(subject)
+        if not _REFERENCE_TOKEN.match(word)
+    ]:
+        # Nothing but references to other paperwork.
+        return False
+    return True
+
+
+def publishable_source_subject(value, item_label: str = "") -> str:
+    """The declaration's subject, or "" when the source cell is not a statement."""
+    subject = _SOURCE_ENTRY_PREFIX.sub("", clean(value)).lstrip(" :").strip()
+    subject = _collapse_form_furniture(subject, item_label)
+    if not _is_self_contained(subject):
+        return ""
+    return subject
+
+
+def deferred_subject(value, item_label: str = "") -> str:
+    """The declaration's identification of the defect, made readable."""
+    return source_subject_sentence(publishable_source_subject(value, item_label))
 
 
 def deferred_consequence_rows(view):
@@ -150,7 +330,9 @@ def deferred_consequence_rows(view):
             subjects = []
             description = clean(source.get("description"))
             raw = clean(source.get("source_text") or " ".join((description, clean(source.get("restriction"))))).upper()
-            subject = deferred_subject(description)
+            # The gate already names the item, so the form's own repeat of
+            # that label is dropped rather than published a second time.
+            subject = deferred_subject(description, title)
             if subject:
                 subjects.append(subject)
             # Explicit uplift is a catering action, never an inferred MEL

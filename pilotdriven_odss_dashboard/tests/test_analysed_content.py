@@ -375,12 +375,13 @@ def test_a_block_capital_defect_is_cased_without_losing_source_shorthand():
     """
     from app.odss.analysed_briefing_content import deferred_subject
     assert deferred_subject('ENG 2 FAN COWLS LATCH ACCESS PANEL AFT-MOST LATCH IS LOOSE.') == (
-        'Eng 2 fan cowls latch access panel aft-most latch is loose.')
-    # Shorthand the source wrote stays shorthand: no vowel, a digit, a single
-    # letter, or a listed abbreviation that would otherwise read as a word.
+        'ENG 2 fan cowls latch access panel aft-most latch is loose.')
+    # Shorthand the source wrote stays shorthand. It is kept because the
+    # lexicon does not recognise it as English, not because it happens to have
+    # no vowel or to sit on a hand-written list.
     assert deferred_subject('MAINT ENTRY: WAC FOUND RH WING FTE PANEL 3 SEAL TORN') == (
         'RH wing FTE panel 3 seal torn')
-    assert deferred_subject('D4L COMMS PA HANDSET INOP.') == 'D4L comms PA handset inop.'
+    assert deferred_subject('D4L COMMS PA HANDSET INOP.') == 'D4L comms PA handset INOP.'
     assert deferred_subject('ATTENDANT CREW SEAT DOOR 3R I/B DIFFICULT') == (
         'Attendant crew seat door 3R I/B difficult')
     assert deferred_subject('SEAT IFE (YCL), AUDIO JACK, NO AUDIO') == (
@@ -390,6 +391,126 @@ def test_a_block_capital_defect_is_cased_without_losing_source_shorthand():
     # A source that already wrote mixed case is readable and is untouched.
     assert deferred_subject('Bay 21 WIP with a 43 ft crane.') == 'Bay 21 WIP with a 43 ft crane.'
     assert deferred_subject(None) == ''
+
+
+# Abbreviations a pilot reads as one unit. Every one carries a vowel and sits
+# outside the 25-item allowlist the earlier rule shipped, so every one was
+# destroyed by it: "MEL" became "mel" - the single most load-bearing
+# abbreviation in this feature - "NEF" became "nef", "ILS" became "Ils" and
+# "CAT II/III INOP" became "cat ii/iii inop".
+OPERATIONAL_ABBREVIATIONS = (
+    'MEL', 'CDL', 'CDDL', 'IFEDDL', 'NEF', 'ECP', 'ILS', 'CAT', 'TCAS', 'GPU',
+    'IRS', 'EGT', 'EFB', 'AOG', 'VHF', 'EMER', 'ACRFT', 'INOP', 'REQ', 'FWD',
+    'ACARS', 'ADIRU', 'EICAS', 'ECAM', 'ETOPS', 'EDTO', 'METAR', 'SIGMET',
+    'NOTAM', 'INTAM', 'ATIS', 'SELCAL', 'SATCOM', 'AUTOLAND', 'STAR', 'MET',
+    'TOD', 'ETA', 'ETD', 'PAX', 'LAV', 'APU', 'AUX', 'OXY', 'ELT', 'IFE',
+    'VCRU', 'WAC', 'JCL', 'YCL', 'PDU', 'MLG', 'DND', 'AVNCS', 'HST', 'RWY',
+    'SID', 'TAF', 'ZFW', 'RTOW', 'MTOW', 'EOSID', 'DME', 'ALT', 'FTE', 'NPE',
+    'MAF', 'IDG', 'ATA', 'AVOD', 'IATA', 'ICAO', 'IRU', 'PA', 'QTY', 'REV',
+    'PLS', 'COM', 'CMS', 'ENG', 'FAP', 'RCCB',
+)
+
+
+def test_sentence_casing_never_lowercases_an_operational_abbreviation():
+    """The rule must keep an abbreviation because it is one, not by luck.
+
+    The rule this replaced kept a word uppercase only when it was one letter,
+    carried a digit, had no vowel, or was on a 25-item allowlist. Vowel
+    presence measures nothing about abbreviation-ness, so everything else was
+    destroyed. Nothing below is on any allowlist in the shipped code beyond the
+    small reserved set; the rest survive because the lexicon does not claim
+    them as English words.
+    """
+    from app.odss.analysed_briefing_content import source_subject_sentence
+    for abbreviation in OPERATIONAL_ABBREVIATIONS:
+        published = source_subject_sentence(f'{abbreviation} 2 FAULT')
+        assert published == f'{abbreviation} 2 fault', published
+    # Whole phrases, as the source writes them.
+    assert source_subject_sentence('ILS RWY 24 U/S') == 'ILS RWY 24 U/S'
+    assert source_subject_sentence('CAT II/III INOP') == 'CAT II/III INOP'
+    assert source_subject_sentence('TCAS 1 INOP') == 'TCAS 1 INOP'
+    assert source_subject_sentence('AUTOLAND CAT IIIB DOWNGRADED') == (
+        'AUTOLAND CAT IIIB downgraded')
+    assert source_subject_sentence('SECTION MEL AND CMS REV 18NOV 25') == (
+        'Section MEL and CMS REV 18NOV 25')
+    assert source_subject_sentence('NON-ESSENTIAL EQUIPMENT AND NEF') == (
+        'Non-essential equipment and NEF')
+    assert source_subject_sentence('VIDEO PB ON ECP NOT RESPONSIVE') == (
+        'Video PB on ECP not responsive')
+    assert source_subject_sentence('DM COM VHF EMER SUPPLY REDUNDANCY') == (
+        'DM COM VHF EMER supply redundancy')
+
+
+def test_sentence_casing_does_not_half_case_one_phrase():
+    """Every capital left standing must be an abbreviation, every lowered word
+    an English word - not a per-word coin toss on whether it holds a vowel.
+
+    "WHOLE ACRFT CHILLERS INOP X DRY ICE REQ" came out as "Whole acrft chillers
+    inop X DRY ice req": ACRFT and INOP destroyed, DRY shouted.
+    """
+    from app.odss.analysed_briefing_content import source_subject_sentence
+    assert source_subject_sentence('WHOLE ACRFT CHILLERS INOP X DRY ICE REQ') == (
+        'Whole ACRFT chillers INOP X dry ice REQ')
+    assert source_subject_sentence('MAINT ENTRY PDU WITH STATUS FWD 12L(B) AFT 3L(X)') == (
+        'MAINT entry PDU with status FWD 12L(B) aft 3L(X)')
+
+
+def test_a_truncated_or_form_debris_subject_is_not_published():
+    """The OFP deferred table is a form, and its description cell is not prose.
+
+    It wraps mid-sentence into the company-remark cell, repeats the selected
+    drop-down, leaves the unselected "OTHERS (PLS ENTER COMMENTS)" behind and
+    sometimes holds a manual section heading instead of a defect. None of that
+    is a statement this briefing can stand behind, so none of it is published.
+    """
+    from app.odss.analysed_briefing_content import deferred_subject
+    # Cut mid-sentence: the rest of each one lives in the company remark.
+    assert deferred_subject('MAINT ENTRY: BOTH VCRU (101HW & 103HW) REMOVED AS PER') == ''
+    assert deferred_subject('FOUND LH INNER WING LEADING EDGE DND FIXED SEAL WITH') == ''
+    assert deferred_subject('MAINT ENTRY: LH WING, SLAT #6 LOWER SEAL FOUND') == ''
+    assert deferred_subject('JCL D1 GALLEY 213/214/215 CHILLING COMPARTMENT:') == ''
+    assert deferred_subject('JCL D1 GALLEY 309/310/311/312/314/315 CHILLING') == ''
+    # A slice out of the middle of the cell: no opening, unbalanced bracket.
+    assert deferred_subject('- GALLEY WASTE COMPARTMENT ACCESS DOOR INSTALLED)') == ''
+    # A manual heading and a bare cross-reference are provenance, not defects.
+    assert deferred_subject('SECTION MEL AND CMS REV 18NOV 25') == ''
+    assert deferred_subject('MAINT ENTRY : WRT CDL 006028, CDL 006029 AND CDL 006032') == ''
+    # The form's drop-down, written twice, with the unselected option left in.
+    assert deferred_subject(
+        'TRASH COMPACTOR, TRASH COMPACTOR, OTHERS (PLS ENTER COMMENTS)',
+        'TRASH COMPACTORS',
+    ) == ''
+    assert deferred_subject(
+        'TRASH COMPACTOR, TRASH COMPACTOR, NO POWER', 'TRASH COMPACTORS'
+    ) == 'No power'
+    assert deferred_subject(
+        'HINGED DOOR SEAL X HINGED DOOR SEAL AT RH FWD SIDE'
+    ) == 'Hinged door seal at RH FWD side'
+
+
+def test_a_well_formed_subject_is_still_published():
+    """The contract abstains on debris; it must not abstain on a real defect.
+
+    Round 2 dropped the subject for every declaration a rule could analyse,
+    which is most of them, and the card stopped saying what was wrong with the
+    aircraft. These are the shapes that must survive.
+    """
+    from app.odss.analysed_briefing_content import deferred_subject
+    for description, expected in (
+        ('ENG 2 FAN COWLS LATCH ACCESS PANEL AFT-MOST LATCH IS LOOSE.',
+         'ENG 2 fan cowls latch access panel aft-most latch is loose.'),
+        ('SEAT 21A TRAY TABLE UNABLE TO STOW', 'Seat 21A tray table unable to stow'),
+        ('LAV L53 TOILET BOWL NIL WATER', 'LAV L53 toilet bowl nil water'),
+        ('D4L GALLEY CHILLER NO.1 RED LIGHT BLINKING',
+         'D4L galley chiller no.1 red light blinking'),
+        ('VIDEO PB ON ECP NOT RESPONSIVE.', 'Video PB on ECP not responsive.'),
+        ('MAINT ENTRY: WAC FOUND RH WING HINGED DOOR SEAL (QTY 01) TORN',
+         'RH wing hinged door seal (QTY 01) torn'),
+        ('LH MLG HINGED DOOR AFT SEAL WITH 30CM LENGTH MISSING.',
+         'LH MLG hinged door aft seal with 30CM length missing.'),
+        ('OTHER GALLEY CHILLER INOP', 'Other galley chiller INOP'),
+    ):
+        assert deferred_subject(description) == expected, description
 
 
 def test_an_analysed_deferred_item_still_names_the_defect_it_analysed():

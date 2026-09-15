@@ -53,11 +53,32 @@ CORPUS = Path(__file__).resolve().parents[2] / "private_cfp_corpus"
 # The three flights David sent reference briefings for on 9 Sep 2026, plus the
 # SIN-HKG flight from his 9 Sep video, whose analysed prose says "...; review
 # required." - the wording that must not be mistaken for an item-level badge.
+#
+# The six flights after them are the deferred-declaration corpus: none of the
+# first four carries a lowercase-destroyed abbreviation or a form-debris
+# subject, which is exactly why a suite built on them alone let "Section mel
+# and CMS rev 18NOV 25", "Non-essential equipment and nef" and "Both VCRU
+# (101HW & 103HW) removed as per" reach the page. Each name below is the flight
+# the corresponding defect was measured on.
 CORPUS_CASES = {
     "SQ910": "SQ91021082026SIN.pdf",
     "SQ481": "SQ48125082026JNB.pdf",
     "SQ38": "SQ38-29AUG2026-OFP-for-prod-proof.pdf",
     "SQ882": "lido-briefing_SQ_882_09Sep2026_SIN_HKG.pdf",
+    # "SECTION MEL AND CMS REV 18NOV 25" - a manual heading, and "mel".
+    "SQ366": "SQ36604082026SIN.pdf",
+    # "NON-ESSENTIAL EQUIPMENT AND FURNISHINGS (NEF)" and the mid-cell slice
+    # "- GALLEY WASTE COMPARTMENT ACCESS DOOR INSTALLED)".
+    "SQ605": "SQ60508092026ICN.pdf",
+    # "MAINT ENTRY: BOTH VCRU (101HW & 103HW) REMOVED AS PER" and the doubled
+    # drop-down "TRASH COMPACTOR, TRASH COMPACTOR, OTHERS (PLS ENTER COMMENTS)".
+    "SQ214": "SQ21419082026PER.pdf",
+    # "FOUND LH INNER WING LEADING EDGE DND FIXED SEAL WITH" and "DM COM VHF".
+    "SQ297": "lido-briefing_SQ_297_16Aug2026_SIN_CHC.pdf",
+    # "VIDEO PB ON ECP NOT RESPONSIVE" and "LH WING, SLAT #6 LOWER SEAL FOUND".
+    "SQ882-10Sep": "lido-briefing_SQ_882_10Sep2026_SIN_HKG.pdf",
+    # "WHOLE ACRFT CHILLERS INOP X DRY ICE REQ" - the half-cased phrase.
+    "SQ279": "lido-briefing_SQ_279_15Aug2026_SIN_ADL.pdf",
 }
 
 # The publication schema the nine-page briefing was deployed under. David's own
@@ -411,14 +432,32 @@ def _deferred_finding(briefing) -> dict:
     )
 
 
-def _gate_subjects(briefing) -> list[str]:
+def _material_gate(briefing, finding) -> dict:
+    """The gate the ranked card was built from, found by its published tag."""
+    reference = str(finding.get("source_reference") or "")
+    for gate in briefing["view"].get("deferred_dispatch_gates") or []:
+        declarations = [
+            str(segment.get("source_declaration") or "").strip()
+            for segment in gate.get("source_segments") or []
+        ]
+        if declarations and all(
+            declaration and declaration in reference for declaration in declarations
+        ):
+            return gate
+    return {}
+
+
+def _subjects_of(gate) -> list[str]:
     from app.odss.analysed_briefing_content import deferred_subject
 
     return [
         subject
-        for gate in briefing["view"].get("deferred_dispatch_gates") or []
         for segment in gate.get("source_segments") or []
-        if (subject := deferred_subject(segment.get("description")).rstrip(" .;"))
+        if (
+            subject := deferred_subject(
+                segment.get("description"), gate.get("title")
+            ).rstrip(" .;")
+        )
     ]
 
 
@@ -436,14 +475,25 @@ def test_the_decision_card_says_what_is_wrong_with_the_aircraft(briefing):
     """
     if not (briefing["view"].get("deferred_dispatch_gates") or []):
         pytest.skip("this flight holds no deferred declaration")
+    from app.odss.analysed_briefing_content import deferred_item_label
+
     finding = _deferred_finding(briefing)
     assert finding, "a deferred declaration must reach the ranked decision page"
-    subjects = _gate_subjects(briefing)
-    assert subjects, "a declaration with a description must yield a subject"
+    gate = _material_gate(briefing, finding)
+    assert gate, "the ranked card must name the declaration it came from"
     headline = str(finding.get("title") or "")
-    assert any(subject in headline for subject in subjects), (
-        f"the decision card headline names no defect: {headline!r}"
-    )
+    subjects = _subjects_of(gate)
+    if subjects:
+        assert any(subject in headline for subject in subjects), (
+            f"the decision card headline names no defect: {headline!r}"
+        )
+    else:
+        # The ranked gate's description cell is not a statement - the OFP form
+        # cut it mid-sentence, or it holds a manual heading. The card then
+        # names the declaration, and the fragment is published nowhere.
+        assert headline == (
+            f"{deferred_item_label(gate.get('title'))} - dispatch confirmation"
+        ), headline
     # It is on the page he circled in green, not only in the view.
     assert normalized(headline) in briefing["folded"][1], headline
     # ...and it is analysed text, never the declaration's block capitals.
@@ -459,27 +509,134 @@ def test_every_deferred_defect_is_published_in_sentence_case(briefing):
     """Relocated, not deleted - and readable where it lands.
 
     Round 2 dropped the subject for every declaration whose effect a rule could
-    analyse, which is most of them. Each one is published again, cased.
+    analyse, which is most of them. Each one the source states as a self-
+    contained defect is published again, cased, on the page that owns it.
     """
-    from app.odss.analysed_briefing_content import (deferred_consequences,
+    from app.odss.analysed_briefing_content import (deferred_consequence_rows,
                                                     deferred_subject)
 
     body = " ".join(briefing["folded"])
-    analysed = " ".join(deferred_consequences(briefing["view"]))
-    for item in briefing["flight"].get("deferred_items") or []:
-        description = " ".join(str(item.get("description") or "").split())
-        subject = deferred_subject(description).rstrip(" .;")
-        if not subject:
-            continue
-        assert subject in analysed, (
-            f"the analysed projection does not say what is wrong with the "
-            f"aircraft: {subject!r}"
+    rows = deferred_consequence_rows(briefing["view"])
+    analysed = " ".join(row["text"] for row in rows)
+    published = {row["subject"] for row in rows if row["subject"]}
+    for gate in briefing["view"].get("deferred_dispatch_gates") or []:
+        for segment in gate.get("source_segments") or []:
+            description = " ".join(str(segment.get("description") or "").split())
+            subject = deferred_subject(description, gate.get("title")).rstrip(" .;")
+            if not subject:
+                continue
+            assert any(subject in value for value in published), (
+                f"the analysed projection does not say what is wrong with the "
+                f"aircraft: {subject!r}"
+            )
+            assert normalized(subject) in body, f"no page publishes it: {subject!r}"
+            if description.rstrip(" .;") != subject:
+                assert description.rstrip(" .;") not in analysed, description
+
+
+# Lower-case forms that can only be a destroyed abbreviation. Each one is a
+# whole word in the published text, so an ordinary English word that merely
+# contains the letters (for example "melt", "catering") cannot match.
+DESTROYED_ABBREVIATIONS = (
+    "mel", "cdl", "cddl", "nef", "ecp", "ils", "cat", "tcas", "gpu", "irs",
+    "egt", "efb", "aog", "vhf", "emer", "acrft", "inop", "req", "fwd", "acars",
+    "adiru", "eicas", "ecam", "etops", "edto", "metar", "sigmet", "notam",
+    "intam", "atis", "autoland", "pax", "lav", "apu", "vcru", "wac", "jcl",
+    "ycl", "pdu", "mlg", "avncs", "hst", "rwy", "zfw", "rtow", "mtow", "eosid",
+)
+
+
+def test_no_page_lowercases_an_operational_abbreviation(briefing):
+    """The casing rule must not answer block capitals by destroying shorthand.
+
+    Round 3 lowered any word that carried a vowel and was not on a 25-item
+    allowlist, so "SECTION MEL AND CMS REV 18NOV 25" published "mel" and
+    "NON-ESSENTIAL EQUIPMENT AND NEF" published "nef" - on the page he circled
+    in green, on flights he personally tested.
+    """
+    body = "\n".join(briefing["pages"])
+    for abbreviation in DESTROYED_ABBREVIATIONS:
+        hit = re.search(rf"(?<![A-Za-z]){abbreviation}(?![A-Za-z])", body)
+        assert not hit, (
+            f"{abbreviation!r} is published in lower case: "
+            f"{body[max(0, hit.start() - 60):hit.end() + 60]!r}"
         )
-        assert normalized(subject) in body, (
-            f"no page publishes it: {subject!r}"
-        )
-        if description.rstrip(" .;") != subject:
-            assert description.rstrip(" .;") not in analysed, description
+
+
+# Tokens that leave a phrase open, restated here rather than imported so the
+# test is not the implementation asserting itself.
+OPEN_TAIL = {
+    "a", "an", "the", "and", "or", "as", "at", "by", "for", "from", "in",
+    "into", "of", "on", "onto", "over", "per", "to", "under", "upon", "via",
+    "with", "within", "than", "that", "which", "when", "while", "if", "due",
+    "both", "each", "all", "any", "no", "not", "is", "are", "was", "were",
+    "be", "been", "has", "have", "had", "will", "must", "may", "can", "x",
+    "found", "noted", "reported", "observed", "suspected", "chilling",
+}
+
+
+def test_no_published_deferred_subject_is_truncated_duplicated_or_form_debris(briefing):
+    """A published subject has to be a statement, not a slice of a form cell.
+
+    The OFP's deferred table wraps its description cell into the company-remark
+    cell, writes the selected drop-down twice and leaves "OTHERS (PLS ENTER
+    COMMENTS)" behind. Round 3 published that cell unconditionally, so page 2
+    carried a headline ending "removed as per" and page 3 carried "Trash
+    compactor, trash compactor, others (PLS enter comments)". His 9 Sep 20:52
+    was "Why are the MEL/CDL content repeated?" and 21:23 "This is also rubbish
+    generated".
+    """
+    from app.odss.analysed_briefing_content import deferred_consequence_rows
+
+    subjects = [
+        row["subject"]
+        for row in deferred_consequence_rows(briefing["view"])
+        if row["subject"]
+    ]
+    finding = _deferred_finding(briefing)
+    headline = str(finding.get("title") or "").removesuffix(" - dispatch confirmation")
+    for subject in [*subjects, *([headline] if headline else [])]:
+        words = re.findall(r"[A-Za-z0-9]+", subject)
+        assert words, subject
+        assert subject[0].isalnum(), f"starts mid-cell: {subject!r}"
+        assert subject.count("(") == subject.count(")"), f"unbalanced: {subject!r}"
+        assert subject.rstrip()[-1] not in ",;:/-&+(", f"cut short: {subject!r}"
+        trailing = re.search(r"(?:^|[^A-Za-z0-9])([A-Za-z]+)\s*$", subject)
+        if trailing:
+            assert trailing.group(1).lower() not in OPEN_TAIL, (
+                f"ends mid-sentence: {subject!r}"
+            )
+        assert not re.search(
+            r"\(\s*(?:PLS|PLEASE)\b|\bENTER\s+COMMENTS?\b", subject, re.I
+        ), f"form placeholder: {subject!r}"
+        # No phrase is published twice inside one subject.
+        segments = [
+            " ".join(re.findall(r"[A-Za-z0-9]+", part)).lower()
+            for part in re.split(r"\s*[,;]\s*|\s+X\s+", subject)
+        ]
+        segments = [segment for segment in segments if segment]
+        assert len(segments) == len(set(segments)), f"repeated segment: {subject!r}"
+
+
+def test_the_named_source_cells_are_not_published_as_defects(briefing):
+    """The reviewer's own strings, on the flights they were measured on.
+
+    Compared with the letter case the page actually draws, not folded: the
+    declaration reference "MEL PREAMBLE SECTION MEL AND CMS REV 18NOV 25" is
+    provenance and is meant to be there in capitals; "Section mel and CMS rev
+    18NOV 25" as a sentence is the defect.
+    """
+    body = re.sub(r"\s+", " ", "\n".join(briefing["pages"]))
+    for fragment in (
+        "Both VCRU (101HW & 103HW) removed as per",
+        "Trash compactor, trash compactor",
+        "others (PLS enter comments)",
+        "Found LH inner wing leading edge DND fixed seal with",
+        "LH wing, slat #6 lower seal found",
+        "- galley waste compartment access door installed)",
+        "Section mel and CMS rev 18NOV 25",
+    ):
+        assert fragment not in body, fragment
 
 
 def test_the_status_release_gate_still_names_the_deferred_defect(briefing):
@@ -498,7 +655,9 @@ def test_the_status_release_gate_still_names_the_deferred_defect(briefing):
     )
     assert str(finding.get("title") or "") in status["detail"]
     assert str(finding.get("summary") or "") in status["detail"]
-    assert any(subject in status["detail"] for subject in _gate_subjects(briefing))
+    subjects = _subjects_of(_material_gate(briefing, finding))
+    if subjects:
+        assert any(subject in status["detail"] for subject in subjects)
 
 
 def test_the_sq910_card_names_the_engine_2_fan_cowl_latch(briefing):
@@ -508,12 +667,14 @@ def test_the_sq910_card_names_the_engine_2_fan_cowl_latch(briefing):
     body = "\n".join(briefing["pages"])
     for phrase in ("eng 2", "fan cowl", "latch", "hst"):
         assert phrase in body.lower(), phrase
-    defect = "Eng 2 fan cowls latch access panel aft-most latch is loose"
+    defect = "ENG 2 fan cowls latch access panel aft-most latch is loose"
     # The card itself, free of line wrapping, and the page it is drawn on.
     assert _deferred_finding(briefing)["title"] == f"{defect} - dispatch confirmation"
     assert normalized(defect) in briefing["folded"][1]
     # Round 1 named it in the source's block capitals, which he objected to.
     assert "ENG 2 FAN COWLS LATCH" not in body
+    # ...and "ENG" is not "Eng": an abbreviation keeps the source's capitals.
+    assert "Eng 2 fan cowls" not in body
     # Round 2's fix stands: the company remark itself is still not republished.
     assert normalized(
         "HST APPLIED, CONDITION TO BE CHECKED PRIOR EVERY DEPARTURE TO APPLY "

@@ -5483,9 +5483,11 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
     # way his reference card does; the declaration's reference stays on the
     # card's SOURCE tag. David, 9 Sep 2026 21:28: "by copying in blocks and
     # capital is very hard to read" - which is answered by casing the subject,
-    # not by deleting it.
+    # not by deleting it. "ENG" stays capitalised because it is an
+    # abbreviation, not an English word: casing lowers what it can evidence is
+    # ordinary English and leaves everything else as the source wrote it.
     assert by_engine["deferred_dispatch_gate"]["title"] == (
-        "Eng 2 fan cowls latch access panel aft-most latch is loose - "
+        "ENG 2 fan cowls latch access panel aft-most latch is loose - "
         "dispatch confirmation"
     )
     assert "IN SIA/00-017 R1" in by_engine[
@@ -5553,7 +5555,7 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
     # the way the AIRPORTS gate does: the cased defect, then its consequence,
     # and never the declaration's own capitalised remark.
     assert release_by_label["STATUS"]["detail"] == (
-        "Eng 2 fan cowls latch access panel aft-most latch is loose - "
+        "ENG 2 fan cowls latch access panel aft-most latch is loose - "
         "dispatch confirmation: The source makes inspection a condition of "
         "every departure; carry that check into this flight's turnaround and "
         "operative Tech Log."

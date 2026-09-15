@@ -4346,7 +4346,9 @@ def _decision_finding_projection(
         for segment in material_gate.get("source_segments") or []:
             if not isinstance(segment, dict):
                 continue
-            subject = deferred_subject(segment.get("description")).rstrip(" .;")
+            subject = deferred_subject(
+                segment.get("description"), material_gate.get("title")
+            ).rstrip(" .;")
             if subject and subject not in gate_subjects:
                 gate_subjects.append(subject)
         headline = (
