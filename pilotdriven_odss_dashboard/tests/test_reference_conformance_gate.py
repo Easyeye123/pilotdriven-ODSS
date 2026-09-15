@@ -36,10 +36,13 @@ MANIFEST_PATH = ROOT / "tests" / "boss_reference_format_manifest.json"
 # The reference briefings themselves are operational documents and live outside
 # git beside the corpus. Point PILOTDRIVEN_BOSS_REFERENCE_DIR at them, or leave
 # the review folder where the 9 Sep round put them.
-REFERENCE_DIRS = (
-    ROOT.parents[2] / "output" / "pd-boss-09sep-review" / "reference",
-    ROOT.parent / "boss_reference_briefings",
-)
+# Checked out directly (…/pilotdriven-ODSS/pilotdriven_odss_dashboard) and from
+# a worktree (…/.work/<name>/pilotdriven_odss_dashboard) the review folder sits
+# at a different depth, so both are tried before the tests give up and skip.
+REFERENCE_DIRS = tuple(
+    parent / "output" / "pd-boss-09sep-review" / "reference"
+    for parent in ROOT.parents[1:4]
+) + (ROOT.parent / "boss_reference_briefings",)
 
 # The flights this round is about: his reference flight, the flight he said had
 # "degenerated to somewhat much simpler and less user friendly", and the saved
