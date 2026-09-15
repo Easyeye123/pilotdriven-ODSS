@@ -1,6 +1,8 @@
 {
   "schema_version": 1,
   "gate": "rev3-raster-pixel-equality",
+  "artefact": "internal-lossless-audit-composition",
+  "scope": "Deterministic-renderer canary for the lossless audit composition (include_audit_appendix=True) on a SHA-pinned historical analysis. This is NOT the pilot-facing download; David's six-page Flight Briefing format is guarded by tests/boss_reference_format_manifest.json and scripts/check_reference_conformance.py.",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
     "filename": "SQ214_REV3_reference_v17_SIGMET_LEG_BOUNDS.pdf",

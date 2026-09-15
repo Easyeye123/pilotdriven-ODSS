@@ -11,18 +11,27 @@ import sys
 import fitz
 import pytest
 
+from app.odss.concise_pdf_gate import MAX_BRIEFING_PAGES
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "check_rev3_visual_regression.py"
 PINNED_MANIFEST = Path(__file__).with_name("rev3_visual_reference_manifest.json")
 
 
+# The gate now refuses any candidate short enough to be the pilot-facing
+# publication, so a synthetic stand-in for the audit composition has to be
+# longer than it.
+SYNTHETIC_PAGE_COUNT = MAX_BRIEFING_PAGES + 1
+
+
 def _create_pdf(path: Path, label: str) -> None:
     with fitz.open() as document:
-        page = document.new_page(width=240, height=160)
-        page.draw_rect(fitz.Rect(12, 12, 228, 148), color=(0.1, 0.2, 0.5), width=2)
-        page.insert_text((24, 52), "REV3 SYNTHETIC VISUAL CONTRACT", fontsize=11)
-        page.insert_text((24, 82), label, fontsize=16)
+        for index in range(SYNTHETIC_PAGE_COUNT):
+            page = document.new_page(width=240, height=160)
+            page.draw_rect(fitz.Rect(12, 12, 228, 148), color=(0.1, 0.2, 0.5), width=2)
+            page.insert_text((24, 52), "REV3 SYNTHETIC VISUAL CONTRACT", fontsize=11)
+            page.insert_text((24, 82), label if index == 0 else f"{label} {index}", fontsize=16)
         document.save(path)
 
 
@@ -55,6 +64,7 @@ def _write_manifest(reference: Path, output: Path) -> None:
             {
                 "schema_version": 1,
                 "gate": "rev3-raster-pixel-equality",
+                "artefact": "internal-lossless-audit-composition",
                 "case_id": "SYNTHETIC-REV3",
                 "reference_asset": {
                     "filename": reference.name,
@@ -138,6 +148,7 @@ def test_identical_synthetic_pdf_passes_exact_pixel_gate(tmp_path: Path) -> None
     assert receipt["summary"]["mean_absolute_error"] == 0.0
     assert receipt["summary"]["max_channel_delta"] == 0
     assert receipt["pages"][0]["pixel_difference"]["difference_bbox_pixels"] is None
+    assert len(receipt["pages"]) == SYNTHETIC_PAGE_COUNT
 
 
 def test_changed_synthetic_pdf_fails_with_metrics_and_diff_png(tmp_path: Path) -> None:
@@ -164,7 +175,7 @@ def test_changed_synthetic_pdf_fails_with_metrics_and_diff_png(tmp_path: Path) -
 
     assert completed.returncode == 1
     assert receipt["status"] == "failed"
-    assert receipt["summary"]["failed_page_count"] == 1
+    assert receipt["summary"]["failed_page_count"] == SYNTHETIC_PAGE_COUNT
     assert difference["changed_pixels"] > 0
     assert difference["changed_pixel_ratio"] > 0
     assert difference["mean_absolute_error"] > 0
@@ -284,7 +295,7 @@ def test_mint_script_writes_a_manifest_the_gate_accepts_for_its_own_reference(tm
     }
     assert payload["renderer"]["binding_version"] == str(fitz.VersionBind)
     assert payload["renderer"]["mupdf_version"] == str(fitz.mupdf_version)
-    assert len(payload["pages"]) == 1
+    assert len(payload["pages"]) == SYNTHETIC_PAGE_COUNT
     assert payload["pages"][0]["page_number"] == 1
     assert len(payload["pages"][0]["reference_raster_sha256"]) == 64
     assert payload["thresholds"] == {
@@ -318,3 +329,69 @@ def test_mint_script_refuses_a_missing_reference(tmp_path: Path) -> None:
     assert minted.returncode == 1
     assert not manifest.exists()
     assert "PDF not found" in minted.stdout + minted.stderr
+
+
+# --- Scope, re-pinned 16 Sep 2026 -----------------------------------------
+# David, 9 Sep 2026 21:22:52: "So you have to check and make sure the memory
+# losses and standard established does not degenerate. How do you ensure
+# that???" This gate was cited as that answer. It cannot be: it compares a
+# raster of the internal lossless audit composition against a reference minted
+# from our own render. The tests below stop it from ever being pointed at the
+# pilot-facing download and called a format gate.
+
+
+def test_the_pinned_manifest_declares_which_artefact_this_gate_guards() -> None:
+    payload = json.loads(PINNED_MANIFEST.read_text(encoding="utf-8"))
+    assert payload["artefact"] == "internal-lossless-audit-composition"
+    assert "check_reference_conformance" in payload["scope"]
+    assert len(payload["pages"]) > MAX_BRIEFING_PAGES, (
+        "the pinned reference must be the audit composition, not the publication"
+    )
+
+
+def test_a_manifest_that_does_not_declare_the_artefact_is_refused(tmp_path: Path) -> None:
+    reference = tmp_path / "synthetic-reference.pdf"
+    manifest = tmp_path / "manifest.json"
+    receipt_path = tmp_path / "receipt.json"
+    _create_pdf(reference, "REFERENCE")
+    _write_manifest(reference, manifest)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    del payload["artefact"]
+    manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    completed = _run_gate(
+        reference=reference, candidate=reference, manifest=manifest, receipt=receipt_path
+    )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert completed.returncode == 1
+    assert receipt["preflight_error_type"] == "VisualRegressionError"
+    assert "internal-lossless-audit-composition" in receipt["preflight_error"]
+
+
+def test_this_gate_refuses_to_certify_the_pilot_facing_download(tmp_path: Path) -> None:
+    """The exact misuse the 9 Sep round exposed, now an error.
+
+    A six-page candidate is the publication David downloads. Comparing its
+    raster here would let a release print "passed" while nothing had checked
+    his format at all.
+    """
+    reference = tmp_path / "synthetic-reference.pdf"
+    publication = tmp_path / "publication.pdf"
+    manifest = tmp_path / "manifest.json"
+    receipt_path = tmp_path / "receipt.json"
+    _create_pdf(reference, "REFERENCE")
+    _write_manifest(reference, manifest)
+    with fitz.open(reference) as document:
+        document.delete_page(MAX_BRIEFING_PAGES)
+        document.save(publication)
+    with fitz.open(publication) as document:
+        assert len(document) == MAX_BRIEFING_PAGES
+
+    completed = _run_gate(
+        reference=reference, candidate=publication, manifest=manifest, receipt=receipt_path
+    )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert completed.returncode == 1
+    assert receipt["preflight_error_type"] == "VisualRegressionError"
+    assert "check_reference_conformance.py" in receipt["preflight_error"]
+    assert "pages" not in receipt

@@ -67,6 +67,11 @@ def build_manifest(
     return {
         "schema_version": 1,
         "gate": "rev3-raster-pixel-equality",
+        # Re-pinned 16 Sep 2026: this gate guards the internal lossless audit
+        # composition, never the pilot-facing six-page Flight Briefing. That
+        # format is guarded by scripts/check_reference_conformance.py against
+        # David's own reference briefings.
+        "artefact": "internal-lossless-audit-composition",
         "case_id": case_id,
         "reference_asset": {
             "filename": reference.name,
