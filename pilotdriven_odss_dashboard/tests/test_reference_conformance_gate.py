@@ -223,6 +223,28 @@ def test_the_production_download_matches_his_format(download, manifest):
     assert result["valid"], result["violations"]
 
 
+def test_the_download_publishes_his_whole_column_field_labels(download, manifest):
+    """His destination column reads TAF TEMPO; a bare TAF is drift, not a synonym.
+
+    Fix round 1 finding: the column check only ever compared the first word of
+    each of his labels, so ``TAF TEMPO`` shrinking to ``TAF`` was accepted and
+    the gate published ``valid=True`` over a live disagreement with his file.
+    Binding rule 7 - the reference wins - so the label is pinned whole, here
+    against the real production render.
+    """
+    expected = manifest["reference_structure"]["overview"]["column_fields"]
+    with fitz.open(download) as document:
+        spans = conformance.page_spans(document[0])
+    published = {span.folded for span in spans}
+    missing = {
+        role: [label for label in labels if conformance.normalized(label) not in published]
+        for role, labels in expected.items()
+    }
+    assert not any(missing.values()), (
+        f"page 1 does not print David's whole field label(s): {missing}"
+    )
+
+
 def test_the_gate_reads_the_download_the_button_renders(monkeypatch, tmp_path):
     """Never the audit composition: he does not download that artefact."""
     from scripts import check_reference_conformance as gate
@@ -316,6 +338,39 @@ def _misplace_the_active_ribbon_item(document) -> None:
     page.insert_text(origin, NAV_RIBBON[4], fontsize=size, fontname="hebo")
 
 
+def _shrink_a_column_field_to_its_first_word(label: str):
+    """A page-1 column field loses everything after its first word.
+
+    This is the exact degeneration the first-word comparison accepted: the
+    label still *starts* with the reference word, so a head-word check cannot
+    see it. Nothing is removed from the page, only shortened. Both of the
+    reference labels that carry a second word are exercised - his
+    ``TAF TEMPO`` shrinking to ``TAF`` is the one that was live in our render,
+    and ``EET / SCHED`` shrinking to ``EET`` is the same mechanism on the other
+    multi-word field.
+    """
+
+    def mutate(document) -> None:
+        page = document[0]
+        wanted = normalized(label)
+        targets = sorted(
+            (span for span in _raw_spans(page) if normalized(span["text"]) == wanted),
+            key=lambda span: span["bbox"][0],
+            reverse=True,
+        )
+        if not targets:
+            # The render already publishes a shrunken label, which is the drift
+            # itself: leave the page alone and require the gate to reject it as
+            # it stands. test_the_download_publishes_his_whole_column_field_labels
+            # is the test that names that case directly.
+            return
+        origin, size = targets[0]["origin"], targets[0]["size"]
+        _erase(page, targets[:1])
+        page.insert_text(origin, wanted.split(" ")[0], fontsize=size, fontname="hebo")
+
+    return mutate
+
+
 def _erase_on_page_one(matcher):
     def mutate(document) -> None:
         page = document[0]
@@ -350,6 +405,14 @@ DRIFTS = {
             lambda span: normalized(span["text"]) in {"RELEASE", "BEFORE PUSH", "ARRIVAL"}
         ),
         "OVERVIEW_STRIP",
+    ),
+    "a-taf-tempo-field-shrunk-to-its-first-word": (
+        _shrink_a_column_field_to_its_first_word("TAF TEMPO"),
+        "OVERVIEW_COLUMN_FIELDS",
+    ),
+    "an-eet-sched-field-shrunk-to-its-first-word": (
+        _shrink_a_column_field_to_its_first_word("EET / SCHED"),
+        "OVERVIEW_COLUMN_FIELDS",
     ),
     "a-destination-column-field-gone": (
         _erase_on_page_one(

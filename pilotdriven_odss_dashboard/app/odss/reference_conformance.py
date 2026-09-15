@@ -116,9 +116,23 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _head_word(label: str) -> str:
-    folded = normalized(label)
-    return folded.split(" ")[0] if folded else ""
+def _column_label_hits(spans: Sequence[Span], anchor: Span, label: str) -> list[Span]:
+    """Spans under ``anchor`` that print David's field label in full.
+
+    This used to compare only the label's first word, so his ``TAF TEMPO``
+    shrinking to a bare ``TAF`` - a real disagreement between his reference
+    briefing and our production render - was accepted and the gate reported
+    ``valid=True``. A gate that folds his label down to its head word cannot
+    see the format degenerating, which is the one thing it exists to see.
+    """
+    wanted = normalized(label)
+    return [
+        span
+        for span in spans
+        if abs(span.x0 - anchor.x0) <= 2.5
+        and span.y0 > anchor.y0
+        and span.folded == wanted
+    ]
 
 
 def _is_word_label(text: str) -> bool:
@@ -600,19 +614,12 @@ def _check_overview(page, spans: Sequence[Span], structure: dict[str, Any],
             continue
         found: list[tuple[float, str]] = []
         for label in expected:
-            head = _head_word(label)
-            hits = [
-                span
-                for span in spans
-                if abs(span.x0 - anchor.x0) <= 2.5
-                and span.y0 > anchor.y0
-                and span.folded.split(" ")[:1] == [head]
-            ]
+            hits = _column_label_hits(spans, anchor, label)
             if hits:
-                found.append((min(hit.y0 for hit in hits), head))
+                found.append((min(hit.y0 for hit in hits), normalized(label)))
         if len(found) != len(expected):
             missing = sorted(
-                {_head_word(label) for label in expected} - {head for _, head in found}
+                {normalized(label) for label in expected} - {item for _, item in found}
             )
             violations.append(
                 _violation(
@@ -620,7 +627,7 @@ def _check_overview(page, spans: Sequence[Span], structure: dict[str, Any],
                     f"Page 1 {role} column is missing reference field(s) {', '.join(missing)}.",
                 )
             )
-        elif [head for _, head in sorted(found)] != [_head_word(label) for label in expected]:
+        elif [item for _, item in sorted(found)] != [normalized(label) for label in expected]:
             violations.append(
                 _violation(
                     "OVERVIEW_COLUMN_FIELDS",
@@ -652,7 +659,13 @@ def _check_overview(page, spans: Sequence[Span], structure: dict[str, Any],
         bottom = tag_row[0].y0 + TILE_HEADING_WINDOW[1]
         anchors: list[float] = []
         for label in overview["tiles"]:
-            head = _head_word(label)
+            # The tile heading is matched on its first word *and* on the whole
+            # label being published on the page, so a tile cannot shrink below
+            # his label here either. It is deliberately not a whole-span match:
+            # our renderer wraps 'WEATHER / HAZARDS' onto two lines where his
+            # reference fits it on one, and line breaking is typography, which
+            # this gate does not pin.
+            head = normalized(label).split(" ")[0]
             hits = [
                 span
                 for span in spans

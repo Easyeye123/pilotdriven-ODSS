@@ -16,6 +16,7 @@ floor.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import re
 from typing import Any
 
 from reportlab.lib import colors
@@ -57,6 +58,45 @@ FOOTER_DISCLAIMER = "UTC · NOT FOR NAVIGATION"
 
 def text(value: Any, missing: str = "Not held") -> str:
     return str(value).strip() if value is not None and str(value).strip() else missing
+
+
+# A TAF change group starts at one of these markers and runs to the next one.
+# Only the source text between them is ever published; nothing is paraphrased.
+_TAF_CHANGE_MARKER = re.compile(
+    r"\b(?:PROB(?:30|40)(?:\s+TEMPO)?|TEMPO|BECMG|FM\d{6})\b",
+    re.IGNORECASE,
+)
+
+
+def taf_tempo_field(taf: Any) -> str:
+    """David's page-1 destination field, verbatim from the source TAF.
+
+    His reference briefing labels the destination weather field ``TAF TEMPO``
+    and prints the TAF's temporary group under it; ours printed a bare ``TAF``
+    with the whole forecast. Binding rule 7 - where his reference and our
+    output disagree, his reference wins - so the label is his and the value has
+    to match the label.
+
+    An absent TEMPO is named, never published as fair weather: "coverage gap is
+    not NIL" applies to a forecast group exactly as it does to a screening
+    result.
+    """
+    body = " ".join(str(taf or "").split())
+    if not body:
+        return text(None)
+    starts = [match.start() for match in _TAF_CHANGE_MARKER.finditer(body)]
+    groups = []
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else len(body)
+        segment = body[start:end].strip().rstrip("=").strip()
+        if segment.upper().startswith(("TEMPO", "PROB")):
+            groups.append(segment)
+    if groups:
+        return " ".join(groups)
+    return (
+        "No TEMPO group in the source TAF; the forecast groups for the "
+        "arrival window are on the WEATHER page."
+    )
 
 
 def kg(value: Any) -> str:
@@ -820,7 +860,16 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         blocks = [("PLAN", [f"RWY {text(flight.get(f'{role}_runway'))} / "
                             f"{text(one.get('sid' if role == 'departure' else 'star'))}"])]
         blocks += extra
-        blocks += [("METAR", [text(weather.get("metar"))]), ("TAF", [text(weather.get("taf"))])]
+        blocks.append(("METAR", [text(weather.get("metar"))]))
+        # His reference column is PLAN / SCHEDULE / METAR / TAF / PERTINENT at
+        # departure and PLAN / EET / SCHED / METAR / TAF TEMPO / PERTINENT at
+        # destination. The arrival field is the TAF's temporary group, so the
+        # label and the value beneath it say the same thing.
+        blocks.append(
+            ("TAF TEMPO", [taf_tempo_field(weather.get("taf"))])
+            if role == "destination"
+            else ("TAF", [text(weather.get("taf"))])
+        )
         # The nine-page ARRIVAL SURFACE card counted the analysed consequences
         # for the arrival. The count stays published, and now also says where
         # the ones that do not fit this column are printed in full.

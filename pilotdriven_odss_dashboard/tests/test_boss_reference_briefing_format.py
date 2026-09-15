@@ -225,6 +225,61 @@ def test_page_one_is_departure_route_map_destination_then_tiles_and_strip(briefi
         assert len(document[0].get_drawings()) > 40
 
 
+def test_page_one_destination_prints_his_taf_tempo_field(briefing):
+    """His destination column reads TAF TEMPO; ours read a bare TAF.
+
+    Fix round 1 finding. The conformance gate compared only the first word of
+    each of his field labels, so this disagreement between his reference PDF
+    and our render passed as valid. Binding rule 7: the reference wins, so the
+    destination weather field is published with his whole label - and with the
+    TEMPO group under it, because a label has to match the value beneath it.
+    """
+    page = briefing["folded"][0]
+    assert normalized("TAF TEMPO") in page, (
+        "page 1 destination column must publish David's TAF TEMPO field"
+    )
+    # His departure column is a plain TAF; only the destination one is TEMPO.
+    with fitz.open(briefing["path"]) as document:
+        spans = [
+            span
+            for block in document[0].get_text("dict")["blocks"]
+            for line in block.get("lines", [])
+            for span in line["spans"]
+            if normalized(span["text"]) in {"TAF", "TAF TEMPO"}
+        ]
+    by_label = {normalized(span["text"]): span for span in spans}
+    assert set(by_label) == {"TAF", "TAF TEMPO"}, sorted(by_label)
+    assert by_label["TAF"]["bbox"][0] < by_label["TAF TEMPO"]["bbox"][0], (
+        "TAF belongs to the departure column and TAF TEMPO to the destination one"
+    )
+
+
+def test_the_taf_tempo_field_never_publishes_an_absent_tempo_as_fair_weather():
+    """A gap is named, never rendered as an empty forecast.
+
+    "Coverage gap is not NIL" is a rule of this codebase. The field prints the
+    source TEMPO group verbatim when the TAF holds one, and says so plainly
+    when it does not.
+    """
+    from app.odss.operational_format import taf_tempo_field
+
+    held = (
+        "FT 201700 2018/2124 25007KT 9999 FEW025 TX32/2106Z TN26/2021Z "
+        "TEMPO 2103/2109 27015KT FEW025 BKN090="
+    )
+    assert taf_tempo_field(held) == "TEMPO 2103/2109 27015KT FEW025 BKN090"
+    probability = (
+        "FT 010500 0106/0212 12008KT 9999 SCT020 BECMG 0110/0112 18010KT "
+        "PROB30 TEMPO 0114/0118 4000 TSRA BKN012CB="
+    )
+    assert taf_tempo_field(probability) == "PROB30 TEMPO 0114/0118 4000 TSRA BKN012CB"
+    no_tempo = "FT 201700 2018/2200 16008KT 9999 FEW015 SCT020="
+    assert "TEMPO" in taf_tempo_field(no_tempo)
+    assert "no tempo group" in taf_tempo_field(no_tempo).lower()
+    assert taf_tempo_field("") == published_value(None)
+    assert taf_tempo_field(None) == published_value(None)
+
+
 def test_page_two_is_the_decision_analysis_he_circled_in_green(briefing):
     """'This for the longest time doesn't work.' - 9 Sep 2026, 21:17:52."""
     page = briefing["folded"][1]
