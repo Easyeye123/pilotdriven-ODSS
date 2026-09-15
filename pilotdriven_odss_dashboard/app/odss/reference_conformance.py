@@ -772,7 +772,10 @@ def _check_analysis(spans: Sequence[Span], structure: dict[str, Any], width: flo
                 f"The decision timeline carries no {departure_stop} dot.",
             )
         )
-    if analysis["timeline_terminal_stop_is_destination"] and stops:
+    # Without a readable footer identity there is no destination to check
+    # against; that is already reported as FOOTER_IDENTITY, and inventing a
+    # second violation out of the empty string would only obscure it.
+    if analysis["timeline_terminal_stop_is_destination"] and stops and destination:
         terminal = max(stops, key=lambda span: span.x0)
         if normalized(terminal.text) != normalized(destination):
             violations.append(
