@@ -28,6 +28,7 @@ from .analysed_briefing_content import (cyclone_content, deferred_item_label,
 from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
 from .constants import format_actm
+from .page_one_weather import forecast_source_line, page_one_metar_field, page_one_taf_field
 from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
 
 SIZE = landscape(A4)
@@ -1100,7 +1101,12 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         blocks = [("PLAN", [f"RWY {text(flight.get(f'{role}_runway'))} / "
                             f"{text(one.get('sid' if role == 'departure' else 'star'))}"])]
         blocks += extra
-        blocks.append(("METAR", [text(weather.get("metar"))]))
+        # His page 1 prints the held record in its reference form - METAR
+        # 11004KT 9999 FEW018, TAF 16008KT 9999 FEW015/SCT020 - not the OFP
+        # record envelope (SA 201900 ... NOSIG=). One rule for both surfaces:
+        # page_one_weather.py here, page1-weather.mjs on the dashboard,
+        # pinned to each other by tests/fixtures/page1-weather-vectors.json.
+        blocks.append(("METAR", [page_one_metar_field(weather.get("metar"), "WEATHER page")]))
         # His reference column is PLAN / SCHEDULE / METAR / TAF / PERTINENT at
         # departure and PLAN / EET / SCHED / METAR / TAF TEMPO / PERTINENT at
         # destination. The arrival field is the TAF's temporary group, so the
@@ -1108,7 +1114,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         blocks.append(
             ("TAF TEMPO", [taf_tempo_field(weather.get("taf"))])
             if role == "destination"
-            else ("TAF", [text(weather.get("taf"))])
+            else ("TAF", [page_one_taf_field(weather.get("taf"), "WEATHER page")])
         )
         # The nine-page ARRIVAL SURFACE card counted the analysed consequences
         # for the arrival. The count stays published, and now also says where
@@ -1170,10 +1176,29 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
 
     overview_grids = ((1.25, 2.05), (1.45, 1.65), (1.65, 1.25))
 
+    def schedule_field() -> str:
+        """His SCHEDULE: ``0050Z / 0850 LT`` - the UTC clock and the local one.
+
+        The local clock is the analysis's own published value (one registry
+        for both surfaces), else resolved here from the same registry; a
+        station it does not hold prints "LT not held", never a guessed offset.
+        """
+        from .brief_theme import local_clock_label
+        utc_clock = clock(identity.get("etd_hhmm"))
+        if not re.fullmatch(r"\d{4}Z", utc_clock):
+            return text(None)
+        schedule = ((view.get("overview") or {}).get("departure") or {}).get("schedule") or {}
+        local = (
+            text(schedule.get("display_local"), "")
+            or local_clock_label(flight.get("departure"), flight.get("scheduled_departure_utc"))
+            or "LT not held"
+        )
+        return f"{utc_clock} / {local}"
+
     def overview_rows(body, leading, variant=0):
         station_weight, map_weight = overview_grids[variant]
         return [
-            (None, [replace(station("departure", CYAN, [("SCHEDULE", [f"{clock(identity.get('etd_hhmm'))} / {text(view.get('flight_date'))}"])]),
+            (None, [replace(station("departure", CYAN, [("SCHEDULE", [schedule_field()])]),
                             width_weight=station_weight),
                     Card("CFP ROUTE - PERTINENT DECISION GATES", [], CYAN, tag="SCHEMATIC",
                          kind="map", payload=route_map, width_weight=map_weight),
@@ -1327,8 +1352,9 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
             terminal.append(f"{text(station_view.get('icao'))} forecast {text(forecast.get('utc_window'))}: {conditions}")
         source = forecast.get("forecast_source") or {}
         if source:
-            label = source.get('display_title') or ('Uploaded OFP' if source.get('source_type') == 'uploaded_cfp' else 'Source not held')
-            terminal.append(f"{label}; issued {utc_label(source.get('issued_at_utc'))}; valid {utc_label(source.get('valid_from_utc'))}-{utc_label(source.get('valid_to_utc'))}.")
+            # A forecast source prints its issue/validity; an observation
+            # basis prints its observation time, never an invented validity.
+            terminal.append(forecast_source_line(source))
         elif conditions:
             terminal.append("Forecast source, issue and validity times are not held.")
     tc_lines = cyclone_content(flight)["lines"]

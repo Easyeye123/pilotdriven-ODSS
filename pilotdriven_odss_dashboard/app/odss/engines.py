@@ -2898,6 +2898,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "taf_sources": [],
             "taf_evidence_refs": [],
             "metar_summaries": [],
+            "metar_sources": [],
             "metar_evidence_refs": [],
             "fallback_evidence_refs": [],
             "record_types": [],
@@ -2920,6 +2921,17 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             group["taf_evidence_refs"].append(evidence_ref)
         elif metar_summary:
             group["metar_summaries"].append(metar_summary)
+            # The observation is a source like a TAF is: a station assessed
+            # from a METAR alone publishes which record it was built from
+            # (B4 fix round 1, 17 Sep 2026 - the dashboard's Weather block
+            # read "Forecast source details unavailable" for exactly this
+            # path).
+            group["metar_sources"].append({
+                **source_reference,
+                "record_type": str(record_type or "METAR").upper(),
+                "raw_text": raw_text,
+                "observed_at_utc": metar_summary.get("observed_at_utc") or record.get("observed_at_utc"),
+            })
             group["metar_evidence_refs"].append(evidence_ref)
         else:
             group["fallback_evidence_refs"].append(evidence_ref)
@@ -2999,6 +3011,10 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         elif group["metar_summaries"]:
             metar_summary = group["metar_summaries"][-1]
             data = {
+                # The basis of a METAR-only assessment is published like a
+                # TAF source; the publishing surfaces name it as an
+                # observation, never as a forecast with a validity.
+                "forecast_source": group["metar_sources"][-1],
                 "phase": group["phase"],
                 "location": group["location"],
                 "utc_window": group["utc_window"],

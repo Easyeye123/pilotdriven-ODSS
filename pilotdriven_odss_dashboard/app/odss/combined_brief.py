@@ -160,7 +160,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-17-surface-figure-outline-provenance-v52"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-17-page1-weather-groups-local-time-v53"
 
 
 def combined_briefing_cache_token(
@@ -5949,7 +5949,7 @@ def _forecast_source_label(forecast: dict[str, Any]) -> str:
     return str(
         source.get("display_title")
         or ("Uploaded OFP" if source.get("source_type") == "uploaded_cfp" else source.get("provider"))
-        or "Forecast source details unavailable"
+        or "Forecast source not published by this analysis"
     ).strip()
 
 

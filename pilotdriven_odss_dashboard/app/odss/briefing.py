@@ -3755,11 +3755,18 @@ def _overview_plan(runway: Any, procedure: Any) -> dict[str, Any]:
     }
 
 
-def _overview_schedule(value: Any, actm_minutes: int) -> dict[str, Any]:
+def _overview_schedule(value: Any, actm_minutes: int, icao: Any = None) -> dict[str, Any]:
+    from .brief_theme import local_clock_label
+
     raw = str(value or "").strip() or None
     return {
         "scheduled_utc": raw,
         "display_utc": _display_utc(raw),
+        # David's page-1 SCHEDULE is the UTC clock beside the station's local
+        # clock ("0050Z / 0850 LT"). Published here, from the one pinned
+        # registry, so the dashboard and the PDF print the same value; None
+        # when the registry does not hold the station.
+        "display_local": local_clock_label(icao, raw) if raw else None,
         "actm_minutes": actm_minutes,
     }
 
@@ -3883,7 +3890,7 @@ def _overview_projection(
         "icao": departure_icao,
         "iata": flight.get("departure_iata"),
         "plan": _overview_plan(flight.get("departure_runway"), flight.get("sid")),
-        "schedule": _overview_schedule(flight.get("scheduled_departure_utc"), 0),
+        "schedule": _overview_schedule(flight.get("scheduled_departure_utc"), 0, departure_icao),
         "forecast_at_reference": _overview_forecast_at_reference(
             source_findings,
             location=departure_icao,
@@ -3904,6 +3911,7 @@ def _overview_projection(
         "schedule": _overview_schedule(
             flight.get("scheduled_arrival_utc"),
             destination_actm if destination_actm is not None else final_actm,
+            destination_icao,
         ),
         "forecast_at_reference": _overview_forecast_at_reference(
             source_findings,

@@ -71,7 +71,11 @@ def test_pdf_keeps_exact_decoded_forecast_provenance(tmp_path, monkeypatch, audi
 def test_pdf_missing_forecast_source_is_explicit_and_not_inferred(tmp_path, monkeypatch):
     doc, _ = render_forecast(tmp_path, monkeypatch, source=None)
     detail = " ".join(" ".join(page.get_text().split()) for page in doc)
-    assert "Forecast source details unavailable" in detail
+    # B4 fix round 1 (17 Sep 2026): the explicit statement is about the
+    # analysis's publication, never "details unavailable" - the sentence David
+    # photographed on the dashboard on 9 Sep.
+    assert "Forecast source not published by this analysis" in detail
+    assert "Forecast source details unavailable" not in detail
     assert "Exact decoded forecast text not held" in detail
     assert "ISSUED not held" in detail
     assert "VALID FROM not held" in detail

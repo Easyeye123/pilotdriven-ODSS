@@ -2819,3 +2819,45 @@ def test_schedule_overlap_must_also_be_inside_bc_validity():
     record['schedule']='DAILY 1300-1400'
     findings,_=analyse(_flight(notams=[record]))
     assert not [item for item in findings if item['engine']=='notam']
+
+
+def test_a_station_assessed_from_a_metar_alone_publishes_the_observation_as_its_source():
+    """B4 fix round 1 (17 Sep 2026): the METAR-only path published no source.
+
+    The dashboard's Weather block fell back to "Forecast source details
+    unavailable" - the sentence David photographed on 9 Sep - for every
+    station whose assessment came from an observation. The basis is a source
+    like a TAF is; it is published with its record type and observation time
+    so the surfaces can name it as an observation, never as a forecast.
+    """
+    from app.odss.briefing import _overview_forecast_at_reference
+    # The shape that reaches this path in production: an official observation
+    # in the ICAO form with its observation time (an OFP "SA DDHHMM" record
+    # carries no Z-time and yields no observation summary at all).
+    raw = "METAR WSSS 160930Z 20005KT 9999 FEW018 BKN300 30/24 Q1010 NOSIG"
+    findings, _ = analyse(_flight(weather=[
+        {"location": "WSSS", "record_type": "METAR", "text": raw,
+         "source": "noaa_awc_live", "provider": "noaa-awc-data-api",
+         "observed_at_utc": "2026-07-16T09:30:00+00:00"},
+    ]))
+    forecast = _overview_forecast_at_reference(findings, location="WSSS", phase="Departure")
+    assert forecast is not None, "a nearby observation still yields a departure assessment"
+    assert forecast["window_status"] == "no_significant_observation"
+    source = forecast["forecast_source"]
+    assert source["record_type"] == "METAR"
+    assert source["raw_text"] == raw
+    assert source["source_type"] == "noaa_awc_live"
+    assert source["display_title"] == "NOAA Aviation Weather Center"
+    assert source["observed_at_utc"].startswith("2026-07-16T09:30")
+    assert not source.get("valid_from_utc") and not source.get("issued_at_utc")
+    # A TAF-assessed station is unchanged: its source is still the forecast.
+    taf = "TAF WSSS 160500Z 1606/1712 20005KT 9999 FEW018"
+    findings, _ = analyse(_flight(weather=[
+        {"location": "WSSS", "record_type": "TAF", "text": taf, "source_page": 15},
+        {"location": "WSSS", "record_type": "METAR", "text": raw,
+         "source": "noaa_awc_live", "provider": "noaa-awc-data-api",
+         "observed_at_utc": "2026-07-16T09:30:00+00:00"},
+    ]))
+    forecast = _overview_forecast_at_reference(findings, location="WSSS", phase="Departure")
+    assert forecast["forecast_source"]["raw_text"] == taf
+    assert forecast["forecast_source"].get("record_type") is None

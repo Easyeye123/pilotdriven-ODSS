@@ -735,3 +735,37 @@ def test_the_sq910_card_names_the_engine_2_fan_cowl_latch(briefing):
         "HST APPLIED, CONDITION TO BE CHECKED PRIOR EVERY DEPARTURE TO APPLY "
         "WHENEVER NECESSARY"
     ) not in " ".join(briefing["folded"])
+
+
+def test_page_one_weather_fields_are_his_trimmed_groups_with_the_local_clock(briefing):
+    """B4 fix round 1 (17 Sep 2026): page 1 printed the OFP record envelope.
+
+    His page 1 reads ``METAR 11004KT 9999 FEW018`` / ``TAF 16008KT 9999
+    FEW015/SCT020`` / ``SCHEDULE 0050Z / 0850 LT``; ours read ``SA 201900
+    11004KT 9999 FEW018 BKN300 28/23 Q1011 NOSIG=`` and ``0050Z / 21AUG26``.
+    The trim rule is shared with the dashboard (page_one_weather.py ==
+    page1-weather.mjs, pinned by tests/fixtures/page1-weather-vectors.json),
+    so both surfaces print the same groups for the same held record.
+    """
+    from app.odss.page_one_weather import held_text, page_one_metar_field, page_one_taf_field
+
+    page = briefing["folded"][0]
+    view = briefing["view"]
+    for role in ("departure", "destination"):
+        weather = (view.get(role) or {}).get("weather") or {}
+        metar = weather.get("metar")
+        if metar:
+            assert normalized(page_one_metar_field(metar, "WEATHER page")) in page, f"{role} METAR in his form"
+            envelope = " ".join(held_text(metar).split()[:2])
+            assert normalized(envelope) not in page, f"{role} METAR envelope {envelope} is not on page 1"
+        if role == "departure" and weather.get("taf"):
+            assert normalized(page_one_taf_field(weather["taf"], "WEATHER page")) in page, "departure TAF in his form"
+    assert normalized("SCHEDULE") in page
+    assert re.search(r"SCHEDULE \d{4}Z (?:\d{4} LT|LT NOT HELD)", page), "SCHEDULE is the UTC clock beside the local one"
+    if briefing["key"] == "SQ910":
+        for expected in ("11004KT 9999 FEW018/BKN300", "16008KT 9999 FEW015/SCT020",
+                         "VRB02KT 9999 FEW025", "0050Z / 0850 LT"):
+            assert normalized(expected) in page, expected
+        body = page.replace(normalized("SQ910 | 21AUG26"), "")
+        for gone in ("SA 201900", "FT 201700", "2018/2200", "NOSIG", "Q1011", "RMK A2983", "0050Z / 21AUG26"):
+            assert normalized(gone) not in body, gone

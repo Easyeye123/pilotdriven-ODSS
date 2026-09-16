@@ -2416,3 +2416,20 @@ def test_a_minima_change_wins_the_page_one_highlight_like_an_outage() -> None:
     assert highlight is not None
     assert highlight["signal_family"] == "approach_minima"
     assert highlight["notam_id"] == "B2/26"
+
+
+def test_overview_schedule_publishes_the_station_local_clock_beside_utc() -> None:
+    """David's page-1 SCHEDULE is ``0050Z / 0850 LT`` (B4 fix round 1, 17 Sep).
+
+    The local clock is published in the contract so the dashboard and the
+    PDF print one value from one registry; a station the registry does not
+    hold publishes None and both surfaces print "LT not held".
+    """
+    from app.odss.briefing import _overview_schedule
+
+    schedule = _overview_schedule("2026-08-21T00:50:00+00:00", 0, "WSSS")
+    assert schedule["display_utc"] == "21 AUG 0050Z"
+    assert schedule["display_local"] == "0850 LT"
+    assert _overview_schedule("2026-08-21T04:45:00+00:00", 201, "RPLL")["display_local"] == "1245 LT"
+    assert _overview_schedule("2026-08-21T00:50:00+00:00", 0, "ZZZZ")["display_local"] is None
+    assert _overview_schedule(None, 0, "WSSS")["display_local"] is None
