@@ -13,10 +13,10 @@ from reportlab.lib import colors
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from .analysed_briefing_content import cyclone_content, flight_window, level_profile_label
-from .briefing import (_screening_geometry, _sigmet_utc,
-                       _projected_land_segments, project_route_map)
-from .vaa import _flight_anchor, _unwrap, _utc
-from .sigmet_geometry import source_polygon
+from .briefing import (_SIGMET_TIME_DISPOSITION, _screening_geometry, _sigmet_time_state,
+                       _sigmet_utc, _projected_land_segments, project_route_map)
+from .vaa import _flight_anchor, _planned_levels, _unwrap, _utc
+from .sigmet_geometry import source_layer, source_polygon
 
 _MAP_NOTE = ("VWS: OFP samples. NM: distance from route. "
              "Dashed area: flight applicability not fully verified.")
@@ -37,6 +37,83 @@ def phenomenon_label(value):
     return "Weather advisory"
 
 
+def event_affects_flight(event):
+    """Route, time and level all matched: the only state drawn as a solid area."""
+    return bool(event.get("level_matched")) and event.get("time_matched") is True \
+        and event.get("route_intersects") is True and not event.get("disposition_conflict")
+
+
+def key_disposition(event):
+    """The verdict the printed key line states, in the SIGMET card's vocabulary.
+
+    The card prints PROMOTED / NOT PROMOTED / REVIEW REQUIRED; the key prints
+    plain words. This is the mapping back, so a gate can hold the two pages
+    of one briefing to the same verdict."""
+    if event.get("disposition_conflict"):
+        return "REVIEW REQUIRED"
+    crosses = event.get("route_intersects")
+    if crosses is False:
+        return "NOT PROMOTED"
+    if crosses is not True:
+        return "REVIEW REQUIRED"
+    state = event.get("time_state")
+    if state is None:
+        return "PROMOTED" if event.get("time_matched") else "REVIEW REQUIRED"
+    return _SIGMET_TIME_DISPOSITION.get(state, "REVIEW REQUIRED")
+
+
+def _passage_window(event):
+    start, end = _utc(event.get("passage_from_utc")), _utc(event.get("passage_to_utc"))
+    return f"{start:%H%M}-{end:%H%M}Z" if start and end else ""
+
+
+def _relevance_parts(event):
+    """Plain words for what the screening established: crossing, validity, level.
+
+    David, 9 Sep 2026: "hazard analysis okay. But not WX ... that is for
+    what???" - a SIGMET the route crosses inside its validity and one it
+    crosses outside must not read the same, and neither may disagree with the
+    SIGMET card's verdict on the same page. A disposition badge is never
+    printed here; the words carry the verdict."""
+    if event.get("disposition_conflict"):
+        return ["held screening verdict and current route geometry disagree; review the SIGMET card"]
+    crosses = event.get("route_intersects")
+    if crosses is False:
+        return ["route does not cross area"]
+    if crosses is not True:
+        return ["route crossing unresolved"]
+    state = event.get("time_state")
+    if state is None:
+        state = "inside" if event.get("time_matched") else "time_unverified"
+    crossing = f"crosses route {_passage_window(event)}".rstrip()
+    gap = event.get("gap_minutes")
+    if state == "inside":
+        parts = [f"{crossing} inside validity"]
+    elif state == "expires_before":
+        parts = [f"{crossing} outside validity (expired {gap} min before earliest crossing)"]
+    elif state == "starts_after":
+        parts = [f"{crossing} outside validity (starts {gap} min after latest crossing)"]
+    elif state == "overlap":
+        parts = [f"{crossing}; validity covers only part of that window; timing unresolved"]
+    elif state == "timing_unresolved":
+        parts = ["crosses route; crossing time not held"]
+    elif state == "validity_unresolved":
+        parts = ["crosses route; validity or passage clock not held"]
+    else:
+        parts = [f"{crossing}; time applicability unverified"]
+    layer, planned = event.get("layer_label"), event.get("planned_level_label")
+    noun = "top" if event.get("layer_kind") == "top" else "layer"
+    if event.get("level_matched") is True and layer and planned:
+        parts.append(f"planned {planned} {'below top' if noun == 'top' else 'within layer'} {layer}")
+    elif event.get("level_matched") is False and layer and planned:
+        parts.append(f"planned {planned} {event.get('level_side') or 'outside'} {noun} {layer}")
+    elif "layer_label" in event:
+        parts.append("level not verified" if layer else "layer not held")
+    if event_affects_flight(event):
+        parts.append("affects flight: route/time/level match")
+    return parts
+
+
 def event_description(event):
     parts = [event.get("marker_label") or event["id"],
              event.get("short_label") or event["label"]]
@@ -47,15 +124,79 @@ def event_description(event):
                           else f"{begin:%d%b %H%MZ}-{end:%d%b %H%MZ}").upper())
         else:
             parts.append("validity not held")
-        if event.get("level_matched") and event.get("time_matched") and event.get("route_intersects") is True:
-            parts.append("affects flight: route/time/level match")
-        elif event.get("route_intersects") is False:
-            parts.append("route does not cross area")
-        else:
-            parts.append("flight relevance unverified")
+        parts.extend(_relevance_parts(event))
     if event.get("distance_nm") is not None:
         parts.append(f"~{event['distance_nm']:.0f} NM from route")
     return "; ".join(str(part) for part in parts if part)
+
+
+def _crossing_state(row, screening, begin, end, passage_start, passage_end):
+    """Route and time in the SIGMET card's own terms.
+
+    The verdict is read from the card when it holds one (``route_intersection``
+    marks a card screened by the current REV3 rules), and derived by the same
+    shared decision otherwise, so the key and the card cannot part ways. A
+    held verdict the current geometry contradicts is published as a
+    disagreement, never silently resolved either way."""
+    crosses = screening["route_intersects"]
+    if crosses is not True:
+        state, gap = None, None
+    elif screening.get("crossing_actm") is None:
+        state, gap = "timing_unresolved", None
+    else:
+        state, gap = _sigmet_time_state(begin, end, passage_start, passage_end)
+    derived = ("NOT PROMOTED" if crosses is False
+               else "REVIEW REQUIRED" if state == "timing_unresolved"
+               else _SIGMET_TIME_DISPOSITION[state])
+    held = row.get("disposition") if row.get("route_intersection") else None
+    result = {"route_intersects": crosses, "time_state": state, "time_matched": state == "inside",
+              "gap_minutes": gap,
+              "passage_from_utc": passage_start.isoformat() if passage_start else None,
+              "passage_to_utc": passage_end.isoformat() if passage_end else None,
+              "disposition": held or derived}
+    if held and held != derived:
+        result["disposition_conflict"] = True
+    return result
+
+
+def _level_state(flight, screening, row):
+    """Planned level against the SIGMET's layer: held facts, never a downgrade.
+
+    The layer comes from the SIGMET text (a top alone only for surface-based
+    phenomena) and the level from the OFP's planned profile over the crossing
+    legs, widened by one fix so a step climb at the crossing is inside the
+    band. "Inside" is conservative. "Outside" is asserted only for a crossing
+    between the held TOC and TOD: in the climb or descent the planned cruise
+    level says nothing about the level at the crossing, and the state stays
+    unverified."""
+    layer = source_layer(row.get("text"), row.get("phenomenon"))
+    result = {"level_matched": None, "layer_label": layer["label"] if layer else None,
+              "layer_kind": layer["kind"] if layer else None, "planned_level_label": None}
+    waypoints = flight.get("route_waypoints") or []
+    legs = screening.get("crossing_leg_indexes") or []
+    if not layer or screening.get("route_intersects") is not True or not legs or not waypoints:
+        return result
+    levels, unresolved = _planned_levels(waypoints, flight.get("planned_level_profile"))
+    if unresolved:
+        return result
+    first, last = max(0, min(legs) - 1), min(len(waypoints) - 1, max(legs) + 1)
+    band = levels[first:last + 1]
+    if not band or any(level is None for level in band):
+        return result
+    low, high = min(band), max(band)
+    result["planned_level_label"] = f"FL{low:03d}" if low == high else f"FL{low:03d}-FL{high:03d}"
+    lower, upper = layer["lower_ft"], layer["upper_ft"]
+    if (upper is None or low * 100 <= upper) and (lower is None or high * 100 >= lower):
+        result["level_matched"] = True
+        return result
+    names = [str(point.get("name") or "").lstrip("-").upper() for point in waypoints]
+    if "TOC" not in names or "TOD" not in names:
+        return result
+    if min(legs) < names.index("TOC") or max(legs) + 1 > names.index("TOD"):
+        return result
+    result["level_matched"] = False
+    result["level_side"] = "above" if upper is not None and low * 100 > upper else "below"
+    return result
 
 
 def build_publication_map(flight, view):
@@ -85,26 +226,28 @@ def build_publication_map(flight, view):
         crossing = screening.get("crossing_actm")
         passage_start = anchor + timedelta(minutes=crossing[0]) if anchor and crossing else None
         passage_end = anchor + timedelta(minutes=crossing[1]) if anchor and crossing else None
-        in_time = bool(begin and end and begin < end and passage_start and passage_end
-                       and begin <= passage_start and passage_end <= end)
         kind = "VA" if row.get("advisory_kind") == "VA_SIGMET" else "WX"
         label = row.get("volcano") or row.get("name") or kind
         if kind == "VA":
             label = f"{label} SIGMET ash area"
-        events.append({"kind": kind, "label": str(label), "polygon": polygon,
-                       "phenomenon_label": "Volcanic ash" if kind == "VA" else phenomenon_label(row.get("phenomenon")),
-                       "short_label": (f"{row.get('fir', '?')}/{row.get('sigmet_id', '?')}" if kind == "WX" else str(label)),
-                       # The legacy fix/vertex distance is not area-to-route
-                       # distance when a leg crosses between outside fixes.
-                       # Do not publish it as a distance from this hazard area.
-                       "position": {"latitude": sum(p[0] for p in polygon) / len(polygon), "longitude": sum(p[1] for p in polygon) / len(polygon)},
-                       "time_utc": when.isoformat() if when else None,
-                       "time_matched": in_time, "valid_from_utc": begin.isoformat() if begin else None,
-                       "valid_to_utc": end.isoformat() if end else None,
-                       # Geometry is explicit even when ACTM is unavailable.
-                       "route_intersects": screening["route_intersects"],
-                       "source_id": row.get("source_id") or row.get("name"),
-                       "place": screening["closest_place"]})
+        event = {"kind": kind, "label": str(label), "polygon": polygon,
+                 "phenomenon_label": "Volcanic ash" if kind == "VA" else phenomenon_label(row.get("phenomenon")),
+                 "short_label": (f"{row.get('fir', '?')}/{row.get('sigmet_id', '?')}" if kind == "WX" else str(label)),
+                 # The legacy fix/vertex distance is not area-to-route
+                 # distance when a leg crosses between outside fixes.
+                 # Do not publish it as a distance from this hazard area.
+                 "position": {"latitude": sum(p[0] for p in polygon) / len(polygon), "longitude": sum(p[1] for p in polygon) / len(polygon)},
+                 "time_utc": when.isoformat() if when else None,
+                 "valid_from_utc": begin.isoformat() if begin else None,
+                 "valid_to_utc": end.isoformat() if end else None,
+                 "source_id": row.get("source_id") or row.get("name"),
+                 "place": screening["closest_place"]}
+        # Geometry is explicit even when ACTM is unavailable; route and time
+        # are stated in the SIGMET card's terms and read from its verdict.
+        event.update(_crossing_state(row, screening, begin, end, passage_start, passage_end))
+        # Level from the SIGMET's own layer and the OFP's planned profile.
+        event.update(_level_state(flight, screening, row))
+        events.append(event)
     # Preserve the existing live matcher output as well as the held CFP
     # polygons. These features already passed route/time/level screening.
     # Keep holes and multipolygon parts instead of filling an invented area.
@@ -245,7 +388,9 @@ def draw_publication_map(canvas, route, x, y, width, height, *, show_key=True):
             continue
         canvas.setStrokeColor(colors.HexColor(palette[event["kind"]]))
         canvas.setFillColor(colors.Color(1, .7, .2, alpha=.25))
-        canvas.setDash([] if event.get("level_matched") else [3, 2])
+        # Solid only when route, time and level all matched: a level match
+        # alone must not draw a crossing outside validity as an applicable area.
+        canvas.setDash([] if event_affects_flight(event) else [3, 2])
         path = canvas.beginPath()
         for ring in event.get("rings") or [polygon]:
             path.moveTo(*xy({"latitude": ring[0][0], "longitude": ring[0][1]}))

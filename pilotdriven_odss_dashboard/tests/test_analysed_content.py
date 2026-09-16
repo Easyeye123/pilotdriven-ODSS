@@ -187,7 +187,9 @@ def test_weather_marker_names_and_key_preserve_type_validity_and_uncertainty():
     line = event_description(event)
     assert 'Thunderstorms 1' in line and 'VHHK SIGMET 2' in line
     assert '09SEP 0000-0400Z' in line
-    assert 'relevance unverified' in line and 'affects flight' not in line and 'WX1' not in line
+    # Route and time matched, level not held: the crossing is stated, the
+    # full verdict is not claimed (David, 9 Sep 2026: "not WX ... that is for what???").
+    assert 'crosses route inside validity' in line and 'affects flight' not in line and 'WX1' not in line
     event['route_intersects'] = False
     assert 'route does not cross area' in event_description(event)
     event['level_matched'] = True

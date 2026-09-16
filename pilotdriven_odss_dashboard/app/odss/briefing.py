@@ -2416,6 +2416,7 @@ def _screening_geometry(
     best: tuple[float, str, float | None] | None = None
     intersects = False
     crossing_bounds = []
+    crossing_legs: list[int] = []
     timing_complete = True
     bearing = None
     for i in range(len(held) - 1):
@@ -2430,6 +2431,7 @@ def _screening_geometry(
         touches = leg.intersects(Polygon(local_ring))
         if touches:
             intersects = True
+            crossing_legs.append(i)
             if actm1 is None or actm2 is None or actm2 < actm1:
                 timing_complete = False
             else:
@@ -2456,6 +2458,9 @@ def _screening_geometry(
         "closest_passage_actm": best[2],
         "route_intersects": intersects,
         "crossing_actm": (min(crossing_bounds), max(crossing_bounds)) if timing_complete and crossing_bounds else None,
+        # Start index of every filed leg that touches the polygon, so a
+        # publication can read the planned level over the crossing itself.
+        "crossing_leg_indexes": crossing_legs,
         "bearing": bearing,
     }
 
@@ -3187,6 +3192,39 @@ def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_SIGMET_TIME_DISPOSITION = {
+    "inside": "PROMOTED",
+    "expires_before": "NOT PROMOTED",
+    "starts_after": "NOT PROMOTED",
+    "overlap": "REVIEW REQUIRED",
+    "validity_unresolved": "REVIEW REQUIRED",
+}
+
+
+def _sigmet_time_state(
+    valid_from: datetime | None,
+    valid_to: datetime | None,
+    entry_utc: datetime | None,
+    exit_utc: datetime | None,
+) -> tuple[str, int | None]:
+    """Compare a crossing's filed leg bounds with the product's validity.
+
+    One decision, shared by the SIGMET verdict card and the route hazard
+    key, so the two pages of one briefing cannot disagree about the same
+    SIGMET (David, 9 Sep 2026: "hazard analysis okay. But not WX ... that is
+    for what???"). Returns the state and, for a miss, the gap in whole
+    minutes."""
+    if not (valid_from and valid_to and valid_from < valid_to and entry_utc and exit_utc):
+        return "validity_unresolved", None
+    if valid_to < entry_utc:
+        return "expires_before", round((entry_utc - valid_to).total_seconds() / 60.0)
+    if valid_from > exit_utc:
+        return "starts_after", round((valid_from - exit_utc).total_seconds() / 60.0)
+    if valid_from <= entry_utc and exit_utc <= valid_to:
+        return "inside", None
+    return "overlap", None
+
+
 def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
     """One REV3-style verdict card per enroute SIGMET in the OFP.
 
@@ -3279,35 +3317,30 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
             )
             if entry_utc and exit_utc:
                 window += f" / {entry_utc:%H%M}-{exit_utc:%H%M}Z"
-            if not (valid_from and valid_to and valid_from < valid_to and entry_utc and exit_utc):
-                card["disposition"] = "REVIEW REQUIRED"
+            state, gap = _sigmet_time_state(valid_from, valid_to, entry_utc, exit_utc)
+            card["disposition"] = _SIGMET_TIME_DISPOSITION[state]
+            if state == "validity_unresolved":
                 card["screening"] = (
                     f"The polygon crosses the route {window}; UTC passage or product validity "
                     "is unresolved, so time applicability cannot be established."
                 )
-            elif valid_to < entry_utc:
-                gap = round((entry_utc - valid_to).total_seconds() / 60.0)
-                card["disposition"] = "NOT PROMOTED"
+            elif state == "expires_before":
                 card["screening"] = (
                     f"The polygon crosses the route {window}, but the product "
                     f"expires {gap} minutes before the earliest possible crossing. NOT PROMOTED."
                 )
-            elif valid_from > exit_utc:
-                gap = round((valid_from - exit_utc).total_seconds() / 60.0)
-                card["disposition"] = "NOT PROMOTED"
+            elif state == "starts_after":
                 card["screening"] = (
                     f"The polygon crosses the route {window}, but the product "
                     f"only becomes valid {gap} minutes after the latest possible crossing. "
                     "NOT PROMOTED."
                 )
-            elif valid_from <= entry_utc and exit_utc <= valid_to:
-                card["disposition"] = "PROMOTED"
+            elif state == "inside":
                 card["screening"] = (
                     f"The polygon crosses the route {window} inside the "
                     "product's validity. PROMOTED - review required."
                 )
             else:
-                card["disposition"] = "REVIEW REQUIRED"
                 card["screening"] = (
                     f"The polygon crosses the route {window}; this interval overlaps the product's validity. "
                     "Exact crossing timing is unresolved."

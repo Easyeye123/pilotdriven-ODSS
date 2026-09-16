@@ -2428,7 +2428,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     }
     assert (
         COMBINED_BRIEFING_SCHEMA_VERSION
-        == "2026-09-17-page1-weather-groups-local-time-v53"
+        == "2026-09-17-route-hazard-key-disposition-v54"
     )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,

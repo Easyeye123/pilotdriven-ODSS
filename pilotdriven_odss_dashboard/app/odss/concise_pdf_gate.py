@@ -113,10 +113,14 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                 for line in lines:
                     if normalized(line) not in folded_pages[index]:
                         violations.append({'code': code, 'message': f'Page {index + 1} omits a source-bound assessment: {line}'})
-            from .analysed_briefing_map import build_publication_map, event_description
+            from .analysed_briefing_map import build_publication_map, event_description, key_disposition
             for event in build_publication_map(flight or {}, view)["publication_events"]:
                 if normalized(event_description(event)) not in folded_pages[WEATHER_PAGE]:
                     violations.append({"code": "ROUTE_HAZARD_KEY_PARITY", "message": f"The weather / route hazards page omits held hazard {event['id']}."})
+                # The key's words and the SIGMET card's verdict are two
+                # statements of one screening on one page; they must agree.
+                if event.get("disposition") and key_disposition(event) != event["disposition"]:
+                    violations.append({"code": "ROUTE_HAZARD_KEY_DISPOSITION_PARITY", "message": f"The route hazard key states {key_disposition(event)} for {event['id']} but its SIGMET card holds {event['disposition']}."})
             for line in deferred_consequences(view):
                 if normalized(line) not in folded_pages[PERFORMANCE_PAGE]:
                     violations.append({"code": "DEFERRED_CONSEQUENCE_PARITY", "message": "The technical status card omits a source-bound consequence."})
