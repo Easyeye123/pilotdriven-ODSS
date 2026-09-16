@@ -19,14 +19,23 @@ These tests pin three things: the three cases print three different plain
 sentences, each sentence states the card's disposition (in words, never as a
 block-capital badge), and a level verdict is printed only from the SIGMET's
 own layer and the OFP's planned level profile.
+
+They also pin the overview map on page 1 to the same verdict: an area is
+drawn solid only when route, time and level all match, so a level-matched
+crossing outside validity (ZJSA/2) can never be painted as an applicable
+area on page 1 while page 5 says it does not apply.
 """
 from __future__ import annotations
 
+from io import BytesIO
+
 import fitz
 import pytest
+from reportlab.pdfgen.canvas import Canvas
 
 from app.odss.analysed_briefing_map import (
     build_publication_map,
+    draw_publication_map,
     event_affects_flight,
     event_description,
     key_disposition,
@@ -34,6 +43,7 @@ from app.odss.analysed_briefing_map import (
 from app.odss.briefing import _sigmet_screening_cards, build_briefing_view
 from app.odss.combined_brief import render_combined_briefing
 from app.odss.concise_pdf_gate import WEATHER_PAGE, check_concise_pdf, normalized
+from app.odss.operational_format import MARGIN, SIZE, TOP
 
 
 SQUARE = "WI S0100 W00100 - S0100 E00100 - N0100 E00100 - N0100 W00100"
@@ -65,6 +75,34 @@ def key_events(flight):
     events = [event for event in build_publication_map(flight, {"hazards": {"sigmet_cards": cards}})["publication_events"]
               if event["kind"] == "WX"]
     return cards, events
+
+
+SOLID, DASHED = [], [3, 2]
+
+
+class DashRecordingCanvas(Canvas):
+    """A real reportlab canvas that also records every dash pattern set on it."""
+
+    def __init__(self):
+        super().__init__(BytesIO(), pagesize=SIZE)
+        self.dashes = []
+
+    def setDash(self, array=(), phase=0):
+        self.dashes.append(list(array) if isinstance(array, (list, tuple)) else array)
+        return super().setDash(array, phase)
+
+
+def drawn_areas(route):
+    """How the page-1 overview map draws each hazard area: event id -> dash.
+
+    The map sets the dash once per event that has a polygon, in publication
+    order, then resets it for the route line; nothing else on the map is
+    dashed. So the record is one pattern per drawn area plus the reset."""
+    canvas = DashRecordingCanvas()
+    draw_publication_map(canvas, route, MARGIN, 233, SIZE[0] - 2 * MARGIN, TOP - 233, show_key=False)
+    areas = [event for event in route["publication_events"] if event.get("polygon")]
+    assert canvas.dashes == canvas.dashes[:len(areas)] + [SOLID], canvas.dashes
+    return {event["id"]: dash for event, dash in zip(areas, canvas.dashes)}
 
 
 # A 20-minute leg through the square: filed leg bounds 1030-1050Z.
@@ -189,6 +227,50 @@ def test_a_level_outside_the_layer_is_asserted_only_for_a_cruise_phase_crossing(
     assert "layer not held" in event_description(events[0])
 
 
+def test_the_map_draws_solid_only_what_the_key_says_affects_the_flight():
+    """Page 1 must not paint solid what page 5 says does not apply.
+
+    On SQ882, ZJSA/2 was level-matched but its product only became valid 81
+    minutes after the latest crossing: NOT PROMOTED on the card. A dash rule
+    keyed on the level match alone would draw it as an applicable area on
+    the overview map while the weather page says it does not apply - the
+    same two-pages-disagree shape as his screenshot, moved to page 1."""
+    flight = flight_for(
+        CROSSING,
+        sigmet("1", "111000/111100"),                     # crosses inside validity: affects flight
+        sigmet("2", "111100/111200"),                     # level matched, product starts later
+        sigmet("3", "111000/111100", area=NORTH_SQUARE),  # never crossed
+    )
+    view = build_briefing_view(flight, [], [])
+    assert [card["disposition"] for card in view["hazards"]["sigmet_cards"]] == ["PROMOTED", "NOT PROMOTED", "NOT PROMOTED"]
+    route = build_publication_map(flight, view)
+    events = {event["short_label"]: event for event in route["publication_events"] if event["kind"] == "WX"}
+    # The level evidence is identical for the first two; only the time differs.
+    assert events["WSJC/1"]["level_matched"] is True and events["WSJC/2"]["level_matched"] is True
+    dashes = drawn_areas(route)
+    assert dashes[events["WSJC/1"]["id"]] == SOLID
+    assert dashes[events["WSJC/2"]["id"]] == DASHED
+    assert dashes[events["WSJC/3"]["id"]] == DASHED
+
+
+@pytest.mark.parametrize("route,layer,level_matched,reason", [
+    (CROSSING, "TOP FL300", None, "level not verified"),
+    (CRUISE, "TOP FL300", False, "above top FL300"),
+])
+def test_a_promoted_crossing_is_drawn_dashed_until_the_level_is_evidenced(route, layer, level_matched, reason):
+    """The card's PROMOTED alone does not paint an area solid either: the
+    legend promises a solid area only when route, time and level all match,
+    and the level is a held fact or nothing."""
+    flight = flight_for(route, sigmet("1", "111000/111100", layer=layer))
+    view = build_briefing_view(flight, [], [])
+    assert view["hazards"]["sigmet_cards"][0]["disposition"] == "PROMOTED"
+    published = build_publication_map(flight, view)
+    event = next(event for event in published["publication_events"] if event["kind"] == "WX")
+    assert event["level_matched"] is level_matched
+    assert reason in event_description(event)
+    assert drawn_areas(published)[event["id"]] == DASHED
+
+
 def test_the_weather_page_prints_the_three_lines_and_the_gate_reads_them_back(tmp_path):
     from generate_visual_samples import sample_findings, sample_flight
 
@@ -267,7 +349,8 @@ def test_sq882_key_lines_agree_with_its_sigmet_cards(tmp_path_factory):
     briefing = rendered("SQ882", tmp_path_factory)
     flight, view = briefing["flight"], briefing["view"]
     cards = {(card["fir"], card["sigmet_id"]): card for card in view["hazards"]["sigmet_cards"]}
-    events = [event for event in build_publication_map(flight, view)["publication_events"] if event["kind"] == "WX"]
+    route = build_publication_map(flight, view)
+    events = [event for event in route["publication_events"] if event["kind"] == "WX"]
     assert len(events) >= 8
     lines = {}
     for event in events:
@@ -283,3 +366,20 @@ def test_sq882_key_lines_agree_with_its_sigmet_cards(tmp_path_factory):
     assert lines["VVHM/1"] != lines["ZJSA/2"]
     assert "unverified" not in " ".join(lines.values())
     assert "REVIEW REQUIRED" not in " ".join(lines.values())
+
+    # Page 1 draws an area solid only where the page-5 card says PROMOTED and
+    # the level is a held match. ZJSA/2 is level-matched and NOT PROMOTED, so
+    # it stays dashed under the legend "flight applicability not fully verified".
+    dashes = drawn_areas(route)
+    by_label = {event["short_label"]: event for event in events}
+    assert dashes[by_label["VVHM/1"]["id"]] == SOLID
+    assert dashes[by_label["ZJSA/1"]["id"]] == SOLID
+    assert by_label["ZJSA/2"]["level_matched"] is True
+    assert dashes[by_label["ZJSA/2"]["id"]] == DASHED
+    for event in route["publication_events"]:
+        if not event.get("polygon"):
+            continue
+        verdict = cards[tuple(event["short_label"].split("/", 1))]["disposition"] if event["kind"] == "WX" else None
+        expected = SOLID if verdict == "PROMOTED" and event["level_matched"] is True else DASHED
+        assert dashes[event["id"]] == expected, (event["id"], event["short_label"], verdict)
+    assert sum(dash == SOLID for dash in dashes.values()) == 2
