@@ -666,16 +666,64 @@ def analysed_airport_overlay(overlay, analysis):
     return result
 
 
+def surface_figure_gap(overlay) -> tuple[str, str]:
+    """The fallback headline and a reason naming which source is missing.
+
+    9 Sep 2026, "WSSS DEPARTURE SURFACE": one centred sentence in an empty
+    panel - "This doesn't work?". The reason is read from the contract the
+    app published (or did not publish); nothing about the airport is guessed.
+    """
+    headline = "Airport surface geometry is not held in this analysis."
+    if not overlay:
+        return headline, (
+            "Missing source: no OpenStreetMap surface overlay was published for "
+            "this airport by the app's surface lookup for this analysis.")
+    features = (overlay.get("featureCollection") or {}).get("features") or []
+    if not features:
+        return headline, (
+            "Missing source: the OpenStreetMap extract held no report-eligible "
+            "runway, taxiway or apron geometry for this airport (nothing verified "
+            "inside the exact aerodrome boundary), so no figure bounds were published.")
+    return headline, (
+        "Missing source: the published overlay carries geometry but no figure bounds.")
+
+
+def scale_bar_metres(points_per_metre: float, max_points: float) -> int:
+    """The longest round ground distance whose bar fits in ``max_points``."""
+    for metres in (10_000, 5_000, 2_500, 2_000, 1_000, 500, 250, 200, 100, 50, 20, 10):
+        if metres * points_per_metre <= max_points:
+            return metres
+    return 10
+
+
 def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=None) -> None:
-    """Draw supplied geometry only; a scheduled/unknown mark is not a closure."""
+    """Draw supplied geometry only; a scheduled/unknown mark is not a closure.
+
+    9 Sep 2026: "This is also rubbish generated" - three bare runway lines, no
+    taxiways, no apron, no scale. The figure strokes the exact aerodrome
+    boundary the app computes, fills apron polygons as areas, and carries a
+    scale bar and a north arrow. Nothing is inferred: every stroke is a
+    supplied feature and the outline is the published boundary.
+    """
+    import math
+    from reportlab.pdfgen.canvas import FILL_EVEN_ODD
     from .surface_overlays import surface_mark_presentation
 
     overlay = overlay or {}
     bounds = overlay.get("bounds") or {}
     if not all(isinstance(bounds.get(k), (int, float)) for k in ("west", "south", "east", "north")):
-        canvas.setFillColor(MUTED)
+        # Left-aligned at the top of the panel like a paragraph, with the
+        # reason under it: "Even the alignment is centred .. it is not what's asked".
+        headline, reason = surface_figure_gap(overlay)
+        canvas.setFillColor(WHITE)
         canvas.setFont("Helvetica", BODY)
-        canvas.drawString(x + 6, y + height - 14, "Airport surface geometry is not held in this analysis.")
+        canvas.drawString(x + 6, y + height - 14, headline)
+        canvas.setFillColor(MUTED)
+        canvas.setFont("Helvetica", LABEL)
+        baseline = y + height - 14 - LEADING
+        for line in wrap(reason, width - 12, size=LABEL):
+            canvas.drawString(x + 6, baseline, line)
+            baseline -= LABEL + 2.5
         return
     marks = {}
     for mark in overlay.get("mapped") or []:
@@ -691,31 +739,117 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     west, south, east, north = (bounds[k] for k in ("west", "south", "east", "north"))
     if east <= west or north <= south:
         raise ValueError("Airport figure bounds are invalid")
-    import math
+    boundary = overlay.get("aerodromeBoundary") or {}
+    rings = [ring for ring in [*(boundary.get("outer") or []), *(boundary.get("inner") or [])]
+             if isinstance(ring, list) and len(ring) >= 4]
+    if rings:
+        # The figure is fitted to the whole field the outline encloses, not
+        # only to the extract's own bounds, so the outline is never clipped.
+        lons = [point[0] for ring in rings for point in ring]
+        lats = [point[1] for ring in rings for point in ring]
+        pad_x = (max(lons) - min(lons)) * 0.02
+        pad_y = (max(lats) - min(lats)) * 0.02
+        west, east = min(west, min(lons) - pad_x), max(east, max(lons) + pad_x)
+        south, north = min(south, min(lats) - pad_y), max(north, max(lats) + pad_y)
     longitude_factor = max(0.01, math.cos(math.radians((south + north) / 2)))
     dx, dy = (east - west) * longitude_factor, north - south
     scale = min((width - 50) / dx, (height - 45) / dy)
     def point(coordinate):
         return (x + (width - dx * scale) / 2 + (coordinate[0] - west) * longitude_factor * scale,
                 y + 28 + (height - 45 - dy * scale) / 2 + (coordinate[1] - south) * scale)
+
+    # Chrome first, so runway labels are placed around it: the north arrow in
+    # the right margin column and the scale bar in the top strip.
+    occupied = []
+    arrow_x, arrow_top = x + width - 13, y + height - 1
+    canvas.setFillColor(WHITE)
+    canvas.setStrokeColor(WHITE)
+    canvas.setFont("Helvetica-Bold", 9)
+    canvas.drawCentredString(arrow_x, arrow_top - 9, "N")
+    head = canvas.beginPath()
+    head.moveTo(arrow_x, arrow_top - 14)
+    head.lineTo(arrow_x - 4, arrow_top - 22)
+    head.lineTo(arrow_x + 4, arrow_top - 22)
+    head.close()
+    canvas.drawPath(head, stroke=0, fill=1)
+    canvas.setLineWidth(1.2)
+    canvas.line(arrow_x, arrow_top - 22, arrow_x, arrow_top - 33)
+    occupied.append((arrow_x - 9, arrow_top - 35, arrow_x + 9, arrow_top + 1))
+
+    points_per_metre = scale / 111_320.0
+    metres = scale_bar_metres(points_per_metre, width * 0.28)
+    bar_length = metres * points_per_metre
+    bar_x, bar_y = x + 3, y + height - 8
+    bar = canvas.beginPath()
+    bar.moveTo(bar_x, bar_y - 2.5)
+    bar.lineTo(bar_x, bar_y + 2.5)
+    bar.moveTo(bar_x, bar_y)
+    bar.lineTo(bar_x + bar_length, bar_y)
+    bar.moveTo(bar_x + bar_length, bar_y - 2.5)
+    bar.lineTo(bar_x + bar_length, bar_y + 2.5)
+    canvas.drawPath(bar, stroke=1, fill=0)
+    scale_label = f"{metres / 1000:g} km" if metres >= 1000 else f"{metres} m"
+    canvas.setFont("Helvetica", 9)
+    canvas.drawString(bar_x + bar_length + 6, bar_y - 3.2, scale_label)
+    occupied.append((bar_x - 2, bar_y - 6, bar_x + bar_length + 8 + stringWidth(scale_label, "Helvetica", 9),
+                     bar_y + 6))
+
+    if rings:
+        canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor("#6B8AA6"))
+        canvas.setLineWidth(0.9)
+        canvas.setDash(4, 3)
+        for ring in rings:
+            path = canvas.beginPath()
+            path.moveTo(*point(ring[0]))
+            for coordinate in ring[1:]:
+                path.lineTo(*point(coordinate))
+            path.close()
+            canvas.drawPath(path, stroke=1, fill=0)
+        canvas.restoreState()
+
+    def draw_order(feature):
+        geometry = feature.get("geometry") or {}
+        aeroway = (feature.get("properties") or {}).get("aeroway")
+        return 0 if geometry.get("type") == "Polygon" else 2 if aeroway == "runway" else 1
+
     labels = {}
-    for feature in (overlay.get("featureCollection") or {}).get("features") or []:
+    for feature in sorted((overlay.get("featureCollection") or {}).get("features") or [], key=draw_order):
         prop = feature.get("properties") or {}
         geometry = feature.get("geometry") or {}
+        polygon = geometry.get("type") == "Polygon"
         lines = [geometry.get("coordinates") or []] if geometry.get("type") == "LineString" else geometry.get("coordinates") or []
         mark = marks.get(prop.get("featureId") or feature.get("id"))
         planned = bool(planned_runway and str(planned_runway) in str(prop.get("ref") or "").split("/"))
         colour = RED if mark == "closure" else AMBER if mark else CYAN if planned else MUTED
+        rings_drawn = [ring for ring in lines if len(ring) >= 4] if polygon else []
+        if rings_drawn:
+            # An apron or stand area is pavement, drawn as a translucent area
+            # with its outline; a marked one takes the mark's colour. A ring
+            # with fewer than four vertices encloses nothing and is left out.
+            path = canvas.beginPath()
+            for ring in rings_drawn:
+                path.moveTo(*point(ring[0]))
+                for coordinate in ring[1:]:
+                    path.lineTo(*point(coordinate))
+                path.close()
+            canvas.setStrokeColor(colour)
+            canvas.setLineWidth(3.2 if mark else 0.7)
+            canvas.setFillColor(colour if mark else colors.HexColor("#64748B"))
+            canvas.setFillAlpha(0.35 if mark else 0.3)
+            canvas.drawPath(path, stroke=1, fill=1, fillMode=FILL_EVEN_ODD)
+            canvas.setFillAlpha(1)
         for line in lines:
             if len(line) < 2:
                 continue
-            canvas.setStrokeColor(colour)
-            canvas.setLineWidth(3.2 if mark else 2.4 if prop.get("aeroway") == "runway" else 0.7)
-            path = canvas.beginPath()
-            path.moveTo(*point(line[0]))
-            for coordinate in line[1:]:
-                path.lineTo(*point(coordinate))
-            canvas.drawPath(path, stroke=1, fill=0)
+            if not polygon:
+                canvas.setStrokeColor(colour)
+                canvas.setLineWidth(3.2 if mark else 2.4 if prop.get("aeroway") == "runway" else 0.7)
+                path = canvas.beginPath()
+                path.moveTo(*point(line[0]))
+                for coordinate in line[1:]:
+                    path.lineTo(*point(coordinate))
+                canvas.drawPath(path, stroke=1, fill=0)
             if prop.get("ref") and (prop.get("aeroway") == "runway" or mark):
                 # OSM can split one runway into several ways. Label its
                 # longest held segment once, with measured collision checks.
@@ -724,7 +858,6 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
                 if length > labels.get(ref, (0,))[0]:
                     first, last = point(line[0]), point(line[-1])
                     labels[ref] = (length, ((first[0] + last[0]) / 2, (first[1] + last[1]) / 2), colour)
-    occupied = []
     for ref, (_, (lx, ly), colour) in sorted(labels.items()):
         label_width = stringWidth(ref, "Helvetica-Bold", 9)
         for ox, oy in ((0, 9), (0, 23), (35, 9), (-35, 9), (0, -17), (55, 23), (-55, 23)):
@@ -750,8 +883,8 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
             raise ValueError(f"Airport figure has no readable label position for {ref}")
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(MUTED)
+    canvas.drawString(x, y + 15, "dashed: aerodrome boundary · shaded: apron / stand area · bar: ground distance")
     canvas.drawString(x, y + 4, "OSM reference · cyan: planned · red: unavailable · amber: scheduled/partial")
-
 
 def fitted_lines(values: list[str], width: float, body: float, budget: int,
                  pointer: str) -> list[str]:

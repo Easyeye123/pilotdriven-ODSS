@@ -16,6 +16,12 @@ SURFACE_MAP_DIR = DATA_DIR / "maps"
 MAX_SURFACE_FEATURES = 256
 MAX_SURFACE_MATCHES = 128
 MAX_COORDINATE_POINTS = 20_000
+MAX_BOUNDARY_RINGS = 32
+# Amazon Location's static-map API rejects a ``geojson-overlay`` query value
+# longer than this. The 10 Sep 2026 satellite surface map introduced the cap
+# with no test; ``fit_static_map_overlay`` now simplifies deterministically
+# down to it and fails closed when the runways and marks alone do not fit.
+STATIC_MAP_OVERLAY_LIMIT = 4_200
 
 
 def surface_conflict_publication_label(conflict: dict[str, Any]) -> str:
@@ -83,6 +89,46 @@ class SurfaceGeometry(_StrictModel):
         minimum = 2 if self.type == "LineString" else 4
         if len(points) < minimum:
             raise ValueError("Surface GeoJSON geometry is incomplete.")
+        return self
+
+
+def _closed_ring(ring: Any) -> list[tuple[float, float]]:
+    """One boundary ring: closed, at least four vertices, enclosing an area."""
+    if not isinstance(ring, list) or not all(
+        isinstance(point, list)
+        and len(point) >= 2
+        and isinstance(point[0], (int, float))
+        and isinstance(point[1], (int, float))
+        for point in ring
+    ):
+        raise ValueError("An aerodrome boundary ring must be a list of [longitude, latitude] points.")
+    points = _coordinate_points(ring)
+    if len(points) < 4 or points[0] != points[-1]:
+        raise ValueError("An aerodrome boundary ring must be closed with at least four points.")
+    area = 0.0
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        area += x0 * y1 - x1 * y0
+    if abs(area) < 1e-10:
+        raise ValueError("An aerodrome boundary ring must enclose an area.")
+    return points
+
+
+class SurfaceAerodromeBoundary(_StrictModel):
+    """The exact OSM aerodrome outline the app already computes.
+
+    ``exactAerodromeBoundary`` (PilotDriven ``airport-report-scope.mjs``)
+    returns ``{outer: [ring...], inner: [ring...]}`` for the report-eligibility
+    test. The same shape is carried here so the figure can stroke the field
+    outline instead of floating three runway lines in black space.
+    """
+
+    outer: list[list[Any]] = Field(min_length=1, max_length=MAX_BOUNDARY_RINGS)
+    inner: list[list[Any]] = Field(default_factory=list, max_length=MAX_BOUNDARY_RINGS)
+
+    @model_validator(mode="after")
+    def validate_rings(self):
+        for ring in [*self.outer, *self.inner]:
+            _closed_ring(ring)
         return self
 
 
@@ -241,6 +287,9 @@ class SurfaceOverlayContract(_StrictModel):
     window: SurfaceWindow
     source: SurfaceSource
     bounds: SurfaceBounds | None
+    # Optional so a browser still on the previous app bundle publishes as
+    # before; when supplied it is the field outline of the figure.
+    aerodromeBoundary: SurfaceAerodromeBoundary | None = None
     featureCollection: SurfaceFeatureCollection
     mapped: list[SurfaceMappedFinding] = Field(max_length=MAX_SURFACE_MATCHES)
     reviewRequired: list[SurfaceReviewFinding] = Field(max_length=MAX_SURFACE_MATCHES)
@@ -499,7 +548,37 @@ def surface_mark_presentation(match: dict[str, Any]) -> str | None:
     return "locator"
 
 
-def _styled_surface_overlay(contract: dict[str, Any]) -> dict[str, Any]:
+def _rounded(coordinates: Any, precision: int | None) -> Any:
+    if precision is None:
+        return coordinates
+    if (
+        isinstance(coordinates, list)
+        and len(coordinates) >= 2
+        and isinstance(coordinates[0], (int, float))
+        and isinstance(coordinates[1], (int, float))
+    ):
+        return [round(float(coordinates[0]), precision), round(float(coordinates[1]), precision)]
+    if isinstance(coordinates, list):
+        return [_rounded(item, precision) for item in coordinates]
+    return coordinates
+
+
+def _styled_surface_overlay(
+    contract: dict[str, Any],
+    *,
+    context_points: int = 16,
+    held_points: int = 16,
+    keep_context: bool = True,
+    precision: int | None = None,
+) -> dict[str, Any]:
+    """Style the validated overlay for the Amazon Location static map.
+
+    Runways and every marked feature are *held*: they are always emitted.
+    Unmarked taxiways, taxilanes and aprons are *context*: they may be thinned
+    to ``context_points`` per line or, at ``keep_context=False``, left out so
+    the query stays under the provider's byte cap. Polygons are never
+    resampled - a ring with vertices removed is a different shape.
+    """
     feature_marks: dict[str, str] = {}
     for match in contract.get("mapped") or []:
         presentation = surface_mark_presentation(match)
@@ -520,15 +599,27 @@ def _styled_surface_overlay(contract: dict[str, Any]) -> dict[str, Any]:
         geometry = feature.get("geometry") or {}
         geometry_type = geometry.get("type")
         coordinates = geometry.get("coordinates")
-        feature_id = str((feature.get("properties") or {}).get("featureId") or "")
+        properties = feature.get("properties") or {}
+        feature_id = str(properties.get("featureId") or "")
+        presentation = feature_marks.get(feature_id)
+        held = presentation is not None or properties.get("aeroway") == "runway"
+        if not held and not keep_context:
+            continue
         if geometry_type == "LineString" and isinstance(coordinates, list):
             geometry = {
                 "type": "LineString",
-                "coordinates": _sample_line(coordinates),
+                "coordinates": _rounded(
+                    _sample_line(coordinates, held_points if held else context_points),
+                    precision,
+                ),
             }
-        elif geometry_type != "Polygon":
+        elif geometry_type == "Polygon":
+            geometry = {
+                "type": "Polygon",
+                "coordinates": _rounded(coordinates, precision),
+            }
+        else:
             continue
-        presentation = feature_marks.get(feature_id)
         style = _SURFACE_STYLES.get(presentation or "")
         properties: dict[str, Any] = {
             "color": style["color"] if style else "#E5E7EB",
@@ -574,6 +665,87 @@ class SurfaceOverlayRenderError(RuntimeError):
     pass
 
 
+# The simplification ladder, in order. Each rung is (name, context points per
+# line, held points per line, keep context, coordinate decimals). The first
+# rung is byte-identical to the unsimplified overlay so an overlay that fits
+# is sent exactly as validated; six decimals is about 0.1 m, finer than the
+# 700 px satellite image can show.
+_STATIC_MAP_RUNGS: tuple[tuple[str, int, int, bool, int | None], ...] = (
+    ("full", 16, 16, True, None),
+    ("rounded", 16, 16, True, 6),
+    ("context-8", 8, 16, True, 6),
+    ("context-4", 4, 16, True, 6),
+    ("context-2", 2, 16, True, 6),
+    ("held-only", 2, 16, False, 6),
+    ("held-8", 2, 8, False, 6),
+    ("held-4", 2, 4, False, 6),
+)
+
+
+def _encode_overlay(overlay: dict[str, Any]) -> str:
+    return json.dumps(overlay, separators=(",", ":"), ensure_ascii=True)
+
+
+def fit_static_map_overlay(
+    contract: dict[str, Any],
+    *,
+    limit: int = STATIC_MAP_OVERLAY_LIMIT,
+) -> tuple[str, dict[str, Any]]:
+    """Encode the styled overlay within the provider's byte cap.
+
+    Deterministic: the same contract always takes the same rung. Runways,
+    marked features and their markers are never dropped; when they alone do
+    not fit, the satellite render is refused (``SurfaceOverlayRenderError``)
+    and the validated schematic stands. Thinning a picture is acceptable;
+    losing a closure from it is not.
+    """
+    feature_ids = {
+        str(feature_id)
+        for match in contract.get("mapped") or []
+        if surface_mark_presentation(match) is not None
+        for feature_id in match.get("featureIds") or []
+    }
+    source_features = (contract.get("featureCollection") or {}).get("features") or []
+    runways = sum(
+        (feature.get("properties") or {}).get("aeroway") == "runway"
+        for feature in source_features
+    )
+    marked = sum(
+        str((feature.get("properties") or {}).get("featureId") or "") in feature_ids
+        and (feature.get("properties") or {}).get("aeroway") != "runway"
+        for feature in source_features
+    )
+    for name, context_points, held_points, keep_context, precision in _STATIC_MAP_RUNGS:
+        overlay = _styled_surface_overlay(
+            contract,
+            context_points=context_points,
+            held_points=held_points,
+            keep_context=keep_context,
+            precision=precision,
+        )
+        text = _encode_overlay(overlay)
+        if len(text.encode("utf-8")) <= limit:
+            lines = [
+                feature for feature in overlay["features"]
+                if feature["geometry"]["type"] != "Point"
+            ]
+            return text, {
+                "bytes": len(text),
+                "limit": limit,
+                "rung": name,
+                "kept": {
+                    "runways": runways,
+                    "marked": marked,
+                    "context": max(0, len(lines) - runways - marked),
+                    "markers": len(overlay["features"]) - len(lines),
+                },
+            }
+    raise SurfaceOverlayRenderError(
+        "Airport surface overlay exceeds the Amazon static-map limit even with "
+        "context removed; the runways and marks are not thinned further."
+    )
+
+
 async def render_surface_static_map(
     contract: dict[str, Any],
     settings: MapSettings,
@@ -588,12 +760,7 @@ async def render_surface_static_map(
     if not bounds:
         raise SurfaceOverlayRenderError("Airport surface bounds are unavailable.")
 
-    overlay = _styled_surface_overlay(contract)
-    overlay_text = json.dumps(overlay, separators=(",", ":"), ensure_ascii=True)
-    if len(overlay_text) > 4_200:
-        raise SurfaceOverlayRenderError(
-            "Airport surface overlay exceeds the Amazon static-map limit."
-        )
+    overlay_text, overlay_receipt = fit_static_map_overlay(contract)
     params = {
         "key": key,
         "style": "Satellite",
@@ -634,6 +801,7 @@ async def render_surface_static_map(
         "image_path": str(destination),
         "media_type": media_type,
         "label": "Amazon Location Satellite + validated OFP surface overlay",
+        "overlay": overlay_receipt,
     }
 
 
@@ -670,9 +838,12 @@ async def attach_surface_report_maps(
 
 
 __all__ = [
+    "STATIC_MAP_OVERLAY_LIMIT",
+    "SurfaceAerodromeBoundary",
     "SurfaceOverlayRequest",
     "validated_airport_surface_index",
     "attach_surface_report_maps",
+    "fit_static_map_overlay",
     "surface_mark_presentation",
     "validated_surface_overlays",
 ]
