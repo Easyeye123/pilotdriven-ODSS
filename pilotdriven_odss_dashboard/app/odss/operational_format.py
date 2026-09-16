@@ -47,6 +47,10 @@ PANEL = colors.HexColor("#102237")
 BORDER = colors.HexColor("#315269")
 WHITE = colors.HexColor("#F2F5FA")
 MUTED = colors.HexColor("#B1C0CD")
+# Taxiways on the airport figure: a tone under the runways' MUTED so weight
+# and tone separate the two, but never a hairline (9 Sep 2026, "no taxiways").
+TAXIWAY = colors.HexColor("#8DA2B6")
+APRON = colors.HexColor("#64748B")
 CYAN = colors.HexColor("#50D5EF")
 GREEN = colors.HexColor("#42D6A3")
 AMBER = colors.HexColor("#FFBC38")
@@ -289,12 +293,46 @@ def rows_height(rows, leading: float) -> float:
     return sum(gap + leading for gap, _ in rows)
 
 
+# The least a drawn figure is given inside an airport column: A1's figure band
+# floor, below which the field is a thumbnail.
+STACK_FIGURE_MIN = 104.0
+# A row height that asks ``plan_page`` for every point the measured rows
+# leave: the minimum is its own content, the preferred exceeds any page.
+TAKES_REMAINING_HEIGHT = (0.0, 9_999.0)
+
+
 def card_height(card: Card, width: float, body: float, leading: float) -> float:
     if card.kind in {"map", "figure", "timeline"}:
         return 0.0
+    if card.kind == "stack":
+        # An airport column: its measured cards plus the figure floor.
+        children = list(card.payload or [])
+        return sum(STACK_FIGURE_MIN if child.kind == "figure" else card_height(child, width, body, leading)
+                   for child in children) + GAP * max(0, len(children) - 1)
     rows = card_rows(card, width, body, leading)
     # 6pt above the title and 4pt of clearance under the last baseline.
     return head_height(card, width) + rows_height(rows, leading) + 10.0
+
+
+def stack_boxes(card: Card, x: float, top: float, width: float, height: float,
+                body: float, leading: float) -> list["CardBox"]:
+    """Lay one airport column out top-down: measured cards keep their measured
+    height; the figure takes whatever the column has left (never below its
+    floor, which ``card_height`` already reserved)."""
+    children = list(card.payload or [])
+    measured = {index: card_height(child, width, body, leading)
+                for index, child in enumerate(children) if child.kind != "figure"}
+    figures = [index for index, child in enumerate(children) if child.kind == "figure"]
+    remaining = height - sum(measured.values()) - GAP * max(0, len(children) - 1)
+    boxes = []
+    for index, child in enumerate(children):
+        child_height = measured.get(index, remaining / len(figures) if figures else 0.0)
+        box = CardBox(child, x, top - child_height, width, child_height)
+        if child.kind not in {"map", "figure", "timeline"}:
+            box.rows = card_rows(child, width, body, leading)
+        boxes.append(box)
+        top -= child_height + GAP
+    return boxes
 
 
 def row_widths(cards: list[Card], full_width: float) -> list[float]:
@@ -354,6 +392,10 @@ def plan_page(title: str, bookmark: str, rows: list[tuple[Any, list[Card]]], *,
         widths = row_widths(cards, full_width)
         x = MARGIN
         for card, width in zip(cards, widths):
+            if card.kind == "stack":
+                page.boxes.extend(stack_boxes(card, x, top, width, height, body, leading))
+                x += width + GAP
+                continue
             box = CardBox(card, x, top - height, width, height)
             if card.kind not in {"map", "figure", "timeline"}:
                 box.rows = card_rows(card, width, body, leading)
@@ -594,9 +636,10 @@ def draw_page(canvas, flight, view, page: Page, number: int, count: int) -> None
                                  box.width - 12, top - box.y - 6, show_key=False)
             continue
         if card.kind == "figure":
-            overlay, planned_runway = card.payload
+            overlay, planned_runway, *rest = card.payload
             draw_airport_figure(canvas, overlay, box.x + 6, box.y + 6, box.width - 12,
-                                top - box.y - 6, planned_runway=planned_runway)
+                                top - box.y - 6, planned_runway=planned_runway,
+                                index_entry=rest[0] if rest else None)
             continue
         if card.kind == "timeline":
             draw_decision_timeline(canvas, card.payload, box.x + 22, box.y + 8,
@@ -666,15 +709,30 @@ def analysed_airport_overlay(overlay, analysis):
     return result
 
 
-def surface_figure_gap(overlay) -> tuple[str, str]:
+def surface_figure_gap(overlay, index_entry=None) -> tuple[str, str]:
     """The fallback headline and a reason naming which source is missing.
 
     9 Sep 2026, "WSSS DEPARTURE SURFACE": one centred sentence in an empty
-    panel - "This doesn't work?". The reason is read from the contract the
-    app published (or did not publish); nothing about the airport is guessed.
+    panel - "This doesn't work?". The reason is read from what the app
+    published: its overlay, or - when it published none - its airport index
+    entry, which records whether the OFP station package the overlay is
+    built from was held at all. Nothing about the airport is guessed.
     """
     headline = "Airport surface geometry is not held in this analysis."
     if not overlay:
+        entry = index_entry if isinstance(index_entry, dict) else {}
+        status = str(entry.get("stationStatus") or "").strip().lower()
+        if status in {"unavailable", "error"}:
+            source = str(entry.get("sourceLabel") or "uploaded OFP station package").strip()
+            return headline, (
+                f"Missing source: the app's airport index records the OFP station package "
+                f"for this airport as {status} ({source}), so no surface overlay was "
+                "requested for it.")
+        if status == "held":
+            return headline, (
+                "Missing source: the OFP station package is held, but the app's surface "
+                "lookup published no overlay for this airport in this analysis (the lookup "
+                "failed or was refused; the app's analysis warnings carry the reason).")
         return headline, (
             "Missing source: no OpenStreetMap surface overlay was published for "
             "this airport by the app's surface lookup for this analysis.")
@@ -696,14 +754,16 @@ def scale_bar_metres(points_per_metre: float, max_points: float) -> int:
     return 10
 
 
-def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=None) -> None:
+def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=None,
+                        index_entry=None) -> None:
     """Draw supplied geometry only; a scheduled/unknown mark is not a closure.
 
     9 Sep 2026: "This is also rubbish generated" - three bare runway lines, no
     taxiways, no apron, no scale. The figure strokes the exact aerodrome
-    boundary the app computes, fills apron polygons as areas, and carries a
-    scale bar and a north arrow. Nothing is inferred: every stroke is a
-    supplied feature and the outline is the published boundary.
+    boundary the app computes, fills apron polygons as areas, strokes the
+    taxiways at a readable weight, and carries a scale bar and a north arrow.
+    Nothing is inferred: every stroke is a supplied feature, the outline is
+    the published boundary, and the legend names only what was drawn.
     """
     import math
     from reportlab.pdfgen.canvas import FILL_EVEN_ODD
@@ -714,7 +774,7 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     if not all(isinstance(bounds.get(k), (int, float)) for k in ("west", "south", "east", "north")):
         # Left-aligned at the top of the panel like a paragraph, with the
         # reason under it: "Even the alignment is centred .. it is not what's asked".
-        headline, reason = surface_figure_gap(overlay)
+        headline, reason = surface_figure_gap(overlay, index_entry)
         canvas.setFillColor(WHITE)
         canvas.setFont("Helvetica", BODY)
         canvas.drawString(x + 6, y + height - 14, headline)
@@ -814,6 +874,7 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
         return 0 if geometry.get("type") == "Polygon" else 2 if aeroway == "runway" else 1
 
     labels = {}
+    shaded = False
     for feature in sorted((overlay.get("featureCollection") or {}).get("features") or [], key=draw_order):
         prop = feature.get("properties") or {}
         geometry = feature.get("geometry") or {}
@@ -821,7 +882,8 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
         lines = [geometry.get("coordinates") or []] if geometry.get("type") == "LineString" else geometry.get("coordinates") or []
         mark = marks.get(prop.get("featureId") or feature.get("id"))
         planned = bool(planned_runway and str(planned_runway) in str(prop.get("ref") or "").split("/"))
-        colour = RED if mark == "closure" else AMBER if mark else CYAN if planned else MUTED
+        runway = prop.get("aeroway") == "runway"
+        colour = RED if mark == "closure" else AMBER if mark else CYAN if planned else MUTED if runway else TAXIWAY
         rings_drawn = [ring for ring in lines if len(ring) >= 4] if polygon else []
         if rings_drawn:
             # An apron or stand area is pavement, drawn as a translucent area
@@ -833,18 +895,22 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
                 for coordinate in ring[1:]:
                     path.lineTo(*point(coordinate))
                 path.close()
-            canvas.setStrokeColor(colour)
-            canvas.setLineWidth(3.2 if mark else 0.7)
-            canvas.setFillColor(colour if mark else colors.HexColor("#64748B"))
+            canvas.setStrokeColor(colour if mark else APRON)
+            canvas.setLineWidth(3.2 if mark else 0.6)
+            canvas.setFillColor(colour if mark else APRON)
             canvas.setFillAlpha(0.35 if mark else 0.3)
             canvas.drawPath(path, stroke=1, fill=1, fillMode=FILL_EVEN_ODD)
             canvas.setFillAlpha(1)
+            shaded = True
         for line in lines:
             if len(line) < 2:
                 continue
             if not polygon:
+                # Runways 2.4 pt, marked pavement 3.2 pt (the width the state
+                # gate reads back), taxiways 1.3 pt: visible on an iPad photo
+                # of the page, still lighter than a runway.
                 canvas.setStrokeColor(colour)
-                canvas.setLineWidth(3.2 if mark else 2.4 if prop.get("aeroway") == "runway" else 0.7)
+                canvas.setLineWidth(3.2 if mark else 2.4 if runway else 1.3)
                 path = canvas.beginPath()
                 path.moveTo(*point(line[0]))
                 for coordinate in line[1:]:
@@ -881,9 +947,18 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
             break
         else:
             raise ValueError(f"Airport figure has no readable label position for {ref}")
+    # The legend is a claim about the figure: it names the outline and the
+    # shaded areas only when they were drawn (an overlay without a published
+    # boundary or apron polygons has neither); the scale bar always is.
+    legend = []
+    if rings:
+        legend.append("dashed: aerodrome boundary")
+    if shaded:
+        legend.append("shaded: apron / stand area")
+    legend.append("bar: ground distance")
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(MUTED)
-    canvas.drawString(x, y + 15, "dashed: aerodrome boundary · shaded: apron / stand area · bar: ground distance")
+    canvas.drawString(x, y + 15, " · ".join(legend))
     canvas.drawString(x, y + 4, "OSM reference · cyan: planned · red: unavailable · amber: scheduled/partial")
 
 def fitted_lines(values: list[str], width: float, body: float, budget: int,
@@ -1160,6 +1235,10 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
 
     # ---------------------------------------------------------------- page 4
     figures, airport_cards = [], []
+    # The app's airport index says whether each airport's OFP station package
+    # was held; a figure with no overlay names that as its missing source.
+    surface_index = {str(entry.get("icao") or "").strip().upper(): entry
+                     for entry in (view.get("airport_surface_index") or []) if isinstance(entry, dict)}
     for analysed in airport_analysis:
         role = analysed["role"]
         overlay = next((o for o in view.get("surface_overlays") or []
@@ -1167,7 +1246,8 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         overlay = analysed_airport_overlay(overlay, analysed)
         figures.append(Card(f"{text(analysed['icao'])} {role.upper()} SURFACE", [],
                             CYAN if role == "departure" else RED, tag="OSM", kind="figure",
-                            payload=(overlay, flight.get(f"{role}_runway"))))
+                            payload=(overlay, flight.get(f"{role}_runway"),
+                                     surface_index.get(str(analysed.get("icao") or "").strip().upper()))))
         airport_cards.append(Card(
             f"{text(analysed['icao'])} {role.upper()} · PLANNED RWY {text(analysed['planned_runway'])}",
             [r["text"] for r in analysed["lines"]]
@@ -1179,10 +1259,23 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         alternate_lines.append(f"{text(row.get('airport'))}/{text(row.get('runway'))} {str(row.get('role') or 'alternate').upper()} · {text(row.get('approach'))} · MIN {text(row.get('minima'))} · {text(row.get('distance_nm'))} NM / {text(row.get('time_minutes'))} min / {kg(row.get('fuel_kg'))}.")
         alternate_lines.extend(r["text"] for r in analysis["lines"])
 
+    # His reference page 4 is a DEPARTURE AIRPORT column beside a DESTINATION
+    # AIRPORT column, the alternate matrix under both. Each column here is the
+    # airport's figure over its consequences, and the column row takes every
+    # point of height the measured alternates row leaves - so the figure is
+    # sized by the page, not by a fixed band (9 Sep 2026: a 145 x 105 pt VHHH
+    # thumbnail in a 375 pt card, "This is also rubbish generated").
+    columns = [Card("", kind="stack", payload=[figure, card])
+               for figure, card in zip(figures, airport_cards)]
+
     def airport_rows(body, leading, variant=0):
+        airport_row = (
+            [(TAKES_REMAINING_HEIGHT, columns)] if columns else [
+                ((104.0, 158.0), [Card("AIRPORT SURFACE", ["No airport figure is held."], CYAN)]),
+                (None, [Card("AIRPORTS", ["No airport analysis is held."], CYAN)]),
+            ])
         return [
-            ((104.0, 158.0), figures or [Card("AIRPORT SURFACE", ["No airport figure is held."], CYAN)]),
-            (None, airport_cards or [Card("AIRPORTS", ["No airport analysis is held."], CYAN)]),
+            *airport_row,
             (None, [Card("ALTERNATE PLANS / FLIGHT-WINDOW CONSEQUENCES",
                          alternate_lines or ["No alternate rows are held."], AMBER,
                          tag="CFP P2", paragraph_gap=2.0)]),
