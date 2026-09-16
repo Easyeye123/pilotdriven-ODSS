@@ -244,6 +244,14 @@ class SurfaceSource(_StrictModel):
     attribution: str = Field(min_length=1, max_length=200)
     licenceUrl: str = Field(min_length=1, max_length=500)
     referenceOnly: Literal[True]
+    # What the app's provider said about the extract the contract was built
+    # from: the report scope it carries (2 = verified membership, field
+    # outline and apron relations; 1 = membership only) and whether it was a
+    # cached copy stood in for a failed refresh. Optional so a browser on the
+    # previous bundle still publishes; when stated, a figure drawn without
+    # its outline can say why instead of omitting it silently (17 Sep 2026).
+    reportScopeVersion: int | None = Field(default=None, ge=0, le=99)
+    stale: bool | None = None
 
 
 class SurfaceBounds(_StrictModel):

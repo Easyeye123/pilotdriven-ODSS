@@ -78,15 +78,20 @@ def fixture_contract(icao: str) -> dict:
 
 
 def surface_contract(icao: str, *, role: str | None = None, with_boundary: bool = True,
-                     with_aprons: bool = True, mapped: list | None = None) -> dict:
+                     with_aprons: bool = True, mapped: list | None = None,
+                     source: dict | None = None) -> dict:
     """The exact payload the app publishes for the airport, revalidated.
 
     ``with_boundary=False, with_aprons=False`` is what today's production app
     (before its companion change) publishes: runways and named taxiways only.
+    ``source`` merges the extract provenance the app now adds to ``source``
+    (``reportScopeVersion`` and ``stale``).
     """
     payload = fixture_contract(icao)
     if role:
         payload["role"] = role
+    if source is not None:
+        payload["source"] = {**payload["source"], **source}
     if not with_boundary:
         payload.pop("aerodromeBoundary", None)
     if not with_aprons:
@@ -218,6 +223,24 @@ def test_contract_accepts_the_exact_aerodrome_boundary_the_app_computes():
     assert contract["aerodromeBoundary"]["inner"] == []
     legacy = vhhh_contract(with_boundary=False)
     assert legacy["aerodromeBoundary"] is None
+
+
+def test_contract_accepts_the_extract_provenance_the_app_publishes():
+    """17 Sep 2026 review: the app now states, under ``source``, the report
+    scope the extract carries (2 = verified membership, field outline and
+    apron relations; 1 = membership only) and whether it is a cached copy
+    stood in for a failed refresh. Optional, so a browser on the previous
+    bundle still publishes; bounded, so a nonsense scope is refused."""
+    stated = vhhh_contract(with_boundary=False, source={"reportScopeVersion": 1, "stale": True})
+    assert stated["source"]["reportScopeVersion"] == 1
+    assert stated["source"]["stale"] is True
+    unstated = vhhh_contract()
+    assert unstated["source"]["reportScopeVersion"] is None
+    assert unstated["source"]["stale"] is None
+    payload = fixture_contract("VHHH")
+    payload["source"]["reportScopeVersion"] = -1
+    with pytest.raises(ValidationError):
+        SurfaceOverlayContract.model_validate(payload)
 
 
 @pytest.mark.parametrize("ring", [
@@ -361,6 +384,70 @@ def test_legend_names_only_what_the_figure_draws(tmp_path):
 
     legend = legend_text(render_figure(tmp_path, vhhh_contract()))
     assert "dashed: aerodrome boundary" in legend and "shaded: apron" in legend, legend
+
+
+@pytest.mark.parametrize("source, expected", [
+    # Production until its seed is rebuilt: the mirror misses and a
+    # report-scoped v1 cache stands in - membership verified, no outline, no
+    # apron relations - published as stale.
+    ({"reportScopeVersion": 1, "stale": True},
+     "no field outline: cached extract predates it; refresh failed"),
+    ({"reportScopeVersion": 1, "stale": False},
+     "no field outline: the extract predates it"),
+    # A browser on the previous bundle publishes no provenance at all.
+    ({}, "no field outline published"),
+    # A current extract whose exact outline OpenStreetMap could not establish.
+    ({"reportScopeVersion": 2, "stale": False},
+     "no field outline: none established from OpenStreetMap"),
+])
+def test_figure_without_its_outline_says_why(tmp_path, source, expected):
+    """17 Sep 2026 review: with the legend honest, a figure drawn from a
+    stale v1 extract simply lost its dashed outline and its caption - close
+    to the picture he called rubbish, with nothing on the page saying why.
+    The reason is read from the provenance the app publishes, never guessed;
+    it is printed under the geometry at the readable floor, and the pavement
+    is drawn above it, never through it."""
+    contract = vhhh_contract(with_boundary=False, source=source)
+    for figure in (FIGURE, PAGE_FOUR_FIGURE):
+        page = render_figure(tmp_path, contract, figure=figure, planned_runway="07R")
+        x, y, width, height = figure
+        assert not dashed_outlines(page)
+        assert "dashed" not in legend_text(page)
+        note = [s for s in spans(page) if s["text"].startswith("no field outline")]
+        assert len(note) == 1, [s["text"] for s in spans(page)]
+        assert note[0]["text"] == expected
+        assert note[0]["size"] >= 8.9
+        assert note[0]["bbox"][0] <= x + 1, "the note is left-aligned with the legend"
+        assert note[0]["bbox"][2] <= x + width, "the note fits the figure width"
+        # Under the geometry and above the legend: from the bottom up the
+        # caption block reads colour key, legend, note, on the figure's own
+        # 11 pt leading (span boxes carry ascender/descender padding, so the
+        # baselines are compared through the boxes' bottoms).
+        legend = [s for s in spans(page) if s["text"].startswith(("shaded", "bar:"))]
+        assert legend
+        assert legend[0]["bbox"][3] - note[0]["bbox"][3] >= 10, "the note sits one line above the legend"
+        note_top = to_pdf_y(page, note[0]["bbox"][1])
+        fills = translucent_fills(page, fitz.Rect(x, 0, x + width, page.rect.height), minimum=0.0)
+        assert len(fills) >= 39
+        assert all(to_pdf_y(page, d["rect"].y1) >= note_top for d in fills), "pavement is drawn above the note"
+    # With the outline drawn there is nothing to explain.
+    page = render_figure(tmp_path, vhhh_contract(source={"reportScopeVersion": 2, "stale": False}))
+    assert dashed_outlines(page)
+    assert not [s for s in spans(page) if s["text"].startswith("no field outline")]
+
+
+def test_fallback_names_a_stale_copy_that_stood_in_for_a_failed_refresh():
+    """The empty-extract fallback reason says when the extract it describes
+    was a cached copy the app could not refresh, read from ``source``."""
+    overlay = {"icao": "WSSS", "role": "departure", "bounds": None,
+               "source": {"reportScopeVersion": 1, "stale": True},
+               "featureCollection": {"type": "FeatureCollection", "features": []},
+               "mapped": [], "reviewRequired": []}
+    _headline, reason = surface_figure_gap(overlay)
+    assert "held no report-eligible" in reason
+    assert "a cached extract stood in for a failed refresh" in reason
+    overlay["source"] = {"reportScopeVersion": 2, "stale": False}
+    assert "stood in" not in surface_figure_gap(overlay)[1]
 
 
 def test_taxiways_read_as_lines_not_hairlines(tmp_path):
@@ -622,6 +709,49 @@ def test_page_four_gives_each_airport_its_own_column_and_a_figure_he_can_read(tm
         assert abs(headline["bbox"][0] - reason["bbox"][0]) < 1.0
         assert headline["bbox"][0] < page.rect.width / 4
         assert abs(headline["bbox"][0] - columns["EBBR"]["figure"]["bbox"][0]) < 4.0
+
+
+def test_page_four_says_why_a_figure_has_no_outline(tmp_path):
+    """The production download path with what production publishes until its
+    seed is rebuilt: the mirror missed, a report-scoped v1 cache stood in
+    (no outline, no apron relations) and the app said so. Page 4 draws the
+    field and prints the reason under it; the physical scan and the readable
+    floor accept the page."""
+    from generate_visual_samples import sample_findings, sample_flight
+    from app.odss.combined_brief import render_combined_briefing
+    from app.odss.concise_pdf_gate import AIRPORTS_PAGE
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    flight = sample_flight()
+    findings = [f for f in sample_findings() if f["engine"] != "depressurisation"]
+    flight["surface_overlays"] = [
+        wsss_contract(role="destination", with_boundary=False, source={"reportScopeVersion": 1, "stale": True})]
+    flight["airport_surface_index"] = [
+        index_entry("EBBR", "departure", "unavailable"),
+        index_entry("WSSS", "destination", "held"),
+    ]
+    path = tmp_path / "SQ303_Flight_Briefing.pdf"
+    render_combined_briefing(flight, findings, [], path)
+    physical = scan_physical_pdf(path)
+    assert physical["valid"], physical["violations"][:4]
+    with fitz.open(path) as document:
+        page = document[AIRPORTS_PAGE]
+        columns = assert_airport_columns(page, "EBBR", "WSSS")
+        all_spans = spans(page)
+        assert not dashed_outlines(page)
+        note = [s for s in all_spans if s["text"].startswith("no field outline")]
+        assert len(note) == 1, [s["text"] for s in all_spans if "outline" in s["text"]]
+        assert note[0]["text"] == "no field outline: cached extract predates it; refresh failed"
+        assert note[0]["bbox"][0] > page.rect.width / 2, "the note sits in the destination column"
+        assert note[0]["bbox"][1] > columns["WSSS"]["figure"]["bbox"][3], "under the figure title"
+        assert note[0]["bbox"][3] < columns["WSSS"]["consequences"]["bbox"][1], "above the consequences card"
+        legend = next(s for s in all_spans if s["text"].startswith("shaded: apron") and s["bbox"][0] > page.rect.width / 2)
+        assert "dashed" not in legend["text"]
+        assert abs(note[0]["bbox"][0] - legend["bbox"][0]) < 1.0, "the note shares the legend's left edge"
+        assert legend["bbox"][3] - note[0]["bbox"][3] >= 10, "the note sits one line above the legend"
+        # The runways and the stand pads are still drawn: a figure without
+        # its outline beats a blocked report, and now it says why.
+        assert len(translucent_fills(page, page.rect, minimum=0.0)) >= 90
 
 
 def test_his_sin_hkg_briefing_draws_both_fields_on_page_four(tmp_path):

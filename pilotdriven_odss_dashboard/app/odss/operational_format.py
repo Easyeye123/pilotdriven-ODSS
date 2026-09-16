@@ -738,12 +738,38 @@ def surface_figure_gap(overlay, index_entry=None) -> tuple[str, str]:
             "this airport by the app's surface lookup for this analysis.")
     features = (overlay.get("featureCollection") or {}).get("features") or []
     if not features:
+        stood_in = (overlay.get("source") or {}).get("stale") is True
         return headline, (
             "Missing source: the OpenStreetMap extract held no report-eligible "
             "runway, taxiway or apron geometry for this airport (nothing verified "
-            "inside the exact aerodrome boundary), so no figure bounds were published.")
+            "inside the exact aerodrome boundary), so no figure bounds were published"
+            + (" (a cached extract stood in for a failed refresh)." if stood_in else "."))
     return headline, (
         "Missing source: the published overlay carries geometry but no figure bounds.")
+
+
+def surface_outline_gap(overlay) -> str | None:
+    """Why a drawn figure has no field outline, read from the contract.
+
+    17 Sep 2026 review: with the legend honest, a figure drawn from an
+    extract that predates the outline (report scope 1, stood in for a failed
+    refresh) simply lost its dashed outline and its caption, and nothing on
+    the page said why. The app states the extract's report scope and whether
+    it was a cached copy under ``source``; the reason is read from those and
+    never guessed. ``None`` when an outline was published.
+    """
+    boundary = (overlay or {}).get("aerodromeBoundary") or {}
+    if any(isinstance(ring, list) and len(ring) >= 4 for ring in boundary.get("outer") or []):
+        return None
+    source = (overlay or {}).get("source") or {}
+    scope = source.get("reportScopeVersion")
+    stale = source.get("stale") is True
+    if not isinstance(scope, int) or isinstance(scope, bool):
+        return "no field outline published"
+    if scope < 2:
+        return ("no field outline: cached extract predates it; refresh failed" if stale
+                else "no field outline: the extract predates it")
+    return "no field outline: none established from OpenStreetMap"
 
 
 def scale_bar_metres(points_per_metre: float, max_points: float) -> int:
@@ -802,6 +828,10 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     boundary = overlay.get("aerodromeBoundary") or {}
     rings = [ring for ring in [*(boundary.get("outer") or []), *(boundary.get("inner") or [])]
              if isinstance(ring, list) and len(ring) >= 4]
+    # An outline the app could not publish is explained in a caption line
+    # under the geometry; the geometry strip gives up that line's height.
+    outline_gap = None if rings else surface_outline_gap(overlay)
+    floor = 11 if outline_gap else 0
     if rings:
         # The figure is fitted to the whole field the outline encloses, not
         # only to the extract's own bounds, so the outline is never clipped.
@@ -813,10 +843,10 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
         south, north = min(south, min(lats) - pad_y), max(north, max(lats) + pad_y)
     longitude_factor = max(0.01, math.cos(math.radians((south + north) / 2)))
     dx, dy = (east - west) * longitude_factor, north - south
-    scale = min((width - 50) / dx, (height - 45) / dy)
+    scale = min((width - 50) / dx, (height - 45 - floor) / dy)
     def point(coordinate):
         return (x + (width - dx * scale) / 2 + (coordinate[0] - west) * longitude_factor * scale,
-                y + 28 + (height - 45 - dy * scale) / 2 + (coordinate[1] - south) * scale)
+                y + 28 + floor + (height - 45 - floor - dy * scale) / 2 + (coordinate[1] - south) * scale)
 
     # Chrome first, so runway labels are placed around it: the north arrow in
     # the right margin column and the scale bar in the top strip.
@@ -929,7 +959,7 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
         for ox, oy in ((0, 9), (0, 23), (35, 9), (-35, 9), (0, -17), (55, 23), (-55, 23)):
             px, py = lx + ox, ly + oy
             box = (px - label_width / 2 - 2, py - 3, px + label_width / 2 + 2, py + 10)
-            if box[0] < x or box[2] > x + width or box[1] < y + 25 or box[3] > y + height:
+            if box[0] < x or box[2] > x + width or box[1] < y + 25 + floor or box[3] > y + height:
                 continue
             if any(box[0] < b[2] and box[2] > b[0] and box[1] < b[3] and box[3] > b[1] for b in occupied):
                 continue
@@ -958,6 +988,8 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     legend.append("bar: ground distance")
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(MUTED)
+    if outline_gap:
+        canvas.drawString(x, y + 26, outline_gap)
     canvas.drawString(x, y + 15, " · ".join(legend))
     canvas.drawString(x, y + 4, "OSM reference · cyan: planned · red: unavailable · amber: scheduled/partial")
 
