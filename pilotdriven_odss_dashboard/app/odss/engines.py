@@ -39,6 +39,7 @@ from .pilot_briefing import (
     notam_sort_key,
     pilot_notam_key,
 )
+from .notam_restriction_line import derive_notam_restriction_line
 from .reviewed_publications import reviewed_publication_for_notam
 from .report_facts import required_operational_reference_times
 from .weather_timing import select_taf_for_window, summarize_metar_for_window, summarize_taf_for_window
@@ -1384,7 +1385,7 @@ def _notam_operational_summary(
     if kind == "approach_navaid_closure":
         return f"{subject} unavailable during the applicable {phase} window."
     if kind == "runway_approach_restriction":
-        return f"{subject.title()} restriction applies during the applicable {phase} window."
+        return derive_notam_restriction_line(text)["text"]
     if kind == "surface_identity_review":
         return retired_taxiway_lighting_summary(text) or "Pavement identity and availability are unverified."
     if kind == "runway_lighting_restriction":
@@ -1403,7 +1404,7 @@ def _notam_operational_summary(
     if kind == "taxiway_closure":
         return f"{subject.upper()} closed during the applicable {phase} window."
     if kind == "taxiway_restriction":
-        return f"{subject.upper()} restriction applies during the applicable {phase} window."
+        return derive_notam_restriction_line(text)["text"]
     if kind == "apron_stand_closure":
         return f"{subject.upper()} closed during the applicable {phase} window."
     if kind == "obstacle":

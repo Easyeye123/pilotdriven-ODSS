@@ -21,6 +21,7 @@ from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
 from .deferred_dispatch import build_deferred_dispatch_gates
 from .engines import detect_terrain_events, detect_vws_events, notam_dashboard_line
+from .notam_restriction_line import derive_notam_restriction_line
 from .enrichment import ofp_volcano_records
 from .pilot_briefing import (
     normalize_notam_references,
@@ -608,13 +609,16 @@ def _compact_notam_text(
         return (
             f"RWY {runway_label} strip grading WIP; men and equipment present."
         )
-    # Boss 02 Sep 2026: before falling back to the engine's generic sentence,
-    # an approach-aid record reads as the boss reads it (aid + state, or the
-    # FAA procedure + its note). Dashboard compact text only; the PDF keeps
-    # its summary.
-    # The line is dashboard-only: the same builder also feeds the PDF's card
-    # summary and airports pages, which must stay byte-identical to the
-    # approved REV3 reference.
+    # A5's source-derived held analysis already supplies both surfaces. The
+    # older FAA dashboard helper can truncate an amended note or choose a
+    # different clause (KORD A9894/26), so it must not replace that analysis.
+    # Exact equality confines this preference to the two generic branches
+    # repaired by A5; timing review and specialist summaries remain intact.
+    if item.get("pertinence_kind") in {"runway_approach_restriction", "taxiway_restriction"}:
+        held = str(item.get("summary") or "")
+        if held and held == derive_notam_restriction_line(raw)["text"]:
+            return held
+    # Older saved findings still use the aid/state or FAA procedure fallback.
     if dashboard:
         dashboard_line = notam_dashboard_line(raw, str(item.get("pertinence_kind") or ""))
         if dashboard_line:

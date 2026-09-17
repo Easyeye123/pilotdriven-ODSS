@@ -2036,9 +2036,19 @@ def test_taxiway_summaries_never_promote_grammar_or_pavement_words_as_ids() -> N
         if item["engine"] == "notam"
     }
 
-    assert "TANGO TWY SEGMENT" in summaries["SX124/26"]
-    assert "W4/W5 HIGH-SPEED TURN-OFFS" in summaries["SX124/26"]
-    assert "TWY M BETWEEN BM3 AND BM5" in summaries["A4644/26"]
+    # Subject extraction must still reject grammar/pavement words as IDs.
+    # A5 now quotes the filed restriction instead of printing that subject in
+    # a generic "restriction applies" template; retain both identity checks.
+    subjects = {
+        record["notam_id"]: engines._notam_subject(record["text"], "taxiway_restriction")
+        for record in flight["notams"]
+    }
+    assert "TANGO TWY SEGMENT" in subjects["SX124/26"].upper()
+    assert "W4/W5 HIGH-SPEED TURN-OFFS" in subjects["SX124/26"].upper()
+    assert "TWY M BETWEEN BM3 AND BM5" in subjects["A4644/26"].upper()
+    assert "TANGO TWY with closure" in summaries["SX124/26"]
+    assert "W4 and W5" in summaries["SX124/26"]
+    assert "TWY M BETWEEN BM3 AND BM5 closed" in summaries["A4644/26"]
     assert "taxilanes R1/R2/R3" in summaries["SX176/24"]
     assert all(
         bad not in " ".join(summaries.values())
