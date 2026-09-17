@@ -85,6 +85,59 @@ def check_airport_figure_states(page, overlay, analysis) -> list[dict[str, str]]
     return violations
 
 
+
+def _bound_defect_subject_is_published(page_text, page_index, item, item_index, view) -> bool:
+    """Recognise a defect-only continuation in its analysed subject position.
+
+    A malformed description may leave the complete defect in company_remark.
+    That is distinct from copying a maintenance instruction block. The gate
+    independently binds the original item, typed segment, short defect grammar,
+    source position and retained consequence; renderer text alone authorises
+    nothing. Every other remark keeps the existing rejection.
+    """
+    if page_index not in {ANALYSIS_PAGE, PERFORMANCE_PAGE} or not view:
+        return False
+    description = str(item.get("description") or "").strip()
+    raw = str(item.get("company_remark") or "").strip()
+    # A source form fragment ending in an unmatched bracket cannot itself be
+    # a defect. The continuation must be a single complete defect statement.
+    if not (description.startswith("-") and description.count(")") > description.count("(")):
+        return False
+    if not raw or re.search(r"[\n\r;()]|\.\s", raw) or len(raw.split()) > 24:
+        return False
+    if re.search(r"\b(?:UPLIFT|APPLY|APPLIED|INSPECT|CHECK|PRIOR|BEFORE|PERMITTED|DISPATCH|SECTION|CHAPTER|MEL|CDL|REFER|WRT|MAINT|PERFORMANCE)\b", raw, re.I):
+        return False
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 /#,'-]+\s(?:MISSING|TORN|LOOSE|INOP|INOPERATIVE|UNSERVICEABLE|NOT WORKING|NOT COLD|NO POWER)[.]?", raw, re.I):
+        return False
+    remark = normalized(raw)
+    folded = normalized(page_text)
+    # The proper subject is cased, present once in its section, and followed
+    # by the analysed effect. Uppercase or repeated injections still fail.
+    if folded.count(remark) != 1 or " ".join(raw.split()) in " ".join(page_text.split()):
+        return False
+    segments = [segment for gate in view.get("deferred_dispatch_gates") or []
+                for segment in gate.get("source_segments") or []
+                if segment.get("source_item_index") == item_index
+                and normalized(segment.get("description")) == normalized(description)
+                and normalized(segment.get("restriction")) == remark
+                and normalized(segment.get("source_text")) == normalized(description + " " + raw)]
+    rows = [row for row in view.get("deferred_pdf_analysis") or []
+            if row.get("source_item_indices") == [item_index]
+            and normalized(row.get("subject")) == remark]
+    if len(segments) != 1 or len(rows) != 1:
+        return False
+    consequences = rows[0].get("consequences") or []
+    if not consequences or any(not normalized(value) or normalized(value) in remark for value in consequences):
+        return False
+    effect = normalized(" ".join(consequences))
+    if page_index == ANALYSIS_PAGE:
+        declaration = normalized(segments[0].get("source_declaration"))
+        return bool(declaration and (remark + " DISPATCH CONFIRMATION " + effect
+                    + " SOURCE UPLOADED OFP DEFERRED DECLARATION " + declaration) in folded)
+    label = normalized(str(item.get("item_type") or "") + " " + str(item.get("reference") or ""))
+    return bool(label and label + " " + remark + " " + effect in folded)
+
+
 def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=None, alternate_analysis=None, closing_lines=None) -> dict[str, Any]:
     violations = []
     with fitz.open(path) as pdf:
@@ -159,16 +212,17 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                 nearest = min((hit.y0 - title.y1 for hit in below), default=None)
                 if nearest is None or nearest > 35:
                     violations.append({"code": "REVIEW_BODY_ALIGNMENT", "message": "Closing conditions are detached from their section heading."})
-        # The raw company remark belongs in the app, not in the published
-        # briefing - on any page. The ranked decision page prints deferred
+        # Source instruction blocks belong in the app. A defect-only source
+        # continuation may name its own analysed subject after independent
+        # binding checks below. The ranked decision page prints deferred
         # items too, so a check bound to the technical page alone cannot see
         # the block-capital copy David objected to.
-        for item in (flight or {}).get("deferred_items") or []:
+        for item_index, item in enumerate((flight or {}).get("deferred_items") or []):
             remark = normalized(item.get("company_remark"))
             if len(remark.split()) < 8:
                 continue
             for index, folded in enumerate(folded_pages):
-                if remark in folded:
+                if remark in folded and not _bound_defect_subject_is_published(pages[index], index, item, item_index, view):
                     violations.append({"code": "COPIED_DEFERRED_REMARK", "message": f"Page {index + 1} repeats a deferred source remark instead of its consequence."})
         if len(pages) != MAX_BRIEFING_PAGES:
             violations.append({"code": "CONCISE_PAGE_CEILING", "message": f"Expected six analysed pages; found {len(pages)}. No source appendix is permitted."})

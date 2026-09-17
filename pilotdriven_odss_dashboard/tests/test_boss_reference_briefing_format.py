@@ -357,17 +357,27 @@ def test_no_page_copies_a_raw_deferred_source_remark(briefing):
     """'by copying in blocks and capital is very hard to read' - 9 Sep 21:28.
 
     The analysed consequence for every deferred item is published on the
-    performance / technical page. The source remark itself never is.
+    performance / technical page. A short defect-only continuation can be a
+    subject with its consequence; maintenance/form instruction blocks cannot.
     """
-    for item in briefing["flight"].get("deferred_items") or []:
+    for item_index, item in enumerate(briefing["flight"].get("deferred_items") or []):
         remark = normalized(item.get("company_remark"))
         if len(remark.split()) < 8:
             continue
         for index, folded in enumerate(briefing["folded"]):
-            assert remark not in folded, (
-                f"page {index + 1} publishes the raw source remark instead of "
-                f"its analysed consequence: {item.get('company_remark')}"
-            )
+            if remark not in folded:
+                continue
+            # Independent source oracle for the one corpus field containing a
+            # complete defect rather than a maintenance instruction. The
+            # malformed description itself must never be published instead.
+            assert (briefing["key"], item_index, remark) == (
+                "SQ605", 2, "AFT GALLEY LH WASTE CONTAINER DOOR IN GALLEY LATCH MISSING"
+            ), f"page {index + 1} copied a source instruction: {remark}"
+            assert index in (1, 2)
+            assert folded.count(remark) == 1
+            assert str(item["company_remark"]) not in " ".join(briefing["pages"][index].split())
+            assert "WASTE CONTAINER DOOR RETENTION NEEDS A PERMITTED CONFIGURATION DECISION" in folded
+            assert "DOES NOT ESTABLISH AN ACCEPTABLE SECURING METHOD OR PERMISSION TO USE IT" in folded
 
 
 def test_the_gate_rejects_a_copied_source_remark_on_the_decision_page(briefing, tmp_path):
@@ -387,7 +397,7 @@ def test_the_gate_rejects_a_copied_source_remark_on_the_decision_page(briefing, 
         document.save(stamped)
     codes = [
         violation["code"]
-        for violation in check_concise_pdf(stamped, flight=briefing["flight"])["violations"]
+        for violation in check_concise_pdf(stamped, flight=briefing["flight"], view=briefing["view"])["violations"]
     ]
     assert "COPIED_DEFERRED_REMARK" in codes
 
@@ -503,15 +513,13 @@ def _material_gate(briefing, finding) -> dict:
 
 
 def _subjects_of(gate) -> list[str]:
-    from app.odss.analysed_briefing_content import deferred_subject
+    from app.odss.analysed_briefing_content import deferred_source_subject
 
     return [
         subject
         for segment in gate.get("source_segments") or []
         if (
-            subject := deferred_subject(
-                segment.get("description"), gate.get("title")
-            ).rstrip(" .;")
+            subject := deferred_source_subject(segment, gate.get("title")).rstrip(" .;")
         )
     ]
 
@@ -538,17 +546,10 @@ def test_the_decision_card_says_what_is_wrong_with_the_aircraft(briefing):
     assert gate, "the ranked card must name the declaration it came from"
     headline = str(finding.get("title") or "")
     subjects = _subjects_of(gate)
-    if subjects:
-        assert any(subject in headline for subject in subjects), (
-            f"the decision card headline names no defect: {headline!r}"
-        )
-    else:
-        # The ranked gate's description cell is not a statement - the OFP form
-        # cut it mid-sentence, or it holds a manual heading. The card then
-        # names the declaration, and the fragment is published nowhere.
-        assert headline == (
-            f"{deferred_item_label(gate.get('title'))} - dispatch confirmation"
-        ), headline
+    assert subjects, "the ranked source-bound declaration must identify its defect"
+    assert any(subject in headline for subject in subjects), (
+        f"the decision card headline names no defect: {headline!r}"
+    )
     # It is on the page he circled in green, not only in the view.
     assert normalized(headline) in briefing["folded"][1], headline
     # ...and it is analysed text, never the declaration's block capitals.
@@ -568,7 +569,7 @@ def test_every_deferred_defect_is_published_in_sentence_case(briefing):
     contained defect is published again, cased, on the page that owns it.
     """
     from app.odss.analysed_briefing_content import (deferred_consequence_rows,
-                                                    deferred_subject)
+                                                    deferred_source_subject)
 
     body = " ".join(briefing["folded"])
     rows = deferred_consequence_rows(briefing["view"])
@@ -577,7 +578,7 @@ def test_every_deferred_defect_is_published_in_sentence_case(briefing):
     for gate in briefing["view"].get("deferred_dispatch_gates") or []:
         for segment in gate.get("source_segments") or []:
             description = " ".join(str(segment.get("description") or "").split())
-            subject = deferred_subject(description, gate.get("title")).rstrip(" .;")
+            subject = deferred_source_subject(segment, gate.get("title")).rstrip(" .;")
             if not subject:
                 continue
             assert any(subject in value for value in published), (
@@ -684,10 +685,13 @@ def test_the_named_source_cells_are_not_published_as_defects(briefing):
     body = re.sub(r"\s+", " ", "\n".join(briefing["pages"]))
     for fragment in (
         "Both VCRU (101HW & 103HW) removed as per",
-        "Trash compactor, trash compactor",
-        "others (PLS enter comments)",
         "Found LH inner wing leading edge DND fixed seal with",
         "LH wing, slat #6 lower seal found",
+    ):
+        assert not re.search(re.escape(fragment) + r"\s*(?:[.;]|- dispatch confirmation)", body), fragment
+    for fragment in (
+        "Trash compactor, trash compactor",
+        "others (PLS enter comments)",
         "- galley waste compartment access door installed)",
         "Section mel and CMS rev 18NOV 25",
     ):
@@ -711,8 +715,8 @@ def test_the_status_release_gate_still_names_the_deferred_defect(briefing):
     assert str(finding.get("title") or "") in status["detail"]
     assert str(finding.get("summary") or "") in status["detail"]
     subjects = _subjects_of(_material_gate(briefing, finding))
-    if subjects:
-        assert any(subject in status["detail"] for subject in subjects)
+    assert subjects, "STATUS must not pass with a content-free paperwork fallback"
+    assert any(subject in status["detail"] for subject in subjects)
 
 
 def test_the_sq910_card_names_the_engine_2_fan_cowl_latch(briefing):
@@ -769,3 +773,53 @@ def test_page_one_weather_fields_are_his_trimmed_groups_with_the_local_clock(bri
         body = page.replace(normalized("SQ910 | 21AUG26"), "")
         for gone in ("SA 201900", "FT 201700", "2018/2200", "NOSIG", "Q1011", "RMK A2983", "0050Z / 21AUG26"):
             assert normalized(gone) not in body, gone
+
+
+RECOVERED_DEFECTS = {
+    "SQ214": ("Both VCRU (101HW & 103HW) removed as per MAF 23224", "Can't feed waste"),
+    "SQ297": ("fixed seal with 2.5CM torn", "all galley chillers working intermittent"),
+    "SQ882-10Sep": ("slat #6 lower seal found deteriorated", "air chiller not cold"),
+    "SQ366": ("potable water ice protection", "SYTEM INOP"),
+    "SQ605": ("waste container door", "latch missing"),
+}
+
+
+def test_complete_source_continuations_are_visible_in_the_actual_download(briefing):
+    """Independent source anchors: no helper-generated expected value or empty-subject escape."""
+    if briefing['key'] not in RECOVERED_DEFECTS:
+        pytest.skip('no formerly truncated subject in this source case')
+    body = ' '.join(briefing['folded'])
+    for fact in RECOVERED_DEFECTS[briefing['key']]:
+        assert normalized(fact) in body, f"{briefing['key']} download omitted held defect: {fact}"
+
+
+@pytest.mark.parametrize('mutation', ['uppercase-copy', 'cased-copy', 'source-loss', 'consequence-loss', 'unrelated-owner'])
+def test_sq605_source_subject_exception_cannot_hide_physical_corruption(mutation, tmp_path_factory, tmp_path):
+    """Use the real six-page download and the view supplied to publication."""
+    import copy
+
+    brief = rendered('SQ605', tmp_path_factory)
+    subject = 'Aft galley LH waste container door in galley latch missing'
+    view = copy.deepcopy(brief['view'])
+    path = tmp_path / f'{mutation}.pdf'
+    with fitz.open(brief['path']) as document:
+        if mutation in ('uppercase-copy', 'cased-copy'):
+            value = subject.upper() if mutation == 'uppercase-copy' else subject
+            document[1].insert_text((40, 500), value, fontsize=9, fontname='helv')
+        elif mutation in ('source-loss', 'consequence-loss'):
+            needle = subject if mutation == 'source-loss' else 'securing'
+            hits = document[2].search_for(needle)
+            assert hits, f'physical mutation did not find {needle}'
+            for hit in hits:
+                document[2].add_redact_annot(hit)
+            document[2].apply_redactions()
+        else:
+            row = next(row for row in view['deferred_pdf_analysis'] if row['source_item_indices'] == [2])
+            row['source_item_indices'] = [1]
+        document.save(path)
+    if mutation == 'consequence-loss':
+        with fitz.open(path) as document:
+            assert normalized(subject) in normalized(document[2].get_text())
+    codes = {item['code'] for item in check_concise_pdf(path, flight=brief['flight'], view=view)['violations']}
+    expected = 'DEFERRED_CONSEQUENCE_PARITY' if mutation == 'source-loss' else 'COPIED_DEFERRED_REMARK'
+    assert expected in codes, (mutation, codes)
