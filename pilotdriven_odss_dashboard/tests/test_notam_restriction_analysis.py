@@ -141,3 +141,11 @@ def test_compact_builder_cannot_overwrite_kord_outage_with_old_faa_note():
     assert compact == held
     assert 'out of service' in compact
     assert not compact.startswith('RNAV (GPS) RWY 22R: DISREGARD')
+
+
+def test_enumerated_procedure_suspension_publishes_the_declaration_not_a_raw_list():
+    row=next(row for row in ROWS if row['notam_id']=='A2623/26' and 'COMMUNICATION FAILURE' in row['text'])
+    line=summary(row['text'])
+    assert 'communication failure procedures are temporarily suspended.' in line
+    assert 'This NOTAM has further content; open the full NOTAM.' in line
+    assert 'ARR-08' not in line and '15 may 2025' not in line.lower()

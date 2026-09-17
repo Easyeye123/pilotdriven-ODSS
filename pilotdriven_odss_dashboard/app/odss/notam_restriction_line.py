@@ -422,6 +422,12 @@ def derive_notam_restriction_line(raw_text: str) -> dict[str, str]:
     if not source:
         return {'text': NO_TEXT_SENTENCE, 'basis': 'no_text'}
     body = strip_publication_envelope(source) or source
+    # An affirmative suspension declaration can head a long numbered list.
+    # Publish that declared scope and disclose the omitted list; clipping the
+    # list would copy dates/designators while pretending to be a compact line.
+    declaration = re.match(r'^(THE\s+(?:FLW|FOLLOWING)\s+.{1,160}?\s+PROCEDURES\s+ARE\s+(?:TEMPORARILY\s+)?(?:SUSPENDED|WITHDRAWN)):\s*(?:1\.|\(1\))\s+', body)
+    if declaration and not re.search(r'\b(?:IF|WHEN|UNLESS|MAY|MIGHT|COULD)\b', declaration[1]):
+        return {'text': decode_notam_text(declaration[1]) + ' This NOTAM has further content; open the full NOTAM.', 'basis': 'restriction_clause'}
     clauses = _clauses(body)
     if len(body) > SUPPLEMENT_LENGTH and clauses and SUBJECT_RE.search(clauses[0]):
         state = RESTRICTION_STATE_RE.search(clauses[0])
