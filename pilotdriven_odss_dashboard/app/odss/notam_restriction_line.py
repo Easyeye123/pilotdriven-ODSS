@@ -765,10 +765,18 @@ def _candidates(source: str):
     # list would copy dates/designators while pretending to be a compact line.
     declaration = re.match(r'^(THE\s+(?:FLW|FOLLOWING)\s+.{1,160}?\s+PROCEDURES\s+ARE\s+(?:TEMPORARILY\s+)?(?:SUSPENDED|WITHDRAWN)):\s*(?:1\.|\(1\))\s+', body)
     clauses = _clauses(body)
+    # Bound before the branch, not inside the else: the declaration branch also
+    # falls through to the shared last-resort block below. While its candidate
+    # passed the copy guard the generator was abandoned at that first yield, but
+    # a heading long enough for the guard to refuse resumes the generator, and
+    # an unbound `picked` raised UnboundLocalError out through
+    # engines._notam_operational_summary, failing the whole analysis. The JS port
+    # declares `let picked = null` here for the same reason.
+    picked = None
     if declaration and not re.search(r'\b(?:IF|WHEN|UNLESS|MAY|MIGHT|COULD)\b', declaration[1]):
         yield decode_notam_text(declaration[1]) + ' ' + OMITTED_CONTENT_MARKER, 'restriction_clause'
     else:
-        picked, basis, state_re = None, '', None
+        basis, state_re = '', None
         title_state = RESTRICTION_STATE_RE.search(clauses[0]) if clauses and SUBJECT_RE.search(clauses[0]) else None
         if len(body) > SUPPLEMENT_LENGTH and title_state:
             picked = {'joined': clauses[0], 'at': title_state.start(), 'used': {0}, 'last': 0, 'join_at': -1,

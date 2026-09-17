@@ -274,6 +274,169 @@ def test_a_weaker_clause_never_stands_in_for_the_closure_it_would_hide():
     assert derived["text"].endswith(MARKER_SENTENCES[0]), derived["text"]
 
 
+# C1 round 2: the declaration branch's own refusal path must reach the guard's
+# fallback instead of raising.
+#
+# ``_candidates`` yields the declaration line, then falls through to the shared
+# last-resort block that reads ``picked``. ``picked`` was bound only inside the
+# ``else:`` of ``if declaration``, so the fallthrough read a name the
+# declaration branch never bound. While the declaration candidate *passed* the
+# copy guard the generator was abandoned at the first yield and nothing broke;
+# once the guard refuses it, ``derive_notam_restriction_line`` resumes the
+# generator and it raises ``UnboundLocalError``.
+#
+# The committed corpus cannot reach this. It holds exactly one
+# declaration-shaped record and that heading is ten words, well under the
+# gate's eighteen-word run, so every corpus sweep above stays green while the
+# class below crashes. The class is what these vectors hold.
+#
+# The boundary is eighteen source words in the heading, or twenty when the
+# heading opens ``THE FLW``: the decoder rewrites that contraction, so only a
+# run starting past it can match the published line.
+#
+# The exception is not contained. ``engines.py`` calls
+# ``derive_notam_restriction_line(text)["text"]`` for the
+# ``runway_approach_restriction`` and ``taxiway_restriction`` kinds with no
+# try/except, and ``_notam_operational_summary`` is itself called unguarded, so
+# a real flight carrying one of these notices fails the whole ODSS analysis —
+# strictly worse than the Download PDF failure this task existed to remove.
+DECLARATION_LIST_TAIL = (
+    ": 1. RNAV (GNSS) RWY 07L 2. RNAV (GNSS) RWY 07C 3. RNAV (GNSS) RWY 07R "
+    "4. RNAV (GNSS) RWY 25L 5. RNAV (GNSS) RWY 25C 6. RNAV (GNSS) RWY 25R"
+)
+
+# Verified live against the committed tree: each of these raised
+# UnboundLocalError before the fix.
+LONG_DECLARATIONS = {
+    # The heading the reviewer reproduced, verbatim.
+    "reviewer vector": (
+        "THE FLW RNAV (GNSS) RWY 07L, RWY 07C, RWY 07R, RWY 25L, RWY 25C, RWY 25R AND CIRCLING "
+        "APPROACH PROCEDURES ARE SUSPENDED" + DECLARATION_LIST_TAIL
+    ),
+    # ``THE FOLLOWING`` is not rewritten, so eighteen heading words is already a
+    # literal eighteen-word run of the source: the tightest shape that refuses.
+    "unrewritten lead at the threshold": (
+        "THE FOLLOWING RNAV (GNSS) RWY 07L, RWY 07C, RWY 07R, RWY 25L, RWY 25C, RWY 25R "
+        "APPROACH PROCEDURES ARE SUSPENDED" + DECLARATION_LIST_TAIL
+    ),
+    # The other half of the declaration pattern: WITHDRAWN, TEMPORARILY, and the
+    # parenthesised list marker.
+    "temporarily withdrawn with a parenthesised list": (
+        "THE FLW INSTRUMENT APPROACH RWY 09L, RWY 09R, RWY 27L, RWY 27R, RWY 16, RWY 34 AND "
+        "CIRCLING APPROACH PROCEDURES ARE TEMPORARILY WITHDRAWN: (1) ILS RWY 09L (2) ILS RWY 09R "
+        "(3) ILS RWY 27L (4) ILS RWY 27R"
+    ),
+}
+
+
+@pytest.mark.parametrize("label", sorted(LONG_DECLARATIONS))
+def test_a_declaration_the_guard_refuses_abstains_instead_of_raising(label):
+    source = LONG_DECLARATIONS[label]
+    heading = source.split(":")[0]
+    assert len(heading.split()) >= 18, f"{label} must be long enough for the guard to refuse it"
+    derived = derive_notam_restriction_line(source)
+    line = derived["text"]
+    # It abstained rather than published a copy, and it said so.
+    assert not gate_copy_rule(published_body(line), source), line
+    assert not gate_copy_rule(line, source), line
+    assert line.endswith(MARKER_SENTENCES), line
+    # And it still adds no word or number the source does not hold.
+    composed = composed_words()
+    held = set(re.findall(r"[a-z]+", source.lower()))
+    body = published_body(line)
+    assert not [
+        word for word in re.findall(r"[a-z]+", body.lower())
+        if word not in held and word not in composed
+    ], line
+    numbers = set(re.findall(r"\d+", source))
+    assert not [number for number in re.findall(r"\d+", body) if number not in numbers], line
+
+
+def test_the_engine_summary_survives_a_declaration_the_guard_refuses():
+    """The boundary the exception escaped through, for both calling kinds."""
+    from app.odss.engines import _notam_operational_summary
+
+    for label, source in sorted(LONG_DECLARATIONS.items()):
+        for kind in ("runway_approach_restriction", "taxiway_restriction"):
+            summary = _notam_operational_summary(
+                source, kind, "destination", "applicable", category="approach")
+            assert summary and not gate_copy_rule(summary, source), f"{label}/{kind}: {summary}"
+
+
+def declaration_matrix() -> list[str]:
+    """Declaration shapes across the lead, kind, scope, verb and list marker."""
+    runways = ["RWY 07L", "RWY 07C", "RWY 07R", "RWY 25L", "RWY 25C", "RWY 25R",
+               "RWY 09L", "RWY 09R", "RWY 27L", "RWY 27R"]
+    sources = []
+    for lead in ("THE FLW", "THE FOLLOWING"):
+        for kind in ("RNAV (GNSS)", "ILS", "VOR", "NDB", "RNP"):
+            for count in range(1, len(runways) + 1):
+                for verb in ("SUSPENDED", "WITHDRAWN", "TEMPORARILY SUSPENDED"):
+                    for marker in ("1.", "(1)"):
+                        scope = ", ".join(runways[:count])
+                        sources.append(
+                            f"{lead} {kind} {scope} APPROACH PROCEDURES ARE {verb}: "
+                            f"{marker} {kind} RWY 07L 2. {kind} RWY 07C 3. {kind} RWY 07R")
+    return sources
+
+
+def test_no_declaration_shape_raises_and_none_publishes_a_copy():
+    """The whole class, not the three vectors above."""
+    sources = declaration_matrix()
+    assert len(sources) >= 250, f"expected the generated matrix, built {len(sources)}"
+    raised, copied, refused = [], [], 0
+    for source in sources:
+        try:
+            line = derive_notam_restriction_line(source)["text"]
+        except Exception as exc:  # noqa: BLE001 - the defect is the exception itself
+            raised.append(f"{type(exc).__name__}: {source[:90]}")
+            continue
+        if gate_copy_rule(published_body(line), source) or gate_copy_rule(line, source):
+            copied.append(f"{source[:70]}\n   {line[:160]}")
+        if line.endswith(MARKER_SENTENCES) and "procedures are" not in line:
+            refused += 1
+    assert not raised, f"{len(raised)} of {len(sources)} declaration shapes raised:\n" + "\n".join(raised[:6])
+    assert not copied, f"{len(copied)} of {len(sources)} declaration shapes copy their source:\n" + "\n".join(copied[:6])
+    # The matrix must actually exercise the refusal path, or it proves nothing.
+    assert refused >= 100, f"only {refused} of {len(sources)} shapes reached the guard's refusal"
+
+
+def test_python_and_js_agree_on_the_declarations_the_corpus_cannot_reach():
+    """Requirement 3 over the vectors the committed corpus does not hold.
+
+    The JS port declared ``let picked = null`` before the branch and returned a
+    clean line for these sources while Python raised, so the crash was also a
+    cross-runtime divergence the corpus differential could not see.
+    """
+    import os
+    import shutil
+    import subprocess
+
+    app_root = Path(os.environ.get(
+        "PILOTDRIVEN_APP_ROOT",
+        Path(__file__).resolve().parents[3] / "pd-09sep-fixes-20260915"))
+    module = app_root / "web/src/lib/notam-restriction-line.mjs"
+    if not module.exists() or not shutil.which("node"):
+        pytest.skip("Cross-repo JS differential needs PILOTDRIVEN_APP_ROOT and Node")
+    sources = [LONG_DECLARATIONS[label] for label in sorted(LONG_DECLARATIONS)] + declaration_matrix()
+    script = (
+        "import {deriveNotamRestrictionLine} from " + json.dumps(module.as_uri())
+        + ";import fs from 'node:fs';process.stdout.write(JSON.stringify("
+        "JSON.parse(fs.readFileSync(0,'utf8')).map(deriveNotamRestrictionLine)));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        input=json.dumps(sources), text=True, capture_output=True, check=True)
+    expected = json.loads(result.stdout)
+    assert len(expected) == len(sources) >= 250, f"differential compared {len(expected)} vectors"
+    mismatches = [
+        f"{source[:70]}\n   py {derive_notam_restriction_line(source)}\n   js {js}"
+        for source, js in zip(sources, expected, strict=True)
+        if derive_notam_restriction_line(source) != js
+    ]
+    assert not mismatches, f"{len(mismatches)} of {len(sources)} disagree:\n" + "\n".join(mismatches[:4])
+
+
 CORPUS_RENDER_CASES = {
     "SQ326-SIN-FRA": "lido-briefing_SQ_326_16Aug2026_SIN_FRA.pdf",
     "SQ352-SIN-CPH": "lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf",
