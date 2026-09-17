@@ -11,5 +11,5 @@ pilotdriven_odss_dashboard/visual-samples/
 # Proprietary reference briefs and CFP-derived fixtures stay out of git
 pilotdriven_odss_dashboard/tests/fixtures/reference-briefs/
 
-# Private CFP corpus - proprietary airline documents, never committed
-private_cfp_corpus/
+# Private CFP corpus, including a symlink mount, is never committed
+/private_cfp_corpus
