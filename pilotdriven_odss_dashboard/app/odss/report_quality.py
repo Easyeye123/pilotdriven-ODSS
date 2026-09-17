@@ -273,7 +273,10 @@ def validate_combined_briefing_pdf(path: Path) -> dict[str, Any]:
                 f"Flight Briefing contains retired pilot-facing label: {label}.",
             ))
 
-    if extracted_pages and "FLIGHT BRIEFING | PAGE 1 OF 6" in " ".join(extracted_pages[0].split()):
+    if extracted_pages and re.search(
+        r"\bFLIGHT BRIEFING\s*\|\s*PAGE 1 OF 6\b",
+        " ".join(extracted_pages[0].split()),
+    ):
         from .concise_pdf_gate import check_concise_pdf
         concise = check_concise_pdf(path)
         violations.extend(ReportQualityViolation(item["code"], item["message"]) for item in concise["violations"])

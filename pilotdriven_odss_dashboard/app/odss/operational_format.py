@@ -1127,9 +1127,14 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         blocks.append(("PERTINENT", kept
                        or ["No analysed constraint is held for the planned movement.",
                            counted]))
+        # Keep both source-held station identifiers, as on the dashboard and
+        # David's reference. Do not make the release gate waive a lost IATA.
+        station_icao = text(station_view.get("icao"))
+        station_iata = str(flight.get(f"{role}_iata") or "").strip()
+        station_identity = f"{station_iata} / {station_icao}" if station_iata else station_icao
         return Card("DEPARTURE" if role == "departure" else "DESTINATION", [], accent,
                     tag="CFP P1", kind="station", width_weight=1.25,
-                    payload=(text(station_view.get("icao")),
+                    payload=(station_identity,
                              airport_short_name(station_view.get("icao")), blocks),
                     target="sec_airports")
 
