@@ -21,7 +21,11 @@ from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
 from .deferred_dispatch import build_deferred_dispatch_gates
 from .engines import detect_terrain_events, detect_vws_events, notam_dashboard_line
-from .notam_restriction_line import derive_notam_restriction_line
+from .notam_restriction_line import (
+    NO_STATEMENT_LINE,
+    copies_its_source,
+    derive_notam_restriction_line,
+)
 from .enrichment import ofp_volcano_records
 from .pilot_briefing import (
     normalize_notam_references,
@@ -623,7 +627,36 @@ def _compact_notam_text(
         dashboard_line = notam_dashboard_line(raw, str(item.get("pertinence_kind") or ""))
         if dashboard_line:
             return dashboard_line
-    return str(item.get("summary") or raw or "Operational notice - review source.")
+    return _non_copying_notam_fallback(item, raw)
+
+
+def _non_copying_notam_fallback(item: dict[str, Any], raw: str) -> str:
+    """The last line this function may publish, under C1's copy invariant.
+
+    Found by C1's reviewer. The terminal fallback published the stored summary
+    - or, when there is none, the raw Item E - verbatim. A stored summary is
+    honoured above only when it EQUALS the fresh derivation, so ANY difference
+    (an older build's wording, a re-analysed source, a hand-edited pack) fell
+    through to here and put the whole record on the page. ``check_concise_pdf``
+    then refuses the page as a copy and ``render_analysed_briefing`` deletes
+    the PDF, so Download PDF fails outright.
+
+    The rule is the gate's, applied through the same guard the derivation uses:
+    a candidate that reproduces its own notice may not be published. When
+    nothing survives, abstain in the derivation's own words so the dashboard
+    and the PDF abstain identically instead of one of them inventing a line.
+    """
+    def publishable(candidate: str) -> bool:
+        body = " ".join(str(candidate or "").split())
+        return bool(body) and not copies_its_source(raw, body)
+
+    held = str(item.get("summary") or "")
+    if publishable(held):
+        return held
+    if " ".join(str(raw or "").split()):
+        derived = derive_notam_restriction_line(raw)["text"]
+        return derived if publishable(derived) else NO_STATEMENT_LINE
+    return "Operational notice - review source."
 
 
 def _compact_notam_condition_key(

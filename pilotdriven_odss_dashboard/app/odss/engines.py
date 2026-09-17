@@ -39,7 +39,10 @@ from .pilot_briefing import (
     notam_sort_key,
     pilot_notam_key,
 )
-from .notam_restriction_line import derive_notam_restriction_line
+from .notam_restriction_line import (
+    FIXED_MARKER_SENTENCES,
+    derive_notam_restriction_line,
+)
 from .reviewed_publications import reviewed_publication_for_notam
 from .report_facts import required_operational_reference_times
 from .weather_timing import select_taf_for_window, summarize_metar_for_window, summarize_taf_for_window
@@ -1303,6 +1306,30 @@ def notam_dashboard_line(text: str, kind: str) -> str:
     return ""
 
 
+RUNWAY_NOT_CLOSED_NOTE = "The runway is not reported closed by this notice."
+
+
+def _with_runway_not_closed_note(line: str) -> str:
+    """Keep the boss's obstacle qualifier ahead of the derivation's markers.
+
+    An obstacle notice that names a runway must say the runway is not reported
+    closed by it (16 Aug 2026 follow-up). The derived line can end with a fixed
+    marker sentence saying what it omitted; the qualifier belongs to the
+    statement, so it goes before that marker rather than after it.
+    """
+    body = line
+    markers: list[str] = []
+    trimmed = True
+    while trimmed:
+        trimmed = False
+        for sentence in FIXED_MARKER_SENTENCES:
+            if body.endswith(sentence):
+                markers.insert(0, sentence)
+                body = body[: -len(sentence)].rstrip()
+                trimmed = True
+    return " ".join(part for part in (body, RUNWAY_NOT_CLOSED_NOTE, *markers) if part)
+
+
 def _notam_operational_summary(
     text: str,
     kind: str,
@@ -1408,13 +1435,25 @@ def _notam_operational_summary(
     if kind == "apron_stand_closure":
         return f"{subject.upper()} closed during the applicable {phase} window."
     if kind == "obstacle":
-        summary = (
-            f"Obstacle or crane affects the {phase} airport environment; "
-            "assess against expected runway and approach use."
-        )
+        # C2, 18 Sep 2026. This branch used to publish a fixed sentence
+        # ("Obstacle or crane affects the ... airport environment; assess
+        # against expected runway and approach use.") that states nothing the
+        # notice says. The dashboard refuses that template as content-free and
+        # derives a line from the source instead, so the two surfaces disagreed
+        # on all four RKSI records of SQ606-SIN-ICN-06SEP. The derivation is
+        # C1's: source-bound, copy-guarded, and it abstains in its own words
+        # rather than inventing one.
+        #
+        # The boss's own rule survives the change: an obstacle notice that
+        # names a runway must still say the runway is not reported closed, so
+        # an obstacle is never skim-read as a closure (16 Aug 2026 follow-up;
+        # the conditional-crane regression "CRANE WILL ONLY OPERATE WHEN RWY
+        # 09L/27R IS CLSD"). The note goes before the derivation's own trailing
+        # marker sentence so the line still ends by saying what it omitted.
+        line = derive_notam_restriction_line(text)["text"]
         if re.search(r"\b(?:RWY|RUNWAY)\s+\d{1,2}", upper):
-            summary += " The runway is not reported closed by this notice."
-        return summary
+            line = _with_runway_not_closed_note(line)
+        return line
     return f"Operational airport restriction requires review during the applicable {phase} window."
 
 

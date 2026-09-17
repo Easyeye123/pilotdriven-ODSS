@@ -160,7 +160,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-18-non-copying-restriction-line-v57"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-18-excess-fuel-and-obstacle-parity-v58"
 
 
 def combined_briefing_cache_token(
@@ -1777,12 +1777,17 @@ def _draw_audit_rev3_v8_overview_summary_row(
     ]
     # When OFP page 1 itemises the whole excess as TANKER, it gets its own
     # row in the OFP's own word (boss, 21 Aug: this excess IS tankering).
-    tanker_items = [
-        item for item in fuel_summary.get("excess_breakdown") or []
-        if item.get("fuel_kg")
-    ]
-    if tanker_items and all(item.get("label") == "TANKER" for item in tanker_items):
-        fuel_rows.append(("TANKER", f"+{tanker_items[0]['fuel_kg']:,}"))
+    # C2: one shared rule with the six-page download and the dashboard, so the
+    # three surfaces cannot drift apart about the same OFP line.
+    from .analysed_briefing_content import tanker_only_excess
+
+    if tanker_only_excess(fuel_summary):
+        carried = next(
+            item["fuel_kg"] for item in fuel_summary["excess_breakdown"]
+            if isinstance(item, dict) and isinstance(item.get("fuel_kg"), (int, float))
+            and not isinstance(item.get("fuel_kg"), bool) and item["fuel_kg"] > 0
+        )
+        fuel_rows.append(("TANKER", f"+{carried:,}"))
     lower_cruise = flight.get("lower_cruise_sensitivity") or {}
     if lower_cruise:
         offset_ft = lower_cruise.get("offset_ft")

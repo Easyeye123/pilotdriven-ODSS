@@ -24,6 +24,8 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from .analysed_briefing_content import (cyclone_content, deferred_item_label,
+                                        excess_fuel_chain_label,
+                                        excess_fuel_tile_label,
                                         release_condition_groups)
 from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
@@ -1145,10 +1147,13 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                  ("PTOW", kg(masses.get("ptow"))), ("RTOW", kg(perf.get("selected_rtow_kg"))),
                  ("MARGIN", kg(perf.get("margin_kg"))), ("PLWT", kg(masses.get("plwt"))),
                  ("FLAPS", text(inputs.get("flap_setting")))]),
+        # His reference FUEL tile reads TANKER when the whole carried excess is
+        # tankering, EXCESS otherwise, on the dashboard's own rule.
         Card("FUEL", [f"Arithmetic {text(fuel.get('state'))}."],
              GREEN, "sec_performance", tag="CFP P1", kind="tile", payload=[
                  ("BLOCK", amount("fuel_in_tanks")), ("FPL REQ", amount("flt_plan_reqmt")),
-                 ("EXCESS", amount("excess_fuel")), ("BURNOFF", amount("burnoff")),
+                 (excess_fuel_tile_label(fuel), amount("excess_fuel")),
+                 ("BURNOFF", amount("burnoff")),
                  ("TAXI", kg(fuel.get("taxi_fuel_kg")))]),
         Card("TECH STATUS", [f"{len(deferred)} consequence(s) on PERF / FUEL / TECH."],
              AMBER, "sec_performance", tag="CFP P1", kind="tile",
@@ -1257,7 +1262,13 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     for key, label in (("dest_hold_top_up", "DEST HOLD TOP-UP"), ("edto_top_up", "EDTO TOP-UP")):
         if (fuel_rows.get(key) or {}).get("fuel_kg"):
             fuel_lines.append(f"{label} {amount(key)}")
+    # His reference page-3 chain runs FPL REQUIREMENT -> TANKER EXCESS -> FUEL
+    # IN TANKS, and the excess closes that arithmetic (tanks - requirement).
+    # Until C2 the chain skipped it entirely and only the TANKER/MEL allocation
+    # appeared, under RECONCILIATION, so the downloaded PDF never stated the
+    # carried excess as one contiguous row.
     fuel_lines += [f"TAXI FUEL {kg(fuel.get('taxi_fuel_kg'))}", f"FLT PLAN REQMT {amount('flt_plan_reqmt')}",
+                   f"{excess_fuel_chain_label(fuel)} {amount('excess_fuel')}",
                    f"FUEL IN TANKS {amount('fuel_in_tanks')}", f"Arithmetic: {text(fuel.get('state'))}"]
     derived = fuel.get("derived_fuel_kg") or {}
     fuel_lines += [f"Tanks - taxi: {kg(derived.get('takeoff'))}",

@@ -17,6 +17,56 @@ def clean(value) -> str:
     return " ".join(str(value or "").split())
 
 
+# ------------------------------------------------- the carried excess's name
+#
+# OFP page 1 itemises the excess by allocation. When every positive allocation
+# is TANKER the excess IS tankering, and David's briefings say so in the OFP's
+# own word: his SQ910_21AUG2026 reference prints ``TANKER +18,847 KG`` in the
+# page-1 FUEL tile and ``TANKER EXCESS 18,847 KG`` in the page-3 fuel chain
+# (his 21 Aug 2026 fuel lesson).
+#
+# Before C2 the rule lived in three places that could drift - the dashboard
+# (``web/src/lib/overview-cards.ts`` ``tankerOnly``), the nine-page composition
+# in ``combined_brief`` - and not at all in the six-page download, which always
+# printed EXCESS. One rule, one place, so the two surfaces cannot disagree
+# about the same OFP line again.
+
+TANKER_EXCESS_TILE_LABEL = "TANKER"
+TANKER_EXCESS_CHAIN_LABEL = "TANKER EXCESS"
+EXCESS_LABEL = "EXCESS"
+
+
+def tanker_only_excess(fuel_summary) -> bool:
+    """True when every positive excess allocation on OFP page 1 is TANKER.
+
+    The dashboard's rule, restated: at least one strictly positive allocation,
+    and every positive allocation labelled TANKER. A zero MEL line beside a
+    positive TANKER line is still tankering; a mixed INTAM/TMM excess is not.
+    """
+    if not isinstance(fuel_summary, dict):
+        return False
+    positive = [
+        item for item in (fuel_summary.get("excess_breakdown") or [])
+        if isinstance(item, dict)
+        and isinstance(item.get("fuel_kg"), (int, float))
+        and not isinstance(item.get("fuel_kg"), bool)
+        and item["fuel_kg"] > 0
+    ]
+    return bool(positive) and all(
+        str(item.get("label") or "").strip().upper() == "TANKER" for item in positive
+    )
+
+
+def excess_fuel_tile_label(fuel_summary) -> str:
+    """Page-1 FUEL tile row name, in his reference's word."""
+    return TANKER_EXCESS_TILE_LABEL if tanker_only_excess(fuel_summary) else EXCESS_LABEL
+
+
+def excess_fuel_chain_label(fuel_summary) -> str:
+    """Page-3 FUEL PLAN / MASS CHAIN row name, in his reference's words."""
+    return TANKER_EXCESS_CHAIN_LABEL if tanker_only_excess(fuel_summary) else EXCESS_LABEL
+
+
 def flight_window(flight):
     return operational_reference_times(flight)
 

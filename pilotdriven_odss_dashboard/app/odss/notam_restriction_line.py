@@ -281,6 +281,9 @@ NO_TEXT_SENTENCE = 'The source NOTAM text is not held in this analysis, so no co
 
 NO_STATEMENT_SENTENCE = 'This analysis could not read a statement from the held NOTAM text.'
 
+# The whole abstention line, so every publication path abstains in one wording.
+NO_STATEMENT_LINE = NO_STATEMENT_SENTENCE + ' ' + UNRESOLVED_SENTENCE
+
 # ASCII boundaries match the JS decoder's semantics, not locale-dependent words.
 RESTRICTION_STATE_RE = re.compile(r'\b(?:' + '|'.join('(?:' + token + ')' for token, _ in RESTRICTION_STATES) + r')\b', re.ASCII)
 STATE_SEVERITY_RULES = [(re.compile('^(?:' + token + ')$', re.ASCII), weight) for token, weight in RESTRICTION_STATES]
@@ -827,6 +830,21 @@ def _candidates(source: str):
         yield label + '. ' + UNRESOLVED_SENTENCE, 'no_clause'
 
 
+def copies_its_source(raw_text: object, published: object) -> bool:
+    """The publication gate's copy rule, applied to one candidate line.
+
+    C2: the same guard the derivation's candidate loop applies, exported so
+    that any other publication path (``briefing._compact_notam_text``'s stored
+    -summary fallback) is held to it too instead of holding its own opinion.
+    Checked twice, as in the loop: on the line without its fixed trailing
+    marker sentences, and on the whole published line, so a marker cannot
+    complete a copied run.
+    """
+    copy = _SourceCopy(_squash(raw_text))
+    body = _squash(published)
+    return copy.copied_by(_without_fixed_markers(body)) or copy.copied_by(body)
+
+
 def derive_notam_restriction_line(raw_text: str) -> dict[str, str]:
     """Publish one source-derived line plus its evidence basis, never an empty template."""
     source = _squash(raw_text)
@@ -836,4 +854,4 @@ def derive_notam_restriction_line(raw_text: str) -> dict[str, str]:
     for text, basis in _candidates(source):
         if not copy.copied_by(_without_fixed_markers(text)) and not copy.copied_by(text):
             return {'text': text, 'basis': basis}
-    return {'text': NO_STATEMENT_SENTENCE + ' ' + UNRESOLVED_SENTENCE, 'basis': 'no_clause'}
+    return {'text': NO_STATEMENT_LINE, 'basis': 'no_clause'}
