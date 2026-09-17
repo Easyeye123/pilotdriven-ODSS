@@ -30,6 +30,7 @@ from .engines import (
 from .notam_restriction_line import (
     NO_STATEMENT_LINE,
     NO_TEXT_SENTENCE,
+    copies_its_source,
     derive_notam_restriction_line,
     states_nothing,
     unpublishable,
@@ -555,8 +556,15 @@ def _compact_notam_text(
     planned_runways: set[str],
     reference_time: datetime | None,
     dashboard: bool = False,
+    preserve_stored_analysis: bool = False,
 ) -> str:
-    """One source-bounded line; fall back to the shared engine summary."""
+    """One source-bounded line; fall back to the shared engine summary.
+
+    ``preserve_stored_analysis`` is for the lossless audit composition, which
+    records what the stored analysis held rather than publishing to a pilot. It
+    relaxes only the ``states_nothing`` refusal; C1's copy invariant applies on
+    every surface, because a copied item E deletes the published PDF.
+    """
     raw = " ".join(str(item.get("item_e_text") or "").split())
     upper = raw.upper()
     schedule_text = _compact_runway_schedule_text(
@@ -635,10 +643,17 @@ def _compact_notam_text(
         dashboard_line = notam_dashboard_line(raw, str(item.get("pertinence_kind") or ""))
         if dashboard_line:
             return dashboard_line
-    return _non_copying_notam_fallback(item, raw)
+    return _non_copying_notam_fallback(
+        item, raw, preserve_stored_analysis=preserve_stored_analysis,
+    )
 
 
-def _non_copying_notam_fallback(item: dict[str, Any], raw: str) -> str:
+def _non_copying_notam_fallback(
+    item: dict[str, Any],
+    raw: str,
+    *,
+    preserve_stored_analysis: bool = False,
+) -> str:
     """The last line this function may publish, under C1's copy invariant.
 
     Found by C1's reviewer. The terminal fallback published the stored summary
@@ -666,8 +681,15 @@ def _non_copying_notam_fallback(item: dict[str, Any], raw: str) -> str:
         body = " ".join(str(candidate or "").split())
         return bool(body) and not unpublishable(raw, body)
 
+    def recordable(candidate: str) -> bool:
+        """What the lossless audit record may reproduce: anything the analysis
+        actually held, except a copy of its own notice - a copy is a defect on
+        every surface because ``check_concise_pdf`` deletes the page for it."""
+        body = " ".join(str(candidate or "").split())
+        return bool(body) and not copies_its_source(raw, body)
+
     held = str(item.get("summary") or "")
-    if publishable(held):
+    if recordable(held) if preserve_stored_analysis else publishable(held):
         return held
     if " ".join(str(raw or "").split()):
         if str(item.get("pertinence_kind") or "") == "obstacle":
@@ -715,6 +737,7 @@ def _compact_notam_lines(
     limit: int = 2,
     planned_runways: set[str] | None = None,
     reference_time: datetime | None = None,
+    preserve_stored_analysis: bool = False,
 ) -> list[dict[str, Any]]:
     """Pick category-diverse compact lines; full notices remain untouched.
 
@@ -752,6 +775,7 @@ def _compact_notam_lines(
             role=role,
             planned_runways=runway_basis,
             reference_time=reference_time,
+            preserve_stored_analysis=preserve_stored_analysis,
         )
         ranked.append((
             0 if operational_runways & runway_basis else 1,
@@ -835,6 +859,8 @@ def _compact_notam_lines(
 def _airport_operational_panels(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
+    *,
+    preserve_stored_analysis: bool = False,
 ) -> list[dict[str, Any]]:
     """The selected source-fact contract shared by dashboard and PDF.
 
@@ -1070,6 +1096,7 @@ def _airport_operational_panels(
                 planned_runways=compact_planned_runways,
                 reference_time=compact_reference_time,
                 dashboard=True,
+                preserve_stored_analysis=preserve_stored_analysis,
             )
         card_summary_lines.extend(
             _compact_notam_lines(
@@ -1082,6 +1109,7 @@ def _airport_operational_panels(
                 ),
                 planned_runways=compact_planned_runways,
                 reference_time=compact_reference_time,
+                preserve_stored_analysis=preserve_stored_analysis,
             )
         )
         source_pages = {
@@ -1127,6 +1155,8 @@ def _airport_operational_panels(
 def _alternate_assessment_rows(
     flight: dict[str, Any],
     airport_panels: list[dict[str, Any]],
+    *,
+    preserve_stored_analysis: bool = False,
 ) -> list[dict[str, Any]]:
     """Bind each destination alternate to its own held source evidence.
 
@@ -1217,6 +1247,7 @@ def _alternate_assessment_rows(
                 {"alternate"},
                 alternate_notams,
             ),
+            preserve_stored_analysis=preserve_stored_analysis,
         )
         selected_constraint = next(
             (
@@ -5514,11 +5545,12 @@ def _intam_operational_priority_rows(
 
 
 def _finding_source_record(item: dict[str, Any]) -> dict[str, Any]:
-    """A finding's own held NOTAM record, however the pack stored it.
+    """A finding's own held NOTAM record, however the pack carries it.
 
-    ``data`` is a dict on a freshly analysed finding and a JSON string once the
-    analysis has been written to disk and read back, which is exactly the case
-    this repair exists for.
+    A stored analysis holds ``data`` as a dict, which is what the rest of the
+    view builder requires. The JSON-string shape is accepted too because a
+    re-serialised or hand-edited pack can carry it, and a repair that silently
+    did nothing for such a pack would be worse than one that refuses it.
     """
     data = item.get("data")
     if isinstance(data, str):
@@ -5591,11 +5623,16 @@ def build_briefing_view(
     timing_view: dict[str, Any] | None = None,
     weather_charts: dict[str, Any] | None = None,
     include_dashboard_only_panels: bool = False,
+    preserve_stored_analysis: bool = False,
 ) -> dict[str, Any]:
     # Repair before anything is projected: every downstream view row (decision
     # findings, card summary lines, considerations, the destination highlight)
     # is built from this list, so one guard here covers all of them.
-    findings = [_republishable_finding(item) for item in findings]
+    #
+    # ``preserve_stored_analysis`` is for the lossless audit composition, which
+    # records what the stored analysis held rather than publishing to a pilot.
+    if not preserve_stored_analysis:
+        findings = [_republishable_finding(item) for item in findings]
     source_findings = list(findings)
     findings = prepare_pilot_findings(findings, notam_limit=24)
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -5633,6 +5670,7 @@ def build_briefing_view(
     all_airport_panels = _airport_operational_panels(
         flight,
         source_findings,
+        preserve_stored_analysis=preserve_stored_analysis,
     )
     airport_operational_panels = [
         panel
@@ -5642,6 +5680,7 @@ def build_briefing_view(
     alternate_assessment_rows = _alternate_assessment_rows(
         flight,
         airport_operational_panels,
+        preserve_stored_analysis=preserve_stored_analysis,
     )
 
     critical_airport_notams = [

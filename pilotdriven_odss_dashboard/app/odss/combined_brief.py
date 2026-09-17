@@ -4677,7 +4677,14 @@ def _pdf_notam_operational_headline(
     *,
     role: str,
 ) -> str:
-    """Prefer reviewed compact wording; never recast an unknown Item E wall."""
+    """Prefer reviewed compact wording; never recast an unknown Item E wall.
+
+    This headline belongs to the audit composition and is called from nowhere
+    else, so it records what the stored analysis held (C2 round 2). The pilot's
+    download reaches its airport analysis through
+    ``airport_pdf_analysis``/``build_briefing_view``, where a refused stored
+    summary IS repaired.
+    """
 
     raw = " ".join(str(item.get("item_e_text") or "").split())
     family = _compact_notam_family(item)
@@ -4687,6 +4694,7 @@ def _pdf_notam_operational_headline(
         role=role,
         planned_runways=set(),
         reference_time=None,
+        preserve_stored_analysis=True,
     ).split())
     if (
         not candidate
@@ -14028,6 +14036,17 @@ def _render_reference_briefing(
             else None
         ),
         weather_charts=weather_charts,
+        # C2 round 2. The audit appendix is the LOSSLESS record of what the
+        # stored analysis held, including that it held a content-free template.
+        # Re-deriving a refused summary here would make the audit record
+        # disagree with the analysis it exists to audit, and it would move the
+        # REV3 raster canary - a deterministic-renderer check on a SHA-pinned
+        # historical pack, explicitly "NOT the pilot-facing download". The
+        # parity contract is about what pilots download, so the repair is
+        # scoped to that surface. Whether the audit composition should also
+        # carry repaired wording is a re-mint decision for David, not a side
+        # effect of this task (C2 report round 2, decision owed).
+        preserve_stored_analysis=include_audit_appendix,
     )
     if include_audit_appendix:
         briefing = _audit_rev3_v8_briefing_projection(flight, briefing)

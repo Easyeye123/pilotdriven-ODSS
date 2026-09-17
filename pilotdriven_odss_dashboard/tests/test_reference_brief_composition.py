@@ -234,7 +234,7 @@ def test_operational_downloaded_pdf_shows_exact_critical_approach_flag(
     real_build = briefing_module.build_briefing_view
 
     def critical_approach_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -242,6 +242,7 @@ def test_operational_downloaded_pdf_shows_exact_critical_approach_flag(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         panel = view["airport_operational_panels"][0]
         def flagged(
@@ -1799,7 +1800,7 @@ def test_six_box_overview_uses_decoded_weather_and_moves_full_alternate_detail(
     )
 
     def dense_destination_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -1807,6 +1808,7 @@ def test_six_box_overview_uses_decoded_weather_and_moves_full_alternate_detail(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["destination"]["weather"].update({
             "metar": destination_metar,
@@ -1968,7 +1970,7 @@ def test_compact_airport_matrix_keeps_vhhh_without_inventing_preferred_status(
     real_build = briefing_module.build_briefing_view
 
     def lower_card_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -1976,6 +1978,7 @@ def test_compact_airport_matrix_keeps_vhhh_without_inventing_preferred_status(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         panels = list(view["airport_operational_panels"])
         edto_panel = next(
@@ -2112,7 +2115,7 @@ def test_compact_airport_single_alternate_row_keeps_honest_source_status(
     real_build = briefing_module.build_briefing_view
 
     def single_row_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -2120,6 +2123,7 @@ def test_compact_airport_single_alternate_row_keeps_honest_source_status(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         panels = [
             panel
@@ -2214,7 +2218,7 @@ def test_compact_station_summary_fails_closed_before_truncating_source_facts(
     real_build = briefing_module.build_briefing_view
 
     def over_capacity_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -2222,6 +2226,7 @@ def test_compact_station_summary_fails_closed_before_truncating_source_facts(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         departure_panel = next(
             panel
@@ -2268,7 +2273,7 @@ def test_compact_station_summary_shows_three_shared_notices_with_sources(
     real_build = briefing_module.build_briefing_view
 
     def exact_station_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -2276,6 +2281,7 @@ def test_compact_station_summary_shows_three_shared_notices_with_sources(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         panels = view["airport_operational_panels"]
         departure = next(
@@ -3558,7 +3564,7 @@ def test_six_box_page1_uses_applicable_taf_result_at_the_readability_floor(
     })
 
     def with_destination_forecast(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -3566,6 +3572,7 @@ def test_six_box_page1_uses_applicable_taf_result_at_the_readability_floor(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["overview"]["destination"]["forecast_at_reference"] = {
             "applicable_conditions": "FM230100 31011KT P6SM SCT060",
@@ -3629,7 +3636,7 @@ def test_six_box_page1_bounds_long_destination_forecast_and_points_to_weather(
     )
 
     def with_sq481_destination_forecast(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -3637,6 +3644,7 @@ def test_six_box_page1_bounds_long_destination_forecast_and_points_to_weather(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["overview"]["destination"]["forecast_at_reference"] = {
             "applicable_conditions": long_conditions,
@@ -3698,7 +3706,7 @@ def test_six_box_page1_keeps_destination_forecast_single_owned(
         })
 
     def with_held_forecasts(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -3706,6 +3714,7 @@ def test_six_box_page1_keeps_destination_forecast_single_owned(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         for role in dense_stations:
             view["overview"][role]["forecast_at_reference"] = {
@@ -3987,6 +3996,7 @@ def test_operational_performance_adds_lossless_eosid_continuation_page(
         warnings,
         timing_view=None,
         weather_charts=None,
+        **kwargs,
     ):
         view = real_build(
             flight,
@@ -3994,6 +4004,7 @@ def test_operational_performance_adds_lossless_eosid_continuation_page(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         destination = next(
             panel
@@ -4214,7 +4225,7 @@ def test_compact_capacity_reflows_long_deferred_and_release_gates(
     real_build = briefing_module.build_briefing_view
 
     def long_gate_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -4222,6 +4233,7 @@ def test_compact_capacity_reflows_long_deferred_and_release_gates(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["deferred_dispatch_gates"] = [
             {
@@ -4837,7 +4849,7 @@ def test_operational_weather_page_names_the_governed_selected_chart(
     chart_bytes = b"governed-operational-chart"
 
     def selected_chart_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -4845,6 +4857,7 @@ def test_operational_weather_page_names_the_governed_selected_chart(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["hazards"]["weather_chart_selection"] = {
             "status": "selected",
@@ -4917,7 +4930,7 @@ def test_operational_weather_page_keeps_first_two_shared_sigmet_dispositions(
     real_build = briefing_module.build_briefing_view
 
     def two_sigmet_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -4925,6 +4938,7 @@ def test_operational_weather_page_keeps_first_two_shared_sigmet_dispositions(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["hazards"]["sigmet_cards"] = [
             {
@@ -4995,7 +5009,7 @@ def test_weather_vaac_assurance_keeps_all_nine_centre_receipts_and_map_parity(
     )
 
     def five_centre_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -5003,6 +5017,7 @@ def test_weather_vaac_assurance_keeps_all_nine_centre_receipts_and_map_parity(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         hazards = dict(view.get("hazards") or {})
         hazards["coverage_ledger"] = [
@@ -5686,7 +5701,7 @@ def test_edto_pages_print_every_shared_operational_row_verbatim(
     ]
 
     def shared_edto_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -5694,6 +5709,7 @@ def test_edto_pages_print_every_shared_operational_row_verbatim(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["edto"]["operational_rows"] = [
             {
@@ -6288,7 +6304,7 @@ def test_long_station_source_rows_continue_without_loss_or_overlap(
     real_build = briefing_module.build_briefing_view
 
     def high_cardinality_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -6296,6 +6312,7 @@ def test_long_station_source_rows_continue_without_loss_or_overlap(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         panel = view["airport_operational_panels"][0]
         # The immutable audit profile deliberately keeps only its historical
@@ -6510,7 +6527,7 @@ def test_all_terrain_events_and_full_vaa_source_text_reach_pdf(
     real_build = briefing_module.build_briefing_view
 
     def full_hazard_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -6518,6 +6535,7 @@ def test_all_terrain_events_and_full_vaa_source_text_reach_pdf(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["terrain"]["events"] = [
             {
@@ -6674,7 +6692,7 @@ def test_operational_vaa_cards_print_shared_applicability_before_source_excerpt(
     real_build = briefing_module.build_briefing_view
 
     def four_advisory_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -6682,6 +6700,7 @@ def test_operational_vaa_cards_print_shared_applicability_before_source_excerpt(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["vaa"]["cfp_advisories"] = [
             {
@@ -6762,7 +6781,7 @@ def test_operational_vaa_cards_keep_full_va_sigmet_name_beside_cfp_notices(
     full_sigmet_name = "VOLCANIC ASH · MT KRAKATAU · WIIF WV SIGMET 18"
 
     def mixed_advisory_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -6770,6 +6789,7 @@ def test_operational_vaa_cards_keep_full_va_sigmet_name_beside_cfp_notices(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         notices = [
             {
@@ -7170,7 +7190,7 @@ def test_hazard_page_prints_one_honest_fallback_when_no_sigmet_cards_exist(
     real_build = briefing_module.build_briefing_view
 
     def no_sigmet_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -7178,6 +7198,7 @@ def test_hazard_page_prints_one_honest_fallback_when_no_sigmet_cards_exist(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["hazards"]["sigmet_cards"] = []
         return view
@@ -7254,7 +7275,7 @@ def test_hazard_continuations_keep_every_sigmet_card_and_vaac_centre(
     real_build = briefing_module.build_briefing_view
 
     def high_cardinality_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -7262,6 +7283,7 @@ def test_hazard_continuations_keep_every_sigmet_card_and_vaac_centre(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["hazards"]["sigmet_cards"] = [
             {
@@ -7339,7 +7361,7 @@ def test_critical_analysis_continues_every_shared_communication(
     real_build = briefing_module.build_briefing_view
 
     def high_cardinality_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -7347,6 +7369,7 @@ def test_critical_analysis_continues_every_shared_communication(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["communications"] = [
             {
@@ -7399,7 +7422,7 @@ def test_critical_analysis_paginates_wrapped_and_oversized_communications(
     real_build = briefing_module.build_briefing_view
 
     def long_communication_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -7407,6 +7430,7 @@ def test_critical_analysis_paginates_wrapped_and_oversized_communications(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["communications"] = [
             {
@@ -7708,7 +7732,7 @@ def test_hazard_continuations_print_every_governed_selected_wafc_chart(
     }
 
     def selected_chart_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -7716,6 +7740,7 @@ def test_hazard_continuations_print_every_governed_selected_wafc_chart(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["hazards"]["weather_chart_selection"] = {
             "status": "selected",
@@ -7776,7 +7801,7 @@ def test_selected_wafc_chart_fails_closed_when_source_bytes_change(
     real_build = briefing_module.build_briefing_view
 
     def selected_chart_view(
-        flight, findings, warnings, timing_view=None, weather_charts=None
+        flight, findings, warnings, timing_view=None, weather_charts=None, **kwargs
     ):
         view = real_build(
             flight,
@@ -7784,6 +7809,7 @@ def test_selected_wafc_chart_fails_closed_when_source_bytes_change(
             warnings,
             timing_view=timing_view,
             weather_charts=weather_charts,
+            **kwargs,
         )
         view["hazards"]["weather_chart_selection"] = {
             "status": "selected",

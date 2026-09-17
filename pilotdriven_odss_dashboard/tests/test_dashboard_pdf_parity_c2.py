@@ -52,7 +52,12 @@ from app.odss.analysed_briefing_content import (
     excess_fuel_tile_label,
     tanker_only_excess,
 )
-from app.odss.briefing import _compact_notam_family, _compact_notam_text
+from app.odss.briefing import (
+    _compact_notam_family,
+    _compact_notam_text,
+    _republishable_finding,
+    build_briefing_view,
+)
 from app.odss.combined_brief import render_combined_briefing
 from app.odss.engines import _notam_operational_summary, notam_dashboard_line
 from app.odss.notam_restriction_line import (
@@ -845,3 +850,157 @@ def test_the_stale_sq606_download_publishes_no_wording_the_dashboard_refuses(tmp
         assert line in body, (
             f"the stale-pack download dropped the line the fresh one prints - {line!r}"
         )
+
+
+# ------------------------- where the repair applies, and where it deliberately does not
+
+REV3_PINNED_ANALYSIS = Path(
+    "/Users/jabe/Documents/ezzo/tmp/pdfs/pd-rev3-reference/SQ214_REV3_v16_analysis.json"
+)
+
+
+def stale_notam_finding(stored: str = OLD_OBSTACLE_TEMPLATE) -> dict:
+    return {
+        "rule_id": "NOTAM-AUTO",
+        "engine": "notam",
+        "severity": "warning",
+        "title": "Destination NOTAM SX88/25",
+        "summary": stored,
+        # A stored analysis holds ``data`` as a dict, which is what the rest of
+        # the view builder requires; the repair also tolerates the JSON-string
+        # shape a hand-edited or re-serialised pack can carry.
+        "data": {
+            "notam_id": "SX88/25",
+            "pertinence_kind": "obstacle",
+            "role": "destination",
+            "applicability": "active",
+            "raw_text": RKSI_OBSTACLE_SOURCES["SX88/25"],
+        },
+    }
+
+
+def test_the_repair_reads_a_stored_json_string_and_a_live_dict_alike():
+    dict_form = stale_notam_finding()
+    string_form = {**dict_form, "data": json.dumps(dict_form["data"])}
+    assert (
+        _republishable_finding(string_form)["summary"]
+        == _republishable_finding(dict_form)["summary"]
+    )
+    assert _republishable_finding(dict_form)["summary"] != OLD_OBSTACLE_TEMPLATE
+
+
+def test_the_repair_leaves_a_finding_that_says_something_of_its_own_alone():
+    """A repair, not a re-analysis. Only a refused summary is replaced, and the
+    finding object itself is returned unchanged so nothing downstream can tell
+    a repaired pack from one that never needed it."""
+    stored = "Runway notice: obstacle erected between RWY 15R/33L and RWY 16L/34R."
+    finding = stale_notam_finding(stored)
+    assert _republishable_finding(finding) is finding
+
+
+def test_the_repair_ignores_a_finding_that_holds_no_notam():
+    """The refusal predicate is defined for airport NOTAM records; a weather or
+    performance finding whose wording happens to be capitalised is none of its
+    business."""
+    finding = {
+        "engine": "performance",
+        "summary": "ZFW TOW LDW RECONCILE AGAINST THE FILED PLAN VALUES",
+        "data": {"role": "destination"},
+    }
+    assert _republishable_finding(finding) is finding
+
+
+def test_the_lossless_audit_composition_keeps_what_the_analysis_held():
+    """The repair is scoped to the pilot-facing publication, on purpose.
+
+    ``_render_reference_briefing``'s audit appendix is the lossless record of a
+    stored analysis - including the fact that it stored a content-free template
+    - and the REV3 raster canary pins it pixel for pixel on a SHA-pinned
+    historical pack (``tests/rev3_visual_reference_manifest.json``: "This is NOT
+    the pilot-facing download"). Repairing it there would make the audit record
+    disagree with the analysis it audits and would move an approved reference.
+
+    Both directions are pinned here so neither can be flipped by accident.
+    """
+    findings = [stale_notam_finding()]
+    flight = {"departure": "WSSS", "destination": "RKSI"}
+    published = build_briefing_view(flight, findings, [])
+    preserved = build_briefing_view(flight, findings, [], preserve_stored_analysis=True)
+
+    def summaries(view):
+        return [
+            one_line(row.get("summary") or "")
+            for row in view.get("decision_findings") or []
+        ]
+
+    assert OLD_OBSTACLE_TEMPLATE in summaries(preserved), summaries(preserved)
+    assert OLD_OBSTACLE_TEMPLATE not in summaries(published), summaries(published)
+    assert any(
+        line and not dashboard_refuses(line, RKSI_OBSTACLE_SOURCES["SX88/25"])
+        for line in summaries(published)
+    ), summaries(published)
+
+
+def test_the_rev3_pinned_pack_is_exactly_what_the_repair_would_change():
+    """Measure the canary's exposure rather than assert it away.
+
+    The pinned REV3 analysis predates C1/C2, so 20 of its 70 findings carry one
+    of the two content-free templates. That is the whole reason the audit
+    composition opts out: if this count is ever zero the opt-out is dead code
+    and should go, and if the templates were something else the classification
+    below would be wrong.
+    """
+    if not REV3_PINNED_ANALYSIS.is_file():
+        pytest.skip("the private REV3 pinned analysis is not available")
+    payload = json.loads(REV3_PINNED_ANALYSIS.read_text(encoding="utf-8"))
+    repaired = [
+        item for item in payload.get("findings") or []
+        if _republishable_finding(item) is not item
+    ]
+    assert len(repaired) == 20, len(repaired)
+    for item in repaired:
+        stored = one_line(item.get("summary") or "")
+        assert OBSTACLE_FILLER_RE.search(stored) or GENERIC_RESTRICTION_RE.match(stored), stored
+
+
+@pytest.mark.parametrize("stored", STALE_TEMPLATES)
+def test_the_audit_headline_keeps_the_template_the_analysis_held(stored):
+    """``_pdf_notam_operational_headline`` is the audit composition's own
+    headline - it is called from nowhere else - so it records what the stored
+    analysis held, by the same rule as the audit view above.
+
+    Without this, hardening the fallback moves the REV3 raster canary on a
+    SHA-pinned historical pack, which is a re-mint decision for David rather
+    than a side effect of closing a parity fault on the download.
+    """
+    source = RKSI_OBSTACLE_SOURCES["SX88/25"]
+    item = {"item_e_text": source, "summary": stored, "pertinence_kind": "obstacle"}
+    common = dict(role="destination", planned_runways=set(), reference_time=None)
+    assert _compact_notam_text(
+        item, _compact_notam_family(item), preserve_stored_analysis=True, **common,
+    ) == stored
+    # The publication surface still refuses it.
+    assert _compact_notam_text(
+        item, _compact_notam_family(item), **common,
+    ) != stored
+
+
+@pytest.mark.parametrize("kind", STORED_SUMMARY_KINDS)
+def test_the_audit_record_still_refuses_a_stored_summary_that_copies_its_source(kind):
+    """C1's invariant is not relaxed anywhere. A content-free template is a
+    faithful record of what the analysis held; a copy of item E is a defect on
+    every surface, because ``check_concise_pdf`` deletes the published PDF for
+    it. Only the ``states_nothing`` refusal is scoped to the publication.
+    """
+    raw = RAW_ITEM_E["1A1353/26"]
+    item = {"item_e_text": raw, "summary": raw, "pertinence_kind": kind}
+    published = _compact_notam_text(
+        item,
+        _compact_notam_family(item),
+        role="destination",
+        planned_runways=set(),
+        reference_time=None,
+        preserve_stored_analysis=True,
+    )
+    assert_not_a_copy(raw, published)
+    assert published != raw
