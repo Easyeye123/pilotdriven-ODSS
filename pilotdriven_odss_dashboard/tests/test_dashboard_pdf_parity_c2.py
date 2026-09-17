@@ -76,6 +76,9 @@ CORPUS_ROWS = json.loads(gzip.decompress(SOURCE_CORPUS.read_bytes()))["rows"]
 # must still read EXCESS - the rule has to be able to say no.
 TANKER_ONLY_CASES = ("SQ910-SIN-MNL-21AUG", "SQ194-SIN-HAN")
 MIXED_EXCESS_CASE = "SQ366-SIN-FCO"
+# SQ322 files no RTOW, so its margin is not held - the one corpus flight whose
+# page-1 MARGIN row is a named gap rather than a number (C2 round 3).
+NO_MARGIN_CASE = "SQ322-SIN-LHR"
 OBSTACLE_CASE = "SQ606-SIN-ICN-06SEP"
 
 
@@ -1179,6 +1182,25 @@ def test_the_margin_is_signed_wherever_the_download_prints_it(case_id, tmp_path_
     page_three = one_line(briefing["pages"][2])
     assert f"RTOW - PTOW: +{margin:,} kg" in page_three, page_three
     assert f"RTOW - PTOW: {margin:,} kg" not in page_three
+
+
+def test_a_margin_the_ofp_does_not_hold_is_named_not_signed(tmp_path_factory):
+    """SQ322-SIN-LHR has no RTOW, so ``margin_kg`` is ``None``.
+
+    ``MARGIN Not held`` is the honest row, and it must not become ``+0 kg``: a
+    coverage gap is not a zero margin. The app's page-1 reader hit exactly this
+    trap - ``Number(null)`` is 0 - and would have demanded ``MARGIN +0 kg`` from
+    every such flight in the release run.
+    """
+    briefing = rendered(NO_MARGIN_CASE, tmp_path_factory)
+    publication = ((briefing["payload"].get("view") or {}).get("briefing") or {}).get(
+        "performance_publication"
+    ) or {}
+    assert publication.get("margin_kg") is None, "SQ322 now holds a margin; pick another case"
+    page_one = one_line(briefing["pages"][0])
+    assert "MARGIN Not held" in page_one, page_one
+    assert "MARGIN +0 kg" not in page_one
+    assert "MARGIN 0 kg" not in page_one
 
 
 @pytest.mark.parametrize("case_id", TANKER_ONLY_CASES)
