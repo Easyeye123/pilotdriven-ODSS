@@ -786,7 +786,8 @@ def test_every_corpus_source_survives_a_stale_template_pack():
                     f"{row.get('notam_id')} stored={stored!r} dashboard={dashboard}: {published}"
                 )
                 checked += 1
-    assert checked >= 5000, f"only {checked} stale vectors were checked"
+    # 1,397 committed sources x 3 refused templates x both dashboard values.
+    assert checked == 8382, f"only {checked} stale vectors were checked"
 
 
 def test_the_stale_sq606_download_publishes_no_wording_the_dashboard_refuses(tmp_path_factory):
