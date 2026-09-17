@@ -468,7 +468,13 @@ def airport_review_constraints(view, analyses):
             raw = clean(notice.get("item_e_text")).upper()
             runways = list(dict.fromkeys(m.replace(" ", "") for m in _SURFACE.findall(raw)))
             scope = "RWY " + "/".join(dict.fromkeys(r for pair in runways for r in pair.split("/"))) if runways else "planned movement"
-            if "RETIL" in raw:
+            if movement_clocks := re.findall(r"\b(?:TSAT|ELDT)\b", raw):
+                topic = "/".join(dict.fromkeys(movement_clocks)) + " runway-availability conditions"
+            elif re.search(r"\b(?:EXC|EXCEPT)\s+(?:TAX|TAXI)\b", raw):
+                topic = "runway closure and taxi-exception extent"
+            elif re.search(r"\b(?:IAC|AERONAUTICAL DATA TABULATION)\b", raw):
+                topic = "approach-chart status and scope"
+            elif "RETIL" in raw:
                 topic = f"{scope} exit-lighting effect"
             elif re.search(r"\b(?:LOC|LOCALISER|LOCALIZER)\b", raw) and re.search(r"\b(?:INTRP|OSCILLATIONS|INTERFERENCE)\b", raw):
                 topic = f"{scope} localizer interference"

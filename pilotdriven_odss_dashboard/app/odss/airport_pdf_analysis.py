@@ -56,6 +56,33 @@ def _timing(record: dict[str, Any], role: str) -> tuple[str | None, str]:
     return None, "unresolved reference time"
 
 
+def _approach_chart_restrictions(raw: str) -> list[tuple[str, str]] | None:
+    """Keep each explicitly withdrawn/suspended chart bound to its own title.
+
+    This narrow source grammar is a chart-status statement, not evidence that
+    an ILS/VOR facility failed. Unrecognised clauses make the notice unresolved.
+    Supporting data tables must match an actual named chart before deduplication.
+    """
+    pattern = re.compile(
+        r"(?P<kind>IAC|AERONAUTICAL DATA TABULATION)\s+[A-Z]+-\d+[A-Z]?\s+"
+        r"(?P<title>(?:ILS|VOR|RNAV(?:\s*\(GNSS\))?)(?:\s+[A-Z])?\s+"
+        r"RWY\s+(?:0[1-9]|[12]\d|3[0-6])[LCR]?(?:\s+CAT\s+I{1,3})?)\s+"
+        r"DATED\s+\d{1,2}\s+[A-Z]{3}\s+\d{4}\s+(?P<state>SUSPENDED|WITHDRAWN)", re.I,
+    )
+    charts, tables = [], []
+    for clause in filter(None, (part.strip() for part in re.split(r"\.(?=\s|$)|;", raw))):
+        match = pattern.fullmatch(clause)
+        if not match:
+            return None
+        item = (" ".join(match.group("title").upper().split()), match.group("state").lower())
+        target = charts if match.group("kind").upper() == "IAC" else tables
+        if item not in target:
+            target.append(item)
+    if not charts or any(item not in charts for item in tables):
+        return None
+    return charts
+
+
 def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway: Any, route_text: str | None = None) -> dict[str, Any]:
     """Group equal consequences, retaining every contributing inline ID."""
     planned = str(planned_runway or "").strip().upper()
@@ -121,6 +148,26 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         if timing is None:
             unresolved.append(notice_id)
             continue
+        # A chart's suspension is not a physical aid outage. Keep title/runway
+        # tuples local to their source clauses, before any equipment grouping.
+        if re.search(r"\b(?:IAC|AERONAUTICAL DATA TABULATION)\b", raw, re.I):
+            charts = _approach_chart_restrictions(raw)
+            if not charts:
+                unresolved.append(notice_id)
+                continue
+            by_state: OrderedDict[str, list[str]] = OrderedDict()
+            for title, chart_state in charts:
+                by_state.setdefault(chart_state, []).append(title)
+            for chart_state, titles in by_state.items():
+                consequence = f"Published approach charts {chart_state} {timing}: " + "; ".join(titles) + "."
+                key = ("approach_chart", consequence, state)
+                row = groups.setdefault(key, {"family": "approach_chart", "consequence": consequence,
+                                               "state": state, "timing": timing, "notam_ids": [], "source_pages": []})
+                if notice_id not in row["notam_ids"]:
+                    row["notam_ids"].append(notice_id)
+                if notice.get("source_page") is not None and notice["source_page"] not in row["source_pages"]:
+                    row["source_pages"].append(notice["source_page"])
+            continue
         # This never prints the matched raw clause. Only identifiers and the
         # classifier's bounded result enter a consequence template.
         if notice.get("approach_affected") or kind == "approach_navaid_closure":
@@ -155,6 +202,14 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
             consequence = f"Taxi access involving {', '.join(taxiways)} is constrained {timing}."
             family = "taxiway"
         elif runways:
+            # A broad validity-window assessment cannot establish a conditional
+            # movement's availability. In particular TSAT/ELDT are separate
+            # operational inputs, not the flight's scheduled departure clock.
+            # Dated runway schedules were handled above; unresolved conditions
+            # retain their closing receipt rather than becoming active closure.
+            if re.search(r"\b(?:TSAT|ELDT|IF|WHEN|UNLESS|EXC|EXCEPT|SUBJECT\s+TO)\b", raw, re.I):
+                unresolved.append(notice_id)
+                continue
             civil_runways = list(dict.fromkeys(
                 match.group(1).replace(" ", "").upper()
                 for match in re.finditer(
@@ -169,8 +224,23 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
                                         "notam_id": notice_id, "markClass": "closure", "scope": "whole_entity",
                                         "stateAtReference": assessed.get("stateAtReference"),
                                         "referenceAt": assessed.get("referenceAt") or notice.get("referenceAt")})
-            runway_label = "RWY " + ", ".join(runways)
             closed = kind == "runway_closure"
+            if closed and not civil:
+                # Bind the closure predicate to its own explicit runway noun.
+                # A runway named in a diversion, taxi route or available clause
+                # must not inherit another runway's closure merely by sharing
+                # the same NOTAM record.
+                runways = list(dict.fromkeys(
+                    match.group(1).replace(" ", "").upper()
+                    for match in re.finditer(
+                        _SURFACE.pattern + r"\s*(?:IS\s+|ARE\s+|WILL\s+BE\s+)?(?:CLSD|CLOSED|NOT\s+(?:AVBL|AVAILABLE))\b",
+                        raw, re.I,
+                    )
+                ))
+                if not runways:
+                    unresolved.append(notice_id)
+                    continue
+            runway_label = "RWY " + ", ".join(runways)
             if civil:
                 operation = "not available for civil use"
             elif closed:
