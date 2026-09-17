@@ -107,7 +107,26 @@ def _bound_defect_subject_is_published(page_text, page_index, item, item_index, 
         return False
     if re.search(r"\b(?:UPLIFT|APPLY|APPLIED|INSPECT|CHECK|PRIOR|BEFORE|PERMITTED|DISPATCH|SECTION|CHAPTER|MEL|CDL|REFER|WRT|MAINT|PERFORMANCE)\b", raw, re.I):
         return False
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 /#,'-]+\s(?:MISSING|TORN|LOOSE|INOP|INOPERATIVE|UNSERVICEABLE|NOT WORKING|NOT COLD|NO POWER)[.]?", raw, re.I):
+    defect = re.fullmatch(
+        r"([A-Za-z0-9 /#'-]+)\s(?:MISSING|TORN|LOOSE|INOP|INOPERATIVE|UNSERVICEABLE|NOT WORKING|NOT COLD|NO POWER)[.]?",
+        raw, re.I,
+    )
+    if not defect:
+        return False
+    # This exception understands a nominal equipment/location phrase only.
+    # A free-text prefix ending in INOP can instead be a command conditional
+    # on a different system's fault. Unknown grammar remains a rejected source
+    # copy, including modals, imperatives and condition clauses; no renderer
+    # assertion can widen the closed vocabulary below.
+    equipment_words = {"GALLEY", "CABIN", "WASTE", "CONTAINER", "DOOR", "LATCH",
+                       "PANEL", "ACCESS", "SEAL", "SEAT", "ARMREST", "FAN",
+                       "LIGHT", "WING", "SLAT"}
+    position_words = {"AFT", "FWD", "FORWARD", "REAR", "UPPER", "LOWER", "LEFT",
+                      "RIGHT", "LH", "RH", "IN", "ON", "AT", "THE", "NO", "NUMBER"}
+    subject_words = re.findall(r"[A-Z0-9]+", defect.group(1).upper())
+    if (not subject_words or not any(word in equipment_words for word in subject_words)
+            or any(word not in equipment_words | position_words and not word.isdigit()
+                   for word in subject_words)):
         return False
     remark = normalized(raw)
     folded = normalized(page_text)

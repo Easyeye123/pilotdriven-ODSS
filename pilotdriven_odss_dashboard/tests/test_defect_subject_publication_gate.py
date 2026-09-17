@@ -62,3 +62,27 @@ def test_form_action_and_manual_instructions_are_not_defect_only_remarks(extra):
     row['subject']=raw.capitalize()
     page=row['subject']+' - dispatch confirmation '+' '.join(row['consequences'])+' SOURCE Uploaded OFP deferred declaration CC MEL 25-35-02B'
     assert not _bound_defect_subject_is_published(page,1,item,2,view)
+
+
+@pytest.mark.parametrize('instruction', [
+    'CABIN FAN MUST BE DEACTIVATED WHEN EMERGENCY CONTROL POWER SUPPLY IS INOP',
+    'CABIN FAN SHALL BE DEACTIVATED WHEN EMERGENCY CONTROL POWER SUPPLY IS INOP',
+    'REMOVE CABIN FAN IF EMERGENCY CONTROL POWER SUPPLY IS INOP',
+    'SWITCH OFF CABIN FAN WHEN EMERGENCY CONTROL POWER SUPPLY IS INOP',
+    'ENSURE AFT GALLEY DOOR IS SECURED IF LATCH MISSING',
+    'CABIN FAN MAY BE USED UNLESS CONTROL POWER SUPPLY IS INOP',
+    'CABIN FAN REQUIRES ISOLATION WHILE CONTROL POWER SUPPLY IS INOP',
+])
+def test_bound_instruction_ending_with_a_defect_is_not_a_defect_subject(instruction):
+    item, view, _ = held()
+    item = copy.deepcopy(item)
+    item['company_remark'] = instruction
+    segment = next(segment for gate in view['deferred_dispatch_gates']
+                   for segment in gate['source_segments'] if segment['source_item_index'] == 2)
+    segment['restriction'] = instruction
+    segment['source_text'] = item['description'] + ' ' + instruction
+    row = next(row for row in view['deferred_pdf_analysis'] if row['source_item_indices'] == [2])
+    row['subject'] = instruction.capitalize()
+    page = (row['subject'] + ' - dispatch confirmation ' + ' '.join(row['consequences'])
+            + ' SOURCE Uploaded OFP deferred declaration CC MEL 25-35-02B')
+    assert not _bound_defect_subject_is_published(page, 1, item, 2, view)
