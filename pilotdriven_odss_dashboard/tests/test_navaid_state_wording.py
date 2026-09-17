@@ -1,8 +1,8 @@
 """Boss 02 Sep 2026 21:22: what he reads first is "instrument approaches being
 affected such as ILS or VOR not working, or on test or unserviceable" — so the
 dashboard line for a navaid record names the aid and its state, never
-"restriction applies". The PDF summary is unchanged: the approved REV3
-reference must stay byte-identical."""
+"restriction applies". A5 now holds the source-derived summary for both
+surfaces; the old dashboard helper remains available for older saved packs."""
 
 from app.odss.engines import _notam_operational_summary, notam_dashboard_line
 from app.odss.pilot_briefing import notam_pertinence
@@ -58,15 +58,19 @@ def test_a_negated_or_neighbouring_state_never_binds_to_the_aid():
     assert _line("ILS RWY 25 AVBL. PAPI RWY 25 U/S.") == ""
 
 
-def test_the_pdf_summary_is_unchanged_by_the_dashboard_line():
+def test_new_pdf_summary_states_the_source_restriction_for_both_surfaces():
     text = "ILS CAT I RWY 06 ON TEST, DO NOT USE (AWAITING FLTCK VERIFICATION)."
     _, kind = notam_pertinence(text)
-    assert _notam_operational_summary(text, kind, "destination") == (
-        "Rwy 06 restriction applies during the applicable destination window."
-    )
+    held = _notam_operational_summary(text, kind, "destination")
+    assert held == "ILS CAT I RWY 06 on test, do not use (awaiting FLTCK verification)."
+    from app.odss.briefing import _compact_notam_text
+    item = {"item_e_text":text, "summary":held, "pertinence_kind":kind}
+    common = dict(role="destination", planned_runways=set(), reference_time=None)
+    assert _compact_notam_text(item, "approach_navaid", **common) == held
+    assert _compact_notam_text(item, "approach_navaid", dashboard=True, **common) == held
 
 
-def test_the_boss_line_reaches_only_the_dashboard_compact_text():
+def test_old_saved_template_keeps_the_legacy_dashboard_fallback():
     from datetime import datetime, timezone
 
     from app.odss.briefing import _compact_notam_text
