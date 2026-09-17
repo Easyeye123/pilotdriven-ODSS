@@ -1353,9 +1353,13 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         terminal.append(f"{text(station_view.get('icao'))} METAR: {text((station_view.get('weather') or {}).get('metar'))}")
         forecast = ((view.get("overview") or {}).get(role) or {}).get("forecast_at_reference") or {}
         conditions = forecast.get("applicable_conditions")
-        if conditions:
-            terminal.append(f"{text(station_view.get('icao'))} forecast {text(forecast.get('utc_window'))}: {conditions}")
         source = forecast.get("forecast_source") or {}
+        if conditions:
+            if str(source.get("record_type") or "").upper() in {"METAR", "SPECI"}:
+                # The checked flight window is not an observation validity.
+                terminal.append(f"{text(station_view.get('icao'))} observation used: {conditions}")
+            else:
+                terminal.append(f"{text(station_view.get('icao'))} forecast {text(forecast.get('utc_window'))}: {conditions}")
         if source:
             # A forecast source prints its issue/validity; an observation
             # basis prints its observation time, never an invented validity.

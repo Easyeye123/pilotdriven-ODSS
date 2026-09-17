@@ -2871,3 +2871,33 @@ def test_a_station_assessed_from_a_metar_alone_publishes_the_observation_as_its_
     forecast = _overview_forecast_at_reference(findings, location="WSSS", phase="Departure")
     assert forecast["forecast_source"]["raw_text"] == taf
     assert forecast["forecast_source"].get("record_type") is None
+
+
+@pytest.mark.parametrize("with_taf", [False, True])
+def test_physical_weather_page_does_not_publish_an_observation_as_a_forecast(tmp_path, with_taf):
+    import fitz
+    from app.odss.combined_brief import render_combined_briefing
+    from app.odss.concise_pdf_gate import WEATHER_PAGE
+
+    raw = "METAR WSSS 160930Z 20005KT 9999 FEW018 BKN300 30/24 Q1010 NOSIG"
+    records = [{"location": "WSSS", "record_type": "METAR", "text": raw,
+                "source": "noaa_awc_live", "provider": "noaa-awc-data-api",
+                "observed_at_utc": "2026-07-16T09:30:00+00:00"}]
+    if with_taf:
+        records.append({"location": "WSSS", "record_type": "TAF",
+                        "text": "TAF WSSS 160500Z 1606/1712 20005KT 9999 FEW018", "source_page": 15})
+    flight = _flight(weather=records)
+    findings, warnings = analyse(flight)
+    path = tmp_path / "weather-basis.pdf"
+    render_combined_briefing(flight, findings, warnings, path)
+    with fitz.open(path) as doc:
+        body = " ".join(doc[WEATHER_PAGE].get_text().split())
+    assert "wind 200° 5 kt" in body
+    if with_taf:
+        assert "WSSS forecast 16 JUL 0900Z-1100Z:" in body
+        assert "WSSS observation used:" not in body
+    else:
+        assert "WSSS observation used:" in body
+        assert "WSSS forecast" not in body
+        assert "Basis: METAR observation 16JUL 0930Z" in body
+        assert "valid 16JUL" not in body
