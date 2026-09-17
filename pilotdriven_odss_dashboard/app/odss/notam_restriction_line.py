@@ -845,6 +845,59 @@ def copies_its_source(raw_text: object, published: object) -> bool:
     return copy.copied_by(_without_fixed_markers(body)) or copy.copied_by(body)
 
 
+# The two content-free templates older ODSS builds published for an airport
+# NOTAM. Neither states anything its notice says, so the dashboard refuses both
+# and derives a line from the source instead. They are matched here - rather
+# than compared to a fixed string - because the obstacle template interpolates
+# the role ("departure"/"destination"/...) and the generic one interpolates the
+# subject and the window.
+OBSTACLE_FILLER_RE = re.compile(r'^Obstacle or crane affects\b', re.IGNORECASE)
+GENERIC_RESTRICTION_RE = re.compile(
+    r'^[\w /()-]+ restriction applies during the applicable [\w -]+ window\.$',
+    re.IGNORECASE,
+)
+
+
+def states_nothing(raw_text: object, published: object) -> bool:
+    """Would the dashboard refuse this line as stating nothing?
+
+    C2 round 2. Round 1 fixed the obstacle template where it was PRODUCED
+    (``engines._notam_operational_summary``), but that line is frozen into the
+    stored analysis, and Download PDF renders a stored analysis without
+    re-analysing it. Every flight already in production storage therefore still
+    carried the refused template, so the two surfaces diverged again for exactly
+    the flights David opens - which is the fault C2 exists to close.
+
+    This is the app's own refusal predicate restated, never imported:
+    ``scripts/lib/briefing-surface-parity.mjs`` ``rejectedAirportSummary`` and
+    ``web/src/lib/airport-critical-notams.mjs`` (``OBSTACLE_FILLER_RE``,
+    ``GENERIC_RESTRICTION_RE``, ``isSourceCopy``). Holding a publication path to
+    it is a restriction on what ODSS may publish; it does not relax anything the
+    dashboard or the parity gate checks, and the tests keep their own
+    independent restatement so a renderer that changes its mind is still caught.
+    """
+    candidate = _squash(published)
+    if not candidate:
+        return True
+    if OBSTACLE_FILLER_RE.match(candidate) or GENERIC_RESTRICTION_RE.match(candidate):
+        return True
+    letters = re.sub(r'[^A-Za-z]', '', candidate)
+    if len(letters) >= 24 and len(re.sub(r'[^A-Z]', '', letters)) / len(letters) > 0.9:
+        return True
+    excerpt = candidate.rstrip('…').strip()
+    return len(excerpt) > 260 and excerpt.lower() in _squash(raw_text).lower()
+
+
+def unpublishable(raw_text: object, published: object) -> bool:
+    """One question for every publication path: may this line go on the page?
+
+    A line is unpublishable when it copies its own notice (C1's invariant) or
+    when it states nothing (the dashboard's refusal). Both surfaces must agree,
+    so both refusals apply wherever ODSS chooses a line to print.
+    """
+    return states_nothing(raw_text, published) or copies_its_source(raw_text, published)
+
+
 def derive_notam_restriction_line(raw_text: str) -> dict[str, str]:
     """Publish one source-derived line plus its evidence basis, never an empty template."""
     source = _squash(raw_text)

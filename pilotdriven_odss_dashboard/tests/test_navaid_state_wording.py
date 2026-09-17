@@ -74,6 +74,24 @@ def test_new_pdf_summary_states_the_source_restriction_for_both_surfaces():
 
 
 def test_old_saved_template_keeps_the_legacy_dashboard_fallback():
+    """An old saved pack keeps the legacy dashboard line - and the PDF no
+    longer keeps the template the dashboard refuses.
+
+    C2 round 2. This test used to assert that the PDF surface republished the
+    stored summary verbatim. That stored summary is the generic content-free
+    template (``{subject} restriction applies during the applicable {phase}
+    window.``), which the dashboard refuses as stating nothing
+    (``web/src/lib/airport-critical-notams.mjs`` ``GENERIC_RESTRICTION_RE``) -
+    so the two assertions below were pinning the two surfaces saying different
+    things about one record: the dashboard naming the aid and its state, the
+    PDF naming nothing. That is fault 2 in its stored-pack form, and Download
+    PDF renders stored packs without re-analysis, so it is what David sees on a
+    flight he already has open.
+
+    The legacy dashboard fallback is unchanged. What changed is that the PDF
+    now publishes what a fresh analysis of the same notice publishes.
+    """
+    import re
     from datetime import datetime, timezone
 
     from app.odss.briefing import _compact_notam_text
@@ -84,6 +102,17 @@ def test_old_saved_template_keeps_the_legacy_dashboard_fallback():
         "item_e_text": "ILS CAT I RWY 06 ON TEST, DO NOT USE (AWAITING FLTCK VERIFICATION).",
         "summary": "Rwy 06 restriction applies during the applicable destination window.",
     }
+    # The app's own refusal predicate, restated rather than imported.
+    refused = re.compile(
+        r"^[\w /()-]+ restriction applies during the applicable [\w -]+ window\.$",
+        re.IGNORECASE,
+    )
+    assert refused.match(item["summary"]), "the fixture must be a refused template"
     common = dict(role="destination", planned_runways=set(), reference_time=datetime(2026, 8, 21, 4, 45, tzinfo=timezone.utc))
     assert _compact_notam_text(item, "approach_navaid", dashboard=True, **common) == "ILS CAT I RWY 06 on test, do not use."
-    assert _compact_notam_text(item, "approach_navaid", **common) == item["summary"]
+    published = _compact_notam_text(item, "approach_navaid", **common)
+    assert published != item["summary"]
+    assert not refused.match(published), published
+    assert published == _notam_operational_summary(
+        item["item_e_text"], item["pertinence_kind"], "destination",
+    )

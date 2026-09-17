@@ -1330,6 +1330,23 @@ def _with_runway_not_closed_note(line: str) -> str:
     return " ".join(part for part in (body, RUNWAY_NOT_CLOSED_NOTE, *markers) if part)
 
 
+def obstacle_restriction_line(text: str) -> str:
+    """The published line for an obstacle notice: C1's derivation, plus the
+    boss's runway qualifier when the notice names a runway.
+
+    C2 round 2. This was inline in ``_notam_operational_summary``'s obstacle
+    branch, which runs at ANALYSIS time only. Download PDF renders a stored
+    analysis without re-analysing it, so a flight already in storage needs the
+    same line derivable at RENDER time. Sharing one function is what makes a
+    stale pack and a fresh one publish the same sentence, rather than two
+    implementations that agree until one of them is edited.
+    """
+    line = derive_notam_restriction_line(text)["text"]
+    if re.search(r"\b(?:RWY|RUNWAY)\s+\d{1,2}", " ".join(str(text or "").upper().split())):
+        line = _with_runway_not_closed_note(line)
+    return line
+
+
 def _notam_operational_summary(
     text: str,
     kind: str,
@@ -1450,10 +1467,10 @@ def _notam_operational_summary(
         # the conditional-crane regression "CRANE WILL ONLY OPERATE WHEN RWY
         # 09L/27R IS CLSD"). The note goes before the derivation's own trailing
         # marker sentence so the line still ends by saying what it omitted.
-        line = derive_notam_restriction_line(text)["text"]
-        if re.search(r"\b(?:RWY|RUNWAY)\s+\d{1,2}", upper):
-            line = _with_runway_not_closed_note(line)
-        return line
+        # Shared with the render-time repair of a pack analysed before C2
+        # (``briefing._republishable_finding``), so storage age cannot change
+        # what an obstacle notice publishes.
+        return obstacle_restriction_line(text)
     return f"Operational airport restriction requires review during the applicable {phase} window."
 
 

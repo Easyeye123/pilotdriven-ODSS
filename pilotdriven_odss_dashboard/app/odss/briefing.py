@@ -20,11 +20,19 @@ from . import brief_theme as theme
 from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
 from .deferred_dispatch import build_deferred_dispatch_gates
-from .engines import detect_terrain_events, detect_vws_events, notam_dashboard_line
+from .engines import (
+    _notam_operational_summary,
+    detect_terrain_events,
+    detect_vws_events,
+    notam_dashboard_line,
+    obstacle_restriction_line,
+)
 from .notam_restriction_line import (
     NO_STATEMENT_LINE,
-    copies_its_source,
+    NO_TEXT_SENTENCE,
     derive_notam_restriction_line,
+    states_nothing,
+    unpublishable,
 )
 from .enrichment import ofp_volcano_records
 from .pilot_briefing import (
@@ -645,15 +653,27 @@ def _non_copying_notam_fallback(item: dict[str, Any], raw: str) -> str:
     a candidate that reproduces its own notice may not be published. When
     nothing survives, abstain in the derivation's own words so the dashboard
     and the PDF abstain identically instead of one of them inventing a line.
+
+    C2 round 2, found by round 1's reviewer: a copy guard alone is not the
+    parity rule. The content-free obstacle template copies nothing, so it was
+    still republished verbatim from any pack analysed before C2 - for both
+    ``dashboard`` values - while the dashboard refused that same string and
+    derived its own line. Both refusals now apply (``unpublishable``), and for
+    an obstacle record the replacement is the analysis-time producer itself, so
+    a pack in storage publishes exactly what a fresh analysis would.
     """
     def publishable(candidate: str) -> bool:
         body = " ".join(str(candidate or "").split())
-        return bool(body) and not copies_its_source(raw, body)
+        return bool(body) and not unpublishable(raw, body)
 
     held = str(item.get("summary") or "")
     if publishable(held):
         return held
     if " ".join(str(raw or "").split()):
+        if str(item.get("pertinence_kind") or "") == "obstacle":
+            fresh = obstacle_restriction_line(raw)
+            if publishable(fresh):
+                return fresh
         derived = derive_notam_restriction_line(raw)["text"]
         return derived if publishable(derived) else NO_STATEMENT_LINE
     return "Operational notice - review source."
@@ -5493,6 +5513,77 @@ def _intam_operational_priority_rows(
     return projected
 
 
+def _finding_source_record(item: dict[str, Any]) -> dict[str, Any]:
+    """A finding's own held NOTAM record, however the pack stored it.
+
+    ``data`` is a dict on a freshly analysed finding and a JSON string once the
+    analysis has been written to disk and read back, which is exactly the case
+    this repair exists for.
+    """
+    data = item.get("data")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except ValueError:
+            return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _republishable_finding(item: dict[str, Any]) -> dict[str, Any]:
+    """Re-derive a stored NOTAM summary the dashboard refuses, at render time.
+
+    C2 round 2, found by round 1's reviewer. Round 1 replaced the content-free
+    obstacle template where it is PRODUCED, in
+    ``engines._notam_operational_summary`` - which runs at analysis time only.
+    ``main.get_service_combined_report`` renders the combined briefing from the
+    stored analysis without re-analysis ("analyses stored before this release -
+    including currently open flights - get the combined briefing without
+    re-analysis"), so every flight already in production storage kept the old
+    template as ``findings[].summary``.
+
+    Measured on a real pack analysed by the pre-C2 build: ``findings[].summary``
+    is the ONLY stale input that reaches the six-page download (``flight``
+    carries none, and ``render_analysed_briefing`` rebuilds the whole view here
+    rather than reading the stored one). It reached page 2 through
+    ``_decision_finding_projection``, so the download published a sentence the
+    dashboard refuses as stating nothing while the dashboard derived its own
+    line from the source - the same two-surface divergence C2 exists to close,
+    reappearing for exactly the flights David already has open.
+
+    This is a repair, not a re-analysis: a stored summary that says something of
+    its own is left exactly as it is. Only a refused one is replaced, and it is
+    replaced by the analysis-time producer itself, so a pack in storage and a
+    fresh pack publish the same sentence.
+    """
+    summary = str(item.get("summary") or "")
+    record = _finding_source_record(item)
+    raw = " ".join(str(record.get("raw_text") or "").split())
+    kind = str(record.get("pertinence_kind") or "")
+    # The refusal predicate is defined for airport NOTAM records; a finding
+    # without a held notice is none of its business.
+    if not record.get("notam_id") or not kind or not summary:
+        return item
+    if not states_nothing(raw, summary):
+        return item
+    candidates = []
+    if raw:
+        if kind == "obstacle":
+            candidates.append(obstacle_restriction_line(raw))
+        candidates.append(_notam_operational_summary(
+            raw,
+            kind,
+            str(record.get("role") or "destination"),
+            str(record.get("applicability") or "active"),
+            category=str(record.get("category") or ""),
+        ))
+        candidates.append(derive_notam_restriction_line(raw)["text"])
+    replacement = next(
+        (line for line in candidates if line and not unpublishable(raw, line)),
+        NO_STATEMENT_LINE if raw else NO_TEXT_SENTENCE,
+    )
+    return {**item, "summary": replacement}
+
+
 def build_briefing_view(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -5501,6 +5592,10 @@ def build_briefing_view(
     weather_charts: dict[str, Any] | None = None,
     include_dashboard_only_panels: bool = False,
 ) -> dict[str, Any]:
+    # Repair before anything is projected: every downstream view row (decision
+    # findings, card summary lines, considerations, the destination highlight)
+    # is built from this list, so one guard here covers all of them.
+    findings = [_republishable_finding(item) for item in findings]
     source_findings = list(findings)
     findings = prepare_pilot_findings(findings, notam_limit=24)
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)

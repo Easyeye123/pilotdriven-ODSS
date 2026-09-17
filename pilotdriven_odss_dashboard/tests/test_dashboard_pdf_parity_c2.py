@@ -613,3 +613,235 @@ def test_the_faa_approach_procedure_line_is_the_only_remaining_copy_path():
         "coverage decision from David or Jabe (C2 report, residual 1)."
     )
     assert found, "the measurement found nothing at all, so it is not measuring"
+
+
+# ============ round 2: fault 2 on a pack that is ALREADY in production storage
+#
+# C2 round 1 fixed fault 2 at ANALYSIS time (``engines._notam_operational_
+# summary``). The obstacle line is frozen from there into
+# ``view.briefing.airport_operational_panels[].selected_notams[].summary`` and
+# ``.compact_text``, and Download PDF renders from the stored analysis without
+# re-analysing it (``main.get_service_combined_report``: "analyses stored
+# before this release - including currently open flights - get the combined
+# briefing without re-analysis").
+#
+# So a flight already in storage still carries the OLD template as its stored
+# summary. The round-1 fallback, ``briefing._non_copying_notam_fallback``, was
+# hardened against COPIES only - and the content-free template is not a copy of
+# anything - so it republished the refused template verbatim, for both
+# ``dashboard`` values. The dashboard refuses that same string
+# (``web/src/lib/airport-critical-notams.mjs`` ``OBSTACLE_FILLER_RE``) and
+# derives its own line, so the two surfaces diverged again for every flight
+# already in storage: the parity gate passes on the corpus, which is freshly
+# analysed, while David opening an existing flight sees the unfixed fault.
+#
+# The rule these tests pin is the parity invariant itself, not just this one
+# template: **no publication path may republish a stored wording the dashboard
+# refuses**. The refusal predicate is the app's, restated above in
+# ``dashboard_refuses`` and never imported from ODSS.
+
+# The exact wording prod ODSS 7da0542 stored, with and without the qualifier
+# that release 22 appended to records naming a runway.
+OLD_OBSTACLE_TEMPLATE_BODY = (
+    "Obstacle or crane affects the destination airport environment; "
+    "assess against expected runway and approach use."
+)
+OLD_OBSTACLE_TEMPLATE = f"{OLD_OBSTACLE_TEMPLATE_BODY} {RUNWAY_NOT_CLOSED_NOTE}"
+
+# An older build's generic wording, the second shape the dashboard refuses.
+OLD_GENERIC_RESTRICTION = "Runway restriction applies during the applicable arrival window."
+
+STALE_TEMPLATES = (OLD_OBSTACLE_TEMPLATE, OLD_OBSTACLE_TEMPLATE_BODY, OLD_GENERIC_RESTRICTION)
+
+
+def stale_pack_line(
+    raw: str,
+    stored_summary: str,
+    *,
+    kind: str = "obstacle",
+    dashboard: bool = False,
+    role: str = "destination",
+    notam_id: str = "STALE",
+) -> str:
+    """What a pack analysed by an older build republishes when it is rendered.
+
+    This is the Download PDF path: ``combined_brief._pdf_notam_operational_
+    headline`` hands the STORED record straight to ``_compact_notam_text``.
+    """
+    item = {
+        "item_e_text": raw,
+        "summary": stored_summary,
+        "pertinence_kind": kind,
+        "notam_id": notam_id,
+    }
+    return _compact_notam_text(
+        item,
+        _compact_notam_family(item),
+        role=role,
+        planned_runways=set(),
+        reference_time=None,
+        dashboard=dashboard,
+    )
+
+
+@pytest.mark.parametrize("notam_id", sorted(RKSI_OBSTACLE_SOURCES))
+@pytest.mark.parametrize("stored", STALE_TEMPLATES)
+@pytest.mark.parametrize("dashboard", [False, True])
+def test_a_stored_content_free_template_is_never_republished(notam_id, stored, dashboard):
+    """The reviewer's reproduction, pinned.
+
+    An item whose stored summary is the old content-free template must not put
+    that template back on the page, on either surface.
+    """
+    source = RKSI_OBSTACLE_SOURCES[notam_id]
+    assert dashboard_refuses(stored, source), "the fixture must be refused to be a test"
+    published = stale_pack_line(source, stored, dashboard=dashboard, notam_id=notam_id)
+    assert published != stored
+    assert not dashboard_refuses(published, source), f"{notam_id}: {published}"
+    assert_not_a_copy(source, published)
+
+
+@pytest.mark.parametrize("notam_id", sorted(RKSI_OBSTACLE_SOURCES))
+@pytest.mark.parametrize("dashboard", [False, True])
+def test_a_stale_obstacle_pack_publishes_what_a_fresh_analysis_publishes(notam_id, dashboard):
+    """The point of the fix: storage age must not change what is published.
+
+    A flight analysed before this release and a flight analysed after it must
+    download the same obstacle line, so re-analysis is never the difference
+    between the fixed and the unfixed fault.
+    """
+    source = RKSI_OBSTACLE_SOURCES[notam_id]
+    fresh = _notam_operational_summary(source, "obstacle", "destination")
+    stale = stale_pack_line(source, OLD_OBSTACLE_TEMPLATE, dashboard=dashboard, notam_id=notam_id)
+    assert stale == fresh, f"{notam_id}: stale pack published {stale!r}, fresh {fresh!r}"
+
+
+@pytest.mark.parametrize("notam_id", ["SX1/26", "SX88/25", "SX66/26"])
+@pytest.mark.parametrize("dashboard", [False, True])
+def test_a_stale_obstacle_pack_naming_a_runway_still_denies_a_closure(notam_id, dashboard):
+    """The boss's 16 Aug 2026 rule must survive the stale path too, or the
+    republished line would be the one place an obstacle can be skim-read as a
+    runway closure."""
+    published = stale_pack_line(
+        RKSI_OBSTACLE_SOURCES[notam_id], OLD_OBSTACLE_TEMPLATE,
+        dashboard=dashboard, notam_id=notam_id,
+    )
+    assert RUNWAY_NOT_CLOSED_NOTE in published, published
+
+
+@pytest.mark.parametrize("dashboard", [False, True])
+def test_a_stored_all_caps_summary_is_never_republished(dashboard):
+    """The third shape the dashboard refuses: a stored summary that is really
+    the raw notice in capitals. It need not be a substring of item E - an older
+    build could have rewrapped it - so C1's copy guard does not see it."""
+    source = RKSI_OBSTACLE_SOURCES["SX66/26"]
+    stored = "TEMPORARY OBSTACLES ERECTED NORTH OF THE FIELD AND LEFT IN PLACE"
+    assert dashboard_refuses(stored, source), "the fixture must be refused to be a test"
+    assert not gate_calls_it_a_copy(source, stored), "and it must not be caught as a copy"
+    published = stale_pack_line(source, stored, dashboard=dashboard)
+    assert published != stored
+    assert not dashboard_refuses(published, source), published
+
+
+@pytest.mark.parametrize("kind", STORED_SUMMARY_KINDS)
+@pytest.mark.parametrize("dashboard", [False, True])
+def test_a_refused_stored_summary_is_refused_for_every_kind(kind, dashboard):
+    """The invariant belongs to the publication path, not to one record kind."""
+    source = RAW_ITEM_E["1A1353/26"]
+    published = stale_pack_line(
+        source, OLD_OBSTACLE_TEMPLATE, kind=kind, dashboard=dashboard,
+    )
+    assert not dashboard_refuses(published, source), published
+
+
+@pytest.mark.parametrize("dashboard", [False, True])
+def test_a_stale_pack_with_no_source_text_still_abstains_in_shared_words(dashboard):
+    """Nothing to derive from: abstain in the derivation's own wording rather
+    than republish the template, so both surfaces abstain identically."""
+    published = stale_pack_line("", OLD_OBSTACLE_TEMPLATE, dashboard=dashboard)
+    assert not dashboard_refuses(published, ""), published
+    assert published != OLD_OBSTACLE_TEMPLATE
+
+
+def test_every_corpus_source_survives_a_stale_template_pack():
+    """Sweep the committed corpus as if every record had been analysed by the
+    build that produced the template: no source may republish it."""
+    checked = 0
+    for row in CORPUS_ROWS:
+        source = one_line(row.get("text") or "")
+        if not source:
+            continue
+        for stored in STALE_TEMPLATES:
+            for dashboard in (False, True):
+                published = stale_pack_line(
+                    source, stored, dashboard=dashboard,
+                    notam_id=str(row.get("notam_id") or "SWEEP"),
+                )
+                assert not dashboard_refuses(published, source), (
+                    f"{row.get('notam_id')} stored={stored!r} dashboard={dashboard}: {published}"
+                )
+                checked += 1
+    assert checked >= 5000, f"only {checked} stale vectors were checked"
+
+
+def test_the_stale_sq606_download_publishes_no_wording_the_dashboard_refuses(tmp_path_factory):
+    """End to end, on the path production actually takes.
+
+    ``render_analysed_briefing`` rebuilds the whole view from ``flight`` and
+    ``findings`` (``build_briefing_view``), so the stored ``view`` is NOT what
+    the download reads - measured on a real pack analysed by the pre-C2 build,
+    the ONLY stale input carrying the refused template is ``findings[].summary``
+    (four records; ``flight`` carries none). Re-freeze exactly that, then call
+    Download PDF as ``main.get_service_combined_report`` does for a flight
+    already in storage, and read the published pages back.
+    """
+    briefing = rendered(OBSTACLE_CASE, tmp_path_factory)
+    payload = json.loads(json.dumps(briefing["payload"]))
+    staled = 0
+    for finding in payload.get("findings") or []:
+        data = finding.get("data")
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError:
+                data = {}
+        if str((data or {}).get("pertinence_kind") or "") != "obstacle":
+            continue
+        finding["summary"] = OLD_OBSTACLE_TEMPLATE
+        staled += 1
+    assert staled >= 4, (
+        f"only {staled} obstacle findings were staled; this test exists for the "
+        "four RKSI records and cannot pass because nothing reached it"
+    )
+    root = tmp_path_factory.mktemp("c2-stale-sq606")
+    path = root / f"{OBSTACLE_CASE}_Operational_Flight_Briefing.pdf"
+    render_combined_briefing(
+        payload["flight"],
+        payload["findings"],
+        payload.get("view", {}).get("warnings") or [],
+        path,
+        weather_charts=payload.get("weather_charts") or {},
+    )
+    with fitz.open(path) as document:
+        body = one_line(" ".join(page.get_text() for page in document))
+    for template in (OLD_OBSTACLE_TEMPLATE, OLD_OBSTACLE_TEMPLATE_BODY):
+        assert template not in body, (
+            "the stale-pack download publishes a wording the dashboard refuses "
+            f'as stating nothing - "{template}"'
+        )
+    # And it does not pass by publishing nothing: the stale pack must publish
+    # what a freshly analysed one publishes. The obstacle line the fresh render
+    # of this same flight reaches page 2 with has to be on the stale page too.
+    fresh_body = one_line(" ".join(briefing["pages"]))
+    fresh_lines = [
+        line for line in (
+            one_line(_notam_operational_summary(source, "obstacle", "destination"))
+            for source in RKSI_OBSTACLE_SOURCES.values()
+        )
+        if line and line in fresh_body
+    ]
+    assert fresh_lines, "the fresh render publishes none of the four derived lines"
+    for line in fresh_lines:
+        assert line in body, (
+            f"the stale-pack download dropped the line the fresh one prints - {line!r}"
+        )
