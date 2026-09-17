@@ -310,6 +310,38 @@ def deferred_subject(value, item_label: str = "") -> str:
     return source_subject_sentence(publishable_source_subject(value, item_label))
 
 
+def deferred_source_subject(source, item_label: str = "") -> str:
+    """Read a wrapped defect from its own complete source segment.
+
+    Description cells can end mid-sentence. The held source_text starts with
+    that exact cell and carries its continuation; reconstruct only within that
+    bound, stopping at a sentence, form field or next declaration. Nothing is
+    inferred from the document reference, and an unbound/missing tail abstains.
+    """
+    description = clean(source.get("description"))
+    subject = deferred_subject(description, item_label)
+    if subject:
+        return subject
+    raw = clean(source.get("source_text"))
+    if not description or not raw.upper().startswith(description.upper() + " "):
+        return ""
+    # A manual heading or a mid-cell bracket fragment is form furniture, not
+    # the beginning of the defect that the following cell actually states.
+    if _MANUAL_HEADING.search(description) or not description[0].isalnum():
+        raw = raw[len(description):].strip()
+    # Even a malformed parsed segment must not borrow another item's defect.
+    raw = re.split(r"\s+[A-Z]{2}\s+(?:CDDL|CDL|MEL|IFEDDL|IN|EN)\s+[A-Z0-9][A-Z0-9/.-]*", raw, maxsplit=1)[0]
+    raw = re.sub(r"^(?:MAINT ENTRY\s*[.:]?\s*)+", "", raw, flags=re.I)
+    # A reference-only cell can precede an intact defect in the continuation.
+    raw = re.sub(r"^(?:WRT|FROM)\s+(?:(?:CDL|MEL|CDDL)\s+[0-9A-Z/-]+(?:,?\s+(?:AND\s+)?)?)+", "", raw, flags=re.I)
+    raw = re.sub(r"\bOTHERS?\s*\((?:PLS|PLEASE)\s+ENTER\s+COMMENTS?\)\s*", "", raw, flags=re.I)
+    # These are separate form/action fields. Their consequences remain in the
+    # analysed row; they are not part of the defect's subject.
+    raw = re.split(r"\s+(?:X\s+PERFORMANCE\b|(?:TO|PLS|PLSE|PLEASE)\s+UPLIFT\b)", raw, maxsplit=1, flags=re.I)[0]
+    candidate = re.split(r"(?<=[.!?])\s+", raw, maxsplit=1)[0]
+    return deferred_subject(candidate, item_label)
+
+
 def deferred_consequence_rows(view):
     """Bind practical consequences to typed source segments, not MEL numbers.
 
@@ -332,7 +364,7 @@ def deferred_consequence_rows(view):
             raw = clean(source.get("source_text") or " ".join((description, clean(source.get("restriction"))))).upper()
             # The gate already names the item, so the form's own repeat of
             # that label is dropped rather than published a second time.
-            subject = deferred_subject(description, title)
+            subject = deferred_source_subject(source, title)
             if subject:
                 subjects.append(subject)
             # Explicit uplift is a catering action, never an inferred MEL
