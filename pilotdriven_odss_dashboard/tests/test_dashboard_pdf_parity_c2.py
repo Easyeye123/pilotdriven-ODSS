@@ -570,7 +570,7 @@ def test_the_stored_summary_fallback_holds_for_every_real_corpus_source():
                     continue
                 assert_not_a_copy(raw, published_fallback(raw, kind, dashboard, row.get("notam_id") or "SWEEP"))
                 checked += 1
-    assert checked >= 4000, f"only {checked} vectors were checked"
+    assert checked >= 5000, f"only {checked} vectors were checked"
 
 
 # The FAA approach-procedure records whose dashboard line is an 18-word run of
