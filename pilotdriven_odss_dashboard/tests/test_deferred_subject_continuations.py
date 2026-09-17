@@ -65,6 +65,7 @@ def test_reconstruction_never_mutates_the_held_source_or_adds_unknown_tokens():
     {'description':'FOUND LH SEAL WITH', 'source_text':'FOUND LH SEAL WITH'},
     {'description':'MAINT ENTRY', 'source_text':'MAINT ENTRYISH OTHER TEXT'},
     {'description':'FOUND LH SEAL WITH', 'source_text':'FOUND LH SEAL WITH FF CDL 57-16 ANOTHER SEAL TORN'},
+    {'description':'Found LH seal with', 'source_text':'Found LH seal with ff cdl 57-16 another seal torn'},
 ])
 def test_missing_unbound_or_still_incomplete_continuation_stays_unresolved(source):
     from app.odss.analysed_briefing_content import deferred_source_subject

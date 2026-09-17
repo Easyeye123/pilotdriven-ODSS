@@ -330,7 +330,7 @@ def deferred_source_subject(source, item_label: str = "") -> str:
     if _MANUAL_HEADING.search(description) or not description[0].isalnum():
         raw = raw[len(description):].strip()
     # Even a malformed parsed segment must not borrow another item's defect.
-    raw = re.split(r"\s+[A-Z]{2}\s+(?:CDDL|CDL|MEL|IFEDDL|IN|EN)\s+[A-Z0-9][A-Z0-9/.-]*", raw, maxsplit=1)[0]
+    raw = re.split(r"\s+[A-Z]{2}\s+(?:CDDL|CDL|MEL|IFEDDL|IN|EN)\s+[A-Z0-9][A-Z0-9/.-]*", raw, maxsplit=1, flags=re.I)[0]
     raw = re.sub(r"^(?:MAINT ENTRY\s*[.:]?\s*)+", "", raw, flags=re.I)
     # A reference-only cell can precede an intact defect in the continuation.
     raw = re.sub(r"^(?:WRT|FROM)\s+(?:(?:CDL|MEL|CDDL)\s+[0-9A-Z/-]+(?:,?\s+(?:AND\s+)?)?)+", "", raw, flags=re.I)
