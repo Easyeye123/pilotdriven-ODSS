@@ -78,7 +78,7 @@ def _complete_runway_closures(raw: str) -> tuple[dict[str, list[str]], bool]:
     patterns = [(re.compile(timing_prefix + _SURFACE.pattern + r"\s+" + predicate + reason, re.I), operation)
                 for predicate, operation in predicates]
     scopes: dict[str, list[str]] = {}
-    unresolved = False
+    unreduced = []
     for clause in filter(None, (part.strip() for part in re.split(r"\.(?=\s|$)|;", body))):
         for pattern, operation in patterns:
             match = pattern.fullmatch(clause)
@@ -88,8 +88,29 @@ def _complete_runway_closures(raw: str) -> tuple[dict[str, list[str]], bool]:
                     scopes[operation].append(runway)
                 break
         else:
-            unresolved = True
-    return scopes, unresolved
+            unreduced.append(clause)
+    affected = {end for pairs in scopes.values() for pair in pairs for end in pair.split("/")}
+    for clause in unreduced:
+        # A period does not make a qualifier independent. Keep an affirmative
+        # closure only beside clearly independent statements with their own
+        # subject and predicate; an ambiguous continuation blocks the claim.
+        if re.fullmatch(r"(?:ILS|DME|VOR|LOC|GP|GS|NDB|GLS)\s+" + _SURFACE.pattern
+                        + r"\s+(?:U/S|UNSERVICEABLE|UNAVAILABLE|AVAILABLE)", clause, re.I):
+            continue
+        other_runway_statements = (
+            _SURFACE.pattern + r"\s+(?:(?:IS|REMAINS)\s+)?(?:AVBL|AVAILABLE|OPEN|SERVICEABLE)",
+            r"ACFT CONCERNED SHALL PLAN\s+" + _SURFACE.pattern + r"\s+FOR TKOF AND LDG OPS",
+            r"TAXI VIA TWY [A-Z0-9/-]+ TO\s+" + _SURFACE.pattern,
+        )
+        independent = False
+        for pattern in other_runway_statements:
+            match = re.fullmatch(pattern, clause, re.I)
+            if match and not affected.intersection(match.group(1).replace(" ", "").upper().split("/")):
+                independent = True
+                break
+        if not independent:
+            return {}, True
+    return scopes, bool(unreduced)
 
 
 def _approach_chart_restrictions(raw: str) -> list[tuple[str, str]] | None:
@@ -253,7 +274,8 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
                 matches = bool(planned and any(planned in r.split("/") for r in affected_runways))
                 relation = f"planned RWY {planned} is affected" if matches else f"this does not close planned RWY {planned}; other notices still apply" if planned else "the planned runway is not held"
                 runway_label = "RWY " + ", ".join(affected_runways)
-                consequence = (f"{runway_label} closure {timing}; {relation}." if timing.startswith("begins")
+                future_operation = operation.replace("not available", "unavailable")
+                consequence = (f"{runway_label} will be {future_operation}; restriction {timing}; {relation}." if timing.startswith("begins")
                                else f"{runway_label} {operation} {timing}; {relation}.")
                 key = ("runway", consequence, state)
                 row = groups.setdefault(key, {"family": "runway", "consequence": consequence,

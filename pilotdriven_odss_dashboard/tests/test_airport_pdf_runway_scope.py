@@ -171,3 +171,23 @@ def test_a_separate_unreduced_operational_clause_keeps_a_closing_receipt():
     result=analyse(record)
     assert 'RWY 16R/34L closed' in result['lines'][0]['text']
     assert result['unresolved_ids']==['A2314/26']
+
+
+@pytest.mark.parametrize('continuation', ['EXC EMERG.', 'WHEN RVR BLW 1000M.', 'BTN TWY A AND TWY B.', 'TO ACFT WITH WINGSPAN MORE THAN 36M.'])
+def test_dependent_qualifier_after_sentence_boundary_blocks_unqualified_closure(continuation):
+    record={**HELD['notice'],'item_e_text':'RWY 16R/34L CLSD. '+continuation}
+    result=analyse(record)
+    assert result['lines']==[] and result['unresolved_ids']==['A2314/26']
+
+
+@pytest.mark.parametrize(('source','scope'), [
+    ('RWY 16R/34L NOT AVBL FOR CIVIL USE.', 'unavailable for civil use'),
+    ('RWY 16R/34L NOT AVBL FOR OPS.', 'unavailable for operations'),
+])
+def test_future_restriction_retains_its_source_operation_scope(source,scope):
+    record={**HELD['notice'],'item_e_text':source,'role_applicability':[],
+            'stateAtReference':'begins_after_reference','valid_from_utc':'2026-08-07T09:50:00+00:00'}
+    line=analyse(record)['lines'][0]['text']
+    assert scope in line
+    assert 'begins 10 min after departure 07 AUG 0940Z' in line
+    assert 'closed to the affected movement' not in line
