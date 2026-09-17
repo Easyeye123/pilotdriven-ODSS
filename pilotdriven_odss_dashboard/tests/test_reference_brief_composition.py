@@ -2434,7 +2434,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     }
     assert (
         COMBINED_BRIEFING_SCHEMA_VERSION
-        == "2026-09-18-stored-pack-obstacle-parity-v59"
+        == "2026-09-18-page1-signed-tile-values-v60"
     )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,

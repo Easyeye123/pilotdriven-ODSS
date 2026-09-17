@@ -243,9 +243,12 @@ def test_the_page1_fuel_tile_names_a_tanker_only_excess_in_his_reference_word(
     assert tanker_only_excess(fuel), f"{case_id} is not a tanker-only excess any more"
     excess = int((fuel.get("rows") or {}).get("excess_fuel", {}).get("fuel_kg"))
     page_one = one_line(briefing["pages"][0])
+    # Round 3 signs the value as his tile does; the row and its order are the
+    # same. ``EXCESS`` must not reappear beside the number under any spelling.
     assert f"FPL REQ {int((fuel.get('rows') or {}).get('flt_plan_reqmt', {}).get('fuel_kg')):,} kg " \
-           f"TANKER {excess:,} kg" in page_one, page_one
+           f"TANKER +{excess:,} kg" in page_one, page_one
     assert f"EXCESS {excess:,} kg" not in page_one
+    assert f"EXCESS +{excess:,} kg" not in page_one
 
 
 @pytest.mark.parametrize("case_id", TANKER_ONLY_CASES)
@@ -1005,3 +1008,187 @@ def test_the_audit_record_still_refuses_a_stored_summary_that_copies_its_source(
     )
     assert_not_a_copy(raw, published)
     assert published != raw
+
+
+# ============================================ C2 round 3: the page-1 value sign
+#
+# The reviewer measured both surfaces and the round-1/2 write-up's §9.2 reason
+# for leaving the sign alone does not survive that measurement:
+#
+#   David's reference page 1   MARGIN +11,376 KG   TANKER +18,847 KG
+#   our dashboard page 1       MARGIN +1,000 kg    TANKER +4,592 kg
+#   our six-page download      MARGIN  1,000 kg    TANKER  4,592 kg
+#
+# So the sign is not "a convention that governs MARGIN as well, and signing one
+# would create a fresh inconsistency" - MARGIN is signed everywhere except in
+# the download, on both rows. Global constraint 7 and the dashboard agree, and
+# the parity oracle normalises ``+`` away, so no existing gate can see it.
+#
+# His page-3 chain row is NOT signed (``TANKER EXCESS 18,847 KG``), so this is a
+# page-1 tile convention and is applied there and nowhere else, except that the
+# margin itself is signed wherever he prints it - his SQ481 REV5 page 1 reads
+# ``RTOW - PTOW +8,581 KG``, which is our page-3 wording for the same number.
+
+REFERENCE_DIRS = tuple(
+    parent / "output" / "pd-boss-09sep-review" / "reference"
+    for parent in Path(__file__).resolve().parents[1].parents[1:4]
+) + (Path(__file__).resolve().parents[2] / "boss_reference_briefings",)
+
+
+def boss_reference_dir() -> Path | None:
+    """Where the 9 Sep round left David's own briefings (they are not in git)."""
+    import os
+
+    override = os.environ.get("PILOTDRIVEN_BOSS_REFERENCE_DIR")
+    candidates = [Path(override)] if override else []
+    candidates.extend(REFERENCE_DIRS)
+    for candidate in candidates:
+        if (candidate / "SQ910_21AUG2026_Flight_Briefing.pdf").is_file():
+            return candidate
+    return None
+
+
+def reference_page_text(filename: str, page: int) -> str:
+    directory = boss_reference_dir()
+    if directory is None:
+        pytest.skip("David's reference briefings are not available in this checkout")
+    path = directory / filename
+    if not path.is_file():
+        pytest.skip(f"{filename} is not in {directory}")
+    with fitz.open(path) as document:
+        return one_line(document[page].get_text())
+
+
+def margin_of(payload: dict) -> int:
+    publication = ((payload.get("view") or {}).get("briefing") or {}).get(
+        "performance_publication"
+    ) or {}
+    return int(publication["margin_kg"])
+
+
+def excess_of(fuel: dict) -> int:
+    return int((fuel.get("rows") or {}).get("excess_fuel", {}).get("fuel_kg"))
+
+
+# ------------------------------------------- the rule is his, not ours
+
+@pytest.mark.parametrize(
+    "filename",
+    ["SQ910_21AUG2026_Flight_Briefing.pdf", "SQ910_21AUG2026_DARK_LARGE_TEXT.pdf"],
+)
+def test_his_page1_tile_signs_both_the_margin_and_the_tanker_carry(filename):
+    """Read off his own file, so the convention cannot be attributed to us."""
+    page_one = reference_page_text(filename, 0)
+    assert "MARGIN +11,376 KG" in page_one, page_one
+    assert "TANKER +18,847 KG" in page_one, page_one
+    assert "MARGIN 11,376 KG" not in page_one
+    assert "TANKER 18,847 KG" not in page_one
+
+
+def test_his_page3_fuel_chain_does_not_sign_the_carried_excess():
+    """The sign is a page-1 tile convention; page 3 states the chain unsigned.
+
+    This is why the fix is scoped to page 1: applying his sign to the page-3
+    chain row would be our idea, not his format.
+    """
+    page_three = reference_page_text("SQ910_21AUG2026_Flight_Briefing.pdf", 2)
+    assert "TANKER EXCESS 18,847 KG" in page_three, page_three
+    assert "TANKER EXCESS +18,847 KG" not in page_three
+
+
+def test_his_other_reference_briefings_sign_the_margin_too():
+    """Two more of his documents, so the margin rule rests on more than one.
+
+    SQ481 REV5 prints our page-3 wording for the same number, signed.
+    """
+    sq481 = reference_page_text("SQ481_25AUG2026_REV5.pdf", 0)
+    assert "RTOW - PTOW +8,581 KG" in sq481, sq481
+    sq38 = reference_page_text("SQ38_28AUG2026_Flight_Briefing.pdf", 0)
+    assert "Margin +3,299 kg" in sq38, sq38
+
+
+# ------------------------------------------------------- the formatter
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        pytest.param(1000, "+1,000 kg", id="positive"),
+        pytest.param(18847, "+18,847 kg", id="his reference value"),
+        pytest.param(0, "+0 kg", id="zero is not negative"),
+        pytest.param(-500, "-500 kg", id="negative"),
+        pytest.param(-1234.4, "-1,234 kg", id="negative rounds on the magnitude"),
+        pytest.param(1234.4, "+1,234 kg", id="positive rounds on the magnitude"),
+        pytest.param(None, "Not held", id="absent"),
+        pytest.param("1000", "Not held", id="string is not a number"),
+        pytest.param(True, "Not held", id="a bool is not a mass"),
+    ],
+)
+def test_the_signed_mass_formatter_matches_the_dashboards_signed_kg(value, expected):
+    """``web/src/lib/overview-cards.ts`` ``signedKg``, restated:
+    ``+`` for >= 0, ``-`` for < 0, and the magnitude formatted as ``kg`` does.
+    A non-number is "Not held", exactly as ``kg`` already reports it.
+    """
+    from app.odss.operational_format import signed_kg
+
+    assert signed_kg(value) == expected
+
+
+# --------------------------------------- what the download must now print
+
+@pytest.mark.parametrize("case_id", TANKER_ONLY_CASES)
+def test_the_page1_tiles_sign_the_margin_and_a_tanker_excess(case_id, tmp_path_factory):
+    briefing = rendered(case_id, tmp_path_factory)
+    fuel = fuel_summary_of(briefing["payload"])
+    assert tanker_only_excess(fuel), f"{case_id} is not a tanker-only excess any more"
+    excess = excess_of(fuel)
+    margin = margin_of(briefing["payload"])
+    page_one = one_line(briefing["pages"][0])
+    assert f"MARGIN +{margin:,} kg" in page_one, page_one
+    assert f"TANKER +{excess:,} kg" in page_one, page_one
+    # The unsigned forms are what release 22 and C2 rounds 1-2 printed.
+    assert f"MARGIN {margin:,} kg" not in page_one
+    assert f"TANKER {excess:,} kg" not in page_one
+    assert f"EXCESS {excess:,} kg" not in page_one
+
+
+def test_a_mixed_excess_prints_an_unsigned_excess_and_a_signed_margin(tmp_path_factory):
+    """The dashboard signs the carried excess exactly when it names it TANKER
+    (``fuelCard``: ``tanker ? signedKg(excess) : kg(excess)``), and signs the
+    margin always. The download must make the same two decisions.
+    """
+    briefing = rendered(MIXED_EXCESS_CASE, tmp_path_factory)
+    fuel = fuel_summary_of(briefing["payload"])
+    assert not tanker_only_excess(fuel)
+    excess = excess_of(fuel)
+    margin = margin_of(briefing["payload"])
+    page_one = one_line(briefing["pages"][0])
+    assert f"EXCESS {excess:,} kg" in page_one, page_one
+    assert f"EXCESS +{excess:,} kg" not in page_one
+    assert f"MARGIN +{margin:,} kg" in page_one, page_one
+
+
+@pytest.mark.parametrize("case_id", TANKER_ONLY_CASES + (MIXED_EXCESS_CASE,))
+def test_the_margin_is_signed_wherever_the_download_prints_it(case_id, tmp_path_factory):
+    """Page 3's TAKE-OFF / LANDING card states the same number in his SQ481
+    wording (``RTOW - PTOW``). One quantity, one format, or the download
+    contradicts itself inside one document - which is the objection that sent
+    round 2 back.
+    """
+    briefing = rendered(case_id, tmp_path_factory)
+    margin = margin_of(briefing["payload"])
+    page_three = one_line(briefing["pages"][2])
+    assert f"RTOW - PTOW: +{margin:,} kg" in page_three, page_three
+    assert f"RTOW - PTOW: {margin:,} kg" not in page_three
+
+
+@pytest.mark.parametrize("case_id", TANKER_ONLY_CASES)
+def test_the_page3_fuel_chain_still_states_the_excess_unsigned(case_id, tmp_path_factory):
+    """His page 3 is unsigned, so ours stays unsigned. Pinned in both
+    directions so a later "sign everything" sweep has to argue with his file.
+    """
+    briefing = rendered(case_id, tmp_path_factory)
+    fuel = fuel_summary_of(briefing["payload"])
+    excess = excess_of(fuel)
+    page_three = one_line(briefing["pages"][2])
+    assert f"TANKER EXCESS {excess:,} kg" in page_three, page_three
+    assert f"TANKER EXCESS +{excess:,} kg" not in page_three

@@ -26,7 +26,8 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from .analysed_briefing_content import (cyclone_content, deferred_item_label,
                                         excess_fuel_chain_label,
                                         excess_fuel_tile_label,
-                                        release_condition_groups)
+                                        release_condition_groups,
+                                        tanker_only_excess)
 from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
 from .constants import format_actm
@@ -109,6 +110,26 @@ def taf_tempo_field(taf: Any) -> str:
 def kg(value: Any) -> str:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return f"{value:,.0f} kg"
+    return "Not held"
+
+
+def signed_kg(value: Any) -> str:
+    """A page-1 tile mass that carries its own sign, as his reference does.
+
+    David's page-1 tiles print the margin and a tanker carry signed -
+    ``MARGIN +11,376 KG`` and ``TANKER +18,847 KG`` in his SQ910_21AUG2026
+    reference, ``RTOW - PTOW +8,581 KG`` in SQ481 REV5, ``Margin +3,299 kg`` in
+    SQ38 - and so does our own dashboard (``web/src/lib/overview-cards.ts``
+    ``signedKg``). Only the six-page download printed them bare. The parity
+    oracle normalises ``+`` away, so no gate saw the difference; C2 round 3
+    closes it, and the app's ``checkPageOneTileValueFormat`` reads the raw
+    page-1 layout text so the release gate can now see it.
+
+    Note what is NOT signed: his page-3 fuel chain states ``TANKER EXCESS
+    18,847 KG``, so the chain row stays bare. The sign is a tile convention.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return f"{'+' if value >= 0 else '-'}{abs(value):,.0f} kg"
     return "Not held"
 
 
@@ -1086,6 +1107,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     airport_analysis = airport_pdf_analysis(flight, view.get("airport_operational_panels") or [])
     alternate_analysis = alternate_pdf_analysis(flight, view.get("airport_operational_panels") or [])
     amount = lambda key: kg((fuel_rows.get(key) or {}).get("fuel_kg"))
+    signed_amount = lambda key: signed_kg((fuel_rows.get(key) or {}).get("fuel_kg"))
     states = {r["key"]: r["state"] for r in receipt["rows"]}
     sections: dict[str, list[Page]] = {}
     route_map = build_publication_map(flight, view)
@@ -1145,14 +1167,19 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                              f"EOSID {text(inputs.get('eosid'))}."],
              CYAN, "sec_performance", tag="CFP P1", kind="tile", payload=[
                  ("PTOW", kg(masses.get("ptow"))), ("RTOW", kg(perf.get("selected_rtow_kg"))),
-                 ("MARGIN", kg(perf.get("margin_kg"))), ("PLWT", kg(masses.get("plwt"))),
+                 # His tile signs the margin: MARGIN +11,376 KG. So does the
+                 # dashboard card (overview-cards.ts `signedKg(margin)`).
+                 ("MARGIN", signed_kg(perf.get("margin_kg"))), ("PLWT", kg(masses.get("plwt"))),
                  ("FLAPS", text(inputs.get("flap_setting")))]),
         # His reference FUEL tile reads TANKER when the whole carried excess is
-        # tankering, EXCESS otherwise, on the dashboard's own rule.
+        # tankering, EXCESS otherwise, on the dashboard's own rule - and signs
+        # the value when it says TANKER (`TANKER +18,847 KG`), exactly as the
+        # dashboard card does (`tanker ? signedKg(excess) : kg(excess)`).
         Card("FUEL", [f"Arithmetic {text(fuel.get('state'))}."],
              GREEN, "sec_performance", tag="CFP P1", kind="tile", payload=[
                  ("BLOCK", amount("fuel_in_tanks")), ("FPL REQ", amount("flt_plan_reqmt")),
-                 (excess_fuel_tile_label(fuel), amount("excess_fuel")),
+                 (excess_fuel_tile_label(fuel),
+                  (signed_amount if tanker_only_excess(fuel) else amount)("excess_fuel")),
                  ("BURNOFF", amount("burnoff")),
                  ("TAXI", kg(fuel.get("taxi_fuel_kg")))]),
         Card("TECH STATUS", [f"{len(deferred)} consequence(s) on PERF / FUEL / TECH."],
@@ -1256,7 +1283,9 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
             f"TEMP {text(inputs.get('temperature_c'))} C · QNH {text(inputs.get('qnh_hpa'))} · WIND {text(inputs.get('wind'))}",
             *[f"{r.get('label')} {kg(r.get('limit_kg'))}" for r in perf.get("candidate_limits") or []],
             f"Selected RTOW {kg(perf.get('selected_rtow_kg'))}",
-            f"RTOW - PTOW: {kg(perf.get('margin_kg'))} · MLGW {kg(inputs.get('maximum_landing_weight_kg'))}",
+            # One quantity, one format. His SQ481 REV5 prints this same row as
+            # `RTOW - PTOW +8,581 KG`; the page-1 tile above states it signed.
+            f"RTOW - PTOW: {signed_kg(perf.get('margin_kg'))} · MLGW {kg(inputs.get('maximum_landing_weight_kg'))}",
             f"MAX FUEL AVAILABLE {kg(inputs.get('maximum_fuel_available_kg'))}"]
     fuel_lines = [f"{label} {amount(key)}" for key, label in (("burnoff", "BURNOFF"), ("stat_cont", "STAT CONT"), ("altn_fuel", "ALTN FUEL"), ("altn_hold", "ALTN HOLD"))]
     for key, label in (("dest_hold_top_up", "DEST HOLD TOP-UP"), ("edto_top_up", "EDTO TOP-UP")):
