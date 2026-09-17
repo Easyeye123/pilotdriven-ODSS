@@ -1008,7 +1008,10 @@ def check_cross_surface_parity(
     # The current publication compares computed VA consequences. Raw volcano
     # notices stay in the SHA-pinned parsed input and app source disclosure;
     # requiring their text here would reintroduce the prohibited appendix.
-    analysed_publication = "FLIGHT BRIEFING - MASTER SUMMARY" in operational_folded
+    analysed_publication = (
+        "FLIGHT BRIEFING - MASTER SUMMARY" in operational_folded
+        or re.search(r"\bFLIGHT BRIEFING\s*\|\s*PAGE 1 OF 6\b", operational_folded) is not None
+    )
     if analysed_publication:
         from app.odss.weather_publication import volcanic_ash_lines
         for consequence in volcanic_ash_lines(flight, view):

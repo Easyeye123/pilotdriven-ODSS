@@ -79,7 +79,11 @@ def test_complete_output_passes() -> None:
         assert result["valid"], result["failures"]
 
 
-def test_analysed_publication_checks_current_ash_projection() -> None:
+@pytest.mark.parametrize("publication_header", [
+    "FLIGHT BRIEFING - MASTER SUMMARY",
+    "FLIGHT BRIEFING | PAGE 1 OF 6",
+])
+def test_analysed_publication_checks_current_ash_projection(publication_header) -> None:
     from app.odss.weather_publication import volcanic_ash_lines
 
     flight = _flight(LOG_PAGE_LOW)
@@ -89,7 +93,7 @@ def test_analysed_publication_checks_current_ash_projection() -> None:
         "official_advisories": [{"volcano": "TEST"}],
     }
     view = build_briefing_view(flight, [], [])
-    base = _passing_text(flight) + "\nFLIGHT BRIEFING - MASTER SUMMARY\n"
+    base = _passing_text(flight) + "\n" + publication_header + "\n"
     text = base + "\n".join(volcanic_ash_lines(flight, view))
     complete = check_cross_surface_parity(flight, [], [], text, unit_output_text=text)
     assert complete["valid"], complete["failures"]
