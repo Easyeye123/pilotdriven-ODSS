@@ -2047,7 +2047,13 @@ def test_taxiway_summaries_never_promote_grammar_or_pavement_words_as_ids() -> N
     assert "W4/W5 HIGH-SPEED TURN-OFFS" in subjects["SX124/26"].upper()
     assert "TWY M BETWEEN BM3 AND BM5" in subjects["A4644/26"].upper()
     assert "TANGO TWY with closure" in summaries["SX124/26"]
-    assert "W4 and W5" in summaries["SX124/26"]
+    # C1: this clause runs 22 source words before its first stop, so a line that
+    # reached its "W4 AND W5" would reproduce an 18-word run of the record and
+    # the concise PDF gate would refuse the page. The subject extractor above
+    # still holds both turn-offs; the published line stops at the runway
+    # surface it names and marks the rest.
+    assert summaries["SX124/26"].endswith("This NOTAM has further content; open the full NOTAM.")
+    assert "W4/W5 HIGH-SPEED TURN-OFFS" in subjects["SX124/26"].upper()
     assert "TWY M BETWEEN BM3 AND BM5 closed" in summaries["A4644/26"]
     assert "taxilanes R1/R2/R3" in summaries["SX176/24"]
     assert all(

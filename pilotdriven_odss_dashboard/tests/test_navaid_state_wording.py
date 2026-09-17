@@ -62,7 +62,10 @@ def test_new_pdf_summary_states_the_source_restriction_for_both_surfaces():
     text = "ILS CAT I RWY 06 ON TEST, DO NOT USE (AWAITING FLTCK VERIFICATION)."
     _, kind = notam_pertinence(text)
     held = _notam_operational_summary(text, kind, "destination")
-    assert held == "ILS CAT I RWY 06 on test, do not use (awaiting FLTCK verification)."
+    # C1: the whole notice is one clause, so publishing all of it reproduces the
+    # record and the concise PDF gate refuses the page. Both surfaces keep the
+    # filed state; the parenthetical reason sits behind the ellipsis.
+    assert held == "ILS CAT I RWY 06 on test, do not use …"
     from app.odss.briefing import _compact_notam_text
     item = {"item_e_text":text, "summary":held, "pertinence_kind":kind}
     common = dict(role="destination", planned_runways=set(), reference_time=None)

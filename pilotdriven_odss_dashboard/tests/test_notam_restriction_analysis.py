@@ -23,8 +23,12 @@ def summary(text, kind='runway_approach_restriction', **kwargs):
 
 
 @pytest.mark.parametrize(('source', 'kind', 'expected'), [
+    # C1: this notice says the whole of itself in one clause, so publishing all
+    # of it reproduces the record and the concise PDF gate refuses the page.
+    # The downgrade and what it downgrades to are kept; the parenthetical
+    # explanation is dropped behind the ellipsis.
     ('ILS RWY 36C DOWNGRADED TO I/C1/1 (SUPPORTS CAT I OPERATIONS).',
-     'runway_approach_restriction', 'ILS RWY 36C downgraded to I/C1/1 (supports CAT I operations).'),
+     'runway_approach_restriction', 'ILS RWY 36C downgraded to I/C1/1 …'),
     ('TXL P7 BEHIND ACFT STAND E20 CLSD',
      'taxiway_restriction', 'TXL P7 behind aircraft stand E20 closed.'),
     ('RWY 34C ALS U/S', 'runway_approach_restriction', 'RWY 34C ALS unserviceable.'),
@@ -128,6 +132,9 @@ def test_python_and_js_decoders_match_every_real_source_when_app_is_available():
     script = "import {deriveNotamRestrictionLine} from " + json.dumps(module.as_uri()) + ";import fs from 'node:fs';process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync(0,'utf8')).map(deriveNotamRestrictionLine)));"
     result = subprocess.run(['node', '--input-type=module', '-e', script], input=json.dumps([row['text'] for row in ROWS]), text=True, capture_output=True, check=True)
     expected = json.loads(result.stdout)
+    # C1: both runtimes carry the copy guard, so a differential that compared
+    # nothing would hide a runtime publishing a copy the other refuses.
+    assert len(expected) == len(ROWS) >= 1300, f'differential compared {len(expected)} vectors'
     mismatches = [(row['location'], row['notam_id']) for row, js in zip(ROWS, expected, strict=True) if derive_notam_restriction_line(row['text']) != js]
     assert not mismatches
 
