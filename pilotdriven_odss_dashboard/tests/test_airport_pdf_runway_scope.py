@@ -138,3 +138,36 @@ def test_a_chart_status_with_a_trailing_condition_stays_unresolved():
             'pertinence_kind':'approach_navaid_closure','approach_affected':True}
     result=analyse(record)
     assert result['lines']==[] and result['unresolved_ids']==['A2885/26']
+
+
+@pytest.mark.parametrize('suffix', [
+    'BTN TWY A AND TWY B',
+    'TO ACFT WITH WINGSPAN MORE THAN 36M',
+    'FROM INTERSECTION A TO RWY END',
+    'FOR ACFT ABOVE 20 TONNES',
+    'TO NON BASED AIRCRAFT',
+    'DUE WIP BTN TWY A AND TWY B',
+    'DUE TO MAINT ONLY FOR ACFT ABOVE 20 TONNES',
+])
+def test_unrecognised_closure_scope_is_not_discarded(suffix):
+    record={**HELD['notice'],'item_e_text':f'RWY 16R/34L CLSD {suffix}.'}
+    result=analyse(record)
+    assert result['lines']==[] and result['unresolved_ids']==['A2314/26']
+
+
+@pytest.mark.parametrize('raw', [
+    'RWY 16R/34L CLSD DUE WIP.',
+    'DAILY 1010-1025 2300-2345 RWY 04/22 CLSD DUE TO RWY INSPECTION',
+    '07 1700-2230, 08 1900-2230, 09-20 1700-2230 RWY 06/24 CLSD DUE TO RUBBER DEPOSIT REMOVAL',
+])
+def test_complete_closure_with_known_works_reason_remains_published(raw):
+    record={**HELD['notice'],'item_e_text':raw}
+    result=analyse(record)
+    assert result['lines'] and result['unresolved_ids']==[]
+
+
+def test_a_separate_unreduced_operational_clause_keeps_a_closing_receipt():
+    record={**HELD['notice'],'item_e_text':'RWY 16R/34L CLSD. ILS RWY 16L/34R U/S.'}
+    result=analyse(record)
+    assert 'RWY 16R/34L closed' in result['lines'][0]['text']
+    assert result['unresolved_ids']==['A2314/26']

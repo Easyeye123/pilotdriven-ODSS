@@ -56,6 +56,42 @@ def _timing(record: dict[str, Any], role: str) -> tuple[str | None, str]:
     return None, "unresolved reference time"
 
 
+def _complete_runway_closures(raw: str) -> tuple[dict[str, list[str]], bool]:
+    """Recognise complete bounded closure clauses, never discard their suffix.
+
+    Unrecognised extent, aircraft limits, exceptions or additional operational
+    clauses remain unresolved. Date/time prefixes use the existing role timing
+    assessment; only known works/maintenance reasons can be omitted from prose.
+    """
+    from .notam_restriction_line import strip_publication_envelope
+
+    body = strip_publication_envelope(raw) or raw
+    day = r"(?:MON|TUE|WED|THU|FRI|SAT|SUN)"
+    month = r"(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)"
+    timing_prefix = rf"(?:(?:DAILY|DLY|{day}(?:-{day})?|{month}|[0-9][0-9,/-]*(?:UTC)?)[, ]+)*"
+    reason = r"(?:\s+(?:DUE(?:\s+TO)?|FOR)\s+(?:WIP|MAINT(?:ENANCE)?(?:\s+WIP)?|RWY\s+INSPECTION|RUBBER\s+DEPOSIT\s+REMOVAL|RWY\s+MARKING\s+REPAINTING\s+WIP|TIRE\s+TRACK\s+WIPING\s+WORKS|CONST(?:RUCTION)?(?:\s+WORKS)?))?"
+    predicates = (
+        (r"(?:IS\s+|WILL\s+)?NOT\s+(?:BE\s+)?(?:AVBL|AVAILABLE)\s+(?:FOR\s+)?CIV(?:IL)?\s+USE", "not available for civil use"),
+        (r"(?:IS\s+|ARE\s+|WILL\s+BE\s+)?(?:CLSD|CLOSED)", "closed to the affected movement"),
+        (r"(?:IS\s+)?NOT\s+(?:AVBL|AVAILABLE)(?:\s+FOR\s+OPS)?", "not available for operations"),
+    )
+    patterns = [(re.compile(timing_prefix + _SURFACE.pattern + r"\s+" + predicate + reason, re.I), operation)
+                for predicate, operation in predicates]
+    scopes: dict[str, list[str]] = {}
+    unresolved = False
+    for clause in filter(None, (part.strip() for part in re.split(r"\.(?=\s|$)|;", body))):
+        for pattern, operation in patterns:
+            match = pattern.fullmatch(clause)
+            if match:
+                runway = match.group(1).replace(" ", "").upper()
+                if runway not in scopes.setdefault(operation, []):
+                    scopes[operation].append(runway)
+                break
+        else:
+            unresolved = True
+    return scopes, unresolved
+
+
 def _approach_chart_restrictions(raw: str) -> list[tuple[str, str]] | None:
     """Keep each explicitly withdrawn/suspended chart bound to its own title.
 
@@ -202,60 +238,31 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
             consequence = f"Taxi access involving {', '.join(taxiways)} is constrained {timing}."
             family = "taxiway"
         elif runways:
-            # A broad validity-window assessment cannot establish a conditional
-            # movement's availability. In particular TSAT/ELDT are separate
-            # operational inputs, not the flight's scheduled departure clock.
-            # Dated runway schedules were handled above; unresolved conditions
-            # retain their closing receipt rather than becoming active closure.
-            if re.search(r"\b(?:TSAT|ELDT|IF|WHEN|UNLESS|EXC|EXCEPT|SUBJECT\s+TO)\b", raw, re.I):
+            scopes, has_unresolved_clause = _complete_runway_closures(raw)
+            if has_unresolved_clause or not scopes:
                 unresolved.append(notice_id)
-                continue
-            civil_runways = list(dict.fromkeys(
-                match.group(1).replace(" ", "").upper()
-                for match in re.finditer(
-                    _SURFACE.pattern + r"\s*(?:IS\s+|WILL\s+)?NOT\s+(?:BE\s+)?(?:AVBL|AVAILABLE)\s+(?:FOR\s+)?CIV(?:IL)?\s+USE\b",
-                    raw, re.I,
-                )
-            ))
-            civil = bool(civil_runways)
-            if civil:
-                runways = civil_runways
-                surface_effects.append({"runways": sorted({end for pair in runways for end in pair.split("/")}),
-                                        "notam_id": notice_id, "markClass": "closure", "scope": "whole_entity",
-                                        "stateAtReference": assessed.get("stateAtReference"),
-                                        "referenceAt": assessed.get("referenceAt") or notice.get("referenceAt")})
-            closed = kind == "runway_closure"
-            if closed and not civil:
-                # Bind the closure predicate to its own explicit runway noun.
-                # A runway named in a diversion, taxi route or available clause
-                # must not inherit another runway's closure merely by sharing
-                # the same NOTAM record.
-                runways = list(dict.fromkeys(
-                    match.group(1).replace(" ", "").upper()
-                    for match in re.finditer(
-                        _SURFACE.pattern + r"\s*(?:IS\s+|ARE\s+|WILL\s+BE\s+)?(?:CLSD|CLOSED|NOT\s+(?:AVBL|AVAILABLE))\b",
-                        raw, re.I,
-                    )
-                ))
-                if not runways:
-                    unresolved.append(notice_id)
-                    continue
-            runway_label = "RWY " + ", ".join(runways)
-            if civil:
-                operation = "not available for civil use"
-            elif closed:
-                operation = "closed to the affected movement"
-            else:
-                # No general paraphrase of an unrecognised operational rule.
-                unresolved.append(notice_id)
-                continue
-            matches = bool(planned and any(planned in r.split("/") for r in runways))
-            relation = f"planned RWY {planned} is affected" if matches else f"this does not close planned RWY {planned}; other notices still apply" if planned else "the planned runway is not held"
-            if timing.startswith("begins"):
-                consequence = f"{runway_label} closure {timing}; {relation}."
-            else:
-                consequence = f"{runway_label} {operation} {timing}; {relation}."
-            family = "runway"
+            for operation, affected_runways in scopes.items():
+                # This path publishes only complete recognised source clauses.
+                # Other clauses retain their closing receipt even when this
+                # notice also contains a valid, independent runway closure.
+                if operation == "not available for civil use":
+                    surface_effects.append({"runways": sorted({end for pair in affected_runways for end in pair.split("/")}),
+                                            "notam_id": notice_id, "markClass": "closure", "scope": "whole_entity",
+                                            "stateAtReference": assessed.get("stateAtReference"),
+                                            "referenceAt": assessed.get("referenceAt") or notice.get("referenceAt")})
+                matches = bool(planned and any(planned in r.split("/") for r in affected_runways))
+                relation = f"planned RWY {planned} is affected" if matches else f"this does not close planned RWY {planned}; other notices still apply" if planned else "the planned runway is not held"
+                runway_label = "RWY " + ", ".join(affected_runways)
+                consequence = (f"{runway_label} closure {timing}; {relation}." if timing.startswith("begins")
+                               else f"{runway_label} {operation} {timing}; {relation}.")
+                key = ("runway", consequence, state)
+                row = groups.setdefault(key, {"family": "runway", "consequence": consequence,
+                                               "state": state, "timing": timing, "notam_ids": [], "source_pages": []})
+                if notice_id not in row["notam_ids"]:
+                    row["notam_ids"].append(notice_id)
+                if notice.get("source_page") is not None and notice["source_page"] not in row["source_pages"]:
+                    row["source_pages"].append(notice["source_page"])
+            continue
         else:
             unresolved.append(notice_id)
             continue
