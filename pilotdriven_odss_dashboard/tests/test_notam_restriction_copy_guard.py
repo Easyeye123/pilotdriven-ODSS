@@ -412,11 +412,10 @@ def test_python_and_js_agree_on_the_declarations_the_corpus_cannot_reach():
     import shutil
     import subprocess
 
-    app_root = Path(os.environ.get(
-        "PILOTDRIVEN_APP_ROOT",
-        Path(__file__).resolve().parents[3] / "pd-09sep-fixes-20260915"))
-    module = app_root / "web/src/lib/notam-restriction-line.mjs"
-    if not module.exists() or not shutil.which("node"):
+    from tests.cross_runtime import js_derivation_module
+
+    module = js_derivation_module(Path(__file__))
+    if module is None:
         pytest.skip("Cross-repo JS differential needs PILOTDRIVEN_APP_ROOT and Node")
     sources = [LONG_DECLARATIONS[label] for label in sorted(LONG_DECLARATIONS)] + declaration_matrix()
     script = (

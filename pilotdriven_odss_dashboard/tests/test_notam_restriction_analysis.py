@@ -125,9 +125,9 @@ def test_python_and_js_decoders_match_every_real_source_when_app_is_available():
     import shutil
     import subprocess
     from app.odss.notam_restriction_line import derive_notam_restriction_line
-    app_root = Path(os.environ.get('PILOTDRIVEN_APP_ROOT', Path(__file__).resolve().parents[3] / 'pd-09sep-fixes-20260915'))
-    module = app_root / 'web/src/lib/notam-restriction-line.mjs'
-    if not module.exists() or not shutil.which('node'):
+    from tests.cross_runtime import js_derivation_module
+    module = js_derivation_module(Path(__file__))
+    if module is None:
         pytest.skip('Cross-repo JS differential needs PILOTDRIVEN_APP_ROOT and Node; semantic tests still run')
     script = "import {deriveNotamRestrictionLine} from " + json.dumps(module.as_uri()) + ";import fs from 'node:fs';process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync(0,'utf8')).map(deriveNotamRestrictionLine)));"
     result = subprocess.run(['node', '--input-type=module', '-e', script], input=json.dumps([row['text'] for row in ROWS]), text=True, capture_output=True, check=True)
