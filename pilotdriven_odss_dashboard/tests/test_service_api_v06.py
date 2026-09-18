@@ -4078,3 +4078,60 @@ def test_combined_report_states_the_publication_format_it_was_rendered_in(
         combined.headers.get("x-odss-briefing-format")
         == COMBINED_BRIEFING_PUBLICATION_FORMAT
     )
+
+
+def test_level_reports_do_not_claim_the_flight_briefing_publication_format(
+    service_app: TestClient,
+) -> None:
+    """Only the Flight Briefing carries a publication-format statement.
+
+    ``x-odss-briefing-format`` names the publication format of the *combined
+    Flight Briefing* - the document whose page set went from the nine-page
+    MASTER SUMMARY layout to the six-page reference briefing. The level 1 and
+    level 2 reports are different documents (``render_level1_visual`` and
+    ``render_level2_visual``), pre-rendered once at analysis time and served
+    back byte-identical by ``_stored_file``; this renderer makes no format
+    claim about them, and stamping the Flight Briefing's token on them would
+    be a statement about bytes it did not produce.
+
+    The PilotDriven app depends on exactly this split: it judges a stored pack
+    on its Flight Briefing alone. Requiring the token on all three condemned
+    every pack saved by that build as "superseded" - a false banner, and a
+    network fetch on every Download of an offline flight pack. If a format
+    statement is ever added to these two routes, this test fails and the app's
+    ``storedBriefingFormatVerdict`` has to be revisited with it.
+    """
+    from app.odss.combined_brief import (
+        COMBINED_BRIEFING_FORMAT_HEADER,
+        COMBINED_BRIEFING_PUBLICATION_FORMAT,
+    )
+
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    header = COMBINED_BRIEFING_FORMAT_HEADER.lower()
+
+    served = {
+        segment: service_app.get(
+            f"/v1/analyses/{analysis_id}/reports/{segment}",
+            headers=_authorization(),
+        )
+        for segment in ("level-1", "level-2", "combined")
+    }
+
+    assert {segment: response.status_code for segment, response in served.items()} == {
+        "level-1": 200,
+        "level-2": 200,
+        "combined": 200,
+    }
+    assert {
+        segment: response.headers.get(header) for segment, response in served.items()
+    } == {
+        "level-1": None,
+        "level-2": None,
+        "combined": COMBINED_BRIEFING_PUBLICATION_FORMAT,
+    }
