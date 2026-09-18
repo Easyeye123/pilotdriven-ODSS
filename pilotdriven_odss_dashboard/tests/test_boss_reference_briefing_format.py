@@ -24,15 +24,19 @@ hand-written fixture that can be edited to match whatever we happen to draw.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import re
 
 import fitz
 import pytest
 
+from tests.cross_runtime import sibling_app_root
+
 from app.analysis import run_odss_analysis
 from app.odss.briefing import build_briefing_view
 from app.odss.combined_brief import (
+    COMBINED_BRIEFING_PUBLICATION_FORMAT,
     COMBINED_BRIEFING_SCHEMA_VERSION,
     combined_briefing_cache_token,
     render_combined_briefing,
@@ -317,6 +321,18 @@ def test_relocated_content_keeps_its_owning_section(briefing):
     assert normalized(view["destination"]["weather"]["metar"]) in folded[4]
 
 
+def _app_module(relative: str) -> Path | None:
+    """The app worktree's module, or None when this tree has no app beside it."""
+    app_root = sibling_app_root(Path(__file__))
+    configured = os.environ.get("PILOTDRIVEN_APP_ROOT")
+    root = Path(configured) if configured else app_root
+    if root is None:
+        return None
+    module = root / relative
+    return module if module.exists() else None
+
+
+
 def test_publication_gate_and_physical_scan_accept_the_new_format(briefing):
     view = briefing["view"]
     result = check_concise_pdf(
@@ -351,6 +367,28 @@ def test_a_saved_pack_cannot_keep_serving_the_cached_nine_page_pdf():
     assert combined_briefing_cache_token(snapshot, 7) != combined_briefing_cache_token(
         snapshot, 7, schema_version=NINE_PAGE_SCHEMA_VERSION
     )
+
+
+def test_the_app_refuses_a_stored_pdf_this_renderer_no_longer_publishes():
+    """The client half of the same test path.
+
+    The saved pack keeps the PDF it downloaded, so the nine-page file survived
+    in device storage even after this renderer went to six pages: on 18 Sep
+    2026 the saved SIA882 pack (saved 10 Sep) still downloaded nine pages while
+    "Create updated briefing" on the same flight downloaded six. The app judges
+    a stored PDF by the publication format this renderer stated when it served
+    it, so the two tokens have to be the same string - a bump here that the app
+    does not follow would let every pack keep serving the old format again.
+    """
+    module = _app_module("web/src/lib/briefing-publication-format.mjs")
+    if module is None:
+        pytest.skip("the PilotDriven app worktree is not available")
+    declared = re.search(
+        r"export const CURRENT_BRIEFING_PUBLICATION_FORMAT = '([^']+)'",
+        module.read_text(encoding="utf-8"),
+    )
+    assert declared, "the app must declare the publication format it serves"
+    assert declared.group(1) == COMBINED_BRIEFING_PUBLICATION_FORMAT
 
 
 def test_no_page_copies_a_raw_deferred_source_remark(briefing):
