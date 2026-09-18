@@ -4042,3 +4042,39 @@ def test_governed_profile_chart_route_serves_only_held_validated_report_page(
         headers=_authorization(),
     )
     assert unverified.status_code == 404
+
+
+def test_combined_report_states_the_publication_format_it_was_rendered_in(
+    service_app: TestClient,
+) -> None:
+    """A saved flight pack keeps the exact Flight Briefing PDF it downloaded.
+
+    Months later the app has to decide whether that stored file was produced
+    by the publication format it serves today, and only the renderer knows.
+    The response therefore states the publication format of the bytes it just
+    handed over, so a pack can record it when it is saved and a superseded
+    pack can be refused instead of handed back - David, 9 Sep 2026: "Even the
+    generated report has changed form."
+    """
+    from app.odss.combined_brief import COMBINED_BRIEFING_PUBLICATION_FORMAT
+
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+
+    combined = service_app.get(
+        f"/v1/analyses/{analysis_id}/reports/combined",
+        headers=_authorization(),
+    )
+
+    assert combined.status_code == 200
+    assert combined.headers["content-type"] == "application/pdf"
+    assert COMBINED_BRIEFING_PUBLICATION_FORMAT
+    assert (
+        combined.headers.get("x-odss-briefing-format")
+        == COMBINED_BRIEFING_PUBLICATION_FORMAT
+    )

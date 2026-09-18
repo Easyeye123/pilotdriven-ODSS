@@ -73,6 +73,8 @@ from .odss.governed_deferred_extract import (
     normalize_governed_deferred_reference_payload,
 )
 from .odss.combined_brief import (
+    COMBINED_BRIEFING_FORMAT_HEADER,
+    COMBINED_BRIEFING_PUBLICATION_FORMAT,
     combined_briefing_cache_token,
     combined_briefing_filename,
     render_combined_briefing,
@@ -2904,6 +2906,10 @@ def get_service_combined_report(request: Request, analysis_id: str):
             analysis_flight.get("flight_date"),
         ),
         media_type="application/pdf",
+        # A client that stores this PDF in a flight pack cannot tell later
+        # which publication format produced it. State it here so a reopened
+        # pack can refuse a superseded file instead of handing it back.
+        headers={COMBINED_BRIEFING_FORMAT_HEADER: COMBINED_BRIEFING_PUBLICATION_FORMAT},
     )
 
 

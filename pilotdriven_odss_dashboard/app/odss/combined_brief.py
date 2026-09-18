@@ -162,6 +162,22 @@ WAFC_CHARTS_PER_PAGE = 3
 # older PDF from persistent report storage.
 COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-18-page1-signed-tile-values-v60"
 
+# The pilot-visible publication format of the Flight Briefing this renderer
+# produces, stated on every served PDF so a client that stores the file can
+# later tell whether it still holds the format in service.
+#
+# This is deliberately coarser than COMBINED_BRIEFING_SCHEMA_VERSION: a
+# content or wording correction bumps the schema version (and so the server's
+# own cache key) without invalidating a stored PDF's *format*. Bump this one
+# only when the published page set changes - the six-page reference briefing
+# replacing the nine-page MASTER SUMMARY layout is the change it was minted
+# for. The PilotDriven app pins the same token in
+# web/src/lib/briefing-publication-format.mjs; the two move together.
+COMBINED_BRIEFING_PUBLICATION_FORMAT = "six-page-reference-briefing-2026-09-15"
+
+# Response header carrying COMBINED_BRIEFING_PUBLICATION_FORMAT to the client.
+COMBINED_BRIEFING_FORMAT_HEADER = "X-ODSS-Briefing-Format"
+
 
 def combined_briefing_cache_token(
     analysis_snapshot_identity: Any,
