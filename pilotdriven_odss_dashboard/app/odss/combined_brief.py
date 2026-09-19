@@ -160,7 +160,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-18-page1-signed-tile-values-v60"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-19-one-notice-assessment-declaration-boundaries-v61"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
@@ -169,11 +169,16 @@ COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-18-page1-signed-tile-values-v60"
 # This is deliberately coarser than COMBINED_BRIEFING_SCHEMA_VERSION: a
 # content or wording correction bumps the schema version (and so the server's
 # own cache key) without invalidating a stored PDF's *format*. Bump this one
-# only when the published page set changes - the six-page reference briefing
+# when the published page set changes - the six-page reference briefing
 # replacing the nine-page MASTER SUMMARY layout is the change it was minted
-# for. The PilotDriven app pins the same token in
-# web/src/lib/briefing-publication-format.mjs; the two move together.
-COMBINED_BRIEFING_PUBLICATION_FORMAT = "six-page-reference-briefing-2026-09-15"
+# for - or when a correction means a copy already stored in a pack contradicts
+# what is now published for the same held analysis. The 19 Sep 2026 audit is
+# the second case: stored copies describe one notice two ways (SIA605
+# SX120/25) and omit page-1 declarations (SQ882 FF/GG), so they are re-created
+# from the held analysis rather than handed back. The PilotDriven app pins the
+# same token in web/src/lib/briefing-publication-format.mjs; the two move
+# together.
+COMBINED_BRIEFING_PUBLICATION_FORMAT = "six-page-reference-briefing-2026-09-19"
 
 # Response header carrying COMBINED_BRIEFING_PUBLICATION_FORMAT to the client.
 COMBINED_BRIEFING_FORMAT_HEADER = "X-ODSS-Briefing-Format"
@@ -10213,9 +10218,9 @@ def _operational_mel_source_items(
                 == "unresolved"
             )
             if (
-                item_type not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN"}
+                item_type not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN", "EN"}
                 and declaration_kind not in {
-                    "MEL", "CDL", "CDDL", "IFEDDL", "IN",
+                    "MEL", "CDL", "CDDL", "IFEDDL", "IN", "EN",
                 }
                 and not unresolved_source
             ):
@@ -10705,8 +10710,8 @@ def draw_operational_mel_cdl_page(
             # IN notice alongside the MEL, and the boss's reference shows
             # all of them (only unparseable rows stay out).
             if (
-                item_type not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN"}
-                and declaration_kind not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN"}
+                item_type not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN", "EN"}
+                and declaration_kind not in {"MEL", "CDL", "CDDL", "IFEDDL", "IN", "EN"}
                 and not unresolved_source
             ):
                 continue
@@ -13991,9 +13996,41 @@ def render_combined_briefing(
         )
     from .operational_format import render_analysed_briefing
     return render_analysed_briefing(
-        flight, findings, warnings, path, weather_charts=weather_charts,
+        source_verified_flight(flight, source_pdf_path), findings, warnings, path,
+        weather_charts=weather_charts,
         company_briefing_references=company_briefing_references,
     )
+
+
+def source_verified_flight(flight: dict[str, Any], source_pdf_path: Any) -> dict[str, Any]:
+    """Re-read the page-1 declarations from the OFP the service still holds.
+
+    Download PDF renders a stored analysis without re-analysing it. A pack
+    saved before 19 Sep 2026 holds a parse that stopped at label EE and knew
+    five kinds, so SQ882's FF CDL 57-16 and GG EN sit inside EE's remark and
+    the slat seal "requests" dry ice. The OFP is the evidence that parse
+    misread; where it is still held, the declarations are read from it again,
+    on a copy, so a saved pack and a fresh one publish the same declarations.
+    The held analysis is never rewritten, and with no OFP held it is published
+    as it stands.
+    """
+    from pathlib import Path
+
+    from .parser import extract_pages, parse_lido
+
+    if not source_pdf_path or "deferred_items" not in (flight or {}):
+        return flight
+    try:
+        source = Path(source_pdf_path)
+        if not source.is_file():
+            return flight
+        # The same read a fresh analysis makes, so the two cannot differ.
+        declarations = parse_lido(extract_pages(source), source.name)["deferred_items"]
+    except (OSError, ValueError, KeyError):
+        return flight
+    if declarations == flight.get("deferred_items"):
+        return flight
+    return {**flight, "deferred_items": declarations}
 
 
 def _render_reference_briefing(

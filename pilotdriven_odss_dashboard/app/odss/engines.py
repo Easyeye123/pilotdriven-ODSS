@@ -39,6 +39,7 @@ from .pilot_briefing import (
     notam_sort_key,
     pilot_notam_key,
 )
+from .runway_closure_schedule import reconcile_runway_closure_findings
 from .notam_restriction_line import (
     FIXED_MARKER_SENTENCES,
     derive_notam_restriction_line,
@@ -2529,7 +2530,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         ))
 
     for item in flight["deferred_items"]:
-        if item["item_type"] in {"UNCLASSIFIED", "IFEDDL", "IN"}:
+        if item["item_type"] in {"UNCLASSIFIED", "IFEDDL", "IN", "EN"}:
             # The OFP's own vocabulary names the block (boss, 21 Aug 2026:
             # "UNCLASSIFIED" never reaches the pilot). The exact printed text
             # is the whole held fact; no remedy or instruction is inferred.
@@ -2550,6 +2551,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 ),
                 "IN": (
                     "Engineering information notice carried verbatim from OFP page 1; "
+                    "no remedy or dispatch instruction is inferred beyond the printed text."
+                ),
+                # "GG EN A35MEN-21-28871" (SQ882 10 Sep 2026). An engineering
+                # notice is not a configuration deviation: it has no CDL
+                # reference to be "missing".
+                "EN": (
+                    "Engineering notice carried verbatim from OFP page 1; "
                     "no remedy or dispatch instruction is inferred beyond the printed text."
                 ),
             }.get(item["item_type"], (
@@ -3295,6 +3303,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 ],
             },
         ))
+
+    # One assessment per notice (production audit, 19 Sep 2026). Where a notice
+    # prints dated runway-closure regimes that can be evaluated at its own
+    # reference time, that statement IS its summary - the same function
+    # publication applies to an analysis stored by an older build, so a fresh
+    # pack and a saved one cannot describe the notice differently.
+    applicable_notams = reconcile_runway_closure_findings(applicable_notams, flight)
 
     unique_applicable_notams: list[dict[str, Any]] = []
     priority_view_notams: list[dict[str, Any]] = []

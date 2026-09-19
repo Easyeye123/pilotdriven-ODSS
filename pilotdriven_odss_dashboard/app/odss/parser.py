@@ -350,14 +350,42 @@ def _parse_notam_procedure_records(
     return records
 
 
+# A page-1 declaration opens with Lido's sequence label: one capital letter
+# printed twice (AA, BB, CC ...). The OFP decides how many there are, so the
+# label is recognised by its shape and its order, never from a fixed list.
+# A closed AA-EE list is how SQ882's FF and GG declarations (10 Sep 2026)
+# became part of EE's remark.
+_DECLARATION_LABEL = r"(?P<token>(?P<letter>[A-Z])(?P=letter))"
 _OPAQUE_DEFERRED_HEADER = re.compile(
-    r"^(?P<token>AA|BB|CC|DD|EE)\s+(?P<description>\S.*\S|\S)\s*$"
+    rf"^{_DECLARATION_LABEL}\s+(?P<description>\S.*\S|\S)\s*$"
+)
+_DECLARATION_HEADER = re.compile(rf"^{_DECLARATION_LABEL}\s+(?P<rest>\S.*\S|\S)\s*$")
+# Lido's own plan-block header ("PLAN 8", "PLAN 27/0/1") or "RTE NO". A
+# dispatcher remark that merely begins with the word - SQ38 29 Aug prints "PLAN
+# VIA PACOTS TRK 2" and "PLAN WITH PACKS OFF" above its declarations - is not it.
+_PLAN_BLOCK_HEADER = re.compile(r"^(?:PLAN\s+\d+(?:/\d+)*\s*$|RTE\s+NO\b)")
+_GOVERNED_DECLARATION = re.compile(
+    # Reference and trailing description are both optional, and the
+    # description may follow with or without a dash ("CC MEL PREAMBLE
+    # SECTION MEL AND CMS REV 18NOV 25" — SQ366 4 Aug shape).
+    r"^(?P<kind>CDDL|CDL|MEL)"
+    r"(?:\s+(?P<reference>[0-9A-Z-]+))?"
+    r"(?:\s*-\s*(?P<dashed>.*\S)|\s+(?P<undashed>\S.*\S|\S))?\s*$"
+)
+_NOTICE_DECLARATION = re.compile(
+    # "DD IN SIA/00-017 R1" (information notice) and "GG EN A35MEN-21-28871"
+    # (engineering notice), with an optional revision and an optional request
+    # printed on the same line ("EE EN A35MEN-21-27688 R1 TO UPLIFT DRY ICE
+    # FOR ALL CHILLERS", SQ606 6 Sep). A notice number carries a digit, so
+    # prose that merely begins with the word IN is not a notice.
+    r"^(?P<kind>IN|EN)\s+(?P<reference>(?=[0-9A-Z/-]*\d)[0-9A-Z/-]+(?:\s+R\d+)?)"
+    r"(?:\s+(?P<description>\S.*\S|\S))?\s*$"
 )
 _OPAQUE_DEFERRED_IDENTIFIER = re.compile(
     r"\b(?P<identifier>ECDL[0-9A-Z][0-9A-Z._/-]{2,79})\b"
 )
 _OPAQUE_DEFERRED_CLASS = re.compile(r"\bX\s+CLASS\s+(?P<class>[A-Z])\b")
-_KNOWN_DEFERRED_HEADER = re.compile(r"^(?:CDDL|CDL|MEL|IFEDDL|IN)(?:\s|$)")
+_KNOWN_DEFERRED_HEADER = re.compile(r"^(?:CDDL|CDL|MEL|IFEDDL|IN|EN)(?:\s|$)")
 
 
 def _opaque_deferred_source_groups(
@@ -424,7 +452,7 @@ def _opaque_deferred_source_groups(
 
             while cursor < len(lines):
                 stripped = lines[cursor].strip()
-                if stripped.startswith("PLAN ") or stripped.startswith("RTE NO"):
+                if _PLAN_BLOCK_HEADER.match(stripped):
                     break
                 if _OPAQUE_DEFERRED_HEADER.fullmatch(stripped):
                     break
@@ -520,9 +548,20 @@ def _parse_deferred_items(
     # prefixed declaration is a first-class item under the CFP's own word —
     # never "UNCLASSIFIED"/"UNSPECIFIED", and never folded into the previous
     # item's remark (that is how the ENG 2 fan-cowl notice vanished).
+    #
+    # 19 Sep 2026 production audit: the boundary is the sequence label, and
+    # only the label. What follows it decides how the item is classified,
+    # never whether it exists — a declaration whose kind is not recognised is
+    # held under its printed words as unresolved, so it can neither vanish nor
+    # hand its conditions to the declaration above it.
     items: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     lines = page1.splitlines()
+    # Labels only ascend within a block, and headers share the block's margin.
+    # Together these keep a wrapped body line that merely begins with two
+    # equal letters inside the declaration it continues.
+    last_label = ""
+    header_indent: int | None = None
     opaque_groups = _opaque_deferred_source_groups(
         page1,
         source_page=source_page,
@@ -537,71 +576,103 @@ def _parse_deferred_items(
         for index in range(start, end + 1)
     }
     for line_index, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip())
         if line_index in opaque_consumed:
             held = opaque_starts.get(line_index)
             if held is not None:
                 if current:
-                    items.append(current)
+                    items.append(_held_declaration(current))
                     current = None
                 items.append(held[1])
+                last_label = max([last_label, *held[1]["source_group_tokens"]])
+                if header_indent is None:
+                    header_indent = indent
             continue
         stripped = line.strip()
-        match = re.match(
-            # Reference and trailing description are both optional, and the
-            # description may follow with or without a dash ("CC MEL PREAMBLE
-            # SECTION MEL AND CMS REV 18NOV 25" — SQ366 4 Aug shape).
-            r"^(AA|BB|CC|DD|EE)\s+(CDDL|CDL|MEL)"
-            r"(?:\s+([0-9A-Z-]+))?(?:\s*-\s*(.*\S)|\s+(\S.*\S|\S))?\s*$",
-            stripped,
-        )
-        ifeddl = re.fullmatch(r"(AA|BB|CC|DD|EE)\s+IFEDDL", stripped)
-        notice = re.fullmatch(r"(AA|BB|CC|DD|EE)\s+IN\s+([0-9A-Z/-]+(?:\s+R\d+)?)", stripped)
-        if match:
+        if _PLAN_BLOCK_HEADER.match(stripped):
+            # The declarations belong to the remarks block; the plan block
+            # that follows it is never part of one.
+            break
+        header = _DECLARATION_HEADER.match(stripped)
+        if (
+            header
+            and header.group("token") > last_label
+            and header_indent in (None, indent)
+        ):
             if current:
-                items.append(current)
-            current = {
-                "reference": match.group(3) or None,
-                "description": (match.group(4) or match.group(5) or "").strip(),
-                "item_type": match.group(2),
-                "source_declaration": stripped,
-                "company_remark": None,
-            }
+                items.append(_held_declaration(current))
+            last_label = header.group("token")
+            header_indent = indent
+            current = _classified_declaration(stripped, header.group("rest"))
             continue
-        if ifeddl:
-            if current:
-                items.append(current)
-            current = {
-                "reference": None,
-                "description": "",
-                "item_type": "IFEDDL",
-                "source_declaration": stripped,
-                "company_remark": None,
-            }
-            continue
-        if notice:
-            if current:
-                items.append(current)
-            current = {
-                "reference": notice.group(2),
-                "description": "",
-                "item_type": "IN",
-                "source_declaration": stripped,
-                "company_remark": None,
-            }
-            continue
-        if current:
-            if stripped.startswith("PLAN ") or stripped.startswith("RTE NO"):
-                items.append(current)
-                current = None
-                break
-            if stripped:
-                if not current["description"]:
-                    current["description"] = stripped
-                else:
-                    current["company_remark"] = f"{current['company_remark'] or ''} {stripped}".strip()
+        if current and stripped:
+            if not current["description"]:
+                current["description"] = stripped
+            else:
+                current["company_remark"] = f"{current['company_remark'] or ''} {stripped}".strip()
     if current:
-        items.append(current)
+        items.append(_held_declaration(current))
     return items
+
+
+def _held_declaration(item: dict[str, Any]) -> dict[str, Any]:
+    """Close a declaration. One of unrecognised kind printed on a single line
+    has no body to name its defect, so its own printed words are the defect."""
+    printed = item.pop("_printed_words", None)
+    if printed and not item["description"]:
+        item["description"] = printed
+    return item
+
+
+def _classified_declaration(source_declaration: str, rest: str) -> dict[str, Any]:
+    """Classify one declaration from the words printed after its label."""
+    governed = _GOVERNED_DECLARATION.match(rest)
+    if governed:
+        return {
+            "reference": governed.group("reference") or None,
+            "description": (
+                governed.group("dashed") or governed.group("undashed") or ""
+            ).strip(),
+            "item_type": governed.group("kind"),
+            "source_declaration": source_declaration,
+            "company_remark": None,
+        }
+    if rest == "IFEDDL":
+        return {
+            "reference": None,
+            "description": "",
+            "item_type": "IFEDDL",
+            "source_declaration": source_declaration,
+            "company_remark": None,
+        }
+    notice = _NOTICE_DECLARATION.match(rest)
+    if notice:
+        return {
+            "reference": " ".join(notice.group("reference").split()),
+            "description": (notice.group("description") or "").strip(),
+            "item_type": notice.group("kind"),
+            "source_declaration": source_declaration,
+            "company_remark": None,
+        }
+    # The OFP printed a declaration whose kind this parser does not know
+    # ("AA WEIGHT AND BALANCE MANUAL CHAPTER 8", "BB INFO IN"). It is still a
+    # declaration: hold its printed words and say its class is unresolved.
+    # Those words stand where "MEL 30-81-01A" would, so - as for any
+    # block-shaped declaration - the defect is the line printed beneath them.
+    return {
+        "reference": None,
+        "description": "",
+        "_printed_words": rest,
+        "item_type": "UNCLASSIFIED",
+        "source_declaration": source_declaration,
+        "company_remark": None,
+        "classification_status": "unresolved",
+        "classification_reason": (
+            "The OFP prints this declaration without an explicit MEL, CDL or "
+            "CDDL class."
+        ),
+        "governed_match_status": "manual_review_required",
+    }
 
 
 def _parse_route_text(page1: str) -> str:

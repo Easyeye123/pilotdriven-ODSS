@@ -27,6 +27,11 @@ from .engines import (
     notam_dashboard_line,
     obstacle_restriction_line,
 )
+from .runway_closure_schedule import (
+    notice_reference_time,
+    published_runway_closure_statement,
+    reconcile_runway_closure_findings,
+)
 from .notam_restriction_line import (
     NO_STATEMENT_LINE,
     NO_TEXT_SENTENCE,
@@ -348,26 +353,6 @@ _COMPACT_PRIMARY_FAMILY_ORDER = {
 }
 
 _RUNWAY_TOKEN = re.compile(r"\b(?:RWY\s*)?(\d{2}[LCR]?)\b")
-_RUNWAY_CLOSURE_SCHEDULE = re.compile(
-    r"\bRWY\s+(?P<runways>\d{2}[LCR]?(?:/\d{2}[LCR]?)?)\s+"
-    r"WILL\s+BE\s+CLSD\s+BTN\s+"
-    r"(?P<start>\d{4})(?:UTC)?\s+TO\s+"
-    r"(?P<end>\d{4})(?:UTC)?\s+EV\s+"
-    r"(?P<weekdays>(?:MON|TUE|WED|THU|FRI|SAT|SUN)"
-    r"(?:\s+AND\s+(?:MON|TUE|WED|THU|FRI|SAT|SUN))*)\s+"
-    r"FM\s+(?P<valid_from>\d{2}[A-Z]{3}\d{2})\s+"
-    r"TO\s+(?P<valid_to>\d{2}[A-Z]{3}\d{2})\b",
-    re.IGNORECASE,
-)
-_WEEKDAY_INDEX = {
-    "MON": 0,
-    "TUE": 1,
-    "WED": 2,
-    "THU": 3,
-    "FRI": 4,
-    "SAT": 5,
-    "SUN": 6,
-}
 
 
 def _runway_designators(value: Any) -> set[str]:
@@ -417,97 +402,23 @@ def _reference_time_for_roles(
     return None
 
 
-def _runway_schedule_at_reference(
-    item: dict[str, Any],
-    *,
-    role: str,
-    planned_runways: set[str],
-    reference_time: datetime | None,
-) -> dict[str, Any] | None:
-    """Summarise an explicit source schedule for the planned runway.
-
-    The source can carry multiple dated runway regimes in one AIP supplement.
-    A regime is used only when its printed date range, weekday and runway all
-    match the current flight.  Anything ambiguous falls back to the existing
-    shared review wording.
-    """
-    if not planned_runways or reference_time is None:
-        return None
-    raw = " ".join(str(item.get("item_e_text") or "").upper().split())
-    for match in _RUNWAY_CLOSURE_SCHEDULE.finditer(raw):
-        schedule_runways = _runway_designators(match.group("runways"))
-        if not schedule_runways & planned_runways:
-            continue
-        try:
-            valid_from = datetime.strptime(
-                match.group("valid_from").upper(), "%d%b%y"
-            ).date()
-            valid_to = datetime.strptime(
-                match.group("valid_to").upper(), "%d%b%y"
-            ).date()
-        except ValueError:
-            continue
-        if not valid_from <= reference_time.date() <= valid_to:
-            continue
-        weekdays = {
-            _WEEKDAY_INDEX[token]
-            for token in re.findall(
-                r"MON|TUE|WED|THU|FRI|SAT|SUN",
-                match.group("weekdays").upper(),
-            )
-        }
-        if reference_time.weekday() not in weekdays:
-            continue
-        start_text = match.group("start")
-        end_text = match.group("end")
-        start_hour, start_minute = int(start_text[:2]), int(start_text[2:])
-        end_hour, end_minute = int(end_text[:2]), int(end_text[2:])
-        if start_hour > 23 or end_hour > 23 or start_minute > 59 or end_minute > 59:
-            continue
-        closure_start = reference_time.replace(
-            hour=start_hour, minute=start_minute, second=0, microsecond=0
-        )
-        closure_end = reference_time.replace(
-            hour=end_hour, minute=end_minute, second=0, microsecond=0
-        )
-        if closure_end <= closure_start:
-            closure_end += timedelta(days=1)
-        runway_label = match.group("runways").upper()
-        reference_label = "ETA" if role == "destination" else (
-            "ETD" if role == "departure" else "REFERENCE"
-        )
-        reference_display = reference_time.strftime("%H%MZ")
-        def evaluated(text: str, state: str) -> dict[str, Any]:
-            return {"text": text, "runways": sorted(schedule_runways),
-                    "referenceAt": reference_time.isoformat(),
-                    "referenceInterval": {"startsAt": closure_start.isoformat(), "endsAt": closure_end.isoformat()},
-                    "stateAtReference": state}
-        if reference_time < closure_start:
-            delta_minutes = int((closure_start - reference_time).total_seconds() // 60)
-            return evaluated(
-                f"RWY {runway_label} closes {start_text}-{end_text}Z; "
-                f"{reference_label} {reference_display} precedes closure by "
-                f"{delta_minutes // 60}h{delta_minutes % 60:02d}.", "begins_after_reference"
-            )
-        if reference_time < closure_end:
-            return evaluated(
-                f"RWY {runway_label} closes {start_text}-{end_text}Z; "
-                f"{reference_label} {reference_display} is within the closure.", "active_at_reference"
-            )
-        delta_minutes = int((reference_time - closure_end).total_seconds() // 60)
-        return evaluated(
-            f"RWY {runway_label} closure {start_text}-{end_text}Z ends "
-            f"{delta_minutes // 60}h{delta_minutes % 60:02d} before "
-            f"{reference_label} {reference_display}.", "ended_before_reference"
-        )
-    return None
-
-
 def _compact_runway_schedule_text(item: dict[str, Any], *, role: str,
                                   planned_runways: set[str], reference_time: datetime | None) -> str | None:
-    result = _runway_schedule_at_reference(item, role=role, planned_runways=planned_runways,
-                                          reference_time=reference_time)
-    return result["text"] if result else None
+    """The notice's one dated-closure statement, as every surface publishes it.
+
+    The assessment belongs to the notice and the time the engine assessed it
+    at (``runway_closure_schedule``). ``planned_runways`` only annotates the
+    statement and ``reference_time`` is used only where an older record holds
+    no reference of its own: neither may select a different answer than the
+    Airports page and the decision page give for the same notice.
+    """
+    statement = published_runway_closure_statement(
+        item.get("item_e_text"),
+        role=role,
+        reference_time=notice_reference_time(item, role, reference_time),
+        planned_runway="/".join(sorted(planned_runways or ())),
+    )
+    return statement["line"] if statement else None
 
 
 def _compact_notam_family(item: dict[str, Any]) -> str:
@@ -5633,6 +5544,11 @@ def build_briefing_view(
     # records what the stored analysis held rather than publishing to a pilot.
     if not preserve_stored_analysis:
         findings = [_republishable_finding(item) for item in findings]
+        # A pack stored by an older build holds the engine's review sentence
+        # for a notice whose dated closure regimes can be evaluated. Give it
+        # the statement a fresh analysis gives it, so the Airports page (which
+        # evaluates the notice) and every row built from its summary agree.
+        findings = reconcile_runway_closure_findings(findings, flight)
     source_findings = list(findings)
     findings = prepare_pilot_findings(findings, notam_limit=24)
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)

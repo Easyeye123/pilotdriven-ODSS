@@ -376,14 +376,27 @@ def _gate_title(group: list[dict[str, Any]]) -> str:
     if references:
         return f"{display_item_type} " + " / ".join(references)
 
+    declaration = deferred_source_declaration_for_display(
+        group[0].get("source_declaration")
+    )
+    if (
+        len(group) == 1
+        and item_type in _INTERNAL_TYPE_PLACEHOLDERS
+        and group[0].get("classification_status") == "unresolved"
+        and declaration
+    ):
+        # A declaration of a kind the parser does not classify ("AA WEIGHT
+        # AND BALANCE MANUAL CHAPTER 8", SQ606 6 Sep) is named by the words
+        # the OFP printed for it, never by a fragment picked from its defect.
+        printed = declaration.split(None, 1)
+        if len(printed) == 2 and re.fullmatch(r"([A-Z])\1", printed[0]):
+            return printed[1]
+        return declaration
     subject = _common_subject(group)
     if subject:
         if len(group) > 1 and not subject.endswith("S"):
             subject += "S"
         return subject
-    declaration = deferred_source_declaration_for_display(
-        group[0].get("source_declaration")
-    )
     return declaration or f"{display_item_type} REVIEW REQUIRED"
 
 
@@ -528,6 +541,7 @@ def build_deferred_dispatch_gates(
         # annotate (SQ910 21 Aug: ENG 2 fan-cowl latch check), ahead of
         # cabin-only IFE deferrals.
         "IN": 4,
+        "EN": 4,
         "IFEDDL": 5,
         "UNCLASSIFIED": 6,
     }

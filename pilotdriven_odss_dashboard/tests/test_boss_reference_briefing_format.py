@@ -682,10 +682,17 @@ def test_no_published_deferred_subject_is_truncated_duplicated_or_form_debris(br
     """
     from app.odss.analysed_briefing_content import deferred_consequence_rows
 
+    # One analysed row can name several declarations that share a consequence,
+    # joining their subjects with "; ". Each declaration's subject is checked
+    # on its own: SQ882 10 Sep prints three separate LH WING defects (DD, EE,
+    # FF), and "LH wing" opening each of them is three facts, not form debris.
+    # Until FF was parsed as its own declaration the slat seal carried a
+    # neighbour's dry-ice action, sat in a row of its own, and hid this.
     subjects = [
-        row["subject"]
+        subject
         for row in deferred_consequence_rows(briefing["view"])
-        if row["subject"]
+        for subject in str(row["subject"] or "").split("; ")
+        if subject
     ]
     finding = _deferred_finding(briefing)
     headline = str(finding.get("title") or "").removesuffix(" - dispatch confirmation")

@@ -166,35 +166,31 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         if kind not in _KINDS and notice.get("approach_affected") is not True:
             excluded.append(notice_id)
             continue
-        # The shared dashboard already resolves explicit dated runway regimes
-        # inside complex supplements. Reuse that analysis, never its generic
-        # summary/raw fallback, even when other clauses remain unresolved.
-        from .briefing import _runway_schedule_at_reference
+        # A complex supplement can print dated closure regimes for several
+        # runways. The notice has ONE assessment of them, shared with the
+        # dashboard card and the decision page (runway_closure_schedule): other
+        # runways' closures limit this flight's options, so every regime in
+        # effect is published, and the planned runway only annotates the line.
+        from .runway_closure_schedule import assess_runway_closure_schedule, notice_reference_time
         assessed = next((r for r in notice.get("role_applicability") or [] if r.get("role") == role), notice)
         raw = str(notice.get("item_e_text") or "")
         runways = list(dict.fromkeys(m.replace(" ", "").upper() for m in _SURFACE.findall(raw)))
-        has_schedule = False
-        # Other runway closures affect the available options for this flight.
-        # Reuse the existing date/weekday/time evaluator for each source-named
-        # pair, while keeping the actual planned runway explicit.
-        for runway in runways:
-            schedule = _runway_schedule_at_reference(
-                notice, role=role, planned_runways=set(runway.split("/")),
-                reference_time=_time(assessed.get("referenceAt") or notice.get("referenceAt")),
-            )
-            if not schedule:
-                continue
-            schedule_line = schedule["text"]
-            surface_effects.append({**schedule, "notam_id": notice_id, "markClass": "closure", "scope": "whole_entity"})
-            if planned and not set(planned.split("/")) & set(runway.split("/")):
-                schedule_line += f" Planned RWY {planned} differs from this affected runway."
-            groups[("runway", schedule_line, "scheduled")] = {
-                "family": "runway", "consequence": schedule_line,
+        assessment = assess_runway_closure_schedule(
+            raw, role=role, reference_time=notice_reference_time(notice, role), planned_runway=planned,
+        )
+        for schedule in (assessment or {}).get("statements") or []:
+            surface_effects.append({
+                "text": schedule["text"], "runways": schedule["runways"],
+                "referenceAt": schedule["referenceAt"], "referenceInterval": schedule["referenceInterval"],
+                "stateAtReference": schedule["stateAtReference"],
+                "notam_id": notice_id, "markClass": "closure", "scope": "whole_entity",
+            })
+            groups[("runway", schedule["line"], "scheduled")] = {
+                "family": "runway", "consequence": schedule["line"],
                 "state": "scheduled", "timing": "dated runway schedule",
                 "notam_ids": [notice_id], "source_pages": [notice.get("source_page")],
             }
-            has_schedule = True
-        if has_schedule:
+        if (assessment or {}).get("statements"):
             # Other unresolved clauses retain their single closing receipt.
             if assessed.get("applicability") == "review":
                 unresolved.append(notice_id)

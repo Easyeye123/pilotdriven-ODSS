@@ -608,6 +608,131 @@ def deferred_items(flight: dict[str, Any]) -> list[dict[str, str]]:
     return rows
 
 
+# --------------------------------------------------------------------------
+# Independent source oracles (production audit, 19 Sep 2026).
+#
+# Every other expectation in this gate is minted from the analysis under test,
+# so a fact no parser extracted is absent from both sides of every comparison
+# and the gate agrees with itself. These two checks look at the source page and
+# at the published statements directly. They deliberately share no pattern or
+# helper with app.odss.parser or the renderers.
+# --------------------------------------------------------------------------
+
+def source_declaration_labels(page_one_text: str) -> list[str]:
+    """Page-1 declaration lines as the OFP prints them, read without the parser.
+
+    A declaration opens with Lido's sequence label - one capital letter twice -
+    at the remarks block's own margin, in ascending order, before the plan
+    block. A wrapped body line is indented or does not ascend.
+    """
+    labels: list[str] = []
+    margin: int | None = None
+    last = ""
+    for raw in str(page_one_text or "").splitlines():
+        text = raw.strip()
+        words = text.split()
+        # Lido's plan block opens "PLAN 8" / "PLAN 27/0/1"; a dispatcher remark
+        # such as "PLAN WITH PACKS OFF" is still part of the remarks.
+        plan_header = (
+            len(words) == 2 and words[0] == "PLAN"
+            and all(part.isdigit() for part in words[1].split("/"))
+        )
+        if plan_header or words[:2] == ["RTE", "NO"]:
+            break
+        parts = text.split(None, 1)
+        if len(parts) != 2:
+            continue
+        token = parts[0]
+        if len(token) != 2 or token[0] != token[1] or not ("A" <= token[0] <= "Z"):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        if token <= last or (margin is not None and indent != margin):
+            continue
+        margin, last = indent, token
+        labels.append(" ".join(text.split()))
+    return labels
+
+
+def check_source_declaration_coverage(
+    page_one_text: str,
+    flight: dict[str, Any],
+    download_text: str,
+) -> list[str]:
+    """Every declaration the OFP prints is held, and reaches the download."""
+    failures: list[str] = []
+    held: dict[str, dict[str, Any]] = {}
+    for item in flight.get("deferred_items") or []:
+        declaration = " ".join(str(item.get("source_declaration") or "").split())
+        for token in item.get("source_group_tokens") or [declaration[:2]]:
+            held[str(token)] = item
+    folded = " ".join(str(download_text or "").upper().split())
+    for declaration in source_declaration_labels(page_one_text):
+        item = held.get(declaration[:2])
+        if item is None:
+            failures.append(f"{declaration}: printed on OFP page 1 but not held as a declaration.")
+            continue
+        reference = " ".join(str(item.get("reference") or "").upper().split())
+        identity = reference if any(character.isdigit() for character in reference) else ""
+        if identity and identity not in folded:
+            failures.append(f"{declaration}: identity {identity} is printed nowhere in the download.")
+    return failures
+
+
+_UNRESOLVED_NOTICE = "COULD NOT BE RESOLVED"
+
+
+def check_notam_statement_consistency(
+    view: dict[str, Any],
+    download_pages: list[str],
+) -> list[str]:
+    """One notice, one story: no surface may call a notice unresolved while
+    another publishes an evaluated consequence for the same notice."""
+    evaluated: dict[str, str] = {}
+    for analysis in [*(view.get("airport_pdf_analysis") or []), *(view.get("alternate_pdf_analysis") or [])]:
+        for line in analysis.get("lines") or []:
+            if line.get("state") != "scheduled":
+                continue
+            for notam_id in line.get("notam_ids") or []:
+                evaluated.setdefault(str(notam_id), str(line.get("consequence") or ""))
+    if not evaluated:
+        return []
+    conflicts: list[str] = []
+    surfaces: list[tuple[str, str, str]] = []
+    for panel in view.get("airport_operational_panels") or []:
+        for notice in panel.get("selected_notams") or []:
+            for field in ("summary", "compact_text"):
+                surfaces.append((str(notice.get("notam_id")), f"dashboard {field}", str(notice.get(field) or "")))
+        for line in panel.get("card_summary_lines") or []:
+            if line.get("kind") == "notam":
+                surfaces.append((str(line.get("notam_id") or line.get("label")), "dashboard card line", str(line.get("text") or "")))
+    for finding in view.get("decision_findings") or []:
+        title = str(finding.get("title") or "")
+        for notam_id in evaluated:
+            if title.endswith(f"NOTAM {notam_id}"):
+                surfaces.append((notam_id, "decision finding", str(finding.get("summary") or "")))
+    for notam_id, surface, text in surfaces:
+        if notam_id in evaluated and _UNRESOLVED_NOTICE in text.upper():
+            conflicts.append(
+                f"{notam_id}: {surface} calls the notice unresolved while the Airports analysis evaluates it."
+            )
+    for number, page in enumerate(download_pages or [], start=1):
+        folded = " ".join(str(page or "").split())
+        upper = folded.upper()
+        for notam_id in evaluated:
+            start = 0
+            while (found := upper.find(notam_id.upper(), start)) >= 0:
+                start = found + len(notam_id)
+                # The statement bound to this id runs to the next sentence end.
+                segment = upper[start:start + 220].split(". ")[0]
+                if _UNRESOLVED_NOTICE in segment:
+                    conflicts.append(
+                        f"{notam_id}: download page {number} calls the notice unresolved "
+                        "while the Airports analysis evaluates it."
+                    )
+                    break
+    return list(dict.fromkeys(conflicts))
+
+
 def governed_link_parameters(uri: str) -> dict[str, list[str]] | None:
     parts = urlsplit(uri)
     fragment_path, separator, fragment_query = parts.fragment.partition("?")
@@ -1219,6 +1344,24 @@ def run_case(
     if missing_text:
         raise AssertionError(
             f"{case['case_id']} output is missing required text: {missing_text}."
+        )
+    # Independent source oracles: what the OFP prints against what was held and
+    # published, and one story per notice across every surface.
+    with fitz.open(preflight["source"]) as document:
+        source_page_one = document[0].get_text("text")
+    with fitz.open(operational) as document:
+        operational_pages = [page.get_text() for page in document]
+    declaration_failures = check_source_declaration_coverage(
+        source_page_one, flight, "\n".join(operational_pages),
+    )
+    if declaration_failures:
+        raise AssertionError(
+            f"{case['case_id']} page-1 declaration coverage failed: {declaration_failures}."
+        )
+    notice_conflicts = check_notam_statement_consistency(publication_view, operational_pages)
+    if notice_conflicts:
+        raise AssertionError(
+            f"{case['case_id']} publishes one notice two ways: {notice_conflicts}."
         )
     deferred = inspect_deferred_contract(combined, flight)
     if not deferred["valid"]:
