@@ -14002,17 +14002,32 @@ def render_combined_briefing(
     )
 
 
+# Everything publication reads that comes from a re-read of OFP page 1 alone.
+# They are one set: the parser moves text BETWEEN them (SQ24 15 Aug's "ZFW
+# RESTRICTED TO 161,229KGS" left the door-seal declaration for page1_remarks),
+# so migrating one without the others loses whatever moved. A new page-1 field
+# that publication reads is added here, and only here.
+SOURCE_DERIVED_PUBLICATION_FIELDS = ("deferred_items", "page1_remarks")
+
+# What makes a re-read unmistakably the same flight as the held analysis.
+_HELD_FLIGHT_IDENTITY = ("flight_number", "flight_date", "departure", "destination", "registration")
+
+
 def source_verified_flight(flight: dict[str, Any], source_pdf_path: Any) -> dict[str, Any]:
-    """Re-read the page-1 declarations from the OFP the service still holds.
+    """Re-read the page-1 source fields from the OFP the service still holds.
 
     Download PDF renders a stored analysis without re-analysing it. A pack
-    saved before 19 Sep 2026 holds a parse that stopped at label EE and knew
-    five kinds, so SQ882's FF CDL 57-16 and GG EN sit inside EE's remark and
-    the slat seal "requests" dry ice. The OFP is the evidence that parse
-    misread; where it is still held, the declarations are read from it again,
-    on a copy, so a saved pack and a fresh one publish the same declarations.
-    The held analysis is never rewritten, and with no OFP held it is published
-    as it stands.
+    saved before 19 Sep 2026 holds a parse that stopped at label EE, knew five
+    kinds and ran every declaration on to the plan block. The OFP is the
+    evidence that parse misread; where it is still held, the page-1 fields are
+    read from it again - ALL of them, from one parse (second review, 19 Sep:
+    copying the declarations alone dropped SQ24's ZFW restriction, which the
+    new parse had moved out of the declaration and into the remarks).
+
+    Only those fields move. The flight's identity, its times, its ATOT and
+    everything analysed from them stay exactly as held; a file that does not
+    parse as this same flight is not read into it; the held analysis is never
+    rewritten; and with no OFP held it is published as it stands.
     """
     from pathlib import Path
 
@@ -14025,12 +14040,22 @@ def source_verified_flight(flight: dict[str, Any], source_pdf_path: Any) -> dict
         if not source.is_file():
             return flight
         # The same read a fresh analysis makes, so the two cannot differ.
-        declarations = parse_lido(extract_pages(source), source.name)["deferred_items"]
+        reread = parse_lido(extract_pages(source), source.name)
     except (OSError, ValueError, KeyError):
         return flight
-    if declarations == flight.get("deferred_items"):
+
+    def identity(value: dict[str, Any]) -> tuple[str, ...]:
+        number = str(value.get("flight_number") or "").upper().replace("SIA", "SQ", 1)
+        return (number, *(str(value.get(key) or "").upper() for key in _HELD_FLIGHT_IDENTITY[1:]))
+
+    if identity(reread) != identity(flight):
         return flight
-    return {**flight, "deferred_items": declarations}
+    migrated = {
+        field: reread[field]
+        for field in SOURCE_DERIVED_PUBLICATION_FIELDS
+        if field in reread and reread[field] != flight.get(field)
+    }
+    return {**flight, **migrated} if migrated else flight
 
 
 def _render_reference_briefing(
