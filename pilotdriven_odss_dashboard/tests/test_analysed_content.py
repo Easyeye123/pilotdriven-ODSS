@@ -517,7 +517,11 @@ def test_a_well_formed_subject_is_still_published():
 
 def test_an_analysed_deferred_item_still_names_the_defect_it_analysed():
     result = ' '.join(deferred_consequences(_deferred('GALLEY CHILLER NOT COLD. PLSE UPLIFT DRY ICE')))
-    assert 'Galley chiller.' in result
+    # 19 Sep 2026 review: this asserted 'Galley chiller.' - the description
+    # cell alone, with the condition the source wrapped under it ("NOT COLD")
+    # dropped. Naming the defect means naming what is wrong with it.
+    assert 'Galley chiller not cold.' in result
+    assert 'uplift dry ice' not in result.lower().split('catering')[0]
     assert 'Catering must arrange' in result
     assert 'GALLEY CHILLER' not in result
 

@@ -653,12 +653,109 @@ def source_declaration_labels(page_one_text: str) -> list[str]:
     return labels
 
 
+def _plan_block_opens(text: str) -> bool:
+    words = text.split()
+    return (
+        len(words) == 2 and words[0] == "PLAN"
+        and all(part.isdigit() for part in words[1].split("/"))
+    ) or words[:2] == ["RTE", "NO"]
+
+
+def source_declaration_bodies(page_one_text: str) -> list[dict[str, Any]]:
+    """Each declaration's own lines, and the remark lines no declaration owns.
+
+    Read straight off the page. A body is the lines under a label; it ends at
+    the next label, at the plan block, or at a paragraph break followed by a
+    line back at the block's margin (the dispatcher moving on). Lines after
+    that belong to no declaration.
+    """
+    bodies: list[dict[str, Any]] = []
+    margin: int | None = None
+    last = ""
+    gap = False
+    current: dict[str, Any] | None = None
+    unowned: list[str] = []
+    for raw in str(page_one_text or "").splitlines():
+        text = " ".join(raw.split())
+        if not text:
+            gap = True
+            continue
+        if _plan_block_opens(text):
+            break
+        indent = len(raw) - len(raw.lstrip())
+        parts = text.split(None, 1)
+        token = parts[0]
+        is_label = (
+            len(parts) == 2 and len(token) == 2 and token[0] == token[1]
+            and "A" <= token[0] <= "Z" and token > last and margin in (None, indent)
+        )
+        if is_label:
+            margin, last, gap = indent, token, False
+            current = {"declaration": text, "lines": []}
+            bodies.append(current)
+            continue
+        if current is not None and gap and indent <= (margin or 0):
+            current = None
+        if current is not None:
+            current["lines"].append(text)
+            gap = False
+        elif bodies:
+            unowned.append(text)
+    return [*bodies, {"declaration": None, "lines": unowned}]
+
+
+_REQUEST_LINE_OPENERS = ("TO ", "PLS ", "PLSE ", "PLEASE ", "UPLIFT ", "DO NOT ")
+_FORM_FIELD_LINES = ("X PERFORMANCE", "PERFORMANCE [P]", "X CLASS", "CLASS ")
+
+
+def _condition_identifiers(lines: list[str]) -> list[str]:
+    """What pins a condition down: tokens that carry a digit (part numbers,
+    breaker ids, positions, quantities, years) in the statement lines - the
+    lines before the engineer's first request or form field. A number cited
+    after CDL/MEL/CDDL on a FROM/WRT line points at other paperwork, and a
+    bare number on its own line is the form's own serial."""
+    tokens: list[str] = []
+    for line in lines:
+        upper = line.upper()
+        if upper.startswith(_REQUEST_LINE_OPENERS):
+            break
+        if upper.startswith(_FORM_FIELD_LINES) or upper.replace(" ", "").isdigit() or upper.startswith("ECDL"):
+            continue
+        words = upper.replace(",", " ").replace(";", " ").replace("(", " ").replace(")", " ").split()
+        cites_paperwork = upper.startswith(("FROM ", "WRT ")) or " WRT " in f" {upper} "
+        for index, word in enumerate(words):
+            if word in {"X"} or " UPLIFT" in f" {' '.join(words[index:index + 2])}":
+                # "... NOISY PLSE UPLIFT", "923 UPLIFT TRASH BAG": the rest of
+                # the line is the request.
+                if "UPLIFT" in words[index:index + 2]:
+                    break
+            core = word.strip(".:#&/-'\"")
+            if len(core) < 3 or not any(character.isdigit() for character in core):
+                continue
+            if cites_paperwork and index and words[index - 1] in {"CDL", "MEL", "CDDL"}:
+                continue
+            if core not in tokens:
+                tokens.append(core)
+    return tokens
+
+
+def _alnum(value: str) -> str:
+    return " ".join("".join(character if character.isalnum() else " " for character in str(value or "").upper()).split())
+
+
 def check_source_declaration_coverage(
     page_one_text: str,
     flight: dict[str, Any],
     download_text: str,
+    expectations: list[dict[str, Any]] | None = None,
 ) -> list[str]:
-    """Every declaration the OFP prints is held, and reaches the download."""
+    """Every declaration the OFP prints is held, keeps only its own words, and
+    reaches the download with what identifies its condition.
+
+    19 Sep 2026 review: the first version of this check passed a download that
+    named CDL 57-16 and EN A35MEN-21-28871 but had lost "572HB", "573BB AND
+    573DB", "1003HW" and "10 JUNE 2027". Identity is not coverage.
+    """
     failures: list[str] = []
     held: dict[str, dict[str, Any]] = {}
     for item in flight.get("deferred_items") or []:
@@ -666,7 +763,13 @@ def check_source_declaration_coverage(
         for token in item.get("source_group_tokens") or [declaration[:2]]:
             held[str(token)] = item
     folded = " ".join(str(download_text or "").upper().split())
-    for declaration in source_declaration_labels(page_one_text):
+    download = f" {_alnum(download_text)} "
+    bodies = source_declaration_bodies(page_one_text)
+    unowned = [line for body in bodies if body["declaration"] is None for line in body["lines"]]
+    for body in bodies:
+        declaration = body["declaration"]
+        if declaration is None:
+            continue
         item = held.get(declaration[:2])
         if item is None:
             failures.append(f"{declaration}: printed on OFP page 1 but not held as a declaration.")
@@ -675,6 +778,21 @@ def check_source_declaration_coverage(
         identity = reference if any(character.isdigit() for character in reference) else ""
         if identity and identity not in folded:
             failures.append(f"{declaration}: identity {identity} is printed nowhere in the download.")
+        for token in _condition_identifiers(body["lines"]):
+            if f" {_alnum(token)} " not in download:
+                failures.append(f"{declaration}: condition identifier {token} is not published in the download.")
+        held_words = _alnum(" ".join(str(item.get(field) or "") for field in ("description", "company_remark")))
+        for line in unowned:
+            if len(line.split()) >= 3 and _alnum(line) in held_words:
+                failures.append(
+                    f"{declaration}: holds '{line}', which the OFP prints outside every declaration."
+                )
+    for row in expectations or []:
+        for phrase in row.get("download_words") or []:
+            if f" {_alnum(phrase)} " not in download:
+                failures.append(
+                    f"{row['declaration']}: reviewed condition '{phrase}' is not published in the download."
+                )
     return failures
 
 
@@ -1351,9 +1469,17 @@ def run_case(
         source_page_one = document[0].get_text("text")
     with fitz.open(operational) as document:
         operational_pages = [page.get_text() for page in document]
+    reviewed = json.loads(
+        (ROOT / "tests" / "fixtures" / "page1_source_declarations.json").read_text(encoding="utf-8")
+    )
     declaration_failures = check_source_declaration_coverage(
         source_page_one, flight, "\n".join(operational_pages),
+        # What a person read under each declaration of this OFP, where recorded.
+        expectations=(reviewed.get("flights") or {}).get(str(case["filename"])),
     )
+    for line in (reviewed.get("general_remarks") or {}).get(str(case["filename"])) or []:
+        if not any(line == row.get("text") for row in flight.get("page1_remarks") or []):
+            declaration_failures.append(f"general remark '{line}' is not held in the page-1 remarks domain.")
     if declaration_failures:
         raise AssertionError(
             f"{case['case_id']} page-1 declaration coverage failed: {declaration_failures}."

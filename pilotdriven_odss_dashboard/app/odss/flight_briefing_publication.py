@@ -821,3 +821,59 @@ __all__ = [
     "required_source_crop_categories",
     "validate_flight_briefing_publication",
 ]
+
+
+
+def current_rules_briefing(analysis: dict, source_pdf_path=None) -> dict:
+    """The stored analysis' briefing, under the publication rules in service.
+
+    Download PDF re-creates a saved pack's briefing from the held analysis with
+    the current build; a reopened pack's dashboard must read the same rules or
+    the two surfaces of one pack can disagree (independent review, 19 Sep
+    2026). An analysis whose stored view carries the current ``publication_rules``
+    is served as stored. An older one is rebuilt exactly as the download does
+    it: the held flight, findings, warnings, timing and weather charts, the
+    page-1 declarations re-read from the held OFP, findings reconciled through
+    the shared assessments. Nothing is re-analysed, no clock or source moves,
+    and the held analysis is never rewritten. A rebuild that cannot complete
+    serves the stored view and says so.
+    """
+    from .briefing import build_briefing_view
+    from .combined_brief import COMBINED_BRIEFING_SCHEMA_VERSION, source_verified_flight
+    from .runway_closure_schedule import reconcile_runway_closure_findings
+
+    view = analysis.get("view") or {}
+    stored = view.get("briefing")
+    flight = analysis.get("flight") or {}
+    findings = analysis.get("findings") or []
+    served = {
+        "briefing": stored,
+        "flight": flight,
+        "findings": findings,
+        "timing": view.get("timing"),
+        "publication_rules": (stored or {}).get("publication_rules"),
+        "rebuilt_from_held_analysis": False,
+    }
+    if not isinstance(stored, dict) or stored.get("publication_rules") == COMBINED_BRIEFING_SCHEMA_VERSION:
+        return served
+    try:
+        verified = source_verified_flight(flight, source_pdf_path)
+        rebuilt = build_briefing_view(
+            verified,
+            findings,
+            list(view.get("warnings") or []),
+            view.get("timing"),
+            analysis.get("weather_charts"),
+            include_dashboard_only_panels=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - an old pack must still open
+        return {**served, "rebuild_error": f"{type(exc).__name__}: {exc}"}
+    rebuilt["publication_rules"] = COMBINED_BRIEFING_SCHEMA_VERSION
+    return {
+        **served,
+        "briefing": rebuilt,
+        "flight": verified,
+        "findings": reconcile_runway_closure_findings(findings, verified),
+        "publication_rules": COMBINED_BRIEFING_SCHEMA_VERSION,
+        "rebuilt_from_held_analysis": True,
+    }

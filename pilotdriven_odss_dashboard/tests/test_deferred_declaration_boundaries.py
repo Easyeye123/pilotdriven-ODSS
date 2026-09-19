@@ -521,3 +521,81 @@ def test_a_dispatcher_remark_that_begins_with_the_word_plan_is_not_the_plan_bloc
     ]
     assert items[0]["company_remark"] == "HINGED DOOR RUBBER SEAL TORN 6 INCHES L/H MAIN L/G"
     assert items[1]["description"] == "PLAN TO RECHECK AT NEXT STATION"
+
+
+# --------------------------------------------------------------------------
+# Independent review, 19 Sep 2026: the first version of this oracle only
+# compared labels and neighbour contamination. It now also holds each
+# declaration to what a person read under it: where it ENDS, which remarks
+# belong to no declaration, and the conditions that must reach the download.
+# --------------------------------------------------------------------------
+
+def _alnum(value: str) -> str:
+    return " ".join(re.sub(r"[^A-Z0-9]+", " ", str(value or "").upper()).split())
+
+
+@pytest.mark.parametrize("filename", sorted(SOURCE_DECLARATIONS["flights"]))
+def test_real_ofp_declarations_end_where_the_page_ends_them(filename: str) -> None:
+    from app.odss.parser import parse_lido
+
+    source = CORPUS / filename
+    if not source.is_file():
+        pytest.skip(f"private source {filename} not available")
+    flight = parse_lido(extract_pages(source), filename)
+    by_label = {
+        label: item
+        for item in flight["deferred_items"]
+        for label in (item.get("source_group_tokens") or [str(item["source_declaration"])[:2]])
+    }
+    for row in SOURCE_DECLARATIONS["flights"][filename]:
+        item = by_label[row["declaration"][:2]]
+        words = _alnum(_words(item))
+        for phrase in row["own_words"]:
+            assert _alnum(phrase) in words, (row["declaration"], "lost", phrase)
+        if row.get("ends_with"):
+            assert _alnum(item.get("company_remark") or item.get("description")).endswith(_alnum(row["ends_with"])), (
+                row["declaration"], item.get("company_remark"),
+            )
+    held = _alnum(json.dumps(flight["deferred_items"]))
+    remarks = [entry["text"] for entry in flight["page1_remarks"]]
+    for line in SOURCE_DECLARATIONS.get("general_remarks", {}).get(filename, []):
+        assert line in remarks, (filename, "general remark not held", line)
+        assert _alnum(line) not in held, (filename, "general remark held by a declaration", line)
+
+
+@pytest.mark.parametrize("filename", sorted(SOURCE_DECLARATIONS["flights"]))
+def test_real_ofp_download_publishes_each_declarations_conditions_under_it(filename: str, tmp_path) -> None:
+    import fitz
+
+    from app.odss.analysed_briefing_content import deferred_source_subject
+    from app.odss.briefing import build_briefing_view
+    from app.odss.combined_brief import render_combined_briefing
+    from app.odss.parser import parse_lido
+
+    source = CORPUS / filename
+    if not source.is_file():
+        pytest.skip(f"private source {filename} not available")
+    expected = SOURCE_DECLARATIONS["flights"][filename]
+    flight = parse_lido(extract_pages(source), filename)
+    flight["briefing"] = build_briefing_view(flight, [], [])
+    path = tmp_path / "download.pdf"
+    render_combined_briefing(flight, [], [], path, source_pdf_path=source)
+    with fitz.open(path) as document:
+        technical = _alnum(document[2].get_text())
+    subjects: dict[str, str] = {}
+    for gate in flight["briefing"]["deferred_dispatch_gates"]:
+        for segment in gate["source_segments"]:
+            item = flight["deferred_items"][segment["source_item_index"]]
+            for label in item.get("source_group_tokens") or [str(item["source_declaration"])[:2]]:
+                subjects[label] = _alnum(f"{gate['title']} {deferred_source_subject(segment, gate['title'])}")
+    for row in expected:
+        label = row["declaration"][:2]
+        for phrase in row["download_words"]:
+            assert _alnum(phrase) in technical, (row["declaration"], "not in the download", phrase)
+            assert _alnum(phrase) in subjects[label], (row["declaration"], "not under its own declaration", phrase)
+            for other in expected:
+                if other is row or phrase in other["download_words"]:
+                    continue
+                assert _alnum(phrase) not in subjects[other["declaration"][:2]], (
+                    phrase, "also published under", other["declaration"],
+                )

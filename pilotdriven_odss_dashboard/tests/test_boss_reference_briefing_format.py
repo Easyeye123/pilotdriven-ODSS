@@ -391,6 +391,32 @@ def test_the_app_refuses_a_stored_pdf_this_renderer_no_longer_publishes():
     assert declared.group(1) == COMBINED_BRIEFING_PUBLICATION_FORMAT
 
 
+def test_the_app_reads_a_saved_pack_under_the_same_rules_this_renderer_stamps():
+    """A reopened pack decides whether its stored view is still current by
+    comparing the rules stamp this service wrote (``briefing.publication_rules``)
+    with the app's own constant. A bump here the app does not follow would make
+    every pack look superseded - or, the other way round, let an older view
+    pass as current beside a download re-created under newer rules."""
+    module = _app_module("web/src/lib/briefing-publication-format.mjs")
+    if module is None:
+        pytest.skip("the PilotDriven app worktree is not available")
+    declared = re.search(
+        r"export const CURRENT_BRIEFING_PUBLICATION_RULES = '([^']+)'",
+        module.read_text(encoding="utf-8"),
+    )
+    assert declared, "the app must declare the publication rules it reads saved packs under"
+    assert declared.group(1) == COMBINED_BRIEFING_SCHEMA_VERSION
+
+
+DEFECT_ONLY_CONTINUATIONS = {
+    ("SQ605", 2, "AFT GALLEY LH WASTE CONTAINER DOOR IN GALLEY LATCH MISSING"),
+    # DD CDL 27-25: the wrapped half of "LH WING, AILERON TRAILING EDGE PANEL".
+    ("SQ882-10Sep", 3, "573BB AND 573DB SEALS FOUND TORN LH WING"),
+    # AA CDL 57-23 - HINGED DOOR SEAL: the body under the manual item's title.
+    ("SQ38", 0, "HINGED DOOR RUBBER SEAL TORN 6 INCHES L H MAIN L G"),
+}
+
+
 def test_no_page_copies_a_raw_deferred_source_remark(briefing):
     """'by copying in blocks and capital is very hard to read' - 9 Sep 21:28.
 
@@ -405,17 +431,23 @@ def test_no_page_copies_a_raw_deferred_source_remark(briefing):
         for index, folded in enumerate(briefing["folded"]):
             if remark not in folded:
                 continue
-            # Independent source oracle for the one corpus field containing a
-            # complete defect rather than a maintenance instruction. The
-            # malformed description itself must never be published instead.
-            assert (briefing["key"], item_index, remark) == (
-                "SQ605", 2, "AFT GALLEY LH WASTE CONTAINER DOOR IN GALLEY LATCH MISSING"
-            ), f"page {index + 1} copied a source instruction: {remark}"
+            # Independent source oracle: the corpus cells that hold a complete
+            # defect statement rather than a maintenance instruction, each read
+            # against its OFP by a person. Until the 19 Sep 2026 review only
+            # the first was admitted, and the download paid for it by losing
+            # conditions ("573BB and 573DB seals found torn" never reached the
+            # page). A cell not listed here is still refused, and a listed one
+            # is still held to the same terms: the analysis pages only, once,
+            # and never in the source's block capitals.
+            assert (briefing["key"], item_index, remark) in DEFECT_ONLY_CONTINUATIONS, (
+                f"page {index + 1} copied a source instruction: {remark}"
+            )
             assert index in (1, 2)
             assert folded.count(remark) == 1
             assert str(item["company_remark"]) not in " ".join(briefing["pages"][index].split())
-            assert "WASTE CONTAINER DOOR RETENTION NEEDS A PERMITTED CONFIGURATION DECISION" in folded
-            assert "DOES NOT ESTABLISH AN ACCEPTABLE SECURING METHOD OR PERMISSION TO USE IT" in folded
+            if briefing["key"] == "SQ605":
+                assert "WASTE CONTAINER DOOR RETENTION NEEDS A PERMITTED CONFIGURATION DECISION" in folded
+                assert "DOES NOT ESTABLISH AN ACCEPTABLE SECURING METHOD OR PERMISSION TO USE IT" in folded
 
 
 def test_the_gate_rejects_a_copied_source_remark_on_the_decision_page(briefing, tmp_path):

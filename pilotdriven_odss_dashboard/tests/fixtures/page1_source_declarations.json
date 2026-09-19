@@ -1,5 +1,5 @@
 {
-  "provenance": "Read by a person from page 1 of each private-corpus OFP on 19 Sep 2026 and cross-checked against Poppler pdftotext -layout (a second extractor). Never regenerate this file from parser output: it is the independent oracle the parser is checked against. own_words are phrases printed only under that declaration.",
+  "provenance": "Read by a person from page 1 of each private-corpus OFP on 19 Sep 2026 and cross-checked against Poppler pdftotext -layout (a second extractor). Never regenerate this file from parser output: it is the independent oracle the parser is checked against. own_words are phrases printed only under that declaration. download_words (added 19 Sep 2026 after independent review) are the conditions, identifiers and expiries a person read under each declaration that must reach the published download under that declaration; they are the reviewer's standard, not the renderer's output. general_remarks lists page-1 dispatcher remarks that belong to NO declaration.",
   "flights": {
     "lido-briefing_SQ_882_10Sep2026_SIN_HKG.pdf": [
       {
@@ -8,12 +8,18 @@
           "25-20-50A",
           "AIR CHILLER NOT COLD",
           "PLS UPLIFT DRY ICE"
+        ],
+        "download_words": [
+          "AIR CHILLER NOT COLD"
         ]
       },
       {
         "declaration": "BB MEL 31-19-03A",
         "own_words": [
           "31-19-03A",
+          "VIDEO PB ON ECP NOT RESPONSIVE"
+        ],
+        "download_words": [
           "VIDEO PB ON ECP NOT RESPONSIVE"
         ]
       },
@@ -23,12 +29,19 @@
           "27-20",
           "O/B CUSHION SEAL FOUND WORN",
           "X PERFORMANCE [P]"
+        ],
+        "download_words": [
+          "O/B CUSHION SEAL FOUND WORN"
         ]
       },
       {
         "declaration": "DD CDL 27-25",
         "own_words": [
           "27-25",
+          "573BB AND 573DB SEALS FOUND TORN"
+        ],
+        "download_words": [
+          "AILERON TRAILING EDGE PANEL",
           "573BB AND 573DB SEALS FOUND TORN"
         ]
       },
@@ -38,12 +51,19 @@
           "27-06",
           "SLAT #6 LOWER SEAL FOUND",
           "DETERIORATED (QTY: 04 OFF)"
+        ],
+        "download_words": [
+          "SLAT #6 LOWER SEAL FOUND DETERIORATED (QTY: 04 OFF)"
         ]
       },
       {
         "declaration": "FF CDL 57-16",
         "own_words": [
           "57-16",
+          "TRAILING EDGE ACCESS PANEL",
+          "572HB SEAL FOUND TORN"
+        ],
+        "download_words": [
           "TRAILING EDGE ACCESS PANEL",
           "572HB SEAL FOUND TORN"
         ]
@@ -55,6 +75,10 @@
           "VCRU #3 DEACTIVATED",
           "RCCB 1003HW TRIPPED UNTIL 10 JUNE 2027",
           "UPLIFT DRY ICE FOR ALL CHILLERS"
+        ],
+        "download_words": [
+          "VCRU #3 DEACTIVATED",
+          "RCCB 1003HW TRIPPED UNTIL 10 JUNE 2027"
         ]
       }
     ],
@@ -64,6 +88,9 @@
         "own_words": [
           "CAN'T FEED WASTE. PUSH COMPACT TO RESET.",
           "923"
+        ],
+        "download_words": [
+          "CAN'T FEED WASTE"
         ]
       },
       {
@@ -71,6 +98,9 @@
         "own_words": [
           "TRASH COMPACTOR, NO POWER",
           "212"
+        ],
+        "download_words": [
+          "NO POWER"
         ]
       },
       {
@@ -78,12 +108,18 @@
         "own_words": [
           "57-21",
           "FTE PANEL 3 SEAL TORN"
+        ],
+        "download_words": [
+          "FTE PANEL 3 SEAL TORN"
         ]
       },
       {
         "declaration": "DD CDL 57-23",
         "own_words": [
           "57-23",
+          "HINGED DOOR SEAL (QTY 01) TORN"
+        ],
+        "download_words": [
           "HINGED DOOR SEAL (QTY 01) TORN"
         ]
       },
@@ -94,6 +130,11 @@
           "BOTH VCRU (101HW & 103HW) REMOVED",
           "SCS SYS NOT AVAILABLE",
           "TO UPLIFT DRY ICE FOR ALL SECTOR"
+        ],
+        "download_words": [
+          "BOTH VCRU (101HW & 103HW) REMOVED AS PER MAF 23224",
+          "3509HW TRIPPED & TAGGED",
+          "SCS SYS NOT AVAILABLE"
         ]
       },
       {
@@ -102,6 +143,9 @@
           "53-66",
           "RH AFT NOSE LANDING GEAR",
           "DOOR SEAL PARTIALLY MISSING"
+        ],
+        "download_words": [
+          "RH AFT NOSE LANDING GEAR DOOR SEAL PARTIALLY MISSING"
         ]
       }
     ],
@@ -111,12 +155,18 @@
         "own_words": [
           "WEIGHT AND BALANCE MANUAL CHAPTER 8",
           "AFT CGO COMPT SINGLE LATCH U/S BETWEEN 42P & 42L"
+        ],
+        "download_words": [
+          "AFT CGO COMPT SINGLE LATCH U/S BETWEEN 42P & 42L"
         ]
       },
       {
         "declaration": "BB MEL 25-20-50A LAV L53 TOILET BOWL NIL WATER",
         "own_words": [
           "25-20-50A",
+          "LAV L53 TOILET BOWL NIL WATER"
+        ],
+        "download_words": [
           "LAV L53 TOILET BOWL NIL WATER"
         ]
       },
@@ -126,12 +176,18 @@
           "57-23",
           "RH HINGED DOOR SEAL MISSING 30CM OF MATERIAL",
           "PERFORMANCE [P]"
+        ],
+        "download_words": [
+          "RH HINGED DOOR SEAL MISSING 30CM OF MATERIAL"
         ]
       },
       {
         "declaration": "DD MEL 30-81-01A ICE DETECTION SYSTEM",
         "own_words": [
           "30-81-01A",
+          "ICE DETECTION SYSTEM"
+        ],
+        "download_words": [
           "ICE DETECTION SYSTEM"
         ]
       },
@@ -140,6 +196,9 @@
         "own_words": [
           "A35MEN-21-27688 R1",
           "TO UPLIFT DRY ICE FOR ALL CHILLERS"
+        ],
+        "download_words": [
+          "A35MEN-21-27688"
         ]
       }
     ],
@@ -149,6 +208,9 @@
         "own_words": [
           "25-21-50A",
           "LAVATORY LM46 NIL FLUSHING"
+        ],
+        "download_words": [
+          "LAVATORY LM46 NIL FLUSHING"
         ]
       },
       {
@@ -157,6 +219,9 @@
           "A380EN-38-29161",
           "SUSPECTED DAMAGED U2R DRAIN TUBES",
           "TO REAPPLY HST IF NECESSARY AND CLEAN UP ANY WATER"
+        ],
+        "download_words": [
+          "WATER LEAKAGE INTO MAIN CABIN AND SUSPECTED DAMAGED U2R DRAIN TUBES"
         ]
       },
       {
@@ -165,6 +230,9 @@
           "27-27",
           "LH FLAP TRACK #5 FAIRING LINK BRACKET SEAL",
           "FOUND DAMAGED"
+        ],
+        "download_words": [
+          "LH FLAP TRACK #5 FAIRING LINK BRACKET SEAL FOUND DAMAGED"
         ]
       }
     ],
@@ -174,6 +242,9 @@
         "own_words": [
           "21-26-08A",
           "DM VENT AVNCS FILTER CLOGGED"
+        ],
+        "download_words": [
+          "DM VENT AVNCS FILTER CLOGGED"
         ]
       },
       {
@@ -182,6 +253,9 @@
           "INFO IN",
           "APU REMAIN SERVICEABLE TO START ON GND",
           "START SUCCESSFUL"
+        ],
+        "download_words": [
+          "APU REMAIN SERVICEABLE TO START ON GND"
         ]
       }
     ],
@@ -191,6 +265,10 @@
         "own_words": [
           "SEAT IFE (YCL), AUDIO JACK, NO AUDIO",
           "41E, 57A X CLASS B"
+        ],
+        "download_words": [
+          "AUDIO JACK, NO AUDIO",
+          "41E, 57A"
         ]
       },
       {
@@ -198,6 +276,9 @@
         "own_words": [
           "TRASH COMPACTOR 212 NO POWER",
           "TO UPLIFT TRASH BAGS"
+        ],
+        "download_words": [
+          "212 NO POWER"
         ]
       },
       {
@@ -206,6 +287,9 @@
           "25-20-50A",
           "D4L GALLEY CHILLER NO.1 RED LIGHT BLINKING",
           "TO UPLIFT DRY ICE"
+        ],
+        "download_words": [
+          "D4L GALLEY CHILLER NO.1 RED LIGHT BLINKING"
         ]
       },
       {
@@ -214,6 +298,9 @@
           "SIA/00-017 R1",
           "ENG 2 FAN COWLS LATCH ACCESS PANEL AFT-MOST LATCH IS LOOSE",
           "TO APPLY WHENEVER NECESSARY"
+        ],
+        "download_words": [
+          "AFT-MOST LATCH IS LOOSE"
         ]
       }
     ],
@@ -223,6 +310,9 @@
         "own_words": [
           "23-12-03A",
           "DM COM VHF EMER SUPPLY REDUNDANCY"
+        ],
+        "download_words": [
+          "DM COM VHF EMER SUPPLY REDUNDANCY"
         ]
       },
       {
@@ -231,6 +321,9 @@
           "57-15",
           "LH INNER WING LEADING EDGE DND FIXED SEAL",
           "2.5CM TORN X PERFORMANCE [P]"
+        ],
+        "download_words": [
+          "LEADING EDGE DND FIXED SEAL WITH 2.5CM TORN"
         ]
       },
       {
@@ -239,6 +332,9 @@
           "25-20-50A",
           "ALL GALLEY CHILLERS WORKING INTERMITTENT DURING FLIGHT",
           "TO UPLIFT DRY ICE"
+        ],
+        "download_words": [
+          "ALL GALLEY CHILLERS WORKING INTERMITTENT DURING FLIGHT"
         ]
       }
     ],
@@ -248,12 +344,20 @@
         "own_words": [
           "JCL D1 GALLEY 213/214/215 CHILLING COMPARTMENT",
           "NOISY"
+        ],
+        "download_words": [
+          "213/214/215 CHILLING COMPARTMENT",
+          "NOISY"
         ]
       },
       {
         "declaration": "BB MEL 25-20-50A",
         "own_words": [
           "JCL D1 GALLEY 309/310/311/312/314/315 CHILLING",
+          "NOT WORKING"
+        ],
+        "download_words": [
+          "309/310/311/312/314/315 CHILLING COMPARTMENT",
           "NOT WORKING"
         ]
       }
@@ -263,6 +367,9 @@
         "declaration": "AA CDDL",
         "own_words": [
           "WHOLE ACRFT CHILLERS INOP X DRY ICE REQ"
+        ],
+        "download_words": [
+          "CHILLERS INOP"
         ]
       },
       {
@@ -271,6 +378,9 @@
           "50-20-01",
           "PDU WITH STATUS FWD 12L(B) AFT 3L(X) 5R(B) 14R(X)",
           "FWD AND AFT CARGO"
+        ],
+        "download_words": [
+          "PDU WITH STATUS FWD 12L(B) AFT 3L(X) 5R(B) 14R(X)"
         ]
       }
     ],
@@ -280,6 +390,9 @@
         "own_words": [
           "SEAT 21A TRAY TABLE UNABLE TO STOW",
           "ECDL007905"
+        ],
+        "download_words": [
+          "SEAT 21A TRAY TABLE UNABLE TO STOW"
         ]
       },
       {
@@ -287,6 +400,9 @@
         "own_words": [
           "SEAT 21A TRAY TABLE UNABLE TO STOW",
           "X CLASS B"
+        ],
+        "download_words": [
+          "SEAT 21A TRAY TABLE UNABLE TO STOW"
         ]
       }
     ],
@@ -296,6 +412,9 @@
         "own_words": [
           "TRASH COMPACTOR 212 INOP",
           "UPLIFT TRASH BAG"
+        ],
+        "download_words": [
+          "212 INOP"
         ]
       },
       {
@@ -303,6 +422,9 @@
         "own_words": [
           "JCL GALLEY 2 AIR CHILLER NOT WORKING",
           "TO UPLIFT DRY ICE"
+        ],
+        "download_words": [
+          "JCL GALLEY 2 AIR CHILLER NOT WORKING"
         ]
       },
       {
@@ -310,6 +432,9 @@
         "own_words": [
           "25-35-02B",
           "AFT GALLEY LH WASTE CONTAINER DOOR IN GALLEY LATCH MISSING"
+        ],
+        "download_words": [
+          "WASTE CONTAINER DOOR IN GALLEY LATCH MISSING"
         ]
       },
       {
@@ -317,6 +442,9 @@
         "own_words": [
           "FWD CARGO DOOR CTRL ACCESS PNL NOT FLUSH WHEN CLOSED",
           "TO INSPECT HST CONDITION AND REAPPLIED"
+        ],
+        "download_words": [
+          "FWD CARGO DOOR CTRL ACCESS PNL NOT FLUSH WHEN CLOSED"
         ]
       }
     ],
@@ -326,12 +454,18 @@
         "own_words": [
           "44-15-02A",
           "D4L COMMS PA HANDSET INOP"
+        ],
+        "download_words": [
+          "D4L COMMS PA HANDSET INOP"
         ]
       },
       {
         "declaration": "BB MEL 21-60-11A",
         "own_words": [
           "21-60-11A",
+          "AFT GALLEY HEATER FAULT FC2161F1FK"
+        ],
+        "download_words": [
           "AFT GALLEY HEATER FAULT FC2161F1FK"
         ]
       },
@@ -341,6 +475,9 @@
           "57-23",
           "LH MLG HINGED DOOR AFT SEAL WITH 30CM LENGTH MISSING",
           "X PERFORMANCE [P]"
+        ],
+        "download_words": [
+          "LH MLG HINGED DOOR AFT SEAL WITH 30CM LENGTH MISSING"
         ]
       },
       {
@@ -348,6 +485,10 @@
         "own_words": [
           "25-22-01A",
           "ATTENDANT CREW SEAT DOOR 3R I/B DIFFICULT",
+          "SAID ATTENDANT SEAT IS BLOCKED"
+        ],
+        "download_words": [
+          "DIFFICULT TO DEPLOY/ PULL DOWN",
           "SAID ATTENDANT SEAT IS BLOCKED"
         ]
       }
@@ -358,6 +499,9 @@
         "own_words": [
           "29-10-03A",
           "DM HYD G RSVR AIR BLEED"
+        ],
+        "download_words": [
+          "DM HYD G RSVR AIR BLEED"
         ]
       },
       {
@@ -366,6 +510,9 @@
           "PREAMBLE",
           "POTABLE WATER ICE PROTECTION SYTEM",
           "DRAINPORT SCV PNL"
+        ],
+        "download_words": [
+          "POTABLE WATER ICE PROTECTION SYTEM INOP DISPLAYED"
         ]
       }
     ],
@@ -374,6 +521,10 @@
         "declaration": "AA CDL 57-23 - HINGED DOOR SEAL",
         "own_words": [
           "57-23",
+          "HINGED DOOR RUBBER SEAL TORN 6 INCHES",
+          "L/H MAIN L/G"
+        ],
+        "download_words": [
           "HINGED DOOR RUBBER SEAL TORN 6 INCHES",
           "L/H MAIN L/G"
         ]
@@ -385,8 +536,23 @@
         "own_words": [
           "57-23",
           "FOUND PARTIALLY MISSING X MISSING DIM APPROX 5CM X"
-        ]
+        ],
+        "download_words": [
+          "FOUND PARTIALLY MISSING",
+          "MISSING DIM APPROX 5CM"
+        ],
+        "ends_with": "MISSING DIM APPROX 5CM X"
       }
+    ]
+  },
+  "general_remarks": {
+    "lido-briefing_SQ_24_15Aug2026_SIN_JFK.pdf": [
+      "ZFW RESTRICTED TO 161,229KGS DUE MTOW X",
+      "EDTO TOP-UP UNAVOIDABLE X",
+      "DUE HIGH FUEL REQMT, PSE CHECK WITH LC EARLY FOR THE TRIM FUEL X",
+      "TAKEOFF PERF CALC WITH LPC AS FOLLOWS:",
+      "RTOW(PERF) = 280,000KGS",
+      "EXCESS FUEL"
     ]
   }
 }

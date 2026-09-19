@@ -157,6 +157,72 @@ def _bound_defect_subject_is_published(page_text, page_index, item, item_index, 
     return bool(label and label + " " + remark + " " + effect in folded)
 
 
+_INSTRUCTION_VOCABULARY = re.compile(
+    r"\b(?:UPLIFT|APPLY|APPLIED|INSPECT|CHECK|PRIOR|BEFORE|PERMITTED|DISPATCH|SECTION|CHAPTER|MEL|CDL|REFER|WRT|MAINT|PERFORMANCE)\b",
+    re.I,
+)
+
+
+def _wrapped_defect_statement_is_published(page_text, page_index, item, item_index, view) -> bool:
+    """Recognise a wrapped description cell inside its own published statement.
+
+    The OFP wraps a defect's description into the cell beneath it ("LH WING,
+    AILERON TRAILING EDGE PANEL" / "573BB AND 573DB SEALS FOUND TORN"), so that
+    second cell is part of what is wrong, not an instruction block. It may
+    appear on the page only as the immediate continuation of its own
+    description, once, re-cased, and only when it carries no instruction
+    vocabulary at all. The binding is rebuilt here from the held item and its
+    own source segment; the renderer's text authorises nothing.
+    """
+    if page_index not in {ANALYSIS_PAGE, PERFORMANCE_PAGE} or not view:
+        return False
+    description = str(item.get("description") or "").strip()
+    raw = str(item.get("company_remark") or "").strip()
+    # More than one sentence is still a statement ("INFO NOTED. APU REMAIN
+    # SERVICEABLE TO START ON GND." - SQ482 14 Aug); what it may never be is an
+    # instruction block, a list, or long enough to be the source reprinted.
+    if not description or not raw or re.search(r"[\n\r;]", raw) or len(raw.split()) > 24:
+        return False
+    if _INSTRUCTION_VOCABULARY.search(raw):
+        return False
+    remark = normalized(raw)
+    folded = normalized(page_text)
+    # Present once, and never as the source's own block capitals.
+    if folded.count(remark) != 1 or " ".join(raw.split()) in " ".join(page_text.split()):
+        return False
+    segments = [segment for gate in view.get("deferred_dispatch_gates") or []
+                for segment in gate.get("source_segments") or []
+                if segment.get("source_item_index") == item_index
+                and normalized(segment.get("description")) == normalized(description)
+                and normalized(segment.get("restriction")) == remark]
+    if len(segments) != 1:
+        return False
+    opening = normalized(re.sub(r"^(?:MAINT(?:ENANCE)?\s+ENTRY\s*[.:]?\s*)+", "", description, flags=re.I))
+    if opening and f"{opening} {remark}" in folded:
+        return True
+    # The label line can carry the manual item's title after a dash ("BB CDL
+    # 38-05 - DRAINAGE PIPE"); the body beneath it is then the whole statement,
+    # bound to the declaration's own identity instead of to a description.
+    declaration = str(item.get("source_declaration") or "")
+    if not re.search(r"\s-\s*" + re.escape(description) + r"\s*$", declaration, re.I):
+        return False
+    if page_index == ANALYSIS_PAGE:
+        return f"{remark} DISPATCH CONFIRMATION" in folded
+    label = normalized(str(item.get("item_type") or "") + " " + str(item.get("reference") or ""))
+    if label and f"{label} {remark}" in folded:
+        return True
+    # Declarations that share a consequence are published in one row ("CDL
+    # 27-23; CDL 57-21: <statement>; <statement>. Reconcile ..."). The body is
+    # then bound through its own analysed row: the row must own this item,
+    # carry the body in its subject, and be on the page whole.
+    return any(
+        item_index in (row.get("source_item_indices") or [])
+        and remark in normalized(row.get("subject"))
+        and normalized(row.get("text")) in folded
+        for row in view.get("deferred_pdf_analysis") or []
+    )
+
+
 def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=None, alternate_analysis=None, closing_lines=None) -> dict[str, Any]:
     violations = []
     with fitz.open(path) as pdf:
@@ -241,7 +307,9 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
             if len(remark.split()) < 8:
                 continue
             for index, folded in enumerate(folded_pages):
-                if remark in folded and not _bound_defect_subject_is_published(pages[index], index, item, item_index, view):
+                if (remark in folded
+                        and not _bound_defect_subject_is_published(pages[index], index, item, item_index, view)
+                        and not _wrapped_defect_statement_is_published(pages[index], index, item, item_index, view)):
                     violations.append({"code": "COPIED_DEFERRED_REMARK", "message": f"Page {index + 1} repeats a deferred source remark instead of its consequence."})
         if len(pages) != MAX_BRIEFING_PAGES:
             violations.append({"code": "CONCISE_PAGE_CEILING", "message": f"Expected six analysed pages; found {len(pages)}. No source appendix is permitted."})

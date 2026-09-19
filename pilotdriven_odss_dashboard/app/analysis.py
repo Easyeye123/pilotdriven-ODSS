@@ -155,6 +155,11 @@ def run_odss_analysis(
         # 03 Sep); the PDF and every report keep the planning panels only.
         include_dashboard_only_panels=True,
     )
+    # Which publication rules produced this view. A reopened pack compares it
+    # with the rules in service, so its dashboard and its re-created download
+    # are never read under two different rule sets.
+    from .odss.combined_brief import COMBINED_BRIEFING_SCHEMA_VERSION
+    briefing_view["publication_rules"] = COMBINED_BRIEFING_SCHEMA_VERSION
     flight_briefing_plan = build_combined_report_plan(flight, findings)
 
     grouped_raw: dict[str, list[dict[str, Any]]] = defaultdict(list)

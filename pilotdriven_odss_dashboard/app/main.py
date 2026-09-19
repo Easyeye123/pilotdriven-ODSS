@@ -2041,6 +2041,24 @@ def get_service_briefing(request: Request, analysis_id: str):
     identity = request_service_identity(request)
     flight, analysis = _service_analysis(analysis_id, identity)
     view = analysis.get("view") or {}
+    # A saved pack's dashboard and its re-created download read the same
+    # publication rules. An analysis stored under older rules is rebuilt from
+    # the same held flight, findings, timing and OFP the download uses; nothing
+    # is re-analysed and the stored analysis is not rewritten.
+    from .odss.flight_briefing_publication import current_rules_briefing
+    try:
+        held_source = str(_stored_file(flight["source_path"], UPLOAD_DIR, "Source PDF not found"))
+    except HTTPException:
+        held_source = None
+    served = current_rules_briefing(analysis, held_source)
+    if served["rebuilt_from_held_analysis"]:
+        analysis = {
+            **analysis,
+            "flight": served["flight"],
+            "findings": served["findings"],
+            "view": {**view, "briefing": served["briefing"]},
+        }
+        view = analysis["view"]
     analysis_flight = analysis.get("flight") or {}
     notam_snapshot = _service_notam_snapshot(analysis)
     report_refresh = _report_refresh_summary(flight)
@@ -2052,6 +2070,8 @@ def get_service_briefing(request: Request, analysis_id: str):
         "schema_version": analysis.get("schema_version"),
         "flight": analysis_flight,
         "briefing": view.get("briefing"),
+        "publication_rules": served["publication_rules"],
+        "rebuilt_from_held_analysis": served["rebuilt_from_held_analysis"],
         "company_briefing_references": (
             analysis.get("company_briefing_references")
             if isinstance(analysis.get("company_briefing_references"), dict)

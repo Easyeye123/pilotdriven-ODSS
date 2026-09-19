@@ -60,7 +60,9 @@ def test_a_held_declaration_absent_from_the_download_fails_the_gate() -> None:
         _item("AA MEL 25-20-50A", "MEL", "25-20-50A"), _item("EE CDL 27-06", "CDL", "27-06"),
         _item("FF CDL 57-16", "CDL", "57-16"), _item("GG EN A35MEN-21-28871", "EN", "A35MEN-21-28871"),
     ]}
-    failures = check_source_declaration_coverage(PAGE_ONE, flight, "MEL 25-20-50A; CDL 27-06; EN A35MEN-21-28871")
+    failures = check_source_declaration_coverage(
+        PAGE_ONE, flight, "MEL 25-20-50A: 213/214 air chiller not cold; CDL 27-06; 572HB seal found torn; EN A35MEN-21-28871",
+    )
 
     assert failures == ["FF CDL 57-16: identity 57-16 is printed nowhere in the download."]
 
@@ -70,7 +72,7 @@ def test_complete_extraction_and_publication_passes() -> None:
         _item("AA MEL 25-20-50A", "MEL", "25-20-50A"), _item("EE CDL 27-06", "CDL", "27-06"),
         _item("FF CDL 57-16", "CDL", "57-16"), _item("GG EN A35MEN-21-28871", "EN", "A35MEN-21-28871"),
     ]}
-    text = "MEL 25-20-50A; CDL 27-06; CDL 27-25 / 57-16; EN A35MEN-21-28871"
+    text = "MEL 25-20-50A: 213/214 air chiller not cold; CDL 27-06; CDL 27-25 / 57-16: 572HB seal found torn; EN A35MEN-21-28871"
 
     assert check_source_declaration_coverage(PAGE_ONE, flight, text) == []
 
@@ -82,7 +84,7 @@ def test_an_opaque_group_holds_every_label_it_names() -> None:
         "reference": "ECDL007905", "source_group_tokens": ["AA", "BB"],
     }]}
 
-    assert check_source_declaration_coverage(page, flight, "DEFERRED ITEM ECDL007905") == []
+    assert check_source_declaration_coverage(page, flight, "DEFERRED ITEM ECDL007905: Seat 21A tray table unable to stow") == []
 
 
 # ----------------------------------------------------------- one notice, one story
@@ -136,3 +138,95 @@ def test_the_oracle_reads_past_a_remark_that_begins_with_the_word_plan() -> None
     )
 
     assert source_declaration_labels(page) == ["AA CDL 57-23 - HINGED DOOR SEAL"]
+
+
+# --------------------------------------------------------------------------
+# Independent review, 19 Sep 2026: the coverage oracle passed a download that
+# named every declaration and still lost "573BB AND 573DB", "572HB", "1003HW"
+# and "10 JUNE 2027". Identity is not coverage. The oracle now reads each
+# declaration's own statement lines off the page and requires what identifies
+# the condition - part numbers, breaker ids, positions, dates - to reach the
+# download, plus whatever a person recorded for that OFP.
+# --------------------------------------------------------------------------
+
+SQ882_PAGE = """\
+REMARKS:
+ATTN ALL CONCERN FR MAINTROL
+AA MEL 25-20-50A
+   MAINT ENTRY
+   FROM CDL 004580 JCL D1 GALLEY COMP
+213/214/215/309/310/311/312/314/315 AIR CHILLER NOT COLD
+   FWD GALLEY
+   PLS UPLIFT DRY ICE
+DD CDL 27-25
+   MAINT ENTRY: LH WING, AILERON TRAILING EDGE PANEL
+   573BB AND 573DB SEALS FOUND TORN
+   LH WING
+FF CDL 57-16
+   MAINT ENTRY: LH WING, TRAILING EDGE ACCESS PANEL
+   572HB SEAL FOUND TORN
+   LH WING
+GG EN A35MEN-21-28871
+   MAINT ENTRY DUE EN A35MEN-21-28871 VCRU #3 DEACTIVATED
+   AND RCCB 1003HW TRIPPED UNTIL 10 JUNE 2027
+   UPLIFT DRY ICE FOR ALL CHILLERS
+
+ZFW RESTRICTED TO 161,229KGS DUE MTOW X
+
+        PLAN 8
+"""
+HELD_882 = {"deferred_items": [
+    _item("AA MEL 25-20-50A", "MEL", "25-20-50A"), _item("DD CDL 27-25", "CDL", "27-25"),
+    _item("FF CDL 57-16", "CDL", "57-16"), _item("GG EN A35MEN-21-28871", "EN", "A35MEN-21-28871"),
+]}
+RELEASE_CANDIDATE_1 = (
+    "CDL 27-25 / 57-16: LH wing, aileron trailing edge panel; LH wing, trailing edge access panel. Reconcile. "
+    "MEL 25-20-50A; EN A35MEN-21-28871: JCL D1 galley COMP 213/214/215/309/310/311/312/314/315 air chiller not cold FWD galley; "
+    "Due EN A35MEN-21-28871 VCRU #3 deactivated. Catering must arrange the source-requested dry-ice uplift."
+)
+COMPLETE = RELEASE_CANDIDATE_1.replace(
+    "trailing edge panel;", "trailing edge panel 573BB and 573DB seals found torn LH wing;"
+).replace("access panel.", "access panel 572HB seal found torn LH wing.").replace(
+    "VCRU #3 deactivated.", "VCRU #3 deactivated and RCCB 1003HW tripped until 10 JUNE 2027."
+)
+
+
+def test_identity_without_the_condition_fails_the_gate() -> None:
+    failures = check_source_declaration_coverage(SQ882_PAGE, HELD_882, RELEASE_CANDIDATE_1)
+
+    lost = " ".join(failures)
+    for token in ("573BB", "573DB", "572HB", "1003HW", "2027"):
+        assert token in lost, (token, failures)
+    assert all("not published" in failure for failure in failures)
+
+
+def test_a_download_that_keeps_every_condition_passes() -> None:
+    assert check_source_declaration_coverage(SQ882_PAGE, HELD_882, COMPLETE) == []
+
+
+def test_the_oracle_does_not_demand_a_request_a_form_field_or_another_papers_number() -> None:
+    # "PLS UPLIFT DRY ICE", "UPLIFT DRY ICE FOR ALL CHILLERS" are requests
+    # (published as consequences); "FROM CDL 004580" cites other paperwork;
+    # the ZFW line after the break belongs to no declaration.
+    failures = " ".join(check_source_declaration_coverage(SQ882_PAGE, HELD_882, COMPLETE))
+
+    assert "004580" not in failures and "161,229" not in failures and "229KGS" not in failures
+
+
+def test_reviewed_expectations_are_enforced_when_a_person_recorded_them() -> None:
+    expectations = [
+        {"declaration": "FF CDL 57-16", "download_words": ["TRAILING EDGE ACCESS PANEL", "572HB SEAL FOUND TORN"]},
+    ]
+    failures = check_source_declaration_coverage(SQ882_PAGE, HELD_882, RELEASE_CANDIDATE_1, expectations=expectations)
+
+    assert "FF CDL 57-16: reviewed condition '572HB SEAL FOUND TORN' is not published in the download." in failures
+
+
+def test_a_remark_outside_every_declaration_held_inside_one_fails_the_gate() -> None:
+    contaminated = {"deferred_items": [
+        *HELD_882["deferred_items"][:3],
+        {**HELD_882["deferred_items"][3], "company_remark": "AND RCCB 1003HW TRIPPED UNTIL 10 JUNE 2027 UPLIFT DRY ICE FOR ALL CHILLERS ZFW RESTRICTED TO 161,229KGS DUE MTOW X"},
+    ]}
+    failures = check_source_declaration_coverage(SQ882_PAGE, contaminated, COMPLETE)
+
+    assert any("GG EN A35MEN-21-28871" in failure and "ZFW RESTRICTED" in failure and "outside" in failure for failure in failures)

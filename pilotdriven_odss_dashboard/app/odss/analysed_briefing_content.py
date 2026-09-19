@@ -360,36 +360,149 @@ def deferred_subject(value, item_label: str = "") -> str:
     return source_subject_sentence(publishable_source_subject(value, item_label))
 
 
-def deferred_source_subject(source, item_label: str = "") -> str:
-    """Read a wrapped defect from its own complete source segment.
+_NEXT_DECLARATION = re.compile(
+    r"\s+[A-Z]{2}\s+(?:CDDL|CDL|MEL|IFEDDL|IN|EN)\s+[A-Z0-9][A-Z0-9/.-]*", re.I,
+)
+_INTERIOR_ENTRY_MARKER = re.compile(r"\bMAINT(?:ENANCE)?\s+ENTRY\s*[.:]?\s*", re.I)
+_REFERENCE_ONLY_OPENING = re.compile(
+    r"^(?:WRT|FROM)\s+(?:(?:CDL|MEL|CDDL)\s+[0-9A-Z/-]+(?:,?\s+(?:AND\s+)?)?)+", re.I,
+)
+# Where the engineer stops describing the aircraft and starts asking for
+# something, or where the form prints one of its own fields. The statement is
+# cut here; the request is published as its analysed consequence. A shape this
+# does not recognise stays in the statement, so the failure is a longer
+# sentence, never a lost condition. A two- or three-digit token before UPLIFT is
+# the CDDL form's own number ("923 UPLIFT TRASH BAG"); four digits is a year
+# ("... UNTIL 10 JUNE 2027 / UPLIFT DRY ICE ...") and stays in the statement.
+_REQUEST_OR_FORM_FIELD = re.compile(
+    r"(?:^|\s+)(?:"
+    r"X\s+PERFORMANCE\b|PERFORMANCE\s*\[P\]|(?:X\s+)?CLASS\s+[A-Z]\b(?=\s*(?:$|X\b))"
+    r"|(?:\b\d{2,3}\s+)?UPLIFT\b"
+    r"|DO\s+NOT\s+[A-Z]+\b"
+    r"|(?:TO|PLS|PLSE|PLEASE)\s+(?:RE-?)?(?:UPLIFT|INSPECT|APPLY|CARRY|CHECK|CLEAN|REPLACE|MONITOR|ENSURE)\b"
+    r")|(?<=[.,;])\s+(?:TO|PLS|PLSE|PLEASE)\s+(?=[A-Z])",
+    re.I,
+)
 
-    Description cells can end mid-sentence. The held source_text starts with
-    that exact cell and carries its continuation; reconstruct only within that
-    bound, stopping at a sentence, form field or next declaration. Nothing is
-    inferred from the document reference, and an unbound/missing tail abstains.
+
+_MAINTENANCE_ACTION = re.compile(
+    r"\b(?:UPLIFT|APPLY|APPLIED|REAPPLY|REAPPLIED|INSPECT\w*|CHECK(?:ED)?|PRIOR|BEFORE)\b", re.I,
+)
+
+
+def _is_dashed_header_title(source, description: str) -> bool:
+    declaration = clean(source.get("source_declaration"))
+    return bool(description) and bool(
+        re.search(r"\s-\s*" + re.escape(description) + r"\s*$", declaration, re.I)
+    )
+
+
+def deferred_source_subject(source, item_label: str = "") -> str:
+    """The declaration's whole statement of what is wrong, read across the wrap.
+
+    The OFP's description cell wraps into the cell beneath it, so the first
+    line is never the statement just because it parses as one: "LH WING,
+    TRAILING EDGE ACCESS PANEL" is followed by "572HB SEAL FOUND TORN", and
+    "FOUND RH AFT NOSE LANDING GEAR" by "DOOR SEAL PARTIALLY MISSING". The
+    statement is the declaration's OWN text - its description and the
+    continuation the parser bounded to it - from the engineer's entry to the
+    first request or form field. Nothing is inferred from the reference, an
+    unbound or borrowed tail is refused, and a statement that still cannot
+    stand alone is not published.
     """
     description = clean(source.get("description"))
-    subject = deferred_subject(description, item_label)
-    if subject:
-        return subject
-    raw = clean(source.get("source_text"))
-    if not description or not raw.upper().startswith(description.upper() + " "):
-        return ""
-    # A manual heading or a mid-cell bracket fragment is form furniture, not
-    # the beginning of the defect that the following cell actually states.
-    if _MANUAL_HEADING.search(description) or not description[0].isalnum():
+    own = clean(source.get("source_text"))
+    if not own and description:
+        own = " ".join(value for value in (description, clean(source.get("restriction"))) if value)
+    bound = bool(description) and (
+        own.upper() == description.upper() or own.upper().startswith(description.upper() + " ")
+    )
+    if not bound:
+        # A segment whose text does not begin with its own description is not
+        # evidence about this declaration.
+        return deferred_subject(description, item_label)
+    # Even a malformed stored segment must not borrow another item's defect.
+    raw = _NEXT_DECLARATION.split(own, maxsplit=1)[0]
+    interior = next(
+        (match for match in _INTERIOR_ENTRY_MARKER.finditer(raw) if match.start() > 0), None,
+    )
+    if interior is not None:
+        # "NON-ESSENTIAL EQUIPMENT AND FURNISHINGS / MAINT ENTRY LAVATORY LM46
+        # NIL FLUSHING": what precedes the engineer's entry is the manual
+        # item's printed title, already named by the declaration itself.
+        raw = raw[interior.end():]
+    elif description and len(raw) > len(description) and (
+        _MANUAL_HEADING.search(description)
+        or not description[0].isalnum()
+        or _is_dashed_header_title(source, description)
+    ):
+        # A manual heading, a mid-cell bracket fragment, or the manual item's
+        # title printed after a dash on the label line ("BB MEL 25-20-50A -
+        # NON-ESSENTIAL EQUIPMENT AND FURNISHINGS") is form furniture, not the
+        # beginning of the defect the following cell states. With no body at
+        # all, the title is everything the OFP printed and is kept.
         raw = raw[len(description):].strip()
-    # Even a malformed parsed segment must not borrow another item's defect.
-    raw = re.split(r"\s+[A-Z]{2}\s+(?:CDDL|CDL|MEL|IFEDDL|IN|EN)\s+[A-Z0-9][A-Z0-9/.-]*", raw, maxsplit=1, flags=re.I)[0]
     raw = re.sub(r"^(?:MAINT ENTRY\s*[.:]?\s*)+", "", raw, flags=re.I)
     # A reference-only cell can precede an intact defect in the continuation.
-    raw = re.sub(r"^(?:WRT|FROM)\s+(?:(?:CDL|MEL|CDDL)\s+[0-9A-Z/-]+(?:,?\s+(?:AND\s+)?)?)+", "", raw, flags=re.I)
+    raw = _REFERENCE_ONLY_OPENING.sub("", raw)
     raw = re.sub(r"\bOTHERS?\s*\((?:PLS|PLEASE)\s+ENTER\s+COMMENTS?\)\s*", "", raw, flags=re.I)
-    # These are separate form/action fields. Their consequences remain in the
-    # analysed row; they are not part of the defect's subject.
-    raw = re.split(r"\s+(?:X\s+PERFORMANCE\b|(?:TO|PLS|PLSE|PLEASE)\s+UPLIFT\b)", raw, maxsplit=1, flags=re.I)[0]
-    candidate = re.split(r"(?<=[.!?])\s+", raw, maxsplit=1)[0]
-    return deferred_subject(candidate, item_label)
+    statement = _REQUEST_OR_FORM_FIELD.split(raw, maxsplit=1)[0].strip(" ,;:")
+    # The first sentence says what is wrong. A later sentence is kept when it
+    # states a further condition ("CB: ... TRIPPED & TAGGED.") and left to the
+    # analysed consequences when it asks for maintenance action ("HST APPLIED,
+    # CONDITION TO BE CHECKED PRIOR EVERY DEPARTURE").
+    sentences = re.split(r"(?<=[.!?])\s+", statement)
+    statement = " ".join(
+        [sentences[0], *(value for value in sentences[1:] if not _MAINTENANCE_ACTION.search(value))]
+    )
+    # The OFP closes a remark line with its own " X" separator; at the very end
+    # of a statement it separates nothing.
+    statement = re.sub(r"(?:\s+X)+\s*$", "", statement).strip(" ,;:")
+    subject = deferred_subject(statement, item_label)
+    if subject:
+        return subject
+    first_sentence = re.split(r"(?<=[.!?])\s+", statement, maxsplit=1)[0]
+    return deferred_subject(first_sentence, item_label) or deferred_subject(description, item_label)
+
+
+_ZFW_RESTRICTION = re.compile(r"\bZFW RESTRICTED TO\s+([\d,]+)\s*KGS?\b", re.I)
+
+
+def page1_remark_consequences(remarks, fuel_summary) -> list[str]:
+    """What the dispatcher's general page-1 remarks mean for this flight.
+
+    These are the OFP's remarks, not any declaration's conditions: SQ24 15 Aug
+    prints "ZFW RESTRICTED TO 161,229KGS DUE MTOW" under its one CDL, after a
+    paragraph break, and the door seal does not limit the zero-fuel weight.
+    """
+    lines: list[str] = []
+    for remark in remarks or []:
+        limit = _ZFW_RESTRICTION.search(clean(remark.get("text") if isinstance(remark, dict) else remark))
+        if not limit:
+            continue
+        limit_kg = int(limit.group(1).replace(",", ""))
+        mass = ((fuel_summary or {}).get("masses_kg") or {}).get("pzfw")
+        comparison = (
+            f"Planned ZFW {mass:,.0f} kg gives {limit_kg - mass:,.0f} kg margin."
+            if isinstance(mass, (int, float))
+            else "Planned ZFW is not held for comparison."
+        )
+        line = f"OFP remark: ZFW restricted to {limit_kg:,.0f} kg. {comparison}"
+        if line not in lines:
+            lines.append(line)
+    return lines
+
+
+def held_page1_remarks(flight) -> list:
+    """The flight's general remarks; for an analysis stored before they had a
+    domain of their own, the ones an old parse left inside a declaration."""
+    if isinstance((flight or {}).get("page1_remarks"), list):
+        return flight["page1_remarks"]
+    return [
+        {"text": match.group(0)}
+        for item in (flight or {}).get("deferred_items") or []
+        for match in _ZFW_RESTRICTION.finditer(clean(item.get("company_remark")))
+    ]
 
 
 def deferred_consequence_rows(view):
@@ -444,12 +557,8 @@ def deferred_consequence_rows(view):
                     and not re.search(r"\bHST\b[^.]*\b(?:NOT|NEVER)\s+(?:RE-?)?APPLIED\b", raw)
                     and not any("HST" in effect for effect in effects)):
                 effects.append("The declaration records HST applied as an interim condition; it does not establish how long that condition stays acceptable.")
-            limit = re.search(r"\bZFW RESTRICTED TO\s+([\d,]+)\s*KGS?\b", raw)
-            if limit:
-                limit_kg = int(limit.group(1).replace(",", ""))
-                mass = ((view.get("fuel_summary") or {}).get("masses_kg") or {}).get("pzfw")
-                comparison = f"Planned ZFW {mass:,.0f} kg gives {limit_kg - mass:,.0f} kg margin." if isinstance(mass, (int, float)) else "Planned ZFW is not held for comparison."
-                effects.append(f"The declaration limits ZFW to {limit_kg:,.0f} kg. {comparison}")
+            # A ZFW restriction is the dispatcher's general remark, never a
+            # defect's own limit: see page1_remark_consequences.
             if source.get("item_type") == "CDL":
                 effects.append("Reconcile this deferred external component with the approved CDL performance allowance for this aircraft; the declaration alone does not quantify a fuel or weight correction.")
             if not effects:

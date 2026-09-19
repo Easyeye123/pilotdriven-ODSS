@@ -1319,6 +1319,11 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     if lower:
         margins.append(f"Cruise -{text(lower.get('offset_ft'))} ft: ADD {kg(lower.get('burn_add_kg'))}; TIME {text(lower.get('time_display'))}.")
 
+    # The dispatcher's general page-1 remarks belong to the mass chain, not to
+    # whichever declaration happened to be printed above them (SQ24 15 Aug).
+    from .analysed_briefing_content import held_page1_remarks, page1_remark_consequences
+    margins += page1_remark_consequences(held_page1_remarks(flight), fuel)
+
     def performance_rows(body, leading, variant=0):
         return [
             (None, [Card("TAKE-OFF / LANDING PERFORMANCE", rtow, CYAN, tag="CFP P1", width_weight=1.0),

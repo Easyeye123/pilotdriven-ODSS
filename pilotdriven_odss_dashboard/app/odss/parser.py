@@ -450,13 +450,22 @@ def _opaque_deferred_source_groups(
             group_end = cursor
             cursor += 1
 
+            header_margin = len(lines[group_start]) - len(lines[group_start].lstrip())
+            gap = False
             while cursor < len(lines):
                 stripped = lines[cursor].strip()
                 if _PLAN_BLOCK_HEADER.match(stripped):
                     break
                 if _OPAQUE_DEFERRED_HEADER.fullmatch(stripped):
                     break
+                if not stripped:
+                    gap = True
+                elif gap and len(lines[cursor]) - len(lines[cursor].lstrip()) <= header_margin:
+                    # A paragraph break and a line back at the margin: the
+                    # dispatcher has moved on; this is not the group's text.
+                    break
                 if stripped:
+                    gap = False
                     line_text = " ".join(stripped.split())
                     audit_lines.append({
                         "line_number": cursor + 1,
@@ -542,6 +551,48 @@ def _parse_deferred_items(
     *,
     source_page: int = 1,
 ) -> list[dict[str, Any]]:
+    return _walk_page1_declarations(page1, source_page=source_page)[0]
+
+
+_REMARKS_HEADING = re.compile(r"^REMARKS\s*:?\s*$", re.IGNORECASE)
+_DECLARATION_BLOCK_HEADING = re.compile(r"\bMAINTROL\b", re.IGNORECASE)
+
+
+def _parse_page1_remarks(page1: str) -> list[dict[str, Any]]:
+    """The dispatcher's general page-1 remarks: every remarks-block line that
+    no declaration owns.
+
+    SQ24 15 Aug prints a ZFW restriction, an EDTO top-up note, take-off
+    performance inputs and the excess-fuel table under its one CDL. They are
+    not the door seal's conditions, and they are not nothing either: they are
+    held here, in their own domain, in the OFP's order.
+    """
+    lines = page1.splitlines()
+    heading = next(
+        (index for index, line in enumerate(lines) if _REMARKS_HEADING.match(line.strip())),
+        None,
+    )
+    unowned = _walk_page1_declarations(page1)[1]
+    first_declaration = _walk_page1_declarations(page1)[2]
+    start = heading if heading is not None else first_declaration
+    if start is None:
+        return []
+    return [
+        {"text": text, "source_line": number}
+        for number, text in unowned
+        if number - 1 > start
+        and not _DECLARATION_BLOCK_HEADING.search(text)
+        and not re.fullmatch(r"[-=+*_ ]{3,}", text)
+    ]
+
+
+def _walk_page1_declarations(
+    page1: str,
+    *,
+    source_page: int = 1,
+) -> tuple[list[dict[str, Any]], list[tuple[int, str]], int | None]:
+    """Walk page 1 once: the declarations, the lines none of them owns, and
+    the index of the first declaration line."""
     # Boss's 21 Aug 2026 SQ910 CFP printed four declaration shapes on one
     # block: "CC MEL 25-20-50A", bare "BB CDDL" (no reference), "AA IFEDDL"
     # and "DD IN SIA/00-017 R1" (engineering information notice). Every
@@ -562,6 +613,15 @@ def _parse_deferred_items(
     # equal letters inside the declaration it continues.
     last_label = ""
     header_indent: int | None = None
+    # Where a declaration ENDS. Its body is the lines under its label; a
+    # paragraph break followed by a line back at the block's margin is the
+    # dispatcher moving on to something else (SQ24 15 Aug: the ZFW, EDTO and
+    # take-off remarks under its one CDL). A wrapped body line that lands at
+    # the margin WITHOUT a break (SQ882's chiller list) is still body text,
+    # and so is an indented line after a break.
+    gap_since_owned = False
+    unowned: list[tuple[int, str]] = []
+    first_declaration: int | None = None
     opaque_groups = _opaque_deferred_source_groups(
         page1,
         source_page=source_page,
@@ -587,8 +647,14 @@ def _parse_deferred_items(
                 last_label = max([last_label, *held[1]["source_group_tokens"]])
                 if header_indent is None:
                     header_indent = indent
+                if first_declaration is None:
+                    first_declaration = line_index
+            gap_since_owned = False
             continue
         stripped = line.strip()
+        if not stripped:
+            gap_since_owned = True
+            continue
         if _PLAN_BLOCK_HEADER.match(stripped):
             # The declarations belong to the remarks block; the plan block
             # that follows it is never part of one.
@@ -604,15 +670,24 @@ def _parse_deferred_items(
             last_label = header.group("token")
             header_indent = indent
             current = _classified_declaration(stripped, header.group("rest"))
+            gap_since_owned = False
+            if first_declaration is None:
+                first_declaration = line_index
             continue
-        if current and stripped:
+        if current and gap_since_owned and indent <= (header_indent or 0):
+            items.append(_held_declaration(current))
+            current = None
+        if current:
+            gap_since_owned = False
             if not current["description"]:
                 current["description"] = stripped
             else:
                 current["company_remark"] = f"{current['company_remark'] or ''} {stripped}".strip()
+        else:
+            unowned.append((line_index + 1, stripped))
     if current:
         items.append(_held_declaration(current))
-    return items
+    return items, unowned, first_declaration
 
 
 def _held_declaration(item: dict[str, Any]) -> dict[str, Any]:
@@ -1867,6 +1942,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         "edto_rvsm": printed_flight_rules or None,
         "bobcat": bobcat,
         "deferred_items": _parse_deferred_items(page1),
+        "page1_remarks": _parse_page1_remarks(page1),
         # Lossless bounded company-bulletin identities. No route relevance,
         # applicability or operational conclusion is inferred here.
         "intam_records": intam_records,
