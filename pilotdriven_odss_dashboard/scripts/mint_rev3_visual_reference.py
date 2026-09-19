@@ -29,6 +29,15 @@ from check_rev3_visual_regression import (  # noqa: E402
     sha256_file,
 )
 
+# What this gate guards, stated in every manifest it mints. Written into the
+# pinned manifest by hand on 16 Sep 2026, so the next mint dropped it.
+GATE_SCOPE = (
+    "Deterministic-renderer canary for the lossless audit composition "
+    "(include_audit_appendix=True) on a SHA-pinned historical analysis. This is NOT the "
+    "pilot-facing download; David's six-page Flight Briefing format is guarded by "
+    "tests/boss_reference_format_manifest.json and scripts/check_reference_conformance.py."
+)
+
 EXACT_THRESHOLDS = {
     "max_changed_pixel_ratio": 0.0,
     "max_mean_absolute_error": 0.0,
@@ -72,6 +81,7 @@ def build_manifest(
         # format is guarded by scripts/check_reference_conformance.py against
         # David's own reference briefings.
         "artefact": "internal-lossless-audit-composition",
+        "scope": GATE_SCOPE,
         "case_id": case_id,
         "reference_asset": {
             "filename": reference.name,

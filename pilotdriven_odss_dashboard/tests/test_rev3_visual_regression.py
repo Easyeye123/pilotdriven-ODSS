@@ -218,12 +218,14 @@ def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
     # 48 page entries of geometry + checksums only; no proprietary PDF bytes.
     assert PINNED_MANIFEST.stat().st_size < 16_000
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference_v17_SIGMET_LEG_BOUNDS.pdf",
-        "sha256": "a4a62fb5da7e4553c0afa825c1ec333a32388ef51f018fa939b3a736a0956ac3",
+        "filename": "SQ214_REV3_reference_v18_RUNWAY_CLOSURE_SCHEDULE.pdf",
+        "sha256": "e6b34d3c560f5e35318a2231b3f01384a74eb11941b857d5def1abc716d30271",
     }
     assert len(payload["pages"]) == 48
-    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-09-09-flight-window-surface-semantics-v47"
-    assert "independent all-page comparison verifies 46 unchanged pages" in payload["provenance"]["approval_basis"]
+    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-09-19-one-notice-assessment-declaration-boundaries-v61"
+    assert "independent all-page comparison verifies 47 unchanged pages" in payload["provenance"]["approval_basis"]
+    # The reviewer is recorded as who it was. No person is named as approver.
+    assert "Codex engineering review" in payload["provenance"]["approval_basis"]
     assert payload["thresholds"] == {
         "max_changed_pixel_ratio": 0.0,
         "max_mean_absolute_error": 0.0,
@@ -305,6 +307,12 @@ def test_mint_script_writes_a_manifest_the_gate_accepts_for_its_own_reference(tm
     }
     assert payload["provenance"]["approval_basis"] == "synthetic test approval"
     assert payload["provenance"]["minted_on"]
+    # A re-pin must not lose the declaration of what this gate guards: the
+    # 16 Sep 2026 scope statement was added to the pinned manifest by hand, so
+    # the next mint (19 Sep 2026) silently dropped it and only the pinned-
+    # manifest contract caught that.
+    assert payload["artefact"] == "internal-lossless-audit-composition"
+    assert "check_reference_conformance" in payload["scope"]
     # The manifest must not embed the private asset itself.
     assert manifest.stat().st_size < 4_000
 
