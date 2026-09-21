@@ -32,6 +32,7 @@ from .runway_closure_schedule import (
     published_runway_closure_statement,
     reconcile_runway_closure_findings,
 )
+from .aircraft_restriction_applicability import notam_aircraft_size_check
 from .notam_restriction_line import (
     NO_STATEMENT_LINE,
     NO_TEXT_SENTENCE,
@@ -741,6 +742,11 @@ def _compact_notam_lines(
             "category": item.get("category"),
             "pertinence_kind": item.get("pertinence_kind"),
             **(
+                {"aircraft_size_check": item["aircraft_size_check"]}
+                if isinstance(item.get("aircraft_size_check"), dict)
+                else {}
+            ),
+            **(
                 {"approach_affected": item["approach_affected"]}
                 if isinstance(item.get("approach_affected"), bool)
                 else {}
@@ -1000,6 +1006,15 @@ def _airport_operational_panels(
         for item in selected_notams:
             family = _compact_notam_family(item)
             item["signal_family"] = family
+            # One aircraft-size comparison per record, from the record's own
+            # item E and the OFP's aircraft type, published beside the line
+            # rather than inside it: the line stays the notice's statement and
+            # every surface that shows it can show the same comparison.
+            size_check = notam_aircraft_size_check(flight, item)
+            if size_check:
+                item["aircraft_size_check"] = size_check
+            else:
+                item.pop("aircraft_size_check", None)
             item["compact_text"] = _compact_notam_text(
                 item,
                 family,
@@ -4495,12 +4510,22 @@ def _decision_finding_projection(
             )
 
         bay_crane = min(bay_cranes, key=bay_crane_priority, default=None)
+        # A size limit is published with its comparison against the OFP's own
+        # aircraft (boss 9 Sep: "downgraded to code E" alone left the pilot to
+        # work out that an A350-941 is itself Code E).
         ground_parts = [
             " - ".join(
                 part
                 for part in (
                     str(line.get("label") or "NOTICE").strip(),
-                    str(line.get("text") or "").strip(),
+                    " ".join(
+                        text
+                        for text in (
+                            str(line.get("text") or "").strip(),
+                            str((line.get("aircraft_size_check") or {}).get("sentence") or "").strip(),
+                        )
+                        if text
+                    ),
                 )
                 if part
             )

@@ -1,0 +1,359 @@
+{
+  "specVersion": "aircraft-restriction-applicability-2026-09-21-v1",
+  "codeLetterTable": {
+    "ruleId": "ICAO_ANNEX14_V1_TABLE_1_1_CODE_LETTER_AMDT15_V1",
+    "bands": [
+      {
+        "code": "A",
+        "minM": 0,
+        "maxExclusiveM": 15
+      },
+      {
+        "code": "B",
+        "minM": 15,
+        "maxExclusiveM": 24
+      },
+      {
+        "code": "C",
+        "minM": 24,
+        "maxExclusiveM": 36
+      },
+      {
+        "code": "D",
+        "minM": 36,
+        "maxExclusiveM": 52
+      },
+      {
+        "code": "E",
+        "minM": 52,
+        "maxExclusiveM": 65
+      },
+      {
+        "code": "F",
+        "minM": 65,
+        "maxExclusiveM": 80
+      }
+    ],
+    "sources": [
+      {
+        "authority": "ICAO",
+        "title": "Annex 14 Volume I, Table 1-1 Aerodrome reference code, as shown in the State letter adopting Amendment 15 (applicable 5 November 2020)",
+        "url": "https://www.icao.int/sites/default/files/APAC/Meetings/2020/2020%20APWHM%20WG2/4-Information%20Papers/IP01%2C%20AI%203%20-%20Amdt%2015%20to%20A14V1.pdf"
+      },
+      {
+        "authority": "EASA",
+        "title": "CS-ADR-DSN Issue 6 (29 March 2022), CS ADR-DSN.A.005 and Table A-1: code letter from wingspan; GM1(d) the code does not regulate aircraft operation",
+        "url": "https://www.easa.europa.eu/en/document-library/certification-specifications/cs-adr-dsn-issue-6"
+      }
+    ]
+  },
+  "wingspanComparisonToleranceM": 0.05,
+  "aircraft": [
+    {
+      "ruleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+      "aircraftFamily": "Airbus A350-900",
+      "aliases": [
+        "A359",
+        "A350-900",
+        "A350-941"
+      ],
+      "wingspanM": 64.75,
+      "code": "E",
+      "sources": [
+        {
+          "authority": "Airbus",
+          "title": "A350-900 dimensions — geometric wingspan 64.75 m",
+          "url": "https://www.aircraft.airbus.com/en/aircraft/a350/a350-900"
+        },
+        {
+          "authority": "ICAO",
+          "title": "Annex 14 Volume I Amendment 15 — Code E 52 m to below 65 m; Code F begins at 65 m",
+          "url": "https://www.icao.int/sites/default/files/APAC/Meetings/2020/2020%20APWHM%20WG2/4-Information%20Papers/IP01%2C%20AI%203%20-%20Amdt%2015%20to%20A14V1.pdf"
+        },
+        {
+          "authority": "EASA",
+          "title": "FSTD detail — A350-900 aircraft type; A350-941 type variant",
+          "url": "https://lisstdis.easa.europa.eu/stdis/index.php?id=27118&r=std%2Fshow"
+        },
+        {
+          "authority": "ICAO",
+          "title": "RVSM monitoring group — A359 designator maps to A350-900",
+          "url": "https://www.icao.int/MID/Documents/2024/MIDRMA%20Board20/WP8.pdf"
+        },
+        {
+          "authority": "Airbus",
+          "title": "Airport Operations ME1911189 Issue 4.0 (6 July 2020): ICAO / EASA Aerodrome Reference Code for Airbus aircraft",
+          "url": "https://www.aircraft.airbus.com/sites/g/files/jlcbta126/files/2023-02/NEW-AI~1.PDF"
+        },
+        {
+          "authority": "EASA",
+          "title": "TCDS EASA.A.151 Issue 33 (1 July 2026) — model A350-941",
+          "url": "https://www.easa.europa.eu/en/document-library/type-certificates/aircraft-cs-25-cs-22-cs-23-cs-vla-cs-lsa/easaa151-airbus-a350"
+        }
+      ]
+    },
+    {
+      "ruleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+      "aircraftFamily": "Airbus A380-800",
+      "aliases": [
+        "A388",
+        "A380-800",
+        "A380-841"
+      ],
+      "wingspanM": 79.75,
+      "code": "F",
+      "sources": [
+        {
+          "authority": "Airbus",
+          "title": "A380 Aircraft Characteristics - Airport and Maintenance Planning, Revision 20 (1 December 2025) — wingspan 79.75 m (261.65 ft)",
+          "url": "https://www.aircraft.airbus.com/sites/g/files/jlcbta126/files/2025-12/AC_A380_20251201.pdf"
+        },
+        {
+          "authority": "Airbus",
+          "title": "Airport Operations ME1911189 Issue 4.0 (6 July 2020): ICAO / EASA Aerodrome Reference Code for Airbus aircraft",
+          "url": "https://www.aircraft.airbus.com/sites/g/files/jlcbta126/files/2023-02/NEW-AI~1.PDF"
+        },
+        {
+          "authority": "EASA",
+          "title": "TCDS EASA.A.110 Issue 17 (5 August 2026) — models A380-841/-842/-861",
+          "url": "https://www.easa.europa.eu/en/document-library/type-certificates/aircraft-cs-25-cs-22-cs-23-cs-vla-cs-lsa/easaa110-airbus-a380"
+        },
+        {
+          "authority": "EUROCONTROL",
+          "title": "Aircraft Performance Database — designator A388 is the A380-800",
+          "url": "https://learningzone.eurocontrol.int/ilp/customs/ATCPFDB/details.aspx?ICAO=A388"
+        }
+      ]
+    },
+    {
+      "ruleId": "BOEING_787_10_ICAO_CODE_E_V1",
+      "aircraftFamily": "Boeing 787-10",
+      "aliases": [
+        "B78X",
+        "787-10",
+        "B787-10"
+      ],
+      "wingspanM": 60.12,
+      "code": "E",
+      "sources": [
+        {
+          "authority": "Boeing",
+          "title": "787 technical specifications — 787-10 wingspan 60.1 m (197 ft 3 in)",
+          "url": "https://www.boeing.com/commercial/787"
+        },
+        {
+          "authority": "EUROCONTROL",
+          "title": "Aircraft Performance Database — designator B78X is the 787-10, wingspan 60.12 m",
+          "url": "https://learningzone.eurocontrol.int/ilp/customs/ATCPFDB/details.aspx?ICAO=B78X"
+        },
+        {
+          "authority": "Boeing",
+          "title": "Airport Compatibility, Design Groups/Codes (FAA and ICAO), 4 November 2014 - letter cross-check only; its table predates Annex 14 Amendment 14",
+          "url": "https://www.boeing.com/content/dam/boeing/v2/airports/faq/aircraftdesigngroup.pdf"
+        }
+      ]
+    },
+    {
+      "ruleId": "BOEING_737_8_ICAO_CODE_C_V1",
+      "aircraftFamily": "Boeing 737-8",
+      "aliases": [
+        "B38M",
+        "737-8",
+        "B737-8"
+      ],
+      "wingspanM": 35.92,
+      "code": "C",
+      "sources": [
+        {
+          "authority": "Boeing",
+          "title": "737 MAX technical specifications — 737-8 wingspan 35.9 m (117 ft 10 in)",
+          "url": "https://www.boeing.com/commercial/737max"
+        },
+        {
+          "authority": "EUROCONTROL",
+          "title": "Aircraft Performance Database — designator B38M is the 737 MAX 8, wingspan 35.9 m",
+          "url": "https://learningzone.eurocontrol.int/ilp/customs/ATCPFDB/details.aspx?ICAO=B38M"
+        },
+        {
+          "authority": "Boeing",
+          "title": "Airport Compatibility, Design Groups/Codes (FAA and ICAO), 4 November 2014 - letter cross-check only; its table predates Annex 14 Amendment 14",
+          "url": "https://www.boeing.com/content/dam/boeing/v2/airports/faq/aircraftdesigngroup.pdf"
+        }
+      ]
+    }
+  ],
+  "restrictionForms": [
+    {
+      "id": "unavailable_to_code_class",
+      "kind": "aerodrome_code",
+      "semantics": "prohibited_code_class",
+      "pattern": "\\b(?:CLSD|CLOSED|NOT\\s+AVBL|NOT\\s+AVAILABLE|NOT\\s+PERMITTED|PROHIBITED)\\s+(?:TO|FOR)\\s+(?:ALL\\s+)?(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+)?(?:(?:WITH|OF)\\s+)?(?:(?:AERODROME|ICAO|EASA)\\s+)?(?:REF(?:ERENCE)?\\s+)?CODE(?:\\s+LETTER)?\\s+'?([A-F])'?(?![A-Z0-9])(?:\\s+(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?))?(?:\\s+(?:AND|OR)\\s+(ABV|ABOVE|HIGHER|LARGER|BLW|BELOW|SMALLER|LOWER))?",
+      "groups": {
+        "code": 1,
+        "direction": 2
+      },
+      "readFrom": "Generic ICAO NOTAM wording; cf. the WSSS training sample \"TWY SA CLSD FOR ACFT CODE E AND BELOW\""
+    },
+    {
+      "id": "unavailable_above_wingspan",
+      "kind": "wingspan",
+      "semantics": "prohibited_wingspan_class",
+      "pattern": "\\b(?:CLSD|CLOSED|NOT\\s+AVBL|NOT\\s+AVAILABLE|NOT\\s+PERMITTED|PROHIBITED)\\s+(?:TO|FOR)\\s+(?:ALL\\s+)?(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+(?:WITH\\s+)?(?:A\\s+)?(?:WINGSPAN|WING\\s+SPAN)\\s+(?:OF\\s+)?(MORE\\s+THAN|GREATER\\s+THAN|LARGER\\s+THAN|EXCEEDING|ABOVE|OVER)\\s+(\\d{1,3}(?:\\.\\d+)?)\\s*(M|FT)(?![A-Z0-9])",
+      "groups": {
+        "comparator": 1,
+        "value": 2,
+        "unit": 3
+      },
+      "inclusive": false,
+      "readFrom": "KLAX 1A4372/26 \"TWY B BTN TWY B3 AND TWY B1 CLSD TO ACFT WINGSPAN MORE THAN 118FT\""
+    },
+    {
+      "id": "downgraded_to_code",
+      "kind": "aerodrome_code",
+      "semantics": "maximum_code",
+      "pattern": "\\b(?:DOWNGRADED|DOWNGRADE|DOWNGRADING|REDUCED)\\s+TO\\s+(?:(?:AERODROME|ICAO|EASA)\\s+)?(?:REF(?:ERENCE)?\\s+)?CODE(?:\\s+LETTER)?\\s+'?([A-F])'?(?![A-Z0-9])",
+      "groups": {
+        "code": 1
+      },
+      "readFrom": "VHHH 1A1868/26 \"TWY E BTN TWY F5 AND TWY F6 DOWNGRADED TO CODE E DUE WIP\""
+    },
+    {
+      "id": "downgrade_of_subject_to_code",
+      "kind": "aerodrome_code",
+      "semantics": "maximum_code",
+      "pattern": "\\b(?:DOWNGRADE|DOWNGRADING|DOWNGRADED|REDUCTION)\\s+(?:OF|FOR)\\s+([^.;\\n]{1,60}?)\\s+TO\\s+(?:(?:AERODROME|ICAO|EASA)\\s+)?(?:REF(?:ERENCE)?\\s+)?CODE(?:\\s+LETTER)?\\s+'?([A-F])'?(?![A-Z0-9])",
+      "groups": {
+        "subject": 1,
+        "code": 2
+      },
+      "readFrom": "WSSS SX93/26 \"DOWNGRADE OF AIRCRAFT STAND 603 TO CODE C\""
+    },
+    {
+      "id": "limited_to_max_code",
+      "kind": "aerodrome_code",
+      "semantics": "maximum_code",
+      "pattern": "\\b(?:RESTRICTED|LIMITED|LTD)\\s+TO\\s+(?:A\\s+)?MAX(?:IMUM)?\\s+(?:OF\\s+)?(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+)?(?:TYPE\\s+)?(?:(?:AERODROME|ICAO|EASA)\\s+)?(?:REF(?:ERENCE)?\\s+)?CODE(?:\\s+LETTER)?\\s+'?([A-F])'?(?![A-Z0-9])",
+      "groups": {
+        "code": 1
+      },
+      "readFrom": "EBBR 1A2446/26 \"TWY INN-6 RESTRICTED TO MAX ACFT TYPE CODE E\"; EDDF 1A3671/26 \"TWY L20 LTD TO MAX ACFT TYPE CODE C\""
+    },
+    {
+      "id": "up_to_code",
+      "kind": "aerodrome_code",
+      "semantics": "maximum_code",
+      "pattern": "\\b(?:UP\\s*TO|UPTO)\\s+(?:AND\\s+INCLUDING\\s+)?(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+)?(?:(?:AERODROME|ICAO|EASA)\\s+)?(?:REF(?:ERENCE)?\\s+)?CODE(?:\\s+LETTER)?\\s+'?([A-F])'?(?![A-Z0-9])",
+      "groups": {
+        "code": 1
+      },
+      "readFrom": "VECC 1A852/26 \"RWY 19R/01L AVBL FOR OPS UPTO CODE C ACFT ONLY\"; VVDN SX12/26 \"STAND 18 USED FOR AIRCRAFT UP TO CODE C\""
+    },
+    {
+      "id": "limited_of_subject_to_code",
+      "kind": "aerodrome_code",
+      "semantics": "code_only",
+      "pattern": "\\b(?:LIMITATION|RESTRICTION)\\s+(?:OF|FOR)\\s+([^.;\\n]{1,60}?)\\s+TO\\s+(?:(?:AERODROME|ICAO|EASA)\\s+)?(?:REF(?:ERENCE)?\\s+)?CODE(?:\\s+LETTER)?\\s+'?([A-F])'?(?![A-Z0-9])",
+      "groups": {
+        "subject": 1,
+        "code": 2
+      },
+      "readFrom": "Same sentence shape as WSSS SX93/26 with a limiting noun; the notice names one letter only"
+    },
+    {
+      "id": "limited_to_code",
+      "kind": "aerodrome_code",
+      "semantics": "code_only",
+      "pattern": "\\b(?:RESTRICTED|LIMITED|LTD)\\s+TO\\s+(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+)?(?:TYPE\\s+)?(?:(?:AERODROME|ICAO|EASA)\\s+)?(?:REF(?:ERENCE)?\\s+)?CODE(?:\\s+LETTER)?\\s+'?([A-F])'?(?![A-Z0-9])",
+      "groups": {
+        "code": 1
+      },
+      "readFrom": "EBBR 1A2448/26 \"TWY A5 RESTRICTED TO ACFT CODE E\""
+    },
+    {
+      "id": "code_only",
+      "kind": "aerodrome_code",
+      "semantics": "code_only",
+      "pattern": "\\b(?:(?:AERODROME|ICAO|EASA)\\s+)?(?:REF(?:ERENCE)?\\s+)?CODE(?:\\s+LETTER)?\\s+'?([A-F])'?(?![A-Z0-9])\\s+(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+)?ONLY(?![A-Z0-9])",
+      "groups": {
+        "code": 1
+      },
+      "readFrom": "VVDN SX12/26 \"STAND 14 ONLY USED FOR AIRCRAFT CODE C\"; generic \"CODE C ACFT ONLY\""
+    },
+    {
+      "id": "max_wingspan",
+      "kind": "wingspan",
+      "semantics": "maximum_wingspan",
+      "pattern": "\\bMAX(?:IMUM)?\\s+(?:WINGSPAN|WING\\s+SPAN)\\s+(?:OF\\s+)?(\\d{1,3}(?:\\.\\d+)?)\\s*(M|FT)(?![A-Z0-9])",
+      "groups": {
+        "value": 1,
+        "unit": 2
+      },
+      "inclusive": true,
+      "readFrom": "Generic \"MAX WINGSPAN 36M\" stand and taxilane limits"
+    },
+    {
+      "id": "wingspan_smaller_than",
+      "kind": "wingspan",
+      "semantics": "maximum_wingspan",
+      "pattern": "\\b(?:WINGSPAN|WING\\s+SPAN)\\s+(?:SMALLER|LESS|LOWER)\\s+THAN\\s+(\\d{1,3}(?:\\.\\d+)?)\\s*(M|FT)(?![A-Z0-9])",
+      "groups": {
+        "value": 1,
+        "unit": 2
+      },
+      "inclusive": false,
+      "readFrom": "EBBR 1A2098/26 \"RESTRICTED TO ACFT WITH WINGSPAN SMALLER THAN 68.6M\""
+    }
+  ],
+  "conditionMarkers": [
+    {
+      "id": "day_or_night",
+      "label": "day/night condition",
+      "pattern": "\\b(?:DAY|NIGHT)\\s+ONLY\\b|\\b(?:DURING|BY)\\s+(?:DAY|NIGHT)\\b|\\bHJ\\b|\\bHN\\b"
+    },
+    {
+      "id": "towing",
+      "label": "towing condition",
+      "pattern": "\\bTOW(?:ING|ED)?\\b|\\bUNDER\\s+TOW\\b"
+    },
+    {
+      "id": "guidance",
+      "label": "follow-me or marshalling condition",
+      "pattern": "\\bFOLLOW[- ]?ME\\b|\\bMARSHALL?(?:ER|ERS|ING)\\b|\\bWING\\s*WALKERS?\\b"
+    },
+    {
+      "id": "exception",
+      "label": "stated exception",
+      "pattern": "\\bEXC\\b|\\bEXCEPT\\b|\\bEXCLUDING\\b|\\bUNLESS\\b"
+    },
+    {
+      "id": "permission",
+      "label": "prior permission or notification",
+      "pattern": "\\bPPR\\b|\\bPRIOR\\s+(?:PERMISSION|NOTIFICATION|APPROVAL|NOTICE)\\b|\\bSUBJ(?:ECT)?\\s+TO\\b|\\bPROVIDED\\b"
+    },
+    {
+      "id": "operator",
+      "label": "operator or schedule condition",
+      "pattern": "\\bNON[- ]?SKED\\b|\\bSKED\\b|\\bGEN(?:ERAL)?\\s+AVIATION\\b|\\bCARGO\\b|\\bMIL(?:ITARY)?\\b"
+    },
+    {
+      "id": "other_dimension",
+      "label": "another aircraft dimension or mass",
+      "pattern": "\\bTAIL\\s+(?:HGT|HEIGHT)\\b|\\bMTOW\\b|\\bMAX\\s+(?:TKOF\\s+)?(?:WEIGHT|MASS)\\b|\\bWHEEL\\s*(?:BASE|SPAN)\\b|\\bOMGWS\\b"
+    },
+    {
+      "id": "visibility",
+      "label": "visibility condition",
+      "pattern": "\\bRVR\\b|\\bLVP\\b|\\bLOW\\s+VIS\\w*\\b"
+    },
+    {
+      "id": "conditional",
+      "label": "stated condition",
+      "pattern": "\\bWHEN\\b|\\bIF\\b"
+    },
+    {
+      "id": "propulsion",
+      "label": "propulsion or power condition",
+      "pattern": "\\bPROPELLER\\b|\\bTURBOPROP\\b|\\bTAX\\s+PWR\\b|\\bOWN\\s+POWER\\b|\\bIDLE\\s+(?:PWR|POWER|THRUST)\\b"
+    }
+  ]
+}
