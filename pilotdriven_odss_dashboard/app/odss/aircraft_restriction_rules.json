@@ -1,5 +1,5 @@
 {
-  "specVersion": "aircraft-restriction-applicability-2026-09-22-v2",
+  "specVersion": "aircraft-restriction-applicability-2026-09-22-v3",
   "codeLetterTable": {
     "ruleId": "ICAO_ANNEX14_V1_TABLE_1_1_CODE_LETTER_AMDT15_V1",
     "bands": [
@@ -389,9 +389,34 @@
       "pattern": "\\bWHEN\\b|\\bIF\\b"
     },
     {
+      "id": "exemption",
+      "label": "stated exemption, exclusion or waiver",
+      "pattern": "\\bEXEMPT(?:S|ED|ION|IONS)?\\b|\\bWAIVE[DR]?S?\\b|\\bDISPENSATIONS?\\b|\\bEXCLUDED\\b|\\bEXCLUSIONS?\\b"
+    },
+    {
+      "id": "applicability",
+      "label": "statement about what the limit applies to",
+      "pattern": "\\bAPPL(?:Y|IES|IED|YING|ICABLE|ICABILITY)\\b|\\bN/A\\b"
+    },
+    {
+      "id": "approval",
+      "label": "stated permission or approval",
+      "pattern": "\\b(?:ALLOWED|PERMITTED|AUTHORI[SZ]ED|APPROVED|ACCEPTED)\\b"
+    },
+    {
+      "id": "reversal",
+      "label": "cancellation, lifting or suspension stated in the notice",
+      "pattern": "\\b(?:CANCELLED|CANCELED|CNL|CNLD|WITHDRAWN|REVOKED|RESCINDED|LIFTED|REMOVED|SUSPENDED|NO\\s+LONGER|RESTORED|RETURNED\\s+TO\\s+NORMAL)\\b"
+    },
+    {
       "id": "propulsion",
       "label": "propulsion or power condition",
       "pattern": "\\bPROPELLER\\b|\\bTURBOPROP\\b|\\bTAX\\s+PWR\\b|\\bOWN\\s+POWER\\b|\\bIDLE\\s+(?:PWR|POWER|THRUST)\\b"
     }
-  ]
+  ],
+  "qualifierContext": {
+    "negation": "\\b(?:NOT|NO|NEVER|NIL|WITHOUT|NEITHER|NOR)\\b",
+    "negationLabel": "a negation that may qualify the limit",
+    "limitVocabulary": "\\b(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)|CODE|(?:WINGSPAN|WING\\s+SPAN)|LIMIT(?:S|ED|ATION|ATIONS)?|LTD|RESTRICT(?:ED|ION|IONS)?|RESTR|DOWNGRAD(?:E|ED|ING)|NOTAM|[AB]\\d{3}(?:-\\d{1,4})?|MD-?\\d{2})\\b"
+  }
 }

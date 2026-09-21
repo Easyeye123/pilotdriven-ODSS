@@ -1,6 +1,6 @@
 {
-  "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures. v2 (22 Sep 2026, after Codex's independent review): adversarial vectors for partial readings (negation, reversal, letter lists and ranges, extra direction words) and for unresolved conditions and exceptions, in the limit's sentence or another one. A vector marked 'synthetic' is labelled fixture wording, not an operational notice.",
-  "specVersion": "aircraft-restriction-applicability-2026-09-22-v2",
+  "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures. v2 (22 Sep 2026, after Codex's independent review): adversarial vectors for partial readings (negation, reversal, letter lists and ranges, extra direction words) and for unresolved conditions and exceptions, in the limit's sentence or another one. A vector marked 'synthetic' is labelled fixture wording, not an operational notice. v3 (22 Sep 2026, Codex fix2 review): qualifiers AFTER the limit or in ANOTHER sentence - 'does not apply', 'exempt', 'not applicable', 'not affected', a lifting, a stated permission - withhold the conclusion and are quoted whole so a negator is never cut off the quote; unrelated negation stays a control.",
+  "specVersion": "aircraft-restriction-applicability-2026-09-22-v3",
   "vectors": [
     {
       "id": "original-complaint-sq882-vhhh-a350",
@@ -361,7 +361,7 @@
         "comparisonRelation": "exceeds_limit",
         "comparisonBasis": "aircraft_code_above_maximum",
         "conditionTexts": [
-          "PROPELLER DRIVEN AIRCRAFT"
+          "AND AFM PROPELLER DRIVEN AIRCRAFT"
         ]
       }
     },
@@ -595,7 +595,7 @@
         "comparisonRelation": "exceeds_limit",
         "comparisonBasis": "aircraft_code_above_maximum",
         "conditionTexts": [
-          "WHEN LVP IN FORCE"
+          "RESTRICTION APPLIES ONLY WHEN LVP IN FORCE"
         ]
       }
     },
@@ -639,7 +639,7 @@
         "comparisonRelation": "within_limit",
         "comparisonBasis": "aircraft_code_equals_maximum",
         "conditionTexts": [
-          "UNDER TOW ONLY",
+          "ACFT UNDER TOW ONLY",
           "PPR FM APRON CONTROL 24HR IN ADVANCE"
         ]
       }
@@ -841,6 +841,243 @@
         "formId": "downgraded_to_code",
         "semantics": "maximum_code",
         "limitLabel": "Code E",
+        "aircraftCode": "F",
+        "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "codex-limit-does-not-apply-in-next-sentence",
+      "origin": "synthetic (Codex fix2 review): the exemption is a separate sentence after the limit. 'Excludes this aircraft' must NOT appear",
+      "noticeText": "TWY A LTD TO MAX ACFT CODE C. THIS LIMIT DOES NOT APPLY TO A350 ACFT.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "THIS LIMIT DOES NOT APPLY TO A350 ACFT"
+        ],
+        "sentence": "A350-941 is Code E (64.75 m wingspan): above the stated limit (Code C). The notice also says \"THIS LIMIT DOES NOT APPLY TO A350 ACFT\", which this check cannot resolve, so whether the limit applies to this flight was not decided. Read the notice.",
+        "otherConditionIds": [
+          "negation"
+        ]
+      }
+    },
+    {
+      "id": "codex-aircraft-are-exempt",
+      "origin": "synthetic (Codex fix2 review): 'EXEMPT' ends its sentence, so the quote must be the whole sentence, not the word",
+      "noticeText": "TWY A LTD TO MAX ACFT CODE C. A350 ACFT ARE EXEMPT.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "A350 ACFT ARE EXEMPT"
+        ],
+        "otherConditionIds": [
+          "exemption"
+        ]
+      }
+    },
+    {
+      "id": "codex-not-applicable-after-the-limit",
+      "origin": "synthetic (Codex fix2 review): a negation AFTER the phrase in the limit's own sentence; the quote keeps the NOT",
+      "noticeText": "TWY A LTD TO MAX ACFT CODE C NOT APPLICABLE TO A350 ACFT.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "NOT APPLICABLE TO A350 ACFT"
+        ],
+        "otherConditionIds": [
+          "negation"
+        ]
+      }
+    },
+    {
+      "id": "exemption-naming-another-type-is-still-unresolved",
+      "origin": "synthetic: this check never decides who an exemption covers",
+      "noticeText": "TWY A LTD TO MAX ACFT CODE C. B747 NOT AFFECTED.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "B747 NOT AFFECTED"
+        ],
+        "otherConditionIds": [
+          "negation"
+        ]
+      }
+    },
+    {
+      "id": "lifting-stated-in-another-sentence",
+      "origin": "synthetic: a reversal outside the limit's sentence",
+      "noticeText": "TWY A LTD TO MAX ACFT CODE C. RESTRICTION LIFTED FM 25 SEP 0600.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "RESTRICTION LIFTED FM 25 SEP 0600"
+        ],
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "stated-permission-elsewhere",
+      "origin": "synthetic: a permission that may override the limit for this very aircraft",
+      "noticeText": "TWY A LTD TO MAX ACFT CODE C. A380 OPS PERMITTED WITH WING WALKERS.",
+      "aircraftType": "A380-841",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "F",
+        "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "A380 OPS PERMITTED WITH WING WALKERS"
+        ],
+        "otherConditionIds": [
+          "approval"
+        ]
+      }
+    },
+    {
+      "id": "waiver-before-the-limit",
+      "origin": "synthetic: qualifier first, limit second",
+      "noticeText": "STATE ACFT WAIVED. TWY A LTD TO MAX ACFT CODE C.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "STATE ACFT WAIVED"
+        ],
+        "otherConditionIds": [
+          "exemption"
+        ]
+      }
+    },
+    {
+      "id": "long-qualifying-sentence-keeps-its-negator",
+      "origin": "synthetic: a sentence too long to quote whole is windowed around its first qualifier, never cut before the NOT",
+      "noticeText": "THE FOLLOWING RESTRICTIONS ARE INTRODUCED FOR THE DURATION OF THE RESURFACING WORKS ON THE NORTHERN APRON AND DO NOT APPLY TO STATE ACFT. TWY A LTD TO MAX ACFT CODE C.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "...APRON AND DO NOT APPLY TO STATE ACFT"
+        ],
+        "otherConditionIds": [
+          "negation"
+        ]
+      }
+    },
+    {
+      "id": "unrelated-negation-about-another-facility-is-a-control",
+      "origin": "control, synthetic: a sentence with a negation but no aircraft or limit vocabulary qualifies nothing",
+      "noticeText": "TWY B CLSD. NO CHANGE TO RWY OPS. TWY E DOWNGRADED TO CODE E DUE WIP",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "within_limit",
+        "restrictsThisAircraft": false,
+        "reason": "aircraft_code_equals_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "within_limit"
+      }
+    },
+    {
+      "id": "unrelated-equipment-outage-is-a-control",
+      "origin": "control, synthetic: 'GP U/S, NO ALTN PROC' beside a clean limit",
+      "noticeText": "GP RWY 25L U/S, NO ALTN PROC. RWY 07C/25C AVBL FOR OPS UPTO CODE C ONLY",
+      "aircraftType": "A380-841",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "up_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
         "aircraftCode": "F",
         "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
         "comparisonRelation": "exceeds_limit"

@@ -19,8 +19,8 @@ from app.odss import aircraft_restriction_applicability as rule
 
 RULES_FILE = Path(rule.__file__).with_name("aircraft_restriction_rules.json")
 VECTORS_FILE = Path(__file__).parent / "fixtures" / "aircraft-restriction-vectors.json"
-SHARED_RULES_SHA256 = "cbcbe1c0118a16d27409df2c38f236d9126f8ab6cf3e390599e004d6457b4676"
-SHARED_VECTORS_SHA256 = "3b1dc9225260a62766fa004347dac848a3fc6980065432b4eff675e1fb892284"
+SHARED_RULES_SHA256 = "467e13f14353f9077d71961553989c0bb690a6be33a7957212a8fe8f6e2365e3"
+SHARED_VECTORS_SHA256 = "7f319f4986c835733fbe026e0029f301992eb03bbd7845a5c7bb2ebce4129c6e"
 
 VECTORS = json.loads(VECTORS_FILE.read_text(encoding="utf-8"))
 
@@ -114,7 +114,8 @@ def test_shared_vector(vector: dict) -> None:
         assert restriction["otherConditions"] == [], "a conclusion is only ever drawn from an unconditional limit"
         assert result["unread"] is None
     assert result["operationalPermission"] is False
-    assert not PERMISSION_WORDING.search(result["sentence"])
+    # OUR words never grant anything; the notice's own quoted words are not ours.
+    assert not PERMISSION_WORDING.search(re.sub(r'"[^"]*"', '""', result["sentence"]))
     if result["outcome"] in {"within_limit", "outside_restricted_class"}:
         assert "not a clearance" in result["sentence"]
     if result["status"] != "confirmed":
@@ -220,6 +221,10 @@ def test_a_notice_without_a_size_limit_publishes_exactly_what_it_did_before() ->
     "TWY A LTD TO MAX ACFT CODE C EXC A350 ACFT",
     "TWY A LTD TO MAX ACFT CODE C WHEN LVP IN FORCE",
     "TWY A LTD TO MAX ACFT CODE C. THIS RESTRICTION APPLIES ONLY WHEN LVP IN FORCE. CTC APRON CONTROL.",
+    # Codex fix2 review: the qualifier follows the limit, in its own sentence or the next.
+    "TWY A LTD TO MAX ACFT CODE C. THIS LIMIT DOES NOT APPLY TO A350 ACFT.",
+    "TWY A LTD TO MAX ACFT CODE C. A350 ACFT ARE EXEMPT.",
+    "TWY A LTD TO MAX ACFT CODE C NOT APPLICABLE TO A350 ACFT.",
 ])
 def test_decision_card_never_concludes_from_an_unresolved_condition(item_e_text: str) -> None:
     (line,) = _destination_lines("A350-941", item_e_text)
@@ -393,3 +398,19 @@ def test_original_sq326_pdf_carries_the_exclusion_and_a_changed_aircraft_does_no
         assert expected in text
     if absent:
         assert absent not in text
+
+
+def test_a_qualified_exclusion_is_never_promoted_into_the_pdf_card_and_an_unrelated_negation_changes_nothing() -> None:
+    """Codex fix2 review. An exemption after the limit concludes nothing, so the
+    promotion that carries CONFIRMED exclusions into the PDF must leave it out;
+    a negation about another facility must not stop a clean exclusion being carried."""
+    closure = _notice(aircraft_type="A380-841", **_CLOSURE)
+    exempted = _notice("A3671/26", "TWY L20 LTD TO MAX ACFT TYPE CODE C. A380 ACFT ARE EXEMPT.",
+                       "TWY L20 limited to max aircraft type code C.", "A380-841")
+    assert exempted["aircraft_size_check"]["status"] == "review_required"
+    assert "A3671/26" not in _ground_card(_panel(closure, exempted, summary_ids=("A3047/26",)))
+
+    clean = _notice("A3671/26", "ILS RWY 25C NOT AVBL. TWY L20 LTD TO MAX ACFT TYPE CODE C.",
+                    "TWY L20 limited to max aircraft type code C.", "A380-841")
+    assert clean["aircraft_size_check"]["outcome"] == "exceeds_limit"
+    assert "above this limit (Code C)" in _ground_card(_panel(closure, clean, summary_ids=("A3047/26",)))

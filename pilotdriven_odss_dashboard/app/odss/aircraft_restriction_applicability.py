@@ -39,6 +39,7 @@ _NOT_A_CLEARANCE = "Size check only, not a clearance; other restrictions still a
 _CONDITION_QUOTE_MAX_WORDS = 12
 _CONDITION_QUOTE_MAX_CHARS = 80
 _CONDITION_QUOTES_SHOWN = 2
+_QUOTE_LEAD_WORDS = 3
 _RELATION = {
     "within_limit": "within",
     "exceeds_limit": "above",
@@ -65,6 +66,16 @@ def _markers() -> tuple[tuple[dict[str, Any], re.Pattern[str]], ...]:
 @lru_cache(maxsize=1)
 def _guards() -> tuple[tuple[dict[str, Any], re.Pattern[str]], ...]:
     return tuple((guard, re.compile(guard["pattern"])) for guard in rules()["readingGuards"])
+
+
+@lru_cache(maxsize=1)
+def _negation() -> re.Pattern[str]:
+    return re.compile(rules()["qualifierContext"]["negation"])
+
+
+@lru_cache(maxsize=1)
+def _limit_vocabulary() -> re.Pattern[str]:
+    return re.compile(rules()["qualifierContext"]["limitVocabulary"])
 
 
 @lru_cache(maxsize=1)
@@ -195,34 +206,88 @@ def _unread_reason(text: str, index: int, length: int) -> dict[str, str] | None:
     return None
 
 
-def _quoted_condition(text: str, index: int) -> str:
-    """The notice's own condition words from a marker to the end of its sentence, bounded."""
-    _, end = _sentence_bounds(text, index, 1)
-    words = text[index:end].strip().split(" ")[:_CONDITION_QUOTE_MAX_WORDS]
-    quote = " ".join(words)
+def _sentence_ranges(text: str) -> list[tuple[int, int]]:
+    """Every sentence of the notice as [start, end) ranges."""
+    ranges: list[tuple[int, int]] = []
+    start = 0
+    for boundary in _SENTENCE_BOUNDARY.finditer(text):
+        ranges.append((start, boundary.start()))
+        start = boundary.start() + 1
+    ranges.append((start, len(text)))
+    return [(begin, finish) for begin, finish in ranges if text[begin:finish].strip()]
+
+
+def _tidy(value: str) -> str:
+    return re.sub(r"^[,:.\s]+|[,:.\s]+$", "", re.sub(r"\s+", " ", value).strip())
+
+
+def _bounded_quote(stretch: str, first_qualifier_offset: int) -> str:
+    """The notice's own qualifying words, bounded.
+
+    The quote is the WHOLE stretch so a negator can never be cut off it ("DOES
+    NOT APPLY TO A350" must not become "APPLY TO A350"); only a stretch too long
+    to quote is windowed, starting a few words before its first qualifier.
+    """
+    clean = _tidy(stretch)
+    words = clean.split(" ")
+    if len(words) <= _CONDITION_QUOTE_MAX_WORDS and len(clean) <= _CONDITION_QUOTE_MAX_CHARS:
+        return clean
+    lead = _tidy(stretch[:max(0, first_qualifier_offset)])
+    begin = max(0, (len(lead.split(" ")) if lead else 0) - _QUOTE_LEAD_WORDS)
+    window = words[begin:begin + _CONDITION_QUOTE_MAX_WORDS]
+    quote = " ".join(window)
+    cut_at_end = begin + len(window) < len(words)
     if len(quote) > _CONDITION_QUOTE_MAX_CHARS:
-        quote = f"{quote[:_CONDITION_QUOTE_MAX_CHARS].rstrip()}..."
-    return re.sub(r"[,:]+$", "", quote)
+        quote = quote[:_CONDITION_QUOTE_MAX_CHARS].rstrip()
+        cut_at_end = True
+    return f"{'...' if begin > 0 else ''}{quote}{'...' if cut_at_end else ''}"
 
 
-def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, str]]:
-    """Every condition marker anywhere in the notice, outside the limit phrase itself."""
+def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, Any]]:
+    """Every qualifier anywhere in the notice, outside the limit phrase itself.
+
+    Codex fix2 review, 22 Sep 2026: "... CODE C. THIS LIMIT DOES NOT APPLY TO A350
+    ACFT.", "... A350 ACFT ARE EXEMPT." and "... CODE C NOT APPLICABLE TO A350 ACFT"
+    still concluded an exclusion. A condition, exception, exemption, applicability
+    statement, permission or reversal counts wherever it stands; a bare negation
+    counts where it can be about the limit - after the phrase in its own sentence,
+    or in a sentence that speaks of aircraft or limits. One entry per qualifying
+    stretch, in notice order.
+    """
     masked = f"{text[:index]}{' ' * length}{text[index + length:]}"
-    found: list[dict[str, Any]] = []
-    for marker, pattern in _markers():
-        for match in pattern.finditer(masked):
-            found.append({
-                "id": marker["id"], "label": marker["label"], "at": match.start(),
-                "text": _quoted_condition(masked, match.start()),
+    limit_end = index + length
+    context = rules()["qualifierContext"]
+    negation = _negation()
+    vocabulary = _limit_vocabulary()
+    conditions: list[dict[str, Any]] = []
+    for begin, finish in _sentence_ranges(masked):
+        own = begin <= index < finish
+        stretches = [(begin, index), (limit_end, finish)] if own else [(begin, finish)]
+        for start, end in stretches:
+            stretch = masked[start:end]
+            if not stretch.strip():
+                continue
+            found: list[dict[str, Any]] = []
+            for marker, pattern in _markers():
+                for match in pattern.finditer(stretch):
+                    found.append({"id": marker["id"], "label": marker["label"], "at": match.start()})
+            negation_counts = (start == limit_end) if own else bool(vocabulary.search(stretch))
+            if negation_counts:
+                for match in negation.finditer(stretch):
+                    found.append({"id": "negation", "label": context["negationLabel"], "at": match.start()})
+            if not found:
+                continue
+            found.sort(key=lambda entry: entry["at"])
+            ids: list[str] = []
+            for entry in found:
+                if entry["id"] not in ids:
+                    ids.append(entry["id"])
+            conditions.append({
+                "id": found[0]["id"],
+                "label": found[0]["label"],
+                "ids": ids,
+                "text": _bounded_quote(stretch, found[0]["at"]),
             })
-    # Stable, like the app's sort: by position, markers keep their catalogue order on a tie.
-    found.sort(key=lambda entry: entry["at"])
-    conditions: list[dict[str, str]] = []
-    for entry in found:
-        condition = {key: value for key, value in entry.items() if key != "at"}
-        if any(condition["text"] in held["text"] or held["text"] in condition["text"] for held in conditions):
-            continue
-        conditions.append(condition)
     return conditions
 
 
