@@ -36,6 +36,15 @@ _FEET_TO_METRES = 0.3048
 _SENTENCE_BOUNDARY = re.compile(r"(?:[;\n]|(?<!\d)\.(?!\d))")
 _CLASS_SEMANTICS = {"prohibited_code_class", "prohibited_wingspan_class"}
 _NOT_A_CLEARANCE = "Size check only, not a clearance; other restrictions still apply."
+_CONDITION_QUOTE_MAX_WORDS = 12
+_CONDITION_QUOTE_MAX_CHARS = 80
+_CONDITION_QUOTES_SHOWN = 2
+_RELATION = {
+    "within_limit": "within",
+    "exceeds_limit": "above",
+    "in_restricted_class": "inside the class named by",
+    "outside_restricted_class": "outside the class named by",
+}
 
 
 @lru_cache(maxsize=1)
@@ -51,6 +60,11 @@ def _forms() -> tuple[tuple[dict[str, Any], re.Pattern[str]], ...]:
 @lru_cache(maxsize=1)
 def _markers() -> tuple[tuple[dict[str, Any], re.Pattern[str]], ...]:
     return tuple((marker, re.compile(marker["pattern"])) for marker in rules()["conditionMarkers"])
+
+
+@lru_cache(maxsize=1)
+def _guards() -> tuple[tuple[dict[str, Any], re.Pattern[str]], ...]:
+    return tuple((guard, re.compile(guard["pattern"])) for guard in rules()["readingGuards"])
 
 
 @lru_cache(maxsize=1)
@@ -150,7 +164,7 @@ def _normalized_notice_text(value: Any) -> str:
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", str(value or ""))).strip().upper()
 
 
-def _sentence_around(text: str, index: int, length: int) -> str:
+def _sentence_bounds(text: str, index: int, length: int) -> tuple[int, int]:
     start, end = 0, len(text)
     for boundary in _SENTENCE_BOUNDARY.finditer(text):
         if boundary.start() < index:
@@ -158,7 +172,58 @@ def _sentence_around(text: str, index: int, length: int) -> str:
         elif boundary.start() >= index + length:
             end = boundary.start()
             break
-    return text[start:end].strip()
+    return start, end
+
+
+def _unread_reason(text: str, index: int, length: int) -> dict[str, str] | None:
+    """Is the matched phrase the WHOLE limit its clause states?
+
+    Codex review, 22 Sep 2026: "CLSD FOR ACFT CODE E AND F" was read as "Code E"
+    and "NOT RESTRICTED TO MAX ACFT CODE C" as a Code C limit. A guard that
+    fires means the phrase is only part of the clause, and it is not compared.
+    """
+    start, end = _sentence_bounds(text, index, length)
+    views = {
+        "sentence_before": text[start:index],
+        "sentence": text[start:end],
+        "before": text[start:index],
+        "after": text[index + length:end],
+    }
+    for guard, pattern in _guards():
+        if pattern.search(views[guard["where"]]):
+            return {"id": guard["id"], "label": guard["label"]}
+    return None
+
+
+def _quoted_condition(text: str, index: int) -> str:
+    """The notice's own condition words from a marker to the end of its sentence, bounded."""
+    _, end = _sentence_bounds(text, index, 1)
+    words = text[index:end].strip().split(" ")[:_CONDITION_QUOTE_MAX_WORDS]
+    quote = " ".join(words)
+    if len(quote) > _CONDITION_QUOTE_MAX_CHARS:
+        quote = f"{quote[:_CONDITION_QUOTE_MAX_CHARS].rstrip()}..."
+    return re.sub(r"[,:]+$", "", quote)
+
+
+def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, str]]:
+    """Every condition marker anywhere in the notice, outside the limit phrase itself."""
+    masked = f"{text[:index]}{' ' * length}{text[index + length:]}"
+    found: list[dict[str, Any]] = []
+    for marker, pattern in _markers():
+        for match in pattern.finditer(masked):
+            found.append({
+                "id": marker["id"], "label": marker["label"], "at": match.start(),
+                "text": _quoted_condition(masked, match.start()),
+            })
+    # Stable, like the app's sort: by position, markers keep their catalogue order on a tie.
+    found.sort(key=lambda entry: entry["at"])
+    conditions: list[dict[str, str]] = []
+    for entry in found:
+        condition = {key: value for key, value in entry.items() if key != "at"}
+        if any(condition["text"] in held["text"] or held["text"] in condition["text"] for held in conditions):
+            continue
+        conditions.append(condition)
+    return conditions
 
 
 def _class_direction(word: str | None) -> str:
@@ -172,20 +237,17 @@ def _reading_from(form: dict[str, Any], match: re.Match[str], text: str) -> dict
         position = form["groups"].get(name)
         return match.group(position) if position else None
 
-    sentence = _sentence_around(text, match.start(), len(match.group(0)))
-    remainder = sentence.replace(match.group(0), " ", 1)
     reading: dict[str, Any] = {
         "formId": form["id"],
         "kind": form["kind"],
         "semantics": form["semantics"],
         "evidence": match.group(0),
         "index": match.start(),
-        "otherConditions": [
-            {"id": marker["id"], "label": marker["label"]}
-            for marker, pattern in _markers()
-            if pattern.search(remainder)
-        ],
+        "otherConditions": _notice_conditions(text, match.start(), len(match.group(0))),
     }
+    unread = _unread_reason(text, match.start(), len(match.group(0)))
+    if unread:
+        reading["unread"] = unread
     subject = group("subject")
     if subject:
         reading["subject"] = subject.strip()
@@ -204,7 +266,7 @@ def _reading_from(form: dict[str, Any], match: re.Match[str], text: str) -> dict
 
 
 def _same_limit(left: dict[str, Any], right: dict[str, Any]) -> bool:
-    return all(
+    return bool(left.get("unread")) == bool(right.get("unread")) and all(
         left.get(key) == right.get(key)
         for key in ("kind", "semantics", "code", "classDirection", "limitM", "inclusive")
     )
@@ -284,6 +346,8 @@ def _result(
     restriction: dict[str, Any] | None = None,
     aircraft: dict[str, Any] | None = None,
     detail: str | None = None,
+    comparison: dict[str, Any] | None = None,
+    unread: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     concerns = (
         True if outcome in {"exceeds_limit", "in_restricted_class"}
@@ -299,6 +363,10 @@ def _result(
         # A comparison never authorises anything.
         "operationalPermission": False,
         "reason": reason,
+        # The pure size relation, kept even when the conclusion above is withheld.
+        "comparison": comparison,
+        # Set when a limit phrase matched but its clause was not fully read.
+        "unread": unread,
         "restriction": restriction,
         "aircraft": aircraft,
         "sentence": sentence,
@@ -357,30 +425,32 @@ def _aircraft_phrase(aircraft: dict[str, Any], reading: dict[str, Any]) -> str:
     return f"{aircraft['type']} has a {span}"
 
 
-def _conditions_clause(reading: dict[str, Any]) -> str:
-    if not reading["otherConditions"]:
-        return ""
-    labels = ", ".join(entry["label"] for entry in reading["otherConditions"])
-    return f" The notice also states: {labels}."
+def _quoted_conditions(reading: dict[str, Any]) -> str:
+    """The notice's own condition words, quoted, so the pilot sees WHAT is unresolved."""
+    shown = [f'"{entry["text"]}"' for entry in reading["otherConditions"][:_CONDITION_QUOTES_SHOWN]]
+    more = len(reading["otherConditions"]) - len(shown)
+    return " and ".join(shown) + (f" and {more} more" if more > 0 else "")
+
+
+def _unresolved_condition_sentence(relation: str, aircraft: dict[str, Any], reading: dict[str, Any]) -> str:
+    """The size relation is stated; the conclusion is not."""
+    return (
+        f"{_aircraft_phrase(aircraft, reading)}: {_RELATION[relation]} the stated limit ({_limit_label(reading)}). "
+        f"The notice also says {_quoted_conditions(reading)}, which this check cannot resolve, so whether the limit "
+        "applies to this flight was not decided. Read the notice."
+    )
 
 
 def _outcome_sentence(outcome: str, aircraft: dict[str, Any], reading: dict[str, Any]) -> str:
     who = _aircraft_phrase(aircraft, reading)
     limit = _limit_label(reading)
-    conditions = _conditions_clause(reading)
     if outcome == "within_limit":
-        return f"{who}: within this limit ({limit}).{conditions} {_NOT_A_CLEARANCE}"
+        return f"{who}: within this limit ({limit}). {_NOT_A_CLEARANCE}"
     if outcome == "exceeds_limit":
-        return (
-            f"{who}: above this limit ({limit}), so the notice excludes this aircraft "
-            f"from the stated area.{conditions}"
-        )
+        return f"{who}: above this limit ({limit}), so the notice excludes this aircraft from the stated area."
     if outcome == "in_restricted_class":
-        return (
-            f"{who}: inside the restricted class ({limit}), so the notice applies to "
-            f"this aircraft.{conditions}"
-        )
-    return f"{who}: outside the restricted class ({limit}).{conditions} {_NOT_A_CLEARANCE}"
+        return f"{who}: inside the restricted class ({limit}), so the notice applies to this aircraft."
+    return f"{who}: outside the restricted class ({limit}). {_NOT_A_CLEARANCE}"
 
 
 def assess_aircraft_restriction_applicability(
@@ -397,6 +467,20 @@ def assess_aircraft_restriction_applicability(
 
     assessment = assess_aircraft_aerodrome_code(aircraft_type, explicit_governed_code)
     aircraft = _public_aircraft(assessment, aircraft_type_source)
+
+    unread = next((entry for entry in readings if entry.get("unread")), None)
+    if unread:
+        return _result(
+            status="review_required",
+            reason="size_limit_wording_not_fully_read",
+            unread={**unread["unread"], "matched": unread["evidence"]},
+            aircraft=aircraft,
+            sentence=(
+                "This notice words an aircraft-size limit in a way the verified rules do not fully read "
+                f"({unread['unread']['label']}), so it was not compared. Read the notice."
+            ),
+            detail=f'Matched only "{unread["evidence"]}"; guard {unread["unread"]["id"]}.',
+        )
 
     if len(readings) > 1:
         labels = "; ".join(_limit_label(entry) for entry in readings)
@@ -455,10 +539,27 @@ def assess_aircraft_restriction_applicability(
             aircraft=aircraft, sentence=sentence,
         )
 
+    comparison = {"relation": outcome, "basis": reason}
+    if reading["otherConditions"]:
+        conditions = "; ".join(f'{entry["id"]} "{entry["text"]}"' for entry in reading["otherConditions"])
+        return _result(
+            status="review_required",
+            reason="unresolved_condition_in_notice",
+            comparison=comparison,
+            restriction=restriction,
+            aircraft=aircraft,
+            sentence=_unresolved_condition_sentence(outcome, aircraft, reading),
+            detail=(
+                f"Rule {assessment['ruleId']}; code table {rules()['codeLetterTable']['ruleId']}; "
+                f'read from "{reading["evidence"]}"; conditions: {conditions}.'
+            ),
+        )
+
     return _result(
         status="confirmed",
         outcome=outcome,
         reason=reason,
+        comparison=comparison,
         restriction=restriction,
         aircraft=aircraft,
         sentence=_outcome_sentence(outcome, aircraft, reading),

@@ -4250,6 +4250,73 @@ def _finding_source_reference(item: dict[str, Any]) -> str:
     )
 
 
+_GROUND_CONSTRAINT_FAMILIES = frozenset({
+    "runway_restriction",
+    "runway_closure",
+    "taxiway",
+    "apron_stand",
+})
+# How many confirmed aircraft exclusions may be added beyond the card's two
+# family-diverse lines. Bounded so the six-page layout cannot be overrun.
+_MATERIAL_AIRCRAFT_EXCLUSION_LINES = 2
+
+
+def _material_aircraft_exclusion_lines(
+    panel: dict[str, Any],
+    held_lines: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Confirmed aircraft exclusions the card's family cap would otherwise drop.
+
+    Codex live QA, 22 Sep 2026, SQ326 (A380-841) into EDDF: A3671/26 "TWY L20 LTD
+    TO MAX ACFT TYPE CODE C" carried a confirmed "above this limit" comparison on
+    its dashboard row, yet the downloaded PDF never mentioned it. The card takes
+    its lines from the panel's summary, which keeps ONE notice per family, and
+    the taxiway slot had gone to a closure. A notice that excludes the flight's
+    own aircraft from destination pavement is not interchangeable with another
+    taxiway notice, so it is carried in addition.
+
+    Only a CONFIRMED exclusion qualifies (``restrictsThisAircraft is True``): an
+    unknown aircraft, an unresolved condition or a partly-read limit concludes
+    nothing and is therefore never promoted here - nothing is invented. The
+    notice must already be one the panel selected as active for this role.
+    """
+    held_ids = {str(line.get("notam_id") or line.get("label") or "").upper() for line in held_lines}
+    material = []
+    for item in panel.get("selected_notams") or []:
+        if not isinstance(item, dict):
+            continue
+        check = item.get("aircraft_size_check")
+        if not (
+            isinstance(check, dict)
+            and check.get("status") == "confirmed"
+            and check.get("restrictsThisAircraft") is True
+        ):
+            continue
+        notam_id = str(item.get("notam_id") or "").upper()
+        raw = str(item.get("item_e_text") or "").upper()
+        if (
+            not notam_id
+            or notam_id in held_ids
+            or str(item.get("signal_family") or _compact_notam_family(item)) not in _GROUND_CONSTRAINT_FAMILIES
+            or str(item.get("applicability") or "active") != "active"
+            or str(item.get("stateAtReference") or "") == "ended_before_reference"
+            or re.search(r"\bFLIGHTS?\s+DEPARTING\b", raw)
+        ):
+            continue
+        held_ids.add(notam_id)
+        material.append({
+            "kind": "notam",
+            "label": item.get("notam_id"),
+            "notam_id": item.get("notam_id"),
+            "text": str(item.get("compact_text") or item.get("summary") or "").strip(),
+            "source_page": item.get("source_page"),
+            "aircraft_size_check": check,
+            "pertinence_rank": int(item.get("pertinence_rank") or 99),
+        })
+    material.sort(key=lambda line: (line["pertinence_rank"], str(line["notam_id"])))
+    return material[:_MATERIAL_AIRCRAFT_EXCLUSION_LINES]
+
+
 def _decision_finding_projection(
     findings: list[dict[str, Any]],
     *,
@@ -4457,13 +4524,11 @@ def _decision_finding_projection(
             if isinstance(line, dict)
             and str(line.get("kind") or "").lower() == "notam"
             and str(line.get("signal_family") or "")
-            in {
-                "runway_restriction",
-                "runway_closure",
-                "taxiway",
-                "apron_stand",
-            }
+            in _GROUND_CONSTRAINT_FAMILIES
         ][:2]
+        ground_lines = ground_lines + _material_aircraft_exclusion_lines(
+            destination_panel, ground_lines,
+        )
         bay_cranes = [
             item
             for item in destination_panel.get("selected_notams") or []

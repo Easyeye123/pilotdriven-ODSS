@@ -1,6 +1,6 @@
 {
-  "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures.",
-  "specVersion": "aircraft-restriction-applicability-2026-09-21-v1",
+  "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures. v2 (22 Sep 2026, after Codex's independent review): adversarial vectors for partial readings (negation, reversal, letter lists and ranges, extra direction words) and for unresolved conditions and exceptions, in the limit's sentence or another one. A vector marked 'synthetic' is labelled fixture wording, not an operational notice.",
+  "specVersion": "aircraft-restriction-applicability-2026-09-22-v2",
   "vectors": [
     {
       "id": "original-complaint-sq882-vhhh-a350",
@@ -8,10 +8,17 @@
       "noticeText": "TWY E BTN TWY F5 AND TWY F6 DOWNGRADED TO CODE E DUE WIP",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "confirmed", "outcome": "within_limit", "restrictsThisAircraft": false,
-        "reason": "aircraft_code_equals_maximum", "formId": "downgraded_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code E", "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
-        "sentence": "A350-941 is Code E (64.75 m wingspan): within this limit (Code E). Size check only, not a clearance; other restrictions still apply."
+        "status": "confirmed",
+        "outcome": "within_limit",
+        "restrictsThisAircraft": false,
+        "reason": "aircraft_code_equals_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "sentence": "A350-941 is Code E (64.75 m wingspan): within this limit (Code E). Size check only, not a clearance; other restrictions still apply.",
+        "comparisonRelation": "within_limit"
       }
     },
     {
@@ -20,10 +27,17 @@
       "noticeText": "TWY E BTN TWY F5 AND TWY F6 DOWNGRADED TO CODE E DUE WIP",
       "aircraftType": "A380-841",
       "expect": {
-        "status": "confirmed", "outcome": "exceeds_limit", "restrictsThisAircraft": true,
-        "reason": "aircraft_code_above_maximum", "formId": "downgraded_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code E", "aircraftCode": "F", "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
-        "sentence": "A380-841 is Code F (79.75 m wingspan): above this limit (Code E), so the notice excludes this aircraft from the stated area."
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": "F",
+        "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+        "sentence": "A380-841 is Code F (79.75 m wingspan): above this limit (Code E), so the notice excludes this aircraft from the stated area.",
+        "comparisonRelation": "exceeds_limit"
       }
     },
     {
@@ -32,9 +46,16 @@
       "noticeText": "TWY E BTN TWY F5 AND TWY F6 DOWNGRADED TO CODE E DUE WIP",
       "aircraftType": "737-8",
       "expect": {
-        "status": "confirmed", "outcome": "within_limit", "restrictsThisAircraft": false,
-        "reason": "aircraft_code_below_maximum", "formId": "downgraded_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code E", "aircraftCode": "C", "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1"
+        "status": "confirmed",
+        "outcome": "within_limit",
+        "restrictsThisAircraft": false,
+        "reason": "aircraft_code_below_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": "C",
+        "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1",
+        "comparisonRelation": "within_limit"
       }
     },
     {
@@ -43,9 +64,15 @@
       "noticeText": "TWY E BTN TWY F5 AND TWY F6 DOWNGRADED TO CODE E DUE WIP",
       "aircraftType": "B77W",
       "expect": {
-        "status": "unknown", "outcome": null, "restrictsThisAircraft": null,
-        "reason": "aircraft_size_not_verified", "formId": "downgraded_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code E", "aircraftCode": null, "aircraftRuleId": null,
+        "status": "unknown",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "aircraft_size_not_verified",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": null,
+        "aircraftRuleId": null,
         "sentence": "This limit (Code E) was not compared: no verified size data is held for B77W. Compare it against the notice yourself."
       }
     },
@@ -55,9 +82,15 @@
       "noticeText": "TWY E BTN TWY F5 AND TWY F6 DOWNGRADED TO CODE E DUE WIP",
       "aircraftType": "A350-1041",
       "expect": {
-        "status": "unknown", "outcome": null, "restrictsThisAircraft": null,
-        "reason": "aircraft_size_not_verified", "formId": "downgraded_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code E", "aircraftCode": null, "aircraftRuleId": null
+        "status": "unknown",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "aircraft_size_not_verified",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": null,
+        "aircraftRuleId": null
       }
     },
     {
@@ -66,9 +99,15 @@
       "noticeText": "TWY E BTN TWY F5 AND TWY F6 DOWNGRADED TO CODE E DUE WIP",
       "aircraftType": "",
       "expect": {
-        "status": "unknown", "outcome": null, "restrictsThisAircraft": null,
-        "reason": "aircraft_size_not_verified", "formId": "downgraded_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code E", "aircraftCode": null, "aircraftRuleId": null
+        "status": "unknown",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "aircraft_size_not_verified",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": null,
+        "aircraftRuleId": null
       }
     },
     {
@@ -78,9 +117,15 @@
       "aircraftType": "A350-941",
       "explicitGovernedCode": "F",
       "expect": {
-        "status": "review_required", "outcome": null, "restrictsThisAircraft": null,
-        "reason": "aircraft_code_conflict", "formId": "downgraded_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code E", "aircraftCode": null, "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1"
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "aircraft_code_conflict",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": null,
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1"
       }
     },
     {
@@ -89,9 +134,16 @@
       "noticeText": "TORA AND ASDA FOR RWY 01L REDUCED. RMK:1.GRADED RESA DIMENSION OF RWY 01L IS 90M 90M 2.RWY 19R/01L AVBL FOR OPS UPTO CODE C ACFT ONLY",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "confirmed", "outcome": "exceeds_limit", "restrictsThisAircraft": true,
-        "reason": "aircraft_code_above_maximum", "formId": "up_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code C", "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1"
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "up_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
       }
     },
     {
@@ -100,9 +152,16 @@
       "noticeText": "TWY L20 LTD TO MAX ACFT TYPE CODE C.",
       "aircraftType": "A380-841",
       "expect": {
-        "status": "confirmed", "outcome": "exceeds_limit", "restrictsThisAircraft": true,
-        "reason": "aircraft_code_above_maximum", "formId": "limited_to_max_code", "semantics": "maximum_code",
-        "limitLabel": "Code C", "aircraftCode": "F", "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1"
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "F",
+        "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+        "comparisonRelation": "exceeds_limit"
       }
     },
     {
@@ -111,9 +170,16 @@
       "noticeText": "TWY A5 RESTRICTED TO ACFT CODE E",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "confirmed", "outcome": "within_limit", "restrictsThisAircraft": false,
-        "reason": "aircraft_code_equals_named_code", "formId": "limited_to_code", "semantics": "code_only",
-        "limitLabel": "Code E", "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1"
+        "status": "confirmed",
+        "outcome": "within_limit",
+        "restrictsThisAircraft": false,
+        "reason": "aircraft_code_equals_named_code",
+        "formId": "limited_to_code",
+        "semantics": "code_only",
+        "limitLabel": "Code E",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "within_limit"
       }
     },
     {
@@ -122,9 +188,15 @@
       "noticeText": "TWY A5 RESTRICTED TO ACFT CODE E",
       "aircraftType": "737-8",
       "expect": {
-        "status": "review_required", "outcome": null, "restrictsThisAircraft": null,
-        "reason": "smaller_aircraft_not_addressed_by_notice", "formId": "limited_to_code", "semantics": "code_only",
-        "limitLabel": "Code E", "aircraftCode": "C", "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1"
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "smaller_aircraft_not_addressed_by_notice",
+        "formId": "limited_to_code",
+        "semantics": "code_only",
+        "limitLabel": "Code E",
+        "aircraftCode": "C",
+        "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1"
       }
     },
     {
@@ -133,9 +205,16 @@
       "noticeText": "TXL N4 CODE C ACFT ONLY",
       "aircraftType": "B787-10",
       "expect": {
-        "status": "confirmed", "outcome": "exceeds_limit", "restrictsThisAircraft": true,
-        "reason": "aircraft_code_above_named_code", "formId": "code_only", "semantics": "code_only",
-        "limitLabel": "Code C", "aircraftCode": "E", "aircraftRuleId": "BOEING_787_10_ICAO_CODE_E_V1"
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_named_code",
+        "formId": "code_only",
+        "semantics": "code_only",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "BOEING_787_10_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
       }
     },
     {
@@ -144,10 +223,17 @@
       "noticeText": "TWY K CLSD FOR ACFT CODE F",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "confirmed", "outcome": "outside_restricted_class", "restrictsThisAircraft": false,
-        "reason": "aircraft_code_outside_restricted_class", "formId": "unavailable_to_code_class", "semantics": "prohibited_code_class",
-        "limitLabel": "Code F", "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
-        "sentence": "A350-941 is Code E (64.75 m wingspan): outside the restricted class (Code F). Size check only, not a clearance; other restrictions still apply."
+        "status": "confirmed",
+        "outcome": "outside_restricted_class",
+        "restrictsThisAircraft": false,
+        "reason": "aircraft_code_outside_restricted_class",
+        "formId": "unavailable_to_code_class",
+        "semantics": "prohibited_code_class",
+        "limitLabel": "Code F",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "sentence": "A350-941 is Code E (64.75 m wingspan): outside the restricted class (Code F). Size check only, not a clearance; other restrictions still apply.",
+        "comparisonRelation": "outside_restricted_class"
       }
     },
     {
@@ -156,9 +242,16 @@
       "noticeText": "TWY K NOT AVBL FOR ACFT CODE E AND ABV",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "confirmed", "outcome": "in_restricted_class", "restrictsThisAircraft": true,
-        "reason": "aircraft_code_in_restricted_class", "formId": "unavailable_to_code_class", "semantics": "prohibited_code_class",
-        "limitLabel": "Code E and above", "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1"
+        "status": "confirmed",
+        "outcome": "in_restricted_class",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_in_restricted_class",
+        "formId": "unavailable_to_code_class",
+        "semantics": "prohibited_code_class",
+        "limitLabel": "Code E and above",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "in_restricted_class"
       }
     },
     {
@@ -167,9 +260,16 @@
       "noticeText": "TWY SA CLSD FOR ACFT CODE E AND BELOW",
       "aircraftType": "A380-841",
       "expect": {
-        "status": "confirmed", "outcome": "outside_restricted_class", "restrictsThisAircraft": false,
-        "reason": "aircraft_code_outside_restricted_class", "formId": "unavailable_to_code_class", "semantics": "prohibited_code_class",
-        "limitLabel": "Code E and below", "aircraftCode": "F", "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1"
+        "status": "confirmed",
+        "outcome": "outside_restricted_class",
+        "restrictsThisAircraft": false,
+        "reason": "aircraft_code_outside_restricted_class",
+        "formId": "unavailable_to_code_class",
+        "semantics": "prohibited_code_class",
+        "limitLabel": "Code E and below",
+        "aircraftCode": "F",
+        "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+        "comparisonRelation": "outside_restricted_class"
       }
     },
     {
@@ -178,9 +278,16 @@
       "noticeText": "THU FRI SAT TUE WED 0730-1330 TWY B BTN TWY B3 AND TWY B1 CLSD TO ACFT WINGSPAN MORE THAN 118FT",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "confirmed", "outcome": "in_restricted_class", "restrictsThisAircraft": true,
-        "reason": "wingspan_in_restricted_class", "formId": "unavailable_above_wingspan", "semantics": "prohibited_wingspan_class",
-        "limitLabel": "wingspan more than 118 ft (35.97 m)", "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1"
+        "status": "confirmed",
+        "outcome": "in_restricted_class",
+        "restrictsThisAircraft": true,
+        "reason": "wingspan_in_restricted_class",
+        "formId": "unavailable_above_wingspan",
+        "semantics": "prohibited_wingspan_class",
+        "limitLabel": "wingspan more than 118 ft (35.97 m)",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "in_restricted_class"
       }
     },
     {
@@ -189,9 +296,15 @@
       "noticeText": "TWY B BTN TWY B3 AND TWY B1 CLSD TO ACFT WINGSPAN MORE THAN 118FT",
       "aircraftType": "737-8",
       "expect": {
-        "status": "review_required", "outcome": null, "restrictsThisAircraft": null,
-        "reason": "wingspan_within_rounding_of_limit", "formId": "unavailable_above_wingspan", "semantics": "prohibited_wingspan_class",
-        "limitLabel": "wingspan more than 118 ft (35.97 m)", "aircraftCode": "C", "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1"
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "wingspan_within_rounding_of_limit",
+        "formId": "unavailable_above_wingspan",
+        "semantics": "prohibited_wingspan_class",
+        "limitLabel": "wingspan more than 118 ft (35.97 m)",
+        "aircraftCode": "C",
+        "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1"
       }
     },
     {
@@ -200,9 +313,16 @@
       "noticeText": "INT INN-6 WITH OUT-7 AND INT OUT-7 WITH B1 RESTRICTED TO ACFT WITH WINGSPAN SMALLER THAN 68.6M",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "confirmed", "outcome": "within_limit", "restrictsThisAircraft": false,
-        "reason": "wingspan_below_limit", "formId": "wingspan_smaller_than", "semantics": "maximum_wingspan",
-        "limitLabel": "wingspan below 68.6 m", "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1"
+        "status": "confirmed",
+        "outcome": "within_limit",
+        "restrictsThisAircraft": false,
+        "reason": "wingspan_below_limit",
+        "formId": "wingspan_smaller_than",
+        "semantics": "maximum_wingspan",
+        "limitLabel": "wingspan below 68.6 m",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "within_limit"
       }
     },
     {
@@ -211,34 +331,61 @@
       "noticeText": "ACFT STAND 5 MAX WINGSPAN 36M",
       "aircraftType": "B787-10",
       "expect": {
-        "status": "confirmed", "outcome": "exceeds_limit", "restrictsThisAircraft": true,
-        "reason": "wingspan_above_limit", "formId": "max_wingspan", "semantics": "maximum_wingspan",
-        "limitLabel": "wingspan up to 36 m", "aircraftCode": "E", "aircraftRuleId": "BOEING_787_10_ICAO_CODE_E_V1"
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "wingspan_above_limit",
+        "formId": "max_wingspan",
+        "semantics": "maximum_wingspan",
+        "limitLabel": "wingspan up to 36 m",
+        "aircraftCode": "E",
+        "aircraftRuleId": "BOEING_787_10_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
       }
     },
     {
       "id": "other-conditions-are-carried-not-dropped",
-      "origin": "real: LMML 1A1495/26 on SQ365 (A350-941) - a code limit AND a propulsion condition in one sentence",
+      "origin": "real: LMML 1A1495/26 on SQ365 (A350-941) - a code limit AND a propulsion condition in one sentence - v2: the size relation is kept, the exclusion is not concluded",
       "noticeText": "RUNWAY 05/23 LIMITED TO AIRCRAFT TO AIRCRAFT UP TO CODE A AND AFM PROPELLER DRIVEN AIRCRAFT.",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "confirmed", "outcome": "exceeds_limit", "restrictsThisAircraft": true,
-        "reason": "aircraft_code_above_maximum", "formId": "up_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code A", "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
-        "otherConditionIds": ["propulsion"]
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "up_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code A",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "PROPELLER DRIVEN AIRCRAFT"
+        ]
       }
     },
     {
-      "id": "within-limit-with-condition-says-so",
-      "origin": "fixture: a favourable code check beside a day-only condition must carry the condition",
+      "id": "condition-withholds-a-favourable-conclusion-too",
+      "origin": "synthetic: a favourable code relation beside a day-only condition is not a conclusion either",
       "noticeText": "TWY P UP TO CODE E DURING DAY ONLY",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "confirmed", "outcome": "within_limit", "restrictsThisAircraft": false,
-        "reason": "aircraft_code_equals_maximum", "formId": "up_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code E", "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
-        "otherConditionIds": ["day_or_night"],
-        "sentence": "A350-941 is Code E (64.75 m wingspan): within this limit (Code E). The notice also states: day/night condition. Size check only, not a clearance; other restrictions still apply."
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "up_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "within_limit",
+        "comparisonBasis": "aircraft_code_equals_maximum",
+        "conditionTexts": [
+          "DURING DAY ONLY"
+        ],
+        "sentence": "A350-941 is Code E (64.75 m wingspan): within the stated limit (Code E). The notice also says \"DURING DAY ONLY\", which this check cannot resolve, so whether the limit applies to this flight was not decided. Read the notice."
       }
     },
     {
@@ -247,9 +394,15 @@
       "noticeText": "INTERMEDIATE TURNPAD RUNWAY TORA AIRCRAFT SUITABILITY TP1 16 2789M UP TO CODE E DURING DAY ONLY TP2 16 3289M UP TO CODE C DURING DAY AND NIGHT CONDITIONS FOR RVR MORE THAN 350M ONLY.",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "review_required", "outcome": null, "restrictsThisAircraft": null,
-        "reason": "notice_states_more_than_one_aircraft_size_limit", "formId": null, "semantics": null,
-        "limitLabel": null, "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1"
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "notice_states_more_than_one_aircraft_size_limit",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1"
       }
     },
     {
@@ -258,9 +411,16 @@
       "noticeText": "CLOSURE OF TAXILANE N4 BEHIND AIRCRAFT STAND 604 AND DOWNGRADE OF AIRCRAFT STAND 603 TO CODE C",
       "aircraftType": "A350-941",
       "expect": {
-        "status": "confirmed", "outcome": "exceeds_limit", "restrictsThisAircraft": true,
-        "reason": "aircraft_code_above_maximum", "formId": "downgrade_of_subject_to_code", "semantics": "maximum_code",
-        "limitLabel": "Code C", "aircraftCode": "E", "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1"
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgrade_of_subject_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
       }
     },
     {
@@ -311,22 +471,438 @@
       "noticeText": "TWY E BTN TWY F5 AND TWY F6 CLSD DUE WIP",
       "aircraftType": "A350-941",
       "expect": null
+    },
+    {
+      "id": "codex-multi-class-list-is-not-its-first-letter",
+      "origin": "synthetic (Codex review 22 Sep 2026): a supported prefix of an unsupported list. The tempting 'outside the class (Code E)' must NOT appear for a Code F aircraft",
+      "noticeText": "TWY A CLSD FOR ACFT CODE E AND F",
+      "aircraftType": "A380-841",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "F",
+        "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+        "unreadGuard": "list_after",
+        "sentence": "This notice words an aircraft-size limit in a way the verified rules do not fully read (it names more than one code letter or a range), so it was not compared. Read the notice."
+      }
+    },
+    {
+      "id": "codex-negated-limit-is-not-a-limit",
+      "origin": "synthetic (Codex review): 'NOT RESTRICTED TO' is the opposite of a restriction",
+      "noticeText": "TWY A NOT RESTRICTED TO MAX ACFT CODE C",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "unreadGuard": "negated",
+        "sentence": "This notice words an aircraft-size limit in a way the verified rules do not fully read (the limit is negated), so it was not compared. Read the notice."
+      }
+    },
+    {
+      "id": "codex-exception-naming-this-aircraft",
+      "origin": "synthetic (Codex review): the exception names the very aircraft; an exclusion must not be concluded",
+      "noticeText": "TWY A LTD TO MAX ACFT CODE C EXC A350 ACFT",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "EXC A350 ACFT"
+        ],
+        "sentence": "A350-941 is Code E (64.75 m wingspan): above the stated limit (Code C). The notice also says \"EXC A350 ACFT\", which this check cannot resolve, so whether the limit applies to this flight was not decided. Read the notice."
+      }
+    },
+    {
+      "id": "exception-naming-another-aircraft-is-still-unresolved",
+      "origin": "synthetic: exceptions are never resolved by this check, whichever aircraft they name",
+      "noticeText": "TWY A LTD TO MAX ACFT CODE C EXC B747 ACFT",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "EXC B747 ACFT"
+        ]
+      }
+    },
+    {
+      "id": "codex-conditional-limit",
+      "origin": "synthetic (Codex review): whether LVP is in force is not known to this check",
+      "noticeText": "TWY A LTD TO MAX ACFT CODE C WHEN LVP IN FORCE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "WHEN LVP IN FORCE"
+        ]
+      }
+    },
+    {
+      "id": "condition-in-a-later-sentence-still-counts",
+      "origin": "synthetic: the condition sits in the next sentence and may govern the limit",
+      "noticeText": "TWY A LTD TO MAX ACFT CODE C. RESTRICTION APPLIES ONLY WHEN LVP IN FORCE. FOLLOW ATC INSTRUCTIONS.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "WHEN LVP IN FORCE"
+        ]
+      }
+    },
+    {
+      "id": "condition-before-the-limit-in-an-earlier-sentence",
+      "origin": "synthetic: condition first, limit second",
+      "noticeText": "DURING NIGHT OPS THE FLW APPLIES. TWY B DOWNGRADED TO CODE D.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code D",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "comparisonBasis": "aircraft_code_above_maximum",
+        "conditionTexts": [
+          "DURING NIGHT OPS THE FLW APPLIES"
+        ]
+      }
+    },
+    {
+      "id": "two-conditions-are-both-quoted",
+      "origin": "synthetic: towing and prior permission",
+      "noticeText": "APRON 3 UP TO CODE E ACFT UNDER TOW ONLY. PPR FM APRON CONTROL 24HR IN ADVANCE.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "up_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "within_limit",
+        "comparisonBasis": "aircraft_code_equals_maximum",
+        "conditionTexts": [
+          "UNDER TOW ONLY",
+          "PPR FM APRON CONTROL 24HR IN ADVANCE"
+        ]
+      }
+    },
+    {
+      "id": "class-closure-with-an-exception",
+      "origin": "synthetic: a class prohibition with an unless-clause",
+      "noticeText": "TWY K CLSD FOR ACFT CODE F UNLESS UNDER FOLLOW-ME GUIDANCE",
+      "aircraftType": "A380-841",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "unavailable_to_code_class",
+        "semantics": "prohibited_code_class",
+        "limitLabel": "Code F",
+        "aircraftCode": "F",
+        "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+        "comparisonRelation": "in_restricted_class",
+        "comparisonBasis": "aircraft_code_in_restricted_class",
+        "conditionTexts": [
+          "UNLESS UNDER FOLLOW-ME GUIDANCE"
+        ]
+      }
+    },
+    {
+      "id": "slash-list-is-not-its-first-letter",
+      "origin": "synthetic: D/E/F list",
+      "noticeText": "TWY B CLSD FOR ACFT CODE D/E/F",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "unreadGuard": "list_after"
+      }
+    },
+    {
+      "id": "code-range-is-not-its-first-letter",
+      "origin": "synthetic: a range of letters",
+      "noticeText": "TXL N2 RESTRICTED TO ACFT CODE C TO E",
+      "aircraftType": "737-8",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "C",
+        "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1",
+        "unreadGuard": "list_after"
+      }
+    },
+    {
+      "id": "list-before-the-matched-letter",
+      "origin": "synthetic: the matched phrase is the LAST letter of a list",
+      "noticeText": "STAND 12 CODE D AND CODE E ACFT ONLY",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "unreadGuard": "list_before"
+      }
+    },
+    {
+      "id": "extra-direction-makes-a-minimum-not-a-code-only",
+      "origin": "synthetic: 'and above' turns a code-only phrase into a minimum the rules do not read",
+      "noticeText": "TWY C RESTRICTED TO ACFT CODE E AND ABOVE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "unreadGuard": "direction_after"
+      }
+    },
+    {
+      "id": "cancelled-limit-is-not-compared",
+      "origin": "synthetic: a cancellation receipt describes a limit that no longer stands",
+      "noticeText": "DOWNGRADE OF TWY E TO CODE E CANCELLED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "unreadGuard": "reversed"
+      }
+    },
+    {
+      "id": "negation-several-words-before-the-limit",
+      "origin": "synthetic: the negator is not adjacent to the matched phrase",
+      "noticeText": "RWY 09/27 NOT AVBL FOR OPS UPTO CODE C ACFT",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "unreadGuard": "negated"
+      }
+    },
+    {
+      "id": "wingspan-range-is-not-its-first-number",
+      "origin": "synthetic: two sizes",
+      "noticeText": "ACFT STAND 5 MAX WINGSPAN 36M TO 52M",
+      "aircraftType": "B787-10",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "BOEING_787_10_ICAO_CODE_E_V1",
+        "unreadGuard": "size_list_after"
+      }
+    },
+    {
+      "id": "unread-wording-with-unknown-aircraft-is-still-unread",
+      "origin": "synthetic: nothing about the aircraft rescues an unread limit",
+      "noticeText": "TWY A CLSD FOR ACFT CODE E AND F",
+      "aircraftType": "B77W",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": null,
+        "aircraftRuleId": null,
+        "unreadGuard": "list_after"
+      }
+    },
+    {
+      "id": "negation-in-another-sentence-does-not-poison-the-limit",
+      "origin": "control, synthetic: guards are scoped to the limit's own sentence; a separate sentence about something else must not reject a clean limit",
+      "noticeText": "ILS RWY 07R NOT AVBL. TWY E BTN TWY F5 AND TWY F6 DOWNGRADED TO CODE E DUE WIP",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "within_limit",
+        "restrictsThisAircraft": false,
+        "reason": "aircraft_code_equals_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "within_limit"
+      }
+    },
+    {
+      "id": "taxiway-letters-after-the-limit-are-not-a-code-list",
+      "origin": "control, synthetic: 'AND F5' is a taxiway designator, not a code letter",
+      "noticeText": "TWY E DOWNGRADED TO CODE E AND F5 CLSD",
+      "aircraftType": "A380-841",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": "F",
+        "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
     }
   ],
   "codeLetterBoundaries": [
-    { "wingspanM": 14.99, "code": "A" },
-    { "wingspanM": 15, "code": "B" },
-    { "wingspanM": 23.99, "code": "B" },
-    { "wingspanM": 24, "code": "C" },
-    { "wingspanM": 35.99, "code": "C" },
-    { "wingspanM": 36, "code": "D" },
-    { "wingspanM": 51.99, "code": "D" },
-    { "wingspanM": 52, "code": "E" },
-    { "wingspanM": 64.99, "code": "E" },
-    { "wingspanM": 65, "code": "F" },
-    { "wingspanM": 79.99, "code": "F" },
-    { "wingspanM": 80, "code": null },
-    { "wingspanM": 0, "code": null },
-    { "wingspanM": -5, "code": null }
+    {
+      "wingspanM": 14.99,
+      "code": "A"
+    },
+    {
+      "wingspanM": 15,
+      "code": "B"
+    },
+    {
+      "wingspanM": 23.99,
+      "code": "B"
+    },
+    {
+      "wingspanM": 24,
+      "code": "C"
+    },
+    {
+      "wingspanM": 35.99,
+      "code": "C"
+    },
+    {
+      "wingspanM": 36,
+      "code": "D"
+    },
+    {
+      "wingspanM": 51.99,
+      "code": "D"
+    },
+    {
+      "wingspanM": 52,
+      "code": "E"
+    },
+    {
+      "wingspanM": 64.99,
+      "code": "E"
+    },
+    {
+      "wingspanM": 65,
+      "code": "F"
+    },
+    {
+      "wingspanM": 79.99,
+      "code": "F"
+    },
+    {
+      "wingspanM": 80,
+      "code": null
+    },
+    {
+      "wingspanM": 0,
+      "code": null
+    },
+    {
+      "wingspanM": -5,
+      "code": null
+    }
   ]
 }

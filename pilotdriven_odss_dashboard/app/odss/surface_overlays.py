@@ -408,6 +408,10 @@ class AirportSurfaceIndexEntry(_StrictModel):
     notes: AirportNotesPublication
 
 
+# Shared with the PilotDriven app (web/src/lib/airport-surface-index-limit.mjs).
+MAX_AIRPORT_SURFACE_INDEX_ENTRIES = 128
+
+
 class SurfaceOverlayRequest(_StrictModel):
     # The field stays required so an omitted payload cannot clear an analysis by
     # accident. An explicit empty list is the fail-safe clear after a timing
@@ -416,12 +420,19 @@ class SurfaceOverlayRequest(_StrictModel):
     # Omission means "leave the published index unchanged" so a browser that
     # loaded the previous app bundle cannot erase it while refreshing the two
     # legacy map overlays. An explicit [] remains the deliberate clear.
-    # The bound must clear a real ULR station package — SQ38 WSSS-KLAX
-    # (29 Aug 2026) filed 39 station airports and the previous cap of 30
-    # rejected the whole publication as a 422.
+    # The bound must clear a real station package, and it has been too small
+    # twice: SQ38 WSSS-KLAX (29 Aug 2026) filed 39 station airports against a
+    # cap of 30, and SQ303 EBBR-WSSS (16 Jul 2026) files 65 - one departure,
+    # one destination, four alternates, one fuel en-route, 49 EDTO and nine
+    # en-route airports, every one a real four-letter station - against a cap of
+    # 64. Either way the whole publication was refused as a 422 and the pilot
+    # got no PDF (Codex live QA, 22 Sep 2026). MAX_AIRPORT_SURFACE_INDEX_ENTRIES
+    # is about twice the largest package seen; it stays a bound (an entry is at
+    # most ~1.5 kB, so the list stays under ~200 kB), the app states the same
+    # number before it sends, and a test pins the two together.
     airport_surface_index: list[AirportSurfaceIndexEntry] | None = Field(
         default=None,
-        max_length=64,
+        max_length=MAX_AIRPORT_SURFACE_INDEX_ENTRIES,
     )
 
 

@@ -1,5 +1,5 @@
 {
-  "specVersion": "aircraft-restriction-applicability-2026-09-21-v1",
+  "specVersion": "aircraft-restriction-applicability-2026-09-22-v2",
   "codeLetterTable": {
     "ruleId": "ICAO_ANNEX14_V1_TABLE_1_1_CODE_LETTER_AMDT15_V1",
     "bands": [
@@ -302,6 +302,44 @@
       },
       "inclusive": false,
       "readFrom": "EBBR 1A2098/26 \"RESTRICTED TO ACFT WITH WINGSPAN SMALLER THAN 68.6M\""
+    }
+  ],
+  "readingGuards": [
+    {
+      "id": "negated",
+      "where": "sentence_before",
+      "label": "the limit is negated",
+      "pattern": "\\b(?:NOT|NO|NEVER|NIL|WITHOUT)\\b"
+    },
+    {
+      "id": "reversed",
+      "where": "sentence",
+      "label": "the limit may be cancelled, lifted or suspended",
+      "pattern": "\\b(?:CANCELLED|CANCELED|CNL|CNLD|WITHDRAWN|REVOKED|RESCINDED|LIFTED|REMOVED|SUSPENDED|NO\\s+LONGER|RESTORED|RETURNED\\s+TO\\s+NORMAL)\\b"
+    },
+    {
+      "id": "list_before",
+      "where": "before",
+      "label": "it names more than one code letter or a range",
+      "pattern": "\\bCODE\\s+(?:LETTER\\s+)?'?[A-F]'?\\s*(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+)?(?:,|/|-|&|\\bAND\\b|\\bOR\\b|\\bTO\\b)\\s*(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+)?$"
+    },
+    {
+      "id": "list_after",
+      "where": "after",
+      "label": "it names more than one code letter or a range",
+      "pattern": "^\\s*(?:,|/|-|&|\\+|\\bAND\\b|\\bOR\\b|\\bTO\\b|\\bTHRU\\b|\\bTHROUGH\\b)\\s*(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+)?(?:CODE\\s+)?(?:LETTER\\s+)?'?[A-F]'?(?![A-Z0-9])"
+    },
+    {
+      "id": "direction_after",
+      "where": "after",
+      "label": "it adds \"and above/below\" wording the rules do not read here",
+      "pattern": "^\\s*(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+)?(?:AND|OR)\\s+(?:ABV|ABOVE|HIGHER|LARGER|GREATER|BLW|BELOW|SMALLER|LOWER|LESS)\\b"
+    },
+    {
+      "id": "size_list_after",
+      "where": "after",
+      "label": "it states more than one size or a range",
+      "pattern": "^\\s*(?:,|/|-|\\bAND\\b|\\bOR\\b|\\bTO\\b)\\s*\\d"
     }
   ],
   "conditionMarkers": [

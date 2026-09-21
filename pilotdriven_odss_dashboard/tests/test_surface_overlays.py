@@ -519,9 +519,47 @@ def test_airport_surface_index_accepts_ulr_station_count() -> None:
     assert len(result) == 39
 
 
+@pytest.mark.parametrize("count", [64, 65, 127, 128])
+def test_airport_surface_index_accepts_every_real_package_size_up_to_the_bound(count: int) -> None:
+    """65 is not a runaway: the real SQ303 EBBR-WSSS OFP of 16 Jul 2026 files exactly
+    65 station airports, and the old cap of 64 refused its whole publication
+    (Codex live QA, 22 Sep 2026). Nothing is dropped to fit: all entries survive."""
+    entries = _ulr_station_index(count)
+    request = SurfaceOverlayRequest.model_validate({"overlays": [], "airport_surface_index": entries})
+    result = validated_airport_surface_index(request, {"departure": "WSSS", "destination": "KLAX"})
+    assert result is not None
+    assert [row["icao"] for row in result] == [row["icao"] for row in entries]
+
+
 def test_airport_surface_index_still_bounds_runaway_station_count() -> None:
+    from app.odss.surface_overlays import MAX_AIRPORT_SURFACE_INDEX_ENTRIES
+
+    assert MAX_AIRPORT_SURFACE_INDEX_ENTRIES == 128
     with pytest.raises(ValidationError):
         SurfaceOverlayRequest.model_validate({
             "overlays": [],
-            "airport_surface_index": _ulr_station_index(65),
+            "airport_surface_index": _ulr_station_index(MAX_AIRPORT_SURFACE_INDEX_ENTRIES + 1),
         })
+
+
+def test_the_app_states_the_same_station_bound_before_it_sends() -> None:
+    """A client that sends more than the service accepts loses the whole report;
+    one that sends fewer silently drops airports. The two numbers move together."""
+    import os
+    import re
+    from pathlib import Path
+
+    from app.odss.surface_overlays import MAX_AIRPORT_SURFACE_INDEX_ENTRIES
+    from tests.cross_runtime import sibling_app_root
+
+    configured = os.environ.get("PILOTDRIVEN_APP_ROOT")
+    root = Path(configured) if configured else sibling_app_root(Path(__file__))
+    module = root / "web/src/lib/airport-surface-index-limit.mjs" if root else None
+    if module is None or not module.exists():
+        pytest.skip("the PilotDriven app worktree is not available")
+    declared = re.search(
+        r"export const MAX_AIRPORT_SURFACE_INDEX_ENTRIES = (\d+)",
+        module.read_text(encoding="utf-8"),
+    )
+    assert declared, "the app must declare the station bound it enforces before sending"
+    assert int(declared.group(1)) == MAX_AIRPORT_SURFACE_INDEX_ENTRIES
