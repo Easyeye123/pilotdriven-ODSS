@@ -1126,7 +1126,8 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     def station(role: str, accent, extra: list[tuple[str, list[str]]]) -> Card:
         station_view = view.get(role) or {}
         weather = station_view.get("weather") or {}
-        analysed = next((a for a in airport_analysis if a["role"] == role), {"lines": []})
+        analysed = next((a for a in airport_analysis if a["role"] == role),
+                        {"lines": [], "unresolved_ids": []})
         pertinent = [line["text"] for line in analysed["lines"]]
         blocks = [("PLAN", [f"RWY {text(flight.get(f'{role}_runway'))} / "
                             f"{text(one.get('sid' if role == 'departure' else 'star'))}"])]
@@ -1154,9 +1155,24 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         kept = fitted_lines(pertinent, 180, BODY, 4, counted)
         if kept and kept[-1] != counted:
             kept.append(counted)
-        blocks.append(("PERTINENT", kept
-                       or ["No analysed constraint is held for the planned movement.",
-                           counted]))
+        # Nothing held and nothing publishable are different facts, and this
+        # field used to state the first when it meant the second. SQ352
+        # 15 Aug 2026, destination EKCH: eleven notices held, six of them of a
+        # pertinent kind, none reducible to a consequence line - and page 1
+        # printed "No analysed constraint is held for the planned movement."
+        # while page 2 of the same PDF listed A1380/26 RWY 12/30 closed and
+        # A1353/26 pavement and friction (independent live QA of release 392).
+        #
+        # The unreduced notices are not lost - they keep their closing receipt
+        # and their full record on the AIRPORTS page - so the repair is to say
+        # which of the two facts this is, not to promote rows this analysis
+        # could not phrase.
+        unreduced = [str(item) for item in analysed.get("unresolved_ids") or []]
+        blocks.append(("PERTINENT", kept or (
+            [f"{len(unreduced)} held notice(s) of a pertinent kind could not be reduced to a "
+             "published consequence. Full record: AIRPORTS page.", counted]
+            if unreduced else
+            ["No analysed constraint is held for the planned movement.", counted])))
         # Keep both source-held station identifiers, as on the dashboard and
         # David's reference. Do not make the release gate waive a lost IATA.
         station_icao = text(station_view.get("icao"))
