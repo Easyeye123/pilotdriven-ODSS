@@ -27,6 +27,58 @@ _STATION_HEADER = re.compile(
     r"(?:\s+(?P<name>.+?))?\s*$",
     re.IGNORECASE,
 )
+
+# Equipment, obstacle and airspace abbreviations that LIDO prints in the same
+# ``AAAA/BBB text`` shape a station header uses. A NOTAM's item-E body sits
+# inside the appendix this scanner walks, so "DVOR/DME STJ 113.200MHZ/CH 79X
+# U/S" and "ELEV/HGT (FT) - 135/153" both satisfy the header pattern.
+#
+# This is the Python twin of ``NON_STATION_ABBREVIATIONS`` and
+# ``classifyBulletinStationLine`` in the web parser's ``cfp.mjs``. The two
+# parsers read the same OFP independently - the client parses it for the
+# manifest, ODSS parses the uploaded file again for the analysis - so a rule
+# applied to only one of them leaves the other publishing the false station.
+# That is exactly what happened: the client-side fix left ELEV and DVOR in the
+# analysis panels, and the merged airport index still offered them
+# (SQ303, 22 Sep 2026: "Jump to airport has 68 options including the
+# placeholder", with "ELEV - (FT) - 135/153" and "DVOR - STJ 113.200MHZ/CH79X
+# U/S"). Keep the two lists together when either changes.
+NON_STATION_ABBREVIATIONS = frozenset({
+    "ALTN", "ATIS", "AWOS", "DME", "DVOR", "ELEV", "FIR", "FRZ", "GNSS", "GP",
+    "GPS", "HGT", "ILS", "LOC", "NDB", "PAPI", "RVR", "RWY", "SFRA", "TAC",
+    "TACAN", "TWY", "UIR", "VASI", "VOR", "VORD", "VOT",
+})
+_AIRSPACE_VOLUME_NAME = re.compile(r"\b(?:FIR|UIR|CTA|TMA|SFRA)\b")
+
+
+def classify_bulletin_station_line(line: str) -> dict[str, str] | None:
+    """One line of a LIDO airport section, read as a station row or refused.
+
+    Returns ``{"icao", "iata", "name"}`` or ``None``. Public so the rule can be
+    tested against real bulletin lines rather than only through a whole OFP.
+
+    A station name is a place name. Measurements, frequencies and channel
+    numbers belong to equipment prose, and a row naming an airspace volume is a
+    FIR/UIR line printed in an airport section, not an aerodrome. Across the
+    29-OFP private corpus this refuses exactly two identities - ELEV/HGT and
+    DVOR/DME - and keeps all 93 genuine ones, none of which carries a digit in
+    its name.
+    """
+    match = _STATION_HEADER.fullmatch(str(line or "").strip())
+    if not match:
+        return None
+    icao = str(match.group("icao") or "").upper()
+    iata = str(match.group("iata") or "").upper()
+    name = str(match.group("name") or "").strip()
+    if icao in NON_STATION_ABBREVIATIONS or iata in NON_STATION_ABBREVIATIONS:
+        return None
+    if re.search(r"\d", name):
+        return None
+    if _AIRSPACE_VOLUME_NAME.search(name):
+        return None
+    return {"icao": icao, "iata": iata, "name": name}
+
+
 _VOLCANO_ADVISORY_HEADING = re.compile(
     r"^VAA\s+(?P<volcano>[A-Z][A-Z0-9 -]{1,48})$",
     re.IGNORECASE,
@@ -101,22 +153,22 @@ def _fuel_enroute_stations(section_text: str) -> list[dict[str, str]]:
             continue
         if not in_fuel_section:
             continue
-        match = _STATION_HEADER.fullmatch(line)
-        if not match:
+        station = classify_bulletin_station_line(line)
+        if station is None:
             continue
-        icao = match.group("icao").upper()
+        icao = station["icao"]
         if icao in seen:
             continue
         seen.add(icao)
         name = re.sub(
             r"\s*/\s*ADEQ\s*$",
             "",
-            str(match.group("name") or "").strip(),
+            station["name"],
             flags=re.IGNORECASE,
         )
         stations.append({
             "airport": icao,
-            "iata": match.group("iata").upper(),
+            "iata": station["iata"],
             "name": name,
             "role": "fuel_enroute_airport",
         })

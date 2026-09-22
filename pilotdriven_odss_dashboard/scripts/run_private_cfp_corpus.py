@@ -20,6 +20,8 @@ from app.odss.combined_brief import (
     _audit_rev3_v8_classification_sentence,
     render_combined_briefing,
 )
+# One vocabulary, shared with the parser rule that refuses these lines.
+from app.odss.enrichment import NON_STATION_ABBREVIATIONS
 from app.odss.report_quality import validate_combined_briefing_pdf
 
 
@@ -796,6 +798,49 @@ def check_source_declaration_coverage(
     return failures
 
 
+def check_station_identities(flight: dict[str, Any]) -> list[str]:
+    """No airport the analysis carries may be an equipment or obstacle line.
+
+    A LIDO NOTAM item-E body sits inside the appendix the station scanner
+    walks, and prints in the same ``AAAA/BBB text`` shape a station header
+    uses. Before 22 Sep 2026 that published two stations that are not
+    aerodromes - ``ELEV/HGT (FT) - 135/153`` and
+    ``DVOR/DME STJ 113.200MHZ/CH 79X U/S`` - into SQ303's airport list, and the
+    dashboard's "Jump to airport" offered both.
+
+    The web parser was corrected first, which is why the analysis had to be
+    checked separately: it parses the uploaded OFP itself, so a client-side
+    rule never reaches it. This check reads the analysis's own airports, so it
+    fails whichever parser regresses.
+    """
+    failures: list[str] = []
+    seen: set[tuple[str, str]] = set()
+
+    def inspect(where: str, code: Any, name: Any = "") -> None:
+        icao = str(code or "").strip().upper()
+        if not icao or (where, icao) in seen:
+            return
+        seen.add((where, icao))
+        label = " ".join(str(name or "").split())
+        if icao in NON_STATION_ABBREVIATIONS:
+            failures.append(f"{where}: {icao} is an abbreviation, not an aerodrome ({label!r}).")
+            return
+        if label and any(character.isdigit() for character in label):
+            failures.append(f"{where}: {icao} carries equipment prose as its name ({label!r}).")
+
+    inspect("departure", flight.get("departure"))
+    inspect("destination", flight.get("destination"))
+    for alternate in flight.get("alternates") or []:
+        inspect("alternate", (alternate or {}).get("airport"), (alternate or {}).get("name"))
+    for airport in (flight.get("edto") or {}).get("airports") or []:
+        inspect("edto", (airport or {}).get("airport"), (airport or {}).get("name"))
+    for station in flight.get("fuel_enroute_airports") or []:
+        inspect("fuel_enroute_airport", (station or {}).get("airport"), (station or {}).get("name"))
+    for notam in flight.get("notams") or []:
+        inspect("notam", (notam or {}).get("location"))
+    return failures
+
+
 _UNRESOLVED_NOTICE = "COULD NOT BE RESOLVED"
 
 
@@ -1483,6 +1528,11 @@ def run_case(
     if declaration_failures:
         raise AssertionError(
             f"{case['case_id']} page-1 declaration coverage failed: {declaration_failures}."
+        )
+    identity_failures = check_station_identities(flight)
+    if identity_failures:
+        raise AssertionError(
+            f"{case['case_id']} carries a non-aerodrome airport identity: {identity_failures}."
         )
     notice_conflicts = check_notam_statement_consistency(publication_view, operational_pages)
     if notice_conflicts:
