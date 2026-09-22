@@ -543,9 +543,15 @@ def draw_chrome(canvas, flight: dict[str, Any], view: dict[str, Any], page: Page
         size -= 0.25
     canvas.setFont("Helvetica-Bold", size)
     canvas.drawString(MARGIN, height - 93, page.title)
-    canvas.setFillColor(AMBER)
-    canvas.setFont("Helvetica-Bold", LABEL)
-    canvas.drawRightString(width - MARGIN, height - 93, CREW_REVIEW)
+    # David, 22 Sep 2026 13:38-13:40: state the general reminder ONCE, on the
+    # front page, and stop repeating review/cross-check/confirmation wording
+    # through the briefing. This banner used to be drawn on every page - six
+    # identical copies in a six-page briefing, 168 across the held corpus. The
+    # statement itself is unchanged; only its repetition is gone.
+    if number == 1:
+        canvas.setFillColor(AMBER)
+        canvas.setFont("Helvetica-Bold", LABEL)
+        canvas.drawRightString(width - MARGIN, height - 93, CREW_REVIEW)
 
     canvas.setStrokeColor(BORDER)
     canvas.line(MARGIN, 30, width - MARGIN, 30)

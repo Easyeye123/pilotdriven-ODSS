@@ -1,5 +1,5 @@
 {
-  "rule": "page1-weather-groups-v1",
+  "rule": "page1-weather-groups-v2",
   "minted_from": [
     "../../output/pd-airports-20260902-odss-corpus",
     "../../output/pd-david-repair-20260910/release-21/release-gates/private-cfp-corpus"
@@ -12,7 +12,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 161400 34003KT 9999 FEW016 FEW020CB BKN300 26/24 Q1012 NOSIG=",
-      "groups": "34003KT 9999 FEW016/FEW020CB/BKN300",
+      "groups": "34003KT 9999 FEW016/FEW020CB/BKN300 26/24 Q1012 NOSIG",
       "more": false
     },
     {
@@ -30,7 +30,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161400 07005KT 010V100 CAVOK 25/24 Q1003 NOSIG=",
-      "groups": "07005KT 010V100 CAVOK",
+      "groups": "07005KT 010V100 CAVOK 25/24 Q1003 NOSIG",
       "more": false
     },
     {
@@ -39,8 +39,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 160500 1606/1706 15005KT 9999 FEW020 TEMPO 1610/1614 3500 TSRA SCT010 FEW027CB=",
-      "groups": "15005KT 9999 FEW020",
-      "more": true
+      "groups": "15005KT 9999 FEW020 TEMPO 1610/1614 3500 TSRA SCT010/FEW027CB",
+      "more": false
     },
     {
       "flight": "SQ194-SIN-HAN",
@@ -48,7 +48,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 161400 VRB02KT 9999 FEW017 31/26 Q1005 NOSIG=",
-      "groups": "VRB02KT 9999 FEW017",
+      "groups": "VRB02KT 9999 FEW017 31/26 Q1005 NOSIG",
       "more": false
     },
     {
@@ -57,8 +57,8 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 161100 1612/1712 23008KT 9999 FEW020 SCT070 BECMG 1704/1705 01010KT BECMG 1708/1709 10008KT=",
-      "groups": "23008KT 9999 FEW020/SCT070",
-      "more": true
+      "groups": "23008KT 9999 FEW020/SCT070 BECMG 1704/1705 01010KT BECMG 1708/1709 10008KT",
+      "more": false
     },
     {
       "flight": "SQ194-SIN-HAN",
@@ -66,7 +66,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 161400 20007KT 140V220 9999 FEW012 31/26 Q1003 NOSIG=",
-      "groups": "20007KT 140V220 9999 FEW012",
+      "groups": "20007KT 140V220 9999 FEW012 31/26 Q1003 NOSIG",
       "more": false
     },
     {
@@ -75,8 +75,8 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 161100 1612/1718 24010KT 9999 FEW010 SCT025 TX33/1706Z TN28/1622Z TEMPO 1612/1615 14010KT BECMG 1618/1620 30010KT TEMPO 1620/1702 VRB05KT 3500 SHRA FEW010CB SCT020 TEMPO 1708/1712 VRB15G25KT 2500 TSRA SHRA FEW008CB SCT015 BECMG 1710/1712 12010KT=",
-      "groups": "24010KT 9999 FEW010/SCT025",
-      "more": true
+      "groups": "24010KT 9999 FEW010/SCT025 TX33/1706Z TN28/1622Z TEMPO 1612/1615 14010KT BECMG 1618/1620 30010KT TEMPO 1620/1702 VRB05KT 3500 SHRA FEW010CB/SCT020 TEMPO 1708/1712 VRB15G25KT 2500 TSRA SHRA FEW008CB/SCT015 BECMG 1710/1712 12010KT",
+      "more": false
     },
     {
       "flight": "SQ194-SIN-HAN",
@@ -84,7 +84,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 161400 20011KT 9999 FEW020 30/25 Q1009 NOSIG=",
-      "groups": "20011KT 9999 FEW020",
+      "groups": "20011KT 9999 FEW020 30/25 Q1009 NOSIG",
       "more": false
     },
     {
@@ -93,8 +93,8 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 161100 1612/1718 22008KT 9999 FEW020 TEMPO 1613/1615 -TSRA FEW018CB SCT020 BKN080 TEMPO 1709/1715 VRB15KT 4000 TSRA FEW018CB SCT020 BKN080=",
-      "groups": "22008KT 9999 FEW020",
-      "more": true
+      "groups": "22008KT 9999 FEW020 TEMPO 1613/1615 -TSRA FEW018CB/SCT020/BKN080 TEMPO 1709/1715 VRB15KT 4000 TSRA FEW018CB/SCT020/BKN080",
+      "more": false
     },
     {
       "flight": "SQ194-SIN-HAN",
@@ -102,7 +102,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 161400 23011KT 200V260 CAVOK 27/25 Q1010 NOSIG=",
-      "groups": "23011KT 200V260 CAVOK",
+      "groups": "23011KT 200V260 CAVOK 27/25 Q1010 NOSIG",
       "more": false
     },
     {
@@ -111,8 +111,8 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 161100 1612/1718 25010KT 9999 SCT017 SCT040 TEMPO 1612/1614 5000 SHRA SCT015 FEW017CB BKN040 TEMPO 1707/1711 25015G27KT 3000 TSRA BKN015 SCT017CB BKN040=",
-      "groups": "25010KT 9999 SCT017/SCT040",
-      "more": true
+      "groups": "25010KT 9999 SCT017/SCT040 TEMPO 1612/1614 5000 SHRA SCT015/FEW017CB/BKN040 TEMPO 1707/1711 25015G27KT 3000 TSRA BKN015/SCT017CB/BKN040",
+      "more": false
     },
     {
       "flight": "SQ194-SIN-HAN",
@@ -120,7 +120,7 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR VHHH 161030Z 21009KT 170V230 9999 FEW015 32/26 Q1001 NOSIG",
-      "groups": "21009KT 170V230 9999 FEW015",
+      "groups": "21009KT 170V230 9999 FEW015 32/26 Q1001 NOSIG",
       "more": false
     },
     {
@@ -129,8 +129,8 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR VVTS 161030Z 25017G27KT 220V280 8000 -TSRA SCT014 SCT016CB BKN047 28/25 Q1008 TEMPO TL1100 22015G27KT 3000 TSRA",
-      "groups": "25017G27KT 220V280 8000 -TSRA SCT014/SCT016CB/BKN047",
-      "more": true
+      "groups": "25017G27KT 220V280 8000 -TSRA SCT014/SCT016CB/BKN047 28/25 Q1008 TEMPO TL1100 22015G27KT 3000 TSRA",
+      "more": false
     },
     {
       "flight": "SQ194-SIN-HAN",
@@ -138,7 +138,7 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR VVNB 161030Z VRB02KT CAVOK 35/26 Q0999 NOSIG",
-      "groups": "VRB02KT CAVOK",
+      "groups": "VRB02KT CAVOK 35/26 Q0999 NOSIG",
       "more": false
     },
     {
@@ -147,7 +147,7 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR VVDN 161000Z 11005KT 070V140 9999 FEW017 SCT055 34/23 Q1003 NOSIG",
-      "groups": "11005KT 070V140 9999 FEW017/SCT055",
+      "groups": "11005KT 070V140 9999 FEW017/SCT055 34/23 Q1003 NOSIG",
       "more": false
     },
     {
@@ -156,7 +156,7 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR VVTS 160730Z 27013KT 9999 -SHRA SCT020 FEW025CB BKN038 33/26 Q1007 NOSIG",
-      "groups": "27013KT 9999 -SHRA SCT020/FEW025CB/BKN038",
+      "groups": "27013KT 9999 -SHRA SCT020/FEW025CB/BKN038 33/26 Q1007 NOSIG",
       "more": false
     },
     {
@@ -165,8 +165,8 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR VVDN 160430Z 22012KT 190V260 9999 FEW017 SCT069 37/22 Q1004 WS ALL RWY NOSIG",
-      "groups": "22012KT 190V260 9999 FEW017/SCT069",
-      "more": true
+      "groups": "22012KT 190V260 9999 FEW017/SCT069 37/22 Q1004 WS ALL RWY NOSIG",
+      "more": false
     },
     {
       "flight": "SQ194-SIN-HAN",
@@ -174,7 +174,7 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR VVDN 160400Z 21013KT CAVOK 36/22 Q1004 NOSIG",
-      "groups": "21013KT CAVOK",
+      "groups": "21013KT CAVOK 36/22 Q1004 NOSIG",
       "more": false
     },
     {
@@ -183,8 +183,8 @@
       "role": "other",
       "kind": "taf",
       "record": "TAF VHHH 160500Z 1606/1712 27010KT 9999 FEW010 SCT025 TX33/1606Z TX33/1706Z TN28/1622Z TEMPO 1620/1702 VRB05KT 3500 SHRA FEW010CB SCT020 TEMPO 1708/1712 VRB15G25KT 2500 TSRA SHRA FEW008CB SCT015 BECMG 1710/1712 14010KT",
-      "groups": "27010KT 9999 FEW010/SCT025",
-      "more": true
+      "groups": "27010KT 9999 FEW010/SCT025 TX33/1606Z TX33/1706Z TN28/1622Z TEMPO 1620/1702 VRB05KT 3500 SHRA FEW010CB/SCT020 TEMPO 1708/1712 VRB15G25KT 2500 TSRA SHRA FEW008CB/SCT015 BECMG 1710/1712 14010KT",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN",
@@ -192,7 +192,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 161130 07006KT CAVOK 17/06 Q1017=",
-      "groups": "07006KT CAVOK",
+      "groups": "07006KT CAVOK 17/06 Q1017",
       "more": false
     },
     {
@@ -201,8 +201,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 160806 1609/1712 04012KT CAVOK FM162300 36014KT 9999 -SHRA BKN025 FM170600 26012KT 9999 -SHRA BKN030 TEMPO 1703/1705 31020G30KT 4000 SHRA BKN015 FEW025TCU INTER 1707/1712 6000 SHRA BKN025=",
-      "groups": "04012KT CAVOK",
-      "more": true
+      "groups": "04012KT CAVOK FM162300 36014KT 9999 -SHRA BKN025 FM170600 26012KT 9999 -SHRA BKN030 TEMPO 1703/1705 31020G30KT 4000 SHRA BKN015/FEW025TCU INTER 1707/1712 6000 SHRA BKN025",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN",
@@ -210,8 +210,8 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161130 19005KT 9999 FEW015 FEW017CB SCT018TCU 29/24 Q1011 TEMPO FM1145 TL1245 2500 +TSRA=",
-      "groups": "19005KT 9999 FEW015/FEW017CB/SCT018TCU",
-      "more": true
+      "groups": "19005KT 9999 FEW015/FEW017CB/SCT018TCU 29/24 Q1011 TEMPO FM1145 TL1245 2500 +TSRA",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN",
@@ -219,8 +219,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 161140 1612/1718 18007KT 9999 FEW015 SCT020 TEMPO 1612/1614 3000 TSRA FEW012CB BKN015=",
-      "groups": "18007KT 9999 FEW015/SCT020",
-      "more": true
+      "groups": "18007KT 9999 FEW015/SCT020 TEMPO 1612/1614 3000 TSRA FEW012CB/BKN015",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN",
@@ -228,7 +228,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 161130 AUTO 05004KT 020V080 9999 // NCD 15/08 Q1015=",
-      "groups": "05004KT 020V080 9999 // NCD",
+      "groups": "05004KT 020V080 9999 // NCD 15/08 Q1015",
       "more": false
     },
     {
@@ -237,7 +237,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 161100 AUTO 05005KT 9999 // NCD 15/08 Q1015=",
-      "groups": "05005KT 9999 // NCD",
+      "groups": "05005KT 9999 // NCD 15/08 Q1015",
       "more": false
     },
     {
@@ -246,7 +246,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 161030 AUTO 04003KT 9999 // NCD 16/09 Q1015=",
-      "groups": "04003KT 9999 // NCD",
+      "groups": "04003KT 9999 // NCD 16/09 Q1015",
       "more": false
     },
     {
@@ -255,8 +255,8 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR WIDD 160900Z COR 15008KT 9999 TS FEW013CB 31/25 Q1009 BECMG FM1000 NSW FEW014 RMK CB TO S",
-      "groups": "15008KT 9999 TS FEW013CB",
-      "more": true
+      "groups": "15008KT 9999 TS FEW013CB 31/25 Q1009 BECMG FM1000 NSW FEW014 RMK CB TO S",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN",
@@ -264,8 +264,8 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR WIDD 160830Z 14006KT 9999 TS FEW013CB 31/25 Q1010 BECMG FM1000 NSW FEW014 RMK CB TO S",
-      "groups": "14006KT 9999 TS FEW013CB",
-      "more": true
+      "groups": "14006KT 9999 TS FEW013CB 31/25 Q1010 BECMG FM1000 NSW FEW014 RMK CB TO S",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN",
@@ -273,8 +273,8 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR WIDD 160730Z 17004KT 9000 TS FEW013CB SCT014 29/25 Q1010 BECMG FM0830 NSW SCT014 RMK CB TO S",
-      "groups": "17004KT 9000 TS FEW013CB/SCT014",
-      "more": true
+      "groups": "17004KT 9000 TS FEW013CB/SCT014 29/25 Q1010 BECMG FM0830 NSW SCT014 RMK CB TO S",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN-19AUG",
@@ -282,7 +282,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 190500 24007KT 230V290 9999 BKN040 19/09 Q1020=",
-      "groups": "24007KT 230V290 9999 BKN040",
+      "groups": "24007KT 230V290 9999 BKN040 19/09 Q1020",
       "more": false
     },
     {
@@ -291,8 +291,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 190220 1903/2006 03005KT 9999 -SHRA SCT025 FM190500 25010KT 9999 NSW SCT035 FM191400 10005KT 9999 SCT025 FM192100 10005KT 9999 MIFG SCT025 FM200000 10005KT 9999 NSW SCT020 FM200400 25006KT 9999 FEW045 INTER 1903/1904 5000 SHRA SCT020 BKN035=",
-      "groups": "03005KT 9999 -SHRA SCT025",
-      "more": true
+      "groups": "03005KT 9999 -SHRA SCT025 FM190500 25010KT 9999 NSW SCT035 FM191400 10005KT 9999 SCT025 FM192100 10005KT 9999 MIFG SCT025 FM200000 10005KT 9999 NSW SCT020 FM200400 25006KT 9999 FEW045 INTER 1903/1904 5000 SHRA SCT020/BKN035",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN-19AUG",
@@ -300,7 +300,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 190500 20010KT 9000 FEW018TCU BKN300 32/24 Q1011 NOSIG=",
-      "groups": "20010KT 9000 FEW018TCU/BKN300",
+      "groups": "20010KT 9000 FEW018TCU/BKN300 32/24 Q1011 NOSIG",
       "more": false
     },
     {
@@ -318,8 +318,8 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 182300 1900/2006 29005KT 9000 FEW018 PROB40 TEMPO 1901/1905 5000 TSRA FEW010 FEW017CB=",
-      "groups": "29005KT 9000 FEW018",
-      "more": true
+      "groups": "29005KT 9000 FEW018 PROB40 TEMPO 1901/1905 5000 TSRA FEW010/FEW017CB",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN-19AUG",
@@ -327,8 +327,8 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 182300 1900/1923 13008KT 9000 SCT014 PROB30 TEMPO 1902/1906 5000 RA=",
-      "groups": "13008KT 9000 SCT014",
-      "more": true
+      "groups": "13008KT 9000 SCT014 PROB30 TEMPO 1902/1906 5000 RA",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN-19AUG",
@@ -336,8 +336,8 @@
       "role": "other",
       "kind": "taf",
       "record": "TAF WMKK 190500Z 1906/2012 VRB03KT 9000 SCT018 TEMPO 1906/1909 26005KT 6000 TSRA FEW017CB PROB40 TEMPO 1914/1917 29005KT 5000 TSRA FEW017CB",
-      "groups": "VRB03KT 9000 SCT018",
-      "more": true
+      "groups": "VRB03KT 9000 SCT018 TEMPO 1906/1909 26005KT 6000 TSRA FEW017CB PROB40 TEMPO 1914/1917 29005KT 5000 TSRA FEW017CB",
+      "more": false
     },
     {
       "flight": "SQ214-PER-SIN-19AUG",
@@ -345,8 +345,8 @@
       "role": "other",
       "kind": "taf",
       "record": "TAF AMD YPPH 190514Z 1906/2012 25010KT 9999 SCT045 FM191300 05005KT 9999 SCT025 FM192100 10005KT 9999 MIFG SCT025 FM200000 10005KT 9999 NSW SCT020 FM200400 25006KT 9999 FEW045 PROB30 1921/2000 2000 BR",
-      "groups": "25010KT 9999 SCT045",
-      "more": true
+      "groups": "25010KT 9999 SCT045 FM191300 05005KT 9999 SCT025 FM192100 10005KT 9999 MIFG SCT025 FM200000 10005KT 9999 NSW SCT020 FM200400 25006KT 9999 FEW045 PROB30 1921/2000 2000 BR",
+      "more": false
     },
     {
       "flight": "SQ223-SIN-PER",
@@ -354,7 +354,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 160130 11008KT 8000 FEW016 BKN300 30/25 Q1013 NOSIG=",
-      "groups": "11008KT 8000 FEW016/BKN300",
+      "groups": "11008KT 8000 FEW016/BKN300 30/25 Q1013 NOSIG",
       "more": false
     },
     {
@@ -363,8 +363,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 152300 1600/1706 16008KT 9999 FEW015 SCT020 TEMPO 1606/1609 3000 TSRA FEW012CB BKN015=",
-      "groups": "16008KT 9999 FEW015/SCT020",
-      "more": true
+      "groups": "16008KT 9999 FEW015/SCT020 TEMPO 1606/1609 3000 TSRA FEW012CB/BKN015",
+      "more": false
     },
     {
       "flight": "SQ223-SIN-PER",
@@ -372,7 +372,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 160130 03007KT CAVOK 19/06 Q1021=",
-      "groups": "03007KT CAVOK",
+      "groups": "03007KT CAVOK 19/06 Q1021",
       "more": false
     },
     {
@@ -381,8 +381,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 152315 1600/1706 06012KT CAVOK FM160200 03015G25KT CAVOK FM160800 04012KT CAVOK FM162300 36014KT 9999 -SHRA BKN025 INTER 1704/1706 31020G30KT 4000 SHRA BKN015 FEW025TCU=",
-      "groups": "06012KT CAVOK",
-      "more": true
+      "groups": "06012KT CAVOK FM160200 03015G25KT CAVOK FM160800 04012KT CAVOK FM162300 36014KT 9999 -SHRA BKN025 INTER 1704/1706 31020G30KT 4000 SHRA BKN015/FEW025TCU",
+      "more": false
     },
     {
       "flight": "SQ223-SIN-PER-18AUG",
@@ -390,7 +390,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 172000 11007KT 9999 FEW018 BKN300 28/24 Q1011 NOSIG=",
-      "groups": "11007KT 9999 FEW018/BKN300",
+      "groups": "11007KT 9999 FEW018/BKN300 28/24 Q1011 NOSIG",
       "more": false
     },
     {
@@ -408,7 +408,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 172000 AUTO 05006KT 9999 // NCD 08/07 Q1018=",
-      "groups": "05006KT 9999 // NCD",
+      "groups": "05006KT 9999 // NCD 08/07 Q1018",
       "more": false
     },
     {
@@ -417,8 +417,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 171706 1718/1900 05005KT 9999 FEW045 FM180300 29010KT 9999 SCT045 FM181400 05005KT 9999 SCT040 FM181800 05005KT 9999 -SHRA SCT035 BKN045=",
-      "groups": "05005KT 9999 FEW045",
-      "more": true
+      "groups": "05005KT 9999 FEW045 FM180300 29010KT 9999 SCT045 FM181400 05005KT 9999 SCT040 FM181800 05005KT 9999 -SHRA SCT035/BKN045",
+      "more": false
     },
     {
       "flight": "SQ223-SIN-PER-18AUG",
@@ -426,8 +426,8 @@
       "role": "other",
       "kind": "taf",
       "record": "TAF AMD YPPH 172309Z 1800/1906 04005KT 9999 -SHRA FEW045 FM180300 29010KT 9999 NSW SCT045 FM181400 05005KT 9999 -SHRA SCT040 FM181800 05005KT 9999 -SHRA SCT035 BKN045 FM190500 25008KT 9999 NSW SCT045 INTER 1815/1902 5000 SHRA SCT020 BKN035",
-      "groups": "04005KT 9999 -SHRA FEW045",
-      "more": true
+      "groups": "04005KT 9999 -SHRA FEW045 FM180300 29010KT 9999 NSW SCT045 FM181400 05005KT 9999 -SHRA SCT040 FM181800 05005KT 9999 -SHRA SCT035/BKN045 FM190500 25008KT 9999 NSW SCT045 INTER 1815/1902 5000 SHRA SCT020/BKN035",
+      "more": false
     },
     {
       "flight": "SQ23-JFK-SIN",
@@ -435,7 +435,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 242151 16009KT 10SM FEW060 BKN250 24/13 A3017 RMK AO2 SLP217 T02440133=",
-      "groups": "16009KT 10SM FEW060/BKN250",
+      "groups": "16009KT 10SM FEW060/BKN250 24/13 A3017 RMK AO2 SLP217 T02440133",
       "more": false
     },
     {
@@ -444,8 +444,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 241932 2420/2524 16011KT P6SM FEW060 SCT250 FM250000 15007KT P6SM SCT250 FM250300 VRB03KT P6SM SCT250 FM251300 06006KT P6SM SCT250 FM251700 10010KT P6SM SCT250 FM251900 13012KT P6SM FEW250=",
-      "groups": "16011KT P6SM FEW060/SCT250",
-      "more": true
+      "groups": "16011KT P6SM FEW060/SCT250 FM250000 15007KT P6SM SCT250 FM250300 VRB03KT P6SM SCT250 FM251300 06006KT P6SM SCT250 FM251700 10010KT P6SM SCT250 FM251900 13012KT P6SM FEW250",
+      "more": false
     },
     {
       "flight": "SQ23-JFK-SIN",
@@ -453,7 +453,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 242230 16006KT 9000 FEW016 FEW018TCU BKN300 28/25 Q1008 NOSIG=",
-      "groups": "16006KT 9000 FEW016/FEW018TCU/BKN300",
+      "groups": "16006KT 9000 FEW016/FEW018TCU/BKN300 28/25 Q1008 NOSIG",
       "more": false
     },
     {
@@ -462,8 +462,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 241700 2418/2600 16009KT 9999 FEW015 SCT020 TEMPO 2502/2505 3000 TSRA FEW012CB BKN015=",
-      "groups": "16009KT 9999 FEW015/SCT020",
-      "more": true
+      "groups": "16009KT 9999 FEW015/SCT020 TEMPO 2502/2505 3000 TSRA FEW012CB/BKN015",
+      "more": false
     },
     {
       "flight": "SQ24-SIN-JFK",
@@ -471,7 +471,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 212330 17005KT 9999 FEW016 FEW020TCU BKN300 28/25 Q1011 NOSIG=",
-      "groups": "17005KT 9999 FEW016/FEW020TCU/BKN300",
+      "groups": "17005KT 9999 FEW016/FEW020TCU/BKN300 28/25 Q1011 NOSIG",
       "more": false
     },
     {
@@ -480,8 +480,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 212300 2200/2306 19007KT 9999 FEW015 SCT020 TEMPO 2205/2208 3000 TSRA FEW012CB BKN015=",
-      "groups": "19007KT 9999 FEW015/SCT020",
-      "more": true
+      "groups": "19007KT 9999 FEW015/SCT020 TEMPO 2205/2208 3000 TSRA FEW012CB/BKN015",
+      "more": false
     },
     {
       "flight": "SQ24-SIN-JFK",
@@ -489,7 +489,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 212345 20015KT 10SM -RA FEW006 FEW042 BKN120 OVC160 24/22 A2971 RMK AO2 P0000=",
-      "groups": "20015KT 10SM -RA FEW006/FEW042/BKN120/OVC160",
+      "groups": "20015KT 10SM -RA FEW006/FEW042/BKN120/OVC160 24/22 A2971 RMK AO2 P0000",
       "more": false
     },
     {
@@ -498,8 +498,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 212321 2200/2306 18012G18KT 6SM -TSRA BKN025 OVC050CB FM220100 19013G19KT P6SM VCSH BKN025 OVC040 FM220400 20013KT P6SM BKN025 BKN250 FM221200 24014KT P6SM BKN025 OVC040 TEMPO 2212/2214 SCT025 FM221400 24014KT P6SM SCT025 BKN060 FM221900 23012KT P6SM BKN060 PROB30 2219/2223 4SM -TSRA BKN040CB FM230100 31011KT P6SM SCT060=",
-      "groups": "18012G18KT 6SM -TSRA BKN025/OVC050CB",
-      "more": true
+      "groups": "18012G18KT 6SM -TSRA BKN025/OVC050CB FM220100 19013G19KT P6SM VCSH BKN025/OVC040 FM220400 20013KT P6SM BKN025/BKN250 FM221200 24014KT P6SM BKN025/OVC040 TEMPO 2212/2214 SCT025 FM221400 24014KT P6SM SCT025/BKN060 FM221900 23012KT P6SM BKN060 PROB30 2219/2223 4SM -TSRA BKN040CB FM230100 31011KT P6SM SCT060",
+      "more": false
     },
     {
       "flight": "SQ24-SIN-JFK",
@@ -507,8 +507,8 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 212321 2200/2306 22010KT P6SM VCSH SCT020 OVC050 FM220300 22009KT P6SM SCT025 BKN060 TEMPO 2204/2208 BKN025 FM220800 23009KT P6SM SCT025 BKN250 TEMPO 2208/2212 BKN025 FM221200 23012KT P6SM SCT025 BKN060 FM221700 26012G20KT P6SM BKN060 PROB30 2219/2222 4SM -TSRA BR BKN040CB FM222300 30010KT P6SM SCT060=",
-      "groups": "22010KT P6SM VCSH SCT020/OVC050",
-      "more": true
+      "groups": "22010KT P6SM VCSH SCT020/OVC050 FM220300 22009KT P6SM SCT025/BKN060 TEMPO 2204/2208 BKN025 FM220800 23009KT P6SM SCT025/BKN250 TEMPO 2208/2212 BKN025 FM221200 23012KT P6SM SCT025/BKN060 FM221700 26012G20KT P6SM BKN060 PROB30 2219/2222 4SM -TSRA BR BKN040CB FM222300 30010KT P6SM SCT060",
+      "more": false
     },
     {
       "flight": "SQ24-SIN-JFK",
@@ -516,8 +516,8 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 212321 2200/2306 VRB04KT P6SM VCSH BKN020 BKN050 FM220300 VRB05KT P6SM BKN025 FM220800 25006KT P6SM OVC015 FM221200 26009KT P6SM BKN020 OVC040 TEMPO 2212/2214 SCT025 FM221400 28012KT P6SM SCT025 BKN060 FM221700 29012G20KT P6SM BKN060 FM222300 30008KT P6SM BKN060 FM230400 32006KT P6SM SCT060 AMD NOT SKED=",
-      "groups": "VRB04KT P6SM VCSH BKN020/BKN050",
-      "more": true
+      "groups": "VRB04KT P6SM VCSH BKN020/BKN050 FM220300 VRB05KT P6SM BKN025 FM220800 25006KT P6SM OVC015 FM221200 26009KT P6SM BKN020/OVC040 TEMPO 2212/2214 SCT025 FM221400 28012KT P6SM SCT025/BKN060 FM221700 29012G20KT P6SM BKN060 FM222300 30008KT P6SM BKN060 FM230400 32006KT P6SM SCT060 AMD NOT SKED",
+      "more": false
     },
     {
       "flight": "SQ24-SIN-JFK",
@@ -525,8 +525,8 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 212333 2200/2306 21012KT 6SM -SHRA VCTS OVC050CB FM220500 21008KT P6SM BKN015 FM221300 25008G16KT P6SM SCT040 FM222200 29006KT P6SM FEW200=",
-      "groups": "21012KT 6SM -SHRA VCTS OVC050CB",
-      "more": true
+      "groups": "21012KT 6SM -SHRA VCTS OVC050CB FM220500 21008KT P6SM BKN015 FM221300 25008G16KT P6SM SCT040 FM222200 29006KT P6SM FEW200",
+      "more": false
     },
     {
       "flight": "SQ24-SIN-JFK-15AUG",
@@ -543,7 +543,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161051 09003KT 10SM FEW070 BKN085 BKN250 22/18 A3014 RMK AO2 SLP206 T02170183=",
-      "groups": "09003KT 10SM FEW070/BKN085/BKN250",
+      "groups": "09003KT 10SM FEW070/BKN085/BKN250 22/18 A3014 RMK AO2 SLP206 T02170183",
       "more": false
     },
     {
@@ -552,8 +552,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 151946 1520/1624 19008KT P6SM SCT070 FM160300 VRB04KT P6SM SCT080 FM161200 17008KT P6SM OVC070 FM161800 18013G19KT P6SM SCT035 OVC050 FM162100 18014G20KT 5SM -RA OVC030=",
-      "groups": "19008KT P6SM SCT070",
-      "more": true
+      "groups": "19008KT P6SM SCT070 FM160300 VRB04KT P6SM SCT080 FM161200 17008KT P6SM OVC070 FM161800 18013G19KT P6SM SCT035/OVC050 FM162100 18014G20KT 5SM -RA OVC030",
+      "more": false
     },
     {
       "flight": "SQ24-SIN-JFK-15AUG",
@@ -561,7 +561,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 160853 VRB03KT 10SM FEW050 SCT110 14/12 A2997=",
-      "groups": "VRB03KT 10SM FEW050/SCT110",
+      "groups": "VRB03KT 10SM FEW050/SCT110 14/12 A2997",
       "more": false
     },
     {
@@ -570,7 +570,7 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR KSWF 152245Z 00000KT 10SM FEW035 25/15 A3012",
-      "groups": "00000KT 10SM FEW035",
+      "groups": "00000KT 10SM FEW035 25/15 A3012",
       "more": false
     },
     {
@@ -579,7 +579,7 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR KSWF 152145Z VRB03KT 10SM FEW035 26/14 A3013",
-      "groups": "VRB03KT 10SM FEW035",
+      "groups": "VRB03KT 10SM FEW035 26/14 A3013",
       "more": false
     },
     {
@@ -588,7 +588,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161400 17003KT CAVOK 09/06 Q1030=",
-      "groups": "17003KT CAVOK",
+      "groups": "17003KT CAVOK 09/06 Q1030",
       "more": false
     },
     {
@@ -597,8 +597,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 152013 1521/1700 09010KT 9999 FEW045 FM162000 05012KT CAVOK=",
-      "groups": "09010KT 9999 FEW045",
-      "more": true
+      "groups": "09010KT 9999 FEW045 FM162000 05012KT CAVOK",
+      "more": false
     },
     {
       "flight": "SQ297-SIN-CHC",
@@ -615,7 +615,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161130 AUTO 27007KT 9999 BKN048 BKN060 03/01 Q1026=",
-      "groups": "27007KT 9999 BKN048/BKN060",
+      "groups": "27007KT 9999 BKN048/BKN060 03/01 Q1026",
       "more": false
     },
     {
@@ -624,8 +624,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 161106 1612/1718 26005KT 9999 SCT045 BECMG 1700/1702 20010KT FM170700 26008KT 9999 -SHRA SCT020 BKN030 TEMPO 1709/1715 7000 SHRA BECMG 1716/1718 20015KT=",
-      "groups": "26005KT 9999 SCT045",
-      "more": true
+      "groups": "26005KT 9999 SCT045 BECMG 1700/1702 20010KT FM170700 26008KT 9999 -SHRA SCT020/BKN030 TEMPO 1709/1715 7000 SHRA BECMG 1716/1718 20015KT",
+      "more": false
     },
     {
       "flight": "SQ297-SIN-CHC",
@@ -633,8 +633,8 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 161102 1612/1718 20008KT 9999 -SHRA SCT025 FM170100 13010KT 9999 -SHRA SCT030 FM171100 20008KT 9999 -SHRA SCT025 INTER 1612/1617 3000 SHRA BKN008 INTER 1617/1705 5000 SHRA BKN014 INTER 1714/1718 5000 SHRA BKN014=",
-      "groups": "20008KT 9999 -SHRA SCT025",
-      "more": true
+      "groups": "20008KT 9999 -SHRA SCT025 FM170100 13010KT 9999 -SHRA SCT030 FM171100 20008KT 9999 -SHRA SCT025 INTER 1612/1617 3000 SHRA BKN008 INTER 1617/1705 5000 SHRA BKN014 INTER 1714/1718 5000 SHRA BKN014",
+      "more": false
     },
     {
       "flight": "SQ303-BRU-SIN",
@@ -642,7 +642,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 160620 05003KT 020V080 CAVOK 19/14 Q1019 NOSIG=",
-      "groups": "05003KT 020V080 CAVOK",
+      "groups": "05003KT 020V080 CAVOK 19/14 Q1019 NOSIG",
       "more": false
     },
     {
@@ -660,7 +660,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 160630 17007KT 150V210 9999 FEW018TCU FEW020CB SCT300 31/25 Q1011 NOSIG=",
-      "groups": "17007KT 150V210 9999 FEW018TCU/FEW020CB/SCT300",
+      "groups": "17007KT 150V210 9999 FEW018TCU/FEW020CB/SCT300 31/25 Q1011 NOSIG",
       "more": false
     },
     {
@@ -678,7 +678,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 160600 31008KT 280V350 9000 NSC 35/20 Q1008 R88/CLRD70 NOSIG=",
-      "groups": "31008KT 280V350 9000 NSC",
+      "groups": "31008KT 280V350 9000 NSC 35/20 Q1008 R88/CLRD70 NOSIG",
       "more": false
     },
     {
@@ -687,7 +687,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 160500 31010KT 9000 NSC 34/20 Q1008 R88/CLRD70 NOSIG=",
-      "groups": "31010KT 9000 NSC",
+      "groups": "31010KT 9000 NSC 34/20 Q1008 R88/CLRD70 NOSIG",
       "more": false
     },
     {
@@ -696,7 +696,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 160400 30010KT 8000 NSC 32/20 Q1008 R88/CLRD70 NOSIG=",
-      "groups": "30010KT 8000 NSC",
+      "groups": "30010KT 8000 NSC 32/20 Q1008 R88/CLRD70 NOSIG",
       "more": false
     },
     {
@@ -705,7 +705,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 160630 30010G20KT 270V350 5000 HZ FEW020 SCT100 33/23 Q1006 NOSIG=",
-      "groups": "30010G20KT 270V350 5000 HZ FEW020/SCT100",
+      "groups": "30010G20KT 270V350 5000 HZ FEW020/SCT100 33/23 Q1006 NOSIG",
       "more": false
     },
     {
@@ -714,7 +714,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 160600 30012G22KT 5000 HZ FEW020 SCT100 33/22 Q1006 NOSIG=",
-      "groups": "30012G22KT 5000 HZ FEW020/SCT100",
+      "groups": "30012G22KT 5000 HZ FEW020/SCT100 33/22 Q1006 NOSIG",
       "more": false
     },
     {
@@ -723,7 +723,7 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 160530 29014G25KT 5000 HZ FEW020 SCT100 32/23 Q1007 NOSIG=",
-      "groups": "29014G25KT 5000 HZ FEW020/SCT100",
+      "groups": "29014G25KT 5000 HZ FEW020/SCT100 32/23 Q1007 NOSIG",
       "more": false
     },
     {
@@ -732,7 +732,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 121330 13005KT 9999 FEW018 BKN160 29/24 Q1010 NOSIG=",
-      "groups": "13005KT 9999 FEW018/BKN160",
+      "groups": "13005KT 9999 FEW018/BKN160 29/24 Q1010 NOSIG",
       "more": false
     },
     {
@@ -750,7 +750,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 121320 04009KT 010V070 CAVOK 30/14 Q1022 NOSIG=",
-      "groups": "04009KT 010V070 CAVOK",
+      "groups": "04009KT 010V070 CAVOK 30/14 Q1022 NOSIG",
       "more": false
     },
     {
@@ -768,7 +768,7 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 121100 1212/1318 23010KT 9999 SCT017 TX31/1307Z TN27/1300Z=",
-      "groups": "23010KT 9999 SCT017",
+      "groups": "23010KT 9999 SCT017 TX31/1307Z TN27/1300Z",
       "more": false
     },
     {
@@ -777,8 +777,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 151700 1518/1700 16008KT 9999 FEW015 SCT020 TEMPO 1606/1609 3000 TSRA FEW012CB BKN015=",
-      "groups": "16008KT 9999 FEW015/SCT020",
-      "more": true
+      "groups": "16008KT 9999 FEW015/SCT020 TEMPO 1606/1609 3000 TSRA FEW012CB/BKN015",
+      "more": false
     },
     {
       "flight": "SQ314-SIN-LGW",
@@ -786,7 +786,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161120 19003KT 120V290 9999 SCT038 24/14 Q1018=",
-      "groups": "19003KT 120V290 9999 SCT038",
+      "groups": "19003KT 120V290 9999 SCT038 24/14 Q1018",
       "more": false
     },
     {
@@ -795,8 +795,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 160700 1607/1712 VRB03KT 9999 BKN008 BECMG 1607/1609 BKN030 BECMG 1612/1615 23010KT BECMG 1617/1620 VRB03KT=",
-      "groups": "VRB03KT 9999 BKN008",
-      "more": true
+      "groups": "VRB03KT 9999 BKN008 BECMG 1607/1609 BKN030 BECMG 1612/1615 23010KT BECMG 1617/1620 VRB03KT",
+      "more": false
     },
     {
       "flight": "SQ322-SIN-LHR",
@@ -804,7 +804,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161350 AUTO VRB02KT 9999 SCT043 25/14 Q1017=",
-      "groups": "VRB02KT 9999 SCT043",
+      "groups": "VRB02KT 9999 SCT043 25/14 Q1017",
       "more": false
     },
     {
@@ -813,8 +813,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 161052 1612/1718 28010KT 9999 SCT040 BECMG 1620/1623 05006KT BECMG 1708/1711 25010KT=",
-      "groups": "28010KT 9999 SCT040",
-      "more": true
+      "groups": "28010KT 9999 SCT040 BECMG 1620/1623 05006KT BECMG 1708/1711 25010KT",
+      "more": false
     },
     {
       "flight": "SQ326-SIN-FRA",
@@ -822,8 +822,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 160500 1606/1712 18007KT 9999 FEW015 SCT020 TEMPO 1607/1610 3000 TSRA FEW012CB BKN015=",
-      "groups": "18007KT 9999 FEW015/SCT020",
-      "more": true
+      "groups": "18007KT 9999 FEW015/SCT020 TEMPO 1607/1610 3000 TSRA FEW012CB/BKN015",
+      "more": false
     },
     {
       "flight": "SQ326-SIN-FRA",
@@ -831,7 +831,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161350 AUTO VRB04KT CAVOK 32/13 Q1013 NOSIG=",
-      "groups": "VRB04KT CAVOK",
+      "groups": "VRB04KT CAVOK 32/13 Q1013 NOSIG",
       "more": false
     },
     {
@@ -840,8 +840,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 161100 1612/1718 27004KT CAVOK TEMPO 1614/1618 30020G35KT TSRA BKN050CB BECMG 1618/1620 33006KT PROB30 TEMPO 1705/1708 SHRA BKN080CB=",
-      "groups": "27004KT CAVOK",
-      "more": true
+      "groups": "27004KT CAVOK TEMPO 1614/1618 30020G35KT TSRA BKN050CB BECMG 1618/1620 33006KT PROB30 TEMPO 1705/1708 SHRA BKN080CB",
+      "more": false
     },
     {
       "flight": "SQ34-SIN-SFO",
@@ -849,7 +849,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161356 28007KT 10SM FEW006 OVC008 15/13 A3010 RMK AO2 SLP193 T01500128=",
-      "groups": "28007KT 10SM FEW006/OVC008",
+      "groups": "28007KT 10SM FEW006/OVC008 15/13 A3010 RMK AO2 SLP193 T01500128",
       "more": false
     },
     {
@@ -858,8 +858,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 160300 1603/1706 26015KT P6SM BKN008 FM160700 27006KT P6SM OVC008 FM161800 06005KT P6SM FEW012 FM162100 29012KT P6SM SKC FM170400 28005KT P6SM SCT008=",
-      "groups": "26015KT P6SM BKN008",
-      "more": true
+      "groups": "26015KT P6SM BKN008 FM160700 27006KT P6SM OVC008 FM161800 06005KT P6SM FEW012 FM162100 29012KT P6SM SKC FM170400 28005KT P6SM SCT008",
+      "more": false
     },
     {
       "flight": "SQ34-SIN-SFO",
@@ -867,8 +867,8 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR RJTT 160330Z 03003KT 360V070 2300 R34L/2000N R22/1500VP2000U R34R/2000N R05/P2000N -SHRA BR FEW006 BKN020 24/23 Q1013 TEMPO FEW010 BKN012 BECMG TL0500 08008KT 8000 -SHRA",
-      "groups": "03003KT 360V070 2300 R34L/2000N R22/1500VP2000U R34R/2000N R05/P2000N -SHRA BR FEW006/BKN020",
-      "more": true
+      "groups": "03003KT 360V070 2300 R34L/2000N R22/1500VP2000U R34R/2000N R05/P2000N -SHRA BR FEW006/BKN020 24/23 Q1013 TEMPO FEW010/BKN012 BECMG TL0500 08008KT 8000 -SHRA",
+      "more": false
     },
     {
       "flight": "SQ352-SIN-CPH",
@@ -876,7 +876,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161350 AUTO 28015KT 260V320 9999 FEW041 BKN056 20/10 Q1013 NOSIG=",
-      "groups": "28015KT 260V320 9999 FEW041/BKN056",
+      "groups": "28015KT 260V320 9999 FEW041/BKN056 20/10 Q1013 NOSIG",
       "more": false
     },
     {
@@ -885,8 +885,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 160227 1603/1703 29008KT CAVOK TEMPO 1620/1622 SCT020TCU TEMPO 1700/1703 4000 SHRA SCT020TCU=",
-      "groups": "29008KT CAVOK",
-      "more": true
+      "groups": "29008KT CAVOK TEMPO 1620/1622 SCT020TCU TEMPO 1700/1703 4000 SHRA SCT020TCU",
+      "more": false
     },
     {
       "flight": "SQ365-FCO-SIN",
@@ -894,7 +894,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 070520 03003KT CAVOK 24/20 Q1013 NOSIG=",
-      "groups": "03003KT CAVOK",
+      "groups": "03003KT CAVOK 24/20 Q1013 NOSIG",
       "more": false
     },
     {
@@ -903,8 +903,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 070500 0706/0812 VRB05KT CAVOK BECMG 0708/0710 26012KT BECMG 0720/0722 VRB05KT TEMPO 0802/0807 BKN010=",
-      "groups": "VRB05KT CAVOK",
-      "more": true
+      "groups": "VRB05KT CAVOK BECMG 0708/0710 26012KT BECMG 0720/0722 VRB05KT TEMPO 0802/0807 BKN010",
+      "more": false
     },
     {
       "flight": "SQ365-FCO-SIN",
@@ -912,7 +912,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 070530 17014KT 9999 FEW018 FEW020TCU BKN300 32/25 Q1009 NOSIG=",
-      "groups": "17014KT 9999 FEW018/FEW020TCU/BKN300",
+      "groups": "17014KT 9999 FEW018/FEW020TCU/BKN300 32/25 Q1009 NOSIG",
       "more": false
     },
     {
@@ -930,8 +930,8 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 070500 35008KT 1800 R28/P2000 R27/P2000 R29R/P2000 R29L/P2000 RA FEW010 SCT025 FEW030CB OVC080 27/25 Q1001 TEMPO 11010G20KT 1500 TSRA=",
-      "groups": "35008KT 1800 R28/P2000 R27/P2000 R29R/P2000 R29L/P2000 RA FEW010/SCT025/FEW030CB/OVC080",
-      "more": true
+      "groups": "35008KT 1800 R28/P2000 R27/P2000 R29R/P2000 R29L/P2000 RA FEW010/SCT025/FEW030CB/OVC080 27/25 Q1001 TEMPO 11010G20KT 1500 TSRA",
+      "more": false
     },
     {
       "flight": "SQ365-FCO-SIN",
@@ -939,8 +939,8 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 070430 04005KT 1300 R28/P2000 R27/P2000 R29R/P2000 R29L/P2000 -RA FEW010 SCT025 FEW030CB OVC080 28/26 Q1001 TEMPO 11010G20KT 1500 TSRA=",
-      "groups": "04005KT 1300 R28/P2000 R27/P2000 R29R/P2000 R29L/P2000 -RA FEW010/SCT025/FEW030CB/OVC080",
-      "more": true
+      "groups": "04005KT 1300 R28/P2000 R27/P2000 R29R/P2000 R29L/P2000 -RA FEW010/SCT025/FEW030CB/OVC080 28/26 Q1001 TEMPO 11010G20KT 1500 TSRA",
+      "more": false
     },
     {
       "flight": "SQ366-SIN-FCO",
@@ -948,7 +948,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 041300 13008KT 9999 FEW018 BKN300 29/25 Q1009 NOSIG=",
-      "groups": "13008KT 9999 FEW018/BKN300",
+      "groups": "13008KT 9999 FEW018/BKN300 29/25 Q1009 NOSIG",
       "more": false
     },
     {
@@ -966,7 +966,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 041250 23010KT 190V250 CAVOK 34/21 Q1015 NOSIG=",
-      "groups": "23010KT 190V250 CAVOK",
+      "groups": "23010KT 190V250 CAVOK 34/21 Q1015 NOSIG",
       "more": false
     },
     {
@@ -975,8 +975,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 041100 0412/0518 22012KT CAVOK BECMG 0416/0418 VRB05KT BECMG 0509/0511 23012KT=",
-      "groups": "22012KT CAVOK",
-      "more": true
+      "groups": "22012KT CAVOK BECMG 0416/0418 VRB05KT BECMG 0509/0511 23012KT",
+      "more": false
     },
     {
       "flight": "SQ481-JNB-SIN-25AUG",
@@ -984,7 +984,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 251400 24009KT CAVOK 24/M04 Q1026 NOSIG=",
-      "groups": "24009KT CAVOK",
+      "groups": "24009KT CAVOK 24/M04 Q1026 NOSIG",
       "more": false
     },
     {
@@ -993,8 +993,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 251000 2512/2618 22010KT CAVOK TX26/2513Z TN11/2603Z BECMG 2513/2515 VRB03KT BECMG 2606/2608 33008KT=",
-      "groups": "22010KT CAVOK",
-      "more": true
+      "groups": "22010KT CAVOK TX26/2513Z TN11/2603Z BECMG 2513/2515 VRB03KT BECMG 2606/2608 33008KT",
+      "more": false
     },
     {
       "flight": "SQ481-JNB-SIN-25AUG",
@@ -1002,7 +1002,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 251400 13010KT 100V160 9999 FEW016 BKN300 29/24 Q1012 NOSIG=",
-      "groups": "13010KT 100V160 9999 FEW016/BKN300",
+      "groups": "13010KT 100V160 9999 FEW016/BKN300 29/24 Q1012 NOSIG",
       "more": false
     },
     {
@@ -1011,8 +1011,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 251100 2512/2618 16008KT 9999 FEW015 SCT020 TEMPO 2606/2609 3000 TSRA FEW012CB BKN015=",
-      "groups": "16008KT 9999 FEW015/SCT020",
-      "more": true
+      "groups": "16008KT 9999 FEW015/SCT020 TEMPO 2606/2609 3000 TSRA FEW012CB/BKN015",
+      "more": false
     },
     {
       "flight": "SQ481-JNB-SIN-25AUG",
@@ -1020,8 +1020,8 @@
       "role": "other",
       "kind": "metar",
       "record": "SA 251400 12008KT 080V160 9999 FEW023 23/07 Q1024 WS ALL RWY NOSIG=",
-      "groups": "12008KT 080V160 9999 FEW023",
-      "more": true
+      "groups": "12008KT 080V160 9999 FEW023 23/07 Q1024 WS ALL RWY NOSIG",
+      "more": false
     },
     {
       "flight": "SQ481-JNB-SIN-25AUG",
@@ -1029,8 +1029,8 @@
       "role": "other",
       "kind": "metar",
       "record": "METAR FMMI 251430Z 09010KT 9999 FEW023 21/09 Q1024 WS R29 NOSIG",
-      "groups": "09010KT 9999 FEW023",
-      "more": true
+      "groups": "09010KT 9999 FEW023 21/09 Q1024 WS R29 NOSIG",
+      "more": false
     },
     {
       "flight": "SQ482-SIN-JNB",
@@ -1038,7 +1038,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161130 22008KT 150V250 CAVOK 19/M03 Q1029 NOSIG=",
-      "groups": "22008KT 150V250 CAVOK",
+      "groups": "22008KT 150V250 CAVOK 19/M03 Q1029 NOSIG",
       "more": false
     },
     {
@@ -1047,7 +1047,7 @@
       "role": "other",
       "kind": "taf",
       "record": "TAF VCBI 141100Z 1412/1518 23010KT 9999 FEW014 SCT017 TX31/1507Z TN27/1500Z",
-      "groups": "23010KT 9999 FEW014/SCT017",
+      "groups": "23010KT 9999 FEW014/SCT017 TX31/1507Z TN27/1500Z",
       "more": false
     },
     {
@@ -1056,7 +1056,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 161100 23005KT 200V270 9000 -RA BKN023 OVC090 28/27 Q1008 NOSIG RMK A2977=",
-      "groups": "23005KT 200V270 9000 -RA BKN023/OVC090",
+      "groups": "23005KT 200V270 9000 -RA BKN023/OVC090 28/27 Q1008 NOSIG RMK A2977",
       "more": false
     },
     {
@@ -1065,7 +1065,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 201900 11004KT 9999 FEW018 BKN300 28/23 Q1011 NOSIG=",
-      "groups": "11004KT 9999 FEW018/BKN300",
+      "groups": "11004KT 9999 FEW018/BKN300 28/23 Q1011 NOSIG",
       "more": false
     },
     {
@@ -1083,7 +1083,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 201900 VRB02KT 9999 FEW025 28/26 Q1010 NOSIG RMK A2983=",
-      "groups": "VRB02KT 9999 FEW025",
+      "groups": "VRB02KT 9999 FEW025 28/26 Q1010 NOSIG RMK A2983",
       "more": false
     },
     {
@@ -1092,8 +1092,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 201700 2018/2124 25007KT 9999 FEW025 TX32/2106Z TN26/2021Z TEMPO 2103/2109 27015KT FEW025 BKN090=",
-      "groups": "25007KT 9999 FEW025",
-      "more": true
+      "groups": "25007KT 9999 FEW025 TX32/2106Z TN26/2021Z TEMPO 2103/2109 27015KT FEW025/BKN090",
+      "more": false
     },
     {
       "flight": "SQ38-SIN-LAX-29AUG",
@@ -1101,7 +1101,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 290930 12011KT 090V150 9000 FEW018TCU BKN300 32/25 Q1008 NOSIG=",
-      "groups": "12011KT 090V150 9000 FEW018TCU/BKN300",
+      "groups": "12011KT 090V150 9000 FEW018TCU/BKN300 32/25 Q1008 NOSIG",
       "more": false
     },
     {
@@ -1119,7 +1119,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 290853 21004KT 10SM SCT050 24/19 A2986 RMK AO2 SLP107 T02440189 51006=",
-      "groups": "21004KT 10SM SCT050",
+      "groups": "21004KT 10SM SCT050 24/19 A2986 RMK AO2 SLP107 T02440189 51006",
       "more": false
     },
     {
@@ -1128,8 +1128,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 290520 2906/3012 26006KT P6SM SCT250 FM290700 VRB03KT P6SM SCT250 FM291700 26008KT P6SM SCT250 FM291900 26012KT P6SM BKN150 FM300500 26006KT P6SM SCT250=",
-      "groups": "26006KT P6SM SCT250",
-      "more": true
+      "groups": "26006KT P6SM SCT250 FM290700 VRB03KT P6SM SCT250 FM291700 26008KT P6SM SCT250 FM291900 26012KT P6SM BKN150 FM300500 26006KT P6SM SCT250",
+      "more": false
     },
     {
       "flight": "SQ605-ICN-SIN-08SEP",
@@ -1137,7 +1137,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 081100 29004KT CAVOK 24/23 Q1009 NOSIG=",
-      "groups": "29004KT CAVOK",
+      "groups": "29004KT CAVOK 24/23 Q1009 NOSIG",
       "more": false
     },
     {
@@ -1146,8 +1146,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 081100 0812/0918 33007KT CAVOK TN20/0820Z TX27/0906Z BECMG 0814/0816 07008KT 9999 SCT040 BECMG 0901/0903 01007KT BECMG 0906/0908 07007KT=",
-      "groups": "33007KT CAVOK",
-      "more": true
+      "groups": "33007KT CAVOK TN20/0820Z TX27/0906Z BECMG 0814/0816 07008KT 9999 SCT040 BECMG 0901/0903 01007KT BECMG 0906/0908 07007KT",
+      "more": false
     },
     {
       "flight": "SQ605-ICN-SIN-08SEP",
@@ -1155,7 +1155,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 081100 18009KT 8000 FEW020 BKN300 30/24 Q1009 NOSIG=",
-      "groups": "18009KT 8000 FEW020/BKN300",
+      "groups": "18009KT 8000 FEW020/BKN300 30/24 Q1009 NOSIG",
       "more": false
     },
     {
@@ -1173,7 +1173,7 @@
       "role": "other",
       "kind": "taf",
       "record": "FT 080903 0812/0918 36005MPS 8000 SCT030 TX26/0812Z TN23/0821Z=",
-      "groups": "36005MPS 8000 SCT030",
+      "groups": "36005MPS 8000 SCT030 TX26/0812Z TN23/0821Z",
       "more": false
     },
     {
@@ -1182,7 +1182,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 060130 14008KT 110V170 5000 HZ FEW016 BKN300 30/24 Q1014 NOSIG=",
-      "groups": "14008KT 110V170 5000 HZ FEW016/BKN300",
+      "groups": "14008KT 110V170 5000 HZ FEW016/BKN300 30/24 Q1014 NOSIG",
       "more": false
     },
     {
@@ -1200,7 +1200,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 060130 04014KT CAVOK 25/16 Q1014 NOSIG=",
-      "groups": "04014KT CAVOK",
+      "groups": "04014KT CAVOK 25/16 Q1014 NOSIG",
       "more": false
     },
     {
@@ -1209,7 +1209,7 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 052300 0600/0706 03010G20KT CAVOK TX29/0606Z TN19/0620Z=",
-      "groups": "03010G20KT CAVOK",
+      "groups": "03010G20KT CAVOK TX29/0606Z TN19/0620Z",
       "more": false
     },
     {
@@ -1218,7 +1218,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 091230 14009KT 6000 FEW018 BKN300 30/25 Q1009 NOSIG=",
-      "groups": "14009KT 6000 FEW018/BKN300",
+      "groups": "14009KT 6000 FEW018/BKN300 30/25 Q1009 NOSIG",
       "more": false
     },
     {
@@ -1236,7 +1236,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 091230 10011KT 9999 FEW040 29/22 Q1010 NOSIG=",
-      "groups": "10011KT 9999 FEW040",
+      "groups": "10011KT 9999 FEW040 29/22 Q1010 NOSIG",
       "more": false
     },
     {
@@ -1245,8 +1245,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 090200 0903/1009 08010KT 9999 FEW025 TX32/0906Z TN26/0922Z TEMPO 0904/0910 30010KT TEMPO 0918/0922 4000 SHRA FEW010CB SCT020=",
-      "groups": "08010KT 9999 FEW025",
-      "more": true
+      "groups": "08010KT 9999 FEW025 TX32/0906Z TN26/0922Z TEMPO 0904/0910 30010KT TEMPO 0918/0922 4000 SHRA FEW010CB/SCT020",
+      "more": false
     },
     {
       "flight": "SQ882-SIN-HKG-10SEP",
@@ -1254,7 +1254,7 @@
       "role": "departure",
       "kind": "metar",
       "record": "SA 092100 12006KT 080V140 9999 SCT018 BKN300 28/25 Q1009 NOSIG=",
-      "groups": "12006KT 080V140 9999 SCT018/BKN300",
+      "groups": "12006KT 080V140 9999 SCT018/BKN300 28/25 Q1009 NOSIG",
       "more": false
     },
     {
@@ -1263,8 +1263,8 @@
       "role": "departure",
       "kind": "taf",
       "record": "FT 092010 0920/1100 15008KT 8000 FEW015 SCT020 TEMPO 0923/1002 27015G25KT 3000 TSRA FEW012CB BKN015=",
-      "groups": "15008KT 8000 FEW015/SCT020",
-      "more": true
+      "groups": "15008KT 8000 FEW015/SCT020 TEMPO 0923/1002 27015G25KT 3000 TSRA FEW012CB/BKN015",
+      "more": false
     },
     {
       "flight": "SQ882-SIN-HKG-10SEP",
@@ -1272,7 +1272,7 @@
       "role": "destination",
       "kind": "metar",
       "record": "SA 092100 05013KT 9999 FEW025 27/22 Q1011 NOSIG=",
-      "groups": "05013KT 9999 FEW025",
+      "groups": "05013KT 9999 FEW025 27/22 Q1011 NOSIG",
       "more": false
     },
     {
@@ -1281,8 +1281,8 @@
       "role": "destination",
       "kind": "taf",
       "record": "FT 092000 0921/1103 04010KT 9999 FEW025 TX32/1006Z TN26/0922Z TEMPO 0921/0922 3500 TSRA SHRA FEW010CB SCT020=",
-      "groups": "04010KT 9999 FEW025",
-      "more": true
+      "groups": "04010KT 9999 FEW025 TX32/1006Z TN26/0922Z TEMPO 0921/0922 3500 TSRA SHRA FEW010CB/SCT020",
+      "more": false
     }
   ]
 }

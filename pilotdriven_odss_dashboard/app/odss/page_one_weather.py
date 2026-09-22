@@ -15,17 +15,19 @@ print the same thing:
    (SA/SP/FT/FC), the station ICAO when the ICAO form carries one, the
    DDHHMM(Z) time and the DDHH/DDHH validity - and the ``=`` terminator from
    the end. None of these is a weather group.
-2. The groups that follow are printed verbatim, in source order, up to the
-   first token that is not base-period weather: for a METAR the temperature /
-   dew point, QNH, trend (NOSIG/TEMPO/BECMG), wind shear or RMK; for a TAF the
-   first change group (TEMPO/BECMG/FM/PROB/INTER) or RMK. TAF TX/TN
-   temperature groups are dropped wherever they sit. Consecutive cloud layers
-   are joined with ``/``, the way his TAF field joins FEW015/SCT020. Every held
-   cloud layer is kept - a rule that printed only the first layer would drop
-   ceilings.
-3. What was cut is never hidden: a METAR trend or wind-shear group, or a TAF
-   change group, adds a pointer to the page that holds it. NOSIG and remarks
-   add nothing; they change no picture.
+2. EVERY group that follows is printed verbatim, in source order. Consecutive
+   cloud layers are joined with ``/``, the way his TAF field joins
+   FEW015/SCT020; nothing else is altered and nothing is dropped.
+3. Nothing is cut, so nothing is pointed elsewhere.
+
+RULE CHANGE, 21-22 Sep 2026 (v1 -> v2). v1 stopped at the first token that was
+not base-period weather: a METAR lost its temperature/dew point, QNH and trend,
+and a departure TAF lost every change group behind
+"· change groups: WEATHER page". David, 21 Sep 21:22 with the KUL card
+photographed: the METAR is shortened too much; 22 Sep 13:38: "TAF Tempo is
+truncated why????". His current instruction outranks the 21 Aug reference form
+those stops were minted from, so the stops are gone. What the envelope rule
+removes is unchanged - none of it is weather.
 4. A record the source itself declares empty (NIL, WX NOT AVAILABLE) is
    printed as the source states it. Nothing held prints "Not held".
 
@@ -38,7 +40,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PAGE1_WEATHER_RULE = "page1-weather-groups-v1"
+PAGE1_WEATHER_RULE = "page1-weather-groups-v2"
 NOT_HELD = "Not held"
 
 _REPORT_WORD = re.compile(r"^(?:METAR|SPECI|TAF)$")
@@ -47,22 +49,6 @@ _LIDO_RECORD_TYPE = re.compile(r"^(?:SA|SP|FT|FC|FX)$")
 _STATION = re.compile(r"^[A-Z]{4}$")
 _RECORD_TIME = re.compile(r"^\d{6}Z?$")
 _VALIDITY = re.compile(r"^\d{4}/\d{4}$")
-
-_METAR_STOP = (
-    re.compile(r"^(?:M?\d{2}|//)/(?:M?\d{2}|//)$"),  # temperature / dew point
-    re.compile(r"^[QA](?:\d{4}|/{4})$"),  # QNH / altimeter
-    re.compile(r"^(?:RMK|NOSIG|TEMPO|BECMG|INTER|WS|LLWS|RE[A-Z]{2,4})$"),
-    re.compile(r"^FM\d{4,6}$"),
-    re.compile(r"^\$$"),
-)
-_METAR_MORE = re.compile(r"^(?:TEMPO|BECMG|INTER|WS|LLWS|FM\d{4,6})$")
-
-_TAF_STOP = (
-    re.compile(r"^(?:TEMPO|BECMG|INTER|RMK|PROB\d{2})$"),
-    re.compile(r"^FM\d{6}$"),
-)
-_TAF_SKIP = re.compile(r"^T[XN]M?\d{2}/\d{4}Z$")
-_TAF_MORE = re.compile(r"^(?:TEMPO|BECMG|INTER|PROB\d{2}|FM\d{6})$")
 
 _CLOUD = re.compile(
     r"^(?:(?:FEW|SCT|BKN|OVC)(?:\d{3}|/{3})(?:CB|TCU|/{3})?"
@@ -114,44 +100,26 @@ def page_one_weather_groups(record: Any, kind: str) -> dict[str, Any]:
     text = held_text(record)
     if not text:
         return {"held": False, "groups": "", "more": False, "envelope": [], "tail": []}
-    is_taf = kind == "taf"
-    stops = _TAF_STOP if is_taf else _METAR_STOP
     envelope, body = _strip_envelope(text.split(" "))
     if not body:
         return {"held": True, "groups": " ".join(envelope), "more": False,
                 "envelope": envelope, "tail": []}
 
     kept: list[list[Any]] = []  # [text, is_cloud]
-    index = 0
-    while index < len(body):
-        token = body[index]
-        if any(stop.match(token) for stop in stops):
-            break
-        if is_taf and _TAF_SKIP.match(token):
-            index += 1
-            continue
+    for token in body:
         cloud = bool(_CLOUD.match(token))
         if cloud and kept and kept[-1][1]:
             kept[-1][0] += "/" + token
         else:
             kept.append([token, cloud])
-        index += 1
-    tail = body[index:]
-    if not kept:
-        return {"held": True, "groups": " ".join(body), "more": False,
-                "envelope": envelope, "tail": []}
-
-    # A METAR's remarks are not read for trend words; the trend precedes RMK.
-    remark_at = -1 if is_taf else (tail.index("RMK") if "RMK" in tail else -1)
-    scanned = tail[:remark_at] if remark_at >= 0 else tail
-    more_pattern = _TAF_MORE if is_taf else _METAR_MORE
-    more = any(more_pattern.match(token) for token in scanned)
+    # ``more`` stays in the shape for callers and vectors; nothing is cut any
+    # more, so it is always False and no pointer is ever printed.
     return {
         "held": True,
         "groups": " ".join(item[0] for item in kept),
-        "more": more,
+        "more": False,
         "envelope": envelope,
-        "tail": tail,
+        "tail": [],
     }
 
 
