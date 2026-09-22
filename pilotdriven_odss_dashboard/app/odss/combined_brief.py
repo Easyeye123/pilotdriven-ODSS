@@ -160,7 +160,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-22-aircraft-size-check-conditions-v63"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-23-page-one-pertinent-statement-v64"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

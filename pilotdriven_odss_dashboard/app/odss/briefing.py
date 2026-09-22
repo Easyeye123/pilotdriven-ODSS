@@ -5986,11 +5986,21 @@ def build_briefing_view(
         ),
     }
     from .airport_pdf_analysis import airport_pdf_analysis, alternate_pdf_analysis
+    from .operational_format import page_one_pertinent
+    airport_analysis = airport_pdf_analysis(flight, all_airport_panels)
     from .concise_pdf_gate import PUBLICATION_FORMAT
     return {
         "publication_format": PUBLICATION_FORMAT,
         "deferred_pdf_analysis": deferred_pdf_analysis,
-        "airport_pdf_analysis": airport_pdf_analysis(flight, all_airport_panels),
+        "airport_pdf_analysis": airport_analysis,
+        # Page 1's PERTINENT statement for each station, printed verbatim by the
+        # PDF and by the dashboard station card, so the two surfaces cannot put
+        # different numbers under the same words again.
+        "page_one_pertinent": {
+            str(item.get("role")): page_one_pertinent(item)
+            for item in airport_analysis
+            if item.get("role") in {"departure", "destination"}
+        },
         "alternate_pdf_analysis": alternate_pdf_analysis(flight, all_airport_panels),
         "status": "REVIEW REQUIRED" if needs_review else "BRIEFING COMPLETE",
         "status_severity": "warning" if needs_review else "information",

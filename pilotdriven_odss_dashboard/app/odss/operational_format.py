@@ -1023,19 +1023,70 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     canvas.drawString(x, y + 15, " · ".join(legend))
     canvas.drawString(x, y + 4, "OSM reference · cyan: planned · red: unavailable · amber: scheduled/partial")
 
-def fitted_lines(values: list[str], width: float, body: float, budget: int,
-                 pointer: str) -> list[str]:
-    """Take whole source lines while they fit; never cut one in half."""
-    kept: list[str] = []
+
+# The page-1 station column's PERTINENT field: the width and line budget the
+# column has always been fitted to.
+PAGE_ONE_PERTINENT_WIDTH = 180
+PAGE_ONE_PERTINENT_BUDGET = 4
+
+
+def page_one_pertinent(analysed: dict[str, Any]) -> dict[str, Any]:
+    """The page-1 PERTINENT statement for one station, decided once.
+
+    Independent QA of release 394 read different numbers under the same words
+    on the two surfaces: SQ303 EBBR/WSSS 10/9 "analysed surface/approach
+    consequence(s)" on the dashboard against 2/2 on page 1, SQ352 WSSS/EKCH
+    11/6 against 2/1. The dashboard counted held notices one row each; page 1
+    counted the grouped consequence sentences this analysis could phrase, and
+    whenever it had one it said nothing of the notices it could not reduce.
+
+    This is the one statement both surfaces print (the view publishes it as
+    ``page_one_pertinent``): the consequence lines that fit the column, whole,
+    in the analysis's order - stopping at the first that does not fit rather
+    than naming a later, lesser one in its place - how many consequences there
+    are, and which held notices of a pertinent kind could not be reduced. Page
+    1 may name no NOTAM outside an analysed line, so those are published here
+    by identity and printed by count.
+    """
+    texts = [str(line.get("text") or "") for line in analysed.get("lines") or [] if str(line.get("text") or "").strip()]
+    named: list[str] = []
     used = 0
-    for value in values:
-        needed = len(wrap(value, width - 28, size=body))
-        if used + needed > budget:
-            kept.append(pointer)
+    for value in texts:
+        needed = len(wrap(value, PAGE_ONE_PERTINENT_WIDTH - 28, size=BODY))
+        if used + needed > PAGE_ONE_PERTINENT_BUDGET:
             break
-        kept.append(value)
+        named.append(value)
         used += needed
-    return kept
+    unresolved = [str(item) for item in analysed.get("unresolved_ids") or []]
+    return {
+        "role": analysed.get("role"),
+        "icao": analysed.get("icao"),
+        "named_lines": named,
+        "analysed_count": len(texts),
+        "unresolved_ids": unresolved,
+        "unresolved_count": len(unresolved),
+    }
+
+
+def page_one_pertinent_lines(field: dict[str, Any], pointer: str) -> list[str]:
+    """The field's words: the named lines, then what was and was not reduced.
+
+    ``pointer`` is the one surface-specific part - where the full analysis is
+    on that surface. The numbers and every other word are the same on both.
+    """
+    analysed = int(field.get("analysed_count") or 0)
+    unresolved = int(field.get("unresolved_count") or 0)
+    counted = f"{analysed} analysed surface/approach consequence(s)."
+    not_reduced = f"{unresolved} held notice(s) of a pertinent kind could not be reduced to a published consequence."
+    if analysed:
+        return [*(field.get("named_lines") or []),
+                " ".join(part for part in (counted, not_reduced if unresolved else "", pointer) if part)]
+    # Nothing held and nothing publishable are different facts (SQ352 EKCH,
+    # release 392): a station whose notices could not be reduced must never read
+    # as one that holds none.
+    if unresolved:
+        return [not_reduced, f"{counted} {pointer}"]
+    return ["No analysed constraint is held for the planned movement.", f"{counted} {pointer}"]
 
 
 def split_card(card: Card, columns: int = 2) -> list[Card]:
@@ -1128,7 +1179,6 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         weather = station_view.get("weather") or {}
         analysed = next((a for a in airport_analysis if a["role"] == role),
                         {"lines": [], "unresolved_ids": []})
-        pertinent = [line["text"] for line in analysed["lines"]]
         blocks = [("PLAN", [f"RWY {text(flight.get(f'{role}_runway'))} / "
                             f"{text(one.get('sid' if role == 'departure' else 'star'))}"])]
         blocks += extra
@@ -1148,31 +1198,13 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
             else ("TAF", [page_one_taf_field(weather.get("taf"), "WEATHER page")])
         )
         # The nine-page ARRIVAL SURFACE card counted the analysed consequences
-        # for the arrival. The count stays published, and now also says where
-        # the ones that do not fit this column are printed in full.
-        counted = (f"{len(pertinent)} analysed surface/approach consequence(s). "
-                   "Full analysis: AIRPORTS page.")
-        kept = fitted_lines(pertinent, 180, BODY, 4, counted)
-        if kept and kept[-1] != counted:
-            kept.append(counted)
-        # Nothing held and nothing publishable are different facts, and this
-        # field used to state the first when it meant the second. SQ352
-        # 15 Aug 2026, destination EKCH: eleven notices held, six of them of a
-        # pertinent kind, none reducible to a consequence line - and page 1
-        # printed "No analysed constraint is held for the planned movement."
-        # while page 2 of the same PDF listed A1380/26 RWY 12/30 closed and
-        # A1353/26 pavement and friction (independent live QA of release 392).
-        #
-        # The unreduced notices are not lost - they keep their closing receipt
-        # and their full record on the AIRPORTS page - so the repair is to say
-        # which of the two facts this is, not to promote rows this analysis
-        # could not phrase.
-        unreduced = [str(item) for item in analysed.get("unresolved_ids") or []]
-        blocks.append(("PERTINENT", kept or (
-            [f"{len(unreduced)} held notice(s) of a pertinent kind could not be reduced to a "
-             "published consequence. Full record: AIRPORTS page.", counted]
-            if unreduced else
-            ["No analysed constraint is held for the planned movement.", counted])))
+        # for the arrival. The count stays published, beside the held notices
+        # this analysis could not reduce, as the one statement the dashboard
+        # station card prints too (``page_one_pertinent``; independent QA of
+        # release 394 read 10/9 there against 2/2 here for SQ303).
+        blocks.append(("PERTINENT", page_one_pertinent_lines(
+            page_one_pertinent(analysed), "Full analysis: AIRPORTS page.",
+        )))
         # Keep both source-held station identifiers, as on the dashboard and
         # David's reference. Do not make the release gate waive a lost IATA.
         station_icao = text(station_view.get("icao"))
