@@ -12,8 +12,10 @@ from app.odss.airport_taxi_consequences import taxi_routing_scopes
     ('TWY D BTN TWY D7 SB AND TWY D6 NB CLSD DUE WIP.', ['D between D7 SB and D6 NB']),
     ('FLW TWY CLSD DUE WIP: 1) TWY T BTN TWY P5 AND TWY R4 INCLUDING ALL JUNCTIONS WITHIN 2) TWY T5 3) TWY T6',
      ['T between P5 and R4, including intervening junctions', 'T5', 'T6']),
+    # 22 Sep 2026: a taxilane keeps its kind beside a taxiway - TXL N4 is not
+    # TWY N4 (tests/test_taxiway_closure_places.py). This pin used to drop it.
     ('FLW TWY CLSD DUE WIP: 1) TWY P8 BTN JUNCTION OF TWY P8/TXL N5/TWY K AND TWY P, INCLUDING JUNCTION OF TWY P8/TWY N 2) TWY N BTN TXL N4 AND TWY P8',
-     ['P8 between P8/N5/K junction and P, including P8/N junction', 'N between N4 and P8']),
+     ['P8 between P8/TXL N5/K junction and P, including P8/N junction', 'N between TXL N4 and P8']),
     ('TXL R1 BEHIND ACFT STANDS E6 TO E7 CLSD.', ['R1 behind stands E6/E7']),
     ('TWY C AND K WILL BE CLSD.', ['C/K']),
     ('TWY W9 AND THE JUNCTION OF TWY W9, TWY W AND TAXIWAY R WILL BE CLOSED.', ['W9 and W9/W/R junction']),

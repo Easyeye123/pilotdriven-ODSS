@@ -40,6 +40,11 @@ from .pilot_briefing import (
     pilot_notam_key,
 )
 from .runway_closure_schedule import reconcile_runway_closure_findings
+from .airport_taxi_consequences import (
+    bounded_taxiway_extents,
+    taxiway_closure_items,
+    taxiway_designation_scope,
+)
 from .notam_restriction_line import (
     FIXED_MARKER_SENTENCES,
     derive_notam_restriction_line,
@@ -1083,7 +1088,8 @@ def _approach_category_operations(upper: str) -> str | None:
     return f"CAT {category}"
 
 
-# Where a bounded taxiway extent ends.
+# A taxiway closure names its places whole - the shared grammar in
+# ``airport_taxi_consequences`` - and says what else it closes.
 #
 # SQ352 15 Aug 2026, EKCH A1383/26, real OFP page 36:
 #
@@ -1092,43 +1098,113 @@ def _approach_category_operations(upper: str) -> str | None:
 #     TWY Y BTN TWY B AND DEICING PLATFORM B.
 #     TWY Z BTN TWY D AND DEICING PLATFORM B.
 #
-# The end group was a single identifier, so it matched the bare word RWY and
-# lost 12/30: the published line was "TWY B BETWEEN Y AND RWY closed ...", an
-# extent that ends nowhere (independent live QA of release 392). A runway
-# designator and a named place are both legitimate end points and are read as
-# whole things. An end this cannot recognise still falls back to one
-# identifier, which is the previous behaviour and invents nothing.
-_EXTENT_END = (
-    r"(?:(?P<end_rwy>(?:RWY|RUNWAY)\s+[0-9]{1,2}[LCR]?(?:\s*/\s*[0-9]{1,2}[LCR]?)?)"
-    r"|(?:TWY|TAXIWAY)\s+(?P<end_twy>[A-Z][A-Z0-9/-]*)"
-    r"|(?P<end_place>(?:DEICING\s+PLATFORM|APRON|STAND|TERMINAL|GATE)\s+[A-Z0-9][A-Z0-9/-]*)"
-    r"|(?P<end_token>[A-Z][A-Z0-9/-]*))"
-)
-_BOUNDED_TAXIWAY_EXTENT = re.compile(
-    r"\b(?:TWY|TAXIWAY)\s+(?P<name>[A-Z][A-Z0-9/-]*)\s+BTN\s+"
-    r"(?:TWY|TAXIWAY)\s+(?P<start>[A-Z][A-Z0-9/-]*)\s+AND\s+" + _EXTENT_END + r"\b",
-    re.I,
-)
-
-
-def _extent_end_text(match: "re.Match[str]") -> str:
-    """The extent's end point, whole."""
-    groups = match.groupdict()
-    if groups.get("end_rwy"):
-        return re.sub(r"\s*/\s*", "/", groups["end_rwy"].replace("RUNWAY", "RWY").strip())
-    for key in ("end_twy", "end_place", "end_token"):
-        if groups.get(key):
-            return re.sub(r"\s+", " ", groups[key].strip())
-    return ""
+# The first reader here took one identifier as the end point and published
+# "TWY B BETWEEN Y AND RWY" (independent live QA of release 392). Its repair
+# then accepted any one word as an end point: VAAH A1134/26 became "TWY P
+# between C and RAPID" (RAPID EXIT TWY R5) and KJFK A3912/26 "TWY A4 between A
+# and TERMINAL 5" (TERMINAL 5 RAMP) - independent replay, 22 Sep 2026. And its
+# start point had to be a taxiway, so an extent starting at a runway, a ramp,
+# a taxilane or a directional taxiway was not seen at all and the fallback
+# below published the partial closure as the WHOLE taxiway (WSSS A2510/26,
+# "TWY Q BTN TXL Q3 AND TWY P7", became "TWY Q closed").
 
 
 def _further_taxiway_extents(text: str) -> int:
-    """Bounded extents this notice states beyond the first.
+    """Bounded extents this notice states beyond the first."""
+    return max(0, len(bounded_taxiway_extents(text)) - 1)
+
+
+def _further_closed_taxiway_items(text: str) -> str:
+    """The sentence saying what else this notice closes, or "".
 
     The subject names one extent. A notice listing three and publishing one,
-    with nothing saying so, reads as though the other two do not exist.
+    with nothing saying so, reads as though the other two do not exist - and
+    that holds for a whole taxiway or a stand-access segment listed beside the
+    extents as much as for another extent. A count is stated only when every
+    listed element was read.
     """
-    return max(0, len(_BOUNDED_TAXIWAY_EXTENT.findall(str(text or "").upper())) - 1)
+    items, exact = taxiway_closure_items(text)
+    further = len(items) - 1
+    if further < 1:
+        return ""
+    if not exact:
+        return "This notice states further closed taxiway items"
+    if all(form == "extent" for form, _ in items):
+        return f"This notice states {further} further closed taxiway extent(s)"
+    return f"This notice states {further} further closed taxiway item(s)"
+
+
+def _taxiway_subject(upper: str, *, closure: bool = True) -> tuple[str, str]:
+    """A taxiway notice's subject, and which reader named it.
+
+    ``extent`` and ``designation`` subjects name one item of what may be a
+    list; ``compound`` and ``table`` subjects already name every item. The
+    partial-closure guard is for closures: a lighting or marking restriction
+    on TWY F4 is not "part of TWY F4".
+    """
+    compound = re.search(
+        r"\b(?:TWY|TAXIWAY)\s+(?P<closed>[A-Z0-9][A-Z0-9/-]*)\s+AND\s+"
+        r"(?:THE\s+)?JUNCTION\s+OF\s+(?:TWY|TAXIWAY)\s+(?P=closed)[,\s]+"
+        r"(?:TWY|TAXIWAY)\s+(?P<left>[A-Z0-9][A-Z0-9/-]*)\s+AND\s+"
+        r"(?:TWY|TAXIWAY)\s+(?P<right>[A-Z0-9][A-Z0-9/-]*)\b",
+        upper,
+    )
+    if compound:
+        return (
+            f"TWY {compound.group('closed')} and "
+            f"{compound.group('closed')}/{compound.group('left')}/{compound.group('right')} junction",
+            "compound",
+        )
+    associated = _associated_taxiway_subject(upper)
+    if associated:
+        return associated, "table"
+    extents = bounded_taxiway_extents(upper)
+    if extents and (closure or extents[0].complete):
+        return extents[0].subject(), "extent"
+    invalid_identifiers = {
+        "AND",
+        "ASSOCIATED",
+        "CLSD",
+        "CLOSED",
+        "CLOSURE",
+        "INDICATOR",
+        "IS",
+        "LIGHT",
+        "LIGHTS",
+        "MARKINGS",
+        "PAVEMENT",
+        "WILL",
+        "WITH",
+    }
+    for match in re.finditer(
+        r"\b(?:TWY|TAXIWAY)\s+(?P<identifier>[A-Z][A-Z0-9/-]*)\b",
+        upper,
+    ):
+        identifier = match.group("identifier")
+        if identifier in invalid_identifiers:
+            continue
+        # A designation qualified by anything but its closure, a list
+        # sibling or the end of its statement is a PARTIAL closure: its
+        # own scope when this can read it, "part of" when it cannot, and
+        # never the whole taxiway.
+        partial = taxiway_designation_scope(upper, match.end(), "TWY", identifier) if closure else None
+        return partial or f"TWY {identifier}", "designation"
+    phonetic = re.search(r"\b([A-Z]{2,})\s+TWY\b", upper)
+    turnoffs = re.search(
+        r"\bHIGH-SPEED\s+TURN-OFFS?\s+([A-Z]\d{1,2})\s+AND\s+([A-Z]\d{1,2})\b",
+        upper,
+    )
+    if phonetic and turnoffs:
+        return (
+            f"{phonetic.group(1).title()} TWY segment and "
+            f"{turnoffs.group(1)}/{turnoffs.group(2)} high-speed turn-offs",
+            "fallback",
+        )
+    if phonetic:
+        return f"{phonetic.group(1).title()} TWY segment", "fallback"
+    if turnoffs:
+        return f"{turnoffs.group(1)}/{turnoffs.group(2)} high-speed turn-offs", "fallback"
+    return "taxiway operational area", "fallback"
 
 
 def _notam_subject(text: str, kind: str) -> str:
@@ -1178,64 +1254,7 @@ def _notam_subject(text: str, kind: str) -> str:
         ]
         return " ".join(part for part in parts if part)
     if kind in {"taxiway_closure", "taxiway_restriction"}:
-        compound = re.search(
-            r"\b(?:TWY|TAXIWAY)\s+(?P<closed>[A-Z0-9][A-Z0-9/-]*)\s+AND\s+"
-            r"(?:THE\s+)?JUNCTION\s+OF\s+(?:TWY|TAXIWAY)\s+(?P=closed)[,\s]+"
-            r"(?:TWY|TAXIWAY)\s+(?P<left>[A-Z0-9][A-Z0-9/-]*)\s+AND\s+"
-            r"(?:TWY|TAXIWAY)\s+(?P<right>[A-Z0-9][A-Z0-9/-]*)\b",
-            upper,
-        )
-        if compound:
-            return (
-                f"TWY {compound.group('closed')} and "
-                f"{compound.group('closed')}/{compound.group('left')}/{compound.group('right')} junction"
-            )
-        associated = _associated_taxiway_subject(upper)
-        if associated:
-            return associated
-        bounded = _BOUNDED_TAXIWAY_EXTENT.search(upper)
-        if bounded:
-            return (
-                f"TWY {bounded.group('name')} between "
-                f"{bounded.group('start')} and {_extent_end_text(bounded)}"
-            )
-        invalid_identifiers = {
-            "AND",
-            "ASSOCIATED",
-            "CLSD",
-            "CLOSED",
-            "CLOSURE",
-            "INDICATOR",
-            "IS",
-            "LIGHT",
-            "LIGHTS",
-            "MARKINGS",
-            "PAVEMENT",
-            "WILL",
-            "WITH",
-        }
-        for match in re.finditer(
-            r"\b(?:TWY|TAXIWAY)\s+(?P<identifier>[A-Z][A-Z0-9/-]*)\b",
-            upper,
-        ):
-            identifier = match.group("identifier")
-            if identifier not in invalid_identifiers:
-                return f"TWY {identifier}"
-        phonetic = re.search(r"\b([A-Z]{2,})\s+TWY\b", upper)
-        turnoffs = re.search(
-            r"\bHIGH-SPEED\s+TURN-OFFS?\s+([A-Z]\d{1,2})\s+AND\s+([A-Z]\d{1,2})\b",
-            upper,
-        )
-        if phonetic and turnoffs:
-            return (
-                f"{phonetic.group(1).title()} TWY segment and "
-                f"{turnoffs.group(1)}/{turnoffs.group(2)} high-speed turn-offs"
-            )
-        if phonetic:
-            return f"{phonetic.group(1).title()} TWY segment"
-        if turnoffs:
-            return f"{turnoffs.group(1)}/{turnoffs.group(2)} high-speed turn-offs"
-        return "taxiway operational area"
+        return _taxiway_subject(upper, closure=kind == "taxiway_closure")[0]
     if kind == "apron_stand_closure":
         match = re.search(
             r"\b(?:ACFT\s+STAND|STAND|APRON|APN|RAMP|GATE)\s+[A-Z0-9][A-Z0-9/-]*\b",
@@ -1522,11 +1541,16 @@ def _notam_operational_summary(
             )
         return f"Lighting affecting {subject.upper()} is unavailable during the applicable {phase} window."
     if kind == "taxiway_closure":
-        further = _further_taxiway_extents(text)
+        notes = []
+        if subject.startswith("part of "):
+            notes.append("Its bounds could not be read completely from the notice")
+        source = _taxiway_subject(upper)[1]
+        further = _further_closed_taxiway_items(text) if source in {"extent", "designation"} else ""
+        if further:
+            notes.append(further if not notes else further[0].lower() + further[1:])
         remaining = (
-            f" This notice states {further} further closed taxiway extent(s); "
-            "the full record is held with the airport's notices."
-            if further else ""
+            " " + "; ".join(notes) + "; the full record is held with the airport's notices."
+            if notes else ""
         )
         return f"{subject.upper()} closed during the applicable {phase} window.{remaining}"
     if kind == "taxiway_restriction":

@@ -12,11 +12,10 @@ enough: the scope had to survive the classifiers.
 from __future__ import annotations
 
 from app.odss.airport_pdf_analysis import _complete_runway_closures
+from app.odss.airport_taxi_consequences import bounded_taxiway_extents
 from app.odss.engines import (
-    _extent_end_text,
     _further_taxiway_extents,
     _notam_subject,
-    _BOUNDED_TAXIWAY_EXTENT,
 )
 
 A1380 = "DAILY 0400-1600 RWY 12/30 CLSD FOR TKOF AND LDG DUE TO WIP."
@@ -68,9 +67,11 @@ def test_an_extent_ending_at_a_runway_keeps_the_designator() -> None:
 
 
 def test_an_extent_ending_at_a_named_place_keeps_the_place() -> None:
-    match = _BOUNDED_TAXIWAY_EXTENT.search("TWY Y BTN TWY B AND DEICING PLATFORM B.")
-    assert match is not None
-    assert _extent_end_text(match) == "DEICING PLATFORM B"
+    # The reader moved to the shared place grammar (22 Sep 2026); the
+    # assertion is the one this test always made.
+    [extent] = bounded_taxiway_extents("TWY Y BTN TWY B AND DEICING PLATFORM B.")
+    assert extent.complete
+    assert extent.end.label == "DEICING PLATFORM B"
 
 
 def test_a_taxiway_to_taxiway_extent_reads_as_before() -> None:
