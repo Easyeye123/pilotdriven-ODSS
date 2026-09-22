@@ -123,20 +123,21 @@ def page_one_weather_groups(record: Any, kind: str) -> dict[str, Any]:
     }
 
 
-def page_one_metar_field(record: Any, pointer: str) -> str:
-    """The page-1 METAR field; ``pointer`` names the page holding the full record."""
+def page_one_metar_field(record: Any, pointer: str | None = None) -> str:
+    """The page-1 METAR field: every held group.
+
+    v1 took ``pointer`` - the page holding the rest of the record - because it
+    cut the record short. v2 cuts nothing, so there is nothing to point at. The
+    parameter is kept, unused, so existing call sites stay valid.
+    """
     result = page_one_weather_groups(record, "metar")
-    if not result["held"]:
-        return NOT_HELD
-    return f"{result['groups']} · trend: {pointer}" if result["more"] else result["groups"]
+    return result["groups"] if result["held"] else NOT_HELD
 
 
-def page_one_taf_field(record: Any, pointer: str) -> str:
-    """The page-1 departure TAF field: the base period, change groups pointed at."""
+def page_one_taf_field(record: Any, pointer: str | None = None) -> str:
+    """The page-1 TAF field: every held group, change groups included."""
     result = page_one_weather_groups(record, "taf")
-    if not result["held"]:
-        return NOT_HELD
-    return f"{result['groups']} · change groups: {pointer}" if result["more"] else result["groups"]
+    return result["groups"] if result["held"] else NOT_HELD
 
 
 def forecast_source_line(source: dict[str, Any]) -> str:
