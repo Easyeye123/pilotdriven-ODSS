@@ -1024,10 +1024,32 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     canvas.drawString(x, y + 4, "OSM reference · cyan: planned · red: unavailable · amber: scheduled/partial")
 
 
-# The page-1 station column's PERTINENT field: the width and line budget the
-# column has always been fitted to.
+# The page-1 station column's PERTINENT field: the width it is fitted to, the
+# lines it gives the other restrictions, and the hard cap for the ones it must
+# always name.
 PAGE_ONE_PERTINENT_WIDTH = 180
-PAGE_ONE_PERTINENT_BUDGET = 4
+PAGE_ONE_PERTINENT_BUDGET = 6
+PAGE_ONE_PERTINENT_MANDATORY_CAP = 9
+
+
+def _unresolved_on_planned_runway(analysed: dict[str, Any]) -> dict[str, Any] | None:
+    """What page 1 says of held notices on the planned runway it cannot reduce.
+
+    SQ303 16 Jul 2026, WSSS SX120/25: the published closure schedules for RWY
+    02L/20R could not be resolved for the arrival on planned RWY 20R; page 1
+    counted it among "1 held notice(s)" and never said the planned runway was
+    involved. The words name the planned runway and which part is unresolved -
+    the notice's timing or its effect - never a closure or an outage.
+    """
+    planned = str(analysed.get("planned_runway") or "").strip()
+    held = [item for item in analysed.get("unresolved_detail") or [] if item.get("names_planned")]
+    if not planned or not held:
+        return None
+    moment = {"departure": "departure", "destination": "arrival"}.get(str(analysed.get("role")), "the reference time")
+    parts = list(dict.fromkeys(f"timing at {moment}" if item.get("reason") == "timing" else "effect" for item in held))
+    notices = "1 held notice" if len(held) == 1 else f"{len(held)} held notices"
+    text = f"Planned RWY {planned}: {notices} unresolved ({', '.join(parts)})."
+    return {"text": text, "tier": 1, "notam_ids": [str(item.get("notam_id")) for item in held], "source": "unresolved"}
 
 
 def page_one_pertinent(analysed: dict[str, Any]) -> dict[str, Any]:
@@ -1036,57 +1058,72 @@ def page_one_pertinent(analysed: dict[str, Any]) -> dict[str, Any]:
     Independent QA of release 394 read different numbers under the same words
     on the two surfaces: SQ303 EBBR/WSSS 10/9 "analysed surface/approach
     consequence(s)" on the dashboard against 2/2 on page 1, SQ352 WSSS/EKCH
-    11/6 against 2/1. The dashboard counted held notices one row each; page 1
-    counted the grouped consequence sentences this analysis could phrase, and
-    whenever it had one it said nothing of the notices it could not reduce.
+    11/6 against 2/1. The count is now decided here and both surfaces print it.
 
-    This is the one statement both surfaces print (the view publishes it as
-    ``page_one_pertinent``): the consequence lines that fit the column, whole,
-    in the analysis's order - stopping at the first that does not fit rather
-    than naming a later, lesser one in its place - how many consequences there
-    are, and which held notices of a pertinent kind could not be reduced. Page
-    1 may name no NOTAM outside an analysed line, so those are published here
-    by identity and printed by count.
+    The first repair named the analysis's full consequence sentences while
+    they fitted four lines, and three of the four reviewed stations named
+    nothing: every first sentence was longer than the column. SQ352 EKCH lost
+    "RWY 22L CAT II/III operations unavailable" - the planned runway - which
+    the card had named in release 394 (independent candidate review, 22 Sep
+    2026). Page 1 now names each consequence in its short form (``brief``,
+    decided by the analysis from the same parts as the full sentence; the
+    AIRPORTS page keeps the sentence and its NOTAM IDs), most relevant first:
+    the airport, then the planned runway - including a held notice on it that
+    could not be reduced - then other runways, other approach aids, taxiways.
+    The first two are always named; the rest while they fit.
     """
-    texts = [str(line.get("text") or "") for line in analysed.get("lines") or [] if str(line.get("text") or "").strip()]
+    lines = [line for line in analysed.get("lines") or [] if str(line.get("text") or "").strip()]
+    items = [{"text": str(line.get("brief") or "").strip(), "tier": int(line.get("relevance", 3)),
+              "notam_ids": [str(notice) for notice in line.get("notam_ids") or []], "source": "analysed"}
+             for line in lines if str(line.get("brief") or "").strip()]
+    on_planned = _unresolved_on_planned_runway(analysed)
+    if on_planned:
+        items.append(on_planned)
+    items.sort(key=lambda item: item["tier"])
     named: list[str] = []
     used = 0
-    for value in texts:
-        needed = len(wrap(value, PAGE_ONE_PERTINENT_WIDTH - 28, size=BODY))
-        if used + needed > PAGE_ONE_PERTINENT_BUDGET:
-            break
-        named.append(value)
-        used += needed
+    stopped = False
+    for item in items:
+        needed = len(wrap(item["text"], PAGE_ONE_PERTINENT_WIDTH - 28, size=BODY))
+        mandatory = item["tier"] <= 1
+        limit = PAGE_ONE_PERTINENT_MANDATORY_CAP if mandatory else PAGE_ONE_PERTINENT_BUDGET
+        # Never name a lesser restriction in place of one that did not fit.
+        item["named"] = not stopped and used + needed <= limit
+        if item["named"]:
+            named.append(item["text"])
+            used += needed
+        elif not mandatory:
+            stopped = True
     unresolved = [str(item) for item in analysed.get("unresolved_ids") or []]
     return {
         "role": analysed.get("role"),
         "icao": analysed.get("icao"),
+        "planned_runway": analysed.get("planned_runway"),
         "named_lines": named,
-        "analysed_count": len(texts),
+        "items": items,
+        "analysed_count": len(lines),
         "unresolved_ids": unresolved,
         "unresolved_count": len(unresolved),
     }
 
 
 def page_one_pertinent_lines(field: dict[str, Any], pointer: str) -> list[str]:
-    """The field's words: the named lines, then what was and was not reduced.
+    """The field's words: the named restrictions, then what was and was not reduced.
 
     ``pointer`` is the one surface-specific part - where the full analysis is
     on that surface. The numbers and every other word are the same on both.
     """
     analysed = int(field.get("analysed_count") or 0)
     unresolved = int(field.get("unresolved_count") or 0)
-    counted = f"{analysed} analysed surface/approach consequence(s)."
-    not_reduced = f"{unresolved} held notice(s) of a pertinent kind could not be reduced to a published consequence."
-    if analysed:
-        return [*(field.get("named_lines") or []),
-                " ".join(part for part in (counted, not_reduced if unresolved else "", pointer) if part)]
+    counted = f"{analysed} analysed surface/approach consequence(s)"
+    named = [str(line) for line in field.get("named_lines") or []]
     # Nothing held and nothing publishable are different facts (SQ352 EKCH,
     # release 392): a station whose notices could not be reduced must never read
     # as one that holds none.
-    if unresolved:
-        return [not_reduced, f"{counted} {pointer}"]
-    return ["No analysed constraint is held for the planned movement.", f"{counted} {pointer}"]
+    if analysed or unresolved or named:
+        held = f"; {unresolved} pertinent held notice(s) not reduced" if unresolved else ""
+        return [*named, f"{counted}{held}. {pointer}"]
+    return ["No analysed constraint is held for the planned movement.", f"{counted}. {pointer}"]
 
 
 def split_card(card: Card, columns: int = 2) -> list[Card]:

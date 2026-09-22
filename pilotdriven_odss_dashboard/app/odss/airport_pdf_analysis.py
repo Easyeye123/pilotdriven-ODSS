@@ -190,11 +190,139 @@ def _approach_chart_restrictions(raw: str) -> list[tuple[str, str]] | None:
     return charts
 
 
+# A notice that limits one approach CATEGORY on one runway, and says nothing
+# else. SQ352 15 Aug 2026, EKCH A1312/26, real OFP page 36:
+#
+#     RWY 22L CAT II/III OPS NOT AVBL DUE TO WIP.
+#
+# The planned arrival runway is 22L. The notice names no aid, so the outage
+# path below could not phrase it and the notice fell to the unreduced count -
+# on page 1, on the dashboard card that prints page 1's statement, and on the
+# AIRPORTS page - while the dashboard's own card had named it correctly in
+# release 394 (independent candidate review, 22 Sep 2026). It is not an ILS
+# outage and not a runway closure: the consequence says the category and the
+# predicate the source used, on the runway it named, and nothing broader.
+#
+# The same statement in the US form, `ORD ILS RWY 28L CAT II/III NA` or
+# `PHL ILS RWY 27R SPECIAL AUTH CAT II NA` (KORD A5362/26, KPHL A2969/26 in
+# the held corpus), names the procedure's category; NA is "not authorized".
+# Every clause of the notice must be one of these statements, or the notice
+# stays unresolved: "ILS CAT IIIB OPS UNAFFECTED" (FACT A2781/26) and an
+# obstacle "EXC IN RWY 25R CAT II/III OPS" never become a restriction.
+_RUNWAY_END = r"(?:0[1-9]|[12]\d|3[0-6])[LCR]?"
+_CATEGORY = (r"CAT\s*(?P<category>(?:I{1,3}|[123])[A-C]?"
+             r"(?:\s*(?:/|\bAND\b)\s*(?:CAT\s*)?(?:I{1,3}|[123])[A-C]?)*)")
+_CATEGORY_PREDICATE = {
+    "NOT AVBL": "not available", "NOT AVAILABLE": "not available",
+    "NA": "not authorized", "NOT AUTHORIZED": "not authorized", "NOT AUTHORISED": "not authorized",
+    "SUSPENDED": "suspended",
+}
+_CATEGORY_PREDICATES = r"(?P<predicate>NOT\s+AVBL|NOT\s+AVAILABLE|NA|NOT\s+AUTHORI[SZ]ED|SUSPENDED)"
+_CATEGORY_REASON = (r"(?:\s+DUE(?:\s+TO)?\s+(?:WIP|MAINT(?:ENANCE)?(?:\s+WIP)?|WORKS?|"
+                    r"CONST(?:RUCTION)?(?:\s+WORKS)?|RWY\s+RESURFACING(?:\s+WIP)?))?")
+
+
+def _category_restrictions(raw: str, icao: Any) -> list[dict[str, Any]] | None:
+    """Each clause's (runway, category, procedure, predicate), or None.
+
+    None whenever any clause is anything else, so the notice keeps its
+    unresolved receipt rather than a partial reading.
+    """
+    from .notam_restriction_line import strip_publication_envelope
+
+    body = " ".join((strip_publication_envelope(raw) or raw).upper().split())
+    station = str(icao or "").strip().upper()
+    location = re.escape(station[1:]) if len(station) == 4 else None
+    prefix = rf"(?:{location}\s+)?(?:NAV\s+)?" if location else r"(?:NAV\s+)?"
+    patterns = (
+        re.compile(rf"(?:RWY|RUNWAY)\s*(?P<runway>{_RUNWAY_END})\s+{_CATEGORY}\s+(?:OPS|OPR|OPERATIONS?)\s+"
+                   rf"{_CATEGORY_PREDICATES}{_CATEGORY_REASON}"),
+        re.compile(rf"{prefix}(?P<procedure>ILS)\s+(?:RWY|RUNWAY)\s*(?P<runway>{_RUNWAY_END})\s+"
+                   rf"(?P<special>SPECIAL\s+AUTH(?:ORI[SZ]ATION)?\s+)?{_CATEGORY}\s+{_CATEGORY_PREDICATES}"),
+    )
+    found: list[dict[str, Any]] = []
+    for clause in filter(None, (part.strip() for part in re.split(r"\.(?=\s|$)|;", body))):
+        match = next((m for m in (p.fullmatch(clause) for p in patterns) if m), None)
+        if not match:
+            return None
+        categories = [token for token in re.split(r"\s*(?:/|\bAND\b)\s*(?:CAT\s*)?", match.group("category")) if token]
+        item = {
+            "runway": match.group("runway"),
+            "category": "CAT " + "/".join(categories),
+            "procedure": match.groupdict().get("procedure") or "",
+            "special": bool(match.groupdict().get("special")),
+            "predicate": _CATEGORY_PREDICATE[" ".join(match.group("predicate").split())],
+        }
+        if item not in found:
+            found.append(item)
+    return found or None
+
+
+def _category_label(item: dict[str, Any]) -> str:
+    """`RWY 22L CAT II/III operations not available` - the source's own scope."""
+    procedure = f"{item['procedure']} " if item["procedure"] else ""
+    special = "special-authorization " if item["special"] else ""
+    return f"RWY {item['runway']} {procedure}{special}{item['category']} operations {item['predicate']}"
+
+
+def _planned_relation(planned: str, runways: list[str]) -> tuple[bool, str]:
+    """Whether the named runways include the planned one, and the short words."""
+    matches = bool(planned and any(planned in runway.split("/") for runway in runways))
+    if matches:
+        return True, "planned runway"
+    return False, (f"not planned RWY {planned}" if planned and runways else "")
+
+
+def _brief_timing(state: str, timing: str) -> str:
+    """The page-1 words for when a consequence applies, beyond the reference."""
+    if state == "active":
+        return ""
+    begins = re.match(r"begins (\d+) min after (departure|arrival|alternate reference)", timing or "")
+    if begins:
+        return f" from {begins.group(1)} min after {begins.group(2)}"
+    outside = re.match(r"outside the active schedule at (departure|arrival|alternate reference)", timing or "")
+    if outside:
+        return f" outside its schedule at {outside.group(1)}"
+    return ""
+
+
+def _chart_brief(titles: list[str], state: str, when: str, planned: str) -> str:
+    """Page 1's words for suspended/withdrawn charts: the planned runway's first."""
+    def runway(title: str) -> str | None:
+        found = re.search(r"\bRWY\s+(" + _RUNWAY_END + r")\b", title)
+        return found.group(1) if found else None
+    mine = [title for title in titles if planned and runway(title) == planned]
+    if mine:
+        others = len(titles) - len(mine)
+        tail = f"; {others} other chart(s)" if others else ""
+        return f"Planned RWY {planned} approach charts {state}{when}: " + "; ".join(mine) + tail + "."
+    listed = "; ".join(titles)
+    if len(listed) <= 60:
+        return _with_relation(f"Approach charts {state}{when}: {listed}", f"not planned RWY {planned}" if planned else "")
+    return _with_relation(f"{len(titles)} approach charts {state}{when}", f"not planned RWY {planned}" if planned else "")
+
+
+def _with_relation(text: str, relation: str) -> str:
+    return f"{text} ({relation})." if relation else f"{text}."
+
+
 def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway: Any, route_text: str | None = None) -> dict[str, Any]:
     """Group equal consequences, retaining every contributing inline ID."""
     planned = str(planned_runway or "").strip().upper()
     groups: OrderedDict[tuple[str, str, str], dict[str, Any]] = OrderedDict()
     unresolved = []
+    unresolved_detail: list[dict[str, Any]] = []
+
+    def leave_unresolved(notice_id: str, raw: str, reason: str) -> None:
+        # What page 1 may say of a notice this analysis cannot reduce: the
+        # runways the notice itself names, and which part of it - its timing
+        # or its effect - is not resolved. Never a guessed restriction.
+        unresolved.append(notice_id)
+        named = list(dict.fromkeys(m.replace(" ", "").upper() for m in _SURFACE.findall(raw)))
+        unresolved_detail.append({
+            "notam_id": notice_id, "runways": named, "reason": reason,
+            "names_planned": bool(planned and any(planned in runway.split("/") for runway in named)),
+        })
     excluded = []
     source_ids = []
     surface_effects = []
@@ -235,28 +363,35 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
                 "stateAtReference": schedule["stateAtReference"],
                 "notam_id": notice_id, "markClass": "closure", "scope": "whole_entity",
             })
+            affected = schedule.get("plannedRunwayAffected")
+            # One notice, one assessment: page 1 prints the schedule's own
+            # sentence whole, as page 2, page 4 and the dashboard do, and says
+            # whether it is the planned runway in a sentence of its own.
+            relation = " Planned runway." if affected else f" Not planned RWY {planned}." if affected is False else ""
             groups[("runway", schedule["line"], "scheduled")] = {
                 "family": "runway", "consequence": schedule["line"],
                 "state": "scheduled", "timing": "dated runway schedule",
                 "notam_ids": [notice_id], "source_pages": [notice.get("source_page")],
+                "brief": schedule["text"] + relation,
+                "relevance": 1 if affected else 2, "planned_match": bool(affected),
             }
         if (assessment or {}).get("statements"):
             # Other unresolved clauses retain their single closing receipt.
             if assessed.get("applicability") == "review":
-                unresolved.append(notice_id)
+                leave_unresolved(notice_id, raw, "timing")
             continue
         timing, state = _timing(notice, role)
         if state == "ended":
             continue
         if timing is None:
-            unresolved.append(notice_id)
+            leave_unresolved(notice_id, raw, "timing")
             continue
         # A chart's suspension is not a physical aid outage. Keep title/runway
         # tuples local to their source clauses, before any equipment grouping.
         if re.search(r"\b(?:IAC|AERONAUTICAL DATA TABULATION)\b", raw, re.I):
             charts = _approach_chart_restrictions(raw)
             if not charts:
-                unresolved.append(notice_id)
+                leave_unresolved(notice_id, raw, "effect")
                 continue
             by_state: OrderedDict[str, list[str]] = OrderedDict()
             for title, chart_state in charts:
@@ -264,8 +399,12 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
             for chart_state, titles in by_state.items():
                 consequence = f"Published approach charts {chart_state} {timing}: " + "; ".join(titles) + "."
                 key = ("approach_chart", consequence, state)
+                chart_runways = [m for title in titles for m in re.findall(r"\bRWY\s+(" + _RUNWAY_END + r")\b", title)]
+                chart_match = bool(planned and planned in chart_runways)
                 row = groups.setdefault(key, {"family": "approach_chart", "consequence": consequence,
-                                               "state": state, "timing": timing, "notam_ids": [], "source_pages": []})
+                                               "state": state, "timing": timing, "notam_ids": [], "source_pages": [],
+                                               "brief": _chart_brief(titles, chart_state, _brief_timing(state, timing), planned),
+                                               "relevance": 1 if chart_match else 3, "planned_match": chart_match})
                 if notice_id not in row["notam_ids"]:
                     row["notam_ids"].append(notice_id)
                 if notice.get("source_page") is not None and notice["source_page"] not in row["source_pages"]:
@@ -275,10 +414,31 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         # classifier's bounded result enter a consequence template.
         if notice.get("approach_affected") or kind == "approach_navaid_closure":
             from .pilot_briefing import _bound_unavailable, _APPROACH_SYSTEM
+            categories = _category_restrictions(raw, panel.get("icao"))
+            if categories:
+                for item in categories:
+                    matches, relation = _planned_relation(planned, [item["runway"]])
+                    label = _category_label(item)
+                    stated = (f"this concerns planned RWY {planned}" if matches
+                              else f"planned RWY {planned} is a different runway" if planned
+                              else "the planned runway is not held")
+                    consequence = (f"{label}; restriction {timing}; {stated}." if timing.startswith("begins")
+                                   else f"{label} {timing}; {stated}.")
+                    row = groups.setdefault(("approach_category", consequence, state), {
+                        "family": "approach_category", "consequence": consequence, "state": state,
+                        "timing": timing, "notam_ids": [], "source_pages": [],
+                        "brief": _with_relation(label + _brief_timing(state, timing), relation),
+                        "relevance": 1 if matches else 3, "planned_match": matches,
+                    })
+                    if notice_id not in row["notam_ids"]:
+                        row["notam_ids"].append(notice_id)
+                    if notice.get("source_page") is not None and notice["source_page"] not in row["source_pages"]:
+                        row["source_pages"].append(notice["source_page"])
+                continue
             # The dashboard's approach flag also admits signal interference.
             # It cannot, by itself, establish a component outage.
             if not _bound_unavailable(raw.upper(), _APPROACH_SYSTEM):
-                unresolved.append(notice_id)
+                leave_unresolved(notice_id, raw, "effect")
                 continue
             component = re.search(r"\b(ILS|DME|VOR|LOC|GP|GS|NDB|GLS)(?:[ -]+PART)\b", raw, re.I)
             systems = [aid for aid in dict.fromkeys(re.findall(r"\b(?:ILS|DME|VOR|LOC|GP|GS|NDB|GLS)\b", raw.upper()))
@@ -286,7 +446,7 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
             component_name = component.group(1).upper() if component else None
             subject = component_name if component_name in systems else "/".join(systems)
             if not subject:
-                unresolved.append(notice_id)
+                leave_unresolved(notice_id, raw, "effect")
                 continue
             scope = "RWY " + ", ".join(runways) if runways else "published approach aid"
             planned_relation = f"; this concerns planned RWY {planned}" if planned and any(planned in r.split("/") for r in runways) else f"; the notice names a different runway from planned {planned}" if planned and runways else "; planned-runway procedure applicability is not established"
@@ -298,7 +458,7 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         elif kind == "taxiway_closure":
             taxiways = taxi_routing_scopes(raw)
             if not taxiways:
-                unresolved.append(notice_id)
+                leave_unresolved(notice_id, raw, "effect")
                 continue
             # An entity-only record cannot establish the extent of a partial
             # closure. State the routing effect without colouring a whole way.
@@ -307,7 +467,7 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         elif runways:
             scopes, has_unresolved_clause = _complete_runway_closures(raw)
             if has_unresolved_clause or not scopes:
-                unresolved.append(notice_id)
+                leave_unresolved(notice_id, raw, "effect")
             for operation, affected_runways in scopes.items():
                 # This path publishes only complete recognised source clauses.
                 # Other clauses retain their closing receipt even when this
@@ -325,17 +485,23 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
                                else f"{runway_label} {operation} {timing}; {relation}.")
                 key = ("runway", consequence, state)
                 row = groups.setdefault(key, {"family": "runway", "consequence": consequence,
-                                               "state": state, "timing": timing, "notam_ids": [], "source_pages": []})
+                                               "state": state, "timing": timing, "notam_ids": [], "source_pages": [],
+                                               "brief": _with_relation(f"{runway_label} {operation}{_brief_timing(state, timing)}",
+                                                                       _planned_relation(planned, affected_runways)[1]),
+                                               "relevance": 1 if matches else 2, "planned_match": matches})
                 if notice_id not in row["notam_ids"]:
                     row["notam_ids"].append(notice_id)
                 if notice.get("source_page") is not None and notice["source_page"] not in row["source_pages"]:
                     row["source_pages"].append(notice["source_page"])
             continue
         else:
-            unresolved.append(notice_id)
+            leave_unresolved(notice_id, raw, "effect")
             continue
         key = (family, consequence, state)
         row = groups.setdefault(key, {"family": family, "consequence": consequence, "state": state, "timing": timing, "notam_ids": [], "source_pages": []})
+        if kind == "airport_closure":
+            row.setdefault("brief", f"Airport use is restricted{_brief_timing(state, timing)}; the planned movement depends on reopening.")
+            row.setdefault("relevance", 0)
         if family == "taxiway":
             row["entities"] = taxiways
         if family == "approach":
@@ -351,8 +517,9 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
     approach_groups = OrderedDict()
     for row in groups.values():
         if row["family"] == "approach":
-            combined = approach_groups.setdefault((row["timing"], row["state"]), {"family": "approach", "state": row["state"], "timing": row["timing"], "segments": [], "notam_ids": [], "source_pages": [], "planned_match": False})
+            combined = approach_groups.setdefault((row["timing"], row["state"]), {"family": "approach", "state": row["state"], "timing": row["timing"], "segments": [], "plain": [], "notam_ids": [], "source_pages": [], "planned_match": False})
             combined["segments"].append(f"{row['scope']} {row['aid']} ({', '.join(row['notam_ids'])})")
+            combined["plain"].append(f"{row['scope']} {row['aid']}")
             combined["notam_ids"].extend(row["notam_ids"])
             combined["source_pages"].extend(row["source_pages"])
             combined["planned_match"] = combined["planned_match"] or row["planned_match"]
@@ -361,8 +528,9 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
             lines.append(row)
             continue
         key = (row["timing"], row["state"])
-        combined = taxi_groups.setdefault(key, {"family": "taxiway", "state": row["state"], "timing": row["timing"], "segments": [], "notam_ids": [], "source_pages": []})
+        combined = taxi_groups.setdefault(key, {"family": "taxiway", "state": row["state"], "timing": row["timing"], "segments": [], "plain": [], "notam_ids": [], "source_pages": []})
         combined["segments"].append(f"{', '.join(row['entities'])} ({', '.join(row['notam_ids'])})")
+        combined["plain"].append(", ".join(row["entities"]))
         combined["notam_ids"].extend(row["notam_ids"])
         combined["source_pages"].extend(row["source_pages"])
     for row in lines:
@@ -372,14 +540,28 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         prefix = "Approach-aid outage " if row["timing"].startswith("begins") else "Unavailable approach aids "
         row["consequence"] = prefix + row['timing'] + ": " + "; ".join(row["segments"]) + ". " + relation
         row["text"] = row["consequence"]
+        short = (f"includes planned RWY {planned}" if row["planned_match"]
+                 else f"not planned RWY {planned}" if planned and all("published approach aid" not in s for s in row["segments"])
+                 else "")
+        row["brief"] = _with_relation("; ".join(row.pop("plain")) + " unavailable" + _brief_timing(row["state"], row["timing"]), short)
+        row["relevance"] = 1 if row["planned_match"] else 3
         lines.append(row)
     for row in taxi_groups.values():
         prefix = "Taxi restriction " if row["timing"].startswith("begins") else "Taxi access is constrained "
         row["consequence"] = prefix + row['timing'] + ": " + "; ".join(row["segments"]) + "."
         row["text"] = row["consequence"]
+        # Page 1 names the places when they are few; a long list is counted,
+        # and every place stays on the AIRPORTS page.
+        places = "; ".join(row.pop("plain"))
+        when = _brief_timing(row["state"], row["timing"])
+        notices = len(dict.fromkeys(row["notam_ids"]))
+        row["brief"] = (f"Taxi access constrained{when}: {places}." if len(places) <= 48
+                        else f"Taxi access constrained{when} by {notices} notice(s).")
+        row["relevance"] = 4
         lines.append(row)
     return {"icao": panel.get("icao"), "role": role, "planned_runway": planned or None, "lines": lines,
-            "surface_effects": surface_effects, "unresolved_ids": unresolved, "supporting_ids": excluded, "selected_ids": source_ids}
+            "surface_effects": surface_effects, "unresolved_ids": unresolved, "unresolved_detail": unresolved_detail,
+            "supporting_ids": excluded, "selected_ids": source_ids}
 
 
 def airport_pdf_analysis(flight: dict[str, Any], panels: list[dict[str, Any]]) -> list[dict[str, Any]]:
