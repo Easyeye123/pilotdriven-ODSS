@@ -50,6 +50,23 @@ NON_STATION_ABBREVIATIONS = frozenset({
     "TACAN", "TWY", "UIR", "VASI", "VOR", "VORD", "VOT",
 })
 _AIRSPACE_VOLUME_NAME = re.compile(r"\b(?:FIR|UIR|CTA|TMA|SFRA)\b")
+# The same page chrome the web parser skips (``isPageChrome`` in cfp.mjs).
+_PAGE_CHROME = re.compile(
+    r"^(?:PAGE\s+\d+\s+OF\s+\d+|SIA\s+\d+/[0-9A-Z]+/[A-Z]{3}-[A-Z]{3})$", re.IGNORECASE,
+)
+_WEATHER_RECORD = re.compile(r"^(?:SA|SP|FT|FC|METAR|SPECI|TAF)\s")
+
+
+def _heads_station_block(lines: list[str], index: int) -> bool:
+    """Whether the line at ``index`` heads its own block, as every real station
+    row does: its dashed underline follows in the NOTAM appendix, its own
+    records in the weather appendix. An item-E body line - where every false
+    station so far was printed (ELEV/HGT, DVOR/DME, EBBU/FIR) - is followed by
+    more of its notice. Twin of ``headsStationBlock`` in cfp.mjs."""
+    following = [line for line in lines[index + 1:index + 8] if line]
+    while following and _PAGE_CHROME.match(following[0]) and len(following) > 1:
+        following = following[1:]
+    return bool(following) and bool(re.match(r"^-{5,}$", following[0]) or _WEATHER_RECORD.match(following[0]))
 
 
 def classify_bulletin_station_line(line: str) -> dict[str, str] | None:
@@ -81,11 +98,17 @@ def classify_bulletin_station_line(line: str) -> dict[str, str] | None:
     # a denylist.
     if icao in NON_STATION_ABBREVIATIONS:
         return None
-    # FIR and UIR are the exception, refused in either column. In this grammar
-    # they are not codes at all: they name the airspace volume the row is
-    # about, as in ``EBBU/FIR - RESTRICTIONS RELATED TO ...``, whose name gives
-    # nothing else to judge by. An aerodrome is never an airspace volume.
-    if icao in AIRSPACE_VOLUME_CODES or iata in AIRSPACE_VOLUME_CODES:
+    # FIR and UIR used to be refused in the IATA column too, on the claim that
+    # no aerodrome could be lost. One is: UIR is Quirindi (YQDI) in IATA's own
+    # code search (independent review, 22 Sep 2026). What marks the real
+    # airspace row is its NAME - ``EBBU/FIR - RESTRICTIONS RELATED TO ...`` -
+    # which is prose, not a place; a colliding row must at least carry a name,
+    # and ``_fuel_enroute_stations`` also requires it to head its own block.
+    #
+    # A station name is a place name, and a place name begins with a letter.
+    if iata in AIRSPACE_VOLUME_CODES and not name:
+        return None
+    if name and not re.match(r"[A-Z]", name, re.IGNORECASE):
         return None
     if re.search(r"\d", name):
         return None
@@ -158,8 +181,8 @@ def _fuel_enroute_stations(section_text: str) -> list[dict[str, str]]:
     stations: list[dict[str, str]] = []
     seen: set[str] = set()
     in_fuel_section = False
-    for raw_line in section_text.splitlines():
-        line = raw_line.strip()
+    lines = [raw_line.strip() for raw_line in section_text.splitlines()]
+    for index, line in enumerate(lines):
         if _FUEL_ENROUTE_HEADING.fullmatch(line):
             in_fuel_section = True
             continue
@@ -170,6 +193,10 @@ def _fuel_enroute_stations(section_text: str) -> list[dict[str, str]]:
             continue
         station = classify_bulletin_station_line(line)
         if station is None:
+            continue
+        # A row whose IATA column is also an airspace-volume abbreviation
+        # cannot be judged by its shape; its place in the OFP settles it.
+        if station["iata"] in AIRSPACE_VOLUME_CODES and not _heads_station_block(lines, index):
             continue
         icao = station["icao"]
         if icao in seen:
