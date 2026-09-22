@@ -43,6 +43,7 @@ _STATION_HEADER = re.compile(
 # (SQ303, 22 Sep 2026: "Jump to airport has 68 options including the
 # placeholder", with "ELEV - (FT) - 135/153" and "DVOR - STJ 113.200MHZ/CH79X
 # U/S"). Keep the two lists together when either changes.
+AIRSPACE_VOLUME_CODES = frozenset({"FIR", "UIR"})
 NON_STATION_ABBREVIATIONS = frozenset({
     "ALTN", "ATIS", "AWOS", "DME", "DVOR", "ELEV", "FIR", "FRZ", "GNSS", "GP",
     "GPS", "HGT", "ILS", "LOC", "NDB", "PAPI", "RVR", "RWY", "SFRA", "TAC",
@@ -70,7 +71,21 @@ def classify_bulletin_station_line(line: str) -> dict[str, str] | None:
     icao = str(match.group("icao") or "").upper()
     iata = str(match.group("iata") or "").upper()
     name = str(match.group("name") or "").strip()
-    if icao in NON_STATION_ABBREVIATIONS or iata in NON_STATION_ABBREVIATIONS:
+    # Facility and measurement abbreviations are checked against the LEADING
+    # column only. An equipment line leads with its equipment word -
+    # ``DVOR/DME ...``, ``ELEV/HGT ...``, ``GNSS/GPS ...`` - so that is where
+    # the refusal belongs. The second column is real IATA code space, where
+    # three-letter codes legitimately collide with abbreviations: DME is Moscow
+    # Domodedovo, and ``UUDD/DME MOSCOW/DOMODEDOVO`` was being refused as
+    # equipment prose (independent review, 22 Sep 2026). A code space cannot be
+    # a denylist.
+    if icao in NON_STATION_ABBREVIATIONS:
+        return None
+    # FIR and UIR are the exception, refused in either column. In this grammar
+    # they are not codes at all: they name the airspace volume the row is
+    # about, as in ``EBBU/FIR - RESTRICTIONS RELATED TO ...``, whose name gives
+    # nothing else to judge by. An aerodrome is never an airspace volume.
+    if icao in AIRSPACE_VOLUME_CODES or iata in AIRSPACE_VOLUME_CODES:
         return None
     if re.search(r"\d", name):
         return None

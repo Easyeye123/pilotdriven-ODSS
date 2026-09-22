@@ -47,6 +47,13 @@ def test_a_genuine_station_header_is_still_read() -> None:
 
 def test_an_airspace_volume_printed_in_an_airport_section_is_not_an_aerodrome() -> None:
     assert classify_bulletin_station_line("LBSR/SOF SOFIA FIR") is None
+    # FIR and UIR are refused in either column: in this grammar they name the
+    # volume the row is about, not a code. The name of this real row gives
+    # nothing else to judge by (SQ023 25 Jul 2026, SQ297 16 Aug 2026).
+    assert classify_bulletin_station_line(
+        "EBBU/FIR - RESTRICTIONS RELATED TO THE RUSSIAN INVASION OF"
+    ) is None
+    assert classify_bulletin_station_line("EBBU/UIR - UPPER AIRSPACE NOTICE") is None
 
 
 def test_the_refusal_is_not_only_the_two_codes_that_were_published() -> None:
@@ -98,3 +105,56 @@ def test_the_corpus_identity_check_names_a_regressed_parser() -> None:
     assert len(failures) == 2
     assert any("ELEV" in line for line in failures)
     assert any("DVOR" in line for line in failures)
+
+
+# An aerodrome whose IATA code collides with an abbreviation in the vocabulary.
+# DME is Moscow Domodedovo's three-letter code (IATA code search, retrieved
+# 22 Sep 2026). The vocabulary is an ICAO/NOTAM abbreviation dictionary, not a
+# denylist over IATA code space, and applying it to the second column refused a
+# real aerodrome (independent review of the deployed rule in both parsers).
+IATA_COLLISIONS = [
+    ("UUDD/DME MOSCOW/DOMODEDOVO", "UUDD", "DME"),
+    ("EGGP/LPL LIVERPOOL/JOHN LENNON", "EGGP", "LPL"),
+    ("LFPG/CDG PARIS/CHARLES DE GAULLE", "LFPG", "CDG"),
+]
+
+
+def test_a_real_aerodrome_is_kept_when_its_iata_code_is_also_an_abbreviation() -> None:
+    for line, icao, iata in IATA_COLLISIONS:
+        station = classify_bulletin_station_line(line)
+        assert station is not None, line
+        assert station["icao"] == icao
+        assert station["iata"] == iata
+
+
+def test_the_equipment_lines_are_still_refused_by_their_leading_word() -> None:
+    """The refusal moved to the leading column; it did not go away."""
+    assert "DME" in NON_STATION_ABBREVIATIONS
+    for line in (ELEV_LINE, DVOR_LINE, DVOR_WITHDRAWN_LINE):
+        assert classify_bulletin_station_line(line) is None, line
+
+
+def test_a_collision_still_loses_to_the_prose_guards() -> None:
+    """The name tests do not care which column carried the abbreviation."""
+    assert classify_bulletin_station_line("UUDD/DME 113.200MHZ/CH 79X U/S") is None
+    assert classify_bulletin_station_line("UUDD/DME MOSCOW FIR") is None
+
+
+def test_the_section_scan_keeps_a_colliding_aerodrome() -> None:
+    section = "\n".join([
+        "FUEL ENROUTE AIRPORT(S):",
+        "UUDD/DME MOSCOW/DOMODEDOVO",
+        DVOR_WITHDRAWN_LINE,
+        "EHAM/AMS AMSTERDAM/SCHIPHOL",
+        ELEV_LINE,
+    ])
+    assert [station["airport"] for station in _fuel_enroute_stations(section)] == ["UUDD", "EHAM"]
+
+
+def test_a_colliding_aerodrome_passes_the_corpus_identity_check() -> None:
+    flight = {
+        "departure": "EBBR",
+        "destination": "WSSS",
+        "fuel_enroute_airports": [{"airport": "UUDD", "name": "MOSCOW/DOMODEDOVO"}],
+    }
+    assert check_station_identities(flight) == []
