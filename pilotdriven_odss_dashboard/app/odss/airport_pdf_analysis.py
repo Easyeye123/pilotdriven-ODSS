@@ -56,6 +56,55 @@ def _timing(record: dict[str, Any], role: str) -> tuple[str | None, str]:
     return None, "unresolved reference time"
 
 
+# The movements a closure clause may name for itself.
+#
+# SQ352 15 Aug 2026, EKCH A1380/26, real OFP page 36:
+#
+#     DAILY 0400-1600
+#     RWY 12/30 CLSD FOR TKOF AND LDG DUE TO WIP.
+#
+# The recognised clause was `timing + surface + predicate + reason` and had to
+# match the whole clause, so this movement scope - sitting between predicate
+# and reason - matched neither and the entire notice fell to unresolved. Page 1
+# then published nothing for a destination whose closure page 2 printed
+# (independent live QA of release 392).
+#
+# The scope is carried, not stripped: "closed" and "closed for take-off and
+# landing" are different facts, and a reader deciding whether an arrival is
+# affected needs the second.
+_MOVEMENT_WORD = r"TKOF|TAKE[\s-]?OFF|LDG|LANDING|ARR(?:IVAL)?S?|DEP(?:ARTURE)?S?"
+_MOVEMENT_SCOPE = (
+    r"(?:\s+(?:FOR|TO)\s+(?P<movement>(?:" + _MOVEMENT_WORD + r")"
+    r"(?:\s*(?:,|AND|OR|/)\s*(?:" + _MOVEMENT_WORD + r"))*))?"
+)
+_MOVEMENT_TEXT = {
+    "TKOF": "take-off", "TAKEOFF": "take-off",
+    "LDG": "landing", "LANDING": "landing",
+    "ARR": "arrival", "ARRIVAL": "arrival", "ARRIVALS": "arrivals",
+    "DEP": "departure", "DEPARTURE": "departure", "DEPARTURES": "departures",
+}
+
+
+def _with_movement_scope(operation: str, movement: str | None) -> str:
+    """The operation, saying which movements the source named."""
+    if not movement:
+        return operation
+    words: list[str] = []
+    for token in re.split(r"[,/]|\bAND\b|\bOR\b", movement.upper()):
+        key = re.sub(r"[\s-]+", "", token.strip())
+        text = _MOVEMENT_TEXT.get(key)
+        if text and text not in words:
+            words.append(text)
+    if not words:
+        return operation
+    named = " and ".join(words) if len(words) < 3 else ", ".join(words[:-1]) + " and " + words[-1]
+    # "closed to the affected movement" is the unscoped wording; when the
+    # source names the movements, it says them instead of that placeholder.
+    if operation == "closed to the affected movement":
+        return f"closed for {named}"
+    return f"{operation} for {named}"
+
+
 def _complete_runway_closures(raw: str) -> tuple[dict[str, list[str]], bool]:
     """Recognise complete bounded closure clauses, never discard their suffix.
 
@@ -75,7 +124,7 @@ def _complete_runway_closures(raw: str) -> tuple[dict[str, list[str]], bool]:
         (r"(?:IS\s+|ARE\s+|WILL\s+BE\s+)?(?:CLSD|CLOSED)", "closed to the affected movement"),
         (r"(?:IS\s+)?NOT\s+(?:AVBL|AVAILABLE)(?:\s+FOR\s+OPS)?", "not available for operations"),
     )
-    patterns = [(re.compile(timing_prefix + _SURFACE.pattern + r"\s+" + predicate + reason, re.I), operation)
+    patterns = [(re.compile(timing_prefix + _SURFACE.pattern + r"\s+" + predicate + _MOVEMENT_SCOPE + reason, re.I), operation)
                 for predicate, operation in predicates]
     scopes: dict[str, list[str]] = {}
     unreduced = []
@@ -84,8 +133,9 @@ def _complete_runway_closures(raw: str) -> tuple[dict[str, list[str]], bool]:
             match = pattern.fullmatch(clause)
             if match:
                 runway = match.group(1).replace(" ", "").upper()
-                if runway not in scopes.setdefault(operation, []):
-                    scopes[operation].append(runway)
+                scoped = _with_movement_scope(operation, match.groupdict().get("movement"))
+                if runway not in scopes.setdefault(scoped, []):
+                    scopes[scoped].append(runway)
                 break
         else:
             unreduced.append(clause)

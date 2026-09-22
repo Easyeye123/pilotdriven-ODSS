@@ -1064,6 +1064,73 @@ def _associated_taxiway_subject(upper: str) -> str | None:
     return f"TWYs {joined}"
 
 
+# "CAT II/III OPS", "CAT 3 OPR" - the operations category a notice limits.
+# Kept in the source's own numerals so no reader has to guess which categories
+# the notice meant.
+_APPROACH_CATEGORY_OPS = re.compile(
+    r"\bCAT\s*(?P<category>(?:I{1,3}|[123])[A-C]?(?:\s*/\s*(?:I{1,3}|[123])[A-C]?)*)"
+    r"\s+(?:OPS|OPR|OPERATIONS?)\b",
+    re.I,
+)
+
+
+def _approach_category_operations(upper: str) -> str | None:
+    """`CAT II/III` when the notice limits a category's operations."""
+    match = _APPROACH_CATEGORY_OPS.search(upper)
+    if not match:
+        return None
+    category = re.sub(r"\s*/\s*", "/", match.group("category").strip().upper())
+    return f"CAT {category}"
+
+
+# Where a bounded taxiway extent ends.
+#
+# SQ352 15 Aug 2026, EKCH A1383/26, real OFP page 36:
+#
+#     FOLLOWING TWY ARE CLSD DUE TO WIP:
+#     TWY B BTN TWY Y AND RWY 12/30.
+#     TWY Y BTN TWY B AND DEICING PLATFORM B.
+#     TWY Z BTN TWY D AND DEICING PLATFORM B.
+#
+# The end group was a single identifier, so it matched the bare word RWY and
+# lost 12/30: the published line was "TWY B BETWEEN Y AND RWY closed ...", an
+# extent that ends nowhere (independent live QA of release 392). A runway
+# designator and a named place are both legitimate end points and are read as
+# whole things. An end this cannot recognise still falls back to one
+# identifier, which is the previous behaviour and invents nothing.
+_EXTENT_END = (
+    r"(?:(?P<end_rwy>(?:RWY|RUNWAY)\s+[0-9]{1,2}[LCR]?(?:\s*/\s*[0-9]{1,2}[LCR]?)?)"
+    r"|(?:TWY|TAXIWAY)\s+(?P<end_twy>[A-Z][A-Z0-9/-]*)"
+    r"|(?P<end_place>(?:DEICING\s+PLATFORM|APRON|STAND|TERMINAL|GATE)\s+[A-Z0-9][A-Z0-9/-]*)"
+    r"|(?P<end_token>[A-Z][A-Z0-9/-]*))"
+)
+_BOUNDED_TAXIWAY_EXTENT = re.compile(
+    r"\b(?:TWY|TAXIWAY)\s+(?P<name>[A-Z][A-Z0-9/-]*)\s+BTN\s+"
+    r"(?:TWY|TAXIWAY)\s+(?P<start>[A-Z][A-Z0-9/-]*)\s+AND\s+" + _EXTENT_END + r"\b",
+    re.I,
+)
+
+
+def _extent_end_text(match: "re.Match[str]") -> str:
+    """The extent's end point, whole."""
+    groups = match.groupdict()
+    if groups.get("end_rwy"):
+        return re.sub(r"\s*/\s*", "/", groups["end_rwy"].replace("RUNWAY", "RWY").strip())
+    for key in ("end_twy", "end_place", "end_token"):
+        if groups.get(key):
+            return re.sub(r"\s+", " ", groups[key].strip())
+    return ""
+
+
+def _further_taxiway_extents(text: str) -> int:
+    """Bounded extents this notice states beyond the first.
+
+    The subject names one extent. A notice listing three and publishing one,
+    with nothing saying so, reads as though the other two do not exist.
+    """
+    return max(0, len(_BOUNDED_TAXIWAY_EXTENT.findall(str(text or "").upper())) - 1)
+
+
 def _notam_subject(text: str, kind: str) -> str:
     upper = " ".join(text.upper().split())
     runway_pattern = r"(?:RWY|RUNWAY)\s*\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
@@ -1085,6 +1152,19 @@ def _notam_subject(text: str, kind: str) -> str:
         bound_subject = _bound_unavailable_approach_subject(upper)
         if bound_subject:
             return bound_subject
+        # A category-limited operation is not an aid outage, and it is not the
+        # whole approach either. SQ352 15 Aug 2026, EKCH A1312/26, real OFP
+        # page 36: "RWY 22L CAT II/III OPS NOT AVBL DUE TO WIP." names no
+        # system token, so this fell through to the literal "approach/navaid"
+        # and published a broader subject than the notice states, dropping the
+        # category entirely (independent live QA of release 392). Say what the
+        # source says - the category, and that it is the operations that are
+        # unavailable. Nothing here implies another category is available.
+        category = _approach_category_operations(upper)
+        if category:
+            runway_named = re.search(r"\b(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?\b", upper)
+            scope = runway_named.group(0).replace("RUNWAY", "RWY") if runway_named else ""
+            return f"{scope} {category} operations".strip()
         system = re.search(
             r"\b(?:ILS|LOC|LOCALIZER|GLIDE\s*PATH|GLIDESLOPE|DME|VOR|NDB|RNP|PAPI)\b",
             upper,
@@ -1113,16 +1193,11 @@ def _notam_subject(text: str, kind: str) -> str:
         associated = _associated_taxiway_subject(upper)
         if associated:
             return associated
-        bounded = re.search(
-            r"\b(?:TWY|TAXIWAY)\s+(?P<name>[A-Z][A-Z0-9/-]*)\s+BTN\s+"
-            r"(?:TWY|TAXIWAY)\s+(?P<start>[A-Z][A-Z0-9/-]*)\s+AND\s+"
-            r"(?:(?:TWY|TAXIWAY)\s+)?(?P<end>[A-Z][A-Z0-9/-]*)\b",
-            upper,
-        )
+        bounded = _BOUNDED_TAXIWAY_EXTENT.search(upper)
         if bounded:
             return (
                 f"TWY {bounded.group('name')} between "
-                f"{bounded.group('start')} and {bounded.group('end')}"
+                f"{bounded.group('start')} and {_extent_end_text(bounded)}"
             )
         invalid_identifiers = {
             "AND",
@@ -1447,7 +1522,13 @@ def _notam_operational_summary(
             )
         return f"Lighting affecting {subject.upper()} is unavailable during the applicable {phase} window."
     if kind == "taxiway_closure":
-        return f"{subject.upper()} closed during the applicable {phase} window."
+        further = _further_taxiway_extents(text)
+        remaining = (
+            f" This notice states {further} further closed taxiway extent(s); "
+            "the full record is held with the airport's notices."
+            if further else ""
+        )
+        return f"{subject.upper()} closed during the applicable {phase} window.{remaining}"
     if kind == "taxiway_restriction":
         return derive_notam_restriction_line(text)["text"]
     if kind == "apron_stand_closure":
