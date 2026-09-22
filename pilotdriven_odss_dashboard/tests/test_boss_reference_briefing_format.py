@@ -821,12 +821,17 @@ def test_the_sq910_card_names_the_engine_2_fan_cowl_latch(briefing):
 def test_page_one_weather_fields_are_his_trimmed_groups_with_the_local_clock(briefing):
     """B4 fix round 1 (17 Sep 2026): page 1 printed the OFP record envelope.
 
-    His page 1 reads ``METAR 11004KT 9999 FEW018`` / ``TAF 16008KT 9999
-    FEW015/SCT020`` / ``SCHEDULE 0050Z / 0850 LT``; ours read ``SA 201900
-    11004KT 9999 FEW018 BKN300 28/23 Q1011 NOSIG=`` and ``0050Z / 21AUG26``.
-    The trim rule is shared with the dashboard (page_one_weather.py ==
-    page1-weather.mjs, pinned by tests/fixtures/page1-weather-vectors.json),
-    so both surfaces print the same groups for the same held record.
+    His page 1 reads ``SCHEDULE 0050Z / 0850 LT``, not ``0050Z / 21AUG26``,
+    and it carries no OFP record envelope (``SA 201900``, ``FT 201700
+    2018/2200``, ``=``).
+
+    21-22 Sep 2026: what the page carries INSIDE the envelope changed. v1 cut
+    the METAR at its temperature group and the TAF at its first change group;
+    he photographed that card ("shortened too much", "TAF Tempo is truncated
+    why????"), so v2 prints every held group. The rule is still shared with the
+    dashboard (page_one_weather.py == page1-weather.mjs, pinned by
+    tests/fixtures/page1-weather-vectors.json), so both surfaces print the same
+    groups for the same held record.
     """
     from app.odss.page_one_weather import held_text, page_one_metar_field, page_one_taf_field
 
@@ -844,11 +849,15 @@ def test_page_one_weather_fields_are_his_trimmed_groups_with_the_local_clock(bri
     assert normalized("SCHEDULE") in page
     assert re.search(r"SCHEDULE \d{4}Z (?:\d{4} LT|LT NOT HELD)", page), "SCHEDULE is the UTC clock beside the local one"
     if briefing["key"] == "SQ910":
-        for expected in ("11004KT 9999 FEW018/BKN300", "16008KT 9999 FEW015/SCT020",
-                         "VRB02KT 9999 FEW025", "0050Z / 0850 LT"):
+        for expected in ("11004KT 9999 FEW018/BKN300 28/23 Q1011 NOSIG",
+                         "16008KT 9999 FEW015/SCT020",
+                         "VRB02KT 9999 FEW025 28/26 Q1010 NOSIG RMK A2983",
+                         "0050Z / 0850 LT"):
             assert normalized(expected) in page, expected
         body = page.replace(normalized("SQ910 | 21AUG26"), "")
-        for gone in ("SA 201900", "FT 201700", "2018/2200", "NOSIG", "Q1011", "RMK A2983", "0050Z / 21AUG26"):
+        # The envelope and the calendar date; NOSIG, QNH and RMK are weather
+        # groups of the record and now print with it.
+        for gone in ("SA 201900", "FT 201700", "2018/2200", "0050Z / 21AUG26"):
             assert normalized(gone) not in body, gone
 
 
