@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from pathlib import Path
 
 import pytest
@@ -346,6 +347,10 @@ def test_compact_card_category_coverage_cannot_drop_full_selected_notams() -> No
         "ETOPS SUITABLE ENROUTE AIRPORT(S)",
         "ETOPS ADEQUATE ENROUTE AIRPORT(S)",
         "ADEQUATE ENROUTE AIRPORT(S)",
+        # The weather list of SQ482 14 Aug prints these after FUEL ENROUTE AIRPORT.
+        "CRITICAL EDTO AIRPORTS:",
+        "EDTO ENROUTE ALTN AIRPORTS:",
+        "DESTINATION ALTERNATE(S)",
     ],
 )
 def test_the_fuel_enroute_section_ends_at_every_airport_section_heading(closing_heading: str) -> None:
@@ -354,6 +359,9 @@ def test_the_fuel_enroute_section_ends_at_every_airport_section_heading(closing_
     assert [station["airport"] for station in flight["fuel_enroute_airports"]] == ["WIII"]
     # Only WIII prints a NOTAM block in this fixture; WADD, past the heading, is not held as a fuel station.
     assert {record["location"] for record in flight["notams"]} == {"WIII"}
+    # The heading is a section boundary, not the tail of the notice before it.
+    last = next(record for record in flight["notams"] if record["notam_id"] == "1A2574/26")
+    assert last["text"] == "D-ATIS LIMITED TRIAL IN PROGRESS. VOICE ATIS REMAINS PRIMARY."
 
 
 def test_the_edto_suitable_heading_still_ends_the_fuel_enroute_section() -> None:
@@ -380,6 +388,10 @@ _CORPUS = Path(__file__).resolve().parents[2] / "private_cfp_corpus"
         ("lido-briefing_SQ_214_16Aug2026_PER_SIN.pdf", ["WIII"], {"YPPH", "WSSS", "WSAP", "WMKK", "WIDD", "WIII"}, "WADD"),
         # Control: an EDTO SUITABLE section already closed the fuel section; 6, as before.
         ("lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf", ["EPWA"], {"WSSS", "EKCH", "ESMS", "EDDF", "EPWA", "VOMM"}, "WMSA"),
+        # The weather list runs FUEL ENROUTE AIRPORT (FQMA), CRITICAL EDTO
+        # AIRPORTS (WIMM, VCBI, FIMP), ADEQUATE ENROUTE AIRPORT(S): 15 fuel
+        # stations before, one now.
+        ("lido-briefing_SQ_482_14Aug2026_SIN_JNB.pdf", ["FQMA"], {"FACT", "FALE", "FAOR", "FIMP", "FQMA", "VCBI", "WSSS"}, "WIMM"),
     ],
 )
 def test_real_ofps_hold_only_their_fuel_enroute_section_as_fuel_stations(
@@ -409,4 +421,16 @@ def test_an_edto_airport_the_over_run_swallowed_keeps_its_edto_window_only() -> 
         ("EDTO", "2026-07-16T19:53:00+00:00", "2026-07-16T22:09:00+00:00"),
     ]
     assert {record.get("source_role") for record in flight["notams"] if record["location"] == "VTBD"} == {None}
+
+
+@pytest.mark.skipif(not (_CORPUS / "lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf").exists(), reason="the private OFP corpus is not available")
+def test_no_notice_ends_with_the_next_section_heading() -> None:
+    # SQ352 EKCH SX1/26 ended "… GP (ILS) AVBL. DESTINATION ALTERNATE(S)" and
+    # VOMM 1G1146/24 "… (2010) EDTO ADEQUATE ENROUTE AIRPORT(S)".
+    filename = "lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf"
+    flight = parse_lido(extract_pages(_CORPUS / filename), filename)
+    heading_tail = re.compile(r"(?:AIRPORT\(S\)|AIRPORTS|ALTERNATE\(S\)|ALTERNATES)\s*$")
+    assert [r["notam_id"] for r in flight["notams"] if heading_tail.search(r["text"])] == []
+    ekch = next(r for r in flight["notams"] if r["location"] == "EKCH" and r["notam_id"] == "SX1/26")
+    assert ekch["text"].endswith("GP (ILS) AVBL.")
 

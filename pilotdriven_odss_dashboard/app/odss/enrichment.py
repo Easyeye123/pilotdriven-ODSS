@@ -24,11 +24,23 @@ _FUEL_ENROUTE_HEADING = re.compile(
 # on through every adequate station to ENROUTE AIRPORT(S) - 34 of SQ365's
 # stations were held as fuel-enroute airports (independent QA of release 402,
 # 23 Sep 2026).
+# The vocabulary is the one the 28 held OFPs print, in either appendix:
+# DEPARTURE / DESTINATION AIRPORT, DESTINATION ALTERNATE(S) (the bulletin
+# prints no AIRPORT word), FUEL ENROUTE AIRPORT, ENROUTE AIRPORT(S), ADEQUATE
+# ENROUTE AIRPORT(S), EDTO/ETOPS SUITABLE and ADEQUATE ENROUTE AIRPORT(S),
+# CRITICAL EDTO AIRPORTS and EDTO ENROUTE ALTN AIRPORTS (the weather list).
+# A heading the pattern did not name was appended to the last notice before
+# it (SQ352 EKCH SX1/26 ended "… DESTINATION ALTERNATE(S)").
 _AIRPORT_SECTION_HEADING = re.compile(
-    r"^(?:(?:DEPARTURE|DESTINATION|ALTERNATE|DESTINATION\s+ALTERNATE|"
-    r"FUEL\s+ENROUTE|ENROUTE|ADEQUATE\s+ENROUTE|"
-    r"(?:EDTO|ETOPS)\s+(?:SUITABLE|ADEQUATE)\s+ENROUTE)\s+)"
-    r"AIRPORT(?:\(S\)|S)?\s*:?\s*$",
+    r"^(?:DEPARTURE\s+AIRPORT(?:\(S\)|S)?"
+    r"|DESTINATION\s+AIRPORT(?:\(S\)|S)?"
+    r"|(?:DESTINATION\s+)?ALTERNATE(?:\(S\)|S)?(?:\s+AIRPORT(?:\(S\)|S)?)?"
+    r"|FUEL\s+ENROUTE\s+AIRPORT(?:\(S\)|S)?"
+    r"|(?:ADEQUATE\s+)?ENROUTE\s+AIRPORT(?:\(S\)|S)?"
+    r"|(?:EDTO|ETOPS)\s+(?:SUITABLE|ADEQUATE)\s+ENROUTE\s+AIRPORT(?:\(S\)|S)?"
+    r"|CRITICAL\s+(?:EDTO|ETOPS)\s+AIRPORT(?:\(S\)|S)?"
+    r"|(?:EDTO|ETOPS)\s+ENROUTE\s+ALTN\s+AIRPORT(?:\(S\)|S)?)"
+    r"\s*:?\s*$",
     re.IGNORECASE,
 )
 _STATION_HEADER = re.compile(
