@@ -488,14 +488,8 @@ def _weather_effect(phase: str, mechanism: str) -> str:
     if "no adverse mechanism" in lower:
         return "No adverse weather mechanism was identified in the parsed station record."
     if "requires operational interpretation" in lower:
-        return (
-            "Flight-specific operational effect is not stated by the source; "
-            "review required."
-        )
-    return (
-        "Flight-specific operational effect is not stated by the source; "
-        "review required."
-    )
+        return "Flight-specific operational effect is not stated by the source."
+    return "Flight-specific operational effect is not stated by the source."
 
 
 def concise_weather_finding(item: dict[str, Any]) -> dict[str, Any]:

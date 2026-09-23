@@ -1639,7 +1639,7 @@ def test_authentic_sq322_approach_impacts_are_critical_without_losing_condition(
     assert "only under the exact condition stated in item E" in by_id[
         "1A2085/26"
     ]["summary"]
-    assert "manual review required" in by_id["1A2085/26"]["summary"]
+    assert "is not evaluated for the applicable" in by_id["1A2085/26"]["summary"]
     assert "closed" not in by_id["1A2085/26"]["summary"].lower()
     assert "LPV minima are raised" in by_id["1A1998/26"]["summary"]
 
@@ -1722,7 +1722,7 @@ def test_unresolved_notam_schedule_is_review_required_not_declared_active() -> N
 
     assert item["data"]["applicability"] == "review"
     assert "could not be resolved" in item["summary"]
-    assert "review required" in item["summary"]
+    assert "review required" not in item["summary"]  # R2: the state, not the suffix
     assert "closed or unavailable during" not in item["summary"]
 
 
@@ -2082,8 +2082,7 @@ def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audi
     assert item["data"]["utc_window"] == "16 JUL 1100Z-1300Z"
     assert "convection / thunderstorms" in item["data"]["mechanism"]
     assert item["data"]["flight_effect"] == (
-        "Flight-specific operational effect is not stated by the source; "
-        "review required."
+        "Flight-specific operational effect is not stated by the source."
     )
     assert not any(
         rejected in item["data"]["flight_effect"]
@@ -2137,7 +2136,7 @@ def test_official_weather_source_gap_is_pilot_facing_and_fails_closed() -> None:
 
     weather = [item for item in findings if item["engine"] == "weather"]
     assert len(weather) == 1
-    assert weather[0]["title"] == "Official weather source review required"
+    assert weather[0]["title"] == "Official weather coverage incomplete"
     assert weather[0]["severity"] == "unknown"
     assert weather[0]["data"]["window_status"] == "review_required"
     assert weather[0]["data"]["source_references"][0]["source_url"] == (
@@ -2287,8 +2286,7 @@ def test_destination_taf_keeps_significant_group_overlapping_arrival_window() ->
     assert "convection / thunderstorms" in item["data"]["mechanism"]
     assert "20:30Z-22:30Z" in item["data"]["timing"]
     assert item["data"]["flight_effect"] == (
-        "Flight-specific operational effect is not stated by the source; "
-        "review required."
+        "Flight-specific operational effect is not stated by the source."
     )
 
 
@@ -2314,8 +2312,7 @@ def test_weather_fallback_never_invents_phase_specific_operational_effects(
 
     effect = item["data"]["flight_effect"]
     assert effect == (
-        "Flight-specific operational effect is not stated by the source; "
-        "review required."
+        "Flight-specific operational effect is not stated by the source."
     )
     assert not any(
         rejected in effect
@@ -2347,7 +2344,7 @@ def test_destination_taf_incomplete_coverage_fails_closed() -> None:
     assert item["severity"] == "warning"
     assert item["data"]["window_status"] == "review_required"
     assert "does not fully cover" in item["data"]["timing"]
-    assert "review required" in item["summary"].lower()
+    assert "incomplete" in item["summary"].lower()
 
 
 def test_incomplete_lido_pages_fail_before_zero_value_analysis() -> None:
@@ -2673,7 +2670,7 @@ def test_unapproved_communication_samples_fail_closed() -> None:
         if item["engine"] == "communications"
     )
     assert communication["severity"] == "unknown"
-    assert communication["title"] == "FIR communication review required"
+    assert communication["title"] == "FIR communication procedures unavailable"
     assert "approved communication procedures are unavailable" in communication["summary"]
     assert all("ACTM 00.00" not in item["summary"] for item in findings)
     assert all("Chennai ATS/FIS" not in str(item) for item in findings)

@@ -375,7 +375,7 @@ def summarize_taf_for_window(
                 f"{_short_range(window_start, window_end)}."
             ),
             "mechanism": "; ".join(mechanisms) or "None safely classified",
-            "window_status_text": "Forecast coverage is incomplete — review required.",
+            "window_status_text": "Forecast coverage is incomplete.",
         }
 
     if mechanisms:

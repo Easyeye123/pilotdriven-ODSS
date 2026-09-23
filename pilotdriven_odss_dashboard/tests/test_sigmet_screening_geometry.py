@@ -49,7 +49,7 @@ def test_missing_or_invalid_timing_never_becomes_outside_route(times):
     assert result["crossing_actm"] is None
     flight = flight_for(route)
     card = _sigmet_screening_cards(flight)[0]
-    assert card["disposition"] == "REVIEW REQUIRED"
+    assert card["disposition"] == "UNRESOLVED"
     assert "does not intersect" not in card["screening"]
     text = " ".join(sigmet_lines(flight, {"hazards": {"sigmet_cards": [card]}}))
     assert "Outside filed route" not in text
@@ -92,10 +92,10 @@ def test_antimeridian_crossing_and_far_side_are_distinct():
 
 @pytest.mark.parametrize("validity,disposition,phrase", [
     ("111000/111100", "PROMOTED", "inside the product's validity"),
-    ("111040/111045", "REVIEW REQUIRED", "overlaps the product's validity"),
+    ("111040/111045", "UNRESOLVED", "overlaps the product's validity"),
     ("111000/111020", "NOT PROMOTED", "before the earliest possible"),
     ("111100/111200", "NOT PROMOTED", "after the latest possible"),
-    ("111040/111030", "REVIEW REQUIRED", "validity"),
+    ("111040/111030", "UNRESOLVED", "validity"),
 ])
 def test_validity_is_compared_to_conservative_filed_leg_bounds(validity, disposition, phrase):
     flight = flight_for([fix(0, -2, 0), fix(0, 2, 20)], validity)
@@ -109,7 +109,7 @@ def test_validity_is_compared_to_conservative_filed_leg_bounds(validity, disposi
 
 def test_missing_utc_anchor_does_not_claim_within_validity():
     card = _sigmet_screening_cards(flight_for([fix(0, -2, 0), fix(0, 2, 20)], departure=None))[0]
-    assert card["disposition"] == "REVIEW REQUIRED"
+    assert card["disposition"] == "UNRESOLVED"
     assert "inside the product's validity" not in card["screening"]
 
 
@@ -153,7 +153,7 @@ def test_unreadable_or_non_polygon_source_never_becomes_closed_triangle(area):
     )
     card = _sigmet_screening_cards(flight)[0]
     assert card['route_intersection'] == 'unresolved'
-    assert card['disposition'] == 'REVIEW REQUIRED'
+    assert card['disposition'] == 'UNRESOLVED'
     assert 'does not intersect' not in card['screening']
 
 

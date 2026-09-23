@@ -2555,8 +2555,7 @@ def test_level2_weather_is_concise_deduplicated_and_does_not_repeat_raw_opmet(
     assert "UTC window: UTC window not resolved." not in text
     assert "Operational mechanism:" not in text
     assert (
-        "Flight-specific operational effect is not stated by the source; "
-        "review required."
+        "Flight-specific operational effect is not stated by the source."
         in normalized
     )
     assert "Route deviation" not in normalized

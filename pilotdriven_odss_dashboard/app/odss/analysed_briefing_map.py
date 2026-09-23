@@ -50,16 +50,16 @@ def key_disposition(event):
     plain words. This is the mapping back, so a gate can hold the two pages
     of one briefing to the same verdict."""
     if event.get("disposition_conflict"):
-        return "REVIEW REQUIRED"
+        return "UNRESOLVED"
     crosses = event.get("route_intersects")
     if crosses is False:
         return "NOT PROMOTED"
     if crosses is not True:
-        return "REVIEW REQUIRED"
+        return "UNRESOLVED"
     state = event.get("time_state")
     if state is None:
-        return "PROMOTED" if event.get("time_matched") else "REVIEW REQUIRED"
-    return _SIGMET_TIME_DISPOSITION.get(state, "REVIEW REQUIRED")
+        return "PROMOTED" if event.get("time_matched") else "UNRESOLVED"
+    return _SIGMET_TIME_DISPOSITION.get(state, "UNRESOLVED")
 
 
 def _passage_window(event):
@@ -146,7 +146,7 @@ def _crossing_state(row, screening, begin, end, passage_start, passage_end):
     else:
         state, gap = _sigmet_time_state(begin, end, passage_start, passage_end)
     derived = ("NOT PROMOTED" if crosses is False
-               else "REVIEW REQUIRED" if state == "timing_unresolved"
+               else "UNRESOLVED" if state == "timing_unresolved"
                else _SIGMET_TIME_DISPOSITION[state])
     held = row.get("disposition") if row.get("route_intersection") else None
     result = {"route_intersects": crosses, "time_state": state, "time_matched": state == "inside",

@@ -72,15 +72,15 @@ _LEVEL_2_GOVERNED_TABLE_CONTINUATION_MARKERS = (
 )
 _LEVEL_2_FAIL_CLOSED_ADVISORY_RESULTS = (
     (
-        "SIGMET review required",
+        "SIGMET coverage incomplete",
         "Flight-window coverage incomplete - review the current official source.",
     ),
     (
-        "Volcanic ash review required",
+        "Volcanic ash applicability unresolved",
         "Applicability unresolved - review official volcanic-ash source.",
     ),
     (
-        "Tropical cyclone review required",
+        "Tropical cyclone applicability unresolved",
         "Applicability unresolved - review official cyclone source.",
     ),
 )

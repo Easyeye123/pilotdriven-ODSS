@@ -483,7 +483,7 @@ def test_warns_when_the_cyclone_review_is_unresolved():
     findings, warnings = _hazard_review_findings(review, _TC_HAZARD)
 
     assert findings[0]["severity"] == "unknown"
-    assert findings[0]["title"] == "Tropical cyclone review required"
+    assert findings[0]["title"] == "Tropical cyclone applicability unresolved"
     assert any("Tropical cyclone applicability remains unresolved" in item for item in warnings)
     # The refusal must never be phrased as a clear result.
     assert any("no tropical cyclone" in detail for detail in findings[0]["details"])

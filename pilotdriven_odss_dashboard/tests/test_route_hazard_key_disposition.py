@@ -155,19 +155,19 @@ def test_the_three_cases_print_three_different_lines_on_one_flight():
 
 def test_a_partial_overlap_or_missing_crossing_clock_stays_unresolved_without_a_badge():
     cards, events = key_events(flight_for(CROSSING, sigmet("1", "111040/111045")))
-    assert cards[0]["disposition"] == "REVIEW REQUIRED"
+    assert cards[0]["disposition"] == "UNRESOLVED"
     line = event_description(events[0])
     assert "crosses route 1030-1050Z" in line and "timing unresolved" in line
     assert "inside validity" not in line and "outside validity" not in line
-    assert "REVIEW REQUIRED" not in line and "affects flight" not in line
-    assert key_disposition(events[0]) == "REVIEW REQUIRED"
+    assert "REVIEW REQUIRED" not in line and "UNRESOLVED" not in line and "affects flight" not in line
+    assert key_disposition(events[0]) == "UNRESOLVED"
 
     cards, events = key_events(flight_for([fix(0, -2, None, "A"), fix(0, 2, None, "B")], sigmet("1", "111000/111100")))
-    assert cards[0]["disposition"] == "REVIEW REQUIRED"
+    assert cards[0]["disposition"] == "UNRESOLVED"
     line = event_description(events[0])
     assert "crosses route" in line and "crossing time not held" in line
     assert "does not cross" not in line and "affects flight" not in line
-    assert key_disposition(events[0]) == "REVIEW REQUIRED"
+    assert key_disposition(events[0]) == "UNRESOLVED"
 
 
 # Cruise-phase crossing: TOC and TOD are held and the crossing leg lies between them.
@@ -336,7 +336,7 @@ def test_a_held_verdict_the_geometry_contradicts_is_published_as_a_disagreement_
     assert event["disposition_conflict"] is True and event["disposition"] == "NOT PROMOTED"
     assert "disagree" in event_description(event) and "affects flight" not in event_description(event)
     assert event_affects_flight(event) is False
-    assert key_disposition(event) == "REVIEW REQUIRED"
+    assert key_disposition(event) == "UNRESOLVED"
     result = check_concise_pdf(path, flight=flight, view=stale)
     assert not result["valid"]
     assert "ROUTE_HAZARD_KEY_DISPOSITION_PARITY" in {violation["code"] for violation in result["violations"]}
@@ -365,7 +365,7 @@ def test_sq882_key_lines_agree_with_its_sigmet_cards(tmp_path_factory):
     assert "crosses route 0241-0319Z outside validity (starts 81 min after latest crossing)" in lines["ZJSA/2"]
     assert lines["VVHM/1"] != lines["ZJSA/2"]
     assert "unverified" not in " ".join(lines.values())
-    assert "REVIEW REQUIRED" not in " ".join(lines.values())
+    assert "REVIEW REQUIRED" not in " ".join(lines.values()) and "UNRESOLVED" not in " ".join(lines.values())
 
     # Page 1 draws an area solid only where the page-5 card says PROMOTED and
     # the level is a held match. ZJSA/2 is level-matched and NOT PROMOTED, so

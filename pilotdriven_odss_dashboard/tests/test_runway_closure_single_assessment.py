@@ -217,7 +217,7 @@ def test_unevaluated_clauses_stay_open_without_contradicting_the_evaluated_one()
     )
 
     assert decision["residualReview"] is True
-    assert decision["text"].endswith("review required.")
+    assert decision["text"].endswith("are not evaluated.")
     assert "02L/20R" not in decision["text"]
 
 

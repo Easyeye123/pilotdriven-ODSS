@@ -1553,12 +1553,12 @@ def test_vws_review_stays_visible_in_pdf_when_high_terrain_exists(tmp_path):
     document = fitz.open(out)
     text = " ".join(" ".join(page.get_text() for page in document).split())
     expected = (
-        "VWS review: 1 planned >004 trigger window; maximum 005 at UDROS "
-        "(ACTM 02.20, OFP p7) - review required."
+        "VWS: 1 planned >004 trigger window; maximum 005 at UDROS "
+        "(ACTM 02.20, OFP p7)."
     )
     assert expected in text
-    assert "windows VWS review" not in text
-    assert "review required.." not in text
+    assert "windows VWS:" not in text
+    assert "p7).." not in text
     physical = scan_physical_pdf(out)
     assert physical["valid"], physical["violations"]
 
@@ -5502,8 +5502,7 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
     # abbreviation, not an English word: casing lowers what it can evidence is
     # ordinary English and leaves everything else as the source wrote it.
     assert by_engine["deferred_dispatch_gate"]["title"] == (
-        "ENG 2 fan cowls latch access panel aft-most latch is loose - "
-        "dispatch confirmation"
+        "ENG 2 fan cowls latch access panel aft-most latch is loose"
     )
     assert "IN SIA/00-017 R1" in by_engine[
         "deferred_dispatch_gate"
@@ -5570,8 +5569,8 @@ def test_material_open_gates_displace_bookkeeping_on_decision_page():
     # the way the AIRPORTS gate does: the cased defect, then its consequence,
     # and never the declaration's own capitalised remark.
     assert release_by_label["STATUS"]["detail"] == (
-        "ENG 2 fan cowls latch access panel aft-most latch is loose - "
-        "dispatch confirmation: The source makes inspection a condition of "
+        "ENG 2 fan cowls latch access panel aft-most latch is loose: "
+        "The source makes inspection a condition of "
         "every departure; carry that check into this flight's turnaround and "
         "operative Tech Log."
     )
@@ -5915,7 +5914,7 @@ def test_missing_classification_never_defaults_to_edto(tmp_path):
     render_combined_briefing(flight, findings, [], out)
     text = "\n".join(page.get_text() for page in fitz.open(out))
 
-    assert "EDTO REVIEW" in text
+    assert "EDTO classification unavailable" in text
     assert "SUMMARY EDTO CFP" not in text
 
 

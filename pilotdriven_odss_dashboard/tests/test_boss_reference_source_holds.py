@@ -65,7 +65,7 @@ def test_route_airspace_source_hold_is_bounded_and_does_not_infer_intersection()
     assert "full held records remain in the dashboard" in projection[
         "card_summary"
     ]
-    assert "confirm route/level applicability" in projection["release_detail"]
+    assert "route/level applicability and any ATC-clearance effect are not assessed" in projection["release_detail"]
     assert "No polygon intersection is inferred" in projection["release_detail"]
 
     gates = _release_gate_projection([], [], [], [], [], projection)

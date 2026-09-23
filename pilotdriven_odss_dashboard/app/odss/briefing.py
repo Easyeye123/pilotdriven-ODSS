@@ -2298,7 +2298,7 @@ def _edto_classification_sentence(
         if source == "NON EDTO"
         else f"OFP P1 classification: {source}."
         if source in {"STANDARD", "EDTO"}
-        else "EDTO REVIEW REQUIRED - OFP classification unavailable."
+        else "EDTO classification unavailable on OFP P1."
     )
 
 
@@ -2631,8 +2631,7 @@ def _terrain_summary(
     unmatched_count = event_count - match_count
     return (
         f"{label}; {match_count}/{event_count} terrain windows have validated "
-        "profile matches - manual review required for "
-        f"{unmatched_count} unmatched terrain "
+        f"profile matches; {unmatched_count} unmatched terrain "
         f"window{'s' if unmatched_count != 1 else ''}"
     )
 
@@ -2706,8 +2705,8 @@ def _vws_review(route_waypoints: list[dict[str, Any]] | None) -> dict[str, Any]:
         window_label = "window" if event_count == 1 else "windows"
         status = "review_required"
         summary = (
-            f"VWS review: {event_count} planned >004 trigger {window_label}; "
-            f"{maximum_text} - review required."
+            f"VWS: {event_count} planned >004 trigger {window_label}; "
+            f"{maximum_text}."
         )
     else:
         status = "reviewed_no_trigger"
@@ -2842,7 +2841,7 @@ def _weather_chart_selection(
             "reason": (
                 f"Chart classification coverage is incomplete: {held_count} "
                 f"held pages exceed the {capacity}-page analysis capacity; "
-                "all held pages remain available for manual review."
+                "all held pages remain available."
             ),
             "selected_charts": [],
             "raw_chart_count": len(charts),
@@ -3210,8 +3209,8 @@ _SIGMET_TIME_DISPOSITION = {
     "inside": "PROMOTED",
     "expires_before": "NOT PROMOTED",
     "starts_after": "NOT PROMOTED",
-    "overlap": "REVIEW REQUIRED",
-    "validity_unresolved": "REVIEW REQUIRED",
+    "overlap": "UNRESOLVED",
+    "validity_unresolved": "UNRESOLVED",
 }
 
 
@@ -3296,10 +3295,10 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
             }
             if geometry is None:
                 card["route_intersection"] = "unresolved"
-                card["disposition"] = "REVIEW REQUIRED"
+                card["disposition"] = "UNRESOLVED"
                 card["screening"] = (
                     "Source polygon or filed route geometry is incomplete or invalid - deterministic "
-                    "screening unavailable; review the original SIGMET."
+                    "screening unavailable."
                 )
                 cards.append(card)
                 continue
@@ -3316,7 +3315,7 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
                 cards.append(card)
                 continue
             if crossing is None:
-                card["disposition"] = "REVIEW REQUIRED"
+                card["disposition"] = "UNRESOLVED"
                 card["screening"] = (
                     "The source polygon intersects the filed route, but crossing timing is unresolved "
                     "because intersecting legs lack complete ordered ACTM values."
@@ -3352,7 +3351,7 @@ def _sigmet_screening_cards(flight: dict[str, Any]) -> list[dict[str, Any]]:
             elif state == "inside":
                 card["screening"] = (
                     f"The polygon crosses the route {window} inside the "
-                    "product's validity. PROMOTED - review required."
+                    "product's validity. PROMOTED."
                 )
             else:
                 card["screening"] = (
@@ -4397,13 +4396,12 @@ def _decision_finding_projection(
         material_rows.append({
             "engine": "route_airspace",
             "severity": "warning",
-            "title": "Route airspace source review",
+            "title": "Route airspace notices",
             "summary": (
                 f"{route_airspace.get('record_count')} source-held route-airspace "
                 f"notice(s) ({route_airspace.get('source_page_text')})."
-                f"{military_note} Confirm route/level applicability and any "
-                "ATC-clearance effect against current controlled products; no "
-                "polygon intersection is inferred."
+                f"{military_note} Route/level applicability and any ATC-clearance "
+                "effect are not assessed; no polygon intersection is inferred."
             ),
             "source_reference": (
                 "Uploaded OFP · route-airspace notice package · "
@@ -4478,10 +4476,10 @@ def _decision_finding_projection(
         material_rows.append({
             "engine": "deferred_dispatch_gate",
             "severity": "warning",
-            "title": f"{headline} - dispatch confirmation",
+            "title": headline,
             "summary": (
                 " ".join(dict.fromkeys(gate_consequences))
-                or "Dispatch confirmation is required."
+                or "Consequence not stated by the source."
             ),
             "source_reference": " · ".join(
                 part
@@ -4724,7 +4722,7 @@ def _decision_finding_projection(
                 for label, record in source_records
             )
             if source_records
-            else str(alternate_weather.get("summary") or "Review required.")
+            else str(alternate_weather.get("summary") or "Not assessed.")
         )
         material_rows.append({
             **alternate_weather,
@@ -4884,7 +4882,7 @@ def _decision_finding_projection(
             str(item.get("title") or "Review item").strip(),
             flags=re.IGNORECASE,
         )
-        summary = str(item.get("summary") or "Review required.").strip()
+        summary = str(item.get("summary") or "Not assessed.").strip()
         identity = (title, summary)
         if identity in seen:
             continue
@@ -5370,9 +5368,9 @@ def _route_airspace_projection(flight: dict[str, Any]) -> dict[str, Any]:
         else ""
     )
     release_detail = (
-        f"{count} source-held route-airspace notice(s) ({page_text}); confirm "
-        "route/level applicability and any ATC-clearance effect against current "
-        "controlled products. No polygon intersection is inferred."
+        f"{count} source-held route-airspace notice(s) ({page_text}); route/level "
+        "applicability and any ATC-clearance effect are not assessed. No polygon "
+        "intersection is inferred."
         if count
         else "No bounded route-airspace notice is held in this parsed view."
     )
@@ -5739,7 +5737,7 @@ def build_briefing_view(
         edto_issues or edto_assessment["status"] == "review_required"
     )
     edto_detail = (
-        "Applicability review required"
+        "Applicability not verified"
         if edto_needs_review
         else "Verified not applicable"
         if edto_assessment["status"] == "verified_not_applicable"
@@ -6002,7 +6000,7 @@ def build_briefing_view(
             if item.get("role") in {"departure", "destination"}
         },
         "alternate_pdf_analysis": alternate_pdf_analysis(flight, all_airport_panels),
-        "status": "REVIEW REQUIRED" if needs_review else "BRIEFING COMPLETE",
+        "status": "UNRESOLVED ITEMS" if needs_review else "BRIEFING COMPLETE",
         "status_severity": "warning" if needs_review else "information",
         "generated_at_utc": generated_at.isoformat(),
         "generated_at_display": generated_at.strftime("%d %b %Y %H%MZ").upper(),

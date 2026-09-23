@@ -94,8 +94,8 @@ def test_vws_review_is_published_even_when_the_same_route_has_high_terrain() -> 
         "maximum_actm_display": "01.25",
         "source_page": 7,
         "summary": (
-            "VWS review: 1 planned >004 trigger window; maximum 005 at ALPHA "
-            "(ACTM 01.25, OFP p7) - review required."
+            "VWS: 1 planned >004 trigger window; maximum 005 at ALPHA "
+            "(ACTM 01.25, OFP p7)."
         ),
     }
 
@@ -349,7 +349,7 @@ def test_terrain_summary_requires_a_validated_controlled_profile_match() -> None
     }
     candidate_view = build_briefing_view(flight, [candidate], [])
     assert "0/1 terrain windows have validated profile matches" in candidate_view["terrain"]["summary"]
-    assert "manual review required" in candidate_view["terrain"]["summary"]
+    assert "1 unmatched terrain window" in candidate_view["terrain"]["summary"]
 
     stale = {
         **candidate,
@@ -364,7 +364,7 @@ def test_terrain_summary_requires_a_validated_controlled_profile_match() -> None
     }
     stale_view = build_briefing_view(flight, [stale], [])
     assert "0/1 terrain windows have validated profile matches" in stale_view["terrain"]["summary"]
-    assert "manual review required" in stale_view["terrain"]["summary"]
+    assert "1 unmatched terrain window" in stale_view["terrain"]["summary"]
 
     validated = {
         **candidate,
@@ -408,7 +408,7 @@ def test_terrain_summary_requires_every_detected_window_to_have_its_own_match() 
     summary = _terrain_summary(events, [one_match])
 
     assert "1/2 terrain windows have validated profile matches" in summary
-    assert "manual review required for 1 unmatched terrain window" in summary
+    assert "; 1 unmatched terrain window" in summary
 
 
 def test_airport_panels_carry_raw_metar_and_taf() -> None:
@@ -1264,7 +1264,7 @@ def test_alternate_assessment_rows_fallback_and_missing_sources_fail_closed() ->
     )
     wmkk, wadd, wiii = view["alternate_assessment_rows"]
 
-    assert view["status"] == "REVIEW REQUIRED"
+    assert view["status"] == "UNRESOLVED ITEMS"
     assert view["status_severity"] == "warning"
 
     assert wmkk["forecast"]["status"] == "unavailable"
@@ -2177,8 +2177,8 @@ def test_sigmet_inside_validity_is_promoted_and_no_polygon_is_review() -> None:
     assert cards["C03"]["disposition"] == "PROMOTED"
     assert "inside the product's validity" in cards["C03"]["screening"]
     # ENTIRE FIR carries no polygon: screening honestly unavailable.
-    assert cards["D04"]["disposition"] == "REVIEW REQUIRED"
-    assert "review the original SIGMET" in cards["D04"]["screening"]
+    assert cards["D04"]["disposition"] == "UNRESOLVED"
+    assert "screening unavailable" in cards["D04"]["screening"]
 
 
 def test_coverage_ledger_marks_absent_sections_unavailable() -> None:

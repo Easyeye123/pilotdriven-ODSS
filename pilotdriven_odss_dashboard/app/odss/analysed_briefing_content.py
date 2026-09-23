@@ -113,12 +113,12 @@ def cyclone_content(flight):
 def deferred_item_label(value, fallback="Deferred item"):
     """Publish a declaration's identity without the app's item-level badge.
 
-    ``build_deferred_dispatch_gates`` falls back to "<TYPE> REVIEW REQUIRED"
+    ``build_deferred_dispatch_gates`` falls back to "<TYPE> ITEM" (before R2, "<TYPE> REVIEW REQUIRED")
     when a declaration cannot be resolved to a subject or a reference. That is
     an in-app review badge, not an analysed statement, and the published
     briefing rejects repeated item-level badges on its analysed pages.
     """
-    cleaned = re.sub(r"\s*REVIEW REQUIRED\s*", " ", str(value or ""), flags=re.I)
+    cleaned = re.sub(r"\s*(?:REVIEW REQUIRED|\bITEM\b)\s*", " ", str(value or ""), flags=re.I)
     return " ".join(cleaned.split()).strip(" -") or fallback
 
 

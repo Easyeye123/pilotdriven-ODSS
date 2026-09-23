@@ -20,7 +20,7 @@ def held():
     row = next(row for row in view['deferred_pdf_analysis'] if row['source_item_indices']==[2])
     effect=' '.join(row['consequences'])
     subject=row['subject'].rstrip(' .;')
-    page=f'{subject} - dispatch confirmation {effect} SOURCE Uploaded OFP deferred declaration CC MEL 25-35-02B'
+    page=f'{subject} {effect} SOURCE Uploaded OFP deferred declaration CC MEL 25-35-02B'
     return item,view,page
 
 
@@ -37,7 +37,9 @@ def test_raw_copy_and_unbound_subjects_never_gain_an_exception(mutation):
     raw=item['company_remark']
     if mutation=='uppercase':page=page.upper()
     if mutation=='repeat':page+=' '+raw.lower()
-    if mutation=='no-consequence':page=page.split(' - dispatch confirmation')[0]+' - dispatch confirmation'
+    if mutation=='no-consequence':
+        row=next(row for row in view['deferred_pdf_analysis'] if row['source_item_indices']==[2])
+        page=row['subject'].rstrip(' .;')+' SOURCE Uploaded OFP deferred declaration CC MEL 25-35-02B'
     if mutation=='wrong-position':page=raw.lower()+' unrelated text '+re.sub(re.escape(raw),'',page,flags=re.I)
     if mutation=='wrong-page':page_index=4
     if mutation=='wrong-item':index=1
@@ -60,7 +62,7 @@ def test_form_action_and_manual_instructions_are_not_defect_only_remarks(extra):
     segment['source_text']=item['description']+' '+raw
     row=next(row for row in view['deferred_pdf_analysis'] if row['source_item_indices']==[2])
     row['subject']=raw.capitalize()
-    page=row['subject']+' - dispatch confirmation '+' '.join(row['consequences'])+' SOURCE Uploaded OFP deferred declaration CC MEL 25-35-02B'
+    page=row['subject']+' '+' '.join(row['consequences'])+' SOURCE Uploaded OFP deferred declaration CC MEL 25-35-02B'
     assert not _bound_defect_subject_is_published(page,1,item,2,view)
 
 
@@ -83,6 +85,6 @@ def test_bound_instruction_ending_with_a_defect_is_not_a_defect_subject(instruct
     segment['source_text'] = item['description'] + ' ' + instruction
     row = next(row for row in view['deferred_pdf_analysis'] if row['source_item_indices'] == [2])
     row['subject'] = instruction.capitalize()
-    page = (row['subject'] + ' - dispatch confirmation ' + ' '.join(row['consequences'])
+    page = (row['subject'] + ' ' + ' '.join(row['consequences'])
             + ' SOURCE Uploaded OFP deferred declaration CC MEL 25-35-02B')
     assert not _bound_defect_subject_is_published(page, 1, item, 2, view)

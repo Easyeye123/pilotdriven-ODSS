@@ -12640,7 +12640,7 @@ def _operational_coverage_receipt(
         (
             "Verified OFP fuel arithmetic and a deterministic performance state are held."
             if fuel_performance_held
-            else "Fuel arithmetic or performance publication remains review-required."
+            else "Fuel arithmetic or performance publication is unresolved."
         ),
     ))
 

@@ -48,7 +48,7 @@ from app.odss.concise_pdf_gate import (
     check_concise_pdf,
     normalized,
 )
-from app.odss.operational_format import text as published_value
+from app.odss.operational_format import CREW_REVIEW, text as published_value
 from scripts.run_private_cfp_corpus import scan_physical_pdf
 
 
@@ -479,12 +479,10 @@ def test_analysed_prose_saying_review_required_is_not_an_item_badge(briefing):
     appears is a weakened gate, not a more precise one.
     """
     if briefing["key"] == "SQ882":
-        # Keeps this case honest: if the engine ever stops publishing the
-        # wording, the test stops proving anything and must be re-pointed.
-        assert re.search(r"\breview required\b", briefing["pages"][1]), (
-            "SQ882 is in this suite because its analysed page-2 prose says "
-            "'...; review required.' - re-point this case if that changes"
-        )
+        # R2 (22 Sep 2026): the engines no longer publish "...; review
+        # required." anywhere, so the badge check is exercised against a
+        # page that carries analysed prose and no badge at all.
+        assert not re.search(r"\breview required\b", briefing["pages"][1])
     view = briefing["view"]
     with_view = check_concise_pdf(
         briefing["path"], flight=briefing["flight"], view=view,
@@ -525,9 +523,16 @@ def test_a_repeated_item_badge_on_page_two_is_still_rejected(briefing, tmp_path)
         assert "REPEATED_ITEM_WARNING" in codes, codes
 
 
-def test_the_release_caveat_from_the_nine_page_brief_is_still_published(briefing):
-    """Relocated, not deleted: the caveat now sits with the release record."""
-    assert normalized(RELEASE_CAVEAT) in briefing["folded"][5]
+def test_the_release_caveat_is_not_repeated_beyond_the_front_page(briefing):
+    """R2 (David, 22 Sep 2026 13:38-13:40): one general statement on the front
+    page and no other generic reminder. The nine-page caveat that this test
+    used to require on page 6 is exactly such a reminder; the page-1 statement
+    carries it once, and page 6 keeps the publication state itself."""
+    assert normalized(RELEASE_CAVEAT) not in briefing["folded"][5]
+    assert briefing["pages"][0].count(CREW_REVIEW) == 1
+    closing = briefing["folded"][5]
+    assert (normalized("Conditional briefing; the unresolved assessments above prevent an automated release conclusion.") in closing
+            or normalized("No unresolved automated source condition; crew operational release remains separate.") in closing)
 
 
 def test_the_analysed_surface_consequence_count_is_still_published(briefing):
@@ -805,7 +810,7 @@ def test_the_sq910_card_names_the_engine_2_fan_cowl_latch(briefing):
         assert phrase in body.lower(), phrase
     defect = "ENG 2 fan cowls latch access panel aft-most latch is loose"
     # The card itself, free of line wrapping, and the page it is drawn on.
-    assert _deferred_finding(briefing)["title"] == f"{defect} - dispatch confirmation"
+    assert _deferred_finding(briefing)["title"] == defect  # R2: no "- dispatch confirmation" suffix
     assert normalized(defect) in briefing["folded"][1]
     # Round 1 named it in the source's block capitals, which he objected to.
     assert "ENG 2 FAN COWLS LATCH" not in body

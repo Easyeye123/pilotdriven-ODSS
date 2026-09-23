@@ -384,9 +384,16 @@ def test_gate_binds_a_dashed_title_declarations_body_to_its_identity() -> None:
     items = _parse_deferred_items(
         "BB CDL 38-05 - DRAINAGE PIPE\n   RERAISED FROM PREVIOUS DDL #M003961, APU DRAINAGE PIPE MISSING.\n        PLAN 1\n"
     )
+    from app.odss.analysed_briefing_content import deferred_consequence_rows
+
     view = {"deferred_dispatch_gates": build_deferred_dispatch_gates(items)}
+    # R2: the analysis page prints "<subject> <consequence> SOURCE ..." with no
+    # "dispatch confirmation" suffix, and the gate binds the body through its
+    # own analysed row, exactly as the production view carries it.
+    view["deferred_pdf_analysis"] = deferred_consequence_rows(view)
+    row = next(row for row in view["deferred_pdf_analysis"] if 0 in row["source_item_indices"])
     technical = "CDL 38-05: Reraised from previous DDL #M003961, APU drainage pipe missing. Reconcile this deferred external component."
-    decision = "MODERATE Reraised from previous DDL #M003961, APU drainage pipe missing - dispatch confirmation Reconcile this."
+    decision = "MODERATE " + row["subject"].rstrip(" .;") + " " + " ".join(row["consequences"])
     elsewhere = "CDL 57-23: Reraised from previous DDL #M003961, APU drainage pipe missing. Reconcile."
 
     assert _wrapped_defect_statement_is_published(technical, PERFORMANCE_PAGE, items[0], 0, view) is True

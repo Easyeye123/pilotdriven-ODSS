@@ -162,7 +162,7 @@ def test_empty_edto_section_fails_closed_to_review_required() -> None:
         == "explicit_edto_assessment_missing"
     )
     assert briefing["edto"]["assessment"]["status"] == "review_required"
-    assert briefing["status"] == "REVIEW REQUIRED"
+    assert briefing["status"] == "UNRESOLVED ITEMS"
 
 
 def test_explicit_nil_conflicting_with_operational_data_requires_review() -> None:

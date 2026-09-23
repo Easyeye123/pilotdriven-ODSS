@@ -151,7 +151,9 @@ def _bound_defect_subject_is_published(page_text, page_index, item, item_index, 
     effect = normalized(" ".join(consequences))
     if page_index == ANALYSIS_PAGE:
         declaration = normalized(segments[0].get("source_declaration"))
-        return bool(declaration and (remark + " DISPATCH CONFIRMATION " + effect
+        # R2: the analysed row prints "<subject> <consequence> SOURCE ..." with no
+        # "dispatch confirmation" suffix; the binding is the same adjacency.
+        return bool(declaration and (remark + " " + effect
                     + " SOURCE UPLOADED OFP DEFERRED DECLARATION " + declaration) in folded)
     label = normalized(str(item.get("item_type") or "") + " " + str(item.get("reference") or ""))
     return bool(label and label + " " + remark + " " + effect in folded)
@@ -207,7 +209,13 @@ def _wrapped_defect_statement_is_published(page_text, page_index, item, item_ind
     if not re.search(r"\s-\s*" + re.escape(description) + r"\s*$", declaration, re.I):
         return False
     if page_index == ANALYSIS_PAGE:
-        return f"{remark} DISPATCH CONFIRMATION" in folded
+        # R2: bound through the analysed row's own consequence instead of the
+        # retired "dispatch confirmation" suffix.
+        rows = [row for row in view.get("deferred_pdf_analysis") or []
+                if item_index in (row.get("source_item_indices") or [])
+                and remark in normalized(row.get("subject"))]
+        return any(f"{remark} {normalized(' '.join(row.get('consequences') or []))}" in folded
+                   for row in rows if row.get("consequences"))
     label = normalized(str(item.get("item_type") or "") + " " + str(item.get("reference") or ""))
     if label and f"{label} {remark}" in folded:
         return True

@@ -1175,8 +1175,7 @@ def deferred_gate_value(row: dict[str, Any]) -> str:
     title = text(row.get("title"), "")
     if len(kinds) >= 3 and not title.upper().startswith(kinds.upper()):
         return kinds
-    status = str(row.get("status") or "")
-    return "CONFIRM" if "confirmation" in status else (kinds or "HELD")
+    return kinds or "HELD"
 
 
 def severity_pill(value: Any) -> tuple[str, Any]:
@@ -1207,7 +1206,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     route_map = build_publication_map(flight, view)
 
     vws_summary = f"{int(vws.get('event_count') or 0)} event(s) at the analysed {text(vws.get('threshold'))} threshold. Maximum {text(vws.get('maximum_display'))} at {text(vws.get('maximum_waypoint'))}, ACTM {text(vws.get('maximum_actm_display'))}."
-    terrain_summary = f"{len(terrain.get('events') or [])} high-MSA event(s); controlled-profile status is in the closing review record."
+    terrain_summary = f"{len(terrain.get('events') or [])} high-MSA event(s); controlled-profile status is in the closing record."
     deferred = [row["text"] for row in view["deferred_pdf_analysis"]]
 
     # ---------------------------------------------------------------- page 1
@@ -1253,6 +1252,17 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                              airport_short_name(station_view.get("icao")), blocks),
                     target="sec_airports")
 
+    weather_tile_payload = [
+        ("SIGMET", "HELD" if (view.get("hazards") or {}).get("sigmet_cards") else "NO DATA"),
+        ("VA", "HELD" if ((view.get("vaa") or {}).get("cfp_advisories")) else "NO DATA"),
+        ("TC", "HELD" if cyclone_content(flight)["time_matched"] else "NO DATA"),
+        ("PLOTTED", str(len(route_map.get("publication_events") or []))),
+        ("VWS MAX", text(vws.get("maximum_display")))]
+    # R2 (David, 22 Sep 2026): the tile states the coverage it holds; "No data
+    # is a gap, not NIL" was a principle sentence repeated on every briefing.
+    weather_tile_line = ("Coverage incomplete."
+                         if any(value == "NO DATA" for _, value in weather_tile_payload)
+                         else "Products held.")
     tiles = [
         Card("PERFORMANCE", [f"{text(inputs.get('runway_condition'))} RWY {text(inputs.get('runway'))}; "
                              f"EOSID {text(inputs.get('eosid'))}."],
@@ -1278,13 +1288,8 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
              payload=[(deferred_item_label(row.get("title")), deferred_gate_value(row))
                       for row in view.get("deferred_dispatch_gates") or []][:5]
              or [("DEFERRED", "None parsed")]),
-        Card("WEATHER / HAZARDS", ["No data is a gap, not NIL."],
-             VIOLET, "sec_hazard", tag="CFP P1", kind="tile", payload=[
-                 ("SIGMET", "HELD" if (view.get("hazards") or {}).get("sigmet_cards") else "NO DATA"),
-                 ("VA", "HELD" if ((view.get("vaa") or {}).get("cfp_advisories")) else "NO DATA"),
-                 ("TC", "HELD" if cyclone_content(flight)["time_matched"] else "NO DATA"),
-                 ("PLOTTED", str(len(route_map.get("publication_events") or []))),
-                 ("VWS MAX", text(vws.get("maximum_display")))]),
+        Card("WEATHER / HAZARDS", [weather_tile_line],
+             VIOLET, "sec_hazard", tag="CFP P1", kind="tile", payload=weather_tile_payload),
         Card("ALTN / ROUTE", [f"{text(one.get('ground_distance_nm'))} NM filed."],
              RED, "sec_airports", tag="CFP P1", kind="tile", payload=[
                  ("PRIMARY", f"{text((one.get('alternates') or [{}])[0].get('airport'))}/{text((one.get('alternates') or [{}])[0].get('runway'))}"),
@@ -1347,7 +1352,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         pill, accent = severity_pill(item.get("severity"))
         finding_cards.append(Card("", [], accent, item.get("target"), kind="finding", payload=(
             pill, str(item.get("title") or "Review item"),
-            str(item.get("summary") or "Review required."),
+            str(item.get("summary") or "Not assessed."),
             "SOURCE · " + str(item.get("source_reference") or "Uploaded OFP"))))
     if not finding_cards:
         finding_cards = [Card("NO RANKED FINDING", [
@@ -1613,12 +1618,9 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     if not has_conditions:
         publication_state = ("1. No unresolved automated source condition; crew operational "
                              "release remains separate.")
-    # The nine-page RELEASE CONDITIONS card carried this caveat on page 1. Page
-    # 1 is now the reference overview, so the caveat moves to the page that
-    # owns the release record; it is a safety statement, not chrome.
-    release_state = [publication_state,
-                     "Current weather, airport surface state and operative aircraft "
-                     "limitations must be confirmed before use."]
+    # R2 (David, 22 Sep 2026): the general statement is printed once, on page
+    # 1; the closing card states the publication state and nothing generic.
+    release_state = [publication_state]
 
     # Enroute review, the airport/weather conditions and the closing record all
     # share one page. Whichever block a flight has loaded gets the wide column

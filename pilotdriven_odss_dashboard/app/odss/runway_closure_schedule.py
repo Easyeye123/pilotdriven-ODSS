@@ -38,7 +38,7 @@ _WEEKDAY_INDEX = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "S
 _TIME_RANGE = re.compile(r"\b\d{4}(?:UTC|Z)?\s*(?:-|TO)\s*\d{4}(?:UTC|Z)?\b", re.IGNORECASE)
 
 RESIDUAL_REVIEW_SENTENCE = (
-    "Other scheduled clauses in this notice are not evaluated; review required."
+    "Other scheduled clauses in this notice are not evaluated."
 )
 
 

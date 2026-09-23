@@ -416,7 +416,7 @@ def _official_weather_review_finding(
     return finding(
         "weather",
         "unknown",
-        "Official weather source review required",
+        "Official weather coverage incomplete",
         "Official public METAR/TAF coverage is incomplete.",
         [
             *(human_reasons.get(code, code.replace("_", " ").capitalize() + ".") for code in reason_codes),
@@ -427,9 +427,9 @@ def _official_weather_review_finding(
             "location": "",
             "utc_window": "Official source coverage check",
             "mechanism": "; ".join(human_reasons.get(code, code.replace("_", " ")) for code in reason_codes),
-            "flight_effect": "Review current official operational weather before use.",
+            "flight_effect": "Flight effect not assessed: official public weather coverage is incomplete.",
             "window_status": "review_required",
-            "window_status_text": "Official public weather coverage is incomplete — review required.",
+            "window_status_text": "Official public weather coverage is incomplete.",
             "provider": review.get("provider"),
             "reason_codes": reason_codes,
             "source_references": references,
@@ -444,23 +444,20 @@ _HAZARD_REVIEWS = (
         "review_key": "sigmet_review",
         "engine": "sigmet",
         "affected_title": "SIGMET affects the planned route",
-        "review_title": "SIGMET review required",
+        "review_title": "SIGMET coverage incomplete",
         "review_summary": (
             "The official source could not fully cover the flight window."
         ),
         "record_phrase": "SIGMET",
         "cfp_phrase": "SIGMET",
         "negative_claim": "no SIGMET",
-        "unresolved_warning": (
-            "SIGMET applicability remains unresolved; "
-            "review the current official source."
-        ),
+        "unresolved_warning": "SIGMET applicability remains unresolved.",
     },
     {
         "review_key": "vaa_review",
         "engine": "vaa",
         "affected_title": "Volcanic ash affects the planned route",
-        "review_title": "Volcanic ash review required",
+        "review_title": "Volcanic ash applicability unresolved",
         "review_summary": (
             "The official sources could not safely confirm that volcanic ash "
             "is not applicable to the route."
@@ -468,16 +465,13 @@ _HAZARD_REVIEWS = (
         "record_phrase": "volcanic-ash",
         "cfp_phrase": "volcanic-ash",
         "negative_claim": "no volcanic ash",
-        "unresolved_warning": (
-            "Volcanic ash applicability remains unresolved; "
-            "review the current official advisory source."
-        ),
+        "unresolved_warning": "Volcanic ash applicability remains unresolved.",
     },
     {
         "review_key": "tropical_cyclone_review",
         "engine": "tropical_cyclone",
         "affected_title": "Tropical cyclone affects the planned route",
-        "review_title": "Tropical cyclone review required",
+        "review_title": "Tropical cyclone applicability unresolved",
         "review_summary": (
             "The official sources could not safely confirm that a tropical "
             "cyclone is not applicable to the route."
@@ -485,10 +479,7 @@ _HAZARD_REVIEWS = (
         "record_phrase": "tropical-cyclone",
         "cfp_phrase": "tropical-cyclone",
         "negative_claim": "no tropical cyclone",
-        "unresolved_warning": (
-            "Tropical cyclone applicability remains unresolved; "
-            "review the current official advisory source."
-        ),
+        "unresolved_warning": "Tropical cyclone applicability remains unresolved.",
     },
 )
 
@@ -601,7 +592,7 @@ def _hazard_review_findings(
         "source_stale": "The source snapshot did not meet the configured freshness limit.",
         "source_records_incomplete": (
             f"Some official {hazard['record_phrase']} records could not be read "
-            "completely; review required."
+            "completely."
         ),
         "coverage_not_complete_for_flight": (
             "Official-source coverage is incomplete for the flight window."
@@ -1464,13 +1455,13 @@ def _notam_operational_summary(
             f"operational review during the applicable {phase} window."
         )
     if kind == "taxiway_restriction" and re.search(r"\bPROC(?:EDURE)?\b", upper) and re.search(r"\bTAXI(?:ING)?\b", upper):
-        return "Published taxi procedure; review the instructions, clearance limits and conditions in item E."
+        return "Published taxi procedure; instructions, clearance limits and conditions are stated in item E."
     subject = _notam_subject(text, kind)
     phase = role.replace("destination alternate", "alternate").replace("informational", "flight")
     if applicability == "review":
         return (
             f"Published {subject or 'airport'} restriction could not be resolved "
-            f"for the applicable {phase} window; review required."
+            f"for the applicable {phase} window."
         )
     if _NO_APPROACH_OPERATIONS.search(upper):
         runway = re.search(_APPROACH_RUNWAY_REFERENCE, upper)
@@ -1481,8 +1472,8 @@ def _notam_operational_summary(
         )
         return (
             f"Instrument approaches to or from {runway_label} are prohibited "
-            "only under the exact condition stated in item E; confirm that "
-            f"condition for the applicable {phase} window (manual review required)."
+            "only under the exact condition stated in item E; that condition "
+            f"is not evaluated for the applicable {phase} window."
         )
     if _APPROACH_MINIMA_RAISED.search(upper):
         return (
@@ -1494,7 +1485,7 @@ def _notam_operational_summary(
     ):
         return (
             "Published procedure may be suspended under the conditions stated in item E; "
-            f"confirm those conditions for the applicable {phase} window (review required)."
+            f"those conditions are not evaluated for the applicable {phase} window."
         )
     if kind == "airport_closure":
         return f"Entire airport closed or unavailable during the applicable {phase} window."
@@ -1515,9 +1506,8 @@ def _notam_operational_summary(
         # The kind owns this sentence: never fall through to the generic
         # restriction line, which would contradict the record's own rank.
         return (
-            "Published approach minima changed; confirm the affected "
-            f"procedure and minima in item E{cause} during the applicable "
-            f"{phase} window."
+            f"Published approach minima changed{cause} (procedure and minima as "
+            f"stated in item E) during the applicable {phase} window."
         )
     if kind == "runway_closure":
         return f"{subject.title()} closed or unavailable during the applicable {phase} window."
@@ -2715,7 +2705,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                     "mel",
                     "warning",
                     f"MEL {item['reference']} - {item['description']}",
-                    "Candidate local-library match; verify the current approved MEL before use.",
+                    "Candidate local-library match; not the approved MEL.",
                     details,
                     {
                         "reference_library_version": REFERENCE_LIBRARY_METADATA["version"],
@@ -2938,7 +2928,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     if official_weather_gap is not None:
         findings.append(official_weather_gap)
         warnings.append(
-            "Official public METAR/TAF coverage is incomplete; review current operational weather."
+            "Official public METAR/TAF coverage is incomplete."
         )
 
     alternate_airports = {a["airport"] for a in flight["alternates"]}
@@ -3170,12 +3160,11 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             if status == "no_significant_overlap":
                 data["flight_effect"] = (
                     "No adverse flight effect is indicated for this window by the "
-                    "selected TAF; confirm the latest operational weather."
+                    "selected TAF."
                 )
             elif status == "review_required":
                 data["flight_effect"] = (
-                    "Forecast coverage is incomplete; review the latest operational "
-                    "weather for this flight phase."
+                    "Forecast coverage is incomplete for this flight phase."
                 )
             severity = "information" if status == "no_significant_overlap" else "warning"
         elif group["metar_summaries"]:
@@ -3200,14 +3189,12 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             }
             if metar_summary["status"] == "outside_window":
                 data["flight_effect"] = (
-                    "This observation is not used to characterize the later flight "
-                    "window; review the applicable forecast and latest observation."
+                    "This observation is not used to characterize the later flight window."
                 )
                 severity = "unknown"
             elif metar_summary["status"] == "no_significant_observation":
                 data["flight_effect"] = (
-                    "No adverse effect is indicated by this nearby observation; "
-                    "confirm the applicable forecast and latest operational weather."
+                    "No adverse effect is indicated by this nearby observation."
                 )
                 severity = "information"
             else:
@@ -3318,7 +3305,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         schedule_status = assessed["schedule_status"]
         schedule = record.get("schedule")
         if applicability == "review":
-            warnings.append(f"{record['notam_id']}: B/C validity or schedule could not be resolved; manual review required.")
+            warnings.append(f"{record['notam_id']}: B/C validity or schedule could not be resolved.")
         approach_affected = _instrument_approach_affected(
             str(record["text"]),
             str(record["category"]),
@@ -3353,7 +3340,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         details = [
             *([f"Schedule: {schedule}."] if schedule else []),
             f"Applicable {role} UTC window: {_utc_window_label(window_start, window_end)}.",
-            *(["Applicability requires manual review."] if applicability == "review" else []),
+            *(["Applicability not resolved."] if applicability == "review" else []),
         ]
         applicable_notams.append(finding(
             "notam",
@@ -3504,11 +3491,11 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         findings.append(finding(
             "communications",
             "unknown",
-            "FIR communication review required",
+            "FIR communication procedures unavailable",
             "Current approved communication procedures are unavailable.",
             [
                 f"OFP route crosses {len(boundary_names)} FIR boundary or boundaries.",
-                "Review current early-contact, frequency and reporting requirements.",
+                "Early-contact, frequency and reporting requirements are not held.",
             ],
             {
                 "reference_status": REFERENCE_LIBRARY_METADATA["status"],
@@ -3667,14 +3654,14 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 else "unknown"
             ),
             f"Profile {index} - {route_start} to {route_end} "
-            f"({' / '.join(match['airways']) or 'airway review required'})",
+            f"({' / '.join(match['airways']) or 'airway not identified'})",
             (
                 f"Proposed depressurisation chart {profile['chart']}; "
                 f"critical point {critical}."
                 if depress_source_loaded
                 else (
                     f"Candidate chart {profile['chart']}; controlled profile "
-                    "index unavailable - review required."
+                    "index unavailable."
                 )
             ),
             details,
@@ -3751,16 +3738,14 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         )
         reference_status = "partial" if depress_source_loaded else "unavailable"
         summary = (
-            "No exact profile confirmed from controlled partial issue - "
-            "manual review required."
+            "No exact profile confirmed from controlled partial issue."
             if depress_source_loaded and coverage_scope == "partial_issue"
             else (
-                "No exact profile confirmed from controlled index - "
-                "manual review required."
+                "No exact profile confirmed from controlled index."
                 if depress_source_loaded
                 else (
                     "No exact profile confirmed because the controlled profile "
-                    "index is unavailable - manual review required."
+                    "index is unavailable."
                 )
             )
         )

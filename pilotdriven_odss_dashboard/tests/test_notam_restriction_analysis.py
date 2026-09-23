@@ -66,7 +66,7 @@ def test_corpus_never_publishes_the_refused_generic_template():
 def test_timing_review_does_not_turn_into_an_active_restriction():
     held = summary('RWY 25L CLSD', applicability='review')
     assert 'could not be resolved' in held
-    assert 'review required' in held
+    assert 'review required' not in held  # R2: the state stands alone
 
 
 def test_closed_condition_is_never_detached_from_the_head_that_qualifies_it():

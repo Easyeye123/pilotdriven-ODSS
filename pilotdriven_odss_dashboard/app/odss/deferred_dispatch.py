@@ -397,7 +397,7 @@ def _gate_title(group: list[dict[str, Any]]) -> str:
         if len(group) > 1 and not subject.endswith("S"):
             subject += "S"
         return subject
-    return declaration or f"{display_item_type} REVIEW REQUIRED"
+    return declaration or f"{display_item_type} ITEM"
 
 
 def _grouping_basis(group: list[dict[str, Any]]) -> str:
@@ -485,7 +485,7 @@ def _publication_row(segment: Mapping[str, Any]) -> dict[str, Any]:
         .replace("PARTIALLY", "PARTLY")
     )
     return {
-        "title": title or f"{display_item_type} REVIEW REQUIRED",
+        "title": title or f"{display_item_type} ITEM",
         "category": item_type.lower().replace("_", "-"),
         "summary": summary,
         "reference": reference or None,
