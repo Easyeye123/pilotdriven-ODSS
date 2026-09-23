@@ -326,6 +326,13 @@ TAKES_REMAINING_HEIGHT = (0.0, 9_999.0)
 
 
 def card_height(card: Card, width: float, body: float, leading: float) -> float:
+    if card.kind == "map" and card.title and len(title_layout(card, width)[1]) > 1:
+        # David's page-1 header row is DEPARTURE / the centre panel's title /
+        # DESTINATION, each one span (reference_conformance OVERVIEW_ROUTE_PANEL).
+        # A grid that narrows the map until "CFP ROUTE - PERTINENT DECISION
+        # GATES" wraps breaks that row, so it is refused at plan time and
+        # plan_page_flexible moves to the next grid, size or deferral step.
+        raise ValueError("Route panel title exceeds its column width; page 1 keeps the reference header row")
     if card.kind in {"map", "figure", "timeline"}:
         return 0.0
     if card.kind == "stack":

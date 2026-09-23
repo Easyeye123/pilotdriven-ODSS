@@ -369,7 +369,8 @@ def test_t2_sq24_the_longest_corpus_taf_is_whole_on_page_one_or_explicitly_defer
     assert whole == (normalized(TAF_CONTINUATION) not in page_one), "the marker appears exactly when the record was deferred"
     assert normalized(f"KJFK TAF: {page_one_weather_record(taf)}") in weather, "the WEATHER page holds the whole TAF"
     assert normalized(f"KJFK METAR: {page_one_weather_record(view['destination']['weather']['metar'])}") in weather
-    assert normalized(page_one_weather_record(view["departure"]["weather"]["taf"])) in page_one, "the departure TAF fits whole"
+    result = _conforms(case["path"])
+    assert result["valid"], result["violations"]
 
 
 def test_t2_a_taf_no_page_one_layout_can_hold_is_deferred_by_whole_groups_never_cut(tmp_path_factory):
@@ -400,14 +401,42 @@ def test_t2_a_taf_no_page_one_layout_can_hold_is_deferred_by_whole_groups_never_
     assert deferred, "the printed prefix ends at a group boundary and carries the marker"
     assert min(deferred) >= 1 and normalized(page_one_weather_record(long_taf)) not in page_one
     assert normalized(f"KJFK TAF: {page_one_weather_record(long_taf)}") in weather, "the whole record is on the WEATHER page"
+    result = _conforms(path)
+    assert result["valid"], result["violations"]
 
 
-def test_t2_sq214_prints_both_tafs_whole_on_page_one(tmp_path_factory):
-    """SQ214 PER-SIN (19 Aug): the 244-character departure TAF fits whole once
-    the route-map footer may take its lines above a 140 pt plot."""
+def _conforms(path: Path) -> dict:
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    return conformance.check_reference_conformance(
+        path, structure=manifest["reference_structure"], contract_extensions=manifest["contract_extensions"])
+
+
+def test_t2_sq214_keeps_his_page_one_header_row_and_prints_what_fits_whole(tmp_path_factory):
+    """SQ214 PER-SIN (19 Aug): the 244-character departure TAF. The grid that
+    held it whole narrowed the centre panel until its title wrapped, which
+    broke David's header row (gate 6 on 24 Sep: OVERVIEW_ROUTE_PANEL). His
+    format wins: that grid is refused at plan time; the record prints whole
+    where a conforming grid can hold it, else by whole groups with the marker
+    (the WEATHER page always holds it whole)."""
     case = rendered_case("SQ214", "SQ21419082026PER.pdf", tmp_path_factory)
     view = case["payload"]["view"]["briefing"]
-    page_one = case["folded"][0]
+    page_one, weather = case["folded"][0], case["folded"][WEATHER_PAGE]
+    result = _conforms(case["path"])
+    assert result["valid"], result["violations"]
     for role in ("departure", "destination"):
-        assert normalized(page_one_weather_record(view[role]["weather"]["taf"])) in page_one, role
-    assert normalized(TAF_CONTINUATION) not in page_one
+        taf = view[role]["weather"]["taf"]
+        whole = normalized(page_one_weather_record(taf)) in page_one
+        _, groups = page_one_taf_change_groups(taf)
+        deferred = any(normalized(page_one_taf_field_continued(taf, drop)) in page_one for drop in range(1, len(groups) + 1))
+        assert whole or deferred, role
+        assert normalized(f"{view[role]['icao']} TAF: {page_one_weather_record(taf)}") in weather, role
+
+
+def test_t2_a_narrowed_centre_panel_is_refused_before_it_can_break_the_header_row():
+    from app.odss.operational_format import Card, card_height, title_layout
+    card = Card("CFP ROUTE - PERTINENT DECISION GATES", [], None, tag="SCHEMATIC", kind="map", payload={}, width_weight=1.0)
+    assert len(title_layout(card, 320.0)[1]) == 1
+    assert card_height(card, 320.0, 9.6, 11.6) == 0.0
+    assert len(title_layout(card, 200.0)[1]) > 1, "the SQ214 narrow-grid width wraps the title"
+    with pytest.raises(ValueError, match="Route panel title exceeds its column width"):
+        card_height(card, 200.0, 9.6, 11.6)
