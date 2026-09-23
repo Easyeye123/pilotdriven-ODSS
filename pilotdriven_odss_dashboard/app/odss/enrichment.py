@@ -16,9 +16,18 @@ _FUEL_ENROUTE_HEADING = re.compile(
     r"^FUEL\s+ENROUTE\s+AIRPORT(?:\(S\)|S)?\s*:?\s*$",
     re.IGNORECASE,
 )
+# Every airport-section heading LIDO prints, so that a section opened by one of
+# them is closed by the next. The adequate headings were missing: a NON EDTO
+# CFP prints FUEL ENROUTE AIRPORT and then EDTO ADEQUATE ENROUTE AIRPORT(S)
+# with no SUITABLE section between (SQ365 LIRF-WSSS p39/p40; SQ605), as do
+# some EDTO CFPs (SQ303 16 Jul, SQ214 16 Aug), and the fuel-enroute section ran
+# on through every adequate station to ENROUTE AIRPORT(S) - 34 of SQ365's
+# stations were held as fuel-enroute airports (independent QA of release 402,
+# 23 Sep 2026).
 _AIRPORT_SECTION_HEADING = re.compile(
     r"^(?:(?:DEPARTURE|DESTINATION|ALTERNATE|DESTINATION\s+ALTERNATE|"
-    r"FUEL\s+ENROUTE|ENROUTE|EDTO\s+SUITABLE\s+ENROUTE)\s+)"
+    r"FUEL\s+ENROUTE|ENROUTE|ADEQUATE\s+ENROUTE|"
+    r"(?:EDTO|ETOPS)\s+(?:SUITABLE|ADEQUATE)\s+ENROUTE)\s+)"
     r"AIRPORT(?:\(S\)|S)?\s*:?\s*$",
     re.IGNORECASE,
 )
