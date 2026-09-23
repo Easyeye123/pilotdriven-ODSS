@@ -260,6 +260,7 @@ def _parse_taf(text: str, reference: datetime) -> dict[str, Any] | None:
         if section["text"] and section["starts_at"] < ends_at:
             groups.append({
                 "kind": "fm",
+                "marker": section["marker"],
                 "text": section["text"],
                 "starts_at": section["starts_at"],
                 "ends_at": ends_at,
@@ -281,6 +282,7 @@ def _parse_taf(text: str, reference: datetime) -> dict[str, Any] | None:
         )
         groups.append({
             "kind": kind,
+            "marker": marker,
             "text": section["text"],
             "starts_at": period[0],
             "ends_at": period[1],
@@ -290,6 +292,14 @@ def _parse_taf(text: str, reference: datetime) -> dict[str, Any] | None:
         "validity_end": validity_end,
         "groups": groups,
     }
+
+
+def _coded_group(group: dict[str, Any]) -> str:
+    """One TAF group as the source prints it: its change marker (with the
+    period) and its groups, whitespace-normalised."""
+    marker = str(group.get("marker") or "").strip()
+    text = " ".join(str(group.get("text") or "").split())
+    return f"{marker} {text}".strip() if marker else text
 
 
 def summarize_taf_for_window(
@@ -364,12 +374,17 @@ def summarize_taf_for_window(
         dict.fromkeys(_describe_conditions(group["text"]) for group in applicable_groups)
     )
     applicable_conditions = applicable_conditions or "conditions could not be safely decoded"
+    # 23 Sep 2026 (T3): "Do NOT decipher. Your user is a pilot." The coded groups
+    # the decoding above was made from travel with it, marker and all, so the
+    # publishing surfaces can print the source form instead of the sentence.
+    coded_groups = [_coded_group(group) for group in applicable_groups]
 
     if not coverage_complete or not base_groups:
         return {
             **source_timing,
             "status": "review_required",
             "applicable_conditions": applicable_conditions,
+            "applicable_groups": coded_groups,
             "timing": (
                 f"The selected TAF does not fully cover "
                 f"{_short_range(window_start, window_end)}."
@@ -406,6 +421,7 @@ def summarize_taf_for_window(
             **source_timing,
             "status": "pertinent",
             "applicable_conditions": applicable_conditions,
+            "applicable_groups": coded_groups,
             "timing": timing,
             "mechanism": "; ".join(mechanisms),
             "window_status_text": (
@@ -442,6 +458,7 @@ def summarize_taf_for_window(
         **source_timing,
         "status": "no_significant_overlap",
         "applicable_conditions": applicable_conditions,
+        "applicable_groups": coded_groups,
         "timing": timing,
         "mechanism": "None in time-overlapping forecast groups",
         "window_status_text": (
@@ -484,11 +501,13 @@ def summarize_metar_for_window(
     )
     mechanisms = significant_mechanisms(text)
     conditions = _describe_conditions(text)
+    coded_record = [" ".join(str(text or "").split())] if str(text or "").strip() else []
     if not near_window:
         return {
             "status": "outside_window",
             "observed_at_utc": observation.isoformat(),
             "applicable_conditions": conditions,
+            "applicable_groups": coded_record,
             "mechanism": "; ".join(mechanisms) or "None safely classified",
             "timing": (
                 f"Observation at {observation:%H:%MZ} is outside "
@@ -501,6 +520,7 @@ def summarize_metar_for_window(
             "status": "pertinent",
             "observed_at_utc": observation.isoformat(),
             "applicable_conditions": conditions,
+            "applicable_groups": coded_record,
             "mechanism": "; ".join(mechanisms),
             "timing": f"Observed at {observation:%H:%MZ}.",
             "window_status_text": (
@@ -511,6 +531,7 @@ def summarize_metar_for_window(
         "status": "no_significant_observation",
         "observed_at_utc": observation.isoformat(),
         "applicable_conditions": conditions,
+        "applicable_groups": coded_record,
         "mechanism": "No significant mechanism in the nearby observation",
         "timing": f"Observed at {observation:%H:%MZ}.",
         "window_status_text": (

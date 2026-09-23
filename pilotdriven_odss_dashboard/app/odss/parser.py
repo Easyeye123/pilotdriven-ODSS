@@ -11,7 +11,12 @@ import fitz
 from .constants import actm_minutes, date_ddmmmyy, utc_on_date
 from .enrichment import enrich_notams, enrich_weather
 
-MAX_PDF_PAGES = 180
+# One ceiling with the app (cfp-limits.mjs MAX_CFP_PAGES). David, 23 Sep 2026
+# 08:15: his SIN-LGW OFP of 22 Sep was refused at 180. The app's 12 MB byte cap
+# admits ~327 pages at the thinnest LIDO density held, so 400 keeps bytes as
+# the binding limit for genuine OFPs and still bounds a low-density file;
+# measured cost at 400 pages is in the round's evidence folder.
+MAX_PDF_PAGES = 400
 
 
 def extract_pages(path: Path) -> list[str]:

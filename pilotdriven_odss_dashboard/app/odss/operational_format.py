@@ -31,7 +31,7 @@ from .analysed_briefing_content import (cyclone_content, deferred_item_label,
 from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
 from .constants import format_actm
-from .page_one_weather import forecast_source_line, page_one_metar_field, page_one_taf_field
+from .page_one_weather import page_one_taf_field_continued, forecast_source_line, page_one_metar_field, page_one_taf_field
 from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
 
 SIZE = landscape(A4)
@@ -429,21 +429,25 @@ def plan_page(title: str, bookmark: str, rows: list[tuple[Any, list[Card]]], *,
     return [page]
 
 
-def plan_page_flexible(title, bookmark, rows_for, *, variants=(0,), **kwargs) -> list[Page]:
+def plan_page_flexible(title, bookmark, rows_for, *, variants=(0,), steps=None, **kwargs) -> list[Page]:
     """Try each grid variant on the readable body ladder before failing closed.
 
     Column width, not type size, is the first lever: a dense source-bound card
     is given more of the row before the body steps down, and the body never
-    steps below the published readable floor.
+    steps below the published readable floor. ``steps``, when given, is an
+    outermost content-deferral ladder the page owner interprets (page 1: how
+    many trailing TAF change groups go to the WEATHER page); step 0 is the
+    whole content and is exhausted across every grid and size first.
     """
     last: ValueError | None = None
-    for variant in variants:
-        for body, leading in BODY_LADDER:
-            try:
-                return plan_page(title, bookmark, rows_for(body, leading, variant),
-                                 body=body, leading=leading, **kwargs)
-            except ValueError as exc:
-                last = exc
+    for step in (steps if steps is not None else (None,)):
+        for variant in variants:
+            for body, leading in BODY_LADDER:
+                try:
+                    rows = rows_for(body, leading, variant) if step is None else rows_for(body, leading, variant, step)
+                    return plan_page(title, bookmark, rows, body=body, leading=leading, **kwargs)
+                except ValueError as exc:
+                    last = exc
     raise last
 
 
@@ -1210,7 +1214,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     deferred = [row["text"] for row in view["deferred_pdf_analysis"]]
 
     # ---------------------------------------------------------------- page 1
-    def station(role: str, accent, extra: list[tuple[str, list[str]]]) -> Card:
+    def station(role: str, accent, extra: list[tuple[str, list[str]]], taf_drop: int = 0) -> Card:
         station_view = view.get(role) or {}
         weather = station_view.get("weather") or {}
         analysed = next((a for a in airport_analysis if a["role"] == role),
@@ -1226,13 +1230,17 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         blocks.append(("METAR", [page_one_metar_field(weather.get("metar"), "WEATHER page")]))
         # His reference column is PLAN / SCHEDULE / METAR / TAF / PERTINENT at
         # departure and PLAN / EET / SCHED / METAR / TAF TEMPO / PERTINENT at
-        # destination. The arrival field is the TAF's temporary group, so the
-        # label and the value beneath it say the same thing.
-        blocks.append(
-            ("TAF TEMPO", [taf_tempo_field(weather.get("taf"))])
-            if role == "destination"
-            else ("TAF", [page_one_taf_field(weather.get("taf"), "WEATHER page")])
-        )
+        # destination. 23 Sep 2026, 20:22: "You need to give the full METAR /
+        # TAF for WSSS and EGKK" - his current instruction outranks the form,
+        # so both columns print the whole held TAF under a TAF label (a label
+        # has to match the value beneath it). The deviation from his file is
+        # declared in tests/boss_reference_format_manifest.json
+        # (contract_extensions.overview_column_field_overrides).
+        # ``taf_drop`` > 0 only when every full-record layout of page 1 has
+        # failed its capacity (plan_page_flexible steps): the largest whole-
+        # group prefix, marked, with the whole record on the WEATHER page.
+        blocks.append(("TAF", [page_one_taf_field_continued(weather.get("taf"), taf_drop)
+                               if taf_drop else page_one_taf_field(weather.get("taf"), "WEATHER page")]))
         # The nine-page ARRIVAL SURFACE card counted the analysed consequences
         # for the arrival. The count stays published, beside the held notices
         # this analysis could not reduce, as the one statement the dashboard
@@ -1328,21 +1336,29 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         )
         return f"{utc_clock} / {local}"
 
-    def overview_rows(body, leading, variant=0):
+    def overview_rows(body, leading, variant=0, step=0):
         station_weight, map_weight = overview_grids[variant]
         return [
-            (None, [replace(station("departure", CYAN, [("SCHEDULE", [schedule_field()])]),
+            (None, [replace(station("departure", CYAN, [("SCHEDULE", [schedule_field()])], taf_drop=step),
                             width_weight=station_weight),
                     Card("CFP ROUTE - PERTINENT DECISION GATES", [], CYAN, tag="SCHEMATIC",
                          kind="map", payload=route_map, width_weight=map_weight),
-                    replace(station("destination", RED, [("EET / SCHED", [f"{text((view.get('metrics') or {}).get('eet'))} / {clock(identity.get('scheduled_eta_hhmm'))}"])]),
+                    replace(station("destination", RED, [("EET / SCHED", [f"{text((view.get('metrics') or {}).get('eet'))} / {clock(identity.get('scheduled_eta_hhmm'))}"])], taf_drop=step),
                             width_weight=station_weight)]),
             (None, tiles),
             ((44.0, 52.0), strip),
         ]
+    # 23 Sep 2026: page 1 prints the full METAR / TAF records. Every grid and
+    # type size is tried with the whole records first; only when none fits the
+    # physical page does a step defer the last change group(s) of the TAFs to
+    # the WEATHER page behind an explicit marker - at most as many groups as
+    # the longer TAF holds, so a step can never cut into the base period.
+    from .page_one_weather import page_one_taf_change_groups
+    deferrable = max(len(page_one_taf_change_groups(((view.get(role) or {}).get("weather") or {}).get("taf"))[1])
+                     for role in ("departure", "destination"))
     sections["overview"] = plan_page_flexible(
         "OVERVIEW", "sec_overview", overview_rows, ribbon_index=0, aliases=("sec_route", "sec_summary"),
-        variants=tuple(range(len(overview_grids))),
+        variants=tuple(range(len(overview_grids))), steps=tuple(range(deferrable + 1)),
         assurance="CFP P1 PRIORITISED | SOURCE FACTS + LABELLED ANALYSIS | AI AUTHORITY: NONE")
 
     # ---------------------------------------------------------------- page 2
@@ -1492,15 +1508,23 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     for role in ("departure", "destination"):
         station_view = view.get(role) or {}
         terminal.append(f"{text(station_view.get('icao'))} METAR: {text((station_view.get('weather') or {}).get('metar'))}")
+        # 23 Sep 2026: the whole TAF here as well, so a page-1 column that had
+        # to defer its last change groups points at a page that holds them.
+        terminal.append(f"{text(station_view.get('icao'))} TAF: {text((station_view.get('weather') or {}).get('taf'))}")
         forecast = ((view.get("overview") or {}).get(role) or {}).get("forecast_at_reference") or {}
         conditions = forecast.get("applicable_conditions")
+        # 23 Sep 2026 (T3): "Do NOT decipher. Your user is a pilot." The page
+        # prints the coded groups the assessment used; an assessment that
+        # published no groups says so rather than decoding.
+        groups = [str(group).strip() for group in (forecast.get("applicable_groups") or []) if str(group).strip()]
+        coded = " ".join(groups) or ("coded groups not published by this analysis" if conditions else "")
         source = forecast.get("forecast_source") or {}
-        if conditions:
+        if coded:
             if str(source.get("record_type") or "").upper() in {"METAR", "SPECI"}:
                 # The checked flight window is not an observation validity.
-                terminal.append(f"{text(station_view.get('icao'))} observation used: {conditions}")
+                terminal.append(f"{text(station_view.get('icao'))} observation used: {coded}")
             else:
-                terminal.append(f"{text(station_view.get('icao'))} forecast {text(forecast.get('utc_window'))}: {conditions}")
+                terminal.append(f"{text(station_view.get('icao'))} forecast {text(forecast.get('utc_window'))}: {coded}")
         if source:
             # A forecast source prints its issue/validity; an observation
             # basis prints its observation time, never an invented validity.

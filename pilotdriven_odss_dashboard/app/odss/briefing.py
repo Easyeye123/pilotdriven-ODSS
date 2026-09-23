@@ -3718,6 +3718,9 @@ def _overview_forecast_at_reference(
     )
     return {
         "applicable_conditions": str(selected["applicable_conditions"]).strip(),
+        # 23 Sep 2026 (T3): the coded groups beside the decoding, so no
+        # surface has to print the sentence.
+        "applicable_groups": [str(group).strip() for group in (selected.get("applicable_groups") or []) if str(group).strip()],
         "utc_window": selected.get("utc_window"),
         "timing": selected.get("timing"),
         "window_status": selected.get("window_status"),

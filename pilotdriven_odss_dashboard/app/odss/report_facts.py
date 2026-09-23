@@ -299,7 +299,7 @@ def deferred_item_report_rows(
                         "No further OFP text was parsed.",
                     ),
                     "source_status": (
-                        "OFP deferred declaration requires review; acronym meaning is not "
+                        "OFP deferred declaration is unresolved; acronym meaning is not "
                         "inferred and no MEL, CDL or CDDL classification is asserted."
                     ),
                 }

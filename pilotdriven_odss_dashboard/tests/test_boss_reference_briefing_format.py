@@ -229,33 +229,43 @@ def test_page_one_is_departure_route_map_destination_then_tiles_and_strip(briefi
         assert len(document[0].get_drawings()) > 40
 
 
-def test_page_one_destination_prints_his_taf_tempo_field(briefing):
-    """His destination column reads TAF TEMPO; ours read a bare TAF.
-
-    Fix round 1 finding. The conformance gate compared only the first word of
-    each of his field labels, so this disagreement between his reference PDF
-    and our render passed as valid. Binding rule 7: the reference wins, so the
-    destination weather field is published with his whole label - and with the
-    TEMPO group under it, because a label has to match the value beneath it.
-    """
-    page = briefing["folded"][0]
-    assert normalized("TAF TEMPO") in page, (
-        "page 1 destination column must publish David's TAF TEMPO field"
+def _page_one_prints_taf(page: str, taf) -> bool:
+    """The whole record, or - only when page 1 could not hold it - its largest
+    whole-group prefix followed by the explicit continuation marker."""
+    from app.odss.page_one_weather import (
+        page_one_taf_change_groups, page_one_taf_field, page_one_taf_field_continued,
     )
-    # His departure column is a plain TAF; only the destination one is TEMPO.
+    if normalized(page_one_taf_field(taf, "WEATHER page")) in page:
+        return True
+    _, groups = page_one_taf_change_groups(taf)
+    return any(normalized(page_one_taf_field_continued(taf, drop)) in page for drop in range(1, len(groups) + 1))
+
+
+def test_page_one_destination_prints_the_full_taf_under_a_taf_label(briefing):
+    """23 Sep 2026, 20:22: "You need to give the full METAR / TAF for WSSS
+    and EGKK." His reference column reads TAF TEMPO with the temporary group
+    under it; his current instruction outranks that form, so both columns
+    now print the whole held TAF under a TAF label - a label has to match
+    the value beneath it. The deviation from his file is declared in
+    tests/boss_reference_format_manifest.json (contract_extensions.
+    overview_column_field_overrides), never silently accepted."""
+    page = briefing["folded"][0]
+    assert normalized("TAF TEMPO") not in page
+    assert normalized("No TEMPO group") not in page
     with fitz.open(briefing["path"]) as document:
         spans = [
             span
             for block in document[0].get_text("dict")["blocks"]
             for line in block.get("lines", [])
             for span in line["spans"]
-            if normalized(span["text"]) in {"TAF", "TAF TEMPO"}
+            if normalized(span["text"]) == "TAF" and "Bold" in span["font"]
         ]
-    by_label = {normalized(span["text"]): span for span in spans}
-    assert set(by_label) == {"TAF", "TAF TEMPO"}, sorted(by_label)
-    assert by_label["TAF"]["bbox"][0] < by_label["TAF TEMPO"]["bbox"][0], (
-        "TAF belongs to the departure column and TAF TEMPO to the destination one"
-    )
+    assert len(spans) == 2, "one TAF label per station column"
+    assert spans[0]["bbox"][0] != spans[1]["bbox"][0]
+    view = briefing["view"]
+    taf = (view.get("destination") or {}).get("weather", {}).get("taf")
+    if taf:
+        assert _page_one_prints_taf(page, taf), "the destination TAF whole, or its whole-group prefix with the marker"
 
 
 def test_the_taf_tempo_field_never_publishes_an_absent_tempo_as_fair_weather():
@@ -823,47 +833,34 @@ def test_the_sq910_card_names_the_engine_2_fan_cowl_latch(briefing):
     ) not in " ".join(briefing["folded"])
 
 
-def test_page_one_weather_fields_are_his_trimmed_groups_with_the_local_clock(briefing):
-    """B4 fix round 1 (17 Sep 2026): page 1 printed the OFP record envelope.
-
-    His page 1 reads ``SCHEDULE 0050Z / 0850 LT``, not ``0050Z / 21AUG26``,
-    and it carries no OFP record envelope (``SA 201900``, ``FT 201700
-    2018/2200``, ``=``).
-
-    21-22 Sep 2026: what the page carries INSIDE the envelope changed. v1 cut
-    the METAR at its temperature group and the TAF at its first change group;
-    he photographed that card ("shortened too much", "TAF Tempo is truncated
-    why????"), so v2 prints every held group. The rule is still shared with the
-    dashboard (page_one_weather.py == page1-weather.mjs, pinned by
-    tests/fixtures/page1-weather-vectors.json), so both surfaces print the same
-    groups for the same held record.
-    """
-    from app.odss.page_one_weather import held_text, page_one_metar_field, page_one_taf_field
+def test_page_one_weather_fields_are_the_full_records_with_the_local_clock(briefing):
+    """B4 fix round 1 (17 Sep 2026) put his local clock under SCHEDULE and
+    removed the OFP record envelope; 21-22 Sep put every group back; 23 Sep
+    2026 20:22 ("give the full METAR / TAF") puts the record back whole -
+    envelope, issue time, validity and terminator are the record's identity.
+    The rule is still shared with the dashboard (page_one_weather.py ==
+    page1-weather.mjs), so both surfaces print the same record."""
+    from app.odss.page_one_weather import page_one_metar_field, page_one_taf_field
 
     page = briefing["folded"][0]
     view = briefing["view"]
     for role in ("departure", "destination"):
         weather = (view.get(role) or {}).get("weather") or {}
-        metar = weather.get("metar")
-        if metar:
-            assert normalized(page_one_metar_field(metar, "WEATHER page")) in page, f"{role} METAR in his form"
-            envelope = " ".join(held_text(metar).split()[:2])
-            assert normalized(envelope) not in page, f"{role} METAR envelope {envelope} is not on page 1"
-        if role == "departure" and weather.get("taf"):
-            assert normalized(page_one_taf_field(weather["taf"], "WEATHER page")) in page, "departure TAF in his form"
+        if weather.get("metar"):
+            assert normalized(page_one_metar_field(weather["metar"], "WEATHER page")) in page, f"{role} METAR in full"
+        if weather.get("taf"):
+            assert _page_one_prints_taf(page, weather["taf"]), f"{role} TAF whole, or its whole-group prefix with the marker"
     assert normalized("SCHEDULE") in page
     assert re.search(r"SCHEDULE \d{4}Z (?:\d{4} LT|LT NOT HELD)", page), "SCHEDULE is the UTC clock beside the local one"
     if briefing["key"] == "SQ910":
-        for expected in ("11004KT 9999 FEW018/BKN300 28/23 Q1011 NOSIG",
-                         "16008KT 9999 FEW015/SCT020",
-                         "VRB02KT 9999 FEW025 28/26 Q1010 NOSIG RMK A2983",
+        for expected in ("SA 201900 11004KT 9999 FEW018 BKN300 28/23 Q1011 NOSIG=",
+                         "FT 201700 2018/2200 16008KT 9999 FEW015 SCT020=",
+                         "SA 201900 VRB02KT 9999 FEW025 28/26 Q1010 NOSIG RMK A2983=",
+                         "FT 201700 2018/2124 25007KT 9999 FEW025 TX32/2106Z TN26/2021Z TEMPO 2103/2109 27015KT FEW025 BKN090=",
                          "0050Z / 0850 LT"):
             assert normalized(expected) in page, expected
-        body = page.replace(normalized("SQ910 | 21AUG26"), "")
-        # The envelope and the calendar date; NOSIG, QNH and RMK are weather
-        # groups of the record and now print with it.
-        for gone in ("SA 201900", "FT 201700", "2018/2200", "0050Z / 21AUG26"):
-            assert normalized(gone) not in body, gone
+        # The calendar date under SCHEDULE stays gone.
+        assert normalized("0050Z / 21AUG26") not in page
 
 
 RECOVERED_DEFECTS = {

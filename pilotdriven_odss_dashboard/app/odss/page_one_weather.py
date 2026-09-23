@@ -123,21 +123,74 @@ def page_one_weather_groups(record: Any, kind: str) -> dict[str, Any]:
     }
 
 
-def page_one_metar_field(record: Any, pointer: str | None = None) -> str:
-    """The page-1 METAR field: every held group.
+# RULE CHANGE, 23 Sep 2026 (v2 -> v3, the FIELDS only). David, 23 Sep 20:22,
+# photographing the SIA312 WSSS / EGKK cards: "You need to give the full METAR
+# / TAF for WSSS and EGKK." The page-1 field is now the record exactly as the
+# OFP holds it - the envelope (SA/FT, issue time, validity), every group and
+# the terminator - whitespace-normalised and nothing else. The groups rule
+# above is unchanged and still pinned by the vectors; it is no longer what the
+# station fields print. The dashboard's page1-weather.mjs carries the same rule.
+PAGE1_WEATHER_FIELD_RULE = "page1-weather-record-v3"
 
-    v1 took ``pointer`` - the page holding the rest of the record - because it
-    cut the record short. v2 cuts nothing, so there is nothing to point at. The
-    parameter is kept, unused, so existing call sites stay valid.
+
+def page_one_weather_record(record: Any) -> str:
+    """The held record verbatim, whitespace-normalised; '' when nothing is held."""
+    raw = record.get("text") if isinstance(record, dict) else record
+    if raw is None or isinstance(raw, bool):
+        return ""
+    return " ".join(str(raw).split())
+
+
+def page_one_metar_field(record: Any, pointer: str | None = None) -> str:
+    """The page-1 METAR field: the full original coded record.
+
+    ``pointer`` is kept, unused, so existing call sites stay valid.
     """
-    result = page_one_weather_groups(record, "metar")
-    return result["groups"] if result["held"] else NOT_HELD
+    return page_one_weather_record(record) or NOT_HELD
 
 
 def page_one_taf_field(record: Any, pointer: str | None = None) -> str:
-    """The page-1 TAF field: every held group, change groups included."""
-    result = page_one_weather_groups(record, "taf")
-    return result["groups"] if result["held"] else NOT_HELD
+    """The page-1 TAF field: the full original coded record, every change group."""
+    return page_one_weather_record(record) or NOT_HELD
+
+
+# A TAF change group starts at one of these markers and runs to the next one.
+_TAF_GROUP_MARKER = re.compile(
+    r"\b(?:PROB(?:30|40)(?:\s+TEMPO)?\s+\d{4}/\d{4}|TEMPO\s+\d{4}/\d{4}|BECMG\s+\d{4}/\d{4}"
+    r"|INTER\s+\d{4}/\d{4}|FM\d{6})\b"
+)
+# Page 1 is a physical page. When the whole TAF cannot be fitted on it at any
+# column width or readable type size (SQ24 SIN-JFK: a 326-character KJFK TAF
+# beside its PERTINENT lines), the column prints the record's largest whole-
+# group prefix and says so with this marker; the WEATHER page prints the whole
+# record. Never a silent cut, never a cut inside a group, and only after every
+# full-record layout has been tried (operational_format.plan_page_flexible).
+TAF_CONTINUATION = "(cont. WEATHER page)"
+
+
+def page_one_taf_change_groups(record: Any) -> tuple[str, list[str]]:
+    """``(base, change groups)`` of the verbatim record; the base keeps the envelope."""
+    text = page_one_weather_record(record)
+    starts = [match.start() for match in _TAF_GROUP_MARKER.finditer(text)]
+    if not starts:
+        return text, []
+    base = text[: starts[0]].strip()
+    bounds = list(zip(starts, starts[1:] + [len(text)]))
+    return base, [text[start:end].strip() for start, end in bounds]
+
+
+def page_one_taf_field_continued(record: Any, drop_groups: int) -> str:
+    """The page-1 TAF field with its last ``drop_groups`` change groups deferred
+    to the WEATHER page behind ``TAF_CONTINUATION``; the full field when
+    nothing is dropped or the record has no change group to drop."""
+    base, groups = page_one_taf_change_groups(record)
+    if not base and not groups:
+        return NOT_HELD
+    drop = max(0, min(int(drop_groups), len(groups)))
+    if drop == 0:
+        return page_one_taf_field(record)
+    kept = groups[: len(groups) - drop]
+    return f"{' '.join([base, *kept]).strip()} {TAF_CONTINUATION}"
 
 
 def forecast_source_line(source: dict[str, Any]) -> str:
@@ -169,10 +222,15 @@ def forecast_source_line(source: dict[str, Any]) -> str:
 
 __all__ = [
     "NOT_HELD",
+    "PAGE1_WEATHER_FIELD_RULE",
     "PAGE1_WEATHER_RULE",
+    "TAF_CONTINUATION",
     "forecast_source_line",
     "held_text",
     "page_one_metar_field",
+    "page_one_taf_change_groups",
     "page_one_taf_field",
+    "page_one_taf_field_continued",
     "page_one_weather_groups",
+    "page_one_weather_record",
 ]

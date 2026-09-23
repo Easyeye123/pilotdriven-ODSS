@@ -24,6 +24,7 @@ def render_forecast(tmp_path, monkeypatch, *, source, audit=False, departure_sou
     build = briefing_module.build_briefing_view
     forecast = {
         "applicable_conditions": "wind 160 degrees 7 kt; visibility 10 km or more",
+        "applicable_groups": ["16007KT 9999 FEW015 SCT020"],
         "utc_window": "16 AUG 1310Z-1510Z",
         "window_status": "review_required",
         **({"forecast_source": deepcopy(source)} if source is not None else {}),
@@ -54,11 +55,16 @@ def test_pdf_keeps_exact_decoded_forecast_provenance(tmp_path, monkeypatch, audi
     assert any("FORECAST SOURCE / CHECKED WINDOW" in page for page in pages)
     detail = " ".join(pages)
     for value in (
-        SOURCE["display_title"], SOURCE["raw_text"], forecast["applicable_conditions"],
+        SOURCE["display_title"], SOURCE["raw_text"], "16007KT 9999 FEW015 SCT020",
         "2026-08-16T08:00Z", "2026-08-17T12:00Z", "16 AUG 1310Z-1510Z",
         "Coverage incomplete - review required",
     ):
         assert value in detail
+    # 23 Sep 2026 (T3): the pilot's WEATHER page prints the coded groups the
+    # assessment used, never their decoding. The audit appendix is unchanged.
+    weather_page = pages[WEATHER_PAGE]
+    assert "16007KT 9999 FEW015 SCT020" in weather_page
+    assert forecast["applicable_conditions"] not in weather_page
     assert forecast["forecast_source"] == SOURCE
     assert any("Forecast source" in row[1] for row in doc.get_toc())
     if not audit:
@@ -139,7 +145,8 @@ def test_current_six_page_forecast_keeps_conditions_window_and_provenance(tmp_pa
     def view(*args, **kwargs):
         result = build(*args, **kwargs)
         result['overview']['destination']['forecast_at_reference'] = {
-            'applicable_conditions': conditions, 'utc_window': '16 AUG 1310Z-1510Z',
+            'applicable_conditions': conditions, 'applicable_groups': ['16007KT 9999 FEW015 SCT020'],
+            'utc_window': '16 AUG 1310Z-1510Z',
             **({'forecast_source': deepcopy(source)} if source else {}),
         }
         return result
@@ -149,7 +156,8 @@ def test_current_six_page_forecast_keeps_conditions_window_and_provenance(tmp_pa
     with fitz.open(path) as doc:
         assert len(doc) == MAX_BRIEFING_PAGES
         weather = ' '.join(doc[WEATHER_PAGE].get_text().split())
-        assert conditions in weather and '16 AUG 1310Z-1510Z' in weather
+        assert '16007KT 9999 FEW015 SCT020' in weather and '16 AUG 1310Z-1510Z' in weather
+        assert conditions not in weather, "the WEATHER page does not decode the forecast (23 Sep 2026)"
         if source:
             assert source['display_title'] in weather
             assert 'issued 16AUG 0800Z; valid 16AUG 0800Z-17AUG 1200Z' in weather

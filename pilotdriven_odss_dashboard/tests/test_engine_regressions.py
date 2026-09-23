@@ -115,7 +115,7 @@ def test_sia722_aa_ifeddl_never_enters_the_mel_cdl_or_cddl_engines() -> None:
     )
     assert declaration["title"] == "AA IFEDDL"
     assert declaration["summary"] == (
-        "OFP deferred declaration requires review; acronym meaning is not "
+        "OFP deferred declaration is unresolved; acronym meaning is not "
         "inferred and no MEL, CDL or CDDL classification is asserted."
     )
     assert declaration["details"] == [
@@ -2895,12 +2895,14 @@ def test_physical_weather_page_does_not_publish_an_observation_as_a_forecast(tmp
     render_combined_briefing(flight, findings, warnings, path)
     with fitz.open(path) as doc:
         body = " ".join(doc[WEATHER_PAGE].get_text().split())
-    assert "wind 200° 5 kt" in body
+    # 23 Sep 2026 (T3): "Do NOT decipher. Your user is a pilot." The page
+    # prints the coded groups the assessment used, never their decoding.
+    assert "wind 200° 5 kt" not in body
     if with_taf:
-        assert "WSSS forecast 16 JUL 0900Z-1100Z:" in body
+        assert "WSSS forecast 16 JUL 0900Z-1100Z: 20005KT 9999 FEW018" in body
         assert "WSSS observation used:" not in body
     else:
-        assert "WSSS observation used:" in body
+        assert "WSSS observation used: METAR WSSS 160930Z 20005KT 9999 FEW018 BKN300 30/24 Q1010 NOSIG" in body
         assert "WSSS forecast" not in body
         assert "Basis: METAR observation 16JUL 0930Z" in body
         assert "valid 16JUL" not in body

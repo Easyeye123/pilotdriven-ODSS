@@ -458,8 +458,9 @@ _HAZARD_REVIEWS = (
         "engine": "vaa",
         "affected_title": "Volcanic ash affects the planned route",
         "review_title": "Volcanic ash applicability unresolved",
+        # R2 residual (24 Sep 2026): a state, not "confirm that ..." prose.
         "review_summary": (
-            "The official sources could not safely confirm that volcanic ash "
+            "The official sources do not establish that volcanic ash "
             "is not applicable to the route."
         ),
         "record_phrase": "volcanic-ash",
@@ -473,7 +474,7 @@ _HAZARD_REVIEWS = (
         "affected_title": "Tropical cyclone affects the planned route",
         "review_title": "Tropical cyclone applicability unresolved",
         "review_summary": (
-            "The official sources could not safely confirm that a tropical "
+            "The official sources do not establish that a tropical "
             "cyclone is not applicable to the route."
         ),
         "record_phrase": "tropical-cyclone",
@@ -1567,7 +1568,8 @@ def _notam_operational_summary(
         # (``briefing._republishable_finding``), so storage age cannot change
         # what an obstacle notice publishes.
         return obstacle_restriction_line(text)
-    return f"Operational airport restriction requires review during the applicable {phase} window."
+    # R2 residual (24 Sep 2026): the unresolved state, never "requires review".
+    return f"Operational airport restriction is unresolved for the applicable {phase} window."
 
 
 def _text_between(
@@ -2656,7 +2658,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                     "no remedy or dispatch instruction is inferred beyond the printed text."
                 ),
             }.get(item["item_type"], (
-                "OFP deferred declaration requires review; acronym meaning is not "
+                "OFP deferred declaration is unresolved; acronym meaning is not "
                 "inferred and no MEL, CDL or CDDL classification is asserted."
             ))
             details = [item.get("description") or "No following OFP text parsed."]
@@ -3136,6 +3138,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "utc_window": group["utc_window"],
                 "mechanism": taf_summary["mechanism"],
                 "applicable_conditions": taf_summary["applicable_conditions"],
+                "applicable_groups": list(taf_summary.get("applicable_groups") or []),
                 "timing": taf_summary["timing"],
                 "window_status": status,
                 "window_status_text": taf_summary["window_status_text"],
@@ -3179,6 +3182,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "utc_window": group["utc_window"],
                 "mechanism": metar_summary["mechanism"],
                 "applicable_conditions": metar_summary["applicable_conditions"],
+                "applicable_groups": list(metar_summary.get("applicable_groups") or []),
                 "timing": metar_summary["timing"],
                 "window_status": metar_summary["status"],
                 "window_status_text": metar_summary["window_status_text"],

@@ -608,8 +608,15 @@ def _check_overview(page, spans: Sequence[Span], structure: dict[str, Any],
             )
         )
 
+    # A declared deviation from his labels: {role: {his label: ours}} with its
+    # reason in ``_why``. 23 Sep 2026: TAF TEMPO -> TAF at the destination,
+    # because the column now prints the whole TAF he asked for.
+    overrides = extensions.get("overview_column_field_overrides") or {}
     for role, anchor in (("departure", departure), ("destination", destination)):
-        expected = overview["column_fields"][role]
+        expected = [
+            (overrides.get(role) or {}).get(label, label)
+            for label in overview["column_fields"][role]
+        ]
         if not expected:
             continue
         found: list[tuple[float, str]] = []

@@ -1207,7 +1207,7 @@ def test_level1_and_level2_publish_sia722_ifeddl_as_review_required_source_text(
                 "NO WIFI SIGNAL / KRISWORLD WIFI NETWORK WHOLE AIRCRAFT"
             ),
             "source_status": (
-                "OFP deferred declaration requires review; acronym meaning is not "
+                "OFP deferred declaration is unresolved; acronym meaning is not "
                 "inferred and no MEL, CDL or CDDL classification is asserted."
             ),
         }
@@ -1900,7 +1900,7 @@ def test_level2_keeps_fail_closed_advisory_results_complete(
             "severity": "unknown",
             "title": "Volcanic ash review required",
             "summary": (
-                "The official sources could not safely confirm that volcanic ash "
+                "The official sources do not establish that volcanic ash "
                 "is not applicable to the route."
             ),
             "details": [],
@@ -1911,7 +1911,7 @@ def test_level2_keeps_fail_closed_advisory_results_complete(
             "severity": "unknown",
             "title": "Tropical cyclone review required",
             "summary": (
-                "The official sources could not safely confirm that a tropical "
+                "The official sources do not establish that a tropical "
                 "cyclone is not applicable to the route."
             ),
             "details": [],

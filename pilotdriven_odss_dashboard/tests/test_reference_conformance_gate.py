@@ -232,7 +232,14 @@ def test_the_download_publishes_his_whole_column_field_labels(download, manifest
     Binding rule 7 - the reference wins - so the label is pinned whole, here
     against the real production render.
     """
-    expected = manifest["reference_structure"]["overview"]["column_fields"]
+    # 23 Sep 2026: the destination TAF TEMPO label is published as TAF under
+    # a declared override (his "full METAR / TAF" instruction); every other
+    # label is still his, whole.
+    overrides = manifest["contract_extensions"].get("overview_column_field_overrides") or {}
+    expected = {
+        role: [(overrides.get(role) or {}).get(label, label) for label in labels]
+        for role, labels in manifest["reference_structure"]["overview"]["column_fields"].items()
+    }
     with fitz.open(download) as document:
         spans = conformance.page_spans(document[0])
     published = {span.folded for span in spans}
@@ -243,6 +250,20 @@ def test_the_download_publishes_his_whole_column_field_labels(download, manifest
     assert not any(missing.values()), (
         f"page 1 does not print David's whole field label(s): {missing}"
     )
+
+
+def test_the_destination_taf_label_is_admitted_only_by_the_declared_override(download, manifest):
+    """The reference wins unless a deviation is declared with its reason: a
+    manifest without the override still rejects our TAF label."""
+    declared = check(download, manifest)
+    assert declared["valid"], declared["violations"]
+    undeclared = json.loads(json.dumps(manifest))
+    del undeclared["contract_extensions"]["overview_column_field_overrides"]
+    silent = check(download, undeclared)
+    assert not silent["valid"]
+    assert "OVERVIEW_COLUMN_FIELDS" in codes(silent)
+    why = manifest["contract_extensions"]["_why"]["overview_column_field_overrides"]
+    assert "23 Sep 2026" in why
 
 
 def test_the_gate_reads_the_download_the_button_renders(monkeypatch, tmp_path):
@@ -371,6 +392,22 @@ def _shrink_a_column_field_to_its_first_word(label: str):
     return mutate
 
 
+def _erase_the_rightmost_label_on_page_one(label: str):
+    """Erase the right-most span reading ``label`` on page 1 - the destination
+    column's copy of a label both columns print."""
+
+    def mutate(document) -> None:
+        page = document[0]
+        targets = sorted(
+            (span for span in _raw_spans(page) if normalized(span["text"]) == normalized(label)),
+            key=lambda span: span["bbox"][0],
+        )
+        assert targets, f"page 1 prints no {label!r} label to erase"
+        _erase(page, targets[-1:])
+
+    return mutate
+
+
 def _erase_on_page_one(matcher):
     def mutate(document) -> None:
         page = document[0]
@@ -406,8 +443,10 @@ DRIFTS = {
         ),
         "OVERVIEW_STRIP",
     ),
-    "a-taf-tempo-field-shrunk-to-its-first-word": (
-        _shrink_a_column_field_to_its_first_word("TAF TEMPO"),
+    # 23 Sep 2026: the destination column prints TAF (declared override), so
+    # the drift to catch there is the label going missing altogether.
+    "the-destination-taf-field-gone": (
+        _erase_the_rightmost_label_on_page_one("TAF"),
         "OVERVIEW_COLUMN_FIELDS",
     ),
     "an-eet-sched-field-shrunk-to-its-first-word": (

@@ -335,6 +335,43 @@ def publication_key_entries(route):
     return entries or [(_EMPTY_HAZARD_KEY, colors.HexColor("#B1C0CD"))]
 
 
+# The schematic keeps at least this much height for the route itself; the
+# footer may take the rest. Four lines was the flat limit while the page-1
+# station cards were short; since 23 Sep 2026 they print the full METAR / TAF
+# records, so the row - and the map beside it - can be much taller, and page 1
+# then gives the stations the widest grid, which narrows the map and wraps its
+# footer onto a fifth line (SQ214 PER-SIN of 19 Aug: a 244-character departure
+# TAF). A taller map has the room; a short one keeps the old four-line limit.
+MAP_PLOT_MIN_HEIGHT = 140.0
+
+
+def map_footer_line_limit(height, leading=11.0):
+    """Footer lines the map at ``height`` can carry above ``MAP_PLOT_MIN_HEIGHT``."""
+    return max(4, int((float(height) - MAP_PLOT_MIN_HEIGHT - 4) // leading))
+
+
+# The footer's type ladder: its published size first, two readable steps down
+# for a narrow map, never smaller. SQ214 PER-SIN of 19 Aug: at 198 pt the note
+# and a seven-waypoint level profile wrap to six lines at 9 pt and to four at
+# 8 pt; the 8 pt footer keeps the route schematic its full height.
+MAP_FOOTER_LADDER = ((9.0, 11.0), (8.5, 10.5), (8.0, 10.0))
+
+
+def map_footer_layout(route, width, height):
+    """``(size, leading, lines)`` for the map footer at this box, or ValueError.
+
+    The largest size on the ladder whose wrapped lines fit the map's line limit
+    wins; the footer text itself is never cut or reworded.
+    """
+    from .operational_format import wrap
+    profile = "Level profile: " + str(route.get("level_profile") or "not held")
+    for size, leading in MAP_FOOTER_LADDER:
+        lines = wrap(_MAP_NOTE, width - 10, size=size) + wrap(profile, width - 10, size=size)
+        if len(lines) <= map_footer_line_limit(height, leading):
+            return size, leading, lines
+    raise ValueError("Route map footer exceeds readable capacity")
+
+
 def draw_publication_map(canvas, route, x, y, width, height, *, show_key=True):
     from .operational_format import wrap
     # Reserve a right-hand key so annotations never obscure dense waypoint
@@ -345,11 +382,8 @@ def draw_publication_map(canvas, route, x, y, width, height, *, show_key=True):
     map_width = width - key_width - 12 if show_key else width - 6
     # Measure the footer caption before projecting: a narrower schematic wraps
     # it onto a second line and must not write over the neighbouring column.
-    footer = wrap(_MAP_NOTE, width - 10, size=9) + wrap(
-        "Level profile: " + route.get("level_profile", "not held"), width - 10, size=9)
-    if len(footer) > 4:
-        raise ValueError("Route map footer exceeds readable capacity")
-    footer_height = 11 * len(footer) + 4
+    footer_size, footer_leading, footer = map_footer_layout(route, width, height)
+    footer_height = footer_leading * len(footer) + 4
     plot_height = height - footer_height
     projection = project_route_map(route, map_width, plot_height, 20)
     points, frame = projection.get("points") or [], projection.get("frame") or {}
@@ -478,10 +512,10 @@ def draw_publication_map(canvas, route, x, y, width, height, *, show_key=True):
             canvas.drawString(kx, ky, line)
             ky -= 11
         ky -= 3
-    canvas.setFont("Helvetica", 9)
+    canvas.setFont("Helvetica", footer_size)
     canvas.setFillColor(colors.HexColor("#B1C0CD"))
-    baseline = y + 2 + 11 * (len(footer) - 1)
+    baseline = y + 2 + footer_leading * (len(footer) - 1)
     for line in footer:
         canvas.drawString(x + 5, baseline, line)
-        baseline -= 11
+        baseline -= footer_leading
     canvas.restoreState()

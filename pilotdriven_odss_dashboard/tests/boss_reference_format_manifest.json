@@ -144,11 +144,17 @@
     "nav_ribbon_active_item_tracks_page": true,
     "analysis_timeline_minimum_stops": 3,
     "overview_route_panel_minimum_drawings": 20,
+    "overview_column_field_overrides": {
+      "destination": {
+        "TAF TEMPO": "TAF"
+      }
+    },
     "_why": {
       "nav_ribbon_on_every_page": "His reference prints the ribbon on page 1 and the active section name in the masthead of pages 2-6. The 9 Sep fix round required the ribbon on every page, which is a superset of his file, so it is declared here rather than claimed as his ruling.",
       "nav_ribbon_active_item_tracks_page": "Derived in spirit from page 1, where exactly one ribbon item is emphasised; applied per page because the ribbon is now on every page.",
       "analysis_timeline_minimum_stops": "His timeline holds nine stops, but the count is flight-specific. Three is the structural floor: departure, at least one enroute gate, arrival.",
-      "overview_route_panel_minimum_drawings": "His centre panel is a drawn schematic, not prose. One document cannot evidence a minimum vector count; 20 is the floor that separates a drawn route from an empty panel."
+      "overview_route_panel_minimum_drawings": "His centre panel is a drawn schematic, not prose. One document cannot evidence a minimum vector count; 20 is the floor that separates a drawn route from an empty panel.",
+      "overview_column_field_overrides": "His reference labels the destination weather field TAF TEMPO and prints the temporary group under it. On 23 Sep 2026 20:22 he wrote, photographing the SIA312 WSSS/EGKK cards, 'You need to give the full METAR / TAF for WSSS and EGKK', after 'TAF Tempo is truncated why????' on 22 Sep. His current instruction outranks the 21 Aug form, so both columns print the whole held TAF under a TAF label (a label has to match the value beneath it). His file is unchanged here; this override is ours and is what admits the render."
     }
   }
 }

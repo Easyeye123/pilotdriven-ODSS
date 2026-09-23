@@ -160,7 +160,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # Part of the cached-report identity. Bump whenever the publication contract
 # changes so an analysis created before a deployment cannot keep serving an
 # older PDF from persistent report storage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-23-page-one-scoped-restrictions-v65"
+# 24 Sep 2026: page 1 prints the full METAR / TAF records under TAF labels and
+# the WEATHER page prints coded forecast groups (T2 / T3); a saved pack's PDF
+# is re-created under these rules, never served from the old composition.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-24-page-one-full-weather-records-v66"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

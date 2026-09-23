@@ -26,6 +26,7 @@ import pytest
 
 from app.analysis import run_odss_analysis
 from app.odss.briefing import _SIGMET_TIME_DISPOSITION
+from app.odss.concise_pdf_gate import normalized
 from app.odss.combined_brief import render_combined_briefing
 from app.odss.engines import _HAZARD_REVIEWS
 from app.odss.operational_format import CREW_REVIEW, deferred_gate_value
@@ -45,15 +46,24 @@ FLIGHTS = {
     "SQ314-unverified-fuel": "lido-briefing_SQ_314_15Aug2026_SIN_LGW.pdf",
 }
 
-# App-authored reminder prose. Sentence-case phrases only: raw source text is
-# block capitals and is not this module's business.
+# App-authored reminder prose. 24 Sep 2026: the 23 Sep lexicon missed
+# "review OFP page 1 directly", "check the raw FIR records", "refresh products
+# before relying", "require review", "confirm applicability", "verify with the
+# authority" (independent review of release 412), and the audit skipped every
+# block-capital line - which is where "REVIEW REQUIRED" badges and "CONFIRM"
+# tile values live. Case is no longer an excuse; provenance is (below).
 REMINDER = re.compile(
-    r"review required|review-required|manual review|must be confirmed|before use|"
-    r"cross-check|cross check|refresh current products|refresh from the latest|dispatch confirmation|"
+    r"review required|review-required|manual review|crew review|"
+    r"must be (?:confirmed|verified|checked|reviewed)|should be (?:confirmed|verified|checked|reviewed)|"
+    r"before use|before relying|cross-check|cross check|"
+    r"refresh (?:current|the|products|from|before)|dispatch confirmation|"
     r"confirmation required|verification required|"
-    r"\bconfirm (?:the|those|route|current|every|any)\b|"
-    r"(?<!not )\bverify (?:the|every|against|current)\b|"
-    r"\breview (?:the|current|official|level)\b",
+    r"\brequires? (?:manual |crew |further |pilot )?review\b|"
+    r"\bfor (?:manual |crew |pilot |dispatch )?review\b|"
+    r"\bconfirm (?:the|those|route|current|every|any|applicability|with|that|it|its|this|these|before|directly)\b|"
+    r"(?<!not )\bverify (?:the|every|against|current|with|that|it|its|this|these|before|directly)\b|"
+    r"\bcheck (?:the|with|against|current|every|any|before|directly)\b|"
+    r"\breview (?:the|current|official|level|OFP|page|source|in|this|these|those|its|it|directly)\b",
     re.I,
 )
 # Raw source quotations carried in the analysis: never rewritten, never
@@ -87,14 +97,61 @@ def rendered(key: str, tmp_path_factory) -> dict:
     return _RENDERED[key]
 
 
-def reminder_lines(page_text: str) -> list[str]:
-    """Lines of app prose that still tell the reader to review something."""
+MANIFEST = Path(__file__).resolve().parent / "boss_reference_format_manifest.json"
+
+
+def _string_leaves(node):
+    if isinstance(node, dict):
+        for value in node.values():
+            yield from _string_leaves(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _string_leaves(value)
+    elif isinstance(node, str):
+        yield node
+
+
+def david_format_labels() -> set[str]:
+    """Every string David's reference structure pins (page titles, ribbon,
+    footer leads, tiles, strip, column fields). These are his format, not
+    reminder prose, and test_boss_round_20260923 proves each one that carries
+    a review word is in his own PDF."""
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    return {normalized(leaf) for leaf in _string_leaves(manifest["reference_structure"])}
+
+
+def source_quotations(payload) -> set[str]:
+    """Normalised text of every raw source string the analysis carries."""
+    quotations = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in SOURCE_KEYS and isinstance(value, str) and value.strip():
+                    quotations.add(normalized(value))
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(payload)
+    return {text for text in quotations if len(text) >= 12}
+
+
+def reminder_lines(page_text: str, quotations: set[str] = frozenset(), labels: set[str] = frozenset()) -> list[str]:
+    """Lines that still tell the reader to review something, whatever their
+    case, unless the line is provably a source quotation (a substring of a raw
+    record the analysis holds) or one of David's own format labels."""
     found = []
     for line in page_text.replace(CREW_REVIEW, " ").splitlines():
-        if not re.search(r"[a-z]", line):
-            continue  # block capitals: source quotation or a David-format label
-        if REMINDER.search(line):
-            found.append(" ".join(line.split()))
+        if not REMINDER.search(line):
+            continue
+        folded = normalized(line)
+        if not folded or folded in labels:
+            continue
+        if any(folded in quotation for quotation in quotations):
+            continue
+        found.append(" ".join(line.split()))
     return found
 
 
@@ -121,8 +178,11 @@ def test_the_general_statement_is_printed_once_on_page_one_only(key, tmp_path_fa
 
 @pytest.mark.parametrize("key", sorted(FLIGHTS))
 def test_no_page_carries_a_generic_reminder(key, tmp_path_factory):
-    pages = rendered(key, tmp_path_factory)["pages"]
-    offending = {index + 1: reminder_lines(page) for index, page in enumerate(pages)}
+    result = rendered(key, tmp_path_factory)
+    pages = result["pages"]
+    quotations = source_quotations(result["payload"])
+    labels = david_format_labels()
+    offending = {index + 1: reminder_lines(page, quotations, labels) for index, page in enumerate(pages)}
     offending = {page: lines for page, lines in offending.items() if lines}
     assert not offending, json.dumps(offending, indent=1)
 
@@ -158,6 +218,23 @@ def test_sq365_keeps_the_unevaluated_schedule_fact(tmp_path_factory):
 
 
 # ---- builders that need no corpus: they fail on the 408 wording today ----
+
+def test_the_audit_no_longer_excuses_a_block_capital_reminder_and_still_excuses_a_quotation():
+    quotations = {normalized("RWY 02L/20R CLSD. CONFIRM THE STATUS WITH ATC BEFORE USE.")}
+    labels = david_format_labels()
+    page = "\n".join([
+        "SEVERITY REVIEW | FLIGHT-TIME CONSEQUENCES",          # David's footer lead: excused by his file
+        "REVIEW REQUIRED",                                      # an app badge: caught, whatever its case
+        "MEL 21-60-11A - DISPATCH CONFIRMATION REQUIRED",       # an app label: caught
+        "RWY 02L/20R CLSD. CONFIRM THE STATUS WITH ATC",        # a wrapped source quotation: excused
+        "Page-1 fuel summary is not held - review OFP page 1 directly.",  # the 24 Sep counterexample shape: caught
+    ])
+    assert reminder_lines(page, quotations, labels) == [
+        "REVIEW REQUIRED",
+        "MEL 21-60-11A - DISPATCH CONFIRMATION REQUIRED",
+        "Page-1 fuel summary is not held - review OFP page 1 directly.",
+    ]
+
 
 def test_hazard_review_titles_and_warnings_state_the_gap_not_an_instruction():
     for review in _HAZARD_REVIEWS:

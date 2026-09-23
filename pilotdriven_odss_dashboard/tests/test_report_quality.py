@@ -758,7 +758,7 @@ def test_quality_gate_rejects_incomplete_fail_closed_advisory_result(
             (
                 "WEATHER AND PROMOTION RESULT\n"
                 "Volcanic ash applicability unresolved\n"
-                "The official sources could not safely confirm that volcanic ash is not"
+                "The official sources do not establish that volcanic ash is not"
             ),
         ],
     )
