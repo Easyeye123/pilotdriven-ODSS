@@ -4941,7 +4941,7 @@ def _performance_reconciliation_projection(
     arithmetic_detail = (
         "Parsed page-1 fuel rows reconcile."
         if state == "verified"
-        else "Parsed page-1 fuel arithmetic is not verified; review the source OFP."
+        else "Parsed page-1 fuel arithmetic is not verified against the source OFP."
     )
     if (
         requirement_total is not None

@@ -1836,7 +1836,7 @@ def _draw_audit_rev3_v8_overview_summary_row(
     if str(fuel_summary.get("state") or "") != "verified":
         canvas.setFillColor(DASH_ORANGE)
         canvas.setFont(SANS_BOLD, T_MICRO)
-        canvas.drawString(ix, row2_top - row2_h + 10, "Page-1 fuel arithmetic did not verify - review the source OFP page.")
+        canvas.drawString(ix, row2_top - row2_h + 10, "Page-1 fuel arithmetic did not verify against the source OFP page.")
 
     tech_inner = panel(canvas, tech_x, row2_top - row2_h, tech_w, row2_h,
                        title="OFP P1 - TECHNICAL STATUS", accent=DASH_RED, title_colour=None)

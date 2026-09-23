@@ -34,11 +34,15 @@ from app.odss.weather_timing import summarize_taf_for_window
 
 
 CORPUS = Path(__file__).resolve().parents[2] / "private_cfp_corpus"
-# The two flights the reviewer captured on 404, and a distinct control.
+# The two flights the reviewer captured on 404, a distinct control, and the
+# one held OFP whose page-1 fuel arithmetic does not verify (the 28-flight
+# audit of release 410 found its reconciliation line still said "review the
+# source OFP").
 FLIGHTS = {
     "SQ303": "SQ30316072026BRU 81.pdf",
     "SQ365": "SQ36507082026FCO.pdf",
     "SQ910": "SQ91021082026SIN.pdf",
+    "SQ314-unverified-fuel": "lido-briefing_SQ_314_15Aug2026_SIN_LGW.pdf",
 }
 
 # App-authored reminder prose. Sentence-case phrases only: raw source text is
@@ -57,7 +61,7 @@ REMINDER = re.compile(
 SOURCE_KEYS = {
     "text", "raw", "icao_message", "item_e", "source_text", "company_remark",
     "description", "restriction", "raw_text", "notam_text", "body_text", "remark",
-    "source_declaration", "note_text", "personal_notes", "e_line",
+    "source_declaration", "note_text", "personal_notes", "e_line", "item_e_text",
 }
 
 _RENDERED: dict[str, dict] = {}
