@@ -1824,6 +1824,9 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
     ]
     assert overview["departure"]["forecast_at_reference"] == {
         "applicable_conditions": "wind 170 degrees 8 kt · visibility 10 km or more",
+        # 23 Sep 2026 (T3): the coded groups travel with the decoding; this
+        # synthetic finding publishes none.
+        "applicable_groups": [],
         "utc_window": "01 AUG 0200-0330Z",
         "timing": "TAF base group at the reference time",
         "window_status": "no_significant_overlap",

@@ -54,17 +54,16 @@ def test_pdf_keeps_exact_decoded_forecast_provenance(tmp_path, monkeypatch, audi
     pages = [" ".join(page.get_text().split()) for page in doc]
     assert any("FORECAST SOURCE / CHECKED WINDOW" in page for page in pages)
     detail = " ".join(pages)
+    # This is the lossless reference/audit composition (_render_reference_briefing),
+    # not the pilot's six-page download: it keeps the decoded conditions. The
+    # six-page WEATHER page's coded groups are asserted in
+    # test_current_six_page_forecast_keeps_conditions_window_and_provenance.
     for value in (
-        SOURCE["display_title"], SOURCE["raw_text"], "16007KT 9999 FEW015 SCT020",
+        SOURCE["display_title"], SOURCE["raw_text"], forecast["applicable_conditions"],
         "2026-08-16T08:00Z", "2026-08-17T12:00Z", "16 AUG 1310Z-1510Z",
         "Coverage incomplete - review required",
     ):
         assert value in detail
-    # 23 Sep 2026 (T3): the pilot's WEATHER page prints the coded groups the
-    # assessment used, never their decoding. The audit appendix is unchanged.
-    weather_page = pages[WEATHER_PAGE]
-    assert "16007KT 9999 FEW015 SCT020" in weather_page
-    assert forecast["applicable_conditions"] not in weather_page
     assert forecast["forecast_source"] == SOURCE
     assert any("Forecast source" in row[1] for row in doc.get_toc())
     if not audit:
