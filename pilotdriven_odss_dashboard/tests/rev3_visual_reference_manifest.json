@@ -5,8 +5,8 @@
   "scope": "Deterministic-renderer canary for the lossless audit composition (include_audit_appendix=True) on a SHA-pinned historical analysis. This is NOT the pilot-facing download; David's six-page Flight Briefing format is guarded by tests/boss_reference_format_manifest.json and scripts/check_reference_conformance.py.",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
-    "filename": "SQ214_REV3_reference_v18_RUNWAY_CLOSURE_SCHEDULE.pdf",
-    "sha256": "e6b34d3c560f5e35318a2231b3f01384a74eb11941b857d5def1abc716d30271"
+    "filename": "SQ214_REV3_reference_v19_R2_REMINDER_WORDING.pdf",
+    "sha256": "b4d5705c4701cb3cacf079fe63ebdc6002c5aeb67a8f1293b3c3c0da3daacb96"
   },
   "renderer": {
     "library": "PyMuPDF",
@@ -32,7 +32,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "5c4eaa9ec0d3bbee8bde3a09375e5825d9fd69e638f272590483a54e1e5f6406"
+      "reference_raster_sha256": "ca719dfc979d04d69798c444fb18b653d275a1683c022ea099f4da129e00e78b"
     },
     {
       "page_number": 3,
@@ -376,7 +376,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "fa0809164df8d5150a65f619339443d05ee7be487fcd35f806d25dae9ffbcc71"
+      "reference_raster_sha256": "597275814204be3c407ec0e3db21d7c8ed56e0e40c80ea30a7e32c08de6d5b3a"
     },
     {
       "page_number": 46,
@@ -409,8 +409,7 @@
     "max_channel_delta": 0
   },
   "provenance": {
-    "minted_on": "2026-09-19",
-    "approval_basis": "Codex engineering review acceptance of the one-notice runway-closure assessment correction, as independent reviewer in the Claude/Codex repair-review loop; no person is named or implied as approver. Explicit v17 failure on page 20 only (candidate app bf3acd5 / ODSS cd554c1 gate run); independent all-page comparison verifies 47 unchanged pages and that page 20 differs only in the WSSS SX120/25 headline, from 'Published RWY 02L/20R restriction could not be resolved for the applicable destination window; review required.' to 'RWY 02L/20R closes 1730-2130Z; ETA 1410Z precedes closure by 3h20.' (19 Aug 2026 is a Wednesday; CAAS AIP SUP 120/2025 section 3.1). Reference is the candidate-3 replay; the candidate-4 replay is pixel- and text-identical to it on all 48 pages. Evidence: output/pd-f1f2-review4-20260919/REVIEW.md, check_visual_baseline.py and visual-baseline-results.json; output/pd-f1f2-fix3-20260919/rev3-repin-proposal; output/pd-f1f2-fix4-20260919/release-gates/rev3-visual-regression-receipt.json. v17 is retained beside it. The six-page production briefing is separately checked; exact raster thresholds remain zero.",
-    "combined_briefing_schema_version": "2026-09-19-one-notice-assessment-declaration-boundaries-v61"
+    "minted_on": "2026-09-23",
+    "approval_basis": "R2 reminder-wording repair (David, 22 Sep 2026 13:38-13:40, 'CUT OUT ALL the damn reminder words'; FIX-LIST item 2), requested through the independent Codex review of 23 Sep 2026 that reopened R2 (output/pd-r2-wording-review-408-20260923/REVIEW.md) and asked for text deltas to go through this explicit reference mechanism; no person is named or implied as approver. Explicit v18 failure on pages 2 and 45 only (candidate ODSS 6881875 with app dc66d11; 9,225 changed pixels); independent all-page text comparison verifies 47 unchanged pages and that pages 2 and 45 differ only in the terrain summary ('...validated profile matches - manual review required for 1 unmatched terrain window' -> '...validated profile matches; 1 unmatched terrain window') and the VWS line ('VWS review: 1 planned >004 trigger window; maximum 005 at IPKON (ACTM 03.25, OFP p8) - review required.' -> 'VWS: 1 planned >004 trigger window; maximum 005 at IPKON (ACTM 03.25, OFP p8).'), with the page-45 metric strip reflowed. The stored historical finding 'No exact profile confirmed because the controlled profile index is unavailable - manual review required.' is part of the pinned v16 analysis JSON and replays unchanged. Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r12-reminder-wording/rev3-v19/."
   }
 }
