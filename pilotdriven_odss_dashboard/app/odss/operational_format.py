@@ -64,6 +64,22 @@ CREW_REVIEW = "BRIEFING FOR CREW REVIEW - CURRENT SOURCE VERIFICATION REQUIRED"
 FOOTER_DISCLAIMER = "UTC · NOT FOR NAVIGATION"
 
 
+FUEL_STATE_LABELS = {"verified": "verified", "review_required": "not verified", "unverified": "not verified"}
+
+
+def fuel_state_label(state: Any) -> str:
+    """The page-1 fuel arithmetic state in words. The parser publishes
+    `verified` (every row reconciles) or `review_required` (a discrepancy);
+    24 Sep 2026's production QA of release 414 found the code printed raw
+    ("Arithmetic review_required.") - a reminder in R2's sense. The state
+    stays what it is; the PDF says it the way the dashboard does ("did not
+    verify against its own arithmetic")."""
+    code = str(state or "").strip().lower()
+    if not code:
+        return "not held"
+    return FUEL_STATE_LABELS.get(code, code.replace("_", " ").replace("-", " "))
+
+
 def text(value: Any, missing: str = "Not held") -> str:
     return str(value).strip() if value is not None and str(value).strip() else missing
 
@@ -1291,7 +1307,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         # tankering, EXCESS otherwise, on the dashboard's own rule - and signs
         # the value when it says TANKER (`TANKER +18,847 KG`), exactly as the
         # dashboard card does (`tanker ? signedKg(excess) : kg(excess)`).
-        Card("FUEL", [f"Arithmetic {text(fuel.get('state'))}."],
+        Card("FUEL", [f"Arithmetic {fuel_state_label(fuel.get('state'))}."],
              GREEN, "sec_performance", tag="CFP P1", kind="tile", payload=[
                  ("BLOCK", amount("fuel_in_tanks")), ("FPL REQ", amount("flt_plan_reqmt")),
                  (excess_fuel_tile_label(fuel),
@@ -1417,7 +1433,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     # carried excess as one contiguous row.
     fuel_lines += [f"TAXI FUEL {kg(fuel.get('taxi_fuel_kg'))}", f"FLT PLAN REQMT {amount('flt_plan_reqmt')}",
                    f"{excess_fuel_chain_label(fuel)} {amount('excess_fuel')}",
-                   f"FUEL IN TANKS {amount('fuel_in_tanks')}", f"Arithmetic: {text(fuel.get('state'))}"]
+                   f"FUEL IN TANKS {amount('fuel_in_tanks')}", f"Arithmetic: {fuel_state_label(fuel.get('state'))}"]
     derived = fuel.get("derived_fuel_kg") or {}
     fuel_lines += [f"Tanks - taxi: {kg(derived.get('takeoff'))}",
                    f"Less burnoff: {kg(derived.get('landing'))} at destination."]

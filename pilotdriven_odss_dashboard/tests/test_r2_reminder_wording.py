@@ -52,8 +52,11 @@ FLIGHTS = {
 # authority" (independent review of release 412), and the audit skipped every
 # block-capital line - which is where "REVIEW REQUIRED" badges and "CONFIRM"
 # tile values live. Case is no longer an excuse; provenance is (below).
+# 24 Sep 2026 (independent production QA of 414): "Arithmetic review_required."
+# on the SQ314 PDF - a status code printed raw. Every spelling of the code is a
+# reminder here; the state it stands for is said in words on the surfaces.
 REMINDER = re.compile(
-    r"review required|review-required|manual review|crew review|"
+    r"review[ _-]required|manual review|manual[ _-]review[ _-]required|crew review|"
     r"must be (?:confirmed|verified|checked|reviewed)|should be (?:confirmed|verified|checked|reviewed)|"
     r"before use|before relying|cross-check|cross check|"
     r"refresh (?:current|the|products|from|before)|dispatch confirmation|"

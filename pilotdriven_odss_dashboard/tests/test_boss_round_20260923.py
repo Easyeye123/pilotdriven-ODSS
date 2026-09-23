@@ -18,6 +18,7 @@ composites of its genuine pages, measured in the round's evidence folder.
 from __future__ import annotations
 
 import copy
+import re
 from datetime import datetime, timezone
 import json
 import os
@@ -440,3 +441,34 @@ def test_t2_a_narrowed_centre_panel_is_refused_before_it_can_break_the_header_ro
     assert len(title_layout(card, 200.0)[1]) > 1, "the SQ214 narrow-grid width wraps the title"
     with pytest.raises(ValueError, match="Route panel title exceeds its column width"):
         card_height(card, 200.0, 9.6, 11.6)
+
+
+# ---------------------------------------------------------------- 24 Sep: fuel arithmetic label (414 review)
+
+
+def test_the_pdf_fuel_arithmetic_label_states_the_condition_not_the_status_code():
+    """Independent production QA of release 414: fresh SQ314's PDF printed
+    "Arithmetic review_required." on page 1 and "Arithmetic: review_required"
+    on the PERF page - the parser's state code, raw. The arithmetic stays
+    unresolved; the label says so in words."""
+    from app.odss.operational_format import fuel_state_label
+
+    assert fuel_state_label("verified") == "verified"
+    assert fuel_state_label("review_required") == "not verified"
+    assert fuel_state_label("unverified") == "not verified"
+    assert fuel_state_label(None) == "not held"
+    assert fuel_state_label("") == "not held"
+    assert not re.search(r"review[ _-]required", fuel_state_label("review_required"), re.I)
+
+
+def test_sq314_pdf_prints_the_fuel_arithmetic_condition_in_words(sq314):
+    """SQ314's page-1 fuel arithmetic does not verify against the OFP (the
+    28-flight audit of 410 found it; release 414's own gate-6 analysis holds
+    state review_required). Both pages say so without the code."""
+    state = (sq314["payload"]["flight"].get("fuel_summary") or {}).get("state")
+    assert state == "review_required", state
+    page_one, perf = sq314["folded"][0], sq314["folded"][2]
+    assert normalized("Arithmetic not verified.") in page_one
+    assert normalized("Arithmetic: not verified") in perf
+    for page in sq314["folded"]:
+        assert "REVIEW REQUIRED" not in page
