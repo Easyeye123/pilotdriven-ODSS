@@ -854,7 +854,12 @@ def current_rules_briefing(analysis: dict, source_pdf_path=None) -> dict:
         "publication_rules": (stored or {}).get("publication_rules"),
         "rebuilt_from_held_analysis": False,
     }
-    if not isinstance(stored, dict) or stored.get("publication_rules") == COMBINED_BRIEFING_SCHEMA_VERSION:
+    # An analysis whose held extraction predates the parser in service is rebuilt too (release-422 QA, F2):
+    # the composition states that on the record, and the stored view - made when that extraction was current -
+    # cannot. The stamp itself is what the parser held and is never rewritten.
+    from .extraction_rules import EXTRACTION_RULES
+    older_extraction = (flight.get("extraction_rules") or None) != EXTRACTION_RULES
+    if not isinstance(stored, dict) or (stored.get("publication_rules") == COMBINED_BRIEFING_SCHEMA_VERSION and not older_extraction):
         return served
     try:
         verified = source_verified_flight(flight, source_pdf_path)

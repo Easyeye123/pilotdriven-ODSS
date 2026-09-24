@@ -839,6 +839,102 @@ def scale_bar_metres(points_per_metre: float, max_points: float) -> int:
     return 10
 
 
+# The seven label offsets release 422 tried, in order (kept first so every figure that fitted before is drawn as before).
+FIGURE_LABEL_OFFSETS = ((0, 9), (0, 23), (35, 9), (-35, 9), (0, -17), (55, 23), (-55, 23))
+FIGURE_LABEL_RINGS = (30, 45, 60, 80)
+FIGURE_LABEL_FACES = (9, 8, 7)
+
+
+def _label_box(px, py, label_width):
+    return (px - label_width / 2 - 2, py - 3, px + label_width / 2 + 2, py + 10)
+
+
+def _figure_label_candidates(anchors, label_width_of):
+    """Every place a label may sit, in preference order: the seven fixed offsets at the pavement's midpoint, then
+    rings around it, then the same around other points along the pavement, then the same at smaller faces."""
+    import math
+    for size in FIGURE_LABEL_FACES:
+        label_width = label_width_of(size)
+        for anchor_index, (ax, ay) in enumerate(anchors):
+            offsets = list(FIGURE_LABEL_OFFSETS)
+            for radius in FIGURE_LABEL_RINGS:
+                offsets.extend((radius * math.cos(math.radians(a)), radius * math.sin(math.radians(a))) for a in range(0, 360, 30))
+            for ox, oy in offsets:
+                px, py = ax + ox, ay + oy
+                yield size, label_width, px, py, _label_box(px, py, label_width)
+
+
+def place_figure_labels(labels, occupied, x, y, width, height, figure_floor):
+    """Measured label placement for an airport figure.
+
+    `labels` maps a ref to (length, midpoint, colour, projected points of its longest way). Returns the placed
+    labels [(ref, midpoint, colour, (px, py, size, box))] and the keyed ones [(ref, (marker point, colour))] whose
+    plate found no readable place: they are numbered on the figure and named in a key under it. `occupied` gains
+    every box placed. Runway refs sort before taxiway refs, so runways keep the first choice of place.
+    """
+    import math
+    placements, keyed = [], []
+    for ref, (_, (lx, ly), colour, points) in sorted(labels.items()):
+        along = [points[0], points[-1]]
+        if len(points) >= 2:
+            # Quarter and three-quarter points of the way, for a plate that cannot sit at its middle.
+            total = sum(math.dist(a, b) for a, b in zip(points, points[1:])) or 1.0
+            for fraction in (0.25, 0.75):
+                target, run = fraction * total, 0.0
+                for a, b in zip(points, points[1:]):
+                    seg = math.dist(a, b)
+                    if run + seg >= target and seg:
+                        t = (target - run) / seg
+                        along.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+                        break
+                    run += seg
+        anchors = [(lx, ly), *along]
+        placed = None
+        for size, label_width, px, py, box in _figure_label_candidates(anchors, lambda size: stringWidth(ref, "Helvetica-Bold", size)):
+            if box[0] < x or box[2] > x + width or box[1] < figure_floor or box[3] > y + height:
+                continue
+            if any(box[0] < b[2] and box[2] > b[0] and box[1] < b[3] and box[3] > b[1] for b in occupied):
+                continue
+            placed = (px, py, size, box)
+            break
+        if placed is not None:
+            occupied.append(placed[3])
+            placements.append((ref, (lx, ly), colour, placed))
+            continue
+        # No readable plate anywhere near this pavement: number the mark itself and name it in the key.
+        marker = None
+        for mx, my in anchors:
+            box = (mx - 5.5, my - 5.5, mx + 5.5, my + 5.5)
+            if box[0] < x or box[2] > x + width or box[1] < figure_floor or box[3] > y + height:
+                continue
+            if any(box[0] < b[2] and box[2] > b[0] and box[1] < b[3] and box[3] > b[1] for b in occupied):
+                continue
+            marker = (mx, my)
+            occupied.append(box)
+            break
+        if marker is None:
+            raise ValueError(f"Airport figure has no readable label position for {ref}")
+        keyed.append((ref, (marker, colour)))
+    return placements, keyed
+
+
+def figure_label_key_lines(keyed, width):
+    """The key under a figure, "1 VV · 2 KE", wrapped to the figure's width at the key face; None when it cannot fit."""
+    entries = [f"{number} {ref}" for number, (ref, _) in enumerate(keyed, start=1)]
+    lines, current = [], ""
+    for entry in entries:
+        candidate = f"{current} · {entry}" if current else entry
+        if stringWidth(candidate, "Helvetica", 8) <= width:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = entry
+    if current:
+        lines.append(current)
+    return lines if len(lines) <= 2 and all(stringWidth(line, "Helvetica", 8) <= width for line in lines) else None
+
+
 def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=None,
                         index_entry=None) -> None:
     """Draw supplied geometry only; a scheduled/unknown mark is not a closure.
@@ -849,6 +945,16 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     taxiways at a readable weight, and carries a scale bar and a north arrow.
     Nothing is inferred: every stroke is a supplied feature, the outline is
     the published boundary, and the legend names only what was drawn.
+
+    Labels (release-422 independent QA, F3): every runway and every marked
+    pavement is named by a measured search - the seven offsets of before first,
+    so a figure that fitted before is drawn exactly as before; then wider
+    rings, other points along the pavement and smaller faces; and when the
+    pavement is too crowded for a plate beside it, the mark is numbered on the
+    figure and named in a key under it. The figure is laid out once more with
+    the key's line(s) when a key is needed. No mark is dropped, no name is
+    silently left out, and a figure that cannot carry even its key fails
+    closed with the reason.
     """
     import math
     from reportlab.pdfgen.canvas import FILL_EVEN_ODD
@@ -890,7 +996,6 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     # An outline the app could not publish is explained in a caption line
     # under the geometry; the geometry strip gives up that line's height.
     outline_gap = None if rings else surface_outline_gap(overlay)
-    floor = 11 if outline_gap else 0
     if rings:
         # The figure is fitted to the whole field the outline encloses, not
         # only to the extract's own bounds, so the outline is never clipped.
@@ -902,15 +1007,73 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
         south, north = min(south, min(lats) - pad_y), max(north, max(lats) + pad_y)
     longitude_factor = max(0.01, math.cos(math.radians((south + north) / 2)))
     dx, dy = (east - west) * longitude_factor, north - south
-    scale = min((width - 50) / dx, (height - 45 - floor) / dy)
-    def point(coordinate):
-        return (x + (width - dx * scale) / 2 + (coordinate[0] - west) * longitude_factor * scale,
-                y + 28 + floor + (height - 45 - floor - dy * scale) / 2 + (coordinate[1] - south) * scale)
+    features = sorted((overlay.get("featureCollection") or {}).get("features") or [], key=lambda feature: (
+        0 if (feature.get("geometry") or {}).get("type") == "Polygon"
+        else 2 if (feature.get("properties") or {}).get("aeroway") == "runway" else 1))
+
+    def layout(floor):
+        """Everything the figure's geometry decides for a caption strip of `floor` extra points: the projection,
+        the chrome the labels must avoid, the label anchors and their measured places."""
+        scale = min((width - 50) / dx, (height - 45 - floor) / dy)
+
+        def point(coordinate):
+            return (x + (width - dx * scale) / 2 + (coordinate[0] - west) * longitude_factor * scale,
+                    y + 28 + floor + (height - 45 - floor - dy * scale) / 2 + (coordinate[1] - south) * scale)
+
+        arrow_x, arrow_top = x + width - 13, y + height - 1
+        points_per_metre = scale / 111_320.0
+        metres = scale_bar_metres(points_per_metre, width * 0.28)
+        bar_length = metres * points_per_metre
+        bar_x, bar_y = x + 3, y + height - 8
+        scale_label = f"{metres / 1000:g} km" if metres >= 1000 else f"{metres} m"
+        occupied = [(arrow_x - 9, arrow_top - 35, arrow_x + 9, arrow_top + 1),
+                    (bar_x - 2, bar_y - 6, bar_x + bar_length + 8 + stringWidth(scale_label, "Helvetica", 9), bar_y + 6)]
+        labels = {}
+        for feature in features:
+            prop = feature.get("properties") or {}
+            geometry = feature.get("geometry") or {}
+            if geometry.get("type") == "Polygon":
+                continue
+            lines = [geometry.get("coordinates") or []] if geometry.get("type") == "LineString" else geometry.get("coordinates") or []
+            mark = marks.get(prop.get("featureId") or feature.get("id"))
+            planned = bool(planned_runway and str(planned_runway) in str(prop.get("ref") or "").split("/"))
+            runway = prop.get("aeroway") == "runway"
+            colour = RED if mark == "closure" else AMBER if mark else CYAN if planned else MUTED if runway else TAXIWAY
+            if not (prop.get("ref") and (runway or mark)):
+                continue
+            for line in lines:
+                if len(line) < 2:
+                    continue
+                # OSM can split one runway into several ways. Label its
+                # longest held segment once, with measured collision checks.
+                length = sum(math.dist(point(a), point(b)) for a, b in zip(line, line[1:]))
+                ref = str(prop["ref"])
+                if length > labels.get(ref, (0,))[0]:
+                    first, last = point(line[0]), point(line[-1])
+                    labels[ref] = (length, ((first[0] + last[0]) / 2, (first[1] + last[1]) / 2), colour, [point(c) for c in line])
+        placements, keyed = place_figure_labels(labels, occupied, x, y, width, height, y + 25 + floor)
+        return {"scale": scale, "point": point, "arrow": (arrow_x, arrow_top), "bar": (bar_x, bar_y, bar_length, scale_label),
+                "placements": placements, "keyed": keyed}
+
+    floor = 11 if outline_gap else 0
+    plan = layout(floor)
+    key_lines = []
+    if plan["keyed"]:
+        key_lines = figure_label_key_lines(plan["keyed"], width)
+        if key_lines is None:
+            raise ValueError("Airport figure label key does not fit: " + ", ".join(ref for ref, _ in plan["keyed"]))
+        # The key takes caption lines from the geometry strip; lay the figure out once more for them.
+        floor += 11 * len(key_lines)
+        plan = layout(floor)
+        if plan["keyed"] and figure_label_key_lines(plan["keyed"], width) is None:
+            raise ValueError("Airport figure label key does not fit: " + ", ".join(ref for ref, _ in plan["keyed"]))
+        key_lines = figure_label_key_lines(plan["keyed"], width) or []
+    point = plan["point"]
+    scale = plan["scale"]
 
     # Chrome first, so runway labels are placed around it: the north arrow in
     # the right margin column and the scale bar in the top strip.
-    occupied = []
-    arrow_x, arrow_top = x + width - 13, y + height - 1
+    arrow_x, arrow_top = plan["arrow"]
     canvas.setFillColor(WHITE)
     canvas.setStrokeColor(WHITE)
     canvas.setFont("Helvetica-Bold", 9)
@@ -923,12 +1086,8 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     canvas.drawPath(head, stroke=0, fill=1)
     canvas.setLineWidth(1.2)
     canvas.line(arrow_x, arrow_top - 22, arrow_x, arrow_top - 33)
-    occupied.append((arrow_x - 9, arrow_top - 35, arrow_x + 9, arrow_top + 1))
 
-    points_per_metre = scale / 111_320.0
-    metres = scale_bar_metres(points_per_metre, width * 0.28)
-    bar_length = metres * points_per_metre
-    bar_x, bar_y = x + 3, y + height - 8
+    bar_x, bar_y, bar_length, scale_label = plan["bar"]
     bar = canvas.beginPath()
     bar.moveTo(bar_x, bar_y - 2.5)
     bar.lineTo(bar_x, bar_y + 2.5)
@@ -937,11 +1096,8 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     bar.moveTo(bar_x + bar_length, bar_y - 2.5)
     bar.lineTo(bar_x + bar_length, bar_y + 2.5)
     canvas.drawPath(bar, stroke=1, fill=0)
-    scale_label = f"{metres / 1000:g} km" if metres >= 1000 else f"{metres} m"
     canvas.setFont("Helvetica", 9)
     canvas.drawString(bar_x + bar_length + 6, bar_y - 3.2, scale_label)
-    occupied.append((bar_x - 2, bar_y - 6, bar_x + bar_length + 8 + stringWidth(scale_label, "Helvetica", 9),
-                     bar_y + 6))
 
     if rings:
         canvas.saveState()
@@ -957,14 +1113,8 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
             canvas.drawPath(path, stroke=1, fill=0)
         canvas.restoreState()
 
-    def draw_order(feature):
-        geometry = feature.get("geometry") or {}
-        aeroway = (feature.get("properties") or {}).get("aeroway")
-        return 0 if geometry.get("type") == "Polygon" else 2 if aeroway == "runway" else 1
-
-    labels = {}
     shaded = False
-    for feature in sorted((overlay.get("featureCollection") or {}).get("features") or [], key=draw_order):
+    for feature in features:
         prop = feature.get("properties") or {}
         geometry = feature.get("geometry") or {}
         polygon = geometry.get("type") == "Polygon"
@@ -992,50 +1142,35 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
             canvas.setFillAlpha(1)
             shaded = True
         for line in lines:
-            if len(line) < 2:
+            if len(line) < 2 or polygon:
                 continue
-            if not polygon:
-                # Runways 2.4 pt, marked pavement 3.2 pt (the width the state
-                # gate reads back), taxiways 1.3 pt: visible on an iPad photo
-                # of the page, still lighter than a runway.
-                canvas.setStrokeColor(colour)
-                canvas.setLineWidth(3.2 if mark else 2.4 if runway else 1.3)
-                path = canvas.beginPath()
-                path.moveTo(*point(line[0]))
-                for coordinate in line[1:]:
-                    path.lineTo(*point(coordinate))
-                canvas.drawPath(path, stroke=1, fill=0)
-            if prop.get("ref") and (prop.get("aeroway") == "runway" or mark):
-                # OSM can split one runway into several ways. Label its
-                # longest held segment once, with measured collision checks.
-                length = sum(math.dist(point(a), point(b)) for a, b in zip(line, line[1:]))
-                ref = str(prop["ref"])
-                if length > labels.get(ref, (0,))[0]:
-                    first, last = point(line[0]), point(line[-1])
-                    labels[ref] = (length, ((first[0] + last[0]) / 2, (first[1] + last[1]) / 2), colour)
-    for ref, (_, (lx, ly), colour) in sorted(labels.items()):
-        label_width = stringWidth(ref, "Helvetica-Bold", 9)
-        for ox, oy in ((0, 9), (0, 23), (35, 9), (-35, 9), (0, -17), (55, 23), (-55, 23)):
-            px, py = lx + ox, ly + oy
-            box = (px - label_width / 2 - 2, py - 3, px + label_width / 2 + 2, py + 10)
-            if box[0] < x or box[2] > x + width or box[1] < y + 25 + floor or box[3] > y + height:
-                continue
-            if any(box[0] < b[2] and box[2] > b[0] and box[1] < b[3] and box[3] > b[1] for b in occupied):
-                continue
-            # A padded opaque plate prevents runway/taxiway strokes crossing
-            # the glyphs. Labels retain leaders to their measured positions.
+            # Runways 2.4 pt, marked pavement 3.2 pt (the width the state
+            # gate reads back), taxiways 1.3 pt: visible on an iPad photo
+            # of the page, still lighter than a runway.
             canvas.setStrokeColor(colour)
-            canvas.setLineWidth(.5)
-            canvas.line(lx, ly, px, py + 3)
-            canvas.setFillColor(BG)
-            canvas.roundRect(box[0], box[1], box[2]-box[0], box[3]-box[1], 2, fill=1, stroke=0)
-            canvas.setFillColor(colour)
-            canvas.setFont("Helvetica-Bold", 9)
-            canvas.drawCentredString(px, py, ref)
-            occupied.append(box)
-            break
-        else:
-            raise ValueError(f"Airport figure has no readable label position for {ref}")
+            canvas.setLineWidth(3.2 if mark else 2.4 if runway else 1.3)
+            path = canvas.beginPath()
+            path.moveTo(*point(line[0]))
+            for coordinate in line[1:]:
+                path.lineTo(*point(coordinate))
+            canvas.drawPath(path, stroke=1, fill=0)
+    for ref, (lx, ly), colour, (px, py, size, box) in plan["placements"]:
+        # A padded opaque plate prevents runway/taxiway strokes crossing
+        # the glyphs. Labels retain leaders to their measured positions.
+        canvas.setStrokeColor(colour)
+        canvas.setLineWidth(.5)
+        canvas.line(lx, ly, px, py + 3)
+        canvas.setFillColor(BG)
+        canvas.roundRect(box[0], box[1], box[2]-box[0], box[3]-box[1], 2, fill=1, stroke=0)
+        canvas.setFillColor(colour)
+        canvas.setFont("Helvetica-Bold", size)
+        canvas.drawCentredString(px, py, ref)
+    for number, (ref, ((mx, my), colour)) in enumerate(plan["keyed"], start=1):
+        canvas.setFillColor(colour)
+        canvas.circle(mx, my, 5.2, stroke=0, fill=1)
+        canvas.setFillColor(WHITE)
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.drawCentredString(mx, my - 2.5, str(number))
     # The legend is a claim about the figure: it names the outline and the
     # shaded areas only when they were drawn (an overlay without a published
     # boundary or apron polygons has neither); the scale bar always is.
@@ -1048,7 +1183,11 @@ def draw_airport_figure(canvas, overlay, x, y, width, height, *, planned_runway=
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(MUTED)
     if outline_gap:
-        canvas.drawString(x, y + 26, outline_gap)
+        canvas.drawString(x, y + 26 + 11 * len(key_lines), outline_gap)
+    for index, line in enumerate(key_lines):
+        canvas.setFont("Helvetica", 8)
+        canvas.drawString(x, y + 26 + 11 * (len(key_lines) - 1 - index), line)
+    canvas.setFont("Helvetica", 9)
     canvas.drawString(x, y + 15, " · ".join(legend))
     canvas.drawString(x, y + 4, "OSM reference · cyan: planned · red: unavailable · amber: scheduled/partial")
 

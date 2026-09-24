@@ -163,7 +163,9 @@ WAFC_CHARTS_PER_PAGE = 3
 # 24 Sep 2026: page 1 prints the full METAR / TAF records under TAF labels and
 # the WEATHER page prints coded forecast groups (T2 / T3); a saved pack's PDF
 # is re-created under these rules, never served from the old composition.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-24-atc-radio-source-v68"
+# Release-422 independent QA, F2: the token is minted together with the composition it publishes
+# (tests/fixtures/publication_rules_manifest.json pins it beside the enroute rule and the extraction rules).
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-24-atc-conditions-clock-v69"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

@@ -65,7 +65,7 @@ from typing import Any
 
 from .extraction_rules import EXTRACTION_RULES
 
-ENROUTE_CONTACT_RULE = "enroute-contact-v3"
+ENROUTE_CONTACT_RULE = "enroute-contact-v4"
 
 JAKARTA_AFN_NOTE = "CPDLC limited trial: pilot initiates AFN logon only when requested by ATC; address WIIF."
 _JAKARTA_TOKENS = ("ADS-C/CPDLC", "REQUESTED BY ATC", "AFN LOGON", "ADDRESS FOR JAKARTA FIR IS WIIF")
@@ -145,7 +145,19 @@ _SUBJECT_NOUN = r"(?:FLIGHT CREWS?|THE PILOTS?|THE CREWS?|FLIGHTS?|FLTS?|ACFT|AI
 _SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b(?P<qualifier>.*?)\s*\b(?P<modal>SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
 _IMPERATIVE = re.compile(r"^" + _LIST_MARKER + r"(?:USE|SELECT|CONTACT|CTC|CALL|MONITOR|LOGON|LOG ON|BROADCAST|REPORT|MAINTAIN|ESTABLISH|COMPLY|SQUAWK|TRANSMIT|NOTIFY|REFER|ADVISE|REQUEST|EXPECT|FILE|OPERATE|AVOID|DO NOT|CONTINUE|PROCEED|REMAIN)\b")
 _LEADING_CLAUSE = re.compile(r"^" + _LIST_MARKER + r"(?P<clause>(?:WHEN|IF|WHILE|UNLESS|IN CASE OF|IN THE EVENT OF|AFTER|BEFORE|DURING|PROVIDED|WHERE)\b[^,]{3,120}),\s*")
-_TRAILING_CLAUSE = re.compile(r"\s\b(?P<clause>(?:WHEN|IF|WHILE|UNLESS|PROVIDED|WHERE|EXCEPT WHEN|ONLY WHEN|ONLY IF)\b.{3,200}?)(?:[.;:]|$)")
+# "PROVIDED" is a condition only as a conjunction ("PROVIDED THAT ...", "PROVIDED THE CREW ..."), never the passive
+# participle of a service ("WILL BE PROVIDED BY TOKYO CONTROL", "PROVIDED TO THE BORDER").
+_TRAILING_CLAUSE = re.compile(r"\s\b(?P<clause>(?:WHEN|IF|WHILE|UNLESS|WHERE|EXCEPT WHEN|ONLY WHEN|ONLY IF|PROVIDED(?!\s+(?:BY|TO|FOR|ON|VIA|FROM|WITH|AT|IN|UNTIL|THROUGH)\b))\b.{3,200}?)(?:[.;:]|$)")
+# A sentence whose subject is not the crew but has one of its own ("THE PROCEDURES IN ICAO DOC 4444 ... APPLY",
+# "ARTCC AUTOMATION WILL PROVIDE ...", "THE SERVICE WILL BE PROVIDED ..."): the shortest noun phrase before its first
+# modal / finite verb. It keeps its own clauses and borrows nothing (F1 of the release-422 independent QA, 24 Sep 2026).
+_OTHER_SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<noun>(?:THE\s+|AN?\s+)?[A-Z0-9][A-Z0-9/().'-]*(?:\s+[A-Z0-9][A-Z0-9/().'-]*){0,9}?)\s+\b(?P<modal>SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS|APPLY|APPLIES|DOES|DO)\b")
+# A subject naming the crew's own communication act continues the governing crew sentence ("FLIGHTS THAT EXPERIENCE
+# GNSS INTERFERENCE MUST NOTIFY ATC. NOTIFICATION SHOULD BE VIA CPDLC ..."): it inherits that sentence's qualifiers.
+# The crew's act as a sentence subject before a modal ("CONTACT SHALL BE ATTEMPTED ...", "LOGON SHALL BE COMPLETED
+# ...", "REQUESTS TO ATC SHOULD BE MADE ..."): a noun, not an instruction, although the word can also open an imperative.
+_CREW_ACT_SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<noun>(?:THE\s+)?(?:NOTIFICATIONS?|CONTACTS?|LOG-?ONS?|POSITION REPORTS?|REPORTS?|REQUESTS?|CALLS?|BROADCASTS?|MESSAGES?|TRANSMISSIONS?|COMMUNICATIONS?|READ-?BACKS?)(?:\s+(?:TO|WITH|OF|FOR|VIA|ON)\s+[A-Z0-9/-]+)?)\s+\b(?:SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
+_CREW_ACT_NOUN = re.compile(r"^(?:THE\s+)?(?:NOTIFICATIONS?|CONTACTS?|LOG-?ONS?|POSITION REPORTS?|REPORTS?|REQUESTS?|CALLS?|BROADCASTS?|MESSAGES?|TRANSMISSIONS?|COMMUNICATIONS?|READ-?BACKS?)\b")
 _DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE REQUESTED TO|IS REQUESTED TO|ARE REQUIRED TO|IS REQUIRED TO|ARE TO|IS TO|NEED TO|EXPECTED TO)\b")
 # Aerodrome restrictions inside a qualifier: "PLANNED TO DEP CYMM/OILSANDS", "ARR KJFK", "OPERATING TO/FROM WSSS".
 _AIRPORT_CONDITION = re.compile(r"\b(?P<kind>DEP(?:ARTING|ARTURE)?(?: FROM)?|ARR(?:IVING|IVAL)?(?: AT| TO)?|LANDING AT|OPERATING (?:TO/FROM|TO OR FROM|TO|FROM|AT)|TO OR FROM|BOUND FOR)\s+(?P<icao>[A-Z]{4})\b(?:/[A-Z-]+)?")
@@ -483,17 +495,32 @@ def _resolve_names(printed: str, names: dict[str, str]) -> list[tuple[str, str |
 # ---- a sentence's subject and the conditions it carries
 
 
-def _subject_of(sentence: str) -> dict[str, Any] | None:
-    """The crew subject a sentence states ("IFR AFCT FLT PLANNED TO DEP CYMM/OILSANDS UNABLE TO CTC ... SHOULD"), with its prefix and qualifier; an imperative sentence addresses the crew directly."""
+def _subject_of(sentence: str) -> dict[str, Any]:
+    """What a sentence says about who acts, and the clauses it carries itself.
+
+    kind "stated": a crew subject ("IFR AFCT FLT PLANNED TO DEP CYMM/OILSANDS UNABLE TO CTC ... SHOULD"), with its
+    prefix and qualifier; "imperative": the crew addressed directly ("USE LOGON ADDRESS ..."); "other": a subject of its
+    own that is not the crew ("THE PROCEDURES ... APPLY", "ARTCC AUTOMATION WILL PROVIDE"); "fragment": no subject at
+    all. A sentence's own leading clause always belongs to it. Only a continuation - a fragment, or an "other" subject
+    naming the crew's own communication act - takes the governing crew sentence's qualifiers (release-422 QA, F1).
+    """
     upper = classify_text(sentence)
     leading = _LEADING_CLAUSE.match(upper)
     body = upper[leading.end():] if leading else upper
+    clause = leading.group("clause").strip() if leading else None
     match = _SUBJECT.match(body)
     if match:
-        return {"kind": "stated", "prefix": match.group("prefix").strip(), "qualifier": match.group("qualifier").strip(), "leading": leading.group("clause").strip() if leading else None}
+        return {"kind": "stated", "prefix": match.group("prefix").strip(), "qualifier": match.group("qualifier").strip(), "leading": clause, "continuation": False}
+    act = _CREW_ACT_SUBJECT.match(body)
+    if act:
+        return {"kind": "other", "prefix": "", "qualifier": "", "leading": clause, "noun": act.group("noun").strip(), "continuation": True}
     if _IMPERATIVE.match(body):
-        return {"kind": "imperative", "prefix": "", "qualifier": "", "leading": leading.group("clause").strip() if leading else None}
-    return None
+        return {"kind": "imperative", "prefix": "", "qualifier": "", "leading": clause, "continuation": False}
+    other = _OTHER_SUBJECT.match(body)
+    if other:
+        noun = other.group("noun").strip()
+        return {"kind": "other", "prefix": "", "qualifier": "", "leading": clause, "noun": noun, "continuation": bool(_CREW_ACT_NOUN.match(noun))}
+    return {"kind": "fragment", "prefix": "", "qualifier": "", "leading": clause, "continuation": True}
 
 
 def _airport_conditions(text: str, flight: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
@@ -559,12 +586,13 @@ def _trailing_conditions(sentence: str) -> list[dict[str, Any]]:
     return [{"kind": "qualifier", "text": clause, "result": "unresolved"}]
 
 
-def _governing_index(parts: list[str], subjects: list[dict[str, Any] | None], index: int) -> int | None:
-    """The nearest earlier sentence with a stated crew subject, for a sentence that has none of its own."""
-    if subjects[index] is not None:
+def _governing_index(parts: list[str], subjects: list[dict[str, Any]], index: int) -> int | None:
+    """The nearest earlier sentence with a stated crew subject, for a sentence that continues it (a fragment, or a
+    subject naming the crew's own act); a sentence with a subject of its own - crew or another actor - borrows nothing."""
+    if not subjects[index]["continuation"]:
         return None
     for j in range(index - 1, -1, -1):
-        if subjects[j] is not None and subjects[j]["kind"] == "stated":
+        if subjects[j]["kind"] == "stated":
             return j
     return None
 
@@ -697,9 +725,10 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
                 "text": "/".join(icao or name for name, icao in origins) + " → " + "/".join(icao or name for name, icao in targets),
                 "result": result,
             })
-        subject = subjects[index] if subjects[index] is not None else (subjects[governing] if governing is not None else None)
-        if subject is not None:
-            conditions.extend(_subject_conditions(subject, flight))
+        # The sentence's own clauses first, then - for a continuation only - the governing crew sentence's qualifiers.
+        conditions.extend(_subject_conditions(subjects[index], flight))
+        if governing is not None:
+            conditions.extend(_subject_conditions(subjects[governing], flight))
         conditions.extend(_trailing_conditions(part))
         unresolved = _UNRESOLVED.search(classify_text(part))
         if unresolved:
@@ -712,7 +741,7 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
             "sentence": part,
             "kind": part_kind,
             "scope": scope,
-            "directive": bool(_DIRECTIVE.search(classify_text(part))) or (subjects[index] or {}).get("kind") == "imperative",
+            "directive": bool(_DIRECTIVE.search(classify_text(part))) or subjects[index]["kind"] == "imperative",
             "conditions": conditions,
             "applicability_state": _state_of(conditions),
             "printed_details": details,

@@ -1,0 +1,7 @@
+{
+  "publication_rules": "2026-09-24-atc-conditions-clock-v69",
+  "enroute_contact_rule": "enroute-contact-v4",
+  "extraction_rules": "2026-09-24-atc-radio-source-extraction-v2",
+  "publication_format": "six-page-reference-briefing-2026-09-19",
+  "minted": "2026-09-24 release-422 independent QA F2: the publication rules token must change whenever the composition it publishes changes (the enroute rule, the extraction rules, the page format). Re-mint this file together with the token; a rule bumped without it fails both suites."
+}
