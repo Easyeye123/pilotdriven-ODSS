@@ -366,9 +366,22 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                 for field in ("title", "summary", "source_reference")
                 for found in re.findall(r"\b[A-Z]{1,3}\d{2,5}/\d{2}\b", str(item.get(field) or ""))
             }
+            # ATC-FIR-BOBCAT-416 (24 Sep 2026): the FIR / COMMUNICATION rows on
+            # the closing page are analysed consequences of the composed
+            # enroute_contact record (each a source-held FIR notice with its
+            # identity, page and "applicability not inferred"), so an identity
+            # that record names is explained where it is printed; any other
+            # identity on that page is still refused.
+            enroute_ids = {
+                normalized(identity)
+                for line in ((view or {}).get("enroute_contact") or {}).get("procedure_lines") or []
+                for identity in line.get("notam_ids") or []
+            }
             for index, page in enumerate(pages):
                 for notice_id in re.findall(r"\b[A-Z]{1,3}\d{2,5}/\d{2}\b", page):
                     if index == ANALYSIS_PAGE and normalized(notice_id) in ranked_ids:
+                        continue
+                    if index == ASSURANCE_PAGE and normalized(notice_id) in enroute_ids:
                         continue
                     if re.search(r"\b" + re.escape(normalized(notice_id)) + r"\b", remaining[index]):
                         violations.append({"code": "NON_INLINE_NOTAM_ID", "message": f"Page {index + 1} contains a NOTAM ID outside an analysed consequence: {notice_id}."})

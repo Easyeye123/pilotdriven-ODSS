@@ -19,6 +19,7 @@ from reportlab.pdfbase import pdfmetrics
 from . import brief_theme as theme
 from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
+from .enroute_contact import compose_enroute_contact
 from .deferred_dispatch import build_deferred_dispatch_gates
 from .engines import (
     _notam_operational_summary,
@@ -5873,6 +5874,8 @@ def build_briefing_view(
         route_airspace=route_airspace,
     )
     fir_boundaries = _fir_boundary_rows(flight)
+    # ATC-FIR-BOBCAT-416 (24 Sep 2026): one composed record for page 6 and the dashboard.
+    enroute_contact = compose_enroute_contact(flight, findings)
     communications = _communication_timeline(flight, findings, timing_view)
     intam_records = [
         dict(record)
@@ -6191,6 +6194,7 @@ def build_briefing_view(
         },
         "exception_cards": exception_cards,
         "communications": communications,
+        "enroute_contact": enroute_contact,
         "fir_boundaries": fir_boundaries,
         "fir_boundary_summary": _fir_boundary_summary(
             fir_boundaries,

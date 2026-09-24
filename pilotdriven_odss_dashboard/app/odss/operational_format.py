@@ -32,6 +32,7 @@ from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
 from .constants import format_actm
 from .page_one_weather import page_one_taf_field_continued, forecast_source_line, page_one_metar_field, page_one_taf_field
+from .enroute_contact import compose_enroute_contact, crossing_sequence_limited
 from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
 
 SIZE = landscape(A4)
@@ -1623,19 +1624,20 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     # The nine-page briefing published the threshold summary on page 1 and the
     # events on the terrain page. ``vws_events or [vws_summary]`` published one
     # or the other; both are source-bound, so both are published here.
-    enroute_lines = [vws_summary, *vws_events]
-    enroute_lines += terrain_lines or [text(terrain.get("summary"))]
+    # 24 Sep 2026 (ATC-FIR-BOBCAT-416): David's FIR / COMMUNICATION column
+    # returns to this page, which long-haul flights already filled (SQ366:
+    # 420 of 432 pt). Every source fact stays; the room comes from printing
+    # the VWS event sentences and the terrain event sentences verbatim but
+    # packed into one paragraph each, and from dropping the two generic
+    # interpretation sentences (not flight facts; one was an instruction).
+    enroute_lines = [vws_summary]
+    if vws_events:
+        enroute_lines.append(" ".join(vws_events))
+    enroute_lines.append(" ".join(terrain_lines) if terrain_lines else text(terrain.get("summary")))
     enroute_lines.append(terrain_summary)
-    interpretation = [
-        "OFP samples describe the printed waypoint values; they do not establish continuous conditions "
-        "between every waypoint. OFP VWS is not a CAT measurement. Missing samples do not demonstrate "
-        "continuous low VWS.",
-        f"OFP VWS: {text(vws.get('maximum_display'))} maximum. "
-        f"WAFS/SIGWX evidence: {'held' if states['wafs_sigwx'] in {'HELD', 'FOUND'} else 'not established'}. "
-        f"AIREP/PIREP retrieval: {'held' if states['airep_pirep'] in {'HELD', 'FOUND'} else 'not established'}. "
-        "Use the source-held event positions to distinguish turbulence sampling from terrain exposure; "
-        "neither establishes a controlled escape procedure.",
-    ]
+    # The WAFS/SIGWX and AIREP/PIREP corroboration states print in the WEATHER
+    # COVERAGE conditions on this page; the card no longer repeats them.
+    interpretation: list[str] = []
     checks = {row["key"]: row for row in receipt["rows"]}
     completed = [f"{label}: {success if checks[key]['state'] == 'HELD' else 'incomplete'}."
                  for key, label, success in (("ofp_parse", "Flight / aircraft identity", "recorded"),
@@ -1669,10 +1671,72 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     # 1; the closing card states the publication state and nothing generic.
     release_state = [publication_state]
 
+    # FIR / COMMUNICATION - David's own page-6 column (his SQ910 reference:
+    # "+00:02  WIIF entry. CPDLC limited trial: pilot initiates AFN logon only
+    # when requested by ATC; address WIIF.", provenance "FPL p12 / NOTAM p32").
+    # Dropped by the 9 Sep cleanup; restored 24 Sep 2026 (ATC-FIR-BOBCAT-416)
+    # from the one composed record the dashboard prints (enroute_contact.py):
+    # the early-call state, each source-held procedure in his row format, the
+    # BOBCAT allocation with its CTOT + ACTM reconciliation (an engineering
+    # placement in his column - the boss did not name the PDF), and the FIR
+    # crossing ACTM line in his 27 Jul format. Nothing inferred.
+    enroute_contact = view.get("enroute_contact") or compose_enroute_contact(flight, findings)
+    fir_state = text(enroute_contact.get("state_sentence"))
+    fir_calls = [f"+{call['actm']} {call['title']}. {call['summary']}" for call in enroute_contact.get("required_calls") or []]
+    procedure_lines = list(enroute_contact.get("procedure_lines") or [])
+
+    def fir_row(line) -> str:
+        pages = ", ".join(f"p{page}" for page in line["source_pages"]) or "page not held"
+        return (f"+{line['actm']} {line['fir']} entry. {line['text']} "
+                f"NOTAM {', '.join(line['notam_ids'])}, OFP {pages}; applicability not inferred.")
+
+    def identities(lines) -> str:
+        return ", ".join(f"{line['fir']} NOTAM {', '.join(line['notam_ids'])}" for line in lines)
+
+    # The card defers whole units only, and says so: every step keeps the
+    # state, the BOBCAT sentence, at least one source-held procedure row when
+    # one is held, and at least eight crossing pairs; the ordered list with
+    # derived UTC and every procedure row are always on the dashboard.
+    #   0  every row, every pair            3  one contact/logon row per FIR
+    #   1  every row, 12 pairs               4  the first contact/logon row only
+    #   2  datalink notices as identities, 8 pairs
+    FIR_PAIR_LADDER = (24, 12, 8, 8, 8)
+
+    def fir_card(gap, weight, step=0):
+        contact = [line for line in procedure_lines if line["kind"] == "contact_logon"]
+        other = [line for line in procedure_lines if line["kind"] != "contact_logon"]
+        lines = [fir_state, *fir_calls]
+        if step <= 1:
+            lines += [fir_row(line) for line in procedure_lines]
+        elif step == 2:
+            lines += [fir_row(line) for line in contact]
+            if other:
+                lines.append(f"Further FIR datalink notice(s) held, not contact instructions: {identities(other)}.")
+        elif step == 3:
+            seen: set[str] = set()
+            shown, deferred = [], []
+            for line in contact:
+                (deferred if line["fir"] in seen else shown).append(line)
+                seen.add(line["fir"])
+            lines += [fir_row(line) for line in shown]
+            if deferred or other:
+                lines.append(f"Further source-held FIR notice rows on the dashboard: {identities(deferred + other)}.")
+        else:
+            shown, deferred = contact[:1], contact[1:] + other
+            lines += [fir_row(line) for line in shown]
+            if deferred:
+                lines.append(f"Further source-held FIR notice rows on the dashboard: {identities(deferred)}.")
+        lines.append(text(enroute_contact.get("slot_sentence")))
+        crossing_line = crossing_sequence_limited(enroute_contact.get("crossings") or [], FIR_PAIR_LADDER[step])
+        lines.append("FIR crossings (OFP ACTM): " + (crossing_line or "no boundary row held."))
+        return Card("FIR / COMMUNICATION", lines, CYAN, "sec_enroute", width_weight=weight, paragraph_gap=gap,
+                    tag=text(enroute_contact.get("provenance")))
+
     # Enroute review, the airport/weather conditions and the closing record all
     # share one page. Whichever block a flight has loaded gets the wide column
     # first; type size steps down only after that, and no condition is dropped.
     closing_cards = {
+        "fir": fir_card,
         "enroute": lambda gap, weight: Card("OFP VWS, CAT AND TERRAIN", enroute_lines + interpretation,
                                             AMBER, "sec_terrain", width_weight=weight, paragraph_gap=gap),
         "review": lambda gap, weight: Card("SOURCE / CALCULATION REVIEW", completed, CYAN,
@@ -1692,27 +1756,33 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                                           width_weight=weight, paragraph_gap=gap),
     }
     closing_grids = (
-        ((("enroute", 1.9), ("review", 1.0)), (("airports", 1.9), ("weather", 1.0)),
+        ((("enroute", 1.9), ("review", 1.0)), (("fir", 1.0),), (("airports", 1.9), ("weather", 1.0)),
          (("control", 1.2), ("remaining", 1.0), ("state", 0.9)), 2.0),
-        ((("enroute", 1.9), ("review", 1.0)), (("airports", 1.0), ("weather", 1.0), ("control", 1.0)),
-         (("remaining", 2.2), ("state", 1.0)), 2.0),
-        ((("enroute", 1.0), ("review", 1.0)), (("airports", 2.6), ("weather", 1.0)),
-         (("control", 1.0), ("remaining", 1.0), ("state", 0.8)), 2.0),
-        ((("enroute", 2.6), ("review", 1.0)), (("airports", 1.0), ("weather", 1.6)),
-         (("control", 1.0), ("remaining", 1.0), ("state", 0.8)), 2.0),
-        ((("enroute", 1.9), ("review", 1.0)), (("airports", 1.0), ("weather", 1.0), ("state", 0.8)),
-         (("remaining", 1.6), ("control", 1.0)), 2.0),
-        ((("enroute", 1.9), ("review", 1.0)), (("airports", 1.0), ("weather", 1.0), ("control", 1.0)),
+        ((("enroute", 1.0),), (("fir", 1.0),), (("airports", 1.9), ("weather", 1.0)),
+         (("review", 1.0), ("control", 1.2), ("remaining", 1.0), ("state", 0.9)), 2.0),
+        ((("enroute", 1.6), ("review", 0.7), ("state", 0.7)), (("fir", 1.0),), (("airports", 1.9), ("weather", 1.0)),
+         (("control", 1.2), ("remaining", 1.0)), 2.0),
+        ((("enroute", 1.9), ("review", 1.0)), (("fir", 1.0),), (("airports", 1.0), ("weather", 1.0), ("state", 0.8)),
+         (("control", 1.0), ("remaining", 1.6)), 2.0),
+        ((("enroute", 1.6), ("review", 0.7), ("state", 0.7)), (("fir", 1.0),), (("airports", 1.9), ("weather", 1.0)),
+         (("control", 1.2), ("remaining", 1.0)), 0.0),
+        ((("enroute", 1.9), ("review", 1.0)), (("fir", 1.0),), (("airports", 1.0), ("weather", 1.0), ("control", 1.0)),
          (("remaining", 2.2), ("state", 1.0)), 0.0),
     )
 
-    def assurance_rows(body, leading, variant=0):
+    def assurance_rows(body, leading, variant=0, step=0):
         *grid, gap = closing_grids[variant]
-        return grid_rows(closing_cards, grid, gap)
+        rows = []
+        for row in grid:
+            built = []
+            for key, weight in row:
+                built.append(closing_cards[key](gap, weight, step) if key == "fir" else closing_cards[key](gap, weight))
+            rows.append((None, built))
+        return rows
     sections["assurance"] = plan_page_flexible(
         "ENROUTE / INTAM / ASSURANCE", "sec_coverage", assurance_rows, ribbon_index=5,
         aliases=("sec_enroute", "sec_terrain", "sec_intam"),
-        variants=tuple(range(len(closing_grids))),
+        variants=tuple(range(len(closing_grids))), steps=range(len(FIR_PAIR_LADDER)),
         assurance="TWO-PASS REVIEW TARGET | SOURCE TRACEABILITY | COMMAND AUTHORITY UNCHANGED")
     return sections
 
