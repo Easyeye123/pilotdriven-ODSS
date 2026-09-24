@@ -4135,3 +4135,129 @@ def test_level_reports_do_not_claim_the_flight_briefing_publication_format(
         "level-2": None,
         "combined": COMBINED_BRIEFING_PUBLICATION_FORMAT,
     }
+
+
+# ---------------------------------------------------------------- O1 of the release-430 independent QA (25 Sep 2026)
+#
+# A saved-pack update's take-off timing request came back as CloudFront's HTML 504 in production while ODSS went on to
+# complete it: the request answered 200 at 16:53:15Z about 130 s after it started, with a fresh 129-page analysis running
+# on the same task. The timing mutation re-runs the whole analysis inside one HTTP request, and the delivery path cuts a
+# response at 120 s (CloudFront OriginReadTimeout). With respond_async the service claims the analysis, answers 202 at
+# once and finishes the mutation off-request under the same claim, rollback and report semantics; the summary states the
+# committed timing, so the caller verifies what was applied instead of trusting one long response.
+
+
+def _hold_analysis(monkeypatch: pytest.MonkeyPatch) -> tuple[threading.Event, threading.Event]:
+    started, release = threading.Event(), threading.Event()
+    original = main.run_odss_analysis
+
+    def held(*args, **kwargs):
+        started.set()
+        assert release.wait(timeout=30)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(main, "run_odss_analysis", held)
+    return started, release
+
+
+def _settled_summary(service_app: TestClient, analysis_id: str) -> dict:
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        summary = service_app.get(f"/v1/analyses/{analysis_id}", headers=_authorization()).json()
+        if summary["status"] != "Processing":
+            return summary
+        time.sleep(0.02)
+    pytest.fail("the timing mutation did not settle")
+
+
+def test_o1_the_summary_states_the_committed_timing(service_app: TestClient) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    assert created.json()["timing"] is None
+    updated = service_app.post(
+        f"/v1/analyses/{created.json()['analysis_id']}/timing",
+        headers=_authorization(),
+        json={"reference_type": "takeoff", "reference_utc": "2026-07-11T10:42:00+00:00"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["timing"] == {
+        "reference_type": "takeoff",
+        "reference_utc": "2026-07-11T10:42:00+00:00",
+        "reference_waypoint": None,
+        "actual_takeoff_utc": "2026-07-11T10:42:00+00:00",
+    }
+
+
+def test_o1_async_timing_answers_202_at_once_and_commits_off_request(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    analysis_id = created.json()["analysis_id"]
+    started, release = _hold_analysis(monkeypatch)
+    try:
+        accepted = service_app.post(
+            f"/v1/analyses/{analysis_id}/timing",
+            headers=_authorization(),
+            json={"reference_type": "takeoff", "reference_utc": "2026-07-11T10:42:00+00:00", "respond_async": True},
+        )
+        assert accepted.status_code == 202
+        assert accepted.json()["status"] == "Processing"
+        assert accepted.headers["location"].endswith(f"/v1/analyses/{analysis_id}")
+        assert accepted.headers["retry-after"] == "2"
+        assert started.wait(timeout=30)
+        # The claim is held for the whole mutation: a second change is refused, never interleaved.
+        second = service_app.post(
+            f"/v1/analyses/{analysis_id}/timing",
+            headers=_authorization(),
+            json={"reference_type": "takeoff", "reference_utc": "2026-07-11T11:00:00+00:00", "respond_async": True},
+        )
+        assert second.status_code == 409
+        assert second.json()["detail"] == "Analysis is already in progress"
+    finally:
+        release.set()
+    settled = _settled_summary(service_app, analysis_id)
+    assert settled["status"] == "Completed"
+    assert settled["timing"]["actual_takeoff_utc"] == "2026-07-11T10:42:00+00:00"
+    briefing = service_app.get(f"/v1/analyses/{analysis_id}/briefing", headers=_authorization()).json()
+    assert briefing["timing"]["actual_takeoff_utc"] == "2026-07-11T10:42:00+00:00"
+
+
+def test_o1_a_rejected_async_timing_keeps_the_previous_reference_and_says_why(
+    service_app: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    analysis_id = created.json()["analysis_id"]
+    prior = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    prior_analysis_path = prior["analysis_path"]
+
+    def fail_analysis(*args, **kwargs):
+        raise RuntimeError("Synthetic timing regeneration failure")
+
+    monkeypatch.setattr(main, "run_odss_analysis", fail_analysis)
+    accepted = service_app.post(
+        f"/v1/analyses/{analysis_id}/timing",
+        headers=_authorization(),
+        json={"reference_type": "takeoff", "reference_utc": "2026-07-11T10:42:00+00:00", "respond_async": True},
+    )
+    assert accepted.status_code in (200, 202)
+    settled = _settled_summary(service_app, analysis_id)
+    assert settled["status"] == "Completed"
+    assert settled["timing"] is None, "the previous (absent) reference is what stays committed"
+    assert any(w.startswith("Rejected timing update") and "Synthetic timing regeneration failure" in w for w in settled["warnings"]), settled["warnings"]
+    restored = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    assert restored["analysis_path"] == prior_analysis_path
+    assert restored["actual_takeoff_utc"] is None

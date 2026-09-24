@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import base64
 from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager
@@ -1383,6 +1384,9 @@ class ServiceTimingRequest(BaseModel):
     reference_waypoint: str | None = None
     weather_before_minutes: int | None = Field(default=None, ge=0, le=720)
     weather_after_minutes: int | None = Field(default=None, ge=0, le=720)
+    # Release-430 QA, O1: answer 202 at once and finish the re-analysis off-request (the delivery path cuts a response
+    # at 120 s); the caller polls the analysis and verifies the committed timing the summary states.
+    respond_async: bool = False
 
 
 class ServiceWeatherWindowRequest(BaseModel):
@@ -1562,6 +1566,22 @@ def _require_current_reports(flight) -> None:
     raise HTTPException(status_code=409, detail=REPORTS_NOT_CURRENT_DETAIL)
 
 
+def _service_timing_summary(flight) -> dict | None:
+    keys = flight.keys() if hasattr(flight, "keys") else ()
+    if "actual_takeoff_utc" not in keys:
+        return None
+    reference_utc = flight["timing_reference_utc"] if "timing_reference_utc" in keys else None
+    actual = flight["actual_takeoff_utc"]
+    if not reference_utc and not actual:
+        return None
+    return {
+        "reference_type": (flight["timing_reference_type"] if "timing_reference_type" in keys else None) or "takeoff",
+        "reference_utc": reference_utc or actual,
+        "reference_waypoint": flight["timing_reference_waypoint"] if "timing_reference_waypoint" in keys else None,
+        "actual_takeoff_utc": actual,
+    }
+
+
 def _service_summary(flight) -> dict:
     analysis_id = _public_analysis_id(flight)
     report_refresh = _report_refresh_summary(flight)
@@ -1605,6 +1625,9 @@ def _service_summary(flight) -> dict:
         },
         "warnings": warnings,
         "report_refresh": report_refresh,
+        # The committed take-off reference (release-430 QA, O1): a caller that could not read a mutation's own response
+        # verifies what was applied from here, never from the request it sent.
+        "timing": _service_timing_summary(flight),
         "links": {
             "self": f"/v1/analyses/{analysis_id}",
             "briefing": f"/v1/analyses/{analysis_id}/briefing",
@@ -1847,6 +1870,21 @@ async def _execute_service_analysis_in_background(
     if failure:
         logger.warning(
             "Asynchronous service analysis failed flight_id=%s error_type=%s",
+            flight_id,
+            failure.partition(":")[0],
+        )
+
+
+async def _execute_service_mutation_in_background(flight_id: int, claimed_flight, mutation: dict) -> None:
+    """Finish a claimed analysis mutation off-request (release-430 QA, O1). Its outcome is the stored row: the new
+    reference with status Completed, or the previous one restored with a "Rejected ..." warning, or Failed."""
+    failure = await asyncio.to_thread(
+        functools.partial(_execute_analysis, flight_id, claimed_flight, claimed_flight=claimed_flight, **mutation),
+    )
+    if failure:
+        logger.warning(
+            "Asynchronous %s failed flight_id=%s error_type=%s",
+            mutation.get("failure_label", "analysis mutation"),
             flight_id,
             failure.partition(":")[0],
         )
@@ -2176,13 +2214,13 @@ def get_service_weather_chart(
 
 
 @app.post("/v1/analyses/{analysis_id}/timing")
-def update_service_timing(
+async def update_service_timing(
     request: Request,
     analysis_id: str,
     payload: ServiceTimingRequest,
 ):
     identity = request_service_identity(request)
-    flight, analysis = _service_analysis(analysis_id, identity)
+    flight, analysis = await asyncio.to_thread(_service_analysis, analysis_id, identity)
     try:
         parsed_reference_utc = parse_utc(payload.reference_utc).isoformat()
         # Reject malformed request data before claiming the analysis. The same
@@ -2275,15 +2313,34 @@ def update_service_timing(
             tenant_id=identity.tenant_id,
         )
 
-    failure_detail = _execute_analysis(
-        flight_id,
-        flight,
-        weather_window_preference=requested_weather_window,
-        locked_mutation=apply_timing,
-        rollback_locked_mutation=rollback_timing,
-        preserve_previous_on_failure=True,
-        commit_locked_mutation_on_report_failure=True,
-        failure_label="timing update",
+    mutation = {
+        "weather_window_preference": requested_weather_window,
+        "locked_mutation": apply_timing,
+        "rollback_locked_mutation": rollback_timing,
+        "preserve_previous_on_failure": True,
+        "commit_locked_mutation_on_report_failure": True,
+        "failure_label": "timing update",
+    }
+    if payload.respond_async:
+        # Claim now, answer 202 at once, finish off-request under the same claim, rollback and report semantics
+        # (release-430 QA, O1): the re-analysis never depends on the delivery path's 120-second response cap.
+        claimed_flight = await asyncio.to_thread(claim_analysis, flight_id, identity.tenant_id)
+        if claimed_flight is None:
+            raise HTTPException(status_code=409, detail="Analysis is already in progress")
+        task = asyncio.create_task(
+            _execute_service_mutation_in_background(flight_id, claimed_flight, mutation),
+            name=f"odss-timing-{_public_analysis_id(claimed_flight)}",
+        )
+        _retain_async_analysis_task(task)
+        processing = get_flight_for_tenant(flight_id, identity.tenant_id)
+        if not processing:
+            raise HTTPException(status_code=500, detail="Analysis record was lost")
+        return _async_analysis_response(
+            processing,
+            status_code=202 if processing["status"] == "Processing" else 200,
+        )
+    failure_detail = await asyncio.to_thread(
+        functools.partial(_execute_analysis, flight_id, flight, **mutation),
     )
     if failure_detail:
         raise HTTPException(status_code=422, detail=failure_detail)

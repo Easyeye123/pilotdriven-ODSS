@@ -140,3 +140,33 @@ def test_the_service_answers_a_composition_failure_with_the_page_and_the_reason(
 
 
 from tests.test_service_api_v06 import service_app  # noqa: E402,F401 - the service fixture (temporary dirs, token)
+
+
+def test_page_six_holds_a_primary_row_with_many_printed_conditions(tmp_path):
+    """RESTRICTION-COMPLETENESS-430: rule v7 states every printed restriction as a condition, so a row can carry more
+    clauses than step 5 of the FIR / COMMUNICATION ladder holds (genuine SQ322: the Karachi row's DRG prerequisite and
+    VIA MOTMO scope). The last step quotes each clause's opening words only - the restriction stays identifiable, the
+    final state is printed, and the dashboard carries every clause in full - instead of failing closed."""
+    payload = genuine_analysis("SQ322-SIN-LHR")
+    pages = render(payload, tmp_path / "sq322.pdf")
+    assert len(pages) == 6
+    page6 = " ".join(pages[5].split())
+    assert "FIR / COMMUNICATION" in page6
+    assert "SX33/26" in page6, "the primary row still prints"
+    assert "DRG THE NON" in page6, "the prerequisite's opening words stay on the page"
+    assert "conditions unresolved" in page6
+
+
+def test_page_six_cuts_clauses_before_it_drops_a_valued_call_row(tmp_path):
+    """RESTRICTION-COMPLETENESS-430: genuine SQ23's Karachi row (SX33/26, p110) grew by its DRG prerequisite and VIA MOTMO
+    scope; the card cuts clauses to a prefix before dropping the row, so the physical page keeps the crew's contact row with
+    its frequencies, its prerequisite's opening words and its unresolved state (on the earlier ladder it went to the
+    dashboard list)."""
+    payload = genuine_analysis("SQ23-JFK-SIN")
+    pages = render(payload, tmp_path / "sq23.pdf")
+    page6 = " ".join(pages[5].split())
+    row = page6[page6.index("OPLR entry."):]
+    row = row[:row.index("conditions unresolved") + len("conditions unresolved")]
+    assert "NOTAM SX33/26" in row and "124.100 MHZ" in row, row
+    assert "DRG THE NON AVAILABILITY" in row, row
+    assert "OPLR SX33/26" not in page6.split("Further rows on the dashboard")[-1] if "Further rows on the dashboard" in page6 else True

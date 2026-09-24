@@ -245,7 +245,10 @@ def test_sq366_composition_publishes_the_source_held_calls_with_their_printed_co
     # The Karachi contingency supplement is for traffic entering Karachi / Lahore FROM Kabul; this flight flies the other way.
     karachi = rows["SX33/26"]
     assert karachi["kind"] == "voice_contact" and karachi["fir"] == "OPKR" and karachi["applicability_state"] == "not_applicable"
-    assert {c["kind"]: c["result"] for c in karachi["conditions"]} == {"validity": "met", "direction": "not_met", "route": "met"}
+    # Release-430 QA (F1 and the SX33/26 audit): the DRG prerequisite and item 5's VIA MOTMO scope (printed in the same parsed
+    # sentence) are explicit unresolved conditions; the failed direction still decides.
+    assert {c["kind"]: c["result"] for c in karachi["conditions"]} == {"validity": "met", "direction": "not_met", "route": "met", "qualifier": "unresolved", "restriction": "unresolved"}
+    assert next(c for c in karachi["conditions"] if c["kind"] == "qualifier")["text"] == "DRG THE NON AVAILABILITY OF ATS (ATS) IN KABUL FIR"
     assert next(c for c in karachi["conditions"] if c["kind"] == "direction")["text"] == "OAKX → OPKR/LAHORE"
     assert karachi["printed_details"]["lead"] == "AT LEAST 15 MIN PRIOR TO ENTERING KARACHI OR LAHORE FIR"
     # The aerodrome TIBA notice (arrival / departure operations) does not apply to an overflight.
@@ -291,8 +294,11 @@ def test_sq23_composition_keeps_the_opposite_direction_control_distinct(tmp_path
     assert aic["printed_details"]["frequencies"] == ["134.5 MHZ", "128.5 MHZ"], "the printed values are kept even where the notice does not apply"
     # The Karachi contingency table: traffic entering Lahore FIR from Kabul via N644 DOBAT contacts Lahore ACC West.
     karachi = rows["SX33/26"]
-    assert karachi["fir"] == "OPLR" and karachi["association"] == "fir_heading" and karachi["applicability_state"] == "conditions_held"
-    assert {c["kind"]: c["result"] for c in karachi["conditions"]} == {"validity": "met", "direction": "met", "route": "met"}
+    # Release-430 QA (the SX33/26 audit): the instruction applies "DRG THE NON AVAILABILITY OF ATS (ATS) IN KABUL FIR"; no held
+    # source states that non-availability, so the prerequisite is explicit and unresolved - the direction and route stay met.
+    assert karachi["fir"] == "OPLR" and karachi["association"] == "fir_heading" and karachi["applicability_state"] == "conditions_unresolved"
+    assert {c["kind"]: c["result"] for c in karachi["conditions"]} == {"validity": "met", "direction": "met", "route": "met", "qualifier": "unresolved", "restriction": "unresolved"}
+    assert next(c for c in karachi["conditions"] if c["kind"] == "qualifier")["text"] == "DRG THE NON AVAILABILITY OF ATS (ATS) IN KABUL FIR"
     assert next(c for c in karachi["conditions"] if c["kind"] == "route")["text"] == "N644 DOBAT LAHORE ACC WEST 124.100 MHZ 118.950 MHZ"
     assert karachi["printed_details"] == {"frequencies": ["124.100 MHZ", "118.950 MHZ"], "lead": "AT LEAST 15 MIN PRIOR TO ENTERING KARACHI OR LAHORE FIR", "interval": None, "addresses": []}
     assert karachi["latest_actm"] == "11:41"

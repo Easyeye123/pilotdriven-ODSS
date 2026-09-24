@@ -1858,19 +1858,19 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     fir_calls = [f"+{call['actm']} {call['title']}. {call['summary']}" for call in enroute_contact.get("required_calls") or []]
     procedure_lines = list(enroute_contact.get("procedure_lines") or [])
 
-    def compact_summary(line) -> str:
+    def compact_summary(line, limit: int = 72) -> str:
         # The same conditions, each quoted source clause cut to a whole-word
         # prefix: the dashboard row carries every clause in full.
         parts = []
         for part in str(line.get("conditions_summary") or "").split(" · "):
-            if len(part) > 72:
-                cut = part[:71]
+            if len(part) > limit:
+                cut = part[:limit - 1]
                 space = cut.rfind(" ")
-                part = (cut[:space] if space > 30 else cut).rstrip(" ,;:") + "…"
+                part = (cut[:space] if space > limit // 2 - 6 else cut).rstrip(" ,;:") + "…"
             parts.append(part)
         return " · ".join(parts)
 
-    def fir_row(line, compact: bool = False) -> str:
+    def fir_row(line, compact: bool = False, limit: int = 72) -> str:
         # ATC-RADIO-SOURCE-418 (24 Sep 2026): the row prints the notice's own
         # instruction sentence, the values it prints (frequency, lead,
         # interval, the next FIR, the latest ACTM a printed lead gives) and
@@ -1887,7 +1887,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         further = line.get("further_actions") or 0
         more = (f" +{further} more on the dashboard." if compact else
                 f" +{further} further instruction sentence(s) of this notice on the dashboard.") if further else ""
-        summary = compact_summary(line) if compact else line["conditions_summary"]
+        summary = compact_summary(line, limit) if compact else line["conditions_summary"]
         return (f"{head} {line['text']}{printed} "
                 f"NOTAM {', '.join(line['notam_ids'])}, OFP {pages}; {summary}.{more}")
 
@@ -1904,22 +1904,37 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     # printed values - the row parity binds on both surfaces) and at least
     # eight crossing pairs; every row is always on the dashboard.
     #   0  every row, every pair            3  the primary + one valued call row per FIR
-    #   1  every row, 12 pairs               4  the primary row only
+    #   1  every row, 12 pairs               4  step 3 with each clause cut to a prefix
     #   2  the call rows in full, the rest as identities, 8 pairs
-    #   5  the primary row with its condition clauses cut to a prefix and the
+    #   5  step 3 with each clause cut to its opening words
+    #   6  the primary row only
+    #   7  the primary row with its condition clauses cut to a prefix and the
     #      deferred rows as per-FIR counts (rule v3: the rows grew by the
     #      timing basis and the further-sentence count; SQ24 / SQ322 / SQ366
-    #      then failed closed at step 4 - the F5 class again)
-    FIR_PAIR_LADDER = (24, 12, 8, 8, 8, 8)
+    #      then failed closed at the primary-only step - the F5 class again)
+    #   8  step 7 with each clause cut to its opening words
+    #   Rule v7 (release-430 QA, F1) states every printed restriction as a
+    #   condition, so a row can carry more clauses. Clauses are cut before a
+    #   row is dropped: step 4 keeps step 3's rows with each clause cut to a
+    #   prefix (genuine SQ23 keeps its Karachi row, prerequisite included),
+    #   and the last step quotes each clause's opening words (genuine SQ322's
+    #   Karachi row missed the previous last step by 2 pt). The state always
+    #   prints; the dashboard carries every clause in full.
+    #   step: (rows, crossing pairs, clause prefix or None for whole clauses)
+    FIR_STEPS = (
+        ("all", 24, None), ("all", 12, None), ("calls", 8, None), ("valued_per_fir", 8, None),
+        ("valued_per_fir", 8, 72), ("valued_per_fir", 8, 44), ("primary", 8, None), ("primary", 8, 72), ("primary", 8, 44),
+    )
 
     def fir_card(gap, weight, step=0):
         primary = primary_procedure_line(procedure_lines)
-        compact = step >= 5
-        if step <= 1:
+        rows_kind, pairs, clause_limit = FIR_STEPS[step]
+        compact = clause_limit is not None
+        if rows_kind == "all":
             shown = list(procedure_lines)
-        elif step == 2:
+        elif rows_kind == "calls":
             shown = [line for line in procedure_lines if line is primary or is_call_line(line)]
-        elif step == 3:
+        elif rows_kind == "valued_per_fir":
             seen: set[str] = set()
             shown = []
             for line in procedure_lines:
@@ -1929,12 +1944,12 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         else:
             shown = [primary] if primary else []
         deferred = [line for line in procedure_lines if line not in shown]
-        lines = [fir_state, *fir_calls, *(fir_row(line, compact) for line in shown)]
+        lines = [fir_state, *fir_calls, *(fir_row(line, compact, clause_limit or 72) for line in shown)]
         if deferred:
             lines.append(f"Further rows on the dashboard: {identities(deferred, compact)}." if not compact
                          else f"+{len(deferred)} further rows on the dashboard ({identities(deferred, compact)}).")
         lines.append(text(enroute_contact.get("slot_sentence")))
-        crossing_line = crossing_sequence_limited(enroute_contact.get("crossings") or [], FIR_PAIR_LADDER[step], compact)
+        crossing_line = crossing_sequence_limited(enroute_contact.get("crossings") or [], pairs, compact)
         lines.append("FIR crossings (OFP ACTM): " + (crossing_line or "no boundary row held."))
         return Card("FIR / COMMUNICATION", lines, CYAN, "sec_enroute", width_weight=weight, paragraph_gap=gap,
                     tag=text(enroute_contact.get("provenance")))
@@ -1989,7 +2004,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     sections["assurance"] = plan_page_flexible(
         "ENROUTE / INTAM / ASSURANCE", "sec_coverage", assurance_rows, ribbon_index=5,
         aliases=("sec_enroute", "sec_terrain", "sec_intam"),
-        variants=tuple(range(len(closing_grids))), steps=range(len(FIR_PAIR_LADDER)),
+        variants=tuple(range(len(closing_grids))), steps=range(len(FIR_STEPS)),
         assurance="TWO-PASS REVIEW TARGET | SOURCE TRACEABILITY | COMMAND AUTHORITY UNCHANGED")
     return sections
 

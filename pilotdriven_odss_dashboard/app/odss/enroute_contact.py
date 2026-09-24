@@ -65,7 +65,7 @@ from typing import Any
 
 from .extraction_rules import EXTRACTION_RULES
 
-ENROUTE_CONTACT_RULE = "enroute-contact-v6"
+ENROUTE_CONTACT_RULE = "enroute-contact-v7"
 
 JAKARTA_AFN_NOTE = "CPDLC limited trial: pilot initiates AFN logon only when requested by ATC; address WIIF."
 _JAKARTA_TOKENS = ("ADS-C/CPDLC", "REQUESTED BY ATC", "AFN LOGON", "ADDRESS FOR JAKARTA FIR IS WIIF")
@@ -147,7 +147,9 @@ _SUBJECT_PREFIX = r"(?:(?:ALL|ANY|EVERY|IFR|VFR|MILITARY|CIVIL|NON-RVSM|RVSM|" +
 _SUBJECT_NOUN = r"(?:FLIGHT CREWS?|THE PILOTS?|THE CREWS?|FLIGHTS?|FLTS?|ACFT|AIRCRAFT|AFCT|TFC|TRAFFIC|OVERFLIGHTS?|PILOTS?|CREWS?|OPERATORS?|AIRLINES?|PERSONS?|USERS?)(?:\s+(?:FLT|FLIGHTS?|OPERATIONS?|OPERATORS?))?"
 _SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b(?P<qualifier>.*?)\s*\b(?P<modal>SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
 _IMPERATIVE = re.compile(r"^" + _LIST_MARKER + r"(?:USE|SELECT|CONTACT|CTC|CALL|MONITOR|LOGON|LOG ON|BROADCAST|REPORT|MAINTAIN|ESTABLISH|COMPLY|SQUAWK|TRANSMIT|NOTIFY|REFER|ADVISE|REQUEST|EXPECT|FILE|OPERATE|AVOID|DO NOT|CONTINUE|PROCEED|REMAIN)\b")
-_LEADING_CLAUSE = re.compile(r"^" + _LIST_MARKER + r"(?P<clause>(?:WHEN|IF|WHILE|UNLESS|IN CASE OF|IN THE EVENT OF|AFTER|BEFORE|DURING|PROVIDED|WHERE)\b[^,]{3,120}),\s*")
+# The circumstance words a leading clause opens with (the ICAO abbreviation DRG included - release-430 QA, audit of SQ23 SX33/26).
+_LEADING_OPENERS = r"WHENEVER|WHEN|IF|WHILE|UNLESS|IN CASE OF|IN THE CASE OF|IN THE EVENT OF|AFTER|BEFORE|DURING|DRG|PROVIDED|WHEREVER|WHERE|AS LONG AS"
+_LEADING_CLAUSE = re.compile(r"^" + _LIST_MARKER + r"(?P<clause>(?:" + _LEADING_OPENERS + r")\b[^,]{3,120}),\s*")
 # "PROVIDED" is a condition only as a conjunction ("PROVIDED THAT ...", "PROVIDED THE CREW ..."), never the passive
 # participle of a service ("WILL BE PROVIDED BY TOKYO CONTROL", "PROVIDED TO THE BORDER").
 _TRAILING_CLAUSE = re.compile(r"\s\b(?P<clause>(?:WHEN|IF|WHILE|UNLESS|WHERE|EXCEPT WHEN|ONLY WHEN|ONLY IF|PROVIDED(?!\s+(?:BY|TO|FOR|ON|VIA|FROM|WITH|AT|IN|UNTIL|THROUGH)\b))\b.{3,200}?)(?:[.;:]|$)")
@@ -197,9 +199,11 @@ _DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE REQUESTED TO|IS RE
 _AIRPORT_CONDITION = re.compile(r"\b(?P<kind>DEP(?:ARTING|ARTURE)?(?: FROM)?|ARR(?:IVING|IVAL)?(?: AT| TO)?|LANDING AT|OPERATING (?:TO/FROM|TO OR FROM|TO|FROM|AT)|TO OR FROM|BOUND FOR)\s+(?P<icao>[A-Z]{4})\b(?:/[A-Z-]+)?")
 _ICAO_STOPWORDS = {"FROM", "WITH", "THAT", "THIS", "INTO", "OVER", "WHEN", "ONLY", "ALSO", "THEN", "THEM", "THEY", "WILL", "SHALL", "MUST", "AREA", "ZONE", "SAME", "EACH", "BOTH", "NEXT", "LAST", "FIRS", "AIRP"}
 # The scope / direction qualifiers other rules already evaluate: a qualifier made only of these adds nothing.
+# A qualifier naming the FIR(s) it applies in ("OPERATING IN THE KABUL FIR", "WHEN ENTERING THE ANCHORAGE ARTCC PAZA FIR"): evaluated
+# against the crossings the OFP prints and kept as an explicit condition (release-430 QA, F1) - never assumed met.
+_FIR_SCOPE_QUALIFIER = re.compile(r"^(?:DEPARTING|LEAVING|ENTERING|TRANSITING|OPERATING (?:IN|WITHIN)|WITHIN|WI|INSIDE|IN|OVERFLYING)\s+(?P<names>(?:THE\s+)?(?:(?!(?:FIRS?|FM|FROM|TO|INTO)\b)[A-Z][A-Z/-]*\s+){0,4}?)FIRS?$")
 _EVALUATED_QUALIFIER = re.compile(
-    r"^(?:(?:DEPARTING|LEAVING|ENTERING|TRANSITING|OPERATING (?:IN|WITHIN)|WITHIN|IN|OVERFLYING)\s+(?:THE\s+)?(?:[A-Z][A-Z-]*\s+){0,4}?FIRS?"
-    r"|FLW\s+F(?:RO)?M\s+.+?\s+FIRS?\s+(?:TO|INTO)\s+.+?\s+FIRS?(?:\s+\(.*\))?"
+    r"^(?:FLW\s+F(?:RO)?M\s+.+?\s+FIRS?\s+(?:TO|INTO)\s+.+?\s+FIRS?(?:\s+\(.*\))?"
     r"|ENTERING\s+.+?\s+FIRS?\s+F(?:RO)?M\s+.+?\s+FIRS?"
     r"|ARRIVING OR DEPARTING(?: FROM)? AERODROMES(?: IN (?:THE )?[A-Z]+ FIR)?"
     r"|DEPARTING(?: FROM)? AERODROMES(?: IN (?:THE )?[A-Z]+ FIR)?)$"
@@ -212,6 +216,74 @@ _AERODROME = re.compile(r"\bAERODROMES?\b|\bTAKE-?OFF\b|\bLANDING\b|\bARRIVAL AN
 _FIR_EXIT = re.compile(r"\bDEPARTING (?:THE )?(?:[A-Z]+ )?FIR\b|\bLEAVING (?:THE )?(?:[A-Z]+ )?FIR\b|\bNEXT FIR\b")
 _FIR_ENTRY = re.compile(r"\bENTERING\b|\bENTRY\b|\bENTRANCE\b")
 _UNRESOLVED = re.compile(r"\bTEMPORARY PURPOSE\b|\bAS REQUIRED\b|\bUNLESS OTHERWISE\b|\bSUBJECT TO\b|\bWHEN INSTRUCTED\b")
+# A population class the subject grammar accepts as a prefix: a qualification of its own (release-430 QA, F1).
+_CLASS_PREFIX = re.compile(r"\b(?:MILITARY|CIVIL|NON-RVSM|RVSM)\b")
+
+# ---- v7: an action's own sentence is accounted for before its state is computed (release-430 QA, F1)
+#
+# Every condition used to come from a recognizer for one grammatical position (the subject, a population connector, a
+# leading or trailing clause) and the state was computed as if that list were complete: a restriction anywhere else -
+# "CPDLC WILL BE USED AS COMMUNICATION WITHIN UBAC ON THE ROUTE PORTION M300, ... BEYOND VOICE VHF COVERAGE" - vanished.
+# Now every span a recognizer consumed is set aside, the non-restrictive wording is typed (a reason, a manner, a timing,
+# a means, a reference), and every restrictive phrase left becomes a condition: a named FIR scope evaluated against the
+# printed crossings, a population prefix evaluated like a subject's, anything else an explicit unresolved restriction
+# quoting the source. The accounting marker is NUL: never in the text, and not whitespace in either reader's regex.
+_ACCOUNTED = "\x00"
+_CIRCUMSTANCE = (r"WHENEVER|WHEN|IF|WHILE|UNLESS|IN CASE OF|IN THE CASE OF|IN THE EVENT OF|DURING|DRG|WHEREVER|WHERE|AS LONG AS|SUBJECT TO"
+                 r"|OTHER THAN|EXCEPT(?! THAT\b)|EXC(?! THAT\b)|PROVIDED(?= (?:THAT|THE|A|AN|ALL|ANY|IT|THEY|THIS|SUCH|NO)\b)")
+# A circumstance runs to a stop, a comma or the directive modal of the clause it qualifies ("... EXCEPT ON M875/L509 ROUTES SHALL USE ...").
+_CIRCUMSTANCE_PHRASE = re.compile(r"\b(?:" + _CIRCUMSTANCE + r")\b(?:(?!\b(?:SHALL|MUST|SHOULD)\b)[^\x00;.,])*")
+_CIRCUMSTANCE_OPENING = re.compile(r"^(?:" + _CIRCUMSTANCE + r")\s+")
+# A reason ("AS THE GROUND SYSTEM USES THE INFORMATION DURING AFN LOGON", "DUE TO MAINT") qualifies nothing it contains. A causal
+# AS needs an action verb: "AS THE AIRCRAFT IS WITHIN VHF COVERAGE" reads as a circumstance and stays one.
+_REASON_PHRASE = re.compile(r"\b(?:BECAUSE(?: OF)?|DUE TO|OWING TO|AS A RESULT OF)\b[^\x00;.,]*"
+                            r"|\bAS (?:THE|THIS|IT|THEY|THESE|THOSE)\s+(?:[A-Z/-]+\s+){0,3}?(?:USES|USE|REQUIRES|REQUIRE|NEEDS|NEED|RECEIVES|RECEIVE|PROCESSES|PROCESS|EXPECTS|EXPECT)\b[^\x00;.,]*")
+# A manner, reference, addition, modification or emphasis; it stops before a circumstance, which stays one.
+_MANNER_PHRASE = re.compile(r"\b(?:IN ACCORDANCE WITH|ACCORDING TO|AS PER|IN LIEU OF|IN ADDITION TO|EXCEPT THAT|WITH REFERENCE TO|WITH RESPECT TO|IN RESPECT OF"
+                            r"|WHETHER|ESPECIALLY|PARTICULARLY|NOTABLY|IN PARTICULAR|INCLUDING)\b(?:(?!\b(?:" + _CIRCUMSTANCE + r")\b)[^\x00;.,])*")
+# "CAN ONLY OCCUR AFTER THE AFN LOGON HAS BEEN COMPLETED": ONLY makes a timing a prerequisite.
+_ONLY_TIMING = re.compile(r"\bONLY\b(?:\s+[A-Z-]+){0,3}?\s+(?:AFTER|BEFORE|UPON|ONCE|PRIOR TO|UNTIL)\b(?:(?!\b(?:SHALL|MUST|SHOULD)\b)[^\x00;.,])*")
+# A timing of the action itself ("AFTER LANDING", "BEFORE CLIMBING ABV FL180", "UNTIL FURTHER NOTICE"); it stops before a
+# spatial restriction, which stays one.
+_TIMING_PHRASE = re.compile(r"\b(?:AFTER|BEFORE|PRIOR TO|UPON|ONCE|UNTIL|TIL)\b(?:(?!\b(?:WITHIN|WI|INSIDE|OUTSIDE|BEYOND|OUT OF)\b)[^\x00;.,:])*")
+_PREFIXED_POPULATION = re.compile(r"\b(?P<prefix>(?:(?:" + _EQUIPMENT_FORMS + r"|IFR|VFR|MILITARY|CIVIL|NON-RVSM|RVSM)\s*,?\s+)+)(?P<noun>" + _SUBJECT_NOUN + r")\b")
+_SPATIAL_OPENERS = (r"AT OR ABOVE|AT OR BELOW|OUT OF|(?:NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW|N|S|E|W) OF|WITHIN|WI|INSIDE|OUTSIDE|BEYOND|THROUGH|THRU|ALONG|VIA"
+                    r"|ABOVE|ABV|BELOW|BLW|BTN|BETWEEN|FROM|FM|FOR|IN|ON|AT")
+_ALWAYS_SPATIAL = re.compile(r"^(?:OUT OF|(?:NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW|N|S|E|W) OF|WITHIN|WI|INSIDE|OUTSIDE|BEYOND)$")
+_WORD_STOP = r"(?:" + _SPATIAL_OPENERS + r"|SHALL|MUST|SHOULD|WILL|MAY|CAN|IS|ARE|WAS|WERE|BE|BEEN|DOES|DO|HAS|HAVE|NEED|NEEDS|ONLY)\b"
+_OBJECT_WORD = r"(?:[^\s\x00;.:,]|(?<=\d)\.(?=\d))+"
+_SPATIAL_PHRASE = re.compile(r"\b(?P<opener>" + _SPATIAL_OPENERS + r")\s+(?P<object>(?!" + _WORD_STOP + r")" + _OBJECT_WORD
+                             + r"(?:(?:\s*,\s*|\s+)(?!" + _WORD_STOP + r")" + _OBJECT_WORD + r")*)")
+_LEVEL_WORDS = re.compile(r"\bFL ?\d{2,3}\b|\b\d{3,5} ?(?:FT|M)\b|\bSFC\b|\bGND\b|\bUNL\b")
+_LATLON_WORDS = re.compile(r"\b\d{1,3}(?:\.\d+)?[NSEW]\b|\b\d{2,7}[NS]\d{3,8}[EW]\b|\bLATITUDE\b|\bLONGITUDE\b|\bMERIDIAN\b|\bPARALLEL\b")
+_TIME_WORDS = re.compile(r"\b\d{4} ?(?:UTC|Z)\b|\b\d{4} ?(?:-|TO|TIL|AND) ?\d{4}\b|\b(?:MON|TUE|WED|THU|FRI|SAT|SUN)\b|\bSR\b|\bSS\b|\bHJ\b|\bHN\b")
+_ROUTE_WORDS = re.compile(r"\bROUTES?\b|\bRTES?\b|\bAIRWAYS?\b|\bAWYS?\b|\bTRACKS?\b|\bTRKS?\b|\bSEGMENTS?\b|\bPORTIONS?\b|\b[A-Z]{1,2}\d{1,4}[A-Z]?\b")
+_AREA_WORDS = re.compile(r"\bAREAS?\b|\bSECTORS?\b|\bUTA\b|\bCTA\b|\bUIR\b|\bTMA\b|\bCTR\b|\bZONES?\b|\bREGIONS?\b|\bAIRSPACE\b|\bAOR\b|\bRESPONSIBILITY\b"
+                         r"|\bOCEANIC\b|\bDOMESTIC\b|\bCOVERAGE\b|\bRANGE\b|\bVICINITY\b|\bCORRIDORS?\b")
+_CIRCUMSTANCE_WORDS = re.compile(r"\bOCCASIONS?\b|\bCIRCUMSTANCES?\b|\bEMERGENC(?:Y|IES)\b|\bCONTINGENC(?:Y|IES)\b|\bFAILURES?\b|\bCASES?\b|\bSITUATIONS?\b|\bIMC\b|\bVMC\b|\bNIGHT\b")
+_MEANS_WORDS = re.compile(r"\bCPDLC\b|\bADS-[BC]\b|\bSATCOM\b|\bVHF\b|\bHF\b|\bUHF\b|\bRADIO\b|\bRTF\b|\bR/T\b|\bTEL(?:EPHONE)?\b|\bPHONE\b|\bACARS\b|\bDATA ?LINK\b"
+                          r"|\bAFTN\b|\bE-?MAIL\b|\bFAX\b|\bFREQ(?:UENCY|UENCIES)?\b|\bCONTROLLER\b|\bDISPATCH(?:ERS?)?\b|\bARINC\b|\bSITA\b")
+_UNIVERSAL = re.compile(r"^(?:ALL|ANY|EVERY)\s+(?:(?:GIVEN|OTHER|ATS|PUBLISHED|DESIGNATED)\s+)?(?:CASES?|CIRCUMSTANCES?|SITUATIONS?|TIMES?|ROUTES?|RTES?|AIRWAYS?|AWYS?)$")
+_DURATION = re.compile(r"^\d{1,3} ?MIN(?:S|UTES)?\b")
+_RELATIVE_FIR = re.compile(r"^(?:THE\s+|THIS\s+|THAT\s+|EACH\s+)?(?:(?:NEXT|PREVIOUS|ADJACENT|RELEVANT|SAME|RESPECTIVE|APPROPRIATE|NEIGHBOU?RING|OTHER|DESTINATION|DEPARTURE|CONCERNED)\s+)?FIRS?\b")
+_RELATIVE_WORDS = re.compile(r"\b(?:NEXT|PREVIOUS|ADJACENT|RELEVANT|SAME|RESPECTIVE|APPROPRIATE|NEIGHBOU?RING|OTHER|DESTINATION|DEPARTURE|CONCERNED)\b")
+_FIR_PREFIX = re.compile(r"^(?:THE\s+)?(?P<names>(?:[A-Z][A-Z/-]*\s+){1,5}?)FIRS?\b(?P<rest>.*)$")
+_LIST_CONTINUES = re.compile(r"^\s*(?:,|AND\b|OR\b)")
+_RUN_GAP = re.compile(r"^[\s,/()]*(?:(?:AND|OR|AND/OR)[\s,/()]*)?$")
+# The heads an IN-phrase names when it is a reference, a message field, a system or a manner - not a place.
+_IN_NEUTRAL = {"ITEM", "ITEMS", "FIELD", "BOX", "LIEU", "ACCORDANCE", "ADDITION", "ADVANCE", "ORDER", "FULL", "USE", "FORCE", "EFFECT", "FLIGHT", "TIME",
+               "VIEW", "LINE", "PRINCIPLE", "GENERAL", "PARTICULAR", "SEQUENCE", "FORMAT", "FPL", "PLAN", "RESPECT", "RESPONSE", "REPLY", "CONJUNCTION",
+               "COORDINATION", "COMPLIANCE", "SUPPORT", "PREPARATION", "ICAO", "DOC", "DOCUMENT", "DOCUMENTS", "ANNEX", "AIP", "AIC", "NOTAM", "NOTAMS",
+               "SUP", "SUPPLEMENT", "SECTION", "PARA", "PARAGRAPH", "ATTACHMENT", "APPENDIX", "CHAPTER", "TABLE", "FIGURE", "ENGLISH", "WRITING",
+               "CONTACT", "CTC", "POSITIVE", "TWO-WAY", "REMARKS", "RMK", "FOLLOWING", "ABOVE-MENTIONED", "CPDLC", "ADS-C", "ACARS", "FMS", "FMC",
+               "MESSAGE", "MESSAGES", "LOGON", "REQUEST", "REQUESTS", "REPORT", "REPORTS", "FREQUENCY", "FREQ", "AUTOMATIC", "MANUAL", "NEXT", "SAME",
+               "THIS", "WHICH", "SUCH", "ITS", "THEIR"}
+# A NOTAM's printed vertical limits (items F/G), printed after its text: a notice-level scope, evaluated from the planned levels.
+_VERTICAL_LIMITS = re.compile(r"(?:^|\s)(?P<phrase>(?:FROM|FM)\s+(?P<lower>SFC|GND|FL\s?\d{2,3}|\d{3,5}\s?FT(?:\s?(?:AMSL|AGL|MSL))?)\s+TO\s+"
+                              r"(?P<upper>UNL|FL\s?\d{2,3}|\d{3,5}\s?FT(?:\s?(?:AMSL|AGL|MSL))?))\s*\.?\s*$")
+# A climb or descent can pass through a FIR entered within this many minutes of take-off or left within this many of the
+# end of the route; a level band above the surface is evaluated from planned cruise levels only outside that margin.
+_CRUISE_MARGIN_MINUTES = 60
 
 STATE_SENTENCES = {
     "no_fir_rows_held": "No FIR boundary row is held in the parsed OFP; early-contact requirements are not established from this source.",
@@ -357,7 +429,8 @@ def _route(flight: dict[str, Any]) -> dict[str, Any]:
     for index in range(0, len(tokens) - 1, 2):
         if tokens[index + 1].isdigit():
             profile.append((tokens[index], int(tokens[index + 1])))
-    return {"names": names, "fir_in_effect": fir_in_effect, "profile": profile}
+    last = max((m for m in (_integer(w.get("actm_minutes")) for w in flight.get("route_waypoints") or [] if isinstance(w, dict)) if m is not None), default=None)
+    return {"names": names, "fir_in_effect": fir_in_effect, "profile": profile, "last_minutes": last}
 
 
 def _planned_level_at(route: dict[str, Any], waypoint: str) -> int | None:
@@ -597,8 +670,69 @@ def _airport_conditions(text: str, flight: dict[str, Any]) -> tuple[list[dict[st
     return conditions, remainder
 
 
-def _subject_conditions(subject: dict[str, Any], flight: dict[str, Any]) -> list[dict[str, Any]]:
-    """The conditions a stated subject carries: aerodrome restrictions evaluated, every other qualifier explicit and unresolved."""
+def _fir_scope_condition(text: str, names_text: str, ctx: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A phrase naming the FIR(s) it applies in, evaluated against the crossings the OFP prints: met when the route crosses
+    one of them, not met when every one is identified and none is crossed, unresolved when a name is not identified. The
+    notice's own FIR stands for "THE FIR"; a relative reference ("THE NEXT FIR") is left to the scope rules (None)."""
+    ctx = ctx or {}
+    words = re.sub(r"^(?:THE|THIS|THAT|A|AN|EACH|ANY)\s+", "", (names_text or "").strip()).strip()
+    if _RELATIVE_WORDS.search(words):
+        return None
+    crossed: set[str] = ctx.get("crossed") or set()
+    names: dict[str, str] = ctx.get("names") or {}
+    if not words:
+        firs = [ctx["fir"]] if ctx.get("fir") else []
+        complete = bool(firs)
+    else:
+        codes = [w for w in re.findall(r"\b[A-Z]{4}\b", words) if w in names or w in crossed]
+        if codes:
+            firs, complete = codes, True
+        else:
+            by_name = {name: icao for icao, name in names.items()}
+            parts = [part.strip() for part in re.split(r", AND | AND |, OR | OR |, |/", words) if part.strip()]
+            resolved = [by_name.get(part) for part in parts]
+            firs, complete = [r for r in resolved if r], bool(parts) and all(resolved)
+    result = "met" if any(f in crossed for f in firs) else "not_met" if firs and complete else "unresolved"
+    return {"kind": "fir_scope", "text": text, "result": result, "note": "/".join(firs)}
+
+
+def _clause_conditions(clause: str, stripped: str, ctx: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """A leading / trailing clause: a direction or aerodrome form is evaluated by its own rule, a named FIR against the
+    crossings; anything else stays an explicit unresolved qualifier quoting the clause."""
+    if _EVALUATED_QUALIFIER.match(stripped):
+        return []
+    scope = _FIR_SCOPE_QUALIFIER.match(stripped)
+    if scope:
+        condition = _fir_scope_condition(clause, scope.group("names"), ctx)
+        return [condition] if condition else []
+    return [{"kind": "qualifier", "text": clause, "result": "unresolved"}]
+
+
+def _qualifier_conditions(qualifier: str, flight: dict[str, Any], ctx: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """A subject / population qualifier: direction and aerodrome forms evaluated by their own rules, a named FIR against
+    the crossings, aerodromes against the flight's own; anything else explicit and unresolved."""
+    if _EVALUATED_QUALIFIER.match(qualifier):
+        return []
+    scope = _FIR_SCOPE_QUALIFIER.match(qualifier)
+    if scope:
+        condition = _fir_scope_condition(qualifier, scope.group("names"), ctx)
+        return [condition] if condition else []
+    airports, remainder = _airport_conditions(qualifier, flight)
+    conditions = list(airports)
+    if len(remainder.split()) >= 2 and not _EVALUATED_QUALIFIER.match(remainder):
+        scope = _FIR_SCOPE_QUALIFIER.match(remainder)
+        if scope:
+            condition = _fir_scope_condition(remainder, scope.group("names"), ctx)
+            if condition:
+                conditions.append(condition)
+        else:
+            conditions.append({"kind": "qualifier", "text": qualifier if airports else remainder, "result": "unresolved"})
+    return conditions
+
+
+def _subject_conditions(subject: dict[str, Any], flight: dict[str, Any], ctx: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """The conditions a stated subject carries: every qualification-bearing prefix (equipment, flight rules, a population
+    class), its qualifier and its own leading clause - evaluated where the OFP holds the evidence, explicit otherwise."""
     conditions: list[dict[str, Any]] = []
     prefix = subject.get("prefix") or ""
     equipment = _EQUIPMENT_PREFIX.search(prefix)
@@ -607,20 +741,20 @@ def _subject_conditions(subject: dict[str, Any], flight: dict[str, Any]) -> list
     rules = _RULES_PREFIX.search(prefix)
     if rules:
         conditions.append({"kind": "flight_rules", "text": rules.group(0), "result": "unresolved"})
+    population_class = _CLASS_PREFIX.search(prefix)
+    if population_class:
+        conditions.append({"kind": "population", "text": population_class.group(0), "result": "unresolved"})
     qualifier = (subject.get("qualifier") or "").strip(" ,;")
-    if qualifier and not _EVALUATED_QUALIFIER.match(qualifier):
-        airports, remainder = _airport_conditions(qualifier, flight)
-        conditions.extend(airports)
-        if len(remainder.split()) >= 2 and not _EVALUATED_QUALIFIER.match(remainder):
-            conditions.append({"kind": "qualifier", "text": qualifier if airports else remainder, "result": "unresolved"})
+    if qualifier:
+        conditions.extend(_qualifier_conditions(qualifier, flight, ctx))
     if subject.get("leading"):
         clause = subject["leading"]
-        if not _EVALUATED_QUALIFIER.match(re.sub(r"^(?:WHEN|IF|WHILE|UNLESS|AFTER|BEFORE|DURING|PROVIDED|WHERE)\s+", "", clause)):
-            conditions.append({"kind": "qualifier", "text": clause, "result": "unresolved"})
+        stripped = re.sub(r"^(?:WHENEVER|WHEN|IF|WHILE|UNLESS|AFTER|BEFORE|DURING|DRG|PROVIDED|WHEREVER|WHERE|AS LONG AS)\s+", "", clause)
+        conditions.extend(_clause_conditions(clause, stripped, ctx))
     return conditions
 
 
-def _population_conditions(sentence: str, flight: dict[str, Any]) -> list[dict[str, Any]]:
+def _population_conditions(sentence: str, flight: dict[str, Any], ctx: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Qualifications of the aircraft population inside a sentence's body, evaluated like a subject's (F1, 424 QA);
     a qualification-bearing prefix alone qualifies, with or without a modifier after the noun (F1, 428 QA)."""
     upper = _semantic(sentence)
@@ -631,7 +765,7 @@ def _population_conditions(sentence: str, flight: dict[str, Any]) -> list[dict[s
         if not modifier and not (_EQUIPMENT_PREFIX.search(prefix) or _RULES_PREFIX.search(prefix)):
             continue
         pseudo = {"kind": "population", "prefix": prefix, "qualifier": modifier, "leading": None}
-        conditions.extend(_subject_conditions(pseudo, flight))
+        conditions.extend(_subject_conditions(pseudo, flight, ctx))
     return conditions
 
 
@@ -666,16 +800,175 @@ def _actor_of(sentence: str, subject: dict[str, Any]) -> str:
     return "crew"
 
 
-def _trailing_conditions(sentence: str) -> list[dict[str, Any]]:
-    """A WHEN / IF / UNLESS clause after the action ("USE LOGON ADDRESS PAZN WHEN OPERATING IN ...") stays an explicit unresolved condition."""
+def _trailing_conditions(sentence: str, ctx: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """A WHEN / IF / UNLESS clause after the action ("USE LOGON ADDRESS PAZN WHEN OPERATING IN ...") stays an explicit
+    condition: a named FIR evaluated against the crossings, anything else unresolved."""
     upper = _semantic(sentence)
     match = _TRAILING_CLAUSE.search(upper)
     if not match:
         return []
     clause = match.group("clause").strip(" ,;")
-    if _EVALUATED_QUALIFIER.match(re.sub(r"^(?:WHEN|IF|WHILE|UNLESS|PROVIDED|WHERE|EXCEPT WHEN|ONLY WHEN|ONLY IF)\s+", "", clause)):
-        return []
-    return [{"kind": "qualifier", "text": clause, "result": "unresolved"}]
+    stripped = re.sub(r"^(?:WHEN|IF|WHILE|UNLESS|PROVIDED|WHERE|EXCEPT WHEN|ONLY WHEN|ONLY IF)\s+", "", clause)
+    return _clause_conditions(clause, stripped, ctx)
+
+
+def _blank(text: str, spans: list[tuple[int, int]]) -> str:
+    chars = list(text)
+    for start, end in spans:
+        for index in range(max(0, start), min(len(chars), end)):
+            chars[index] = _ACCOUNTED
+    return "".join(chars)
+
+
+def _accounted_spans(upper: str, ctx: dict[str, Any] | None) -> list[tuple[int, int]]:
+    """The spans the recognizers already account for: a leading clause, a stated crew subject (prefix, noun, qualifier),
+    a trailing clause, population phrases, directions, ATC-request and other named phrases, route tokens, the printed
+    frequencies, lead, interval and addresses, and the notice's vertical limits when this sentence prints them."""
+    spans: list[tuple[int, int]] = []
+    leading = _LEADING_CLAUSE.match(upper)
+    offset = leading.end() if leading else 0
+    if leading:
+        spans.append((0, leading.end()))
+    stated = _SUBJECT.match(upper[offset:])
+    if stated:
+        spans.append((offset, offset + stated.start("modal")))
+    trailing = _TRAILING_CLAUSE.search(upper)
+    if trailing:
+        spans.append(trailing.span("clause"))
+    for pattern in (_POPULATION, *_DIRECTIONS, _ATC_REQUEST, _UNRESOLVED, _ROUTE_LIST, _ROUTE_PAIR, _ROUTE_FREQ_ROW, _FREQUENCY, _INTERVAL, _ADDRESS):
+        spans.extend(match.span() for match in pattern.finditer(upper))
+    spans.extend(match.span(1) for match in _LEAD.finditer(upper))
+    vertical = (ctx or {}).get("vertical")
+    if vertical:
+        match = _VERTICAL_LIMITS.search(upper)
+        if match and " ".join(match.group("phrase").split()) == vertical:
+            spans.append(match.span("phrase"))
+    return spans
+
+
+def _spatial_kind(opener: str, obj: str) -> str:
+    """What a spatial phrase is: "restriction" (a level, position, time, circumstance, area, route or unlisted place),
+    "fir" (a named FIR, evaluated), or "neutral" (a means, a purpose, a reference, the notice's own or a relative FIR)."""
+    if _UNIVERSAL.match(obj):
+        return "neutral"
+    if _LEVEL_WORDS.search(obj) or _LATLON_WORDS.search(obj) or _TIME_WORDS.search(obj) or _CIRCUMSTANCE_WORDS.search(obj):
+        return "restriction"
+    always = bool(_ALWAYS_SPATIAL.match(opener))
+    if opener in ("WITHIN", "WI") and _DURATION.match(obj):
+        return "neutral"
+    if opener in ("WITHIN", "WI", "INSIDE", "IN", "FOR", "THROUGH", "THRU"):
+        if _RELATIVE_FIR.match(obj):
+            return "neutral"
+        fir = _FIR_PREFIX.match(obj)
+        if fir and not _LIST_CONTINUES.match(fir.group("rest")) and not _AREA_WORDS.search(fir.group("names")):
+            return "fir"
+    if always or _AREA_WORDS.search(obj) or _ROUTE_WORDS.search(obj):
+        return "restriction"
+    if opener in ("VIA", "ALONG"):
+        return "neutral" if _MEANS_WORDS.search(obj) else "restriction"
+    if opener == "IN":
+        head = re.sub(r"^(?:THE|A|AN)\s+", "", obj).split()[0].strip("()\"'")
+        return "neutral" if head in _IN_NEUTRAL else "restriction"
+    return "neutral"
+
+
+def _restriction_conditions(sentence: str, flight: dict[str, Any], ctx: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Every restrictive phrase of a sentence the recognizers did not account for (release-430 QA, F1): a circumstance
+    (WHEN, DURING / DRG, EXCEPT ...), ONLY + a timing, a population prefix, a spatial phrase naming an area, a route, a
+    level, a position, a coverage or a time, or a time window. A named FIR is evaluated; adjacent restrictive phrases
+    are one condition quoting the source; everything else is typed non-restrictive."""
+    upper = _semantic(sentence)
+    residual = _blank(upper, _accounted_spans(upper, ctx))
+    residual = _blank(residual, [m.span() for m in _REASON_PHRASE.finditer(residual)])
+    residual = _blank(residual, [m.span() for m in _MANNER_PHRASE.finditer(residual)])
+    conditions: list[dict[str, Any]] = []
+    phrases: list[tuple[int, int]] = []
+    circumstances = list(_CIRCUMSTANCE_PHRASE.finditer(residual))
+    for match in circumstances:
+        clause = upper[match.start():match.end()].strip(" ,;:")
+        if not clause:
+            continue
+        stripped = _CIRCUMSTANCE_OPENING.sub("", clause)
+        if _EVALUATED_QUALIFIER.match(stripped):
+            continue
+        scope = _FIR_SCOPE_QUALIFIER.match(stripped)
+        condition = _fir_scope_condition(clause, scope.group("names"), ctx) if scope else None
+        if scope and condition:
+            conditions.append(condition)
+        elif not scope:
+            phrases.append(match.span())
+    residual = _blank(residual, [m.span() for m in circumstances])
+    only = list(_ONLY_TIMING.finditer(residual))
+    phrases.extend(m.span() for m in only)
+    residual = _blank(residual, [m.span() for m in only])
+    residual = _blank(residual, [m.span() for m in _TIMING_PHRASE.finditer(residual)])
+    populations = list(_PREFIXED_POPULATION.finditer(residual))
+    for match in populations:
+        pseudo = {"kind": "population", "prefix": match.group("prefix").strip(" ,"), "qualifier": "", "leading": None}
+        conditions.extend(_subject_conditions(pseudo, flight, ctx))
+    residual = _blank(residual, [m.span() for m in populations])
+    spatial = list(_SPATIAL_PHRASE.finditer(residual))
+    for match in spatial:
+        opener, obj = match.group("opener"), match.group("object")
+        kind = _spatial_kind(opener, obj)
+        if kind == "restriction":
+            phrases.append(match.span())
+        elif kind == "fir":
+            fir = _FIR_PREFIX.match(obj)
+            text = f"{opener} {obj[:fir.start('rest')].strip()}"
+            condition = _fir_scope_condition(text, fir.group("names"), ctx)
+            if condition:
+                conditions.append(condition)
+    residual = _blank(residual, [m.span() for m in spatial])
+    phrases.extend(m.span() for m in _TIME_WORDS.finditer(residual))
+    runs: list[list[int]] = []
+    for start, end in sorted(phrases):
+        if runs and (start <= runs[-1][1] or _RUN_GAP.match(upper[runs[-1][1]:start])):
+            runs[-1][1] = max(runs[-1][1], end)
+        else:
+            runs.append([start, end])
+    for start, end in runs:
+        text = upper[start:end].strip(" ,;:")
+        if text:
+            conditions.append({"kind": "restriction", "text": text, "result": "unresolved"})
+    return conditions
+
+
+def _band_value(token: str) -> int:
+    token = token.replace(" ", "")
+    if token in ("SFC", "GND"):
+        return 0
+    if token == "UNL":
+        return 999
+    if token.startswith("FL"):
+        return int(token[2:])
+    return int(re.match(r"\d+", token).group(0)) // 100
+
+
+def _vertical_condition(match: re.Match[str], route: dict[str, Any], crossings: list[dict[str, Any]], fir: str) -> dict[str, Any]:
+    """A notice's printed vertical limits against the planned levels: a band from the surface covering every planned level
+    is met; otherwise the planned cruise levels in effect in this FIR decide, only where a climb or descent cannot pass
+    through it (outside the cruise margin) - else the band stays explicit and unresolved."""
+    low, high = _band_value(match.group("lower")), _band_value(match.group("upper"))
+    text = " ".join(match.group("phrase").split())
+    planned = [level for _, level in route["profile"]]
+    if planned and low == 0 and high >= max(planned):
+        return {"kind": "level", "text": text, "result": "met", "note": f"planned FL{min(planned)}-FL{max(planned)}"}
+    in_fir = sorted({level for name, effect in zip(route["names"], route["fir_in_effect"]) if effect == fir
+                     for level in [_planned_level_at(route, name)] if level is not None})
+    if not fir or not in_fir:
+        return {"kind": "level", "text": text, "result": "unresolved", "note": "planned level in this FIR not held"}
+    held = f"planned FL{in_fir[0]}" if len(in_fir) == 1 else f"planned FL{in_fir[0]}-FL{in_fir[-1]}"
+    entries = [row for row in crossings if row["fir"] == fir]
+    exits = [row for row in crossings if entries and row["sequence"] > entries[0]["sequence"] and row["fir"] != fir]
+    last = route.get("last_minutes")
+    cruise = bool(entries) and entries[0]["actm_minutes"] >= _CRUISE_MARGIN_MINUTES and bool(exits) and last is not None \
+        and exits[0]["actm_minutes"] <= last - _CRUISE_MARGIN_MINUTES
+    if not cruise:
+        return {"kind": "level", "text": text, "result": "unresolved", "note": f"{held} in {fir}; a climb or descent may pass through this FIR"}
+    within = [low <= level <= high for level in in_fir]
+    result = "met" if all(within) else "not_met" if not any(within) else "unresolved"
+    return {"kind": "level", "text": text, "result": result, "note": f"{held} in {fir}"}
 
 
 def _governing_index(parts: list[str], subjects: list[dict[str, Any]], index: int) -> int | None:
@@ -776,6 +1069,9 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
                 "result": "unresolved" if level is None else "met" if low <= level <= high else "not_met",
                 "note": f"planned FL{level}" if level is not None else "planned level not held",
             })
+    vertical = _VERTICAL_LIMITS.search(classify_text(text))
+    if vertical:
+        notice_conditions.append(_vertical_condition(vertical, route, crossings, fir))
     atc_request = _ATC_REQUEST.search(classify_text(text))
     if atc_request:
         notice_conditions.append({"kind": "atc_request", "text": atc_request.group(0), "result": "unresolved"})
@@ -783,6 +1079,7 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
         notice_conditions.append({"kind": "association", "text": "FIR in effect at the segment not derivable from the boundary rows", "result": "unresolved"})
 
     # ---- every communication sentence is an action with its own conditions (its subject's, or its governing sentence's)
+    ctx = {"names": names, "crossed": crossed, "fir": fir, "vertical": " ".join(vertical.group("phrase").split()) if vertical else None}
     parts = sentences(text)
     subjects = [_subject_of(part) for part in parts]
     scopes = [sentence_scope(part) for part in parts]
@@ -818,15 +1115,17 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
                 "result": result,
             })
         # The sentence's own clauses first, then - for a continuation only - the governing crew sentence's qualifiers.
-        conditions.extend(_subject_conditions(subjects[index], flight))
+        conditions.extend(_subject_conditions(subjects[index], flight, ctx))
         if governing is not None:
-            conditions.extend(_subject_conditions(subjects[governing], flight))
-        conditions.extend(_trailing_conditions(part))
-        conditions.extend(_population_conditions(part, flight))
+            conditions.extend(_subject_conditions(subjects[governing], flight, ctx))
+        conditions.extend(_trailing_conditions(part, ctx))
+        conditions.extend(_population_conditions(part, flight, ctx))
         actor = _actor_of(part, subjects[index])
         unresolved = _UNRESOLVED.search(classify_text(part))
         if unresolved:
             conditions.append({"kind": "other", "text": unresolved.group(0).lower().replace(" ", "-"), "result": "unresolved"})
+        # The completeness boundary: whatever restriction the sentence prints that no rule above consumed (release-430 QA, F1).
+        conditions.extend(_restriction_conditions(part, flight, ctx))
         conditions = _dedupe(conditions)
         details = printed_details(part)
         if route_frequencies is not None and not details["frequencies"]:
@@ -975,6 +1274,17 @@ def condition_phrase(condition: dict[str, Any]) -> str:
         return f"flight rules {text}: not held in the analysis"
     if kind == "atc_request":
         return f"{text.lower()}: at ATC's request"
+    if kind == "fir_scope":
+        firs = condition.get("note") or ""
+        if result == "met":
+            return f"{text}: {firs} on the route"
+        if result == "not_met":
+            return f"{text}: {firs} not on the route"
+        return f"{text}: " + ("not every FIR identified in the OFP" if firs else "FIR not identified in the OFP")
+    if kind == "restriction":
+        return f"{text}: not evaluable from the OFP"
+    if kind == "population":
+        return f"population {text}: not held for this aircraft"
     if kind == "association":
         return text
     return f"{text} condition not evaluable"

@@ -67,8 +67,10 @@ def test_f1_synthetic_an_adverb_inside_the_passive_still_reads_as_a_provision():
 
 
 def test_f1_synthetic_a_source_provenance_block_changes_nothing_but_the_printed_sentence():
-    body = "CPDLC TRIAL SERVICES WILL INITIALLY BE AVAILABLE TO FANS 1/A, PACKAGE AIRCRAFT WITHIN ZONE FIR."
-    with_ref = "SX0001/26 AIP SUPPLEMENT ZZZZ/ZONE FIR VALIDITY: 01JAN26 - 31DEC26 CPDLC TRIAL WI ZONE FIR " + body
+    # The FIR the sentence names is one the OFP identifies in both variants (release 430 evaluates a named FIR scope, and a
+    # provenance pair such as "ZZZZ/ZONE FIR" is itself FIR-name evidence); the title stays in both, only the block differs.
+    body = "CPDLC TRIAL WI MUMBAI FIR CPDLC TRIAL SERVICES WILL INITIALLY BE AVAILABLE TO FANS 1/A, PACKAGE AIRCRAFT WITHIN MUMBAI FIR."
+    with_ref = "SX0001/26 AIP SUPPLEMENT VABF/MUMBAI FIR VALIDITY: 01JAN26 - 31DEC26 " + body
     bare = rows_by_id(with_synthetic(genuine_flight("SQ366"), "1G803/26", "SYN-BARE/26", body))["SYN-BARE/26"]
     referenced = rows_by_id(with_synthetic(genuine_flight("SQ366"), "1G803/26", "SYN-REF/26", with_ref))["SYN-REF/26"]
     for row in (bare, referenced):

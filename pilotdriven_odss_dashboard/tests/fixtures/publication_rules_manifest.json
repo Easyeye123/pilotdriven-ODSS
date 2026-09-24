@@ -1,7 +1,7 @@
 {
-  "publication_rules": "2026-09-24-service-population-v71",
-  "enroute_contact_rule": "enroute-contact-v6",
+  "publication_rules": "2026-09-25-restriction-completeness-v72",
+  "enroute_contact_rule": "enroute-contact-v7",
   "extraction_rules": "2026-09-24-atc-radio-source-extraction-v2",
   "publication_format": "six-page-reference-briefing-2026-09-19",
-  "minted": "2026-09-24 release-428 independent QA F1: the composition changed (rule v6: prefix-only population qualifications, provenance set aside, passive adverbs, crew agents), so the token changed. Re-mint this file together with the token; a rule bumped without it fails both suites."
+  "minted": "2026-09-25 release-430 independent QA F1: the composition changed (rule v7: every restrictive phrase of an action's own sentence is accounted for before its state - evaluated, typed non-restrictive, or an explicit unresolved restriction; named FIR scopes evaluated against the crossings; DRG in the leading clause; printed vertical limits evaluated), so the token changed. Re-mint this file together with the token; a rule bumped without it fails both suites."
 }
