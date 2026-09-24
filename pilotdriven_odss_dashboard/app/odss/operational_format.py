@@ -1564,24 +1564,56 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     for r in flight.get("flight_planning_etps") or []:
         route_clocks.append(f"{text(r.get('label'))} {text(r.get('from'))}/{text(r.get('to'))}: {text(r.get('distance_nm'))} NM; EET {text(r.get('eet_token'))}.")
 
-    weather_cards = {
-        "terminal": lambda gap, weight: Card("TERMINAL WEATHER", terminal, CYAN, tag="CFP WX",
-                                             width_weight=weight, paragraph_gap=gap),
-        "sigmet": lambda gap, weight: Card("SIGMET", sigmet_lines(flight, view), AMBER,
-                                           width_weight=weight, paragraph_gap=gap),
-        "cyclone": lambda gap, weight: Card("TROPICAL CYCLONE", tc_lines
-                                            or ["No governed route-specific cyclone consequence was established from the held sources."],
-                                            AMBER, width_weight=weight, paragraph_gap=gap),
-        "ash": lambda gap, weight: Card("VOLCANIC ASH", volcanic_ash_lines(flight, view), AMBER,
-                                        width_weight=weight, paragraph_gap=gap),
-        "key": lambda gap, weight: Card("FLIGHT HAZARD KEY", hazard_lines, VIOLET,
-                                        width_weight=weight, paragraph_gap=gap),
-        "clocks": lambda gap, weight: Card("ROUTE / EDTO CLOCKS", route_clocks
-                                           or [text(identity.get("rules")), "No EDTO or additional planning ETP is held."],
-                                           CYAN, width_weight=weight, paragraph_gap=gap),
-        "edto": lambda gap, weight: Card("EDTO AIRPORT WINDOWS", edto_window_lines(flight, view),
-                                         AMBER, width_weight=weight, paragraph_gap=gap),
-    }
+    # F5 of the release-420 independent QA (24 Sep 2026): a production
+    # analysis (live weather beside the OFP's own) put page 5 two points over
+    # its budget on a fresh SQ24, and this page had no deferral: it tried its
+    # grids and sizes and failed closed, so the whole six-page briefing
+    # answered 500 and could not be saved. Like page 6, it now defers WHOLE
+    # units to the dashboard - never a cut line, never a stale PDF - and says
+    # so on the page, in this order: the planning ETP / EDTO clock rows
+    # first, then the EDTO airport windows, then the SIGMET rows; each is a
+    # dashboard-held record and the concise gate verifies that exactly the
+    # stated number of trailing rows is deferred. The plotted-hazard key is
+    # never deferred: its words and the SIGMET verdicts are two statements of
+    # one screening on one page. Step 0 is the whole content; it is exhausted
+    # across every grid and size before any unit is deferred.
+    WEATHER_DEFER_LADDER = (
+        {"edto": None, "sigmet": None, "clocks": None},
+        {"edto": None, "sigmet": None, "clocks": 6},
+        {"edto": 6, "sigmet": None, "clocks": 6},
+        {"edto": 6, "sigmet": 6, "clocks": 6},
+        {"edto": 3, "sigmet": 3, "clocks": 3},
+        {"edto": 2, "sigmet": 2, "clocks": 1},
+    )
+    full_sigmet = sigmet_lines(flight, view)
+    full_edto = edto_window_lines(flight, view)
+
+    def deferred(lines, keep, unit):
+        if keep is None or len(lines) <= keep:
+            return list(lines)
+        return [*lines[:keep], f"+{len(lines) - keep} further {unit} on the dashboard."]
+
+    def weather_cards(step: int) -> dict:
+        keep = WEATHER_DEFER_LADDER[step]
+        key_lines = list(hazard_lines)
+        return {
+            "terminal": lambda gap, weight: Card("TERMINAL WEATHER", terminal, CYAN, tag="CFP WX",
+                                                 width_weight=weight, paragraph_gap=gap),
+            "sigmet": lambda gap, weight: Card("SIGMET", deferred(full_sigmet, keep["sigmet"], "SIGMET row(s)"), AMBER,
+                                               width_weight=weight, paragraph_gap=gap),
+            "cyclone": lambda gap, weight: Card("TROPICAL CYCLONE", tc_lines
+                                                or ["No governed route-specific cyclone consequence was established from the held sources."],
+                                                AMBER, width_weight=weight, paragraph_gap=gap),
+            "ash": lambda gap, weight: Card("VOLCANIC ASH", volcanic_ash_lines(flight, view), AMBER,
+                                            width_weight=weight, paragraph_gap=gap),
+            "key": lambda gap, weight: Card("FLIGHT HAZARD KEY", key_lines, VIOLET,
+                                            width_weight=weight, paragraph_gap=gap),
+            "clocks": lambda gap, weight: Card("ROUTE / EDTO CLOCKS", deferred(route_clocks, keep["clocks"], "route / EDTO clock row(s)")
+                                               or [text(identity.get("rules")), "No EDTO or additional planning ETP is held."],
+                                               CYAN, width_weight=weight, paragraph_gap=gap),
+            "edto": lambda gap, weight: Card("EDTO AIRPORT WINDOWS", deferred(full_edto, keep["edto"], "EDTO airport window(s)"),
+                                             AMBER, width_weight=weight, paragraph_gap=gap),
+        }
     # A long-haul package can hold a dozen screened hazards: give the loaded
     # card the full row before the body steps down. Nothing is dropped.
     weather_grids = (
@@ -1605,12 +1637,13 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
          (("edto", 1.0), ("ash", 1.0)), (("cyclone", 1.0), ("clocks", 1.0)), 0.0),
     )
 
-    def weather_rows(body, leading, variant=0):
+    def weather_rows(body, leading, variant=0, step=0):
         *grid, gap = weather_grids[variant]
-        return grid_rows(weather_cards, grid, gap)
+        return grid_rows(weather_cards(step), grid, gap)
     sections["weather"] = plan_page_flexible(
         "WEATHER / ROUTE HAZARDS", "sec_hazard", weather_rows, ribbon_index=4,
         aliases=("sec_hazards", "sec_weather"), variants=tuple(range(len(weather_grids))),
+        steps=range(len(WEATHER_DEFER_LADDER)),
         assurance="WEATHER SOURCE REVIEW | COVERAGE GAPS ARE NOT NIL | LIVE PRODUCTS CONTROL")
 
     # ---------------------------------------------------------------- page 6
@@ -1686,23 +1719,45 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     fir_calls = [f"+{call['actm']} {call['title']}. {call['summary']}" for call in enroute_contact.get("required_calls") or []]
     procedure_lines = list(enroute_contact.get("procedure_lines") or [])
 
-    def fir_row(line) -> str:
+    def compact_summary(line) -> str:
+        # The same conditions, each quoted source clause cut to a whole-word
+        # prefix: the dashboard row carries every clause in full.
+        parts = []
+        for part in str(line.get("conditions_summary") or "").split(" · "):
+            if len(part) > 72:
+                cut = part[:71]
+                space = cut.rfind(" ")
+                part = (cut[:space] if space > 30 else cut).rstrip(" ,;:") + "…"
+            parts.append(part)
+        return " · ".join(parts)
+
+    def fir_row(line, compact: bool = False) -> str:
         # ATC-RADIO-SOURCE-418 (24 Sep 2026): the row prints the notice's own
         # instruction sentence, the values it prints (frequency, lead,
         # interval, the next FIR, the latest ACTM a printed lead gives) and
         # the result of each printed condition against this OFP - never a
-        # blanket "not held" over a source that holds them.
+        # blanket "not held" over a source that holds them. Rule v3 (the 420
+        # review): the further action sentences of the notice are counted
+        # here and printed on the dashboard; at the ladder's later steps the
+        # quoted condition clauses are cut to a prefix, the dashboard holds
+        # them whole.
         pages = ", ".join(f"p{page}" for page in line["source_pages"]) or "page not held"
         head = f"+{line['actm']} {line['fir']} entry." if line["actm"] else f"{line['fir'] or 'FIR not derived'} (crossing not derived)."
         values = printed_values(line)
         printed = f" Printed: {' · '.join(values)}." if values else ""
+        further = line.get("further_actions") or 0
+        more = (f" +{further} more on the dashboard." if compact else
+                f" +{further} further instruction sentence(s) of this notice on the dashboard.") if further else ""
+        summary = compact_summary(line) if compact else line["conditions_summary"]
         return (f"{head} {line['text']}{printed} "
-                f"NOTAM {', '.join(line['notam_ids'])}, OFP {pages}; {line['conditions_summary']}.")
+                f"NOTAM {', '.join(line['notam_ids'])}, OFP {pages}; {summary}.{more}")
 
-    def identities(lines) -> str:
+    def identities(lines, compact: bool = False) -> str:
         grouped: dict[str, list[str]] = {}
         for line in lines:
             grouped.setdefault(line["fir"] or "FIR not derived", []).extend(line["notam_ids"])
+        if compact:
+            return ", ".join(f"{fir} {len(ids)}" for fir, ids in grouped.items())
         return "; ".join(f"{fir} {', '.join(ids)}" for fir, ids in grouped.items())
 
     # The card defers whole rows only, and says so: every step keeps the
@@ -1712,10 +1767,15 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     #   0  every row, every pair            3  the primary + one valued call row per FIR
     #   1  every row, 12 pairs               4  the primary row only
     #   2  the call rows in full, the rest as identities, 8 pairs
-    FIR_PAIR_LADDER = (24, 12, 8, 8, 8)
+    #   5  the primary row with its condition clauses cut to a prefix and the
+    #      deferred rows as per-FIR counts (rule v3: the rows grew by the
+    #      timing basis and the further-sentence count; SQ24 / SQ322 / SQ366
+    #      then failed closed at step 4 - the F5 class again)
+    FIR_PAIR_LADDER = (24, 12, 8, 8, 8, 8)
 
     def fir_card(gap, weight, step=0):
         primary = primary_procedure_line(procedure_lines)
+        compact = step >= 5
         if step <= 1:
             shown = list(procedure_lines)
         elif step == 2:
@@ -1730,11 +1790,12 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         else:
             shown = [primary] if primary else []
         deferred = [line for line in procedure_lines if line not in shown]
-        lines = [fir_state, *fir_calls, *(fir_row(line) for line in shown)]
+        lines = [fir_state, *fir_calls, *(fir_row(line, compact) for line in shown)]
         if deferred:
-            lines.append(f"Further rows on the dashboard: {identities(deferred)}.")
+            lines.append(f"Further rows on the dashboard: {identities(deferred, compact)}." if not compact
+                         else f"+{len(deferred)} further rows on the dashboard ({identities(deferred, compact)}).")
         lines.append(text(enroute_contact.get("slot_sentence")))
-        crossing_line = crossing_sequence_limited(enroute_contact.get("crossings") or [], FIR_PAIR_LADDER[step])
+        crossing_line = crossing_sequence_limited(enroute_contact.get("crossings") or [], FIR_PAIR_LADDER[step], compact)
         lines.append("FIR crossings (OFP ACTM): " + (crossing_line or "no boundary row held."))
         return Card("FIR / COMMUNICATION", lines, CYAN, "sec_enroute", width_weight=weight, paragraph_gap=gap,
                     tag=text(enroute_contact.get("provenance")))

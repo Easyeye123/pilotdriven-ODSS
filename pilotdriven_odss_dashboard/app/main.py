@@ -2071,6 +2071,10 @@ def get_service_briefing(request: Request, analysis_id: str):
         "flight": analysis_flight,
         "briefing": view.get("briefing"),
         "publication_rules": served["publication_rules"],
+        # The extraction rules the held analysis was parsed under (None for an
+        # analysis stored before the parser stamped them); the app compares
+        # them with the value in service when it reopens a saved pack (F2).
+        "extraction_rules": analysis_flight.get("extraction_rules"),
         "rebuilt_from_held_analysis": served["rebuilt_from_held_analysis"],
         "company_briefing_references": (
             analysis.get("company_briefing_references")
@@ -2899,22 +2903,38 @@ def get_service_combined_report(request: Request, analysis_id: str):
                 f".{cache_path.name}.{uuid.uuid4().hex}.tmp"
             )
             try:
-                render_combined_briefing(
-                    analysis_flight,
-                    findings,
-                    warnings,
-                    staging,
-                    source_pdf_path=source_path,
-                    weather_charts=weather_charts,
-                    company_briefing_references=(
-                        analysis.get("company_briefing_references")
-                        if isinstance(
-                            analysis.get("company_briefing_references"),
-                            dict,
-                        )
-                        else None
-                    ),
-                )
+                try:
+                    render_combined_briefing(
+                        analysis_flight,
+                        findings,
+                        warnings,
+                        staging,
+                        source_pdf_path=source_path,
+                        weather_charts=weather_charts,
+                        company_briefing_references=(
+                            analysis.get("company_briefing_references")
+                            if isinstance(
+                                analysis.get("company_briefing_references"),
+                                dict,
+                            )
+                            else None
+                        ),
+                    )
+                except ValueError as exc:
+                    # F5 of the release-420 independent QA (24 Sep 2026): a
+                    # fresh SQ24 answered a bare 500 here when page 5 could
+                    # not be composed, and the app could only say "blocked".
+                    # A composition refusal is a stated condition of this
+                    # analysis, not a transport failure: name the page and
+                    # the reason, never a stale or partial PDF.
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "code": "briefing_composition_failed",
+                            "message": f"The Flight Briefing could not be composed for this analysis: {exc}",
+                            "retryable": False,
+                        },
+                    ) from exc
                 staging.replace(cache_path)
             finally:
                 staging.unlink(missing_ok=True)

@@ -231,6 +231,30 @@ def _wrapped_defect_statement_is_published(page_text, page_index, item, item_ind
     )
 
 
+def lines_after_stated_deferral(lines, folded_page: str, unit: str | None):
+    """The lines a page must print once its own stated whole-unit deferral is honoured.
+
+    F5 of the release-420 independent QA (24 Sep 2026): page 5 now defers
+    whole trailing rows of a card to the dashboard when it cannot hold them,
+    and prints "+N further <unit> on the dashboard." in their place. The gate
+    accepts that statement only when exactly the last N rows are the ones
+    missing - a deferral that hides a row it did not declare, or declares
+    more than it defers, is still a violation.
+    """
+    if not unit:
+        return list(lines)
+    stated = re.search(r"(?:\+\s*)?(\d+) FURTHER " + re.escape(normalized(unit)) + r" ON THE DASHBOARD", folded_page)
+    if not stated:
+        return list(lines)
+    count = int(stated.group(1))
+    if count <= 0 or count >= len(lines):
+        return list(lines)
+    kept, deferred = lines[:-count], lines[-count:]
+    if any(normalized(line) in folded_page for line in deferred):
+        return list(lines)  # a "deferred" row that is printed anyway is not what the statement says
+    return kept
+
+
 def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=None, alternate_analysis=None, closing_lines=None) -> dict[str, Any]:
     violations = []
     with fitz.open(path) as pdf:
@@ -251,12 +275,12 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                     violations.append({"code": "CYCLONE_TIME_DISTANCE_PARITY", "message": "The weather page omits the flight-matched cyclone distance or its flight-window coverage condition."})
         if view is not None and len(pages) > ASSURANCE_PAGE:
             from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
-            for index, code, lines in (
-                (WEATHER_PAGE, 'EDTO_WINDOW_PARITY', edto_window_lines(flight or {}, view)),
-                (WEATHER_PAGE, 'SIGMET_SCREENING_PARITY', sigmet_lines(flight or {}, view)),
-                (WEATHER_PAGE, 'ASH_ASSESSMENT_PARITY', volcanic_ash_lines(flight or {}, view)),
+            for index, code, lines, unit in (
+                (WEATHER_PAGE, 'EDTO_WINDOW_PARITY', edto_window_lines(flight or {}, view), "EDTO airport window(s)"),
+                (WEATHER_PAGE, 'SIGMET_SCREENING_PARITY', sigmet_lines(flight or {}, view), "SIGMET row(s)"),
+                (WEATHER_PAGE, 'ASH_ASSESSMENT_PARITY', volcanic_ash_lines(flight or {}, view), None),
             ):
-                for line in lines:
+                for line in lines_after_stated_deferral(lines, folded_pages[index], unit):
                     if normalized(line) not in folded_pages[index]:
                         violations.append({'code': code, 'message': f'Page {index + 1} omits a source-bound assessment: {line}'})
             from .analysed_briefing_map import build_publication_map, event_description, key_disposition

@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from .extraction_rules import EXTRACTION_RULES
+
 import fitz
 
 from .constants import actm_minutes, date_ddmmmyy, utc_on_date
@@ -2019,6 +2021,9 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         # route applicability; publishing surfaces retain that explicit gate.
         "notam_procedure_records": notam_procedure_records,
         "notam_fir_names": notam_fir_names,
+        # The extraction rules this parse applied (extraction_rules.py); a
+        # composition over an analysis without the value in service says so.
+        "extraction_rules": EXTRACTION_RULES,
         "alternates": _parse_alternates(cfp_pages),
         "performance": performance,
         "fuel": fuel,

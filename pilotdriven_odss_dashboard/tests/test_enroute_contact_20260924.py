@@ -149,7 +149,7 @@ def test_sq366_page_six_prints_his_fir_communication_column_with_the_allocation_
     composed = case["payload"]["view"]["briefing"]["enroute_contact"]
     primary = primary_procedure_line(composed["procedure_lines"])
     assert primary["notam_ids"] == ["1G216/26"]
-    assert normalized("+05:35 OAKX entry. ALL OVERFLIGHTS SHALL COMPLY WITH TIBA PROCEDURE FOR BROADCAST INTENTIONS ON FREQ 125.2MHZ 10 MINS PRIOR ENTERING TO FIR. Printed: 125.2MHZ · 10 MINS PRIOR ENTERING TO FIR · not later than ACTM 05:25. NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing · overflight: met · conditions held.") in page
+    assert normalized("+05:35 OAKX entry. ALL OVERFLIGHTS SHALL COMPLY WITH TIBA PROCEDURE FOR BROADCAST INTENTIONS ON FREQ 125.2MHZ 10 MINS PRIOR ENTERING TO FIR. Printed: 125.2MHZ · 10 MINS PRIOR ENTERING TO FIR · not later than ACTM 05:25. NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM) · overflight: met · conditions held.") in page
     assert normalized("Further rows on the dashboard: WIIF 1A1891/26, SX50/25;") in page
     assert normalized("BOBCAT BIROS FL380: CTOT 1752Z + ACTM 05:35 = 2327Z, 1 min before CTO 2328Z (OFP p1, p11).") in page
     assert normalized("FIR crossings (OFP ACTM): WIIF 00:03 · WSJC 00:06 · WMFC 00:07 · WSJC 00:07 · WMFC 00:08") in page

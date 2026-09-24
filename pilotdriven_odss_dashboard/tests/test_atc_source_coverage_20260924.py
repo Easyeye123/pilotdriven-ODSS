@@ -238,6 +238,10 @@ def test_sq366_composition_publishes_the_source_held_calls_with_their_printed_co
     assert aic["applicability_state"] == "conditions_held"
     assert "CON TACT WITH TURKMENABAT-CTL ON 134.5 MHZ FREQ (BACKUP FREQ 128.5 MHZ)" in aic["instruction"]
     assert rows["1A1891/26"]["kind"] == "contact_logon" and rows["1G803/26"]["kind"] == "datalink_other"
+    # Rule v3 (the 420 review, F1): the AFN logon is initiated "AS REQUESTED BY ATC" and the AIP SUP logon needs data-link
+    # equipment and coverage the analysis does not hold - conditions stated, not promoted.
+    assert rows["1A1891/26"]["applicability_state"] == "conditions_unresolved" and any(c["kind"] == "atc_request" for c in rows["1A1891/26"]["conditions"])
+    assert rows["SX50/25"]["applicability_state"] == "conditions_unresolved" and any(c["kind"] == "equipment" for c in rows["SX50/25"]["conditions"])
     # The Karachi contingency supplement is for traffic entering Karachi / Lahore FROM Kabul; this flight flies the other way.
     karachi = rows["SX33/26"]
     assert karachi["kind"] == "voice_contact" and karachi["fir"] == "OPKR" and karachi["applicability_state"] == "not_applicable"
@@ -251,7 +255,7 @@ def test_sq366_composition_publishes_the_source_held_calls_with_their_printed_co
     assert composed["state"] == "source_procedures_held"
     assert composed["state_sentence"] == (
         "No approved early-call rule is held. 9 source-held communication notice(s) on the parsed route "
-        "(6 voice/broadcast, 3 datalink): printed conditions met on 6, unresolved on 1, not applicable on 2. "
+        "(6 voice/broadcast, 3 datalink): printed conditions met on 4, unresolved on 3, not applicable on 2. "
         "Frequencies and lead times are the source's own printed values; none is inferred from crossing times."
     )
     assert composed["other_procedure_count"] == 1, "the Vienna CPDLC logon notice is held but LOVV is not on this route; the firefighting, VOR and spoofed-call notices are not instructions"
@@ -290,7 +294,7 @@ def test_sq23_composition_keeps_the_opposite_direction_control_distinct(tmp_path
     assert karachi["fir"] == "OPLR" and karachi["association"] == "fir_heading" and karachi["applicability_state"] == "conditions_held"
     assert {c["kind"]: c["result"] for c in karachi["conditions"]} == {"validity": "met", "direction": "met", "route": "met"}
     assert next(c for c in karachi["conditions"] if c["kind"] == "route")["text"] == "N644 DOBAT LAHORE ACC WEST 124.100 MHZ 118.950 MHZ"
-    assert karachi["printed_details"] == {"frequencies": ["124.100 MHZ", "118.950 MHZ"], "lead": "AT LEAST 15 MIN PRIOR TO ENTERING KARACHI OR LAHORE FIR", "interval": None}
+    assert karachi["printed_details"] == {"frequencies": ["124.100 MHZ", "118.950 MHZ"], "lead": "AT LEAST 15 MIN PRIOR TO ENTERING KARACHI OR LAHORE FIR", "interval": None, "addresses": []}
     assert karachi["latest_actm"] == "11:41"
 
 

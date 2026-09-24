@@ -33,6 +33,29 @@ composition derives, from each uploaded source alone:
   repeats      a consecutive duplicate boundary row is a repeated row; a
                repeat after a different FIR is a re-entry.
 No flight, FIR, notice, frequency or expected string is special-cased.
+
+ATC-CONDITIONS-CLOCK-EXTRACTION-420 (24 Sep 2026, rule v3). The release-420
+independent QA showed a valid date promoting the rest of a notice to "held":
+  actions      every communication sentence of a notice is kept as an action
+               with its own conditions; the headline is the directive sentence
+               with printed values (frequency, lead, interval, logon address),
+               never an introductory statement; the rest are exposed;
+  subjects     an action's conditions come from its own subject's qualifiers
+               or, when the sentence has no crew subject of its own
+               ("NOTIFICATION SHOULD BE VIA CPDLC"), from the sentence that
+               governs it ("FLIGHTS THAT EXPERIENCE OR SUSPECT GNSS
+               INTERFERENCE ... MUST NOTIFY"); a departure / arrival aerodrome
+               restriction is evaluated against this flight's own airports (a
+               negative match is not applicable); every other qualifier - a
+               trigger, an equipment or flight-rules prefix, a WHEN / IF
+               clause, an "as requested by ATC" marker - is an explicit
+               unresolved condition; nothing unparsed defaults to met;
+  timing       one effective basis - the actual take-off when held, else the
+               scheduled departure - gives the displayed crossing clocks AND
+               every validity decision, and is named on each validity;
+  extraction   the extraction rules the parser stamped on the analysis are
+               compared with the value in service; an older extraction is
+               stated, never presented as the current parser's.
 """
 from __future__ import annotations
 
@@ -40,7 +63,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-ENROUTE_CONTACT_RULE = "enroute-contact-v2"
+from .extraction_rules import EXTRACTION_RULES
+
+ENROUTE_CONTACT_RULE = "enroute-contact-v3"
 
 JAKARTA_AFN_NOTE = "CPDLC limited trial: pilot initiates AFN logon only when requested by ATC; address WIIF."
 _JAKARTA_TOKENS = ("ADS-C/CPDLC", "REQUESTED BY ATC", "AFN LOGON", "ADDRESS FOR JAKARTA FIR IS WIIF")
@@ -67,7 +92,9 @@ _KIND_RULES = (
         r"|(?:^|[.;:]\s+|\b(?:SHALL|MUST|SHOULD|WILL|TO|IMMEDIATELY|THEN)\s+(?:[A-Z]+\s+)?)(?:CONTACT(?:ED|ING)?|CTC)\s+(?:THE\s+|WITH\s+)?(?:RELEVANT\s+|APPROPRIATE\s+|NEXT\s+|RESPECTIVE\s+)?(?:[A-Z][A-Z,/-]*\s+){0,4}?" + _UNIT + r"\b"
         r"|\b(?:SHALL|MUST|WILL|SHOULD|TO|AND)\s+CALL\s+(?:[A-Z][A-Z/-]*\s+){0,2}?(?:" + _UNIT + r"\b|ON\s+(?:FREQ(?:UENCY)?\s+)?\d{2,3}\.\d)"
         r"|\bREPORT(?:ING)?\s+(?:POSITION|PASSING|REACHING|ENTERING|CROSSING|ABEAM)\b"
-        r"|\bMONITOR(?:ING)?\s+(?:CONTINUOUSLY\s+)?(?:THE\s+)?(?:VHF|UHF|HF|FREQ|FREQUENCY|GUARD|EMERGENCY|\d{2,3}\.\d)",
+        r"|\bMONITOR(?:ING)?\s+(?:CONTINUOUSLY\s+)?(?:THE\s+)?(?:VHF|UHF|HF|FREQ|FREQUENCY|GUARD|EMERGENCY|\d{2,3}\.\d)"
+        r"|\b(?:HF|VHF|UHF)(?:\s+OR\s+(?:HF|VHF|UHF))?\s+MONITORING\b"
+        r"|\b(?:REQUESTS?|POSITION REPORTS?|COMMUNICATIONS?|CALLS?)\s+(?:TO ATC\s+)?(?:SHOULD|SHALL|MUST|MAY|WILL|ARE TO|IS TO)\s+BE\s+(?:MADE|SENT|PASSED|TRANSMITTED|CONDUCTED)\s+(?:OVER|ON|VIA|BY)\s+(?:VHF|HF|UHF|CPDLC|SATCOM|RADIO|\d{2,3}\.\d)",
     )),
     ("tiba_broadcast", re.compile(
         r"\bCOMPLY WITH (?:THE )?TIBA\b|\bTIBA (?:FREQ(?:UENCY|UENCIES)?|BROADCASTS?|PROCEDURES? (?:FOR|ON|DEFINED|AS))\b|\bON (?:THE )?(?:RELEVANT |APPROPRIATE )?TIBA\b"
@@ -107,6 +134,33 @@ _ROUTE_LIST = re.compile(r"\b([A-Z]{5})-([A-Z]{1,2}\d{1,3})-([A-Z]{5})(?:-([A-Z]
 _ROUTE_PAIR = re.compile(r"(?:\(|, )([A-Z]{1,2}\d{1,3}) ([A-Z]{5})(?=[,)])")
 # A printed contact table row: airway, transfer point, the unit, its primary and secondary frequency.
 _ROUTE_FREQ_ROW = re.compile(r"\b([A-Z]{1,2}\d{1,3}) ([A-Z]{5}) ((?:[A-Z]+ ){1,4}?)(\d{2,3}\.\d{1,3} MHZ)(?: (\d{2,3}\.\d{1,3} MHZ))?")
+# Printed logon addresses: "USE LOGON ADDRESS PAZN", "THE AFN LOGON ADDRESS FOR JAKARTA FIR IS WIIF", "LOGON TO KZAK".
+_ADDRESS = re.compile(r"\bLOGON ADDRESS(?:ES)?(?: FOR [A-Z][A-Z ]*? FIR)?(?: IS| ARE)? ([A-Z]{4})\b|\bLOG ?ON TO ([A-Z]{4})\b")
+_ADDRESS_STOPWORDS = {"WHEN", "WITH", "THAT", "THIS", "FROM", "INTO", "OVER", "ONLY", "ALSO", "THEN", "THEM", "THEY", "WILL", "BASED", "UPON", "EACH", "BOTH", "SAME", "MUST", "SHALL"}
+# A sentence's own crew subject, its qualifiers and the modal that ends them:
+# "IFR AFCT FLT PLANNED TO DEP CYMM/OILSANDS UNABLE TO CTC ... SHOULD CTC ...".
+_LIST_MARKER = r"(?:\(?[A-Z]\)?[.)]\s+|\d{1,2}[.)]\s+|-\s*)?"
+_SUBJECT_PREFIX = r"(?:(?:ALL|ANY|EVERY|IFR|VFR|MILITARY|CIVIL|NON-RVSM|RVSM|FANS[- ]?1/A|DATA[- ]?LINK\s*-?\s*EQUIPPED|ADS-[BC][- ]EQUIPPED|APPROPRIATELY EQUIPPED|SUITABLY EQUIPPED|EQUIPPED)\s+)*"
+_SUBJECT_NOUN = r"(?:FLIGHT CREWS?|THE PILOTS?|THE CREWS?|FLIGHTS?|FLTS?|ACFT|AIRCRAFT|AFCT|TFC|TRAFFIC|OVERFLIGHTS?|PILOTS?|CREWS?|OPERATORS?|AIRLINES?|PERSONS?|USERS?)(?:\s+(?:FLT|FLIGHTS?|OPERATIONS?|OPERATORS?))?"
+_SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b(?P<qualifier>.*?)\s*\b(?P<modal>SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
+_IMPERATIVE = re.compile(r"^" + _LIST_MARKER + r"(?:USE|SELECT|CONTACT|CTC|CALL|MONITOR|LOGON|LOG ON|BROADCAST|REPORT|MAINTAIN|ESTABLISH|COMPLY|SQUAWK|TRANSMIT|NOTIFY|REFER|ADVISE|REQUEST|EXPECT|FILE|OPERATE|AVOID|DO NOT|CONTINUE|PROCEED|REMAIN)\b")
+_LEADING_CLAUSE = re.compile(r"^" + _LIST_MARKER + r"(?P<clause>(?:WHEN|IF|WHILE|UNLESS|IN CASE OF|IN THE EVENT OF|AFTER|BEFORE|DURING|PROVIDED|WHERE)\b[^,]{3,120}),\s*")
+_TRAILING_CLAUSE = re.compile(r"\s\b(?P<clause>(?:WHEN|IF|WHILE|UNLESS|PROVIDED|WHERE|EXCEPT WHEN|ONLY WHEN|ONLY IF)\b.{3,200}?)(?:[.;:]|$)")
+_DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE REQUESTED TO|IS REQUESTED TO|ARE REQUIRED TO|IS REQUIRED TO|ARE TO|IS TO|NEED TO|EXPECTED TO)\b")
+# Aerodrome restrictions inside a qualifier: "PLANNED TO DEP CYMM/OILSANDS", "ARR KJFK", "OPERATING TO/FROM WSSS".
+_AIRPORT_CONDITION = re.compile(r"\b(?P<kind>DEP(?:ARTING|ARTURE)?(?: FROM)?|ARR(?:IVING|IVAL)?(?: AT| TO)?|LANDING AT|OPERATING (?:TO/FROM|TO OR FROM|TO|FROM|AT)|TO OR FROM|BOUND FOR)\s+(?P<icao>[A-Z]{4})\b(?:/[A-Z-]+)?")
+_ICAO_STOPWORDS = {"FROM", "WITH", "THAT", "THIS", "INTO", "OVER", "WHEN", "ONLY", "ALSO", "THEN", "THEM", "THEY", "WILL", "SHALL", "MUST", "AREA", "ZONE", "SAME", "EACH", "BOTH", "NEXT", "LAST", "FIRS", "AIRP"}
+# The scope / direction qualifiers other rules already evaluate: a qualifier made only of these adds nothing.
+_EVALUATED_QUALIFIER = re.compile(
+    r"^(?:(?:DEPARTING|LEAVING|ENTERING|TRANSITING|OPERATING (?:IN|WITHIN)|WITHIN|IN|OVERFLYING)\s+(?:THE\s+)?(?:[A-Z][A-Z-]*\s+){0,4}?FIRS?"
+    r"|FLW\s+F(?:RO)?M\s+.+?\s+FIRS?\s+(?:TO|INTO)\s+.+?\s+FIRS?(?:\s+\(.*\))?"
+    r"|ENTERING\s+.+?\s+FIRS?\s+F(?:RO)?M\s+.+?\s+FIRS?"
+    r"|ARRIVING OR DEPARTING(?: FROM)? AERODROMES(?: IN (?:THE )?[A-Z]+ FIR)?"
+    r"|DEPARTING(?: FROM)? AERODROMES(?: IN (?:THE )?[A-Z]+ FIR)?)$"
+)
+_EQUIPMENT_PREFIX = re.compile(r"\b(?:FANS[- ]?1/A|DATA[- ]?LINK\s*-?\s*EQUIPPED|ADS-[BC][- ]EQUIPPED|APPROPRIATELY EQUIPPED|SUITABLY EQUIPPED|EQUIPPED)\b")
+_RULES_PREFIX = re.compile(r"\b(?:IFR|VFR)\b")
+_ATC_REQUEST = re.compile(r"\b(?:AS|WHEN|IF|WHERE) (?:SO )?REQUESTED BY ATC\b|\bON (?:ATC |CONTROLLER )?REQUEST\b|\bAT (?:ATC|CONTROLLER)(?:'S)? DISCRETION\b|\b(?:WHEN|IF|AS|UNLESS OTHERWISE) INSTRUCTED(?: BY ATC)?\b")
 _OVERFLIGHT = re.compile(r"\bOVERFLIGHTS?\b|\bOVERFLYING\b|\bTRANSIT(?:ING)?\b")
 _AERODROME = re.compile(r"\bAERODROMES?\b|\bTAKE-?OFF\b|\bLANDING\b|\bARRIVAL AND DEPARTURE\b|\bARRIVING OR DEPARTING\b|\bAPPROACH\b")
 _FIR_EXIT = re.compile(r"\bDEPARTING (?:THE )?(?:[A-Z]+ )?FIR\b|\bLEAVING (?:THE )?(?:[A-Z]+ )?FIR\b|\bNEXT FIR\b")
@@ -292,7 +346,16 @@ def _fir_names(flight: dict[str, Any], records: list[dict[str, Any]]) -> dict[st
 # ---------------------------------------------------------------- crossings
 
 
-def _crossings(flight: dict[str, Any]) -> list[dict[str, Any]]:
+def _clock(takeoff: datetime | None, minutes: int) -> tuple[str | None, str]:
+    """HHMMZ and the day rollover ("D+1") of take-off + ACTM; nothing without an actual take-off (never a guessed clock)."""
+    if takeoff is None:
+        return None, ""
+    instant = takeoff + timedelta(minutes=minutes)
+    days = (instant.date() - takeoff.date()).days
+    return f"{instant:%H%M}Z", f"D+{days}" if days > 0 else ""
+
+
+def _crossings(flight: dict[str, Any], takeoff: datetime | None = None) -> list[dict[str, Any]]:
     crossings: list[dict[str, Any]] = []
     seen: set[str] = set()
     previous: str | None = None
@@ -304,6 +367,7 @@ def _crossings(flight: dict[str, Any]) -> list[dict[str, Any]]:
         if not fir or minutes is None:
             continue
         repeated = fir == previous
+        utc, day = _clock(takeoff, minutes)
         crossings.append({
             "sequence": len(crossings) + 1,
             "fir": fir,
@@ -312,8 +376,8 @@ def _crossings(flight: dict[str, Any]) -> list[dict[str, Any]]:
             "source_page": _integer(waypoint.get("source_page")),
             "reentry": fir in seen and not repeated,
             "repeated": repeated,
-            "utc": None,
-            "day": "",
+            "utc": utc,
+            "day": day,
         })
         seen.add(fir)
         previous = fir
@@ -365,7 +429,7 @@ def _scope_compatible(scope: str, relation: str) -> bool:
 
 
 def printed_details(sentence: Any) -> dict[str, Any]:
-    """The frequencies, lead and interval a sentence prints, in the source's own words."""
+    """The frequencies, lead, interval and logon addresses a sentence prints, in the source's own words."""
     upper = classify_text(sentence)
     frequencies: list[str] = []
     for match in _FREQUENCY.findall(upper):
@@ -373,7 +437,16 @@ def printed_details(sentence: Any) -> dict[str, Any]:
             frequencies.append(match)
     lead = _LEAD.search(upper)
     interval = _INTERVAL.search(upper)
-    return {"frequencies": frequencies, "lead": lead.group(1).strip() if lead else None, "interval": interval.group(0) if interval else None}
+    addresses: list[str] = []
+    for match in _ADDRESS.finditer(upper):
+        address = match.group(1) or match.group(2)
+        if address and address not in _ADDRESS_STOPWORDS and address not in addresses:
+            addresses.append(address)
+    return {"frequencies": frequencies, "lead": lead.group(1).strip() if lead else None, "interval": interval.group(0) if interval else None, "addresses": addresses}
+
+
+def _has_values(details: dict[str, Any]) -> bool:
+    return bool(details.get("frequencies") or details.get("lead") or details.get("interval") or details.get("addresses"))
 
 
 def _lead_minutes(lead: str | None) -> int | None:
@@ -401,36 +474,119 @@ def _route_tokens(text: str) -> list[dict[str, Any]]:
     return tokens
 
 
-def effective_scopes(parts: list[str]) -> list[str]:
-    """A sentence's own scope; an unscoped sentence takes the scope of the notice's opening sentence, which states its subject."""
-    own = [sentence_scope(s) for s in parts]
-    opening = own[0] if own else "unscoped"
-    return [scope if scope != "unscoped" else opening for scope in own]
-
-
-def _instruction_index(parts: list[str], scopes: list[str], kind: str, relation: str) -> int:
-    """The scope-compatible sentence of the record's own kind carrying printed values; then compatible; then any communication sentence."""
-    communication = [i for i, s in enumerate(parts) if procedure_kind(s)]
-    if not communication:
-        return 0
-    def rank(i: int) -> tuple[int, int, int, int]:
-        return (
-            0 if _scope_compatible(scopes[i], relation) else 1,
-            0 if procedure_kind(parts[i]) == kind else 1,
-            0 if any(printed_details(parts[i]).values()) else 1,
-            i,
-        )
-    return min(communication, key=rank)
-
-
 def _resolve_names(printed: str, names: dict[str, str]) -> list[tuple[str, str | None]]:
     """The FIR names a direction phrase lists, each with the ICAO the OFP's own headings or bodies give it."""
     by_name = {name: icao for icao, name in names.items()}
     return [(name, by_name.get(name)) for name in re.split(r", AND | AND |, OR | OR |, ", printed.strip()) if name.strip()]
 
 
-def _compose_procedure(record: dict[str, Any], route: dict[str, Any], crossings: list[dict[str, Any]],
-                       names: dict[str, str], departure: datetime | None) -> dict[str, Any] | None:
+# ---- a sentence's subject and the conditions it carries
+
+
+def _subject_of(sentence: str) -> dict[str, Any] | None:
+    """The crew subject a sentence states ("IFR AFCT FLT PLANNED TO DEP CYMM/OILSANDS UNABLE TO CTC ... SHOULD"), with its prefix and qualifier; an imperative sentence addresses the crew directly."""
+    upper = classify_text(sentence)
+    leading = _LEADING_CLAUSE.match(upper)
+    body = upper[leading.end():] if leading else upper
+    match = _SUBJECT.match(body)
+    if match:
+        return {"kind": "stated", "prefix": match.group("prefix").strip(), "qualifier": match.group("qualifier").strip(), "leading": leading.group("clause").strip() if leading else None}
+    if _IMPERATIVE.match(body):
+        return {"kind": "imperative", "prefix": "", "qualifier": "", "leading": leading.group("clause").strip() if leading else None}
+    return None
+
+
+def _airport_conditions(text: str, flight: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+    """Departure / arrival aerodrome restrictions in a qualifier, evaluated against this flight's own airports; the qualifier with them removed."""
+    conditions: list[dict[str, Any]] = []
+    remainder = text
+    for match in _AIRPORT_CONDITION.finditer(text):
+        icao = match.group("icao")
+        if icao in _ICAO_STOPWORDS:
+            continue
+        arrival = match.group("kind").startswith(("ARR", "LANDING", "BOUND"))
+        both = match.group("kind").startswith(("OPERATING TO/FROM", "OPERATING TO OR FROM", "TO OR FROM"))
+        own = [str(flight.get("destination") or "").upper()] if arrival else [str(flight.get("departure") or "").upper()]
+        if both:
+            own = [str(flight.get("departure") or "").upper(), str(flight.get("destination") or "").upper()]
+        own = [o for o in own if o]
+        kind = "arrival" if arrival else "departure"
+        if not own:
+            result, note = "unresolved", "this flight's airports are not held"
+        elif icao in own:
+            result, note = "met", f"this flight {'arrives at' if arrival else 'departs'} {icao}"
+        else:
+            result, note = "not_met", f"this flight {'arrives at' if arrival else 'departs'} {'/'.join(own)}"
+        conditions.append({"kind": kind, "text": f"{match.group('kind')} {icao} ({note})", "result": result})
+        remainder = remainder.replace(match.group(0), " ")
+    remainder = re.sub(r"\b(?:PLANNED TO|PLANNING TO|INTENDING TO)\s*$", "", remainder)
+    remainder = re.sub(r"\s+", " ", remainder).strip(" ,;")
+    return conditions, remainder
+
+
+def _subject_conditions(subject: dict[str, Any], flight: dict[str, Any]) -> list[dict[str, Any]]:
+    """The conditions a stated subject carries: aerodrome restrictions evaluated, every other qualifier explicit and unresolved."""
+    conditions: list[dict[str, Any]] = []
+    prefix = subject.get("prefix") or ""
+    equipment = _EQUIPMENT_PREFIX.search(prefix)
+    if equipment:
+        conditions.append({"kind": "equipment", "text": equipment.group(0), "result": "unresolved"})
+    rules = _RULES_PREFIX.search(prefix)
+    if rules:
+        conditions.append({"kind": "flight_rules", "text": rules.group(0), "result": "unresolved"})
+    qualifier = (subject.get("qualifier") or "").strip(" ,;")
+    if qualifier and not _EVALUATED_QUALIFIER.match(qualifier):
+        airports, remainder = _airport_conditions(qualifier, flight)
+        conditions.extend(airports)
+        if len(remainder.split()) >= 2 and not _EVALUATED_QUALIFIER.match(remainder):
+            conditions.append({"kind": "qualifier", "text": qualifier if airports else remainder, "result": "unresolved"})
+    if subject.get("leading"):
+        clause = subject["leading"]
+        if not _EVALUATED_QUALIFIER.match(re.sub(r"^(?:WHEN|IF|WHILE|UNLESS|AFTER|BEFORE|DURING|PROVIDED|WHERE)\s+", "", clause)):
+            conditions.append({"kind": "qualifier", "text": clause, "result": "unresolved"})
+    return conditions
+
+
+def _trailing_conditions(sentence: str) -> list[dict[str, Any]]:
+    """A WHEN / IF / UNLESS clause after the action ("USE LOGON ADDRESS PAZN WHEN OPERATING IN ...") stays an explicit unresolved condition."""
+    upper = classify_text(sentence)
+    match = _TRAILING_CLAUSE.search(upper)
+    if not match:
+        return []
+    clause = match.group("clause").strip(" ,;")
+    if _EVALUATED_QUALIFIER.match(re.sub(r"^(?:WHEN|IF|WHILE|UNLESS|PROVIDED|WHERE|EXCEPT WHEN|ONLY WHEN|ONLY IF)\s+", "", clause)):
+        return []
+    return [{"kind": "qualifier", "text": clause, "result": "unresolved"}]
+
+
+def _governing_index(parts: list[str], subjects: list[dict[str, Any] | None], index: int) -> int | None:
+    """The nearest earlier sentence with a stated crew subject, for a sentence that has none of its own."""
+    if subjects[index] is not None:
+        return None
+    for j in range(index - 1, -1, -1):
+        if subjects[j] is not None and subjects[j]["kind"] == "stated":
+            return j
+    return None
+
+
+def _state_of(conditions: list[dict[str, Any]]) -> str:
+    results = [c["result"] for c in conditions]
+    return "not_applicable" if "not_met" in results else "conditions_unresolved" if "unresolved" in results else "conditions_held"
+
+
+def _dedupe(conditions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str]] = set()
+    kept: list[dict[str, Any]] = []
+    for condition in conditions:
+        key = (condition["kind"], condition["text"])
+        if key not in seen:
+            seen.add(key)
+            kept.append(condition)
+    return kept
+
+
+def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: dict[str, Any], crossings: list[dict[str, Any]],
+                       names: dict[str, str], basis: dict[str, Any]) -> dict[str, Any] | None:
     """One source-held notice against this flight's OFP; None when the notice's airspace is not on the parsed route."""
     text = _normalise(record.get("text"))
     kind = procedure_kind(text)
@@ -465,78 +621,122 @@ def _compose_procedure(record: dict[str, Any], route: dict[str, Any], crossings:
     entry = first_by_fir.get(fir) if fir else None
     relation = _relation(crossings, fir) if fir else "unresolved"
 
-    parts = sentences(text)
-    scopes = effective_scopes(parts)
-    index = _instruction_index(parts, scopes, kind, relation)
-    instruction = parts[index] if parts else ""
-    scope = scopes[index] if parts else "unscoped"
-    conditions: list[dict[str, Any]] = []
-
+    # ---- notice-level conditions: validity at the effective timing basis, the notice's route / level tokens, ATC's request
+    notice_conditions: list[dict[str, Any]] = []
     validity = _normalise(record.get("validity"))
     window = validity_window(validity)
-    instant = departure + timedelta(minutes=entry["actm_minutes"]) if departure and entry else None
+    basis_utc = _utc(basis.get("utc")) if basis.get("utc") else None
+    instant = basis_utc + timedelta(minutes=entry["actm_minutes"]) if basis_utc and entry else None
+    basis_text = (
+        f"ATOT {basis_utc:%H%M}Z + ACTM" if basis["kind"] == "actual_takeoff" and basis_utc
+        else f"scheduled departure {basis_utc:%H%M}Z + ACTM" if basis["kind"] == "scheduled_departure" and basis_utc
+        else "no departure time held"
+    )
     if window is None or instant is None:
-        conditions.append({"kind": "validity", "text": validity, "result": "unresolved"})
+        notice_conditions.append({"kind": "validity", "text": validity, "result": "unresolved", "basis": basis_text})
     else:
         start, end = window
-        conditions.append({"kind": "validity", "text": validity, "result": "met" if start <= instant and (end is None or instant <= end) else "not_met"})
-
-    if scope == "overflight":
-        conditions.append({"kind": "scope", "text": "overflight", "result": "met" if relation == "overflight" else "not_met" if relation == "arrival" else "unresolved"})
-    elif scope == "aerodrome":
-        conditions.append({"kind": "scope", "text": "arrival/departure operations at aerodromes in the FIR", "result": "met" if relation == "arrival" else "not_met" if relation == "overflight" else "unresolved"})
-    elif scope == "fir_exit":
-        conditions.append({"kind": "scope", "text": "departing the FIR", "result": "met" if relation == "overflight" else "not_met" if relation == "arrival" else "unresolved"})
-
-    direction = next((m for m in (pattern.search(classify_text(instruction)) for pattern in _DIRECTIONS) if m), None)
-    if direction:
-        origins = _resolve_names(direction.group("from"), names)
-        targets = _resolve_names(direction.group("to"), names)
-        origin_rows = [first_by_fir[icao] for _, icao in origins if icao in first_by_fir]
-        target_rows = [first_by_fir[icao] for _, icao in targets if icao in first_by_fir]
-        if any(icao is None for _, icao in origins) and not origin_rows or all(icao is None for _, icao in targets):
-            result = "unresolved"
-        elif not origin_rows or not target_rows:
-            result = "not_met"
-        else:
-            result = "met" if any(o["sequence"] < t["sequence"] for o in origin_rows for t in target_rows) else "not_met"
-        conditions.append({
-            "kind": "direction",
-            "text": "/".join(icao or name for name, icao in origins) + " → " + "/".join(icao or name for name, icao in targets),
-            "result": result,
-        })
-
-    route_frequencies: list[str] | None = None
+        notice_conditions.append({"kind": "validity", "text": validity, "result": "met" if start <= instant and (end is None or instant <= end) else "not_met", "basis": basis_text})
     tokens = _route_tokens(text)
     if segment is not None and heading_kind == "segment":
         tokens = [{"waypoint": w, "airway": segment.get("airway"), "band": None, "text": _normalise(record.get("heading"))} for w in segment_waypoints] + tokens
+    route_frequencies: list[str] | None = None
     if tokens:
         on_route_tokens = [t for t in tokens if t["waypoint"] in route["names"]]
         matched = on_route_tokens[0] if on_route_tokens else None
-        conditions.append({"kind": "route", "text": matched["text"] if matched else tokens[0]["text"], "result": "met" if matched else "not_met"})
+        notice_conditions.append({"kind": "route", "text": matched["text"] if matched else tokens[0]["text"], "result": "met" if matched else "not_met"})
         if matched and matched.get("frequencies"):
             route_frequencies = list(matched["frequencies"])
         band_token = next((t for t in on_route_tokens if t["band"]), None)
         if band_token:
             level = _planned_level_at(route, band_token["waypoint"])
             low, high = band_token["band"]
-            conditions.append({
+            notice_conditions.append({
                 "kind": "level", "text": f"FL{low}-FL{high} at {band_token['waypoint']}",
                 "result": "unresolved" if level is None else "met" if low <= level <= high else "not_met",
                 "note": f"planned FL{level}" if level is not None else "planned level not held",
             })
-    unresolved = _UNRESOLVED.search(classify_text(instruction))
-    if unresolved:
-        conditions.append({"kind": "other", "text": unresolved.group(0).lower().replace(" ", "-"), "result": "unresolved"})
+    atc_request = _ATC_REQUEST.search(classify_text(text))
+    if atc_request:
+        notice_conditions.append({"kind": "atc_request", "text": atc_request.group(0), "result": "unresolved"})
     if association == "unresolved":
-        conditions.append({"kind": "association", "text": "FIR in effect at the segment not derivable from the boundary rows", "result": "unresolved"})
+        notice_conditions.append({"kind": "association", "text": "FIR in effect at the segment not derivable from the boundary rows", "result": "unresolved"})
 
-    results = [c["result"] for c in conditions]
-    state = "not_applicable" if "not_met" in results else "conditions_unresolved" if "unresolved" in results else "conditions_held"
+    # ---- every communication sentence is an action with its own conditions (its subject's, or its governing sentence's)
+    parts = sentences(text)
+    subjects = [_subject_of(part) for part in parts]
+    scopes = [sentence_scope(part) for part in parts]
+    actions: list[dict[str, Any]] = []
+    for index, part in enumerate(parts):
+        part_kind = procedure_kind(part)
+        if part_kind is None:
+            continue
+        governing = _governing_index(parts, subjects, index)
+        scope = scopes[index] if scopes[index] != "unscoped" or governing is None else scopes[governing]
+        conditions = list(notice_conditions)
+        if scope == "overflight":
+            conditions.append({"kind": "scope", "text": "overflight", "result": "met" if relation == "overflight" else "not_met" if relation == "arrival" else "unresolved"})
+        elif scope == "aerodrome":
+            conditions.append({"kind": "scope", "text": "arrival/departure operations at aerodromes in the FIR", "result": "met" if relation == "arrival" else "not_met" if relation == "overflight" else "unresolved"})
+        elif scope == "fir_exit":
+            conditions.append({"kind": "scope", "text": "departing the FIR", "result": "met" if relation == "overflight" else "not_met" if relation == "arrival" else "unresolved"})
+        direction = next((m for m in (pattern.search(classify_text(part)) for pattern in _DIRECTIONS) if m), None)
+        if direction:
+            origins = _resolve_names(direction.group("from"), names)
+            targets = _resolve_names(direction.group("to"), names)
+            origin_rows = [first_by_fir[icao] for _, icao in origins if icao in first_by_fir]
+            target_rows = [first_by_fir[icao] for _, icao in targets if icao in first_by_fir]
+            if any(icao is None for _, icao in origins) and not origin_rows or all(icao is None for _, icao in targets):
+                result = "unresolved"
+            elif not origin_rows or not target_rows:
+                result = "not_met"
+            else:
+                result = "met" if any(o["sequence"] < t["sequence"] for o in origin_rows for t in target_rows) else "not_met"
+            conditions.append({
+                "kind": "direction",
+                "text": "/".join(icao or name for name, icao in origins) + " → " + "/".join(icao or name for name, icao in targets),
+                "result": result,
+            })
+        subject = subjects[index] if subjects[index] is not None else (subjects[governing] if governing is not None else None)
+        if subject is not None:
+            conditions.extend(_subject_conditions(subject, flight))
+        conditions.extend(_trailing_conditions(part))
+        unresolved = _UNRESOLVED.search(classify_text(part))
+        if unresolved:
+            conditions.append({"kind": "other", "text": unresolved.group(0).lower().replace(" ", "-"), "result": "unresolved"})
+        conditions = _dedupe(conditions)
+        details = printed_details(part)
+        if route_frequencies is not None and not details["frequencies"]:
+            details["frequencies"] = route_frequencies
+        actions.append({
+            "sentence": part,
+            "kind": part_kind,
+            "scope": scope,
+            "directive": bool(_DIRECTIVE.search(classify_text(part))) or (subjects[index] or {}).get("kind") == "imperative",
+            "conditions": conditions,
+            "applicability_state": _state_of(conditions),
+            "printed_details": details,
+        })
+    if not actions:
+        return None
 
-    details = printed_details(instruction)
+    def rank(action: dict[str, Any]) -> tuple[int, int, int, int, int]:
+        return (
+            0 if _scope_compatible(action["scope"], relation) else 1,
+            0 if action["directive"] else 1,
+            0 if action["kind"] == kind else 1,
+            0 if _has_values(action["printed_details"]) else 1,
+            actions.index(action),
+        )
+
+    headline = min(actions, key=rank)
+    instruction = headline["sentence"]
+    scope = headline["scope"]
+    conditions = headline["conditions"]
+    state = headline["applicability_state"]
+    details = dict(headline["printed_details"])
     if route_frequencies is not None:
-        details["frequencies"] = route_frequencies
+        details["frequencies"] = list(route_frequencies)
     lead_minutes = _lead_minutes(details["lead"])
     next_fir = _next_fir(crossings, fir) if fir and scope == "fir_exit" else None
     latest = None
@@ -564,6 +764,7 @@ def _compose_procedure(record: dict[str, Any], route: dict[str, Any], crossings:
         "printed_details": details,
         "conditions": conditions,
         "applicability_state": state,
+        "actions": [{k: v for k, v in action.items() if k != "directive"} for action in actions],
         "next_fir": next_fir,
         "latest_actm": latest,
         "actm": entry["actm"] if entry else None,
@@ -617,6 +818,8 @@ def printed_values(line: dict[str, Any]) -> list[str]:
         parts.append(details["lead"])
     if details.get("interval"):
         parts.append(details["interval"])
+    if details.get("addresses"):
+        parts.append("logon " + ", ".join(details["addresses"]))
     if line.get("next_fir"):
         parts.append(f"next FIR {line['next_fir']['fir']} at {line['next_fir']['actm']}")
     if line.get("latest_actm"):
@@ -627,7 +830,8 @@ def printed_values(line: dict[str, Any]) -> list[str]:
 def condition_phrase(condition: dict[str, Any]) -> str:
     kind, result, text = condition["kind"], condition["result"], condition.get("text") or ""
     if kind == "validity":
-        return f"validity {text}: " + {"met": "covers this crossing", "not_met": "outside this crossing", "unresolved": "not evaluable"}[result]
+        outcome = {"met": "covers this crossing", "not_met": "outside this crossing", "unresolved": "not evaluable"}[result]
+        return f"validity {text}: {outcome} (at {condition.get('basis') or 'no departure time held'})"
     if kind == "route":
         return f"route {text}: " + {"met": "on the filed route", "not_met": "not on the filed route", "unresolved": "unresolved"}[result]
     if kind == "level":
@@ -636,6 +840,16 @@ def condition_phrase(condition: dict[str, Any]) -> str:
         return f"direction {text}: " + {"met": "met", "not_met": "not met", "unresolved": "unresolved"}[result]
     if kind == "scope":
         return f"{text}: " + {"met": "met", "not_met": "not met", "unresolved": "unresolved"}[result]
+    if kind in ("departure", "arrival"):
+        return f"{kind} {text}: " + {"met": "met", "not_met": "not met", "unresolved": "not evaluable"}[result]
+    if kind == "qualifier":
+        return f"{text}: not evaluable from the OFP"
+    if kind == "equipment":
+        return f"equipment {text}: not held for this aircraft"
+    if kind == "flight_rules":
+        return f"flight rules {text}: not held in the analysis"
+    if kind == "atc_request":
+        return f"{text.lower()}: at ATC's request"
     if kind == "association":
         return text
     return f"{text} condition not evaluable"
@@ -665,8 +879,9 @@ def procedure_lines(procedures: list[dict[str, Any]]) -> list[dict[str, Any]]:
         lines.append({
             "fir": row["fir"], "actm": row["actm"], "sequence": row["sequence"], "text": text, "kind": row["kind"],
             "association": row["association"], "applicability_state": row["applicability_state"],
-            "printed_details": {"frequencies": list(row["printed_details"]["frequencies"]), "lead": row["printed_details"]["lead"], "interval": row["printed_details"]["interval"]},
+            "printed_details": {"frequencies": list(row["printed_details"]["frequencies"]), "lead": row["printed_details"]["lead"], "interval": row["printed_details"]["interval"], "addresses": list(row["printed_details"].get("addresses") or [])},
             "latest_actm": row["latest_actm"], "next_fir": dict(row["next_fir"]) if row["next_fir"] else None,
+            "further_actions": max(0, len(row.get("actions") or []) - 1),
             "conditions_summary": conditions_summary(row),
             "notam_ids": [row["notam_id"]], "source_pages": [row["source_page"]] if row["source_page"] is not None else [],
         })
@@ -729,17 +944,40 @@ def slot_sentence(slot: dict[str, Any] | None) -> str:
 # ---------------------------------------------------------------- the composition
 
 
-def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _iso_z(value: datetime | None) -> str | None:
+    return f"{value:%Y-%m-%dT%H:%M:%S}Z" if value else None
+
+
+def timing_basis(flight: dict[str, Any], actual_takeoff_utc: Any = None) -> dict[str, Any]:
+    """One effective basis for every clock and every validity decision: the actual take-off when held (the entered one first, then the analysis' own), else the scheduled departure, else none - and it is named."""
+    takeoff = _utc(actual_takeoff_utc) if actual_takeoff_utc else _utc(flight.get("actual_takeoff_utc"))
+    if takeoff:
+        return {"kind": "actual_takeoff", "utc": _iso_z(takeoff)}
+    scheduled = _utc(flight.get("scheduled_departure_utc"))
+    if scheduled:
+        return {"kind": "scheduled_departure", "utc": _iso_z(scheduled)}
+    return {"kind": "none", "utc": None}
+
+
+def extraction_statement(flight: dict[str, Any]) -> dict[str, Any]:
+    """The extraction rules the parser stamped on this analysis, against the value in service."""
+    rules = flight.get("extraction_rules") if isinstance(flight.get("extraction_rules"), str) and flight.get("extraction_rules") else None
+    return {"rules": rules, "current": rules == EXTRACTION_RULES}
+
+
+def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[str, Any]] | None = None, actual_takeoff_utc: Any = None) -> dict[str, Any]:
     source = flight if isinstance(flight, dict) else {}
-    crossings = _crossings(source)
+    basis = timing_basis(source, actual_takeoff_utc)
+    takeoff = _utc(basis["utc"]) if basis["kind"] == "actual_takeoff" else None
+    crossings = _crossings(source, takeoff)
     route = _route(source)
-    departure = _utc(source.get("scheduled_departure_utc"))
     records = [r for r in source.get("notam_procedure_records") or [] if isinstance(r, dict)]
     names = _fir_names(source, records)
+    extraction = extraction_statement(source)
     procedures: list[dict[str, Any]] = []
     other_procedure_count = 0
     for record in records:
-        composed = _compose_procedure(record, route, crossings, names, departure)
+        composed = _compose_procedure(record, source, route, crossings, names, basis)
         if composed is None:
             other_procedure_count += 1
         else:
@@ -783,6 +1021,11 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
     else:
         state = "no_fir_rows_held"
         state_sentence = STATE_SENTENCES[state]
+    if not extraction["current"]:
+        state_sentence = (
+            f"Held extraction predates the current parser ({extraction['rules'] or 'rules not stated'}): the notices below are the ones "
+            f"that extraction held; Create updated briefing re-reads the OFP. {state_sentence}"
+        )
 
     notam_pages = sorted({row["source_page"] for row in procedures if row["source_page"] is not None})
     if crossings:
@@ -797,6 +1040,8 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
         "rule": ENROUTE_CONTACT_RULE,
         "state": state,
         "state_sentence": state_sentence,
+        "timing_basis": basis,
+        "extraction": extraction,
         "crossings": crossings,
         "crossing_sequence": " · ".join(f"{row['fir']} {row['actm']}" for row in crossings),
         "source_pages": source_pages,
@@ -810,9 +1055,10 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
     }
 
 
-def crossing_sequence_limited(crossings: list[dict[str, Any]], limit: int = 24) -> str:
-    """The PDF's whole-pair prefix rule: never a cut pair; the deferral is stated."""
+def crossing_sequence_limited(crossings: list[dict[str, Any]], limit: int = 24, compact: bool = False) -> str:
+    """The PDF's whole-pair prefix rule: never a cut pair; the deferral is stated (in fewer words at the ladder's last step)."""
     pairs = [f"{row['fir']} {row['actm']}" for row in crossings]
     if len(pairs) <= limit:
         return " · ".join(pairs)
-    return " · ".join(pairs[:limit]) + f" · +{len(pairs) - limit} more (ordered list with derived UTC on the dashboard)"
+    suffix = "more on the dashboard" if compact else "more (ordered list with derived UTC on the dashboard)"
+    return " · ".join(pairs[:limit]) + f" · +{len(pairs) - limit} {suffix}"

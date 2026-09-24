@@ -34,7 +34,7 @@ CASES = (
     ("SQ303-BRU-SIN", "SQ30316072026BRU 81.pdf"),
 )
 WAYPOINT_FIELDS = ("name", "fir_boundary", "actm_minutes", "source_page")
-FLIGHT_FIELDS = ("planned_level_profile", "scheduled_departure_utc", "notam_procedure_records", "notam_fir_names", "bobcat")
+FLIGHT_FIELDS = ("departure", "destination", "planned_level_profile", "scheduled_departure_utc", "actual_takeoff_utc", "extraction_rules", "notam_procedure_records", "notam_fir_names", "bobcat")
 
 
 def slim_flight(flight: dict) -> dict:
