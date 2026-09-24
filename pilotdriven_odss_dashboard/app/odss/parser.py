@@ -280,25 +280,81 @@ _NOTAM_FIR_HEADING = re.compile(
     r"^(?P<icao>[A-Z]{4})\s+(?P<name>[A-Z][A-Z0-9 /().,'-]*\bFIR)\s*$",
     re.IGNORECASE,
 )
+# An airway-segment heading: "ENRON/RANAHL750", "ZB    /BIROSL750" - two
+# waypoints (2-5 letters) and the airway they share (1-2 letters + 1-3 digits).
+_NOTAM_SEGMENT_HEADING = re.compile(r"^(?P<from>[A-Z]{2,5})\s*/(?P<rest>[A-Z]{3,7}\d{1,3})$")
+_AIRWAY_SPLIT = re.compile(r"^(?P<to>[A-Z]{2,5})(?P<airway>[A-Z]{1,2}\d{1,3})$")
+# A NOTAM-series label printed above a record ("UT O0287/26", "WS A2306/26"):
+# a continuation inside the current section, never a new section.
+_NOTAM_SERIES_LABEL = re.compile(r"^[A-Z]{1,2}\s+[A-Z]\d{3,5}/\d{2}$")
+
+
+def _split_segment_heading(stripped: str, route_names: set[str] | None = None) -> dict[str, str] | None:
+    """The waypoints and airway of a segment heading; when the tail splits two
+    ways, the split whose waypoint the parsed route names wins."""
+    match = _NOTAM_SEGMENT_HEADING.match(" ".join(stripped.upper().split()))
+    if not match:
+        return None
+    rest = match.group("rest")
+    candidates = []
+    for cut in range(len(rest) - 2, 1, -1):
+        to, airway = rest[:cut], rest[cut:]
+        if 2 <= len(to) <= 5 and _AIRWAY_SPLIT.match(to + airway) and re.fullmatch(r"[A-Z]{1,2}\d{1,3}", airway):
+            candidates.append((to, airway))
+    if not candidates:
+        return None
+    chosen = next((c for c in candidates if route_names and c[0] in route_names), candidates[0])
+    return {"from": match.group("from"), "to": chosen[0], "airway": chosen[1]}
+
+
+def _parse_notam_fir_names(pages: list[str], bounds: tuple[int, int] | None) -> dict[str, str]:
+    """ICAO -> FIR name from the NOTAM section's own underlined FIR headings."""
+    names: dict[str, str] = {}
+    if bounds is None:
+        return names
+    start, end = bounds
+    for page_index in range(start, end):
+        lines = pages[page_index].splitlines()
+        for line_index, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or line_index + 1 >= len(lines) or not re.fullmatch(r"[-=]{3,}", lines[line_index + 1].strip()):
+                continue
+            match = _NOTAM_FIR_HEADING.fullmatch(" ".join(stripped.split()))
+            if match:
+                name = " ".join(match.group("name").upper().split())
+                names.setdefault(match.group("icao").upper(), name[:-4].strip() if name.endswith(" FIR") else name)
+    return names
 
 
 def _parse_notam_procedure_records(
     pages: list[str],
     bounds: tuple[int, int] | None,
+    route_names: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Retain source NOTAM records that explicitly print datalink procedure.
+    """Retain source NOTAM records that print an enroute communication instruction.
 
-    Selection requires both a named FIR heading and printed
-    ``CPDLC``/``ADS-C`` tokens.  The record is not claimed route-applicable;
-    it is held for pilot review with its identity, section heading, physical
-    page and complete source prose.  Airport or generic section records never
-    inherit a previous FIR heading.
+    ATC-RADIO-SOURCE-418 (24 Sep 2026): the rule admitted only records under a
+    named FIR heading that print CPDLC / ADS-C, so the genuine SQ366 and SQ23
+    OFPs' voice, TIBA and contact instructions (some under airway-segment
+    headings) never reached the briefing. Now a record is held when it sits
+    under a FIR heading ("OAKX  KABUL FIR") or an airway-segment heading
+    ("ENRON/RANAHL750") and its body prints a communication instruction of any
+    kind - contact / call / report / monitor with a unit or frequency, TIBA /
+    broadcast / transmission, logon, CPDLC / ADS-C (enroute_contact.
+    procedure_kind; OCR-split words are joined for the test only). A NOTAM-
+    series label under a heading is a continuation of that section. Airport
+    and other sections are never inherited. The record is not claimed route-
+    applicable here: it is held with its identity, validity, heading, heading
+    kind, FIR or segment, physical page and complete source prose; the
+    composition evaluates its printed conditions against the OFP's own facts.
     """
+    from .enroute_contact import procedure_kind
+
     if bounds is None:
         return []
     start, end = bounds
     records: list[dict[str, Any]] = []
-    heading: str | None = None
+    heading: dict[str, Any] | None = None
     current: dict[str, Any] | None = None
     body_lines: list[str] = []
 
@@ -306,7 +362,7 @@ def _parse_notam_procedure_records(
         nonlocal current, body_lines
         if current is not None:
             body = " ".join(body_lines).strip()
-            if re.search(r"\b(?:CPDLC|ADS-C)\b", body, re.IGNORECASE):
+            if procedure_kind(body):
                 records.append({
                     **current,
                     "text": body,
@@ -327,11 +383,17 @@ def _parse_notam_procedure_records(
             )
             if underlined_heading:
                 flush()
-                heading = (
-                    " ".join(stripped.split())
-                    if _NOTAM_FIR_HEADING.fullmatch(stripped)
-                    else None
-                )
+                compact = " ".join(stripped.split())
+                if _NOTAM_SERIES_LABEL.fullmatch(compact.upper()):
+                    continue  # a series label inside the current section
+                fir_match = _NOTAM_FIR_HEADING.fullmatch(compact)
+                segment = _split_segment_heading(stripped, route_names)
+                if fir_match:
+                    heading = {"heading": compact, "heading_kind": "fir", "fir": fir_match.group("icao").upper(), "segment": None}
+                elif segment:
+                    heading = {"heading": compact.replace(" ", ""), "heading_kind": "segment", "fir": None, "segment": segment}
+                else:
+                    heading = None
                 continue
             declaration = _NOTAM_PROCEDURE_HEADER.match(stripped)
             if declaration:
@@ -340,7 +402,7 @@ def _parse_notam_procedure_records(
                     current = {
                         "notam_id": declaration.group("identity").upper(),
                         "validity": " ".join(declaration.group("validity").split()),
-                        "heading": heading,
+                        **heading,
                         "source_page": page_index + 1,
                     }
                 continue
@@ -1830,7 +1892,9 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     notam_procedure_records = _parse_notam_procedure_records(
         pages,
         sections.get("notam"),
+        {str(w.get("name") or "").upper().lstrip("-") for w in waypoints if isinstance(w, dict)},
     )
+    notam_fir_names = _parse_notam_fir_names(pages, sections.get("notam"))
     intam_source_pages = sorted({
         int(record["source_page"])
         for record in intam_records
@@ -1954,6 +2018,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         # Source-held CPDLC/ADS-C procedure records. Presence does not prove
         # route applicability; publishing surfaces retain that explicit gate.
         "notam_procedure_records": notam_procedure_records,
+        "notam_fir_names": notam_fir_names,
         "alternates": _parse_alternates(cfp_pages),
         "performance": performance,
         "fuel": fuel,

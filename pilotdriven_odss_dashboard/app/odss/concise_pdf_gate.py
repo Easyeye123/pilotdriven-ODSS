@@ -372,10 +372,17 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
             # identity, page and "applicability not inferred"), so an identity
             # that record names is explained where it is printed; any other
             # identity on that page is still refused.
+            # ATC-RADIO-SOURCE-418 (24 Sep 2026): the row also quotes the
+            # notice's own instruction sentence verbatim, and an AIP
+            # supplement or AIC names itself inside it in its long form
+            # ("SX0033/26 AIP SUPPLEMENT ...", "AX0001/23 AIC RESTRICTION");
+            # an identity the composed record itself prints is explained by
+            # that record, exactly as its notam_ids are.
+            enroute_lines = ((view or {}).get("enroute_contact") or {}).get("procedure_lines") or []
             enroute_ids = {
                 normalized(identity)
-                for line in ((view or {}).get("enroute_contact") or {}).get("procedure_lines") or []
-                for identity in line.get("notam_ids") or []
+                for line in enroute_lines
+                for identity in [*(line.get("notam_ids") or []), *re.findall(r"\b[A-Z]{1,3}\d{2,5}/\d{2}\b", str(line.get("text") or ""))]
             }
             for index, page in enumerate(pages):
                 for notice_id in re.findall(r"\b[A-Z]{1,3}\d{2,5}/\d{2}\b", page):

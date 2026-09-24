@@ -310,6 +310,9 @@ def test_notam_procedure_projection_holds_cpdcl_source_without_applicability() -
         "notam_id": "1A1891/26",
         "validity": "04-JUN-26 0000 - 02-SEP-26 2359",
         "heading": "WIIF JAKARTA FIR",
+        "heading_kind": "fir",
+        "fir": "WIIF",
+        "segment": None,
         "source_page": 2,
         "text": (
             "ADS-C/CPDLC OPERATIONAL LIMITED TRIAL WILL BE INITIATED AS "

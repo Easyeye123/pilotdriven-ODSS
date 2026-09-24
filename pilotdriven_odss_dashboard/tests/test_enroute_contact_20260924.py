@@ -25,7 +25,7 @@ from app.analysis import run_odss_analysis
 from app.odss import reference_conformance as conformance
 from app.odss.combined_brief import render_combined_briefing
 from app.odss.concise_pdf_gate import normalized
-from app.odss.enroute_contact import ENROUTE_CONTACT_RULE, compose_enroute_contact, contact_procedure_kind
+from app.odss.enroute_contact import ENROUTE_CONTACT_RULE, compose_enroute_contact, primary_procedure_line, procedure_kind
 from tests.test_r2_reminder_wording import david_format_labels, reminder_lines, source_quotations
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,12 +91,14 @@ def _conforms(path: Path) -> dict:
 
 
 def test_the_rule_classifies_a_notice_by_its_printed_instruction_only():
-    assert ENROUTE_CONTACT_RULE == "enroute-contact-v1"
-    assert contact_procedure_kind("... AFN LOGON PROCESS WILL BE INITIATED BY THE PILOT WHEN REQUESTED BY ATC") == "contact_logon"
-    assert contact_procedure_kind("ALL DATA LINK EQUIPPED AIRCRAFT (CPDLC ATN VDL MODE 2) ARE REQUESTED TO LOGON TO LOVV") == "contact_logon"
-    assert contact_procedure_kind("PILOTS SHALL CONTACT MUMBAI RADAR PRIOR TO ENTERING THE FIR") == "contact_logon"
-    assert contact_procedure_kind("OPPORTUNITY BASED APPLICATION OF 10 MINUTES SEPARATION ON XNG TRACKS BTN ADS-B EQUIPPED ACFT") == "datalink_other"
-    assert contact_procedure_kind("") == "datalink_other"
+    # ATC-RADIO-SOURCE-418: four kinds, decided by the printed verb and object; a notice without one is not held.
+    assert procedure_kind("... AFN LOGON PROCESS WILL BE INITIATED BY THE PILOT WHEN REQUESTED BY ATC") == "contact_logon"
+    assert procedure_kind("ALL DATA LINK EQUIPPED AIRCRAFT (CPDLC ATN VDL MODE 2) ARE REQUESTED TO LOGON TO LOVV") == "contact_logon"
+    assert procedure_kind("PILOTS SHALL CONTACT MUMBAI RADAR PRIOR TO ENTERING THE FIR") == "voice_contact"
+    assert procedure_kind("ALL OVERFLIGHTS SHALL COMPLY WITH TIBA PROCEDURE FOR BROADCAST INTENTIONS ON FREQ 125.2MHZ") == "tiba_broadcast"
+    assert procedure_kind("ADS-C/CPDLC OPERATIONAL TRIAL WITHIN JAKARTA FIR ... 10 MINUTES SEPARATION") == "datalink_other"
+    assert procedure_kind("OPPORTUNITY BASED APPLICATION OF 10 MINUTES SEPARATION ON XNG TRACKS BTN ADS-B EQUIPPED ACFT") is None
+    assert procedure_kind("") is None
 
 
 def test_the_composition_reproduces_the_frozen_vectors_the_dashboard_rule_pins():
@@ -114,7 +116,7 @@ def test_sq366_composition_from_the_genuine_analysis(tmp_path_factory):
     composed = compose_enroute_contact(case["payload"]["flight"], case["payload"]["findings"])
     assert composed["state"] == "source_procedures_held"
     assert len(composed["crossings"]) == 24
-    assert composed["crossings"][0] == {"sequence": 1, "fir": "WIIF", "actm": "00:03", "actm_minutes": 3, "source_page": 8, "reentry": False, "utc": None, "day": ""}
+    assert composed["crossings"][0] == {"sequence": 1, "fir": "WIIF", "actm": "00:03", "actm_minutes": 3, "source_page": 8, "reentry": False, "repeated": False, "utc": None, "day": ""}
     assert composed["crossing_sequence"].startswith("WIIF 00:03 · WSJC 00:06 · WMFC 00:07 · WSJC 00:07 · WMFC 00:08 · ")
     assert any(row["fir"] == "WSJC" and row["reentry"] for row in composed["crossings"])
     jakarta = next(row for row in composed["procedures"] if row["notam_id"] == "1A1891/26")
@@ -126,7 +128,8 @@ def test_sq366_composition_from_the_genuine_analysis(tmp_path_factory):
         "computed_cto": "2327Z", "difference_minutes": -1, "source_pages": [1, 11],
     }
     assert composed["slot_sentence"] == "BOBCAT BIROS FL380: CTOT 1752Z + ACTM 05:35 = 2327Z, 1 min before CTO 2328Z (OFP p1, p11)."
-    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, p85"
+    # ATC-RADIO-SOURCE-418: every printed instruction is held, so the Kabul, Karachi and Turkmenabat pages join the provenance.
+    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-89"
     assert [line["notam_ids"] for line in composed["procedure_lines"] if line["fir"] == "WIIF"] == [["1A1891/26"], ["SX50/25"]]
     # The composition is published on the view so the dashboard and the PDF read one record.
     assert case["payload"]["view"]["briefing"]["enroute_contact"] == composed
@@ -141,12 +144,17 @@ def test_sq366_page_six_prints_his_fir_communication_column_with_the_allocation_
     raw = case["pages"][ENROUTE_PAGE]
     assert "FIR / COMMUNICATION" in raw
     assert normalized("No approved early-call rule is held.") in page
-    assert normalized("+00:03 WIIF entry. CPDLC limited trial: pilot initiates AFN logon only when requested by ATC; address WIIF. NOTAM 1A1891/26, OFP p67; applicability not inferred.") in page
+    # ATC-RADIO-SOURCE-418: page 6 holds one full row on this OFP (the first call row with a printed frequency, by the
+    # shared rule) and names every deferred row; the Jakarta note is on the dashboard and named here.
+    composed = case["payload"]["view"]["briefing"]["enroute_contact"]
+    primary = primary_procedure_line(composed["procedure_lines"])
+    assert primary["notam_ids"] == ["1G216/26"]
+    assert normalized("+05:35 OAKX entry. ALL OVERFLIGHTS SHALL COMPLY WITH TIBA PROCEDURE FOR BROADCAST INTENTIONS ON FREQ 125.2MHZ 10 MINS PRIOR ENTERING TO FIR. Printed: 125.2MHZ · 10 MINS PRIOR ENTERING TO FIR · not later than ACTM 05:25. NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing · overflight: met · conditions held.") in page
+    assert normalized("Further rows on the dashboard: WIIF 1A1891/26, SX50/25;") in page
     assert normalized("BOBCAT BIROS FL380: CTOT 1752Z + ACTM 05:35 = 2327Z, 1 min before CTO 2328Z (OFP p1, p11).") in page
     assert normalized("FIR crossings (OFP ACTM): WIIF 00:03 · WSJC 00:06 · WMFC 00:07 · WSJC 00:07 · WMFC 00:08") in page
-    assert "FPL pp8-14 / NOTAM p67, p85" in raw
+    assert "FPL pp8-14 / NOTAM p67, pp85-89" in raw
     # Whole pairs only, in the OFP order; when the page cannot hold all 24 the deferral is stated.
-    composed = case["payload"]["view"]["briefing"]["enroute_contact"]
     printed_pairs, line = _printed_pairs(raw)
     expected = [(row["fir"], row["actm"]) for row in composed["crossings"]]
     assert printed_pairs and printed_pairs == expected[:len(printed_pairs)]

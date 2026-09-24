@@ -32,7 +32,8 @@ from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
 from .constants import format_actm
 from .page_one_weather import page_one_taf_field_continued, forecast_source_line, page_one_metar_field, page_one_taf_field
-from .enroute_contact import compose_enroute_contact, crossing_sequence_limited
+from .enroute_contact import (compose_enroute_contact, crossing_sequence_limited, has_printed_values, is_call_line,
+                              primary_procedure_line, printed_values)
 from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
 
 SIZE = landscape(A4)
@@ -1686,46 +1687,52 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     procedure_lines = list(enroute_contact.get("procedure_lines") or [])
 
     def fir_row(line) -> str:
+        # ATC-RADIO-SOURCE-418 (24 Sep 2026): the row prints the notice's own
+        # instruction sentence, the values it prints (frequency, lead,
+        # interval, the next FIR, the latest ACTM a printed lead gives) and
+        # the result of each printed condition against this OFP - never a
+        # blanket "not held" over a source that holds them.
         pages = ", ".join(f"p{page}" for page in line["source_pages"]) or "page not held"
-        return (f"+{line['actm']} {line['fir']} entry. {line['text']} "
-                f"NOTAM {', '.join(line['notam_ids'])}, OFP {pages}; applicability not inferred.")
+        head = f"+{line['actm']} {line['fir']} entry." if line["actm"] else f"{line['fir'] or 'FIR not derived'} (crossing not derived)."
+        values = printed_values(line)
+        printed = f" Printed: {' · '.join(values)}." if values else ""
+        return (f"{head} {line['text']}{printed} "
+                f"NOTAM {', '.join(line['notam_ids'])}, OFP {pages}; {line['conditions_summary']}.")
 
     def identities(lines) -> str:
-        return ", ".join(f"{line['fir']} NOTAM {', '.join(line['notam_ids'])}" for line in lines)
+        grouped: dict[str, list[str]] = {}
+        for line in lines:
+            grouped.setdefault(line["fir"] or "FIR not derived", []).extend(line["notam_ids"])
+        return "; ".join(f"{fir} {', '.join(ids)}" for fir, ids in grouped.items())
 
-    # The card defers whole units only, and says so: every step keeps the
-    # state, the BOBCAT sentence, at least one source-held procedure row when
-    # one is held, and at least eight crossing pairs; the ordered list with
-    # derived UTC and every procedure row are always on the dashboard.
-    #   0  every row, every pair            3  one contact/logon row per FIR
-    #   1  every row, 12 pairs               4  the first contact/logon row only
-    #   2  datalink notices as identities, 8 pairs
+    # The card defers whole rows only, and says so: every step keeps the
+    # state, the BOBCAT sentence, the primary row (the first call row with
+    # printed values - the row parity binds on both surfaces) and at least
+    # eight crossing pairs; every row is always on the dashboard.
+    #   0  every row, every pair            3  the primary + one valued call row per FIR
+    #   1  every row, 12 pairs               4  the primary row only
+    #   2  the call rows in full, the rest as identities, 8 pairs
     FIR_PAIR_LADDER = (24, 12, 8, 8, 8)
 
     def fir_card(gap, weight, step=0):
-        contact = [line for line in procedure_lines if line["kind"] == "contact_logon"]
-        other = [line for line in procedure_lines if line["kind"] != "contact_logon"]
-        lines = [fir_state, *fir_calls]
+        primary = primary_procedure_line(procedure_lines)
         if step <= 1:
-            lines += [fir_row(line) for line in procedure_lines]
+            shown = list(procedure_lines)
         elif step == 2:
-            lines += [fir_row(line) for line in contact]
-            if other:
-                lines.append(f"Further FIR datalink notice(s) held, not contact instructions: {identities(other)}.")
+            shown = [line for line in procedure_lines if line is primary or is_call_line(line)]
         elif step == 3:
             seen: set[str] = set()
-            shown, deferred = [], []
-            for line in contact:
-                (deferred if line["fir"] in seen else shown).append(line)
-                seen.add(line["fir"])
-            lines += [fir_row(line) for line in shown]
-            if deferred or other:
-                lines.append(f"Further source-held FIR notice rows on the dashboard: {identities(deferred + other)}.")
+            shown = []
+            for line in procedure_lines:
+                if line is primary or (is_call_line(line) and has_printed_values(line) and line["fir"] not in seen):
+                    shown.append(line)
+                    seen.add(line["fir"])
         else:
-            shown, deferred = contact[:1], contact[1:] + other
-            lines += [fir_row(line) for line in shown]
-            if deferred:
-                lines.append(f"Further source-held FIR notice rows on the dashboard: {identities(deferred)}.")
+            shown = [primary] if primary else []
+        deferred = [line for line in procedure_lines if line not in shown]
+        lines = [fir_state, *fir_calls, *(fir_row(line) for line in shown)]
+        if deferred:
+            lines.append(f"Further rows on the dashboard: {identities(deferred)}.")
         lines.append(text(enroute_contact.get("slot_sentence")))
         crossing_line = crossing_sequence_limited(enroute_contact.get("crossings") or [], FIR_PAIR_LADDER[step])
         lines.append("FIR crossings (OFP ACTM): " + (crossing_line or "no boundary row held."))
