@@ -172,8 +172,15 @@ _RELATIVE_OPENING = re.compile(r"^(?:THAT|WHICH|WHO)\s+(?:ARE|IS|WERE|WAS)?\s*")
 # crew action. A sentence whose actor is ATC - a service, a separation, a procedure applied or provided, a centre or
 # its automation - is an ATC provision: still held with its conditions, never presented as a required crew call.
 _CREW_DIRECTIVE = re.compile(r"\b(?:" + _SUBJECT_NOUN + r")\b[^.;]*?\b(?:SHALL|MUST|SHOULD|ARE (?:REQUESTED|REQUIRED|EXPECTED) TO|IS (?:REQUESTED|REQUIRED|EXPECTED) TO|ARE TO|IS TO|NEED TO)\b")
-_ATC_ACTOR = re.compile(r"\b(?:ATC|ATS|ACC|ARTCC|CENTRE|CENTER|CONTROL|CTL|AUTOMATION|SERVICES?|SER|SEPARATION|APPLICATION|PROCEDURES?|SURVEILLANCE|RADAR|UNIT|STATION|FACILITY|TOWER|APP|APPROACH|FIS|AFTN|CPDLC|ADS-[BC])\b")
-_SERVICE_PASSIVE = re.compile(r"\b(?:SHALL|WILL|MAY|CAN|IS|ARE|TO)\s+BE\s+(?:APPLIED|PROVIDED|AVAILABLE|OFFERED|IMPLEMENTED|CONDUCTED|ESTABLISHED|MAINTAINED|EXERCISED|USED|EXPECTED|ISSUED|GIVEN)\b")
+# The HEAD of the subject noun phrase (its last word before the first preposition) names the actor: "OPPORTUNITY BASED
+# APPLICATION OF ..." → APPLICATION, "ARTCC AUTOMATION" → AUTOMATION, "THE CALL SIGN TO BE USED ..." → SIGN (the crew's).
+_HEAD_STOP = re.compile(r"\b(?:OF|ON|IN|FOR|TO|WITH|AT|BY|FROM|WITHIN|BETWEEN|BTN|VIA|UNDER|OVER)\b")
+_ATC_HEADS = {"ATC", "ATS", "ACC", "ARTCC", "ATSU", "CENTRE", "CENTER", "CONTROL", "CTL", "AUTOMATION", "SERVICE", "SERVICES",
+              "SEPARATION", "APPLICATION", "PROVISION", "SURVEILLANCE", "RADAR", "UNIT", "STATION", "FACILITY", "TOWER", "APP",
+              "APPROACH", "FIS", "AFTN"}
+# A service applied or provided (the strict passive), or an agent phrase naming ATC ("... ENDEAVOURED BY ATC", "... BY THE ATSU").
+_SERVICE_PASSIVE = re.compile(r"\b(?:SHALL|WILL|MAY|IS|ARE)\s+BE\s+(?:APPLIED|PROVIDED|AVAILABLE|OFFERED|IMPLEMENTED|CONDUCTED|ESTABLISHED|MAINTAINED|EXERCISED|ENDEAVOURED)\b|\bIS\s+(?:AVAILABLE|PROVIDED)\b")
+_ATC_AGENT = re.compile(r"\bBY (?:THE )?(?:ATC|ATS|ACC|ARTCC|ATSU|GROUND SYSTEM|(?:[A-Z]+ ){0,2}(?:CENTRE|CENTER|CONTROL|CTL|OCEANIC|RADIO|APPROACH|TOWER))\b")
 _DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE REQUESTED TO|IS REQUESTED TO|ARE REQUIRED TO|IS REQUIRED TO|ARE TO|IS TO|NEED TO|EXPECTED TO)\b")
 # Aerodrome restrictions inside a qualifier: "PLANNED TO DEP CYMM/OILSANDS", "ARR KJFK", "OPERATING TO/FROM WSSS".
 _AIRPORT_CONDITION = re.compile(r"\b(?P<kind>DEP(?:ARTING|ARTURE)?(?: FROM)?|ARR(?:IVING|IVAL)?(?: AT| TO)?|LANDING AT|OPERATING (?:TO/FROM|TO OR FROM|TO|FROM|AT)|TO OR FROM|BOUND FOR)\s+(?P<icao>[A-Z]{4})\b(?:/[A-Z-]+)?")
@@ -601,15 +608,20 @@ def _population_conditions(sentence: str, flight: dict[str, Any]) -> list[dict[s
     return conditions
 
 
+def _head_noun(noun: str) -> str:
+    chunk = _HEAD_STOP.split(noun)[0].strip(" ,.;:-")
+    words = chunk.split()
+    return words[-1] if words else ""
+
+
 def _actor_of(sentence: str, subject: dict[str, Any]) -> str:
-    """"crew" for a sentence that directs the crew; "atc" for a provision, service or procedure ATC applies."""
+    """"crew" for a sentence that directs the crew; "atc" for a provision, service or separation ATC applies or provides."""
     if subject["kind"] in ("stated", "imperative") or subject.get("continuation"):
         return "crew"
     upper = classify_text(sentence)
     if _CREW_DIRECTIVE.search(upper) or _IMPERATIVE.match(upper):
         return "crew"
-    noun = subject.get("noun") or ""
-    if _ATC_ACTOR.search(noun) or _SERVICE_PASSIVE.search(upper):
+    if _head_noun(subject.get("noun") or "") in _ATC_HEADS or _SERVICE_PASSIVE.search(upper) or _ATC_AGENT.search(upper):
         return "atc"
     return "crew"
 

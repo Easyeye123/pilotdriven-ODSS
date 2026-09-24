@@ -89,3 +89,27 @@ def test_f1_synthetic_a_crew_instruction_qualified_in_its_body_stays_unresolved(
     assert row["actor"] == "crew"
     assert row["applicability_state"] == "conditions_unresolved", row["conditions"]
     assert any(c["kind"] == "qualifier" and "UNABLE TO LOGON" in c["text"] for c in row["conditions"]), row["conditions"]
+
+
+# ---------------------------------------------------------------- the actor label on genuine sentences that are not provisions
+
+def test_f1_genuine_informational_sentences_about_the_crew_are_not_labelled_atc_provisions():
+    rows = rows_by_id(genuine_flight("SQ366"))
+    sup = rows["SX50/25"]
+    assert sup["actor"] == "crew"
+    call_sign = action_starting(sup, "THE CALL SIGN TO BE USED FOR AFN LOGON")
+    assert call_sign["actor"] == "crew", "the crew's call sign is the crew's, not a service ATC provides"
+    capability = next(a for a in sup["actions"] if "ARE ABLE TO HAVE UP TO FIVE ADS-C CONNECTIONS" in a["sentence"])
+    assert capability["actor"] == "crew"
+    initiated = next(a for a in sup["actions"] if a["sentence"].startswith("THE CPDLC CONNECTION IS INITIATED BY SENDING"))
+    assert initiated["actor"] == "atc", "a connection the ATSU initiates is ATC's act"
+
+
+def test_f1_genuine_a_service_endeavoured_by_atc_is_a_provision_but_the_crew_request_leads_the_row():
+    from tests.test_atc_conditions_20260924b import genuine
+    row = rows_by_id(genuine("SQ23"))["1A1531/26"]
+    assert row["actor"] == "crew" and "ARE REQUESTED TO LOG ON" in row["instruction"]
+    endeavoured = action_starting(row, "INCREASED CPDLC USAGE WILL BE ENDEAVOURED BY ATC")
+    assert endeavoured["actor"] == "atc"
+    assert conditions_summary(endeavoured).startswith("ATC provision")
+    assert not conditions_summary(row).startswith("ATC provision")
