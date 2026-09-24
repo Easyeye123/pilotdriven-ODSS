@@ -1,7 +1,7 @@
 {
-  "publication_rules": "2026-09-24-condition-completeness-v70",
-  "enroute_contact_rule": "enroute-contact-v5",
+  "publication_rules": "2026-09-24-service-population-v71",
+  "enroute_contact_rule": "enroute-contact-v6",
   "extraction_rules": "2026-09-24-atc-radio-source-extraction-v2",
   "publication_format": "six-page-reference-briefing-2026-09-19",
-  "minted": "2026-09-24 release-424 independent QA F1: the composition changed (rule v5: body qualifications, ATC provisions), so the token changed. Re-mint this file together with the token; a rule bumped without it fails both suites."
+  "minted": "2026-09-24 release-428 independent QA F1: the composition changed (rule v6: prefix-only population qualifications, provenance set aside, passive adverbs, crew agents), so the token changed. Re-mint this file together with the token; a rule bumped without it fails both suites."
 }

@@ -65,7 +65,7 @@ from typing import Any
 
 from .extraction_rules import EXTRACTION_RULES
 
-ENROUTE_CONTACT_RULE = "enroute-contact-v5"
+ENROUTE_CONTACT_RULE = "enroute-contact-v6"
 
 JAKARTA_AFN_NOTE = "CPDLC limited trial: pilot initiates AFN logon only when requested by ATC; address WIIF."
 _JAKARTA_TOKENS = ("ADS-C/CPDLC", "REQUESTED BY ATC", "AFN LOGON", "ADDRESS FOR JAKARTA FIR IS WIIF")
@@ -140,7 +140,10 @@ _ADDRESS_STOPWORDS = {"WHEN", "WITH", "THAT", "THIS", "FROM", "INTO", "OVER", "O
 # A sentence's own crew subject, its qualifiers and the modal that ends them:
 # "IFR AFCT FLT PLANNED TO DEP CYMM/OILSANDS UNABLE TO CTC ... SHOULD CTC ...".
 _LIST_MARKER = r"(?:\(?[A-Z]\)?[.)]\s+|\d{1,2}[.)]\s+|-\s*)?"
-_SUBJECT_PREFIX = r"(?:(?:ALL|ANY|EVERY|IFR|VFR|MILITARY|CIVIL|NON-RVSM|RVSM|FANS[- ]?1/A|DATA[- ]?LINK\s*-?\s*EQUIPPED|ADS-[BC][- ]EQUIPPED|APPROPRIATELY EQUIPPED|SUITABLY EQUIPPED|EQUIPPED)\s+)*"
+# A population's qualifying prefixes: flight rules, and equipment named with or without EQUIPPED / PACKAGE
+# ("FANS 1/A, PACKAGE AIRCRAFT", "ADS-B EQUIPPED ACFT", "DATA LINK - EQUIPPED AIRCRAFT"); items may be comma-separated.
+_EQUIPMENT_FORMS = r"FANS[- ]?1/A(?:[ ,]+(?:PACKAGE|EQUIPPED|CAPABLE))?|DATA[- ]?LINK\s*-?\s*EQUIPPED|ADS-[BC](?:[- ]EQUIPPED)?|CPDLC(?:[- ]EQUIPPED)?|APPROPRIATELY EQUIPPED|SUITABLY EQUIPPED|EQUIPPED"
+_SUBJECT_PREFIX = r"(?:(?:ALL|ANY|EVERY|IFR|VFR|MILITARY|CIVIL|NON-RVSM|RVSM|" + _EQUIPMENT_FORMS + r")\s*,?\s+)*"
 _SUBJECT_NOUN = r"(?:FLIGHT CREWS?|THE PILOTS?|THE CREWS?|FLIGHTS?|FLTS?|ACFT|AIRCRAFT|AFCT|TFC|TRAFFIC|OVERFLIGHTS?|PILOTS?|CREWS?|OPERATORS?|AIRLINES?|PERSONS?|USERS?)(?:\s+(?:FLT|FLIGHTS?|OPERATIONS?|OPERATORS?))?"
 _SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b(?P<qualifier>.*?)\s*\b(?P<modal>SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
 _IMPERATIVE = re.compile(r"^" + _LIST_MARKER + r"(?:USE|SELECT|CONTACT|CTC|CALL|MONITOR|LOGON|LOG ON|BROADCAST|REPORT|MAINTAIN|ESTABLISH|COMPLY|SQUAWK|TRANSMIT|NOTIFY|REFER|ADVISE|REQUEST|EXPECT|FILE|OPERATE|AVOID|DO NOT|CONTINUE|PROCEED|REMAIN)\b")
@@ -162,11 +165,11 @@ _CREW_ACT_NOUN = re.compile(r"^(?:THE\s+)?(?:NOTIFICATIONS?|CONTACTS?|LOG-?ONS?|
 # 24 Sep 2026): a crew noun introduced by a population connector and followed by a restrictive modifier - "BTN ADS-B
 # EQUIPPED ACFT THAT ARE CORRELATED WITH CPL ...", "FOR ACFT DEPARTING RJTT", "TO FLIGHTS UNABLE TO LOGON". It is
 # evaluated exactly like a subject qualifier; an object mention without a modifier ("REPORT ANY ACFT") is not one.
-_POPULATION_MODIFIER = r"(?:THAT|WHICH|WHO|EQUIPPED|CORRELATED|OPERATING|OPERATED|PLANNED|PLANNING|FLYING|ENTERING|LEAVING|DEPARTING|ARRIVING|TRANSITING|OVERFLYING|CROSSING|HAVING|CAPABLE|ABLE|UNABLE|NOT|IN POSITIVE|IN CONTACT|IN CTC|WITH|WITHOUT|USING|CONDUCTING|MAINTAINING|EXPERIENCING|LOGGED|BOUND|INBOUND|OUTBOUND|REQUESTING|INTENDING|EXPECTING|CLEARED|APPROACHING|HOLDING|PROCEEDING|ROUTING|CARRYING)"
+_POPULATION_MODIFIER = r"(?:THAT|WHICH|WHO|EQUIPPED|CORRELATED|OPERATING|OPERATED|PLANNED|PLANNING|FLYING|ENTERING|LEAVING|DEPARTING|ARRIVING|TRANSITING|OVERFLYING|CROSSING|HAVING|CAPABLE|ABLE|UNABLE|NOT|IN POSITIVE|IN CONTACT|IN CTC|WITH|WITHOUT|WITHIN|INSIDE|OUTSIDE|USING|CONDUCTING|MAINTAINING|EXPERIENCING|LOGGED|BOUND|INBOUND|OUTBOUND|REQUESTING|INTENDING|EXPECTING|CLEARED|APPROACHING|HOLDING|PROCEEDING|ROUTING|CARRYING)"
 _POPULATION = re.compile(
     r"\b(?:BTN|BETWEEN|FOR|TO|OF|BY|APPLICABLE TO|APPLIES TO|APPLY TO|ONLY (?:TO|FOR)|AVAILABLE TO|PROVIDED TO)\s+"
-    r"(?:(?:ALL|ANY|EVERY|THE|THOSE|SUCH)\s+)?(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\s+"
-    r"(?P<modifier>" + _POPULATION_MODIFIER + r"\b[^.;]*?)(?=\s+\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE TO|IS TO)\b|[.;]|$)")
+    r"(?:(?:ALL|ANY|EVERY|THE|THOSE|SUCH)\s+)?(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b"
+    r"(?:\s+(?P<modifier>" + _POPULATION_MODIFIER + r"\b[^.;]*?)(?=\s+\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE TO|IS TO)\b|[.;]|$))?")
 _RELATIVE_OPENING = re.compile(r"^(?:THAT|WHICH|WHO)\s+(?:ARE|IS|WERE|WAS)?\s*")
 # Who acts. A sentence directing the crew (a crew subject with a modal, an imperative, a continuation of one) is a
 # crew action. A sentence whose actor is ATC - a service, a separation, a procedure applied or provided, a centre or
@@ -174,12 +177,20 @@ _RELATIVE_OPENING = re.compile(r"^(?:THAT|WHICH|WHO)\s+(?:ARE|IS|WERE|WAS)?\s*")
 _CREW_DIRECTIVE = re.compile(r"\b(?:" + _SUBJECT_NOUN + r")\b[^.;]*?\b(?:SHALL|MUST|SHOULD|ARE (?:REQUESTED|REQUIRED|EXPECTED) TO|IS (?:REQUESTED|REQUIRED|EXPECTED) TO|ARE TO|IS TO|NEED TO)\b")
 # The HEAD of the subject noun phrase (its last word before the first preposition) names the actor: "OPPORTUNITY BASED
 # APPLICATION OF ..." → APPLICATION, "ARTCC AUTOMATION" → AUTOMATION, "THE CALL SIGN TO BE USED ..." → SIGN (the crew's).
-_HEAD_STOP = re.compile(r"\b(?:OF|ON|IN|FOR|TO|WITH|AT|BY|FROM|WITHIN|BETWEEN|BTN|VIA|UNDER|OVER)\b")
+_HEAD_STOP = re.compile(r"\b(?:OF|ON|IN|FOR|TO|WITH|AT|BY|FROM|WITHIN|WI|BETWEEN|BTN|VIA|UNDER|OVER)\b")
+# A source provenance block folded into a sentence - an AIP SUP / NOTAM reference with its validity - is set aside
+# for the grammatical analysis only; the printed sentence keeps the source wording (release-428 QA, F1).
+_PROVENANCE = re.compile(r"^(?:[A-Z]{1,2}\d{1,4}/\d{2}\s+)?AIP\s+SUP(?:PLEMENT)?\b(?:\s+NR\s+\S+)?(?:\s+[A-Z]{4}/[A-Z' .()-]*?\s+FIRS?)?\s+VALIDITY:?\s*\d{2}[A-Z]{3}\d{2,4}\s*-\s*(?:\d{2}[A-Z]{3}\d{2,4}|UFN|PERM)\s*")
+# The phrase before a sentence's first modal / finite verb, for a subject the anchored patterns did not read.
+_PRE_MODAL = re.compile(r"^(?P<phrase>.+?)\s+\b(?:SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS|APPLY|APPLIES|DOES|DO)\b")
+_CREW_ACT_HEADS = {"NOTIFICATION", "NOTIFICATIONS", "CONTACT", "CONTACTS", "LOGON", "LOGONS", "LOG-ON", "LOG-ONS", "REPORT", "REPORTS", "REQUEST", "REQUESTS", "CALL", "CALLS", "BROADCAST", "BROADCASTS", "MESSAGE", "MESSAGES", "TRANSMISSION", "TRANSMISSIONS", "COMMUNICATION", "COMMUNICATIONS", "READBACK", "READBACKS", "READ-BACK", "READ-BACKS"}
 _ATC_HEADS = {"ATC", "ATS", "ACC", "ARTCC", "ATSU", "CENTRE", "CENTER", "CONTROL", "CTL", "AUTOMATION", "SERVICE", "SERVICES",
               "SEPARATION", "APPLICATION", "PROVISION", "SURVEILLANCE", "RADAR", "UNIT", "STATION", "FACILITY", "TOWER", "APP",
               "APPROACH", "FIS", "AFTN"}
 # A service applied or provided (the strict passive), or an agent phrase naming ATC ("... ENDEAVOURED BY ATC", "... BY THE ATSU").
-_SERVICE_PASSIVE = re.compile(r"\b(?:SHALL|WILL|MAY|IS|ARE)\s+BE\s+(?:APPLIED|PROVIDED|AVAILABLE|OFFERED|IMPLEMENTED|CONDUCTED|ESTABLISHED|MAINTAINED|EXERCISED|ENDEAVOURED)\b|\bIS\s+(?:AVAILABLE|PROVIDED)\b")
+_SERVICE_PASSIVE = re.compile(r"\b(?:SHALL|WILL|MAY|IS|ARE)\s+(?:(?!BE\b)[A-Z]+\s+){0,2}BE\s+(?:APPLIED|PROVIDED|AVAILABLE|OFFERED|IMPLEMENTED|CONDUCTED|ESTABLISHED|MAINTAINED|EXERCISED|ENDEAVOURED)\b|\bIS\s+(?:[A-Z]+\s+)?(?:AVAILABLE|PROVIDED)\b")
+# An agent phrase naming the crew keeps a passive sentence the crew's ("... SHALL BE APPLIED BY ALL AIRCRAFT").
+_CREW_AGENT = re.compile(r"\bBY\s+(?:ALL\s+|THE\s+|EACH\s+)?(?:AIRCRAFT|ACFT|AFCT|PILOTS?|CREWS?|FLIGHT CREWS?|FLIGHTS?|OPERATORS?|TRAFFIC|TFC)\b")
 _ATC_AGENT = re.compile(r"\bBY (?:THE )?(?:ATC|ATS|ACC|ARTCC|ATSU|GROUND SYSTEM|(?:[A-Z]+ ){0,2}(?:CENTRE|CENTER|CONTROL|CTL|OCEANIC|RADIO|APPROACH|TOWER))\b")
 _DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE REQUESTED TO|IS REQUESTED TO|ARE REQUIRED TO|IS REQUIRED TO|ARE TO|IS TO|NEED TO|EXPECTED TO)\b")
 # Aerodrome restrictions inside a qualifier: "PLANNED TO DEP CYMM/OILSANDS", "ARR KJFK", "OPERATING TO/FROM WSSS".
@@ -193,7 +204,7 @@ _EVALUATED_QUALIFIER = re.compile(
     r"|ARRIVING OR DEPARTING(?: FROM)? AERODROMES(?: IN (?:THE )?[A-Z]+ FIR)?"
     r"|DEPARTING(?: FROM)? AERODROMES(?: IN (?:THE )?[A-Z]+ FIR)?)$"
 )
-_EQUIPMENT_PREFIX = re.compile(r"\b(?:FANS[- ]?1/A|DATA[- ]?LINK\s*-?\s*EQUIPPED|ADS-[BC][- ]EQUIPPED|APPROPRIATELY EQUIPPED|SUITABLY EQUIPPED|EQUIPPED)\b")
+_EQUIPMENT_PREFIX = re.compile(r"\b(?:" + _EQUIPMENT_FORMS + r")\b")
 _RULES_PREFIX = re.compile(r"\b(?:IFR|VFR)\b")
 _ATC_REQUEST = re.compile(r"\b(?:AS|WHEN|IF|WHERE) (?:SO )?REQUESTED BY ATC\b|\bON (?:ATC |CONTROLLER )?REQUEST\b|\bAT (?:ATC|CONTROLLER)(?:'S)? DISCRETION\b|\b(?:WHEN|IF|AS|UNLESS OTHERWISE) INSTRUCTED(?: BY ATC)?\b")
 _OVERFLIGHT = re.compile(r"\bOVERFLIGHTS?\b|\bOVERFLYING\b|\bTRANSIT(?:ING)?\b")
@@ -518,16 +529,23 @@ def _resolve_names(printed: str, names: dict[str, str]) -> list[tuple[str, str |
 # ---- a sentence's subject and the conditions it carries
 
 
+def _semantic(sentence: str) -> str:
+    """The sentence for classification: upper-cased, OCR joins applied, a leading provenance block set aside."""
+    return _PROVENANCE.sub("", classify_text(sentence), count=1)
+
+
 def _subject_of(sentence: str) -> dict[str, Any]:
     """What a sentence says about who acts, and the clauses it carries itself.
 
     kind "stated": a crew subject ("IFR AFCT FLT PLANNED TO DEP CYMM/OILSANDS UNABLE TO CTC ... SHOULD"), with its
     prefix and qualifier; "imperative": the crew addressed directly ("USE LOGON ADDRESS ..."); "other": a subject of its
-    own that is not the crew ("THE PROCEDURES ... APPLY", "ARTCC AUTOMATION WILL PROVIDE"); "fragment": no subject at
-    all. A sentence's own leading clause always belongs to it. Only a continuation - a fragment, or an "other" subject
-    naming the crew's own communication act - takes the governing crew sentence's qualifiers (release-422 QA, F1).
+    own that is not the crew ("THE PROCEDURES ... APPLY", "ARTCC AUTOMATION WILL PROVIDE", or the phrase before the
+    first modal when no anchored pattern read it); "fragment": no finite verb at all. A sentence's own leading clause
+    always belongs to it. Only a continuation - a fragment, or a subject whose head names the crew's own communication
+    act - takes the governing crew sentence's qualifiers (release-422 QA, F1). A source provenance block is set aside
+    first (release-428 QA, F1).
     """
-    upper = classify_text(sentence)
+    upper = _semantic(sentence)
     leading = _LEADING_CLAUSE.match(upper)
     body = upper[leading.end():] if leading else upper
     clause = leading.group("clause").strip() if leading else None
@@ -540,9 +558,14 @@ def _subject_of(sentence: str) -> dict[str, Any]:
     if _IMPERATIVE.match(body):
         return {"kind": "imperative", "prefix": "", "qualifier": "", "leading": clause, "continuation": False}
     other = _OTHER_SUBJECT.match(body)
-    if other:
-        noun = other.group("noun").strip()
-        return {"kind": "other", "prefix": "", "qualifier": "", "leading": clause, "noun": noun, "continuation": bool(_CREW_ACT_NOUN.match(noun))}
+    noun = other.group("noun").strip() if other else None
+    if noun is None:
+        pre = _PRE_MODAL.match(body)
+        if pre:
+            noun = " ".join(pre.group("phrase").split()[-10:]).strip(" ,;:")
+    if noun:
+        return {"kind": "other", "prefix": "", "qualifier": "", "leading": clause, "noun": noun,
+                "continuation": bool(_CREW_ACT_NOUN.match(noun)) or _head_noun(noun) in _CREW_ACT_HEADS}
     return {"kind": "fragment", "prefix": "", "qualifier": "", "leading": clause, "continuation": True}
 
 
@@ -598,12 +621,16 @@ def _subject_conditions(subject: dict[str, Any], flight: dict[str, Any]) -> list
 
 
 def _population_conditions(sentence: str, flight: dict[str, Any]) -> list[dict[str, Any]]:
-    """Qualifications of the aircraft population inside a sentence's body, evaluated like a subject's (F1, 424 QA)."""
-    upper = classify_text(sentence)
+    """Qualifications of the aircraft population inside a sentence's body, evaluated like a subject's (F1, 424 QA);
+    a qualification-bearing prefix alone qualifies, with or without a modifier after the noun (F1, 428 QA)."""
+    upper = _semantic(sentence)
     conditions: list[dict[str, Any]] = []
     for match in _POPULATION.finditer(upper):
-        modifier = _RELATIVE_OPENING.sub("", match.group("modifier").strip(" ,;"))
-        pseudo = {"kind": "population", "prefix": match.group("prefix").strip(), "qualifier": modifier, "leading": None}
+        prefix = match.group("prefix").strip(" ,")
+        modifier = _RELATIVE_OPENING.sub("", (match.group("modifier") or "").strip(" ,;"))
+        if not modifier and not (_EQUIPMENT_PREFIX.search(prefix) or _RULES_PREFIX.search(prefix)):
+            continue
+        pseudo = {"kind": "population", "prefix": prefix, "qualifier": modifier, "leading": None}
         conditions.extend(_subject_conditions(pseudo, flight))
     return conditions
 
@@ -614,21 +641,34 @@ def _head_noun(noun: str) -> str:
     return words[-1] if words else ""
 
 
+def _chunk_heads(noun: str) -> list[str]:
+    heads = []
+    for chunk in _HEAD_STOP.split(noun):
+        words = chunk.strip(" ,.;:-").split()
+        if words:
+            heads.append(words[-1])
+    return heads
+
+
 def _actor_of(sentence: str, subject: dict[str, Any]) -> str:
-    """"crew" for a sentence that directs the crew; "atc" for a provision, service or separation ATC applies or provides."""
+    """"crew" for a sentence that directs the crew; "atc" for a provision, service or separation ATC applies or
+    provides. Decided by the subject's head noun, a service passive (adverbs allowed) beside an ATC-headed phrase, or
+    an agent phrase naming ATC; an agent phrase naming the crew keeps it the crew's; an uncertain actor is the crew's."""
     if subject["kind"] in ("stated", "imperative") or subject.get("continuation"):
         return "crew"
-    upper = classify_text(sentence)
-    if _CREW_DIRECTIVE.search(upper) or _IMPERATIVE.match(upper):
+    upper = _semantic(sentence)
+    if _CREW_DIRECTIVE.search(upper) or _IMPERATIVE.match(upper) or _CREW_AGENT.search(upper):
         return "crew"
-    if _head_noun(subject.get("noun") or "") in _ATC_HEADS or _SERVICE_PASSIVE.search(upper) or _ATC_AGENT.search(upper):
+    heads = _chunk_heads(subject.get("noun") or "")
+    passive = bool(_SERVICE_PASSIVE.search(upper))
+    if (heads and heads[0] in _ATC_HEADS) or (passive and any(head in _ATC_HEADS for head in heads)) or _ATC_AGENT.search(upper):
         return "atc"
     return "crew"
 
 
 def _trailing_conditions(sentence: str) -> list[dict[str, Any]]:
     """A WHEN / IF / UNLESS clause after the action ("USE LOGON ADDRESS PAZN WHEN OPERATING IN ...") stays an explicit unresolved condition."""
-    upper = classify_text(sentence)
+    upper = _semantic(sentence)
     match = _TRAILING_CLAUSE.search(upper)
     if not match:
         return []
