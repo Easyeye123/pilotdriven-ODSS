@@ -255,7 +255,7 @@ def test_sq366_composition_publishes_the_source_held_calls_with_their_printed_co
     assert composed["state"] == "source_procedures_held"
     assert composed["state_sentence"] == (
         "No approved early-call rule is held. 9 source-held communication notice(s) on the parsed route "
-        "(6 voice/broadcast, 3 datalink): printed conditions met on 4, unresolved on 3, not applicable on 2. "
+        "(6 voice/broadcast, 3 datalink): printed conditions met on 3, unresolved on 4, not applicable on 2. "
         "Frequencies and lead times are the source's own printed values; none is inferred from crossing times."
     )
     assert composed["other_procedure_count"] == 1, "the Vienna CPDLC logon notice is held but LOVV is not on this route; the firefighting, VOR and spoofed-call notices are not instructions"

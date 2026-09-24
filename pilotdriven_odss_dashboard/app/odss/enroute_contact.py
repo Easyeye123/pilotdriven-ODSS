@@ -65,7 +65,7 @@ from typing import Any
 
 from .extraction_rules import EXTRACTION_RULES
 
-ENROUTE_CONTACT_RULE = "enroute-contact-v4"
+ENROUTE_CONTACT_RULE = "enroute-contact-v5"
 
 JAKARTA_AFN_NOTE = "CPDLC limited trial: pilot initiates AFN logon only when requested by ATC; address WIIF."
 _JAKARTA_TOKENS = ("ADS-C/CPDLC", "REQUESTED BY ATC", "AFN LOGON", "ADDRESS FOR JAKARTA FIR IS WIIF")
@@ -158,6 +158,22 @@ _OTHER_SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<noun>(?:THE\s+|AN?\s+)?[
 # ...", "REQUESTS TO ATC SHOULD BE MADE ..."): a noun, not an instruction, although the word can also open an imperative.
 _CREW_ACT_SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<noun>(?:THE\s+)?(?:NOTIFICATIONS?|CONTACTS?|LOG-?ONS?|POSITION REPORTS?|REPORTS?|REQUESTS?|CALLS?|BROADCASTS?|MESSAGES?|TRANSMISSIONS?|COMMUNICATIONS?|READ-?BACKS?)(?:\s+(?:TO|WITH|OF|FOR|VIA|ON)\s+[A-Z0-9/-]+)?)\s+\b(?:SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
 _CREW_ACT_NOUN = re.compile(r"^(?:THE\s+)?(?:NOTIFICATIONS?|CONTACTS?|LOG-?ONS?|POSITION REPORTS?|REPORTS?|REQUESTS?|CALLS?|BROADCASTS?|MESSAGES?|TRANSMISSIONS?|COMMUNICATIONS?|READ-?BACKS?)\b")
+# A qualification of the aircraft population anywhere in a sentence's body (F1 of the release-424 independent QA,
+# 24 Sep 2026): a crew noun introduced by a population connector and followed by a restrictive modifier - "BTN ADS-B
+# EQUIPPED ACFT THAT ARE CORRELATED WITH CPL ...", "FOR ACFT DEPARTING RJTT", "TO FLIGHTS UNABLE TO LOGON". It is
+# evaluated exactly like a subject qualifier; an object mention without a modifier ("REPORT ANY ACFT") is not one.
+_POPULATION_MODIFIER = r"(?:THAT|WHICH|WHO|EQUIPPED|CORRELATED|OPERATING|OPERATED|PLANNED|PLANNING|FLYING|ENTERING|LEAVING|DEPARTING|ARRIVING|TRANSITING|OVERFLYING|CROSSING|HAVING|CAPABLE|ABLE|UNABLE|NOT|IN POSITIVE|IN CONTACT|IN CTC|WITH|WITHOUT|USING|CONDUCTING|MAINTAINING|EXPERIENCING|LOGGED|BOUND|INBOUND|OUTBOUND|REQUESTING|INTENDING|EXPECTING|CLEARED|APPROACHING|HOLDING|PROCEEDING|ROUTING|CARRYING)"
+_POPULATION = re.compile(
+    r"\b(?:BTN|BETWEEN|FOR|TO|OF|BY|APPLICABLE TO|APPLIES TO|APPLY TO|ONLY (?:TO|FOR)|AVAILABLE TO|PROVIDED TO)\s+"
+    r"(?:(?:ALL|ANY|EVERY|THE|THOSE|SUCH)\s+)?(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\s+"
+    r"(?P<modifier>" + _POPULATION_MODIFIER + r"\b[^.;]*?)(?=\s+\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE TO|IS TO)\b|[.;]|$)")
+_RELATIVE_OPENING = re.compile(r"^(?:THAT|WHICH|WHO)\s+(?:ARE|IS|WERE|WAS)?\s*")
+# Who acts. A sentence directing the crew (a crew subject with a modal, an imperative, a continuation of one) is a
+# crew action. A sentence whose actor is ATC - a service, a separation, a procedure applied or provided, a centre or
+# its automation - is an ATC provision: still held with its conditions, never presented as a required crew call.
+_CREW_DIRECTIVE = re.compile(r"\b(?:" + _SUBJECT_NOUN + r")\b[^.;]*?\b(?:SHALL|MUST|SHOULD|ARE (?:REQUESTED|REQUIRED|EXPECTED) TO|IS (?:REQUESTED|REQUIRED|EXPECTED) TO|ARE TO|IS TO|NEED TO)\b")
+_ATC_ACTOR = re.compile(r"\b(?:ATC|ATS|ACC|ARTCC|CENTRE|CENTER|CONTROL|CTL|AUTOMATION|SERVICES?|SER|SEPARATION|APPLICATION|PROCEDURES?|SURVEILLANCE|RADAR|UNIT|STATION|FACILITY|TOWER|APP|APPROACH|FIS|AFTN|CPDLC|ADS-[BC])\b")
+_SERVICE_PASSIVE = re.compile(r"\b(?:SHALL|WILL|MAY|CAN|IS|ARE|TO)\s+BE\s+(?:APPLIED|PROVIDED|AVAILABLE|OFFERED|IMPLEMENTED|CONDUCTED|ESTABLISHED|MAINTAINED|EXERCISED|USED|EXPECTED|ISSUED|GIVEN)\b")
 _DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE REQUESTED TO|IS REQUESTED TO|ARE REQUIRED TO|IS REQUIRED TO|ARE TO|IS TO|NEED TO|EXPECTED TO)\b")
 # Aerodrome restrictions inside a qualifier: "PLANNED TO DEP CYMM/OILSANDS", "ARR KJFK", "OPERATING TO/FROM WSSS".
 _AIRPORT_CONDITION = re.compile(r"\b(?P<kind>DEP(?:ARTING|ARTURE)?(?: FROM)?|ARR(?:IVING|IVAL)?(?: AT| TO)?|LANDING AT|OPERATING (?:TO/FROM|TO OR FROM|TO|FROM|AT)|TO OR FROM|BOUND FOR)\s+(?P<icao>[A-Z]{4})\b(?:/[A-Z-]+)?")
@@ -574,6 +590,30 @@ def _subject_conditions(subject: dict[str, Any], flight: dict[str, Any]) -> list
     return conditions
 
 
+def _population_conditions(sentence: str, flight: dict[str, Any]) -> list[dict[str, Any]]:
+    """Qualifications of the aircraft population inside a sentence's body, evaluated like a subject's (F1, 424 QA)."""
+    upper = classify_text(sentence)
+    conditions: list[dict[str, Any]] = []
+    for match in _POPULATION.finditer(upper):
+        modifier = _RELATIVE_OPENING.sub("", match.group("modifier").strip(" ,;"))
+        pseudo = {"kind": "population", "prefix": match.group("prefix").strip(), "qualifier": modifier, "leading": None}
+        conditions.extend(_subject_conditions(pseudo, flight))
+    return conditions
+
+
+def _actor_of(sentence: str, subject: dict[str, Any]) -> str:
+    """"crew" for a sentence that directs the crew; "atc" for a provision, service or procedure ATC applies."""
+    if subject["kind"] in ("stated", "imperative") or subject.get("continuation"):
+        return "crew"
+    upper = classify_text(sentence)
+    if _CREW_DIRECTIVE.search(upper) or _IMPERATIVE.match(upper):
+        return "crew"
+    noun = subject.get("noun") or ""
+    if _ATC_ACTOR.search(noun) or _SERVICE_PASSIVE.search(upper):
+        return "atc"
+    return "crew"
+
+
 def _trailing_conditions(sentence: str) -> list[dict[str, Any]]:
     """A WHEN / IF / UNLESS clause after the action ("USE LOGON ADDRESS PAZN WHEN OPERATING IN ...") stays an explicit unresolved condition."""
     upper = classify_text(sentence)
@@ -730,6 +770,8 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
         if governing is not None:
             conditions.extend(_subject_conditions(subjects[governing], flight))
         conditions.extend(_trailing_conditions(part))
+        conditions.extend(_population_conditions(part, flight))
+        actor = _actor_of(part, subjects[index])
         unresolved = _UNRESOLVED.search(classify_text(part))
         if unresolved:
             conditions.append({"kind": "other", "text": unresolved.group(0).lower().replace(" ", "-"), "result": "unresolved"})
@@ -741,7 +783,8 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
             "sentence": part,
             "kind": part_kind,
             "scope": scope,
-            "directive": bool(_DIRECTIVE.search(classify_text(part))) or subjects[index]["kind"] == "imperative",
+            "actor": actor,
+            "directive": actor == "crew" and (bool(_DIRECTIVE.search(classify_text(part))) or subjects[index]["kind"] == "imperative"),
             "conditions": conditions,
             "applicability_state": _state_of(conditions),
             "printed_details": details,
@@ -793,6 +836,7 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
         "printed_details": details,
         "conditions": conditions,
         "applicability_state": state,
+        "actor": headline["actor"],
         "actions": [{k: v for k, v in action.items() if k != "directive"} for action in actions],
         "next_fir": next_fir,
         "latest_actm": latest,
@@ -888,7 +932,9 @@ STATE_PHRASES = {"conditions_held": "conditions held", "conditions_unresolved": 
 
 
 def conditions_summary(row: dict[str, Any]) -> str:
-    phrases = [condition_phrase(c) for c in row.get("conditions") or []]
+    """The row's conditions and state in one line; an ATC provision says so first (release-424 QA, F1)."""
+    phrases = ["ATC provision"] if row.get("actor") == "atc" else []
+    phrases.extend(condition_phrase(c) for c in row.get("conditions") or [])
     phrases.append(STATE_PHRASES[row["applicability_state"]])
     return " · ".join(phrases)
 
