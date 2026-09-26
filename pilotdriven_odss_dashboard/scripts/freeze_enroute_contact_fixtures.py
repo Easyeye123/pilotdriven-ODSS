@@ -32,6 +32,8 @@ CASES = (
     ("SQ24-SIN-JFK-15AUG", "lido-briefing_SQ_24_15Aug2026_SIN_JFK.pdf"),
     ("SQ304-SIN-BRU", "lido-briefing_SQ_304_12Jul2026_SIN_BRU.pdf"),
     ("SQ303-BRU-SIN", "SQ30316072026BRU 81.pdf"),
+    # HEADING-CONTINUITY-432: its Kabul heading is printed at the foot of p70, the underline on p71.
+    ("SQ322-SIN-LHR", "lido-briefing_SQ_322_16Aug2026_SIN_LHR.pdf"),
 )
 WAYPOINT_FIELDS = ("name", "fir_boundary", "actm_minutes", "source_page")
 FLIGHT_FIELDS = ("departure", "destination", "planned_level_profile", "scheduled_departure_utc", "actual_takeoff_utc", "extraction_rules", "notam_procedure_records", "notam_fir_names", "bobcat")

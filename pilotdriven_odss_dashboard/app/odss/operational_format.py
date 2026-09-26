@@ -390,6 +390,38 @@ def row_widths(cards: list[Card], full_width: float) -> list[float]:
     return [usable * card.width_weight / total for card in cards]
 
 
+# The page-6 FIR / COMMUNICATION card quotes each row's conditions; its deferral
+# ladder may cut them (operational section builder, FIR_STEPS).
+_VALIDITY_CLAUSE = re.compile(r"validity .+: (?:covers this crossing|outside this crossing|not evaluable) \(at [^)]*\)")
+
+
+def compact_conditions_summary(summary: Any, limit: int | None = 72) -> str:
+    """A row's conditions summary ("clause · clause · state") at one step of the page-6 ladder.
+
+    Each quoted source clause is cut to a whole-word prefix of `limit` characters; the dashboard row carries every
+    clause in full. The validity clause is never cut (release-432 QA, O2): its window, whether it covers the crossing
+    and the timing basis it was evaluated at (scheduled departure or ATOT + ACTM) are the row's timing, not a quote.
+    At limit 0 - the ladder's last resort - the other clauses are counted, not printed; the validity clause, an
+    ATC-provision label and the state always print. `limit` None keeps every clause whole.
+    """
+    parts = str(summary or "").split(" · ")
+    if limit is None:
+        return " · ".join(parts)
+    if limit == 0:
+        *clauses, state = parts
+        kept = [part for part in clauses if part == "ATC provision" or _VALIDITY_CLAUSE.fullmatch(part)]
+        counted = len(clauses) - len(kept)
+        return " · ".join(kept + ([f"+{counted} further condition(s) on the dashboard"] if counted else []) + [state])
+    compacted = []
+    for part in parts:
+        if len(part) > limit and not _VALIDITY_CLAUSE.fullmatch(part):
+            cut = part[:limit - 1]
+            space = cut.rfind(" ")
+            part = (cut[:space] if space > limit // 2 - 6 else cut).rstrip(" ,;:") + "…"
+        compacted.append(part)
+    return " · ".join(compacted)
+
+
 def plan_page(title: str, bookmark: str, rows: list[tuple[Any, list[Card]]], *,
               ribbon_index: int = 0, assurance: str = "", aliases: tuple[str, ...] = (),
               body: float = BODY, leading: float = LEADING) -> list[Page]:
@@ -1859,16 +1891,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     procedure_lines = list(enroute_contact.get("procedure_lines") or [])
 
     def compact_summary(line, limit: int = 72) -> str:
-        # The same conditions, each quoted source clause cut to a whole-word
-        # prefix: the dashboard row carries every clause in full.
-        parts = []
-        for part in str(line.get("conditions_summary") or "").split(" · "):
-            if len(part) > limit:
-                cut = part[:limit - 1]
-                space = cut.rfind(" ")
-                part = (cut[:space] if space > limit // 2 - 6 else cut).rstrip(" ,;:") + "…"
-            parts.append(part)
-        return " · ".join(parts)
+        return compact_conditions_summary(line.get("conditions_summary"), limit)
 
     def fir_row(line, compact: bool = False, limit: int = 72) -> str:
         # ATC-RADIO-SOURCE-418 (24 Sep 2026): the row prints the notice's own
@@ -1904,26 +1927,32 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     # printed values - the row parity binds on both surfaces) and at least
     # eight crossing pairs; every row is always on the dashboard.
     #   0  every row, every pair            3  the primary + one valued call row per FIR
-    #   1  every row, 12 pairs               4  step 3 with each clause cut to a prefix
+    #   1  every row, 12 pairs               4  step 3 with each clause cut to a prefix (72)
     #   2  the call rows in full, the rest as identities, 8 pairs
-    #   5  step 3 with each clause cut to its opening words
-    #   6  the primary row only
-    #   7  the primary row with its condition clauses cut to a prefix and the
+    #   5  step 3 with each clause cut to 44 characters   6  ... to its opening words (24)
+    #   7  step 3 with the clauses counted, not printed (validity and state print)
+    #   8  the primary row only
+    #   9  the primary row with its condition clauses cut to a prefix and the
     #      deferred rows as per-FIR counts (rule v3: the rows grew by the
     #      timing basis and the further-sentence count; SQ24 / SQ322 / SQ366
     #      then failed closed at the primary-only step - the F5 class again)
-    #   8  step 7 with each clause cut to its opening words
+    #   10, 11  step 9 with each clause cut to 44 / 24 characters
+    #   12 the primary row with its clauses counted - the last resort, never false
     #   Rule v7 (release-430 QA, F1) states every printed restriction as a
     #   condition, so a row can carry more clauses. Clauses are cut before a
     #   row is dropped: step 4 keeps step 3's rows with each clause cut to a
     #   prefix (genuine SQ23 keeps its Karachi row, prerequisite included),
-    #   and the last step quotes each clause's opening words (genuine SQ322's
-    #   Karachi row missed the previous last step by 2 pt). The state always
-    #   prints; the dashboard carries every clause in full.
+    #   then to its opening words, then counts them (genuine SQ322's Karachi
+    #   row missed release 430's last step by 2 pt). The state always
+    #   prints; the dashboard carries every clause in full. The validity
+    #   clause and its timing basis are never cut (release-432 QA, O2: the
+    #   gate's page 6, without production's reference data, reached these
+    #   steps and printed "(at…").
     #   step: (rows, crossing pairs, clause prefix or None for whole clauses)
     FIR_STEPS = (
         ("all", 24, None), ("all", 12, None), ("calls", 8, None), ("valued_per_fir", 8, None),
-        ("valued_per_fir", 8, 72), ("valued_per_fir", 8, 44), ("primary", 8, None), ("primary", 8, 72), ("primary", 8, 44),
+        ("valued_per_fir", 8, 72), ("valued_per_fir", 8, 44), ("valued_per_fir", 8, 24), ("valued_per_fir", 8, 0),
+        ("primary", 8, None), ("primary", 8, 72), ("primary", 8, 44), ("primary", 8, 24), ("primary", 8, 0),
     )
 
     def fir_card(gap, weight, step=0):
@@ -1944,7 +1973,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         else:
             shown = [primary] if primary else []
         deferred = [line for line in procedure_lines if line not in shown]
-        lines = [fir_state, *fir_calls, *(fir_row(line, compact, clause_limit or 72) for line in shown)]
+        lines = [fir_state, *fir_calls, *(fir_row(line, compact, 72 if clause_limit is None else clause_limit) for line in shown)]
         if deferred:
             lines.append(f"Further rows on the dashboard: {identities(deferred, compact)}." if not compact
                          else f"+{len(deferred)} further rows on the dashboard ({identities(deferred, compact)}).")

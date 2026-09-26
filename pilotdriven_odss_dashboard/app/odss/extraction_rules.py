@@ -13,4 +13,6 @@ and say when a held extraction predates it. The app's copy is
 the two are bumped together whenever the parser's extraction changes.
 """
 
-EXTRACTION_RULES = "2026-09-24-atc-radio-source-extraction-v2"
+# v3 (release-432 QA, F2): NOTAM headings are read across page breaks; each procedure record names its heading page;
+# a record whose owner the layout does not establish is held with heading_kind "unresolved".
+EXTRACTION_RULES = "2026-09-26-notam-heading-continuity-v3"

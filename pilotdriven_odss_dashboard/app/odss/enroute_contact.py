@@ -56,6 +56,13 @@ independent QA showed a valid date promoting the rest of a notice to "held":
   extraction   the extraction rules the parser stamped on the analysis are
                compared with the value in service; an older extraction is
                stated, never presented as the current parser's.
+
+HEADING-CONTINUITY-432 (26 Sep 2026, rule v8). The parser reads NOTAM headings
+across page breaks and names each record's heading page; a record whose owner
+the source layout does not establish arrives with heading_kind "unresolved".
+Such a record is bound to no crossing - no ACTM, no lead-time clock - and says
+so ("section heading not established from the source layout"); a FIR its own
+body names still associates it. Every composed notice carries heading_page.
 """
 from __future__ import annotations
 
@@ -65,7 +72,9 @@ from typing import Any
 
 from .extraction_rules import EXTRACTION_RULES
 
-ENROUTE_CONTACT_RULE = "enroute-contact-v7"
+ENROUTE_CONTACT_RULE = "enroute-contact-v8"
+# A record whose owning heading the source layout does not establish (parser heading_kind "unresolved").
+_UNRESOLVED_OWNER = "section heading not established from the source layout"
 
 JAKARTA_AFN_NOTE = "CPDLC limited trial: pilot initiates AFN logon only when requested by ATC; address WIIF."
 _JAKARTA_TOKENS = ("ADS-C/CPDLC", "REQUESTED BY ATC", "AFN LOGON", "ADDRESS FOR JAKARTA FIR IS WIIF")
@@ -1076,7 +1085,11 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
     if atc_request:
         notice_conditions.append({"kind": "atc_request", "text": atc_request.group(0), "result": "unresolved"})
     if association == "unresolved":
-        notice_conditions.append({"kind": "association", "text": "FIR in effect at the segment not derivable from the boundary rows", "result": "unresolved"})
+        notice_conditions.append({
+            "kind": "association",
+            "text": _UNRESOLVED_OWNER if heading_kind == "unresolved" else "FIR in effect at the segment not derivable from the boundary rows",
+            "result": "unresolved",
+        })
 
     # ---- every communication sentence is an action with its own conditions (its subject's, or its governing sentence's)
     ctx = {"names": names, "crossed": crossed, "fir": fir, "vertical": " ".join(vertical.group("phrase").split()) if vertical else None}
@@ -1176,6 +1189,7 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
         "fir": fir,
         "notam_id": _normalise(record.get("notam_id")).upper(),
         "source_page": _integer(record.get("source_page")),
+        "heading_page": _integer(record.get("heading_page")),
         "validity": validity,
         "heading": _normalise(record.get("heading")),
         "heading_kind": heading_kind,

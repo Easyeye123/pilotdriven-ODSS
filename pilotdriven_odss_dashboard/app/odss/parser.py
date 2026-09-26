@@ -4,7 +4,7 @@ import hashlib
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from .extraction_rules import EXTRACTION_RULES
 
@@ -309,22 +309,111 @@ def _split_segment_heading(stripped: str, route_names: set[str] | None = None) -
     return {"from": match.group("from"), "to": chosen[0], "airway": chosen[1]}
 
 
+# A LIDO NOTAM page is framed by the briefing's running header ("SIA 322/16Aug26/WSSS-EGLL Reg:9VSKS OFP:77/0/0",
+# "SIA 304/12Jul26/SIN-BRU") and the package footer ("Page 70 of 112"); the text extraction prints both after the
+# page's own lines. They are furniture, not NOTAM text - the header in its full shape, or any line opening with the
+# operator prefix the notice readers below already treat as furniture ("SIA ").
+_NOTAM_PAGE_FURNITURE = re.compile(r"^(?:[A-Z]{2,3}\s*\d{1,4}/\d{1,2}[A-Za-z]{3}\d{2}/\S.*|SIA\s.*|Page\s+\d+\s+of\s+\d+)$")
+# A heading is underlined with a hyphen rule; a title is printed between two "=" bars.
+_NOTAM_RULE = re.compile(r"-{3,}")
+_NOTAM_TITLE_BAR = re.compile(r"={3,}")
+
+
+def _notam_section_lines(pages: list[str], bounds: tuple[int, int]) -> list[tuple[int, str]]:
+    """The NOTAM section as one stream of (physical page, stripped line) in which a page break reads as a line break.
+
+    HEADING-CONTINUITY-432 (release-432 independent production QA, F2, 26 Sep 2026): genuine SQ322 prints
+    'OAKX  KABUL FIR' as the last line of p70 and its underline as the first line of p71, and both heading readers looked
+    for the underline on the next line of the same page. A page's furniture and the blank lines at its edges are
+    therefore removed once, here, for every NOTAM heading reader. Blank lines inside a page are kept: in the airport
+    sections a blank line before a rule marks a paragraph separator, not a heading.
+    """
+    start, end = bounds
+    stream: list[tuple[int, str]] = []
+    for page_index in range(start, end):
+        lines = [line.strip() for line in pages[page_index].splitlines()]
+        while lines and (not lines[0] or _NOTAM_PAGE_FURNITURE.fullmatch(lines[0])):
+            lines.pop(0)
+        while lines and (not lines[-1] or _NOTAM_PAGE_FURNITURE.fullmatch(lines[-1])):
+            lines.pop()
+        stream.extend((page_index + 1, line) for line in lines)
+    return stream
+
+
+def _notam_section_events(pages: list[str], bounds: tuple[int, int]) -> Iterator[dict[str, Any]]:
+    """The NOTAM section's structure, read across page breaks: headings, titles, rules and text lines.
+
+    A heading is a line whose hyphen rule follows it; a line in the FIR, segment or series-label grammar may have blank
+    lines before its rule. A title is a line between two "=" bars. Two layouts are ambiguous and reported as such, so a
+    reader never lets the previous heading own what follows: a FIR or segment heading printed without its rule directly
+    above a notice ("unconfirmed_heading"), and a rule with a blank line and no heading above it ("rule",
+    after_blank=True). Each event names the physical page it was printed on.
+    """
+    lines = _notam_section_lines(pages, bounds)
+    count = len(lines)
+
+    def substantive(index: int) -> int:
+        while index < count and not lines[index][1]:
+            index += 1
+        return index
+
+    index = 0
+    while index < count:
+        page_number, text = lines[index]
+        if not text:
+            index += 1
+            continue
+        if _NOTAM_TITLE_BAR.fullmatch(text):
+            title_at = substantive(index + 1)
+            closing_at = substantive(title_at + 1)
+            if (
+                closing_at < count
+                and _NOTAM_TITLE_BAR.fullmatch(lines[closing_at][1])
+                and not _NOTAM_RULE.fullmatch(lines[title_at][1])
+                and not _NOTAM_TITLE_BAR.fullmatch(lines[title_at][1])
+            ):
+                yield {"event": "title", "text": " ".join(lines[title_at][1].split()), "page": lines[title_at][0]}
+                index = closing_at + 1
+            else:
+                index += 1  # a bar that opens no title
+            continue
+        if _NOTAM_RULE.fullmatch(text):
+            yield {"event": "rule", "page": page_number, "after_blank": index == 0 or not lines[index - 1][1]}
+            index += 1
+            continue
+        compact = " ".join(text.split())
+        if not _NOTAM_PROCEDURE_HEADER.match(text):
+            underline_at = index + 1 if index + 1 < count and _NOTAM_RULE.fullmatch(lines[index + 1][1]) else None
+            fir_or_segment = bool(_NOTAM_FIR_HEADING.fullmatch(compact) or _split_segment_heading(compact))
+            if underline_at is None and (fir_or_segment or _NOTAM_SERIES_LABEL.fullmatch(compact.upper())):
+                candidate = substantive(index + 1)
+                if candidate < count and _NOTAM_RULE.fullmatch(lines[candidate][1]):
+                    underline_at = candidate
+            if underline_at is not None:
+                yield {"event": "heading", "text": compact, "page": page_number, "underline_page": lines[underline_at][0]}
+                index = underline_at + 1
+                continue
+            following = substantive(index + 1)
+            if fir_or_segment and following < count and _NOTAM_PROCEDURE_HEADER.match(lines[following][1]):
+                yield {"event": "unconfirmed_heading", "text": compact, "page": page_number}
+                index += 1
+                continue
+        yield {"event": "line", "text": text, "page": page_number}
+        index += 1
+
+
 def _parse_notam_fir_names(pages: list[str], bounds: tuple[int, int] | None) -> dict[str, str]:
-    """ICAO -> FIR name from the NOTAM section's own underlined FIR headings."""
+    """ICAO -> FIR name from the NOTAM section's own underlined FIR headings, wherever a page break falls."""
     names: dict[str, str] = {}
     if bounds is None:
         return names
-    start, end = bounds
-    for page_index in range(start, end):
-        lines = pages[page_index].splitlines()
-        for line_index, line in enumerate(lines):
-            stripped = line.strip()
-            if not stripped or line_index + 1 >= len(lines) or not re.fullmatch(r"[-=]{3,}", lines[line_index + 1].strip()):
-                continue
-            match = _NOTAM_FIR_HEADING.fullmatch(" ".join(stripped.split()))
-            if match:
-                name = " ".join(match.group("name").upper().split())
-                names.setdefault(match.group("icao").upper(), name[:-4].strip() if name.endswith(" FIR") else name)
+    for event in _notam_section_events(pages, bounds):
+        if event["event"] != "heading":
+            continue
+        match = _NOTAM_FIR_HEADING.fullmatch(event["text"])
+        if match:
+            name = " ".join(match.group("name").upper().split())
+            names.setdefault(match.group("icao").upper(), name[:-4].strip() if name.endswith(" FIR") else name)
     return names
 
 
@@ -349,12 +438,20 @@ def _parse_notam_procedure_records(
     applicable here: it is held with its identity, validity, heading, heading
     kind, FIR or segment, physical page and complete source prose; the
     composition evaluates its printed conditions against the OFP's own facts.
+
+    HEADING-CONTINUITY-432 (26 Sep 2026): headings are read across page
+    breaks (_notam_section_events), so a heading printed at the foot of a page
+    owns the notices under its underline on the next; every record names the
+    page its heading is printed on (heading_page). Where the source layout
+    does not establish the owner - a FIR or segment heading without its rule
+    directly above a notice, or a rule with no heading above it inside a FIR
+    or segment section - the notices that follow are held with heading_kind
+    "unresolved" until the next heading, never under the previous owner.
     """
     from .enroute_contact import procedure_kind
 
     if bounds is None:
         return []
-    start, end = bounds
     records: list[dict[str, Any]] = []
     heading: dict[str, Any] | None = None
     current: dict[str, Any] | None = None
@@ -373,48 +470,54 @@ def _parse_notam_procedure_records(
         current = None
         body_lines = []
 
-    for page_index in range(start, end):
-        lines = pages[page_index].splitlines()
-        for line_index, line in enumerate(lines):
-            stripped = line.strip()
-            underlined_heading = (
-                stripped
-                and line_index + 1 < len(lines)
-                and re.fullmatch(r"[-=]{3,}", lines[line_index + 1].strip())
-                and not _NOTAM_PROCEDURE_HEADER.match(stripped)
-            )
-            if underlined_heading:
+    def unresolved(text: str, page_number: int) -> dict[str, Any]:
+        return {"heading": text, "heading_kind": "unresolved", "fir": None, "segment": None, "heading_page": page_number}
+
+    for event in _notam_section_events(pages, bounds):
+        kind = event["event"]
+        if kind == "heading":
+            flush()
+            compact = event["text"]
+            if _NOTAM_SERIES_LABEL.fullmatch(compact.upper()):
+                continue  # a series label inside the current section
+            fir_match = _NOTAM_FIR_HEADING.fullmatch(compact)
+            segment = _split_segment_heading(compact, route_names)
+            if fir_match:
+                heading = {"heading": compact, "heading_kind": "fir", "fir": fir_match.group("icao").upper(), "segment": None,
+                           "heading_page": event["page"]}
+            elif segment:
+                heading = {"heading": compact.replace(" ", ""), "heading_kind": "segment", "fir": None, "segment": segment,
+                           "heading_page": event["page"]}
+            else:
+                heading = None
+            continue
+        if kind == "title":
+            flush()
+            heading = None
+            continue
+        if kind == "unconfirmed_heading" or (kind == "rule" and event["after_blank"]):
+            # The source does not establish who owns what follows: hold it with its owner unresolved rather than let
+            # the heading before it own it. Outside a held section nothing is inherited, so nothing changes.
+            if heading is not None:
                 flush()
-                compact = " ".join(stripped.split())
-                if _NOTAM_SERIES_LABEL.fullmatch(compact.upper()):
-                    continue  # a series label inside the current section
-                fir_match = _NOTAM_FIR_HEADING.fullmatch(compact)
-                segment = _split_segment_heading(stripped, route_names)
-                if fir_match:
-                    heading = {"heading": compact, "heading_kind": "fir", "fir": fir_match.group("icao").upper(), "segment": None}
-                elif segment:
-                    heading = {"heading": compact.replace(" ", ""), "heading_kind": "segment", "fir": None, "segment": segment}
-                else:
-                    heading = None
-                continue
-            declaration = _NOTAM_PROCEDURE_HEADER.match(stripped)
-            if declaration:
-                flush()
-                if heading is not None:
-                    current = {
-                        "notam_id": declaration.group("identity").upper(),
-                        "validity": " ".join(declaration.group("validity").split()),
-                        **heading,
-                        "source_page": page_index + 1,
-                    }
-                continue
-            if (
-                current is not None
-                and stripped
-                and not re.fullmatch(r"[-=]{3,}", stripped)
-                and not stripped.startswith(("SIA ", "Page "))
-            ):
-                body_lines.append(" ".join(stripped.split()))
+                heading = unresolved(event.get("text", ""), event["page"])
+            continue
+        if kind != "line":
+            continue
+        stripped = event["text"]
+        declaration = _NOTAM_PROCEDURE_HEADER.match(stripped)
+        if declaration:
+            flush()
+            if heading is not None:
+                current = {
+                    "notam_id": declaration.group("identity").upper(),
+                    "validity": " ".join(declaration.group("validity").split()),
+                    **heading,
+                    "source_page": event["page"],
+                }
+            continue
+        if current is not None and not stripped.startswith(("SIA ", "Page ")):
+            body_lines.append(" ".join(stripped.split()))
     flush()
     return records
 

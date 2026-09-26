@@ -313,6 +313,7 @@ def test_notam_procedure_projection_holds_cpdcl_source_without_applicability() -
         "heading_kind": "fir",
         "fir": "WIIF",
         "segment": None,
+        "heading_page": 2,  # HEADING-CONTINUITY-432: the page the owning heading is printed on
         "source_page": 2,
         "text": (
             "ADS-C/CPDLC OPERATIONAL LIMITED TRIAL WILL BE INITIATED AS "
