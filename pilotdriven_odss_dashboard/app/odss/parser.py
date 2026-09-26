@@ -1438,6 +1438,107 @@ def _utc_nearest(reference: datetime, hhmm: str) -> datetime:
     return min(candidates, key=lambda value: abs((value - reference).total_seconds()))
 
 
+# SLOT-ALLOCATION-434 (independent QA of release 434, F3). The slot-control allocation a dispatcher prints: the fields
+# WPT, FL, CTO, CTOT in that order, after an optional "<SYSTEM> ALLOCATION" label. Genuine packs print them spaced
+# ("WPT BIROS FL 380 CTO 2328 CTOT 1752"), comma-separated on the line after the label, hyphenated between pipes
+# ("WPT-BIROS | FL-360 | CTO-2100 | CTOT-1527") and colon-joined ("WPT DOBAT FL:360 CTO:2202 CTOT:1627"); the grammar
+# fixes the field order, not the separators. The same grammar, token for token, is parseSlotAllocation in the app's
+# cfp.mjs (tests/test_slot_allocation_grammar_20260927.py replays every case through both).
+_ALLOCATION_KEY_SEPARATOR = r"\s*[:\-=–]?\s*"
+_ALLOCATION_FIELD_SEPARATOR = r"(?:\s*[,|;/]\s*|\s+)"
+_ALLOCATION_CLOCK = r"[0-9]{2}:?[0-9]{2}(?![0-9:])Z?"
+_SLOT_ALLOCATION = re.compile(
+    r"(?:\b(?P<system>[A-Z][A-Z0-9]{1,11})\s*ALLOCATION\b\s*[:\-–]?\s*)?"
+    r"\bWPT(?:\s*[:\-=–]\s*|\s+)(?P<waypoint>(?=[A-Z0-9]*[A-Z])[A-Z0-9]{2,7})"
+    + _ALLOCATION_FIELD_SEPARATOR + r"FL" + _ALLOCATION_KEY_SEPARATOR + r"(?P<level>[0-9]{2,3})(?![0-9])"
+    + _ALLOCATION_FIELD_SEPARATOR + r"CTO" + _ALLOCATION_KEY_SEPARATOR + r"(?P<cto>" + _ALLOCATION_CLOCK + r")"
+    + _ALLOCATION_FIELD_SEPARATOR + r"CTOT" + _ALLOCATION_KEY_SEPARATOR + r"(?P<ctot>" + _ALLOCATION_CLOCK + r")"
+    + r"(?P<note>[^\n]*)",
+    re.IGNORECASE,
+)
+_SLOT_ALLOCATION_LABEL = re.compile(r"\b(?P<system>[A-Z][A-Z0-9]{1,11})\s*ALLOCATION\b\s*[:\-–]?", re.IGNORECASE)
+_SLOT_ALLOCATION_WPT = re.compile(r"\bWPT\b", re.IGNORECASE)
+_SLOT_ALLOCATION_TIME_KEY = re.compile(r"\bCTOT?\b", re.IGNORECASE)
+_SLOT_FLOW_SYSTEMS = {"BOBCAT", "ATFM", "CFMU", "SLOT", "FLOW"}
+_SLOT_SYSTEM_MENTION = re.compile(r"\b(BOBCAT|ATFM|CFMU)\b", re.IGNORECASE)
+_SLOT_ALLOCATION_FORM = "not in the WPT / FL / CTO / CTOT form"
+_SLOT_ALLOCATION_WINDOW = 3  # the anchor line and the two lines after it: a wrapped label or field sequence
+_SLOT_ALLOCATION_QUOTE = 120
+
+
+def _allocation_clock(printed: str) -> str | None:
+    digits = printed.upper().rstrip("Z").replace(":", "")
+    return digits if int(digits[:2]) <= 23 and int(digits[2:]) <= 59 else None
+
+
+def parse_slot_allocation(pages: list[tuple[int, str]]) -> dict[str, Any]:
+    """The first readable slot-control allocation in ``pages`` (in search order), else the first printed one that does
+    not read - never absence for an allocation the OFP prints.
+
+    Returns ``{"allocation": {system, waypoint, level, cto, ctot, note, page} | None,
+    "unread": {text, page, reason} | None}``; ``cto`` / ``ctot`` are the printed HHMM clocks. Evidence that an
+    allocation is printed is a label of a flow system ("BOBCAT ALLOCATION") or a line printing WPT with CTO or CTOT;
+    another kind of allocation ("GATE ALLOCATION") or a CTOT mentioned alone is not.
+    """
+    unread: dict[str, Any] | None = None
+    for page_number, text in pages:
+        lines = [" ".join(line.split()) for line in str(text or "").split("\n")]
+        lines = [line for line in lines if line]
+        for index, line in enumerate(lines):
+            label = _SLOT_ALLOCATION_LABEL.search(line)
+            if not label and not _SLOT_ALLOCATION_WPT.search(line):
+                continue
+            window = "\n".join(lines[index:index + _SLOT_ALLOCATION_WINDOW])
+            match = next((m for m in _SLOT_ALLOCATION.finditer(window) if m.start() <= len(line)), None)
+            reason = _SLOT_ALLOCATION_FORM
+            if match:
+                level = int(match.group("level"))
+                cto = _allocation_clock(match.group("cto"))
+                ctot = _allocation_clock(match.group("ctot"))
+                if not 10 <= level <= 600:
+                    reason = f"FL{match.group('level')} is not a flight level"
+                elif cto is None:
+                    reason = f"CTO {match.group('cto')} is not a UTC clock time"
+                elif ctot is None:
+                    reason = f"CTOT {match.group('ctot')} is not a UTC clock time"
+                else:
+                    named = match.group("system")
+                    mentioned = _SLOT_SYSTEM_MENTION.search(line)
+                    system = named.upper() if named else (mentioned.group(1).upper() if mentioned else "SLOT")
+                    return {
+                        "allocation": {
+                            "system": system,
+                            "waypoint": match.group("waypoint").upper(),
+                            "level": level,
+                            "cto": cto,
+                            "ctot": ctot,
+                            "note": match.group("note").strip().strip("*").strip(),
+                            "page": page_number,
+                        },
+                        "unread": None,
+                    }
+            printed = bool(label and label.group("system").upper() in _SLOT_FLOW_SYSTEMS) or bool(
+                _SLOT_ALLOCATION_WPT.search(line) and _SLOT_ALLOCATION_TIME_KEY.search(line)
+            )
+            if unread is None and (printed or match):
+                quote = line
+                if label and not line[label.end():].strip() and index + 1 < len(lines):
+                    quote = f"{line} {lines[index + 1]}"
+                if len(quote) > _SLOT_ALLOCATION_QUOTE:
+                    quote = quote[:_SLOT_ALLOCATION_QUOTE - 1].rstrip() + "…"
+                unread = {"text": quote, "page": page_number, "reason": reason}
+    return {"allocation": None, "unread": unread}
+
+
+def _slot_allocation_search_pages(pages: list[str], sections: dict[str, tuple[int, int]], cfp_start: int,
+                                  summary_group: list[int]) -> list[tuple[int, str]]:
+    """The summary (logical page 1) first, then every other page before the NOTAM bulletin - the app searches the same."""
+    end = sections["notam"][0] if "notam" in sections else len(pages)
+    summary = [cfp_start + index for index in summary_group]
+    order = summary + [index for index in range(end) if index not in summary]
+    return [(index + 1, pages[index]) for index in order]
+
+
 _EXPLICIT_NIL_EDTO = re.compile(
     r"\b(?:EDTO|ETOPS)(?:\s+(?:STATUS|APPLICABILITY))?\s*[:=-]?\s*"
     r"(?:NIL|N/?A|NOT\s+APPLICABLE)\b|"
@@ -1868,18 +1969,17 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     )
 
     bobcat = None
-    match = re.search(
-        r"BOBCAT\s+ALLOCATION\s*:\s*WPT\s+([A-Z0-9]+)\s*,?\s*"
-        r"FL\s*(\d+)\s*,?\s*CTO\s*(\d{4})\s*,?\s*CTOT\s*(\d{4})",
-        page1,
-        re.IGNORECASE,
+    slot_allocation_unread = None
+    slot_allocation = parse_slot_allocation(
+        _slot_allocation_search_pages(pages, sections, cfp_start, _lido_logical_page_groups(cfp_pages)[0])
     )
-    if match:
+    allocation = slot_allocation["allocation"]
+    if allocation:
         waypoint = next(
             (
                 item
                 for item in waypoints
-                if str(item.get("name") or "").lstrip("-").upper() == match.group(1).upper()
+                if str(item.get("name") or "").lstrip("-").upper() == allocation["waypoint"]
             ),
             None,
         )
@@ -1887,11 +1987,17 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
             minutes=int((waypoint or {}).get("actm_minutes") or 0)
         )
         bobcat = {
-            "waypoint": match.group(1).upper(),
-            "flight_level": int(match.group(2)),
-            "cto_utc": _utc_nearest(predicted_crossing, match.group(3)).isoformat(),
-            "ctot_utc": _utc_nearest(departure_utc, match.group(4)).isoformat(),
+            "waypoint": allocation["waypoint"],
+            "flight_level": allocation["level"],
+            "cto_utc": _utc_nearest(predicted_crossing, allocation["cto"]).isoformat(),
+            "ctot_utc": _utc_nearest(departure_utc, allocation["ctot"]).isoformat(),
+            "system": allocation["system"],
+            "source_page": allocation["page"],
         }
+    elif slot_allocation["unread"]:
+        unread = slot_allocation["unread"]
+        # Printed but not read: held verbatim so no surface can publish it as absent.
+        slot_allocation_unread = {"text": unread["text"], "source_page": unread["page"], "reason": unread["reason"]}
 
     fuel = {
         "trip_fuel_kg": _int_group(page1, r"BURNOFF\s+\d{2}\.\d{2}\s+0*(\d+)"),
@@ -2115,6 +2221,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         # discarded based on the route's EDTO classification.
         "edto_rvsm": printed_flight_rules or None,
         "bobcat": bobcat,
+        "slot_allocation_unread": slot_allocation_unread,
         "deferred_items": _parse_deferred_items(page1),
         "page1_remarks": _parse_page1_remarks(page1),
         # Lossless bounded company-bulletin identities. No route relevance,

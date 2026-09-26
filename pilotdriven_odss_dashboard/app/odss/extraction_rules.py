@@ -15,4 +15,6 @@ the two are bumped together whenever the parser's extraction changes.
 
 # v3 (release-432 QA, F2): NOTAM headings are read across page breaks; each procedure record names its heading page;
 # a record whose owner the layout does not establish is held with heading_kind "unresolved".
-EXTRACTION_RULES = "2026-09-26-notam-heading-continuity-v3"
+# v4 (release-434 QA, F3): the slot-control allocation is read in every printed separator and wrap form (one grammar
+# with the app); an allocation printed but not read is held as ``slot_allocation_unread``, never as absence.
+EXTRACTION_RULES = "2026-09-27-slot-allocation-grammar-v4"

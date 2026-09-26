@@ -165,7 +165,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # is re-created under these rules, never served from the old composition.
 # Release-422 independent QA, F2: the token is minted together with the composition it publishes
 # (tests/fixtures/publication_rules_manifest.json pins it beside the enroute rule and the extraction rules).
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-26-heading-continuity-v73"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-27-slot-allocation-v74"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

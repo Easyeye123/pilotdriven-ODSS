@@ -63,6 +63,11 @@ the source layout does not establish arrives with heading_kind "unresolved".
 Such a record is bound to no crossing - no ACTM, no lead-time clock - and says
 so ("section heading not established from the source layout"); a FIR its own
 body names still associates it. Every composed notice carries heading_page.
+
+SLOT-ALLOCATION-434 (27 Sep 2026, rule v9). The slot line says what the OFP prints: the allocation read (under the
+system and on the page the print names), an allocation printed but not read (quoted, with why - never absence), no
+allocation held by an extraction older than the grammar (Create updated briefing re-reads it), or - only when the
+current extraction found nothing allocation-like - that none is printed.
 """
 from __future__ import annotations
 
@@ -72,7 +77,7 @@ from typing import Any
 
 from .extraction_rules import EXTRACTION_RULES
 
-ENROUTE_CONTACT_RULE = "enroute-contact-v8"
+ENROUTE_CONTACT_RULE = "enroute-contact-v9"
 # A record whose owning heading the source layout does not establish (parser heading_kind "unresolved").
 _UNRESOLVED_OWNER = "section heading not established from the source layout"
 
@@ -1359,10 +1364,12 @@ def _slot_control(flight: dict[str, Any]) -> dict[str, Any] | None:
     computed = ctot_at + timedelta(minutes=actm_minutes) if actm_minutes is not None and ctot_at else None
     difference = round((computed - cto_at).total_seconds() / 60) if computed and cto_at else None
     evidence = flight.get("source_evidence") if isinstance(flight.get("source_evidence"), dict) else {}
-    pages = sorted({p for p in (_integer(evidence.get("page1")), _integer(row.get("source_page")) if row else None) if p is not None and p > 0})
+    # An allocation held before SLOT-ALLOCATION-434 names neither: that grammar read BOBCAT labels on page 1 only.
+    printed_page = _integer(bobcat.get("source_page")) or _integer(evidence.get("page1"))
+    pages = sorted({p for p in (printed_page, _integer(row.get("source_page")) if row else None) if p is not None and p > 0})
     level = bobcat.get("flight_level")
     return {
-        "system": "BOBCAT",
+        "system": _normalise(bobcat.get("system")).upper() or "BOBCAT",
         "waypoint": waypoint,
         "flight_level": _integer(level) if _integer(level) is not None else (int(level) if level is not None else None),
         "ctot": _hhmm_z(_utc(bobcat.get("ctot_utc"))),
@@ -1374,8 +1381,30 @@ def _slot_control(flight: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def slot_sentence(slot: dict[str, Any] | None) -> str:
+def _slot_unread(flight: dict[str, Any]) -> dict[str, Any] | None:
+    """An allocation the OFP prints that the grammar did not read, as the parser quoted it."""
+    unread = flight.get("slot_allocation_unread")
+    if not isinstance(unread, dict) or not _normalise(unread.get("text")):
+        return None
+    return {"text": _normalise(unread.get("text")), "source_page": _integer(unread.get("source_page")),
+            "reason": _normalise(unread.get("reason")) or None}
+
+
+def unread_slot_sentence(unread: dict[str, Any]) -> str:
+    page = f" on OFP p{unread['source_page']}" if unread.get("source_page") else ""
+    reason = f" ({unread['reason']})" if unread.get("reason") else ""
+    return (f'A slot-control allocation is printed{page} but was not read{reason}: "{unread["text"]}". '
+            "Use the OFP's printed allocation; no CTOT + ACTM check was made.")
+
+
+def slot_sentence(slot: dict[str, Any] | None, unread: dict[str, Any] | None = None,
+                  extraction: dict[str, Any] | None = None) -> str:
     if not slot:
+        if unread:
+            return unread_slot_sentence(unread)
+        if extraction is not None and not extraction.get("current"):
+            return (f"No slot-control allocation is held by this extraction ({extraction.get('rules') or 'rules not stated'}), "
+                    "which predates the current parser; Create updated briefing re-reads the OFP.")
         return NO_ALLOCATION_SENTENCE
     pages = f" (OFP {', '.join(f'p{p}' for p in slot['source_pages'])})" if slot["source_pages"] else ""
     level = f"FL{slot['flight_level']}" if slot["flight_level"] is not None else "level not found"
@@ -1487,6 +1516,7 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
         provenance = "FPL boundary rows not held"
 
     slot = _slot_control(source)
+    unread = None if slot else _slot_unread(source)
     return {
         "rule": ENROUTE_CONTACT_RULE,
         "state": state,
@@ -1501,7 +1531,8 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
         "other_procedure_count": other_procedure_count,
         "required_calls": required_calls,
         "slot_control": slot,
-        "slot_sentence": slot_sentence(slot),
+        "slot_unread": unread,
+        "slot_sentence": slot_sentence(slot, unread, extraction),
         "provenance": provenance,
     }
 

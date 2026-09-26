@@ -2590,12 +2590,16 @@ N03 10.0 E105 40.0 090
 
     flight = parse_lido(pages, "bobcat.pdf")
 
+    # SLOT-ALLOCATION-434: the allocation also names the system and page it is printed under.
     assert flight["bobcat"] == {
         "waypoint": "BOBI1",
         "flight_level": 360,
         "cto_utc": "2026-07-16T22:15:00+00:00",
         "ctot_utc": "2026-07-16T22:05:00+00:00",
+        "system": "BOBCAT",
+        "source_page": 1,
     }
+    assert flight["slot_allocation_unread"] is None
 
 
 def test_depressurisation_profiles_require_aircraft_effectivity(

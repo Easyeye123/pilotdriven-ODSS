@@ -34,9 +34,12 @@ CASES = (
     ("SQ303-BRU-SIN", "SQ30316072026BRU 81.pdf"),
     # HEADING-CONTINUITY-432: its Kabul heading is printed at the foot of p70, the underline on p71.
     ("SQ322-SIN-LHR", "lido-briefing_SQ_322_16Aug2026_SIN_LHR.pdf"),
+    # SLOT-ALLOCATION-434: its allocation is printed colon-joined ("WPT DOBAT FL:360 CTO:2202 CTOT:1627"); SQ322's is
+    # hyphenated between pipes. Both were read as no allocation before the shared grammar.
+    ("SQ352-SIN-CPH", "lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf"),
 )
 WAYPOINT_FIELDS = ("name", "fir_boundary", "actm_minutes", "source_page")
-FLIGHT_FIELDS = ("departure", "destination", "planned_level_profile", "scheduled_departure_utc", "actual_takeoff_utc", "extraction_rules", "notam_procedure_records", "notam_fir_names", "bobcat")
+FLIGHT_FIELDS = ("departure", "destination", "planned_level_profile", "scheduled_departure_utc", "actual_takeoff_utc", "extraction_rules", "notam_procedure_records", "notam_fir_names", "bobcat", "slot_allocation_unread")
 
 
 def slim_flight(flight: dict) -> dict:

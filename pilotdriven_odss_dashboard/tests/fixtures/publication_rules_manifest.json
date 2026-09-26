@@ -1,7 +1,7 @@
 {
-  "publication_rules": "2026-09-26-heading-continuity-v73",
-  "enroute_contact_rule": "enroute-contact-v8",
-  "extraction_rules": "2026-09-26-notam-heading-continuity-v3",
+  "publication_rules": "2026-09-27-slot-allocation-v74",
+  "enroute_contact_rule": "enroute-contact-v9",
+  "extraction_rules": "2026-09-27-slot-allocation-grammar-v4",
   "publication_format": "six-page-reference-briefing-2026-09-19",
-  "minted": "2026-09-26 release-432 independent QA: F2 - the parser reads NOTAM headings across page breaks and names each record's heading page, and a record whose owner the layout does not establish is held unresolved (extraction v3); the composition binds such a record to no crossing and carries heading_page (rule v8); O2 - page 6 never cuts the validity clause and its timing basis. The extraction, the composition and the page changed, so the token changed. Re-mint this file together with the token; a rule bumped without it fails both suites."
+  "minted": "2026-09-27 release-434 independent QA: F3 - one slot-allocation grammar with the app reads every printed separator and wrap form (hyphen/pipe, colon, comma, spaced, wrapped) and validates its clocks and level; an allocation printed but not read is held verbatim (extraction v4); the composition states read / printed-but-not-read / held-by-an-older-extraction / none-printed, under the system and page the print names (rule v9); page 6 prints that sentence. The extraction, the composition and the page changed, so the token changed. Re-mint this file together with the token; a rule bumped without it fails both suites."
 }
