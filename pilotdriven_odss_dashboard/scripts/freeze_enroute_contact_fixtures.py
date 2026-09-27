@@ -37,6 +37,11 @@ CASES = (
     # SLOT-ALLOCATION-434: its allocation is printed colon-joined ("WPT DOBAT FL:360 CTO:2202 CTOT:1627"); SQ322's is
     # hyphenated between pipes. Both were read as no allocation before the shared grammar.
     ("SQ352-SIN-CPH", "lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf"),
+    # AIRSPACE-HEADINGS-436: Fukuoka's oceanic data-link notices sit under "RJJJ FUKUOKA FIR OCEANIC" (SQ34, SQ38; SQ24
+    # above also holds KZNY 1A487/26 under "KZNY NEW YORK DOMESTIC LOWER"); SQ38's Great Sitkin voice-contact notice
+    # sits under the enroute topic heading "VAA GREAT SITKIN" and SQ366's UAV notice under "UAV 401614N 0250927E".
+    ("SQ34-SIN-SFO", "lido-briefing_SQ_34_15Aug2026_SIN_SFO.pdf"),
+    ("SQ38-SIN-LAX-29AUG", "SQ38-29AUG2026-OFP-for-prod-proof.pdf"),
 )
 WAYPOINT_FIELDS = ("name", "fir_boundary", "actm_minutes", "source_page")
 FLIGHT_FIELDS = ("departure", "destination", "planned_level_profile", "scheduled_departure_utc", "actual_takeoff_utc", "extraction_rules", "notam_procedure_records", "notam_fir_names", "bobcat", "slot_allocation_unread")

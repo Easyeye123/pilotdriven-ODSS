@@ -4261,3 +4261,30 @@ def test_o1_a_rejected_async_timing_keeps_the_previous_reference_and_says_why(
     restored = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
     assert restored["analysis_path"] == prior_analysis_path
     assert restored["actual_takeoff_utc"] is None
+
+
+def test_service_briefing_carries_the_per_flight_checklist_the_pdf_prints(
+    service_app: TestClient,
+) -> None:
+    """VOLCANIC-CHECK-436: David, 24 Sep 2026 06:51 - "make sure the AI goes thru the checklist of items it must perform
+    for each flight. That list has disappeared?" The dashboard reads the same checklist rows the downloaded briefing
+    prints (composed with the view; recomputed with the PDF's inputs when manual references are attached), including
+    the composed volcanic-ash row and the early ATC/FIR calls row."""
+    created = service_app.post(
+        "/v1/analyses",
+        headers=_authorization(),
+        files={"file": ("SQ304-notam-windows.pdf", _build_lido_pdf_with_notam_windows(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    payload = service_app.get(
+        f"/v1/analyses/{created.json()['analysis_id']}/briefing",
+        headers=_authorization(),
+    ).json()
+    receipt = payload["coverage_receipt"]
+    keys = [row["key"] for row in receipt["rows"]]
+    assert {"vaa_vaac", "atc_fir_calls", "vws", "enroute_notam"} <= set(keys)
+    assert receipt == payload["briefing"]["coverage_receipt"]
+    volcanic = next(row for row in receipt["rows"] if row["key"] == "vaa_vaac")
+    assert volcanic["detail"] == payload["briefing"]["vaa"]["check"]["line"]
+    # The unit suite runs with every live source disabled: never "checked", always "not queried".
+    assert volcanic["state"] == "NOT QUERIED"

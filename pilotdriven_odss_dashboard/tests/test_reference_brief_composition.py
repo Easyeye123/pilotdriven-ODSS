@@ -2434,7 +2434,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     }
     assert (
         COMBINED_BRIEFING_SCHEMA_VERSION
-        == "2026-09-27-slot-allocation-v74"
+        == "2026-09-27-checklist-volcanic-airspace-v75"
     )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
@@ -3135,8 +3135,9 @@ def test_operational_coverage_receipt_preserves_explicit_truth_states():
 
     assert rows["airep_pirep"]["state"] == "CHECKED · NO MATCH"
     assert rows["vws"]["state"] == "CHECKED · NO TRIGGER"
-    assert rows["fuel_performance"]["state"] == "REVIEW REQUIRED"
-    assert rows["airport_intelligence"]["state"] == "REVIEW REQUIRED"
+    # VOLCANIC-CHECK-436: the receipt's state is the R2 word UNRESOLVED (was REVIEW REQUIRED) now that the dashboard prints it.
+    assert rows["fuel_performance"]["state"] == "UNRESOLVED"
+    assert rows["airport_intelligence"]["state"] == "UNRESOLVED"
     assert "1/2 current released exact-ICAO package" in rows[
         "airport_intelligence"
     ]["detail"]
@@ -3180,7 +3181,7 @@ def test_operational_coverage_explains_public_window_vs_ofp_selected_notams_and_
     assert "5 OFP-selected" in rows["airport_notam"]["detail"]
     assert "202 current station-window" in rows["airport_notam"]["detail"]
     assert "different evidence sets" in rows["airport_notam"]["detail"]
-    assert rows["governed_references"]["state"] == "REVIEW REQUIRED"
+    assert rows["governed_references"]["state"] == "UNRESOLVED"
     assert "2 approved governed reference receipt(s) attached" in rows[
         "governed_references"
     ]["detail"]
@@ -3257,7 +3258,7 @@ def test_operational_coverage_receipt_fails_closed_on_aircraft_identity_and_vws(
     receipt = _operational_coverage_receipt(flight, briefing, [], None)
     rows = {row["key"]: row for row in receipt["rows"]}
 
-    assert rows["ofp_parse"]["state"] == "REVIEW REQUIRED"
+    assert rows["ofp_parse"]["state"] == "UNRESOLVED"
     assert rows["vws"]["state"] == "UNAVAILABLE"
     assert rows["airep_pirep"]["state"] == "NOT QUERIED"
 
@@ -7997,7 +7998,7 @@ def test_coverage_page_handles_many_airport_notes_gaps_without_blocking_pdf(tmp_
     ]
     receipt = _operational_coverage_receipt(flight, briefing, findings, None)
     row = next(row for row in receipt["rows"] if row["key"] == "airport_intelligence")
-    assert row["state"] == ("UNAVAILABLE" if availability == "source_unavailable" else "REVIEW REQUIRED")
+    assert row["state"] == ("UNAVAILABLE" if availability == "source_unavailable" else "UNRESOLVED")
     assert "46" in row["detail"]
     assert "Airports section" in row["detail"]
     out = tmp_path / "airport-notes-coverage.pdf"

@@ -102,6 +102,33 @@ def test_analysed_publication_checks_current_ash_projection(publication_header) 
     assert any("vaa: analysed consequence" in failure for failure in omitted["failures"])
 
 
+def test_analysed_publication_accepts_each_complete_volcanic_form_and_nothing_less() -> None:
+    """VOLCANIC-CHECK-436: page 5 prints the live volcanic sources by name, as counts, or - beside held OFP records, at
+    its capacity step - leaves them to page 6's source line; the gate accepts one complete form, and the page-6 form
+    only when page 6 names every unmet source. LABELLED SYNTHETIC flight."""
+    from app.odss.weather_publication import volcanic_ash_lines
+
+    flight = _flight(LOG_PAGE_LOW)
+    flight["weather"] = [{"location": "WIIF", "record_type": "VA_SIGMET", "source_page": 13, "text": (
+        "WIIF JAKARTA FIR WV SIGMET 08 VALID 220400/220700 VA ERUPTION MT KRAKATAU WI S0200 E10400 - S0200 E10600 - "
+        "N0200 E10600 SFC/FL400")}]
+    view = build_briefing_view(flight, [], [])
+    base = _passing_text(flight) + "\nFLIGHT BRIEFING | PAGE 1 OF 6\nVOLCANIC ASH\n"
+    whole, compact, omit = (volcanic_ash_lines(flight, view, live) for live in ("whole", "compact", "omit"))
+    assert whole != compact and omit != whole
+    for form in (whole, compact):
+        text = base + "\n".join(form)
+        result = check_cross_surface_parity(flight, [], [], text, unit_output_text=text)
+        assert result["valid"], result["failures"]
+    unmet = [row["source"] for row in view["source_assurance"] if row["status"] not in {"HELD", "REACHED"}]
+    assert unmet
+    named = base + "\n".join(omit) + "\nSOURCE ASSURANCE: " + ", ".join(unmet) + " not reached."
+    assert check_cross_surface_parity(flight, [], [], named, unit_output_text=named)["valid"]
+    unnamed = base + "\n".join(omit)
+    result = check_cross_surface_parity(flight, [], [], unnamed, unit_output_text=unnamed)
+    assert not result["valid"] and any("on neither page 5 nor page 6" in failure for failure in result["failures"]), result["failures"]
+
+
 def test_edto_operational_rows_retain_real_edto_sector_and_fuel_facts() -> None:
     rows = _edto_operational_rows(
         "EDTO",

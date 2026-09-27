@@ -129,7 +129,8 @@ def test_sq366_composition_from_the_genuine_analysis(tmp_path_factory):
     }
     assert composed["slot_sentence"] == "BOBCAT BIROS FL380: CTOT 1752Z + ACTM 05:35 = 2327Z, 1 min before CTO 2328Z (OFP p1, p11)."
     # ATC-RADIO-SOURCE-418: every printed instruction is held, so the Kabul, Karachi and Turkmenabat pages join the provenance.
-    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-89"
+    # AIRSPACE-HEADINGS-436: p93 is 1A2595/26 (UAV flights, voice contact) under the topic heading "UAV 401614N 0250927E".
+    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-89, p93"
     assert [line["notam_ids"] for line in composed["procedure_lines"] if line["fir"] == "WIIF"] == [["1A1891/26"], ["SX50/25"]]
     # The composition is published on the view so the dashboard and the PDF read one record.
     assert case["payload"]["view"]["briefing"]["enroute_contact"] == composed
@@ -151,6 +152,8 @@ def test_sq366_page_six_prints_his_fir_communication_column_with_the_allocation_
     assert primary["notam_ids"] == ["1G216/26"]
     assert normalized("+05:35 OAKX entry. ALL OVERFLIGHTS SHALL COMPLY WITH TIBA PROCEDURE FOR BROADCAST INTENTIONS ON FREQ 125.2MHZ 10 MINS PRIOR ENTERING TO FIR. Printed: 125.2MHZ · 10 MINS PRIOR ENTERING TO FIR · not later than ACTM 05:25. NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM) · overflight: met · conditions held.") in page
     assert normalized("Further rows on the dashboard: WIIF 1A1891/26, SX50/25;") in page
+    # AIRSPACE-HEADINGS-436: the UAV topic notice is named among the deferred rows, under no FIR.
+    assert normalized("FIR not derived 1A2595/26.") in page
     assert normalized("BOBCAT BIROS FL380: CTOT 1752Z + ACTM 05:35 = 2327Z, 1 min before CTO 2328Z (OFP p1, p11).") in page
     assert normalized("FIR crossings (OFP ACTM): WIIF 00:03 · WSJC 00:06 · WMFC 00:07 · WSJC 00:07 · WMFC 00:08") in page
     assert "FPL pp8-14 / NOTAM p67, pp85-89" in raw

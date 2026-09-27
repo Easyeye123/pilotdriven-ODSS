@@ -286,9 +286,30 @@ _NOTAM_FIR_HEADING = re.compile(
 # waypoints (2-5 letters) and the airway they share (1-2 letters + 1-3 digits).
 _NOTAM_SEGMENT_HEADING = re.compile(r"^(?P<from>[A-Z]{2,5})\s*/(?P<rest>[A-Z]{3,7}\d{1,3})$")
 _AIRWAY_SPLIT = re.compile(r"^(?P<to>[A-Z]{2,5})(?P<airway>[A-Z]{1,2}\d{1,3})$")
-# A NOTAM-series label printed above a record ("UT O0287/26", "WS A2306/26"):
-# a continuation inside the current section, never a new section.
-_NOTAM_SERIES_LABEL = re.compile(r"^[A-Z]{1,2}\s+[A-Z]\d{3,5}/\d{2}$")
+# A NOTAM-series label printed above a record ("UT O0287/26", "WS A2306/26", and with a location prefix
+# "KZLA A1657/26"): a continuation inside the current section, never a new section.
+_NOTAM_SERIES_LABEL = re.compile(r"^[A-Z]{1,4}\s+[A-Z]\d{3,5}/\d{2}$")
+# AIRSPACE-HEADINGS-436 (independent QA of release 436, 27 Sep 2026): a FIR heading may print the airspace part after its
+# designator - "RJJJ FUKUOKA FIR OCEANIC", "UBBA BAKU FIR LOWER", "LFFF FRANCE UIR" - or name the part without the word
+# FIR - "KZNY NEW YORK DOMESTIC LOWER". Each ended the held scope, so the communication notices under it were never held
+# (genuine SQ34 / SQ38 / SQ24: Fukuoka-oceanic ATS data-link notices SX75/24, SX90/23 on a route crossing RJJJ; SQ24:
+# KZNY 1A487/26). The heading owns its notices for that FIR; the printed part is kept on each record ("airspace").
+_NOTAM_AIRSPACE_HEADING = re.compile(
+    r"^(?P<icao>[A-Z]{4})\s+(?P<name>[A-Z][A-Z0-9 /().,'-]*?)\s+"
+    r"(?P<airspace>(?:FIR/UIR|FIR|UIR)(?:\s+(?:LOWER|UPPER|OCEANIC|DOMESTIC))*|(?:DOMESTIC|OCEANIC)(?:\s+(?:LOWER|UPPER))?)$",
+    re.IGNORECASE,
+)
+# An airport section's heading: the ICAO location, the IATA code after a slash, the name ("WSSS /SIN SINGAPORE/CHANGI").
+_NOTAM_AIRPORT_HEADING = re.compile(r"^[A-Z]{4}\s+/[A-Z]{3}\b")
+# The enroute parts of a LIDO bulletin are titled "AREA ENROUTE ..." / "EXTENDED AREA AROUND ..."; the others are airports.
+_NOTAM_AREA_TITLE = re.compile(r"^(?:EXTENDED\s+)?AREA\b", re.IGNORECASE)
+
+
+def _airspace_heading(compact: str) -> re.Match[str] | None:
+    """A FIR heading that names its airspace part (not the plain "ICAO NAME FIR" form, which _NOTAM_FIR_HEADING reads)."""
+    if _NOTAM_FIR_HEADING.fullmatch(compact):
+        return None
+    return _NOTAM_AIRSPACE_HEADING.fullmatch(compact)
 
 
 def _split_segment_heading(stripped: str, route_names: set[str] | None = None) -> dict[str, str] | None:
@@ -384,7 +405,7 @@ def _notam_section_events(pages: list[str], bounds: tuple[int, int]) -> Iterator
         compact = " ".join(text.split())
         if not _NOTAM_PROCEDURE_HEADER.match(text):
             underline_at = index + 1 if index + 1 < count and _NOTAM_RULE.fullmatch(lines[index + 1][1]) else None
-            fir_or_segment = bool(_NOTAM_FIR_HEADING.fullmatch(compact) or _split_segment_heading(compact))
+            fir_or_segment = bool(_NOTAM_FIR_HEADING.fullmatch(compact) or _airspace_heading(compact) or _split_segment_heading(compact))
             if underline_at is None and (fir_or_segment or _NOTAM_SERIES_LABEL.fullmatch(compact.upper())):
                 candidate = substantive(index + 1)
                 if candidate < count and _NOTAM_RULE.fullmatch(lines[candidate][1]):
@@ -403,10 +424,12 @@ def _notam_section_events(pages: list[str], bounds: tuple[int, int]) -> Iterator
 
 
 def _parse_notam_fir_names(pages: list[str], bounds: tuple[int, int] | None) -> dict[str, str]:
-    """ICAO -> FIR name from the NOTAM section's own underlined FIR headings, wherever a page break falls."""
+    """ICAO -> FIR name from the NOTAM section's own underlined FIR headings, wherever a page break falls. A heading that
+    names the FIR's airspace part ("UBBA BAKU FIR LOWER") names a FIR no plain "ICAO NAME FIR" heading named."""
     names: dict[str, str] = {}
     if bounds is None:
         return names
+    part_names: dict[str, str] = {}
     for event in _notam_section_events(pages, bounds):
         if event["event"] != "heading":
             continue
@@ -414,6 +437,12 @@ def _parse_notam_fir_names(pages: list[str], bounds: tuple[int, int] | None) -> 
         if match:
             name = " ".join(match.group("name").upper().split())
             names.setdefault(match.group("icao").upper(), name[:-4].strip() if name.endswith(" FIR") else name)
+            continue
+        part = _airspace_heading(event["text"])
+        if part:
+            part_names.setdefault(part.group("icao").upper(), " ".join(part.group("name").upper().split()))
+    for icao, name in part_names.items():
+        names.setdefault(icao, name)
     return names
 
 
@@ -473,6 +502,11 @@ def _parse_notam_procedure_records(
     def unresolved(text: str, page_number: int) -> dict[str, Any]:
         return {"heading": text, "heading_kind": "unresolved", "fir": None, "segment": None, "heading_page": page_number}
 
+    # AIRSPACE-HEADINGS-436: inside an enroute ("AREA ...") part, a heading that is neither a FIR, an airspace part, a
+    # segment, a series label nor an airport is a topic ("UAV 401614N 0250927E", "VAA GREAT SITKIN", a restricted area):
+    # its notices are held with no owning FIR - never under the FIR printed before it (LIDO does not nest topics under
+    # the FIR above: "LAT LATINA" prints before "LIRR ROME FIR"). In the airport parts nothing is held, as before.
+    area_part = False
     for event in _notam_section_events(pages, bounds):
         kind = event["event"]
         if kind == "heading":
@@ -481,19 +515,26 @@ def _parse_notam_procedure_records(
             if _NOTAM_SERIES_LABEL.fullmatch(compact.upper()):
                 continue  # a series label inside the current section
             fir_match = _NOTAM_FIR_HEADING.fullmatch(compact)
+            part_match = _airspace_heading(compact)
             segment = _split_segment_heading(compact, route_names)
             if fir_match:
                 heading = {"heading": compact, "heading_kind": "fir", "fir": fir_match.group("icao").upper(), "segment": None,
                            "heading_page": event["page"]}
+            elif part_match:
+                heading = {"heading": compact, "heading_kind": "fir", "fir": part_match.group("icao").upper(), "segment": None,
+                           "airspace": " ".join(part_match.group("airspace").upper().split()), "heading_page": event["page"]}
             elif segment:
                 heading = {"heading": compact.replace(" ", ""), "heading_kind": "segment", "fir": None, "segment": segment,
                            "heading_page": event["page"]}
+            elif area_part and not _NOTAM_AIRPORT_HEADING.match(compact):
+                heading = {"heading": compact, "heading_kind": "topic", "fir": None, "segment": None, "heading_page": event["page"]}
             else:
                 heading = None
             continue
         if kind == "title":
             flush()
             heading = None
+            area_part = bool(_NOTAM_AREA_TITLE.match(event["text"]))
             continue
         if kind == "unconfirmed_heading" or (kind == "rule" and event["after_blank"]):
             # The source does not establish who owns what follows: hold it with its owner unresolved rather than let

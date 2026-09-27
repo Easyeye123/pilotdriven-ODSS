@@ -68,6 +68,12 @@ SLOT-ALLOCATION-434 (27 Sep 2026, rule v9). The slot line says what the OFP prin
 system and on the page the print names), an allocation printed but not read (quoted, with why - never absence), no
 allocation held by an extraction older than the grammar (Create updated briefing re-reads it), or - only when the
 current extraction found nothing allocation-like - that none is printed.
+
+AIRSPACE-HEADINGS-436 (27 Sep 2026, rule v10). A record held under a FIR heading that names the FIR's airspace part
+("RJJJ FUKUOKA FIR OCEANIC", "UBBA BAKU FIR LOWER", "KZNY NEW YORK DOMESTIC LOWER", "LFFF FRANCE UIR") is bound to that
+FIR's crossing, and the printed part is stated as a condition the OFP's boundary rows cannot evaluate ("section ...").
+A record held under a topic heading in an enroute part ("UAV 401614N 0250927E", "VAA GREAT SITKIN") is bound to no
+crossing unless its own body names the FIR, and says the owning FIR is not established.
 """
 from __future__ import annotations
 
@@ -77,7 +83,7 @@ from typing import Any
 
 from .extraction_rules import EXTRACTION_RULES
 
-ENROUTE_CONTACT_RULE = "enroute-contact-v9"
+ENROUTE_CONTACT_RULE = "enroute-contact-v10"
 # A record whose owning heading the source layout does not establish (parser heading_kind "unresolved").
 _UNRESOLVED_OWNER = "section heading not established from the source layout"
 
@@ -1089,10 +1095,15 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
     atc_request = _ATC_REQUEST.search(classify_text(text))
     if atc_request:
         notice_conditions.append({"kind": "atc_request", "text": atc_request.group(0), "result": "unresolved"})
+    if heading_kind == "fir" and _normalise(record.get("airspace")):
+        # The heading names the FIR's airspace part; which part this crossing is in is not in the OFP's boundary rows.
+        notice_conditions.append({"kind": "qualifier", "text": f"section {_normalise(record.get('heading'))}", "result": "unresolved"})
     if association == "unresolved":
         notice_conditions.append({
             "kind": "association",
-            "text": _UNRESOLVED_OWNER if heading_kind == "unresolved" else "FIR in effect at the segment not derivable from the boundary rows",
+            "text": _UNRESOLVED_OWNER if heading_kind == "unresolved"
+            else f"owning FIR not established: printed under {_normalise(record.get('heading'))}" if heading_kind == "topic"
+            else "FIR in effect at the segment not derivable from the boundary rows",
             "result": "unresolved",
         })
 

@@ -165,7 +165,7 @@ WAFC_CHARTS_PER_PAGE = 3
 # is re-created under these rules, never served from the old composition.
 # Release-422 independent QA, F2: the token is minted together with the composition it publishes
 # (tests/fixtures/publication_rules_manifest.json pins it beside the enroute rule and the extraction rules).
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-27-slot-allocation-v74"
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-09-27-checklist-volcanic-airspace-v75"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
@@ -12417,13 +12417,16 @@ def draw_operational_hazard_page(
         chart_y -= 10.2
 
 
+# "UNRESOLVED" was "REVIEW REQUIRED": since the dashboard prints the checklist
+# (VOLCANIC-CHECK-436) the state is the R2 word (David, 22 Sep 2026), as the
+# page-6 checklist and the volcanic check already print it.
 _COVERAGE_RECEIPT_STATES = frozenset({
     "FOUND",
     "CHECKED · NO MATCH",
     "CHECKED · NO TRIGGER",
     "HELD",
     "NOT APPLICABLE",
-    "REVIEW REQUIRED",
+    "UNRESOLVED",
     "UNAVAILABLE",
     "NOT QUERIED",
 })
@@ -12480,7 +12483,7 @@ def _review_receipt_state(
         return "UNAVAILABLE"
     if clean_no_match and status == "review_required":
         return "CHECKED · NO MATCH"
-    return "REVIEW REQUIRED"
+    return "UNRESOLVED"
 
 
 def _external_cat_receipt(briefing: dict[str, Any]) -> dict[str, str]:
@@ -12531,7 +12534,7 @@ def _external_cat_receipt(briefing: dict[str, Any]) -> dict[str, str]:
         source.get("summary")
         or source.get("reason")
         or source.get("detail")
-        or "Explicit AIREP/PIREP receipt is incomplete; review required."
+        or "Explicit AIREP/PIREP receipt is incomplete."
     )
     return _coverage_receipt_row(
         "airep_pirep",
@@ -12541,6 +12544,9 @@ def _external_cat_receipt(briefing: dict[str, Any]) -> dict[str, str]:
     )
 
 
+# R2 (David, 22 Sep 2026: "CUT OUT ALL the damn reminder words"): since the
+# dashboard prints every row's detail (VOLCANIC-CHECK-436), each detail states
+# a fact or a state, never a review / confirm / verify instruction.
 def _operational_coverage_receipt(
     _flight: dict[str, Any],
     briefing: dict[str, Any],
@@ -12559,11 +12565,11 @@ def _operational_coverage_receipt(
     rows.append(_coverage_receipt_row(
         "ofp_parse",
         "OFP PARSE",
-        "HELD" if identity_complete else "REVIEW REQUIRED",
+        "HELD" if identity_complete else "UNRESOLVED",
         (
             "Flight, route and aircraft source identity held."
             if identity_complete
-            else "Parsed flight identity is incomplete; source package review required."
+            else "Parsed flight identity is incomplete in the source package."
         ),
     ))
 
@@ -12571,7 +12577,7 @@ def _operational_coverage_receipt(
     rows.append(_coverage_receipt_row(
         "flight_timing",
         "FLIGHT TIMING",
-        "HELD" if timing_complete else "REVIEW REQUIRED",
+        "HELD" if timing_complete else "UNRESOLVED",
         (
             "Scheduled departure and arrival UTC are held."
             if timing_complete
@@ -12596,7 +12602,7 @@ def _operational_coverage_receipt(
         if item.get("match_status") == "candidate"
     ]
     if candidate_extracts:
-        mel_state = "REVIEW REQUIRED"
+        mel_state = "UNRESOLVED"
         mel_detail = (
             f"{len(candidate_extracts)} governed candidate extract(s) held; "
             "no candidate selected without manual confirmation."
@@ -12608,7 +12614,7 @@ def _operational_coverage_receipt(
             f"{len(deferred_items)} OFP deferred declaration(s)."
         )
     elif deferred_items:
-        mel_state = "REVIEW REQUIRED"
+        mel_state = "UNRESOLVED"
         mel_detail = (
             f"{len(deferred_items)} OFP deferred declaration(s) held; "
             "no exact governed manual extract is published."
@@ -12641,7 +12647,7 @@ def _operational_coverage_receipt(
     rows.append(_coverage_receipt_row(
         "fuel_performance",
         "FUEL / PERFORMANCE",
-        "HELD" if fuel_performance_held else "REVIEW REQUIRED",
+        "HELD" if fuel_performance_held else "UNRESOLVED",
         (
             "Verified OFP fuel arithmetic and a deterministic performance state are held."
             if fuel_performance_held
@@ -12649,9 +12655,11 @@ def _operational_coverage_receipt(
         ),
     ))
 
+    # The dashboard's view also carries rest-of-route panels the PDF never
+    # sees (dashboard_only); the checklist is the same on both surfaces.
     airport_panels = [
         item for item in (briefing.get("airport_operational_panels") or [])
-        if isinstance(item, dict)
+        if isinstance(item, dict) and not item.get("dashboard_only")
     ]
     alternate_rows = [
         item for item in (briefing.get("alternate_assessment_rows") or [])
@@ -12678,7 +12686,7 @@ def _operational_coverage_receipt(
         edto_state = "HELD"
         edto_detail = "EDTO classification and checked-period assessment are held."
     else:
-        edto_state = "REVIEW REQUIRED"
+        edto_state = "UNRESOLVED"
         edto_detail = "EDTO classification or checked-period suitability is unresolved."
     rows.append(_coverage_receipt_row("edto", "EDTO", edto_state, edto_detail))
 
@@ -12756,7 +12764,7 @@ def _operational_coverage_receipt(
         for item in note_rows
     )
     if not note_rows:
-        airport_notes_state = "REVIEW REQUIRED"
+        airport_notes_state = "UNRESOLVED"
         airport_notes_detail = "Applicable Airport Notes coverage is not published."
     elif unavailable_icaos:
         airport_notes_state = "UNAVAILABLE"
@@ -12771,10 +12779,11 @@ def _operational_coverage_receipt(
             "package(s) held."
         )
     elif review_icaos:
-        airport_notes_state = "REVIEW REQUIRED"
+        airport_notes_state = "UNRESOLVED"
         airport_notes_detail = (
             f"{current_note_count}/{len(note_rows)} current released exact-ICAO "
-            f"package(s); {len(review_icaos)} require review. Per-airport states: Airports section."
+            f"package(s); {len(review_icaos)} not current (future, expired, withdrawn or unstated). "
+            "Per-airport states: Airports section."
         )
     elif no_match_count == len(note_rows):
         airport_notes_state = "CHECKED · NO MATCH"
@@ -12782,10 +12791,10 @@ def _operational_coverage_receipt(
             f"{len(note_rows)} exact ICAO(s) checked; no current released package."
         )
     else:
-        airport_notes_state = "REVIEW REQUIRED"
+        airport_notes_state = "UNRESOLVED"
         airport_notes_detail = (
             f"{current_note_count}/{len(note_rows)} current released exact-ICAO "
-            "package(s); remaining coverage requires review."
+            "package(s); the remaining airports hold no current released package."
         )
     rows.append(_coverage_receipt_row(
         "airport_intelligence",
@@ -12806,6 +12815,31 @@ def _operational_coverage_receipt(
             if route_airspace_count
             else "No bounded route-airspace record is held; absence is not inferred."
         ),
+    ))
+
+    # David, 24 Sep 2026 06:51: "Additional like radio calls requirement for
+    # ATC .. this was a firm inclusion." The early ATC/FIR call check has its
+    # own composed record (enroute_contact.py, restored 24 Sep); the checklist
+    # now lists it with that record's own state sentence.
+    contact = briefing.get("enroute_contact")
+    if not isinstance(contact, dict):
+        contact = {}
+    contact_state = str(contact.get("state") or "")
+    contact_current = (contact.get("extraction") or {}).get("current", True) is not False
+    if not contact_current or contact_state == "no_fir_rows_held":
+        contact_receipt_state = "UNRESOLVED"
+    elif contact_state in {"library_rules_held", "source_procedures_held"}:
+        contact_receipt_state = "FOUND"
+    elif contact_state == "no_procedure_held":
+        contact_receipt_state = "CHECKED · NO MATCH"
+    else:
+        contact_receipt_state = "UNRESOLVED"
+    slot = str(contact.get("slot_sentence") or "") if (contact.get("slot_control") or contact.get("slot_unread")) else ""
+    rows.append(_coverage_receipt_row(
+        "atc_fir_calls",
+        "EARLY ATC / FIR CALLS",
+        contact_receipt_state,
+        " ".join(part for part in (str(contact.get("state_sentence") or "Early-contact state is not held."), slot) if part),
     ))
 
     weather_review = receipt_inputs.get("official_weather_review")
@@ -12836,13 +12870,28 @@ def _operational_coverage_receipt(
         "Explicit route/time/level SIGMET review state; missing coverage stays visible.",
     ))
 
-    vaa_review = (briefing.get("vaa") or {}).get("direct_source_review")
-    vaa_state = _review_receipt_state(vaa_review)
+    # VOLCANIC-CHECK-436: the row states what each volcanic source returned -
+    # the OFP section, its volcano notices, the live VA SIGMET feed and every
+    # route-responsible VAAC - from the one composed check every surface
+    # prints. It was always REVIEW REQUIRED with one generic sentence, whether
+    # the sources answered, failed or were never queried.
+    vaa = briefing.get("vaa") or {}
+    volcanic = vaa.get("check")
+    if not isinstance(volcanic, dict):
+        # A view composed before the check: composed here from the view's own
+        # projections, never from the raw flight.
+        from .volcanic_check import volcanic_ash_check
+        volcanic = volcanic_ash_check(
+            {},
+            (briefing.get("va_sigmet") or {}).get("review"),
+            vaa.get("direct_source_review"),
+            vaa.get("cfp_advisories"),
+        )
     rows.append(_coverage_receipt_row(
         "vaa_vaac",
         "VAA / VAAC",
-        vaa_state,
-        "Responsible-centre reach and direct-advisory applicability remain separate checks.",
+        volcanic["state"],
+        volcanic["line"],
     ))
 
     tc_review = receipt_inputs.get("tropical_cyclone_review")
@@ -12879,7 +12928,7 @@ def _operational_coverage_receipt(
             f"{len(matched_profiles)} exact controlled depressurisation profile match(es) held."
         )
     elif terrain_events:
-        profile_state = "REVIEW REQUIRED"
+        profile_state = "UNRESOLVED"
         profile_detail = (
             "OFP terrain trigger exists, but no exact controlled profile match is held."
         )
@@ -12906,7 +12955,7 @@ def _operational_coverage_receipt(
     elif chart_status == "unavailable":
         chart_state = "UNAVAILABLE"
     else:
-        chart_state = "REVIEW REQUIRED"
+        chart_state = "UNRESOLVED"
     chart_row = _coverage_receipt_row(
         "wafs_sigwx",
         "WAFS / SIGWX",
@@ -12935,12 +12984,12 @@ def _operational_coverage_receipt(
         references_state = "FOUND"
         references_detail = f"{len(exact_extracts)} exact governed manual extract(s) published."
     elif candidate_extracts:
-        references_state = "REVIEW REQUIRED"
+        references_state = "UNRESOLVED"
         references_detail = (
             f"{len(candidate_extracts)} governed candidate extract(s) held; none selected."
         )
     elif reference_status == "available" and attached_references:
-        references_state = "REVIEW REQUIRED"
+        references_state = "UNRESOLVED"
         references_detail = (
             f"{len(attached_references)} approved governed reference "
             "receipt(s) attached, but none has an exact or explicit "
@@ -12982,7 +13031,7 @@ def _operational_coverage_receipt(
             "detail": (
                 "All three explicit CAT/VWS evidence layers reached a completed state."
                 if cat_complete
-                else "One or more CAT/VWS layers are unavailable, unqueried, or review-required."
+                else "One or more CAT/VWS layers are unavailable, unqueried or unresolved."
             ),
         },
     }
@@ -12993,7 +13042,7 @@ def _coverage_state_colour(state: str):
         return EDTO_GREEN
     if state == "NOT APPLICABLE":
         return COMMS_TEAL
-    if state in {"REVIEW REQUIRED", "INCOMPLETE"}:
+    if state in {"UNRESOLVED", "INCOMPLETE"}:
         return WEATHER_AMBER
     return CRITICAL
 
@@ -13096,7 +13145,20 @@ def draw_operational_coverage_page(
         accent=COMMS_TEAL,
         title_colour=None,
     )
-    rows = list(receipt.get("rows") or [])
+    # This internal composition keeps its approved two-column, nine-row grid.
+    # The early ATC/FIR calls row (VOLCANIC-CHECK-436) is published on the
+    # dashboard and on the download's page 6; the volcanic row's full sentence
+    # is printed there too, and here in its short form when two lines cannot
+    # hold it.
+    volcanic_check = (briefing.get("vaa") or {}).get("check") or {}
+    rows = []
+    for row in receipt.get("rows") or []:
+        if row.get("key") == "atc_fir_calls":
+            continue
+        if (row.get("key") == "vaa_vaac" and volcanic_check.get("short_line")
+                and len(_wrap(row["detail"], SANS, 7.2, (width - 2 * MARGIN - 18.0) / 2.0 - 24.0)) > 2):
+            row = {**row, "detail": volcanic_check["short_line"]}
+        rows.append(row)
     left_rows = rows[:9]
     right_rows = rows[9:]
     column_gap = 18.0

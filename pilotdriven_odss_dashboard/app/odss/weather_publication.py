@@ -117,7 +117,7 @@ def sigmet_lines(flight, view):
     return lines
 
 
-def volcanic_ash_lines(flight, view):
+def volcanic_ash_lines(flight, view, live='whole'):
     lines = _matched_lines(flight, view, ash=True)
     for row in (view.get('vaa') or {}).get('cfp_advisories') or []:
         if row.get('advisory_kind') == 'CFP_VAA_NOTICE':
@@ -126,17 +126,33 @@ def volcanic_ash_lines(flight, view):
         derived = re.sub(r'\. Flight-analysis screening of the OFP advisory polygon.*$', '.', derived)
         derived = derived.replace('Closest approach ', 'Closest ').replace("the SIGMET's validity", 'validity')
         lines.append(f"{clean(row.get('volcano') or row.get('name')) or 'Unnamed advisory'}: {derived}")
-    direct = flight.get('direct_vaa_source_review') or (flight.get('vaa_review') or {}).get('direct_vaa_source_review') or {}
-    count = len(direct.get('official_advisories') or [])
-    reached = [clean(r.get('centre')) for r in direct.get('responsible_centre_receipts') or []
-               if r.get('reached') is True and clean(r.get('centre'))]
-    centres = '/'.join(dict.fromkeys(reached))
-    if count and direct.get('applicability_status') == 'not_assessed':
-        noun = 'advisory' if count == 1 else 'advisories'
-        prefix = f'{centres} reached; ' if centres else ''
-        lines.append(f'{prefix}{count} direct VAAC {noun} held; route/time/level applicability has not been assessed.')
-    if direct.get('source_status') == 'partial':
-        lines.append('Direct VAAC coverage is partial; the held evidence does not establish an ash-free flight.')
+    # VOLCANIC-CHECK-436: the live sources, named with what each returned - the
+    # feed and every route-responsible VAAC (reached / NOT reached / not
+    # queried, advisories held, unsettled route points). The card printed the
+    # same sentence whether those sources were off, failed or answered with
+    # nothing, and never named a centre (SQ34 SIN-SFO, release 436 QA).
+    check = (view.get('vaa') or {}).get('check') or {}
+    if check.get('live_line'):
+        # ``live`` is the page's own capacity step, taken before any SIGMET, EDTO or clock row is deferred: the live
+        # sources by name ("whole"), as counts ("compact"), or - beside held OFP records - left to page 6's source line
+        # and checklist, which name them unreached, partial or not queried ("omit"). A card with nothing else to say
+        # always prints the counts; the generic sentence never replaces a held check.
+        if live == 'whole':
+            lines.append(check['live_line'])
+        elif live == 'compact' or not lines:
+            lines.append(check.get('live_compact') or check['live_line'])
+    else:
+        direct = flight.get('direct_vaa_source_review') or (flight.get('vaa_review') or {}).get('direct_vaa_source_review') or {}
+        count = len(direct.get('official_advisories') or [])
+        reached = [clean(r.get('centre')) for r in direct.get('responsible_centre_receipts') or []
+                   if r.get('reached') is True and clean(r.get('centre'))]
+        centres = '/'.join(dict.fromkeys(reached))
+        if count and direct.get('applicability_status') == 'not_assessed':
+            noun = 'advisory' if count == 1 else 'advisories'
+            prefix = f'{centres} reached; ' if centres else ''
+            lines.append(f'{prefix}{count} direct VAAC {noun} held; route/time/level applicability has not been assessed.')
+        if direct.get('source_status') == 'partial':
+            lines.append('Direct VAAC coverage is partial; the held evidence does not establish an ash-free flight.')
     if not lines:
         lines = [f'No flight-specific ash screening result is held for {window_label(flight)}. '
                  'This does not establish that the route is ash-free.']

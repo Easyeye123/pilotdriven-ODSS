@@ -275,10 +275,15 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                     violations.append({"code": "CYCLONE_TIME_DISTANCE_PARITY", "message": "The weather page omits the flight-matched cyclone distance or its flight-window coverage condition."})
         if view is not None and len(pages) > ASSURANCE_PAGE:
             from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
+            # VOLCANIC-CHECK-436: the card prints its live sources by name, as counts, or (beside held OFP records, at
+            # the page's capacity step) leaves them to page 6; one of the three complete forms must be on the page.
+            ash_forms = [volcanic_ash_lines(flight or {}, view, live) for live in ("whole", "compact", "omit")]
+            ash_lines = next((form for form in ash_forms
+                              if all(normalized(line) in folded_pages[WEATHER_PAGE] for line in form)), ash_forms[0])
             for index, code, lines, unit in (
                 (WEATHER_PAGE, 'EDTO_WINDOW_PARITY', edto_window_lines(flight or {}, view), "EDTO airport window(s)"),
                 (WEATHER_PAGE, 'SIGMET_SCREENING_PARITY', sigmet_lines(flight or {}, view), "SIGMET row(s)"),
-                (WEATHER_PAGE, 'ASH_ASSESSMENT_PARITY', volcanic_ash_lines(flight or {}, view), None),
+                (WEATHER_PAGE, 'ASH_ASSESSMENT_PARITY', ash_lines, None),
             ):
                 for line in lines_after_stated_deferral(lines, folded_pages[index], unit):
                     if normalized(line) not in folded_pages[index]:

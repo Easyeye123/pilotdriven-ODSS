@@ -17,4 +17,7 @@ the two are bumped together whenever the parser's extraction changes.
 # a record whose owner the layout does not establish is held with heading_kind "unresolved".
 # v4 (release-434 QA, F3): the slot-control allocation is read in every printed separator and wrap form (one grammar
 # with the app); an allocation printed but not read is held as ``slot_allocation_unread``, never as absence.
-EXTRACTION_RULES = "2026-09-27-slot-allocation-grammar-v4"
+# v5 (release-436 QA, ATC completeness): FIR headings that name the airspace part ("... FIR OCEANIC", "... FIR LOWER",
+# "... DOMESTIC LOWER", "... UIR") own their notices and keep the part ("airspace"); location-prefixed series labels continue
+# a section; topic headings in an enroute part hold their communication notices with no owning FIR ("topic").
+EXTRACTION_RULES = "2026-09-27-notam-airspace-headings-v5"

@@ -1302,9 +1302,20 @@ def check_cross_surface_parity(
     )
     if analysed_publication:
         from app.odss.weather_publication import volcanic_ash_lines
-        for consequence in volcanic_ash_lines(flight, view):
-            if not operational_printed(consequence):
-                failures.append(f"vaa: analysed consequence {consequence!r} missing")
+        # VOLCANIC-CHECK-436: page 5's volcanic card prints its live sources by name, as counts, or - beside held OFP
+        # records, at the page's own capacity step - leaves them to page 6's source line. One of the three complete
+        # forms must be printed, and a page that leaves them to page 6 must name every unmet source there.
+        forms = [volcanic_ash_lines(flight, view, live) for live in ("whole", "compact", "omit")]
+        printed_form = next((index for index, form in enumerate(forms)
+                             if all(operational_printed(line) for line in form)), None)
+        if printed_form is None:
+            for consequence in forms[0]:
+                if not operational_printed(consequence):
+                    failures.append(f"vaa: analysed consequence {consequence!r} missing")
+        elif printed_form == 2 and forms[2] != forms[0]:
+            for entry in view.get("source_assurance") or []:
+                if str(entry.get("status") or "").upper() not in {"HELD", "REACHED"} and not operational_printed(str(entry.get("source") or "")):
+                    failures.append(f"vaa: unmet source {entry.get('source')!r} is on neither page 5 nor page 6")
     for advisory in (view.get("vaa") or {}).get("cfp_advisories") or []:
         if analysed_publication:
             continue

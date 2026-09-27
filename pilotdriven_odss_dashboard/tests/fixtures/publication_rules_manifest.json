@@ -1,7 +1,7 @@
 {
-  "publication_rules": "2026-09-27-slot-allocation-v74",
-  "enroute_contact_rule": "enroute-contact-v9",
-  "extraction_rules": "2026-09-27-slot-allocation-grammar-v4",
+  "publication_rules": "2026-09-27-checklist-volcanic-airspace-v75",
+  "enroute_contact_rule": "enroute-contact-v10",
+  "extraction_rules": "2026-09-27-notam-airspace-headings-v5",
   "publication_format": "six-page-reference-briefing-2026-09-19",
-  "minted": "2026-09-27 release-434 independent QA: F3 - one slot-allocation grammar with the app reads every printed separator and wrap form (hyphen/pipe, colon, comma, spaced, wrapped) and validates its clocks and level; an allocation printed but not read is held verbatim (extraction v4); the composition states read / printed-but-not-read / held-by-an-older-extraction / none-printed, under the system and page the print names (rule v9); page 6 prints that sentence. The extraction, the composition and the page changed, so the token changed. Re-mint this file together with the token; a rule bumped without it fails both suites."
+  "minted": "2026-09-27 release-436 independent QA: (1) ATC/FIR completeness - FIR headings that name the airspace part (RJJJ FUKUOKA FIR OCEANIC, KZNY NEW YORK DOMESTIC LOWER, UBBA BAKU FIR LOWER) own their notices with the part kept as airspace, enroute topic headings hold their notices without an owner, location-prefixed NOTAM labels continue the section (extraction v5); the composition states the airspace part as a condition the OFP cannot evaluate and a topic notice as owner-not-established (rule v10); (2) one composed volcanic-ash check (OFP section, volcano notices, VA SIGMET feed, responsible VAACs) printed by the checklist row, page 1, page 5, the page-6 source line and the dashboard, and page 6 lists every checklist row by result, including early ATC/FIR calls; (3) the airport surface matcher reads INT bounds and TEMPO states. The extraction, the composition and the pages changed, so the token changed. Re-mint this file together with the token; a rule bumped without it fails both suites."
 }

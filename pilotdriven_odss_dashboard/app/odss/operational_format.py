@@ -395,6 +395,68 @@ def row_widths(cards: list[Card], full_width: float) -> list[float]:
 _VALIDITY_CLAUSE = re.compile(r"validity .+: (?:covers this crossing|outside this crossing|not evaluable) \(at [^)]*\)")
 
 
+# VOLCANIC-CHECK-436: the checklist rows in plain words (R2: codes print as
+# words), in the receipt's own order, grouped by what the check found.
+CHECKLIST_WORDS = {
+    "ofp_parse": "OFP parse", "flight_timing": "flight timing", "mel_cdl": "MEL/CDL",
+    "fuel_performance": "fuel/performance", "airports_alternates": "airports/alternates", "edto": "EDTO",
+    "airport_notam": "airport NOTAMs", "airport_intelligence": "Airport Notes", "enroute_notam": "FIR NOTAMs",
+    "atc_fir_calls": "early ATC/FIR calls", "metar_taf": "METAR/TAF", "sigmet": "SIGMET",
+    "vaa_vaac": "volcanic ash", "tropical_cyclone": "tropical cyclone", "vws": "VWS",
+    "depressurisation_profile": "depressurisation profile", "wafs_sigwx": "WAFS/SIGWX",
+    "airep_pirep": "AIREP/PIREP", "governed_references": "manual references",
+}
+CHECKLIST_GROUPS = (
+    ("CHECKED", "checked", frozenset({"FOUND", "HELD", "CHECKED · NO MATCH", "CHECKED · NO TRIGGER", "NOT APPLICABLE"})),
+    ("UNRESOLVED", "unresolved", frozenset({"UNRESOLVED"})),
+    ("SOURCE UNAVAILABLE", "source unavailable", frozenset({"UNAVAILABLE"})),
+    ("NOT QUERIED", "not queried", frozenset({"NOT QUERIED"})),
+)
+
+
+CHECKLIST_MODES = ("whole", "open", "counts")
+
+
+def checklist_lines(rows: list[dict[str, Any]], mode: str = "whole") -> list[str]:
+    """Every checklist row, grouped by result; a state outside the vocabulary is never folded into CHECKED.
+
+    ``mode`` is the page's own capacity step, taken before any FIR / COMMUNICATION row is deferred: "whole" names every
+    item under its result; "open" prints the counts and names every item that is NOT complete; "counts" prints the
+    counts only. Every item is always named, with its detail, on the dashboard, and the unresolved ones are numbered in
+    this page's conditions."""
+    grouped: dict[str, list[str]] = {title: [] for title, _, _ in CHECKLIST_GROUPS}
+    for row in rows:
+        title = next((title for title, _, states in CHECKLIST_GROUPS if row.get("state") in states), "UNRESOLVED")
+        grouped[title].append(CHECKLIST_WORDS.get(str(row.get("key")), text(row.get("label")).lower()))
+    counts = " · ".join(f"{len(grouped[title])} {word}" for title, word, _ in CHECKLIST_GROUPS if grouped[title])
+    if mode == "whole":
+        return [f"PD CHECKS ({len(rows)}): {counts}.",
+                *(f"{title}: {', '.join(grouped[title])}." for title, _, _ in CHECKLIST_GROUPS if grouped[title])]
+    if mode == "counts":
+        return [f"PD CHECKS ({len(rows)}): {counts}; each item is named on the dashboard."]
+    open_items = "; ".join(f"{', '.join(grouped[title])} ({word})" for title, word, _ in CHECKLIST_GROUPS[1:] if grouped[title])
+    return [f"PD CHECKS ({len(rows)}): {counts}; the checked items are named on the dashboard.",
+            *([f"Open: {open_items}."] if open_items else [])]
+
+
+SOURCE_ASSURANCE_WORDS = {"NOT REACHED": "not reached", "PARTIAL": "partial", "NOT QUERIED": "not queried",
+                          "NOT SETTLED": "not settled"}
+
+
+def source_assurance_line(entries: list[dict[str, Any]]) -> str:
+    """The page-6 source line. It used to name only the OFP's sources, so "every listed source record is held" printed
+    while the live VA SIGMET feed and every responsible VAAC were unreached; each source is listed with its own state."""
+    grouped: dict[str, list[str]] = {}
+    for row in entries:
+        status = str(row.get("status") or "").upper()
+        if status in {"HELD", "REACHED"}:
+            continue
+        grouped.setdefault(SOURCE_ASSURANCE_WORDS.get(status, "not held"), []).append(text(row.get("source")))
+    if not grouped:
+        return "SOURCE ASSURANCE: every listed source is held or reached."
+    return "SOURCE ASSURANCE: " + "; ".join(f"{', '.join(names)} {word}" for word, names in grouped.items()) + "."
+
+
 def compact_conditions_summary(summary: Any, limit: int | None = 72) -> str:
     """A row's conditions summary ("clause · clause · state") at one step of the page-6 ladder.
 
@@ -1396,7 +1458,11 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     inputs = perf.get("inputs") or {}
     terrain = view.get("terrain") or {}
     vws = terrain.get("vws_review") or {}
-    receipt = _operational_coverage_receipt(flight, view, findings, references)
+    # The checklist composed with the view is the one the dashboard prints; it
+    # is recomputed here only when governed manual references were attached
+    # after the analysis (the endpoint recomputes it with the same inputs).
+    receipt = (view["coverage_receipt"] if not references and isinstance(view.get("coverage_receipt"), dict)
+               else _operational_coverage_receipt(flight, view, findings, references))
     airport_analysis = airport_pdf_analysis(flight, view.get("airport_operational_panels") or [])
     alternate_analysis = alternate_pdf_analysis(flight, view.get("airport_operational_panels") or [])
     amount = lambda key: kg((fuel_rows.get(key) or {}).get("fuel_kg"))
@@ -1458,7 +1524,13 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
 
     weather_tile_payload = [
         ("SIGMET", "HELD" if (view.get("hazards") or {}).get("sigmet_cards") else "NO DATA"),
-        ("VA", "HELD" if ((view.get("vaa") or {}).get("cfp_advisories")) else "NO DATA"),
+        # VOLCANIC-CHECK-436: the tile read "HELD" from a volcano NOTAM alone and
+        # "NO DATA" beside a feed VA SIGMET crossing the route. It now prints the
+        # composed check: AFFECTING / HELD (VA SIGMET or VAAC advisory) / NOTICE
+        # (volcano notices only) / NO DATA.
+        ("VA", text(((view.get("vaa") or {}).get("check") or {}).get("tile"))
+               if ((view.get("vaa") or {}).get("check") or {}).get("tile")
+               else ("HELD" if ((view.get("vaa") or {}).get("cfp_advisories")) else "NO DATA")),
         ("TC", "HELD" if cyclone_content(flight)["time_matched"] else "NO DATA"),
         ("PLOTTED", str(len(route_map.get("publication_events") or []))),
         ("VWS MAX", text(vws.get("maximum_display")))]
@@ -1748,13 +1820,21 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     # never deferred: its words and the SIGMET verdicts are two statements of
     # one screening on one page. Step 0 is the whole content; it is exhausted
     # across every grid and size before any unit is deferred.
+    # VOLCANIC-CHECK-436: the volcanic card names every responsible VAAC and its
+    # reach. Before any SIGMET, EDTO or clock row is deferred, the page first
+    # prints those facts as counts ("VAACs 0/4 reached, 9 route points
+    # unsettled"), then - beside held OFP records - leaves them to page 6's
+    # source line and checklist, which state every unreached, partial or
+    # unqueried source. Operational rows keep their place; nothing reads clear.
     WEATHER_DEFER_LADDER = (
-        {"edto": None, "sigmet": None, "clocks": None},
-        {"edto": None, "sigmet": None, "clocks": 6},
-        {"edto": 6, "sigmet": None, "clocks": 6},
-        {"edto": 6, "sigmet": 6, "clocks": 6},
-        {"edto": 3, "sigmet": 3, "clocks": 3},
-        {"edto": 2, "sigmet": 2, "clocks": 1},
+        {"edto": None, "sigmet": None, "clocks": None, "ash": "whole"},
+        {"edto": None, "sigmet": None, "clocks": None, "ash": "compact"},
+        {"edto": None, "sigmet": None, "clocks": None, "ash": "omit"},
+        {"edto": None, "sigmet": None, "clocks": 6, "ash": "omit"},
+        {"edto": 6, "sigmet": None, "clocks": 6, "ash": "omit"},
+        {"edto": 6, "sigmet": 6, "clocks": 6, "ash": "omit"},
+        {"edto": 3, "sigmet": 3, "clocks": 3, "ash": "omit"},
+        {"edto": 2, "sigmet": 2, "clocks": 1, "ash": "omit"},
     )
     full_sigmet = sigmet_lines(flight, view)
     full_edto = edto_window_lines(flight, view)
@@ -1775,7 +1855,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
             "cyclone": lambda gap, weight: Card("TROPICAL CYCLONE", tc_lines
                                                 or ["No governed route-specific cyclone consequence was established from the held sources."],
                                                 AMBER, width_weight=weight, paragraph_gap=gap),
-            "ash": lambda gap, weight: Card("VOLCANIC ASH", volcanic_ash_lines(flight, view), AMBER,
+            "ash": lambda gap, weight: Card("VOLCANIC ASH", volcanic_ash_lines(flight, view, keep["ash"]), AMBER,
                                             width_weight=weight, paragraph_gap=gap),
             "key": lambda gap, weight: Card("FLIGHT HAZARD KEY", key_lines, VIOLET,
                                             width_weight=weight, paragraph_gap=gap),
@@ -1844,23 +1924,26 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     # COVERAGE conditions on this page; the card no longer repeats them.
     interpretation: list[str] = []
     checks = {row["key"]: row for row in receipt["rows"]}
-    completed = [f"{label}: {success if checks[key]['state'] == 'HELD' else 'incomplete'}."
-                 for key, label, success in (("ofp_parse", "Flight / aircraft identity", "recorded"),
-                                             ("flight_timing", "Scheduled departure / arrival UTC", "recorded"),
-                                             ("fuel_performance", "Fuel arithmetic / performance", "verified"))]
-    edto_result = {"NOT APPLICABLE": "not applicable", "HELD": "assessment recorded"}.get(checks["edto"]["state"], "assessment incomplete")
-    completed.append(f"EDTO: {edto_result}.")
+    # David, 24 Sep 2026 06:51: "I asked you to make sure the AI goes thru the
+    # checklist of items it must perform for each flight. That list has
+    # disappeared?" The card printed four of the checklist's rows since the
+    # 9 Sep cleanup. It prints every row now, grouped by what the check found,
+    # in plain words; each row's detail stays on the dashboard and on the page
+    # that owns it, and the unresolved ones are numbered in the conditions.
+
     from .governed_deferred_extract import governed_deferred_extracts
     extracts = governed_deferred_extracts(view.get("deferred_source_items"), references)
     conditions = release_condition_groups(flight, view, receipt, airport_analysis, alternate_analysis, extracts)
     source_lines = [f"OFP {text(identity.get('ofp'))} · {text(view.get('flight_number'))} · {text(view.get('flight_date'))}",
                     f"Generated {text(view.get('generated_at_display'))}."]
-    unavailable = [text(row.get("source")) for row in view.get("source_assurance") or []
-                   if str(row.get("status") or "").upper() != "HELD"]
-    source_lines.append("SOURCE ASSURANCE: "
-                        + (", ".join(unavailable) + " not held." if unavailable
-                           else "every listed source record is held."))
+    source_lines.append(source_assurance_line(view.get("source_assurance") or []))
     source_lines.append("Source checks and full NOTAMs: app / Show full NOTAM.")
+    # A capacity step of this page (VOLCANIC-CHECK-436): the source line now
+    # names every live volcanic source with its state, so a full page (a saved
+    # SQ366 pack held by an older extraction) keeps the identity and the source
+    # line, one line each, and leaves the app pointer, before a FIR row goes.
+    source_lines_compact = [f"OFP {text(identity.get('ofp'))} · {text(view.get('flight_number'))} · {text(view.get('flight_date'))}"
+                            f" · generated {text(view.get('generated_at_display'))}.", source_lines[2]]
     notes = [str(n.get("note_text")) for n in flight.get("personal_notes") or [] if (n.get("include_level1") or n.get("include_level2")) and n.get("note_text")]
     if notes:
         conditions["technical"].append("PILOT NOTES: " + " / ".join(notes))
@@ -1990,16 +2073,17 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         "fir": fir_card,
         "enroute": lambda gap, weight: Card("OFP VWS, CAT AND TERRAIN", enroute_lines + interpretation,
                                             AMBER, "sec_terrain", width_weight=weight, paragraph_gap=gap),
-        "review": lambda gap, weight: Card("SOURCE / CALCULATION REVIEW", completed, CYAN,
-                                           width_weight=weight, paragraph_gap=gap),
+        "review": lambda gap, weight, mode="whole": Card(
+            "SOURCE / CALCULATION REVIEW", checklist_lines(receipt["rows"], mode), CYAN,
+            width_weight=weight, paragraph_gap=gap),
         "airports": lambda gap, weight: Card("AIRPORT ASSESSMENTS", conditions["operations"]
                                              or ["No unresolved airport assessment is recorded."],
                                              AMBER, width_weight=weight, paragraph_gap=gap),
         "weather": lambda gap, weight: Card("WEATHER COVERAGE", conditions["weather"]
                                             or ["No unresolved weather-source condition is recorded."],
                                             AMBER, width_weight=weight, paragraph_gap=gap),
-        "control": lambda gap, weight: Card("SOURCE CONTROL", source_lines, CYAN,
-                                            width_weight=weight, paragraph_gap=gap),
+        "control": lambda gap, weight, compact=False: Card("SOURCE CONTROL", source_lines_compact if compact else source_lines, CYAN,
+                                                           width_weight=weight, paragraph_gap=gap),
         "remaining": lambda gap, weight: Card("REMAINING RELEASE INPUTS", conditions["technical"]
                                               or ["No unresolved aircraft/route source condition is recorded."],
                                               AMBER, width_weight=weight, paragraph_gap=gap),
@@ -2021,19 +2105,37 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
          (("remaining", 2.2), ("state", 1.0)), 0.0),
     )
 
+    # One content ladder for the page: at every FIR / COMMUNICATION step the
+    # checklist is tried whole, then with the open items only, then as counts,
+    # before the next FIR row is deferred - David's FIR column keeps priority.
+    # The source card's compact form (identity and generation time on one line,
+    # the app pointer left out) is the last content given up before the next
+    # FIR row is deferred.
+    ASSURANCE_STEPS = tuple((fir_step, mode, compact) for fir_step in range(len(FIR_STEPS))
+                            for mode, compact in ((CHECKLIST_MODES[0], False), (CHECKLIST_MODES[1], False),
+                                                  (CHECKLIST_MODES[2], False), (CHECKLIST_MODES[2], True)))
+
     def assurance_rows(body, leading, variant=0, step=0):
         *grid, gap = closing_grids[variant]
+        fir_step, mode, control_compact = ASSURANCE_STEPS[step]
         rows = []
         for row in grid:
             built = []
             for key, weight in row:
-                built.append(closing_cards[key](gap, weight, step) if key == "fir" else closing_cards[key](gap, weight))
+                if key == "fir":
+                    built.append(closing_cards[key](gap, weight, fir_step))
+                elif key == "review":
+                    built.append(closing_cards[key](gap, weight, mode))
+                elif key == "control":
+                    built.append(closing_cards[key](gap, weight, control_compact))
+                else:
+                    built.append(closing_cards[key](gap, weight))
             rows.append((None, built))
         return rows
     sections["assurance"] = plan_page_flexible(
         "ENROUTE / INTAM / ASSURANCE", "sec_coverage", assurance_rows, ribbon_index=5,
         aliases=("sec_enroute", "sec_terrain", "sec_intam"),
-        variants=tuple(range(len(closing_grids))), steps=range(len(FIR_STEPS)),
+        variants=tuple(range(len(closing_grids))), steps=range(len(ASSURANCE_STEPS)),
         assurance="TWO-PASS REVIEW TARGET | SOURCE TRACEABILITY | COMMAND AUTHORITY UNCHANGED")
     return sections
 

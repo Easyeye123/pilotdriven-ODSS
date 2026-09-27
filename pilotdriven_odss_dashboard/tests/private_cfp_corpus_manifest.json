@@ -2,7 +2,7 @@
  "schema_version": 1,
  "extraction_contract_version": 2,
  "description": "Private physical-PDF release corpus. Files remain outside git; exact hashes make the gate reproducible and fail closed.",
- "extraction_baseline_policy": "Frozen and reviewed from fresh current full-analysis outputs of the exact SHA-pinned sources with live NOAA AWC disabled. Counts and SHA-256 digests cover all full ordered deterministic records. Any parser change requires deliberate evidence review and explicit remint; the release runner never derives or blesses these values. On 2026-09-09, 22 planning-publication digests were deliberately reminted after independent source-page verification of previously omitted inline PLAN QNH and PLAN WIND values. All source hashes, counts and other extraction digests remain unchanged; wind tokens are retained as printed without conversion. On 2026-09-19, five deferred_items counts and digests were deliberately reminted (SQ882-SIN-HKG-10SEP 5->7, SQ214-PER-SIN-19AUG 5->6, SQ606-SIN-ICN-06SEP 3->5, SQ322-SIN-LHR 2->3, SQ482-SIN-JNB 1->2) after the production audit found page-1 declarations the parser never extracted (labels beyond EE, the EN kind, unrecognised kinds). Each new value was checked against an independent hand reading of the source page cross-checked with Poppler (tests/fixtures/page1_source_declarations.json); the remint aborted unless every other pinned count and digest was byte-identical, and they were. Later the same day, after independent review, the SQ24-SIN-JFK-15AUG deferred_items digest (count unchanged at 1) was deliberately reminted: its one CDL no longer holds the general ZFW, EDTO, take-off and excess-fuel remarks printed after a paragraph break beneath it, which are now held in page1_remarks. Every other pinned count and digest was byte-identical. On 2026-09-22, two fuel_enroute_airports counts and digests were deliberately reminted (SQ303-BRU-SIN 52->50, SQ352-SIN-CPH 2->1) after the production audit found two NOTAM item-E lines being read as aerodromes. A LIDO item-E body sits inside the appendix the station scanner walks and prints in the same AAAA/BBB name shape a station header uses, so 'ELEV/HGT (FT) - 135/153' and 'DVOR/DME STJ 113.200MHZ/CH 79X U/S' were published as airports and the dashboard's Jump to airport offered both. The removed identities are exactly ELEV and DVOR, in exactly the two corpus files whose sources contain those lines; the other 27 files' station lists are byte-identical, no file lost a genuine aerodrome, and every other pinned count and digest was byte-identical. Each new value was checked against an independent recomputation from the source PDF before the remint was accepted. Evidence: output/pd-boss-fixes-20260922/b5-odss-station-identity/. On 2026-09-23, after the independent production audit of release 402 found the fuel-enroute section of SQ365 running on into its EDTO ADEQUATE ENROUTE AIRPORT(S) section, the airport-section heading pattern was completed to every heading the 28 held OFPs print (EDTO/ETOPS suitable and adequate, bare adequate, CRITICAL EDTO AIRPORTS, EDTO ENROUTE ALTN AIRPORTS, DESTINATION ALTERNATE(S)) and 25 cases were deliberately reminted. Five had held every station after their fuel-enroute section as a fuel-enroute airport with its notices and weather: SQ365-FCO-SIN fuel/notams/weather 35/206/154 -> 1/62/17, SQ605-ICN-SIN-08SEP 17/128/77 -> 1/42/13, SQ303-BRU-SIN 50/289/212 -> 1/64/17, SQ214-PER-SIN 7/56/46 -> 1/41/16, SQ482-SIN-JNB 15/122/66 -> 1/56/22 (the weather list runs FUEL ENROUTE, CRITICAL EDTO, ADEQUATE). In every one of the 25 the last notice before a heading the pattern had not named had that heading appended to its text (SQ352 EKCH SX1/26 ended 'DESTINATION ALTERNATE(S)', VOMM 1G1146/24 'EDTO ADEQUATE ENROUTE AIRPORT(S)'); only the notams digest moves on the other 20 and the counts are unchanged. Each new value was recomputed by this runner's own snapshot from the full corpus run on the fixed tree; a verifier classed every changed record as either a removed fuel-station record, a dropped heading tail, or the false fuel source_role removed from a retained weather record at a planning station the source does not file as fuel-enroute (SQ303 VTBD/EDDM, SQ365 EDDM, SQ482 WIMM/VCBI/FIMP; text, other fields and order unchanged), and required every other pinned count and digest, and every planning station's applicability windows, byte-identical - they were. 50 pinned values move in 25 cases. Live NOAA AWC weather is not pinned. Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r9-adequate-roles/. On 2026-09-24, after the independent production QA of release 418 found the genuine SQ366 and SQ23 OFPs printing TIBA / contact / voice instructions the parser never held (it admitted only FIR-headed CPDLC / ADS-C notices), the notam_procedure_records counts and digests were deliberately reminted in 24 cases: the parser now holds every record under a FIR or airway-segment heading whose body prints a communication instruction (contact / CTC / call, establish or maintain contact, report position, monitor a frequency, comply with TIBA / broadcast / transmission, logon, CPDLC / ADS-C) and each record carries heading_kind, fir and segment. A verifier over this runner's own full corpus run on the fixed tree, against the release-418 gate-6 analyses, required every previously held record to be retained with identical identity, validity, heading, page and text (it was, in every case), classified every added record by heading kind and instruction kind ({'fir/voice_contact': 22, 'fir/tiba_broadcast': 16, 'segment/tiba_broadcast': 11, 'segment/voice_contact': 10}), and required every other pinned count and digest to be byte-identical (they were). No source hash, route hash or other extraction field moved. Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r20-atc-source-coverage/design/remint-verifier-report.txt. On 2026-09-26, after the independent production QA of release 432 found the genuine SQ322 Kabul notices (1G272/26, 1G216/26, 1G197/26) held under the previous airway-segment heading because 'OAKX  KABUL FIR' is printed at the foot of p70 with its underline on p71, the NOTAM heading readers were made to read across page breaks and every procedure record was given heading_page (the page its heading is printed on); the notam_procedure_records digests were deliberately reminted in 24 cases (counts unchanged). A verifier (remint_verifier.py) required release 432's own gate-6 analyses to reproduce every previously pinned value, required every other pinned count and digest to be byte-identical on the repaired tree, and classified every record: 121 gained only heading_page and 3 changed owner - exactly the three SQ322 Kabul records, each now under the heading an independent poppler-text oracle names (124/124 records agree, heading and page). Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r26-heading-ownership/corpus-audit/.",
+ "extraction_baseline_policy": "Frozen and reviewed from fresh current full-analysis outputs of the exact SHA-pinned sources with live NOAA AWC disabled. Counts and SHA-256 digests cover all full ordered deterministic records. Any parser change requires deliberate evidence review and explicit remint; the release runner never derives or blesses these values. On 2026-09-09, 22 planning-publication digests were deliberately reminted after independent source-page verification of previously omitted inline PLAN QNH and PLAN WIND values. All source hashes, counts and other extraction digests remain unchanged; wind tokens are retained as printed without conversion. On 2026-09-19, five deferred_items counts and digests were deliberately reminted (SQ882-SIN-HKG-10SEP 5->7, SQ214-PER-SIN-19AUG 5->6, SQ606-SIN-ICN-06SEP 3->5, SQ322-SIN-LHR 2->3, SQ482-SIN-JNB 1->2) after the production audit found page-1 declarations the parser never extracted (labels beyond EE, the EN kind, unrecognised kinds). Each new value was checked against an independent hand reading of the source page cross-checked with Poppler (tests/fixtures/page1_source_declarations.json); the remint aborted unless every other pinned count and digest was byte-identical, and they were. Later the same day, after independent review, the SQ24-SIN-JFK-15AUG deferred_items digest (count unchanged at 1) was deliberately reminted: its one CDL no longer holds the general ZFW, EDTO, take-off and excess-fuel remarks printed after a paragraph break beneath it, which are now held in page1_remarks. Every other pinned count and digest was byte-identical. On 2026-09-22, two fuel_enroute_airports counts and digests were deliberately reminted (SQ303-BRU-SIN 52->50, SQ352-SIN-CPH 2->1) after the production audit found two NOTAM item-E lines being read as aerodromes. A LIDO item-E body sits inside the appendix the station scanner walks and prints in the same AAAA/BBB name shape a station header uses, so 'ELEV/HGT (FT) - 135/153' and 'DVOR/DME STJ 113.200MHZ/CH 79X U/S' were published as airports and the dashboard's Jump to airport offered both. The removed identities are exactly ELEV and DVOR, in exactly the two corpus files whose sources contain those lines; the other 27 files' station lists are byte-identical, no file lost a genuine aerodrome, and every other pinned count and digest was byte-identical. Each new value was checked against an independent recomputation from the source PDF before the remint was accepted. Evidence: output/pd-boss-fixes-20260922/b5-odss-station-identity/. On 2026-09-23, after the independent production audit of release 402 found the fuel-enroute section of SQ365 running on into its EDTO ADEQUATE ENROUTE AIRPORT(S) section, the airport-section heading pattern was completed to every heading the 28 held OFPs print (EDTO/ETOPS suitable and adequate, bare adequate, CRITICAL EDTO AIRPORTS, EDTO ENROUTE ALTN AIRPORTS, DESTINATION ALTERNATE(S)) and 25 cases were deliberately reminted. Five had held every station after their fuel-enroute section as a fuel-enroute airport with its notices and weather: SQ365-FCO-SIN fuel/notams/weather 35/206/154 -> 1/62/17, SQ605-ICN-SIN-08SEP 17/128/77 -> 1/42/13, SQ303-BRU-SIN 50/289/212 -> 1/64/17, SQ214-PER-SIN 7/56/46 -> 1/41/16, SQ482-SIN-JNB 15/122/66 -> 1/56/22 (the weather list runs FUEL ENROUTE, CRITICAL EDTO, ADEQUATE). In every one of the 25 the last notice before a heading the pattern had not named had that heading appended to its text (SQ352 EKCH SX1/26 ended 'DESTINATION ALTERNATE(S)', VOMM 1G1146/24 'EDTO ADEQUATE ENROUTE AIRPORT(S)'); only the notams digest moves on the other 20 and the counts are unchanged. Each new value was recomputed by this runner's own snapshot from the full corpus run on the fixed tree; a verifier classed every changed record as either a removed fuel-station record, a dropped heading tail, or the false fuel source_role removed from a retained weather record at a planning station the source does not file as fuel-enroute (SQ303 VTBD/EDDM, SQ365 EDDM, SQ482 WIMM/VCBI/FIMP; text, other fields and order unchanged), and required every other pinned count and digest, and every planning station's applicability windows, byte-identical - they were. 50 pinned values move in 25 cases. Live NOAA AWC weather is not pinned. Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r9-adequate-roles/. On 2026-09-24, after the independent production QA of release 418 found the genuine SQ366 and SQ23 OFPs printing TIBA / contact / voice instructions the parser never held (it admitted only FIR-headed CPDLC / ADS-C notices), the notam_procedure_records counts and digests were deliberately reminted in 24 cases: the parser now holds every record under a FIR or airway-segment heading whose body prints a communication instruction (contact / CTC / call, establish or maintain contact, report position, monitor a frequency, comply with TIBA / broadcast / transmission, logon, CPDLC / ADS-C) and each record carries heading_kind, fir and segment. A verifier over this runner's own full corpus run on the fixed tree, against the release-418 gate-6 analyses, required every previously held record to be retained with identical identity, validity, heading, page and text (it was, in every case), classified every added record by heading kind and instruction kind ({'fir/voice_contact': 22, 'fir/tiba_broadcast': 16, 'segment/tiba_broadcast': 11, 'segment/voice_contact': 10}), and required every other pinned count and digest to be byte-identical (they were). No source hash, route hash or other extraction field moved. Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r20-atc-source-coverage/design/remint-verifier-report.txt. On 2026-09-26, after the independent production QA of release 432 found the genuine SQ322 Kabul notices (1G272/26, 1G216/26, 1G197/26) held under the previous airway-segment heading because 'OAKX  KABUL FIR' is printed at the foot of p70 with its underline on p71, the NOTAM heading readers were made to read across page breaks and every procedure record was given heading_page (the page its heading is printed on); the notam_procedure_records digests were deliberately reminted in 24 cases (counts unchanged). A verifier (remint_verifier.py) required release 432's own gate-6 analyses to reproduce every previously pinned value, required every other pinned count and digest to be byte-identical on the repaired tree, and classified every record: 121 gained only heading_page and 3 changed owner - exactly the three SQ322 Kabul records, each now under the heading an independent poppler-text oracle names (124/124 records agree, heading and page). Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r26-heading-ownership/corpus-audit/. On 2026-09-27, after the independent QA of release 436 asked for ATC/FIR completeness under headings such as 'UBBA BAKU FIR LOWER' and 'KZNY NEW YORK DOMESTIC LOWER', the NOTAM heading readers were made to recognise FIR headings that name the airspace part (FIR/UIR followed by LOWER, UPPER, OCEANIC or DOMESTIC, and DOMESTIC or OCEANIC with LOWER or UPPER), kept as the record's `airspace`, and to hold notices under enroute topic headings (heading_kind 'topic', owner not established); the notam_procedure_records counts and digests were deliberately reminted in 7 cases. A verifier (remint_verifier_r28.py) required release 436's own gate-6 analyses to reproduce every previously pinned value, required every other pinned count and digest to be byte-identical on the repaired tree, and required all 124 previously held records to be kept byte-identical and in order; the 14 added records (11 under airspace-part FIR headings, 3 under topic headings) each sit under the heading and page an independent poppler-text oracle names (138/138 records agree). Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r28-remaining-gaps/corpus-audit/.",
  "cases": [
   {
    "case_id": "SQ223-SIN-PER",
@@ -114,7 +114,7 @@
      "route_waypoints": 150,
      "flight_planning_etps": 1,
      "intam_records": 23,
-     "notam_procedure_records": 10,
+     "notam_procedure_records": 11,
      "planning_publication": 1
     },
     "identity_sha256": {
@@ -128,7 +128,7 @@
      "route_waypoints": "44ff1d518a617c00dbda09f69f364654b544ff36bae4afa90bbdb09dd4a7a124",
      "flight_planning_etps": "4cf0397bf273f76cba282861907348cb695a30748a9b02d778e655ca56ee0844",
      "intam_records": "d06bdb33f281385042f7b58ea777b88e73e10dde710048fe095a52c7eeb3b5a2",
-     "notam_procedure_records": "95ac21e2e658824127090b83ae8ae9407d8485136ff4fba169bbddf038761c0f",
+     "notam_procedure_records": "216e63ef0e6411843c8557059dbfe4c2e29d589f70a6df6364f1f001c4b453a5",
      "planning_publication": "81e857ce472c8a7020068307ff01f4e05f4f8de52a95037417bd9dc744c74706"
     }
    }
@@ -157,7 +157,7 @@
      "route_waypoints": 118,
      "flight_planning_etps": 1,
      "intam_records": 24,
-     "notam_procedure_records": 10,
+     "notam_procedure_records": 13,
      "planning_publication": 1
     },
     "identity_sha256": {
@@ -171,7 +171,7 @@
      "route_waypoints": "3e434a6893583b69393d8191a7ce3167c165cfdc68de04294516e50f13048648",
      "flight_planning_etps": "357499099f6612be6f5fa6d02cdeaef37bd9358ce5277797b70cef0f3afff974",
      "intam_records": "426c82d5c0f74c341ffdb0882d23e79944e6e2d66f484b67048fdfbb891a916e",
-     "notam_procedure_records": "409c84bf397c7603feddc744cf1b74802a8a54ae0ad2bd4ec7b193ae70629267",
+     "notam_procedure_records": "74aecc2474138082e6fe662d332ffbae428b5d628f8e674b82fb998881b2faf6",
      "planning_publication": "8f2da52b8caed129ee7f54f0fc19582482dd4c46014f5326499dc98fff4351e8"
     }
    }
@@ -243,7 +243,7 @@
      "route_waypoints": 169,
      "flight_planning_etps": 1,
      "intam_records": 28,
-     "notam_procedure_records": 11,
+     "notam_procedure_records": 12,
      "planning_publication": 1
     },
     "identity_sha256": {
@@ -257,7 +257,7 @@
      "route_waypoints": "bb36bac2a262d2258aee9c75f734304eec938abf74ce265ae3c17bde75622850",
      "flight_planning_etps": "f27c5eb8e72c1f9af336566d068e3c4fcff94a1ef45364453bc27c89f240905b",
      "intam_records": "a033de7f3bb34e55ca2b64e8561136f8e8302906bad0579d1e49037ad0ade326",
-     "notam_procedure_records": "495c9b2c242de8494c6c76e26bc7f6edc0bd989c26e15d33d700cac005919571",
+     "notam_procedure_records": "c6fc4fe5bc169c42b8c649be58adebe489e672d4d2056c82cc73011d8714c603",
      "planning_publication": "884af2c66be6762af8d90b5ae54a1f031b58aa180ce281758ee32558a65da23a"
     }
    }
@@ -673,7 +673,7 @@
      "route_waypoints": 119,
      "flight_planning_etps": 1,
      "intam_records": 23,
-     "notam_procedure_records": 8,
+     "notam_procedure_records": 11,
      "planning_publication": 1
     },
     "identity_sha256": {
@@ -687,7 +687,7 @@
      "route_waypoints": "9a5015618cc1be93dc076cd8535512e563ecc6cf2fdc3e95e5ccc1f855b647a3",
      "flight_planning_etps": "07818955ea1662d41e9c1f117cae81847f3ff4e441a8a5ce80d6e934c953e4a7",
      "intam_records": "3587e008c0aa57ae7264ae28788408903d78f79d12ebb2088b580fbc01b52c9f",
-     "notam_procedure_records": "58ac58b8e6184f2722d9c43e3710c1481f537c23c2f12ade09622a5b261e7426",
+     "notam_procedure_records": "2d01a53a3b3a3be93eb5c83a453552fe0e1bdff931b9a59509dc43e38a28ce38",
      "planning_publication": "01d35fdb52d1ddd9836a73d1cfbb14be38b27c2d7cdd5c0aa30a9193ae0ff0aa"
     }
    }
@@ -802,7 +802,7 @@
      "route_waypoints": 53,
      "flight_planning_etps": 1,
      "intam_records": 23,
-     "notam_procedure_records": 1,
+     "notam_procedure_records": 3,
      "planning_publication": 1
     },
     "identity_sha256": {
@@ -816,7 +816,7 @@
      "route_waypoints": "96fc23b81156d10c9238053abb0fa8994821cafd3a5dcfd6e30fae3a2f19ea25",
      "flight_planning_etps": "8d5ec37e52fef7de4cf22e165fbd677a636a782de7301e186e3c061d7c41f385",
      "intam_records": "501199b1f7ccb336ef833c06431d745463c3592c7cd1679e86596de60e694fab",
-     "notam_procedure_records": "580046cdb3b544a96df3ebadfdcdd95a1e093138ca98c3cac2923e710bf98902",
+     "notam_procedure_records": "e3814c8830c1c42c4d207583f5bb81d9324c893c130a0ac6090cd5431b700a80",
      "planning_publication": "d3f22609c79495e944cc2087b8f0bb22abb5e5812c1ce30dc6615da105c07877"
     }
    }
@@ -845,7 +845,7 @@
      "route_waypoints": 138,
      "flight_planning_etps": 1,
      "intam_records": 26,
-     "notam_procedure_records": 8,
+     "notam_procedure_records": 9,
      "planning_publication": 1
     },
     "identity_sha256": {
@@ -859,7 +859,7 @@
      "route_waypoints": "c04e537f591e22c73666a8d7dfa4f0013d1469b13b7054c7211e7468684c9889",
      "flight_planning_etps": "95561b4964d9dcd76c3e45132c9d0afc9303f2c7062151713684e7e1c04e128e",
      "intam_records": "3457e705ab4f80b93e5d9ee1878b29b020fe4084d206418d834e5c886dd0362d",
-     "notam_procedure_records": "41487d5248cf20b6215ca192cadaa7fc2b794a13b8c30cb5281bcb59bf98d8c0",
+     "notam_procedure_records": "c3c660d4120a9b32755cc54c539f4f2692d81610c3353ecbce7cd8376b5ae91b",
      "planning_publication": "022fda05cf8101a435ff9f9d1e6f5963468cc84cb1c84c68413448804e87b0d3"
     }
    }
@@ -1017,7 +1017,7 @@
      "route_waypoints": 98,
      "flight_planning_etps": 1,
      "intam_records": 22,
-     "notam_procedure_records": 4,
+     "notam_procedure_records": 7,
      "planning_publication": 1
     },
     "identity_sha256": {
@@ -1031,7 +1031,7 @@
      "route_waypoints": "672aa7f5504f864c054da7d8cc402f5dbe1268c921cf8fa5c9c5c0091f42559f",
      "flight_planning_etps": "adc5a972ff6dc0553d719b12092392e7ee16a4892e74c299236cb3c0121e3975",
      "intam_records": "5a093392d912a49bd5bd02ddc5c55dc04981626b7504053920d0b87911400d43",
-     "notam_procedure_records": "83c168f8edad2713423ec349c6a24f6b2333bed59eb31230ac18cbce2a1aeb5a",
+     "notam_procedure_records": "db3b708dc88cdb02592d63b1fd14f64392205ad0b723cf122dd8cd93706b0a22",
      "planning_publication": "98559ab99951784956c50c0b73fdc0614558a11e7ea1b99cae9bf0eaa90ac1c5"
     }
    }

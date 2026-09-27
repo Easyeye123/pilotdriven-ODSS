@@ -2100,6 +2100,24 @@ def get_service_briefing(request: Request, analysis_id: str):
     analysis_flight = analysis.get("flight") or {}
     notam_snapshot = _service_notam_snapshot(analysis)
     report_refresh = _report_refresh_summary(flight)
+    # VOLCANIC-CHECK-436: the per-flight checklist the downloaded briefing
+    # prints on page 6. Composed with the view; recomputed with the same inputs
+    # the PDF uses when governed manual references were attached afterwards.
+    briefing_view = view.get("briefing") or {}
+    coverage_receipt = briefing_view.get("coverage_receipt")
+    attached_references = (
+        analysis.get("company_briefing_references")
+        if isinstance(analysis.get("company_briefing_references"), dict)
+        else None
+    )
+    if attached_references or not isinstance(coverage_receipt, dict):
+        from app.odss.combined_brief import _operational_coverage_receipt
+        try:
+            coverage_receipt = _operational_coverage_receipt(
+                analysis_flight, briefing_view, analysis.get("findings") or [], attached_references,
+            )
+        except (ValueError, TypeError, KeyError, AttributeError):
+            coverage_receipt = coverage_receipt if isinstance(coverage_receipt, dict) else None
     warnings = list(view.get("warnings") or [])
     if report_refresh["warning"] and report_refresh["warning"] not in warnings:
         warnings.append(report_refresh["warning"])
@@ -2114,6 +2132,7 @@ def get_service_briefing(request: Request, analysis_id: str):
         # them with the value in service when it reopens a saved pack (F2).
         "extraction_rules": analysis_flight.get("extraction_rules"),
         "rebuilt_from_held_analysis": served["rebuilt_from_held_analysis"],
+        "coverage_receipt": coverage_receipt,
         "company_briefing_references": (
             analysis.get("company_briefing_references")
             if isinstance(analysis.get("company_briefing_references"), dict)

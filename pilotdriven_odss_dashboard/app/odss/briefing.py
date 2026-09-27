@@ -43,6 +43,7 @@ from .notam_restriction_line import (
     unpublishable,
 )
 from .enrichment import ofp_volcano_records
+from .volcanic_check import volcanic_ash_check
 from .pilot_briefing import (
     normalize_notam_references,
     prepare_pilot_findings,
@@ -5206,6 +5207,7 @@ def _source_assurance_projection(
     volcanic_advisories: list[dict[str, Any]],
     coverage_ledger: list[dict[str, str]],
     route_airspace: dict[str, Any] | None = None,
+    volcanic_check: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     selected_notams = len(flight.get("notams") or [])
     weather_records = len(_cfp_weather_records(flight))
@@ -5271,11 +5273,19 @@ def _source_assurance_projection(
             "status": "HELD" if volcanic_advisories else "NOT HELD",
             "detail": f"{len(volcanic_advisories)} named advisory record(s).",
         },
-        {
-            "source": "VA SIGMET COVERAGE",
-            "status": va_sigmet.upper(),
-            "detail": "A coverage state is not a NIL operational finding.",
-        },
+        # VOLCANIC-CHECK-436: this list used to name only the OFP's volcanic
+        # sources, so "every listed source record is held" printed while the
+        # live VA SIGMET feed and every responsible VAAC were unreached (SQ34,
+        # independent QA of release 436). The OFP section, the feed and the
+        # responsible centres are each listed with their own state.
+        *(
+            (volcanic_check or {}).get("sources")
+            or [{
+                "source": "VA SIGMET COVERAGE",
+                "status": va_sigmet.upper(),
+                "detail": "A coverage state is not a NIL operational finding.",
+            }]
+        ),
         {
             "source": "INTAM",
             "status": "HELD" if intam_records else "NOT HELD",
@@ -5919,6 +5929,15 @@ def build_briefing_view(
         direct_vaa_source_review.get("status")
         or legacy_vaa_review.get("status")
     )
+    # VOLCANIC-CHECK-436: the four volcanic sources composed once; the
+    # checklist row, page 1, page 5, the source line and the dashboard all
+    # print this record (volcanic_check.py).
+    volcanic_check = volcanic_ash_check(
+        flight,
+        va_sigmet_review,
+        direct_vaa_source_review,
+        volcanic_advisories,
+    )
     release_gates = _release_gate_projection(
         decision_findings,
         performance_reconciliation,
@@ -5932,6 +5951,7 @@ def build_briefing_view(
         volcanic_advisories,
         coverage_ledger,
         route_airspace,
+        volcanic_check,
     )
     deferred_receipt_items = [
         {
@@ -5993,7 +6013,7 @@ def build_briefing_view(
     from .operational_format import page_one_pertinent
     airport_analysis = airport_pdf_analysis(flight, all_airport_panels)
     from .concise_pdf_gate import PUBLICATION_FORMAT
-    return {
+    view = {
         "publication_format": PUBLICATION_FORMAT,
         "deferred_pdf_analysis": deferred_pdf_analysis,
         "airport_pdf_analysis": airport_analysis,
@@ -6252,6 +6272,7 @@ def build_briefing_view(
             ),
         },
         "vaa": {
+            "check": volcanic_check,
             "cfp_advisories": volcanic_advisories,
             # CFP notices and official direct-VAAC advisories are deliberately
             # separate collections.  CFP VA SIGMET/volcano text is not proof
@@ -6333,6 +6354,15 @@ def build_briefing_view(
         ],
         "warnings": warnings[:5],
     }
+    # David, 24 Sep 2026 06:51: "make sure the AI goes thru the checklist of
+    # items it must perform for each flight. That list has disappeared?" The
+    # checklist is composed with the view, so the dashboard reads the same
+    # rows the PDF prints (release-436 QA, VOLCANIC-CHECK-436). The endpoint
+    # and the PDF recompute it with the governed manual references attached
+    # after the analysis; with none attached the three are identical.
+    from .combined_brief import _operational_coverage_receipt
+    view["coverage_receipt"] = _operational_coverage_receipt(flight, view, source_findings, None)
+    return view
 
 
 __all__ = [

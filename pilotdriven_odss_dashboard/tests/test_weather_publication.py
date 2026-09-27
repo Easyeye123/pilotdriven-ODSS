@@ -61,9 +61,10 @@ def test_physical_pdf_explains_non_edto_excluded_sigmet_and_unassessed_ash(tmp_p
         assert 'EXPIRED BEFORE SCHEDULED DEPARTURE 08SEP 1450Z' in weather
         assert 'C03 08SEP 1018 1418Z 32 MIN' in weather
         assert 'SUCCESSOR SIGMET COVERAGE' in weather
-        assert 'DARWIN TOKYO REACHED' in weather
-        assert '2 DIRECT VAAC ADVISORIES' in weather
-        assert 'APPLICABILITY HAS NOT BEEN ASSESSED' in weather
+        # VOLCANIC-CHECK-436: the live sources print as the composed check - every responsible centre named with its
+        # reach, the advisories held and that their route applicability is not assessed.
+        assert 'RESPONSIBLE VAACS DARWIN TOKYO ALL REACHED' in weather
+        assert '2 ADVISORIES HELD ROUTE APPLICABILITY NOT ASSESSED' in weather
         assert len(doc) == MAX_BRIEFING_PAGES
     assert flight == original
 

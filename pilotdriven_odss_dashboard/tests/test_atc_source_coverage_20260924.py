@@ -254,19 +254,25 @@ def test_sq366_composition_publishes_the_source_held_calls_with_their_printed_co
     # The aerodrome TIBA notice (arrival / departure operations) does not apply to an overflight.
     aerodrome = rows["1G272/26"]
     assert aerodrome["applicability_state"] == "not_applicable" and any(c["kind"] == "scope" and c["result"] == "not_met" for c in aerodrome["conditions"])
-    assert set(rows) == {"1A1891/26", "SX50/25", "1G803/26", "SX33/26", "1G272/26", "1G216/26", "1G197/26", "1G220/26", "AX1/23"}
+    # AIRSPACE-HEADINGS-436 (27 Sep): 1A2595/26 (UAV flights within ATHINAI FIR, voice contact) is printed under the
+    # enroute topic heading "UAV 401614N 0250927E" on p93 and is now held, with no owner established.
+    assert set(rows) == {"1A1891/26", "SX50/25", "1G803/26", "SX33/26", "1G272/26", "1G216/26", "1G197/26", "1G220/26", "AX1/23", "1A2595/26"}
+    assert rows["1A2595/26"]["association"] == "unresolved" and rows["1A2595/26"]["fir"] == ""
     assert composed["state"] == "source_procedures_held"
     assert composed["state_sentence"] == (
-        "No approved early-call rule is held. 9 source-held communication notice(s) on the parsed route "
-        "(6 voice/broadcast, 3 datalink): printed conditions met on 3, unresolved on 4, not applicable on 2. "
+        "No approved early-call rule is held. 10 source-held communication notice(s) on the parsed route "
+        "(7 voice/broadcast, 3 datalink): printed conditions met on 3, unresolved on 5, not applicable on 2. "
         "Frequencies and lead times are the source's own printed values; none is inferred from crossing times."
     )
     assert composed["other_procedure_count"] == 1, "the Vienna CPDLC logon notice is held but LOVV is not on this route; the firefighting, VOR and spoofed-call notices are not instructions"
-    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-89"
+    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-89, p93"
     # Display rows fall due in time order: the latest ACTM a printed lead gives, else the boundary ACTM.
     lines = composed["procedure_lines"]
     anchors = [line["latest_actm"] or line["actm"] for line in lines]
-    assert anchors == sorted(anchors), anchors
+    timed = [anchor for anchor in anchors if anchor]
+    assert timed == sorted(timed), anchors
+    # A row bound to no crossing (the UAV topic notice, AIRSPACE-HEADINGS-436) has no time and follows the timed rows.
+    assert all(anchor is None for anchor in anchors[len(timed):]), anchors
     assert [line["notam_ids"][0] for line in lines if line["fir"] == "OAKX"] == ["1G216/26", "1G220/26", "1G272/26", "1G197/26"]
     assert primary_procedure_line(lines)["notam_ids"] == ["1G216/26"], "the first call row that prints a frequency (page 6 always prints it)"
     assert all(line["applicability_state"] and line["conditions_summary"] for line in lines)
@@ -349,7 +355,8 @@ def test_sq366_page_six_prints_the_applicable_voice_row_with_the_printed_frequen
     case = rendered("SQ366", tmp_path_factory)
     page, raw = case["folded"][ENROUTE_PAGE], case["pages"][ENROUTE_PAGE]
     assert "FIR / COMMUNICATION" in raw
-    assert normalized("No approved early-call rule is held. 9 source-held communication notice(s) on the parsed route") in page
+    # Ten since AIRSPACE-HEADINGS-436: the UAV topic notice (1A2595/26) is held.
+    assert normalized("No approved early-call rule is held. 10 source-held communication notice(s) on the parsed route") in page
     assert normalized("lead times and frequencies are not held") not in page
     assert normalized("+05:35 OAKX entry.") in page and "125.2MHZ" in raw and "1G216/26" in raw
     assert normalized("10 MINS PRIOR ENTERING TO FIR") in page
