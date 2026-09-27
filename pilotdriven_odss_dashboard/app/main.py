@@ -2100,32 +2100,33 @@ def get_service_briefing(request: Request, analysis_id: str):
     analysis_flight = analysis.get("flight") or {}
     notam_snapshot = _service_notam_snapshot(analysis)
     report_refresh = _report_refresh_summary(flight)
-    # VOLCANIC-CHECK-436: the per-flight checklist the downloaded briefing
-    # prints on page 6. Composed with the view; recomputed with the same inputs
-    # the PDF uses when governed manual references were attached afterwards.
+    # Surface publication can append Airport Notes after the initial analysis.
+    # Project the checklist from the complete held view on every read, just as
+    # the PDF does; a cached pre-surface receipt is not an authoritative input.
     briefing_view = view.get("briefing") or {}
-    coverage_receipt = briefing_view.get("coverage_receipt")
     attached_references = (
         analysis.get("company_briefing_references")
         if isinstance(analysis.get("company_briefing_references"), dict)
         else None
     )
-    if attached_references or not isinstance(coverage_receipt, dict):
-        from app.odss.combined_brief import _operational_coverage_receipt
-        try:
-            coverage_receipt = _operational_coverage_receipt(
-                analysis_flight, briefing_view, analysis.get("findings") or [], attached_references,
-            )
-        except (ValueError, TypeError, KeyError, AttributeError):
-            coverage_receipt = coverage_receipt if isinstance(coverage_receipt, dict) else None
     warnings = list(view.get("warnings") or [])
+    from app.odss.combined_brief import _operational_coverage_receipt
+    try:
+        coverage_receipt = _operational_coverage_receipt(
+            analysis_flight, briefing_view, analysis.get("findings") or [], attached_references,
+        )
+    except (ValueError, TypeError, KeyError, AttributeError):
+        # Never fall back to stale success rows when current evidence is invalid.
+        coverage_receipt = None
+        warnings.append("PD checklist could not be composed from the held evidence.")
+    briefing_view = {**briefing_view, "coverage_receipt": coverage_receipt}
     if report_refresh["warning"] and report_refresh["warning"] not in warnings:
         warnings.append(report_refresh["warning"])
     return JSONResponse({
         "analysis_id": analysis_id,
         "schema_version": analysis.get("schema_version"),
         "flight": analysis_flight,
-        "briefing": view.get("briefing"),
+        "briefing": briefing_view,
         "publication_rules": served["publication_rules"],
         # The extraction rules the held analysis was parsed under (None for an
         # analysis stored before the parser stamped them); the app compares

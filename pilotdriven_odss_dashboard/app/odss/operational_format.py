@@ -1458,11 +1458,10 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     inputs = perf.get("inputs") or {}
     terrain = view.get("terrain") or {}
     vws = terrain.get("vws_review") or {}
-    # The checklist composed with the view is the one the dashboard prints; it
-    # is recomputed here only when governed manual references were attached
-    # after the analysis (the endpoint recomputes it with the same inputs).
-    receipt = (view["coverage_receipt"] if not references and isinstance(view.get("coverage_receipt"), dict)
-               else _operational_coverage_receipt(flight, view, findings, references))
+    # Late airport evidence and governed references can follow the initial
+    # analysis. Both endpoint and PDF project from these complete held inputs,
+    # never from the checklist cached before those inputs were published.
+    receipt = _operational_coverage_receipt(flight, view, findings, references)
     airport_analysis = airport_pdf_analysis(flight, view.get("airport_operational_panels") or [])
     alternate_analysis = alternate_pdf_analysis(flight, view.get("airport_operational_panels") or [])
     amount = lambda key: kg((fuel_rows.get(key) or {}).get("fuel_kg"))

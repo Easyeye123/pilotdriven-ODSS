@@ -4288,3 +4288,72 @@ def test_service_briefing_carries_the_per_flight_checklist_the_pdf_prints(
     assert volcanic["detail"] == payload["briefing"]["vaa"]["check"]["line"]
     # The unit suite runs with every live source disabled: never "checked", always "not queried".
     assert volcanic["state"] == "NOT QUERIED"
+
+
+@pytest.mark.parametrize("availability, expected", [
+    ("no_current_released_match", "CHECKED · NO MATCH"),
+    ("source_unavailable", "UNAVAILABLE"),
+    ("expired", "UNRESOLVED"),
+    ("current", "FOUND"),
+])
+def test_briefing_receipt_uses_late_airport_evidence_without_manual_references(
+    service_app: TestClient, availability: str, expected: str,
+) -> None:
+    """438 production SQ34: surface publication appended its index after the
+    initial checklist, leaving dashboard rows stale while the PDF rebuilt them.
+    Reproduce that stored shape without attaching unrelated manual references.
+    """
+    created = service_app.post(
+        "/v1/analyses", headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    analysis_id = created.json()["analysis_id"]
+    record = database.get_flight_by_analysis_id(analysis_id, "tenant-1")
+    path = Path(record["analysis_path"])
+    held = json.loads(path.read_text())
+    view = held["view"]["briefing"]
+    original = next(r for r in view["coverage_receipt"]["rows"] if r["key"] == "airport_intelligence")
+    assert original["state"] == "UNRESOLVED"
+    index = [{"icao": held["flight"]["departure"], "notamCount": 3,
+              "notes": {"status": "released" if availability == "current" else "unavailable",
+                        "availabilityStatus": availability}}]
+    held["flight"]["airport_surface_index"] = index
+    view["airport_surface_index"] = index
+    held.pop("company_briefing_references", None)
+    path.write_text(json.dumps(held))
+    before = path.read_bytes()
+    response = service_app.get(f"/v1/analyses/{analysis_id}/briefing", headers=_authorization())
+    assert response.status_code == 200
+    payload = response.json()
+    rows = {r["key"]: r for r in payload["coverage_receipt"]["rows"]}
+    assert rows["airport_intelligence"]["state"] == expected
+    assert "coverage is not published" not in rows["airport_intelligence"]["detail"]
+    assert payload["briefing"]["coverage_receipt"] == payload["coverage_receipt"]
+    # The endpoint and freshly composed PDF use the same complete held inputs;
+    # serving the projection must not mutate the saved analysis.
+    from app.odss.combined_brief import _operational_coverage_receipt
+    assert payload["coverage_receipt"] == _operational_coverage_receipt(
+        payload["flight"], payload["briefing"], held["findings"], None,
+    )
+    assert path.read_bytes() == before
+
+
+def test_briefing_does_not_serve_stale_checklist_when_projection_fails(service_app, monkeypatch):
+    from app.odss import combined_brief
+    created = service_app.post(
+        "/v1/analyses", headers=_authorization(),
+        files={"file": ("SQ304.pdf", _build_lido_pdf(), "application/pdf")},
+    )
+    assert created.status_code == 201
+    def fail(*args):
+        raise ValueError("synthetic invalid held receipt input")
+    monkeypatch.setattr(combined_brief, "_operational_coverage_receipt", fail)
+    result = service_app.get(
+        f"/v1/analyses/{created.json()['analysis_id']}/briefing", headers=_authorization(),
+    )
+    assert result.status_code == 200
+    body = result.json()
+    assert body["coverage_receipt"] is None
+    assert body["briefing"]["coverage_receipt"] is None
+    assert "PD checklist could not be composed from the held evidence." in body["warnings"]
