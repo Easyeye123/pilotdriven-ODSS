@@ -74,6 +74,14 @@ AIRSPACE-HEADINGS-436 (27 Sep 2026, rule v10). A record held under a FIR heading
 FIR's crossing, and the printed part is stated as a condition the OFP's boundary rows cannot evaluate ("section ...").
 A record held under a topic heading in an enroute part ("UAV 401614N 0250927E", "VAA GREAT SITKIN") is bound to no
 crossing unless its own body names the FIR, and says the owning FIR is not established.
+
+ATC-SOURCE-COVERAGE (30 Sep 2026, rule v11). Printed FIR status and crew
+notification/fallback duties are retained even without a timed FPL boundary.
+That missing association/time stays unresolved with source-page provenance.
+Service availability, negation and ATC provisions cannot become crew calls;
+only a positive crew instruction can derive a deadline from its printed lead.
+Headings require source layout evidence; no route or notice outcome is pinned.
+
 """
 from __future__ import annotations
 
@@ -83,7 +91,7 @@ from typing import Any
 
 from .extraction_rules import EXTRACTION_RULES
 
-ENROUTE_CONTACT_RULE = "enroute-contact-v10"
+ENROUTE_CONTACT_RULE = "enroute-contact-v11"
 # A record whose owning heading the source layout does not establish (parser heading_kind "unresolved").
 _UNRESOLVED_OWNER = "section heading not established from the source layout"
 
@@ -97,14 +105,14 @@ _OCR_JOINS = (
     ("CON TACT", "CONTACT"), ("BROAD CAST", "BROADCAST"), ("LOG ON", "LOGON"), ("LOG-ON", "LOGON"),
     ("TRANS MISSION", "TRANSMISSION"), ("FREQ UENCY", "FREQUENCY"), ("CALL SIGN", "CALLSIGN"), ("CALLSIGNS", "CALLSIGN"),
 )
-_UNIT = r"(?:ACC|ACCS|CTL|CONTROL|RADAR|RADIO|APP|APPROACH|TWR|TOWER|CENTER|CENTRE|ATC|ATS|FIR|INFORMATION|UNIT|SECTOR|CTR|OCC|ARTCC|ATSU)"
+_UNIT = r"(?:ACC|ACCS|CTL|CONTROL|RADAR|RADIO|APP|APPROACH|TWR|TOWER|CENTER|CENTRE|ATC|ATS|FIR|INFORMATION|UNIT|SECTOR|CTR|OCC|ARTCC|ATSU|FSS)"
 # A communication instruction, by its own printed verb and object: contact /
 # CTC / call a unit or a frequency as an obligation or imperative (a state
 # such as "in positive contact with" is not), establish or maintain contact,
 # report a position, monitor a frequency; comply with TIBA, broadcast (as an
 # obligation) or transmit; logon; CPDLC / ADS-C. A reference to TIBA
 # procedures, a broadcast made by the ground, a phone number to call, a
-# report "to ATC" of an occurrence or monitoring a selection are not.
+# monitoring a navigation selection alone is not a communications duty.
 _KIND_RULES = (
     ("contact_logon", re.compile(r"\bAFN LOGON\b|\bLOGON\b")),
     ("voice_contact", re.compile(
@@ -123,13 +131,33 @@ _KIND_RULES = (
     )),
     ("datalink_other", re.compile(r"\bCPDLC\b|\bADS-C\b")),
 )
-_KIND_RANK = {"voice_contact": 0, "tiba_broadcast": 1, "contact_logon": 2, "datalink_other": 3}
+_KIND_RANK = {"voice_contact": 0, "tiba_broadcast": 1, "contact_logon": 2, "atc_duty": 3, "datalink_other": 4}
 _STATE_RANK = {"conditions_held": 0, "conditions_unresolved": 1, "not_applicable": 2}
+# Source service status is retained as communications evidence. These words
+# classify the quotation; they do not supply a substitute crew instruction.
+_COMMUNICATION_SERVICE = re.compile(r"\b(?:CPDLC|ADS-C|DATA[ -]?LINK|COM|COMMUNICATIONS?|HF|VHF|UHF|SATCOM|SELCAL|RCO|DRCO|RADIO(?! ALTIMETER| NAVIGATION| BEACON)|EMERGENCY|GUARD|A/G FAC)\b|\b(?:ACC|FIC|CENTRE|CENTER|ARTCC)\b.{0,180}\b(?:FREQ(?:UENCY)?|\d{2,3}\.\d{1,3}\s*MHZ)\b")
+_SERVICE_STATUS = re.compile(r"\b(?:NOT (?:AVBL|AVAILABLE)|UN[- ]?(?:AVBL|AVAILABLE|SERVICEABLE|SERVICEABILITY)|UNMONITORED|WITHDRAWN|SUSPENDED|OUT OF SERVICE|LIMITED (?:RADIO )?COVERAGE|SUBJ(?:ECT)? TO (?:INTRP|INTERRUPTION))\b|\bU/S\b")
+# Equipment plus an obligation/restriction, never surveillance coverage alone.
+_NONVOICE_EQUIPMENT = re.compile(r"\b(?:SSR|IFF|TRANSPONDERS?|ADS-B OUT EQUIPAGE)\b")
+_NONVOICE_DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|ARE REQUIRED TO|IS REQUIRED TO|NOT REQUIRED TO|(?:ARE|IS) NOT PERMITTED|(?:ARE|IS) (?:TEMPORARILY )?PROHIBITED)\b")
+_OPERATING_SUBJECT = re.compile(r"\b(?:FLIGHT CREWS?|AIR CREWS?|CREWS?|PILOTS?|FLIGHTS?|FLTS?|ACFT|AIRCRAFT|AFCT|OVERFLIGHTS?|TFC|TRAFFIC)\b")
+_OPERATING_DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|ARE REQUIRED TO|IS REQUIRED TO|(?:ARE|IS) NOT PERMITTED TO|(?:ARE|IS) (?:TEMPORARILY )?PROHIBITED FROM)\s+(?:(?:NOT|CONTINUE TO|BE|FLT|FLIGHT)\s+)*(?:SQUAWK(?:ING)?|OPERAT(?:E|ED|ING)|DISPLAY(?:ED)?|CHANGE|MAINTAIN|FLY|ENTER(?:ING)?|DEPART(?:ING)?|CROSS|FOLLOW|AVOID|FILE|PLANNED|HAVE|REMAIN|BE CAPABLE OF CRUISING|APPROVED|COORDINATE|ON|IN)\b")
+_OPERATING_TARGET = re.compile(r"^(?:(?:THEIR|ITS|THE|A|AN|ASSIGNED|CRUISING|LAST|NEW|PUBLISHED|MANDATORY|CURRENT|REQUIRED|WI|WITHIN|IN|ON|VIA|ABOVE|BELOW|OVER|WITH|BY|AT|HIGH|LOW|AND|SECTORS?)\s+)*(?:SSR|IFF|TRANSPONDERS?|ADS-B|(?:FLIGHT|FLT) LEVELS?|FL\d{2,3}|ALTITUDE|IAS|MACH|IAS\/MACH|ATS|ATC|TIBA|FIRS?|AIRSPACE|AERODROMES?|RUNWAYS?|RWY|ROUTES?|RTE|FPLS?|FLT PLAN|FLIGHT PLAN|WRA|TSA|TRA|NAVIGATION LIGHTS|ANTI-COLLISION LIGHTS|M\d{3}|MACH \d(?:\.\d+)?|TWO-WAY (?:RADIO )?(?:COMMUNICATIONS?|COM) WITH (?:ATC|ATS)|(?:AD|AERODROME|ATC|ATS) WATCH SUPERVISOR|(?:ACTIVE|FILED) (?:IFR|VFR)(?: OR (?:A )?(?:ACTIVE|FILED) (?:IFR|VFR))? (?:FPL|FLT PLAN|FLIGHT PLAN)|(?:[A-Z][A-Z0-9-]*\s+){1,4}(?:FIRS?|AIRSPACE))\b")
+_ATC_SERVICE = re.compile(r"^(?:ATS|AIR TRAFFIC SERVICES?|AIR TRAFFIC CONTROL)\b")
+_ATC_SERVICE_STATUS = re.compile(r"\b(?:NOT (?:AVBL|AVAILABLE|PROVIDED)|UN[- ]?(?:AVBL|AVAILABLE))\b")
+_PRIOR_ATS_APPROVAL = re.compile(r"\b(?:EXEMPTION|APPROVAL|PERMISSION)\b.{0,100}\bPRIOR (?:COOR|COORDINATION|APPROVAL)\b.{0,100}\b(?:ATS|ATC)\b")
+_PRINTED_RADIO_ADVICE = re.compile(r"\bCHECK (?:ACT|ACTIVITY) WITH\b.{0,100}\b(?:APP|FIC|ACC|ATC)\b|\b(?:ADVICE|ADVISE|ADVISED)\s+(?:TO\s+)?(?:CTC|CONTACT)\s+(?:[A-Z]+\s+){0,4}(?:ACC|ATC|CONTROL|RADIO|FIR)\b|\bTRY\s+(?:ALTN|ALTERNATE)\s+FREQ(?:UENCY)?\b|\b(?:DISREGARD\s+(?:ANY\s+)?(?:NON-STANDARD|SUSPICIOUS)\s+(?:OR\s+SUSPICIOUS\s+)?CALLS|VERIFY\s+AUTHENTICITY\s+OF\s+ATS\s+INSTRUCTIONS|MAINTAIN\s+STRICT\s+ADHERENCE\s+TO\s+ASSIGNED\s+FREQUENCIES)\b")
+_ATC_RECIPIENT = re.compile(r"\b(?:ATC|AIR TRAFFIC CONTROL)\s+(?:SHALL|MUST|SHOULD)\s+BE\s+INFORMED\b")
+_ATC_REPORT = re.compile(r"\b(?:REPORT(?:ING)?|REP|INFORM|ADVISE|NOTIFY)\b.{0,300}\b(?:ATC|AIR TRAFFIC CONTROL|AIR TRAFFIC SERVICES|ATS UNIT|ATSU|ATS)\b|\b(?:ATC|AIR TRAFFIC CONTROL)\s+(?:SHALL|MUST|SHOULD)\s+BE\s+INFORMED\b|\bMAKE ATC AWARE\b")
+_RETIRED_REPORT = re.compile(r"\b(?:NO LONGER|NOT) REQUIRED TO SEND\b.{0,100}\b(?:POSITION|PSN) REPORT\b|\b(?:WO|WITHOUT) THE REQUIREMENT FOR VOICE (?:POSITION|PSN) (?:REPORT|REP)\b|\b(?:POSITION|PSN) REPORT(?:ING)?\b.{0,60}\b(?:WITHDRAWN|NO LONGER REQUIRED)\b")
+_REPORT_EVENT = re.compile(r"\b(?:GNSS (?:INTERFERENCE|JAMMING|SPOOFING)|RADIO ALTIMETER ANOMALIES|UNAUTHORIZED RADIO TRANSMISSIONS|SUSPICIOUS CALLS|VOLCANIC ASH|SIGHTING|ENCOUNTER|OCCURRENCE)\b")
+_NEGATED_CALL = re.compile(r"\b(?:(?:ARE|IS)\s+)?NOT REQUIRED TO\s+(?:CONTACT|CTC|CALL|LOGON|BROADCAST|MONITOR|TRANSMIT|REPORT|REP|INFORM|NOTIFY|ADVISE)\b")
+_PROHIBITED_CALL = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|DO|DOES)\s+NOT\s+(?:CONTACT|CTC|CALL|LOGON|BROADCAST|MONITOR|TRANSMIT|REPORT|REP|INFORM|NOTIFY|ADVISE)\b")
 # A sentence ends at "." or ";" after a word of two or more characters; a list
 # marker ("A.", "1.") and a unit abbreviation ("MIN.", "HRS.") do not end one.
 _SENTENCE_SPLIT = re.compile(r"(?<=\S\S[.;])\s+")
 _ABBREVIATION = re.compile(r"\b(?:MIN|MINS|HR|HRS|NM|FT|SEC|SECS|KT|KTS|DEG|APPROX)\.$")
-_FREQUENCY = re.compile(r"\b\d{2,3}\.\d{1,3} ?MHZ\b")
+_FREQUENCY = re.compile(r"\b\d{2,5}(?:\.\d{1,3})? ?(?:MHZ|KHZ)\b")
 _LEAD_NOUN = r"(?:FIR|FIRS|BOUNDARY|POINT|ENTRY|ENTRANCE|TAKEOFF|TAKE-OFF|DEPARTURE|AIRSPACE|SECTOR|TMA|CTA|UTA|CROSSING)"
 # The lead as printed: an amount, up to two words, a relation word and the
 # anchor noun phrase it names (the FIR, the boundary point, the entry, the
@@ -164,11 +192,17 @@ _LIST_MARKER = r"(?:\(?[A-Z]\)?[.)]\s+|\d{1,2}[.)]\s+|-\s*)?"
 # ("FANS 1/A, PACKAGE AIRCRAFT", "ADS-B EQUIPPED ACFT", "DATA LINK - EQUIPPED AIRCRAFT"); items may be comma-separated.
 _EQUIPMENT_FORMS = r"FANS[- ]?1/A(?:[ ,]+(?:PACKAGE|EQUIPPED|CAPABLE))?|DATA[- ]?LINK\s*-?\s*EQUIPPED|ADS-[BC](?:[- ]EQUIPPED)?|CPDLC(?:[- ]EQUIPPED)?|APPROPRIATELY EQUIPPED|SUITABLY EQUIPPED|EQUIPPED"
 _SUBJECT_PREFIX = r"(?:(?:ALL|ANY|EVERY|IFR|VFR|MILITARY|CIVIL|NON-RVSM|RVSM|" + _EQUIPMENT_FORMS + r")\s*,?\s+)*"
-_SUBJECT_NOUN = r"(?:FLIGHT CREWS?|THE PILOTS?|THE CREWS?|FLIGHTS?|FLTS?|ACFT|AIRCRAFT|AFCT|TFC|TRAFFIC|OVERFLIGHTS?|PILOTS?|CREWS?|OPERATORS?|AIRLINES?|PERSONS?|USERS?)(?:\s+(?:FLT|FLIGHTS?|OPERATIONS?|OPERATORS?))?"
+_SUBJECT_NOUN = r"(?:FLIGHT CREWS?|AIR CREWS?|THE PILOTS?|THE CREWS?|FLIGHTS?|FLTS?|ACFT|AIRCRAFT|AFCT|TFC|TRAFFIC|OVERFLIGHTS?|PILOTS?|CREWS?|OPERATORS?|AIRLINES?|PERSONS?|USERS?)(?:\s+(?:FLT|FLIGHTS?|OPERATIONS?|OPERATORS?))?"
 _SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b(?P<qualifier>.*?)\s*\b(?P<modal>SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
+# A headline AIR CREWS TO REPORT directive is not the infinitive within an
+# ACFT UNABLE TO CTC ... SHOULD CTC qualifier. Prefer the finite modal, then
+# accept an abbreviated TO directive only directly after its subject.
+_SUBJECT_TO = re.compile(r"^" + _LIST_MARKER + r"(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b(?P<qualifier>)\s+(?P<modal>TO)(?= (?:REMAIN|REPORT|REP|INFORM|NOTIFY|CONTACT|CTC|BROADCAST|MONITOR|TRANSMIT)\b)")
+_EMBEDDED_SUBJECT = re.compile(r"\b(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b(?P<qualifier>.*?)\s*\b(?P<modal>SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
+_JOINED_CREW_SUBJECT = re.compile(r"\s+(?=" + _SUBJECT_PREFIX + _SUBJECT_NOUN + r"\b[^.;]*?\b(?:SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b)")
 _IMPERATIVE = re.compile(r"^" + _LIST_MARKER + r"(?:USE|SELECT|CONTACT|CTC|CALL|MONITOR|LOGON|LOG ON|BROADCAST|REPORT|MAINTAIN|ESTABLISH|COMPLY|SQUAWK|TRANSMIT|NOTIFY|REFER|ADVISE|REQUEST|EXPECT|FILE|OPERATE|AVOID|DO NOT|CONTINUE|PROCEED|REMAIN)\b")
 # The circumstance words a leading clause opens with (the ICAO abbreviation DRG included - release-430 QA, audit of SQ23 SX33/26).
-_LEADING_OPENERS = r"WHENEVER|WHEN|IF|WHILE|UNLESS|IN CASE OF|IN THE CASE OF|IN THE EVENT OF|AFTER|BEFORE|DURING|DRG|PROVIDED|WHEREVER|WHERE|AS LONG AS"
+_LEADING_OPENERS = r"WHENEVER|WHEN|IF|WHILE|UNLESS|IN CASE(?: OF)?|IN THE CASE OF|IN THE EVENT OF|AFTER|BEFORE|DURING|DRG|PROVIDED|WHEREVER|WHERE|AS LONG AS"
 _LEADING_CLAUSE = re.compile(r"^" + _LIST_MARKER + r"(?P<clause>(?:" + _LEADING_OPENERS + r")\b[^,]{3,120}),\s*")
 # "PROVIDED" is a condition only as a conjunction ("PROVIDED THAT ...", "PROVIDED THE CREW ..."), never the passive
 # participle of a service ("WILL BE PROVIDED BY TOKYO CONTROL", "PROVIDED TO THE BORDER").
@@ -181,13 +215,14 @@ _OTHER_SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<noun>(?:THE\s+|AN?\s+)?[
 # GNSS INTERFERENCE MUST NOTIFY ATC. NOTIFICATION SHOULD BE VIA CPDLC ..."): it inherits that sentence's qualifiers.
 # The crew's act as a sentence subject before a modal ("CONTACT SHALL BE ATTEMPTED ...", "LOGON SHALL BE COMPLETED
 # ...", "REQUESTS TO ATC SHOULD BE MADE ..."): a noun, not an instruction, although the word can also open an imperative.
-_CREW_ACT_SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<noun>(?:THE\s+)?(?:NOTIFICATIONS?|CONTACTS?|LOG-?ONS?|POSITION REPORTS?|REPORTS?|REQUESTS?|CALLS?|BROADCASTS?|MESSAGES?|TRANSMISSIONS?|COMMUNICATIONS?|READ-?BACKS?)(?:\s+(?:TO|WITH|OF|FOR|VIA|ON)\s+[A-Z0-9/-]+)?)\s+\b(?:SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
-_CREW_ACT_NOUN = re.compile(r"^(?:THE\s+)?(?:NOTIFICATIONS?|CONTACTS?|LOG-?ONS?|POSITION REPORTS?|REPORTS?|REQUESTS?|CALLS?|BROADCASTS?|MESSAGES?|TRANSMISSIONS?|COMMUNICATIONS?|READ-?BACKS?)\b")
+_CREW_ACT_SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<noun>(?:THE\s+)?(?:CALL ?SIGNS?|FLIGHT IDENTIFIERS?|AIRCRAFT REGISTRATIONS?|NOTIFICATIONS?|CONTACTS?|LOG-?ONS?|POSITION REPORTS?|REPORTS?|REQUESTS?|CALLS?|BROADCASTS?|MESSAGES?|TRANSMISSIONS?|COMMUNICATIONS?|READ-?BACKS?)(?:\s+(?:TO|WITH|OF|FOR|VIA|ON)\s+[A-Z0-9/-]+)?)\s+\b(?:SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
+_CREW_ACT_NOUN = re.compile(r"^(?:THE\s+)?(?:CALL ?SIGNS?|FLIGHT IDENTIFIERS?|AIRCRAFT REGISTRATIONS?|NOTIFICATIONS?|CONTACTS?|LOG-?ONS?|POSITION REPORTS?|REPORTS?|REQUESTS?|CALLS?|BROADCASTS?|MESSAGES?|TRANSMISSIONS?|COMMUNICATIONS?|READ-?BACKS?)\b")
 # A qualification of the aircraft population anywhere in a sentence's body (F1 of the release-424 independent QA,
 # 24 Sep 2026): a crew noun introduced by a population connector and followed by a restrictive modifier - "BTN ADS-B
 # EQUIPPED ACFT THAT ARE CORRELATED WITH CPL ...", "FOR ACFT DEPARTING RJTT", "TO FLIGHTS UNABLE TO LOGON". It is
 # evaluated exactly like a subject qualifier; an object mention without a modifier ("REPORT ANY ACFT") is not one.
-_POPULATION_MODIFIER = r"(?:THAT|WHICH|WHO|EQUIPPED|CORRELATED|OPERATING|OPERATED|PLANNED|PLANNING|FLYING|ENTERING|LEAVING|DEPARTING|ARRIVING|TRANSITING|OVERFLYING|CROSSING|HAVING|CAPABLE|ABLE|UNABLE|NOT|IN POSITIVE|IN CONTACT|IN CTC|WITH|WITHOUT|WITHIN|INSIDE|OUTSIDE|USING|CONDUCTING|MAINTAINING|EXPERIENCING|LOGGED|BOUND|INBOUND|OUTBOUND|REQUESTING|INTENDING|EXPECTING|CLEARED|APPROACHING|HOLDING|PROCEEDING|ROUTING|CARRYING)"
+_POPULATION_MODIFIER = r"(?:THAT|WHICH|WHO|EQUIPPED|CORRELATED|OPERATING|OPTG|OPERATED|PLANNED|PLANNING|FLYING|ENTERING|LEAVING|DEPARTING|ARRIVING|TRANSITING|OVERFLYING|CROSSING|HAVING|CAPABLE|ABLE|UNABLE|NOT|IN POSITIVE|IN CONTACT|IN CTC|WITH|WITHOUT|WITHIN|INSIDE|OUTSIDE|USING|CONDUCTING|MAINTAINING|EXPERIENCING|LOGGED|BOUND|INBOUND|OUTBOUND|REQUESTING|INTENDING|EXPECTING|CLEARED|APPROACHING|HOLDING|PROCEEDING|ROUTING|CARRYING)"
+_CREW_QUALIFIER_START = re.compile(r"^(?:" + _POPULATION_MODIFIER + r"|VIA|FLW|F(?:RO)?M|TO|IN|AT|ON|AND|OR)\b|^\(")
 _POPULATION = re.compile(
     r"\b(?:BTN|BETWEEN|FOR|TO|OF|BY|APPLICABLE TO|APPLIES TO|APPLY TO|ONLY (?:TO|FOR)|AVAILABLE TO|PROVIDED TO)\s+"
     r"(?:(?:ALL|ANY|EVERY|THE|THOSE|SUCH)\s+)?(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b"
@@ -213,6 +248,8 @@ _ATC_HEADS = {"ATC", "ATS", "ACC", "ARTCC", "ATSU", "CENTRE", "CENTER", "CONTROL
 _SERVICE_PASSIVE = re.compile(r"\b(?:SHALL|WILL|MAY|IS|ARE)\s+(?:(?!BE\b)[A-Z]+\s+){0,2}BE\s+(?:APPLIED|PROVIDED|AVAILABLE|OFFERED|IMPLEMENTED|CONDUCTED|ESTABLISHED|MAINTAINED|EXERCISED|ENDEAVOURED)\b|\bIS\s+(?:[A-Z]+\s+)?(?:AVAILABLE|PROVIDED)\b")
 # An agent phrase naming the crew keeps a passive sentence the crew's ("... SHALL BE APPLIED BY ALL AIRCRAFT").
 _CREW_AGENT = re.compile(r"\bBY\s+(?:ALL\s+|THE\s+|EACH\s+)?(?:AIRCRAFT|ACFT|AFCT|PILOTS?|CREWS?|FLIGHT CREWS?|FLIGHTS?|OPERATORS?|TRAFFIC|TFC)\b")
+_PASSIVE_CREW_CONTROL = re.compile(r"\b(?:TRANSPONDERS?|(?:NAVIGATION|ANTI-COLLISION|POSITION)(?: AND (?:NAVIGATION|ANTI-COLLISION|POSITION))? LIGHTS)\s+(?:SHALL|MUST|SHOULD)\s+BE\s+(?:OPERATED|DISPLAYED|ON|ACTIVE|ACT|OPN)\b|\b(?:CLIMBS?|DESCENTS?)(?: AND (?:CLIMBS?|DESCENTS?))? (?:SHALL|MUST|SHOULD) BE (?:CARRIED OUT|CONDUCTED|PERFORMED)\b")
+_PASSIVE_NAMED_AGENT = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|ARE|IS)\s+(?:[A-Z-]+\s+){0,2}BE\s+[A-Z-]+(?:ED|EN)\s+BY\s+(?:THE\s+|ALL\s+)?[A-Z][A-Z-]*(?:\s+[A-Z][A-Z-]*)*")
 _ATC_AGENT = re.compile(r"\bBY (?:THE )?(?:ATC|ATS|ACC|ARTCC|ATSU|GROUND SYSTEM|(?:[A-Z]+ ){0,2}(?:CENTRE|CENTER|CONTROL|CTL|OCEANIC|RADIO|APPROACH|TOWER))\b")
 _DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE REQUESTED TO|IS REQUESTED TO|ARE REQUIRED TO|IS REQUIRED TO|ARE TO|IS TO|NEED TO|EXPECTED TO)\b")
 # Aerodrome restrictions inside a qualifier: "PLANNED TO DEP CYMM/OILSANDS", "ARR KJFK", "OPERATING TO/FROM WSSS".
@@ -338,7 +375,60 @@ def procedure_kind(text: Any) -> str | None:
     for kind, pattern in _KIND_RULES:
         if pattern.search(upper):
             return kind
+    if any(_nonvoice_duty(part) for part in sentences(upper)) or _PRIOR_ATS_APPROVAL.search(upper) or any(_ATC_SERVICE.search(part) and _ATC_SERVICE_STATUS.search(part) for part in sentences(upper)):
+        return "atc_duty"
+    if _PRINTED_RADIO_ADVICE.search(upper) or _ATC_REPORT.search(upper) or _RETIRED_REPORT.search(upper) or any(_COMMUNICATION_SERVICE.search(part) and _SERVICE_STATUS.search(part) for part in sentences(upper)):
+        return "voice_contact"
     return None
+
+
+def _instruction_effect(sentence: str, subject: dict[str, Any]) -> str:
+    upper = _semantic(sentence)
+    if _NEGATED_CALL.search(upper) or _RETIRED_REPORT.search(upper):
+        return "not_required"
+    if _PROHIBITED_CALL.search(upper):
+        return "prohibited"
+    if _nonvoice_duty(upper) and re.search(r"\b(?:NOT PERMITTED|PROHIBITED|SHALL NOT|MUST NOT|DO NOT)\b", upper):
+        return "prohibited"
+    # A positive crew instruction that contains an outage qualifier remains
+    # an instruction ("if CPDLC is unavailable, contact ...").
+    directed = bool(_CREW_DIRECTIVE.search(upper) or _IMPERATIVE.match(upper) or _PRINTED_RADIO_ADVICE.search(upper) or _ATC_REPORT.search(upper))
+    if not directed and ((_COMMUNICATION_SERVICE.search(upper) and _SERVICE_STATUS.search(upper)) or (_ATC_SERVICE.search(upper) and _ATC_SERVICE_STATUS.search(upper))):
+        return "availability"
+    return "instruction"
+
+
+def _nonvoice_duty(upper: str) -> bool:
+    operation = _OPERATING_DIRECTIVE.search(upper)
+    target = re.split(r"\b(?:BEFORE|AFTER|DUE TO|EXCEPT|UNLESS|WHEN|IF)\b", upper[operation.end():].strip())[0] if operation else ""
+    return bool((operation and _OPERATING_SUBJECT.search(upper[:operation.start()]) and _OPERATING_TARGET.search(target)) or re.search(r"\bSQUAWK(?:ING)?\b", upper)
+                or _PASSIVE_CREW_CONTROL.search(upper)
+                or (_NONVOICE_EQUIPMENT.search(upper) and _NONVOICE_DIRECTIVE.search(upper)))
+
+
+def _action_sentences(text: str) -> list[str]:
+    """Split independent unpunctuated subjects only after a complete printed
+    non-voice duty. Leading geographic/equipment premises stay with their
+    first subject; every quotation remains an original source substring."""
+    result = []
+    for part in sentences(text):
+        if not _nonvoice_duty(classify_text(part)):
+            result.append(part)
+            continue
+        start = 0
+        circumstances = list(_CIRCUMSTANCE_PHRASE.finditer(part.upper()))
+        for match in _JOINED_CREW_SUBJECT.finditer(part.upper()):
+            if any(clause.start() < match.start() < clause.end() for clause in circumstances):
+                continue
+            preceding = part[start:match.start()].strip()
+            if not _nonvoice_duty(classify_text(preceding)):
+                continue
+            result.append(preceding)
+            start = match.end()
+        remainder = part[start:].strip()
+        if remainder:
+            result.append(remainder)
+    return result
 
 
 def sentences(text: Any) -> list[str]:
@@ -642,8 +732,8 @@ def _subject_of(sentence: str) -> dict[str, Any]:
     leading = _LEADING_CLAUSE.match(upper)
     body = upper[leading.end():] if leading else upper
     clause = leading.group("clause").strip() if leading else None
-    match = _SUBJECT.match(body)
-    if match:
+    match = _SUBJECT.match(body) or _SUBJECT_TO.match(body)
+    if match and (not match.group("qualifier").strip() or _CREW_QUALIFIER_START.match(match.group("qualifier").strip())):
         return {"kind": "stated", "prefix": match.group("prefix").strip(), "qualifier": match.group("qualifier").strip(), "leading": clause, "continuation": False}
     act = _CREW_ACT_SUBJECT.match(body)
     if act:
@@ -712,7 +802,8 @@ def _fir_scope_condition(text: str, names_text: str, ctx: dict[str, Any] | None)
             parts = [part.strip() for part in re.split(r", AND | AND |, OR | OR |, |/", words) if part.strip()]
             resolved = [by_name.get(part) for part in parts]
             firs, complete = [r for r in resolved if r], bool(parts) and all(resolved)
-    result = "met" if any(f in crossed for f in firs) else "not_met" if firs and complete else "unresolved"
+    missing_source_boundary = ctx.get("fir") not in crossed and ctx.get("fir") in firs
+    result = "met" if any(f in crossed for f in firs) else "not_met" if firs and complete and not missing_source_boundary else "unresolved"
     return {"kind": "fir_scope", "text": text, "result": result, "note": "/".join(firs)}
 
 
@@ -804,20 +895,44 @@ def _chunk_heads(noun: str) -> list[str]:
     return heads
 
 
-def _actor_of(sentence: str, subject: dict[str, Any]) -> str:
+def _actor_of(sentence: str, subject: dict[str, Any], governing: int | None = None) -> str:
     """"crew" for a sentence that directs the crew; "atc" for a provision, service or separation ATC applies or
     provides. Decided by the subject's head noun, a service passive (adverbs allowed) beside an ATC-headed phrase, or
-    an agent phrase naming ATC; an agent phrase naming the crew keeps it the crew's; an uncertain actor is the crew's."""
-    if subject["kind"] in ("stated", "imperative") or subject.get("continuation"):
-        return "crew"
+    an agent phrase naming ATC. Explicit other subjects keep their actor: equipment in their object is not a crew
+    obligation. Source-passive aircraft control instructions are crew duties; an absent actor stays unresolved."""
     upper = _semantic(sentence)
-    if _CREW_DIRECTIVE.search(upper) or _IMPERATIVE.match(upper) or _CREW_AGENT.search(upper):
+    passive_agent = _PASSIVE_NAMED_AGENT.search(upper)
+    if passive_agent:
+        agent = re.split(r"\b(?:DURING|DRG|WHEN|IF|BEFORE|AFTER|WITHIN|IN|AT|ON|FROM|TO|BY|FOR)\b", re.split(r"\bBY\s+", passive_agent.group())[1])[0].strip()
+        if _CREW_AGENT.search(f"BY {agent}"):
+            return "crew"
+        head = re.sub(r"S$", "", _head_noun(agent))
+        if _ATC_AGENT.search(f"BY {agent}") or head in ("ATC", "ATS", "ACC", "ATSU", "ARTCC", "CENTRE", "CENTER", "CONTROL", "CTL", "APP", "TOWER"):
+            return "atc"
+        return "other"
+    if subject["kind"] in ("stated", "imperative") or _CREW_AGENT.search(upper):
         return "crew"
-    heads = _chunk_heads(subject.get("noun") or "")
+    heads = [head if head in _ATC_HEADS else re.sub(r"S$", "", head) for head in _chunk_heads(subject.get("noun") or "")]
+    if _ATC_RECIPIENT.search(upper) and (heads and heads[0] == "ATC" or subject["kind"] == "fragment"):
+        return "crew"
     passive = bool(_SERVICE_PASSIVE.search(upper))
     if (heads and heads[0] in _ATC_HEADS) or (passive and any(head in _ATC_HEADS for head in heads)) or _ATC_AGENT.search(upper):
         return "atc"
-    return "crew"
+    if subject["kind"] == "other" and subject.get("continuation"):
+        return "crew"
+    if _PASSIVE_CREW_CONTROL.search(upper) and heads and heads[0] in ("TRANSPONDER", "LIGHT", "CLIMB", "DESCENT"):
+        return "crew"
+    # A geographic/provenance prelude can precede an embedded crew subject.
+    # It must be before the first modal, not an object of another actor's duty.
+    crew = _EMBEDDED_SUBJECT.search(upper)
+    modal = re.search(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b", upper)
+    if crew and modal and crew.start() < modal.start() and (not crew.group("qualifier").strip() or _CREW_QUALIFIER_START.match(crew.group("qualifier").strip())):
+        return "crew"
+    if subject["kind"] == "other":
+        return "other"
+    if _PRINTED_RADIO_ADVICE.search(upper):
+        return "crew"
+    return "crew" if governing is not None else "unresolved"
 
 
 def _trailing_conditions(sentence: str, ctx: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -849,7 +964,7 @@ def _accounted_spans(upper: str, ctx: dict[str, Any] | None) -> list[tuple[int, 
     offset = leading.end() if leading else 0
     if leading:
         spans.append((0, leading.end()))
-    stated = _SUBJECT.match(upper[offset:])
+    stated = _SUBJECT.match(upper[offset:]) or _SUBJECT_TO.match(upper[offset:])
     if stated:
         spans.append((offset, offset + stated.start("modal")))
     trailing = _TRAILING_CLAUSE.search(upper)
@@ -1020,7 +1135,7 @@ def _dedupe(conditions: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: dict[str, Any], crossings: list[dict[str, Any]],
                        names: dict[str, str], basis: dict[str, Any]) -> dict[str, Any] | None:
-    """One source-held notice against this flight's OFP; None when the notice's airspace is not on the parsed route."""
+    """One held notice. A missing timed FIR entry cannot establish that the source airspace is irrelevant."""
     text = _normalise(record.get("text"))
     kind = procedure_kind(text)
     if kind is None:
@@ -1037,8 +1152,6 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
     association, fir = "unresolved", ""
     if heading_kind == "fir":
         heading_fir = _normalise(record.get("fir")).upper() or heading.split(" ")[0]
-        if heading_fir not in crossed:
-            return None
         association, fir = "fir_heading", heading_fir
     else:
         body_firs = [icao for icao, _ in _BODY_FIR.findall(classify_text(text)) if icao in crossed]
@@ -1061,7 +1174,8 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
     basis_utc = _utc(basis.get("utc")) if basis.get("utc") else None
     instant = basis_utc + timedelta(minutes=entry["actm_minutes"]) if basis_utc and entry else None
     basis_text = (
-        f"ATOT {basis_utc:%H%M}Z + ACTM" if basis["kind"] == "actual_takeoff" and basis_utc
+        "no FIR crossing time held" if not entry
+        else f"ATOT {basis_utc:%H%M}Z + ACTM" if basis["kind"] == "actual_takeoff" and basis_utc
         else f"scheduled departure {basis_utc:%H%M}Z + ACTM" if basis["kind"] == "scheduled_departure" and basis_utc
         else "no departure time held"
     )
@@ -1070,6 +1184,12 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
     else:
         start, end = window
         notice_conditions.append({"kind": "validity", "text": validity, "result": "met" if start <= instant and (end is None or instant <= end) else "not_met", "basis": basis_text})
+    if kind == "atc_duty":
+        for part in sentences(text):
+            upper_part = classify_text(part)
+            if not procedure_kind(part) and re.search(r"\b(?:AFFECTED AREAS?|APPLIES TO|APPLICABLE TO|LIMITED TO|RESTRICTED TO)\b", upper_part) and _AREA_WORDS.search(upper_part):
+                # An earlier source sentence can qualify a later duty.
+                notice_conditions.append({"kind": "qualifier", "text": part, "result": "unresolved"})
     tokens = _route_tokens(text)
     if segment is not None and heading_kind == "segment":
         tokens = [{"waypoint": w, "airway": segment.get("airway"), "band": None, "text": _normalise(record.get("heading"))} for w in segment_waypoints] + tokens
@@ -1089,6 +1209,10 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
                 "result": "unresolved" if level is None else "met" if low <= level <= high else "not_met",
                 "note": f"planned FL{level}" if level is not None else "planned level not held",
             })
+    if re.search(r"\b(?:TEMPORARY FLIGHT RESTRICTIONS?|TFR)\b", classify_text(text)):
+        # A later TFR SSR/continuous-communications action retains the
+        # notice's geographic/population/exception boundary as unresolved.
+        notice_conditions.append({"kind": "qualifier", "text": "source airspace limits, population and exceptions", "result": "unresolved"})
     vertical = _VERTICAL_LIMITS.search(classify_text(text))
     if vertical:
         notice_conditions.append(_vertical_condition(vertical, route, crossings, fir))
@@ -1098,10 +1222,11 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
     if heading_kind == "fir" and _normalise(record.get("airspace")):
         # The heading names the FIR's airspace part; which part this crossing is in is not in the OFP's boundary rows.
         notice_conditions.append({"kind": "qualifier", "text": f"section {_normalise(record.get('heading'))}", "result": "unresolved"})
-    if association == "unresolved":
+    if association == "unresolved" or not entry:
         notice_conditions.append({
             "kind": "association",
-            "text": _UNRESOLVED_OWNER if heading_kind == "unresolved"
+            "text": f"source FIR {fir}; route association and crossing time unresolved" if heading_kind == "fir" and not entry
+            else _UNRESOLVED_OWNER if heading_kind == "unresolved"
             else f"owning FIR not established: printed under {_normalise(record.get('heading'))}" if heading_kind == "topic"
             else "FIR in effect at the segment not derivable from the boundary rows",
             "result": "unresolved",
@@ -1109,7 +1234,7 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
 
     # ---- every communication sentence is an action with its own conditions (its subject's, or its governing sentence's)
     ctx = {"names": names, "crossed": crossed, "fir": fir, "vertical": " ".join(vertical.group("phrase").split()) if vertical else None}
-    parts = sentences(text)
+    parts = _action_sentences(text)
     subjects = [_subject_of(part) for part in parts]
     scopes = [sentence_scope(part) for part in parts]
     actions: list[dict[str, Any]] = []
@@ -1145,16 +1270,30 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
             })
         # The sentence's own clauses first, then - for a continuation only - the governing crew sentence's qualifiers.
         conditions.extend(_subject_conditions(subjects[index], flight, ctx))
+        if part_kind == "atc_duty":
+            if subjects[index]["kind"] == "other" and _OPERATING_SUBJECT.search(subjects[index].get("noun") or ""):
+                # Unknown flight-population qualifications stay explicit.
+                conditions.append({"kind": "population", "text": subjects[index]["noun"], "result": "unresolved"})
+            for match in _EMBEDDED_SUBJECT.finditer(_semantic(part)):
+                conditions.extend(_subject_conditions({"prefix": match.group("prefix").strip(),
+                                                       "qualifier": match.group("qualifier").strip(), "leading": None}, flight, ctx))
         if governing is not None:
             conditions.extend(_subject_conditions(subjects[governing], flight, ctx))
         conditions.extend(_trailing_conditions(part, ctx))
         conditions.extend(_population_conditions(part, flight, ctx))
-        actor = _actor_of(part, subjects[index])
+        effect = _instruction_effect(part, subjects[index])
+        actor = "service" if effect == "availability" else _actor_of(part, subjects[index], governing)
         unresolved = _UNRESOLVED.search(classify_text(part))
         if unresolved:
             conditions.append({"kind": "other", "text": unresolved.group(0).lower().replace(" ", "-"), "result": "unresolved"})
         # The completeness boundary: whatever restriction the sentence prints that no rule above consumed (release-430 QA, F1).
         conditions.extend(_restriction_conditions(part, flight, ctx))
+        fallback = re.search(r"\bIN CASE OF NO CONTACT\b", classify_text(part))
+        if fallback:
+            conditions.append({"kind": "qualifier", "text": fallback.group(0), "result": "unresolved"})
+        event = _REPORT_EVENT.search(classify_text(text)) if _ATC_REPORT.search(classify_text(part)) else None
+        if event:
+            conditions.append({"kind": "qualifier", "text": f"report trigger: {event.group(0)}", "result": "unresolved"})
         conditions = _dedupe(conditions)
         details = printed_details(part)
         if route_frequencies is not None and not details["frequencies"]:
@@ -1164,7 +1303,8 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
             "kind": part_kind,
             "scope": scope,
             "actor": actor,
-            "directive": actor == "crew" and (bool(_DIRECTIVE.search(classify_text(part))) or subjects[index]["kind"] == "imperative"),
+            "instruction_effect": effect,
+            "directive": actor == "crew" and effect == "instruction" and (bool(_DIRECTIVE.search(classify_text(part)) or _PRINTED_RADIO_ADVICE.search(classify_text(part)) or _ATC_REPORT.search(classify_text(part))) or subjects[index]["kind"] == "imperative"),
             "conditions": conditions,
             "applicability_state": _state_of(conditions),
             "printed_details": details,
@@ -1174,7 +1314,7 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
 
     def rank(action: dict[str, Any]) -> tuple[int, int, int, int, int]:
         return (
-            0 if _scope_compatible(action["scope"], relation) else 1,
+            (1 if kind == "atc_duty" and action["scope"] == "unscoped" else 0) if _scope_compatible(action["scope"], relation) else 2,
             0 if action["directive"] else 1,
             0 if action["kind"] == kind else 1,
             0 if _has_values(action["printed_details"]) else 1,
@@ -1190,9 +1330,10 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
     if route_frequencies is not None:
         details["frequencies"] = list(route_frequencies)
     lead_minutes = _lead_minutes(details["lead"])
-    next_fir = _next_fir(crossings, fir) if fir and scope == "fir_exit" else None
+    positive_call = is_call_line(headline)
+    next_fir = _next_fir(crossings, fir) if positive_call and fir and scope == "fir_exit" else None
     latest = None
-    if lead_minutes is not None:
+    if positive_call and lead_minutes is not None:
         anchor = None
         if scope == "fir_exit":
             anchor = next((row for row in crossings if next_fir and row["fir"] == next_fir["fir"] and row["actm"] == next_fir["actm"]), None)
@@ -1206,6 +1347,8 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
         "notam_id": _normalise(record.get("notam_id")).upper(),
         "source_page": _integer(record.get("source_page")),
         "heading_page": _integer(record.get("heading_page")),
+        **({"source_label": _normalise(record["source_label"]), "source_label_page": _integer(record.get("source_label_page"))}
+           if record.get("source_label") else {}),
         "validity": validity,
         "heading": _normalise(record.get("heading")),
         "heading_kind": heading_kind,
@@ -1218,12 +1361,13 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
         "conditions": conditions,
         "applicability_state": state,
         "actor": headline["actor"],
+        "instruction_effect": headline["instruction_effect"],
         "actions": [{k: v for k, v in action.items() if k != "directive"} for action in actions],
         "next_fir": next_fir,
         "latest_actm": latest,
         "actm": entry["actm"] if entry else None,
         "sequence": entry["sequence"] if entry else None,
-        "on_route": True,
+        "on_route": True if entry else None,
         "applicability": "not_inferred",
     }
 
@@ -1243,7 +1387,8 @@ def _time_order(row: dict[str, Any]) -> tuple[int, int, int, str]:
 
 def is_call_line(line: dict[str, Any]) -> bool:
     """A voice / broadcast / logon row whose printed conditions are not failed."""
-    return line["kind"] != "datalink_other" and line["applicability_state"] != "not_applicable"
+    return (line["kind"] in {"voice_contact", "tiba_broadcast", "contact_logon"} and line["applicability_state"] != "not_applicable"
+            and line.get("actor", "crew") == "crew" and line.get("instruction_effect", "instruction") == "instruction")
 
 
 def has_printed_values(line: dict[str, Any]) -> bool:
@@ -1325,7 +1470,11 @@ STATE_PHRASES = {"conditions_held": "conditions held", "conditions_unresolved": 
 
 def conditions_summary(row: dict[str, Any]) -> str:
     """The row's conditions and state in one line; an ATC provision says so first (release-424 QA, F1)."""
-    phrases = ["ATC provision"] if row.get("actor") == "atc" else []
+    labels = ({"instruction": "ATC duty", "availability": "ATC service availability", "not_required": "No ATC duty", "prohibited": "ATC restriction"}
+              if row.get("kind") == "atc_duty" else {"availability": "Communications availability", "not_required": "No call requirement", "prohibited": "Communication prohibition"})
+    label = labels.get(row.get("instruction_effect"))
+    actor_label = {"atc": "ATC provision", "other": "Other actor duty", "unresolved": "Actor unresolved"}.get(row.get("actor"))
+    phrases = [actor_label] if actor_label else [label] if label else []
     phrases.extend(condition_phrase(c) for c in row.get("conditions") or [])
     phrases.append(STATE_PHRASES[row["applicability_state"]])
     return " · ".join(phrases)
@@ -1335,8 +1484,11 @@ def procedure_lines(procedures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One printed row per FIR, text and applicability; notices that carry the same instruction share the row. Composed order kept."""
     lines: list[dict[str, Any]] = []
     for row in procedures:
-        text = row["note"] or row["instruction_short"]
-        line = next((item for item in lines if item["fir"] == row["fir"] and item["text"] == text and item["applicability_state"] == row["applicability_state"]), None)
+        text = row["note"] or (row["instruction"] if row.get("instruction_effect") == "availability" or row.get("kind") == "atc_duty" else row["instruction_short"])
+        summary = conditions_summary(row)
+        line = next((item for item in lines if item["fir"] == row["fir"] and item["text"] == text and item["conditions_summary"] == summary
+                     and item["actor"] == row["actor"] and item["instruction_effect"] == row["instruction_effect"] and item["actm"] == row["actm"]
+                     and item["further_actions"] == max(0, len(row.get("actions") or []) - 1)), None)
         if line is not None:
             if row["notam_id"] not in line["notam_ids"]:
                 line["notam_ids"].append(row["notam_id"])
@@ -1346,10 +1498,11 @@ def procedure_lines(procedures: list[dict[str, Any]]) -> list[dict[str, Any]]:
         lines.append({
             "fir": row["fir"], "actm": row["actm"], "sequence": row["sequence"], "text": text, "kind": row["kind"],
             "association": row["association"], "applicability_state": row["applicability_state"],
+            "actor": row["actor"], "instruction_effect": row["instruction_effect"],
             "printed_details": {"frequencies": list(row["printed_details"]["frequencies"]), "lead": row["printed_details"]["lead"], "interval": row["printed_details"]["interval"], "addresses": list(row["printed_details"].get("addresses") or [])},
             "latest_actm": row["latest_actm"], "next_fir": dict(row["next_fir"]) if row["next_fir"] else None,
             "further_actions": max(0, len(row.get("actions") or []) - 1),
-            "conditions_summary": conditions_summary(row),
+            "conditions_summary": summary,
             "notam_ids": [row["notam_id"]], "source_pages": [row["source_page"]] if row["source_page"] is not None else [],
         })
     for line in lines:
@@ -1492,7 +1645,6 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
         })
 
     source_pages = sorted({row["source_page"] for row in crossings if row["source_page"] is not None})
-    voice = sum(1 for row in procedures if row["kind"] in ("voice_contact", "tiba_broadcast"))
     met = sum(1 for row in procedures if row["applicability_state"] == "conditions_held")
     unresolved = sum(1 for row in procedures if row["applicability_state"] == "conditions_unresolved")
     not_applicable = sum(1 for row in procedures if row["applicability_state"] == "not_applicable")
@@ -1502,8 +1654,8 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
     elif procedures:
         state = "source_procedures_held"
         state_sentence = (
-            f"No approved early-call rule is held. {len(procedures)} source-held communication notice(s) on the parsed route "
-            f"({voice} voice/broadcast, {len(procedures) - voice} datalink): printed conditions met on {met}, unresolved on {unresolved}, "
+            f"No approved early-call rule is held. {len(procedures)} source-held ATC/communications notice(s): "
+            f"printed conditions met on {met}, unresolved on {unresolved}, "
             f"not applicable on {not_applicable}. Frequencies and lead times are the source's own printed values; none is inferred from crossing times."
         )
     elif crossings:
@@ -1525,6 +1677,8 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
             provenance += f" / NOTAM {_page_range(notam_pages)}"
     else:
         provenance = "FPL boundary rows not held"
+        if notam_pages:
+            provenance += f" / NOTAM {_page_range(notam_pages)}"
 
     slot = _slot_control(source)
     unread = None if slot else _slot_unread(source)

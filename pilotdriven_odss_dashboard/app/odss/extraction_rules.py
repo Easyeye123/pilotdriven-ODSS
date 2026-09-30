@@ -20,4 +20,4 @@ the two are bumped together whenever the parser's extraction changes.
 # v5 (release-436 QA, ATC completeness): FIR headings that name the airspace part ("... FIR OCEANIC", "... FIR LOWER",
 # "... DOMESTIC LOWER", "... UIR") own their notices and keep the part ("airspace"); location-prefixed series labels continue
 # a section; topic headings in an enroute part hold their communication notices with no owning FIR ("topic").
-EXTRACTION_RULES = "2026-09-27-notam-airspace-headings-v5"
+EXTRACTION_RULES = "2026-09-30-atc-source-coverage-v6"

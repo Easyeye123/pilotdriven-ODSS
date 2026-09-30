@@ -42,6 +42,51 @@ AIRPORTS_PAGE = 3
 WEATHER_PAGE = 4
 ASSURANCE_PAGE = 5
 
+# Read complete case-insensitive slash tokens before deciding what is a
+# notice identity. A serial-ending left side with a two-digit year, a
+# structurally valid producer numeric prefix,
+# explicit NOTAM/AIC/SUP context, or a damaged declared ID establishes notice
+# context. Other value syntaxes (TAF TX32/1006Z, FL330/350, TAS450/460) alone
+# do not. Recognition never authorises an ID: the owning analysed view must.
+_SOURCE_NOTICE_CANDIDATE = re.compile(
+    r"(?<![A-Z0-9])(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*\d)[A-Z0-9]+/\d+[A-Z0-9/]*(?![A-Z0-9/])", re.IGNORECASE)
+_DECLARED_NOTICE_ID = re.compile(r"\d*[A-Z]{1,3}\d+/\d{2}", re.IGNORECASE)
+_PRODUCER_NOTICE_SERIAL = re.compile(r"\d+[A-Z]{1,3}\d+", re.IGNORECASE)
+
+
+def _declared_notice_ids(*payloads) -> set[str]:
+    """Source/view IDs aid recognition of corruption, never publication permission."""
+    found = set()
+    def walk(value):
+        if isinstance(value, list):
+            for item in value:
+                walk(item)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if key in {"notam_id", "notam_ids"}:
+                    for identity in (item if isinstance(item, list) else [item]):
+                        if isinstance(identity, str) and _DECLARED_NOTICE_ID.fullmatch(identity.strip()):
+                            found.add(identity.strip().upper())
+                walk(item)
+    for payload in payloads:
+        walk(payload)
+    return found
+
+
+def _source_notice_tokens(text: str, declared_ids: set[str]) -> list[str]:
+    found = []
+    for match in _SOURCE_NOTICE_CANDIDATE.finditer(text):
+        token = match.group()
+        upper = token.upper()
+        serial, suffix = upper.split("/", 1)
+        year = re.match(r"\d+", suffix).group()
+        explicit = re.search(r"\b(?:NOTAM[NRC]?|AIC|AIP SUP(?:PLEMENT)?)\s*:?\s*$", text[:match.start()], re.IGNORECASE)
+        if (serial[-1].isdigit() and len(year) == 2
+                or _PRODUCER_NOTICE_SERIAL.fullmatch(serial)
+                or explicit or any(identity in upper for identity in declared_ids)):
+            found.append(token)
+    return found
+
 
 def normalized(value: Any) -> str:
     return " ".join(re.sub(r"[^A-Z0-9]+", " ", str(value).upper()).split())
@@ -256,6 +301,7 @@ def lines_after_stated_deferral(lines, folded_page: str, unit: str | None):
 
 
 def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=None, alternate_analysis=None, closing_lines=None) -> dict[str, Any]:
+    declared_notice_ids = _declared_notice_ids(flight, view, airport_analysis, alternate_analysis)
     violations = []
     with fitz.open(path) as pdf:
         if pdf.embfile_count():
@@ -393,7 +439,7 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                 normalized(found)
                 for item in (view or {}).get("decision_findings") or []
                 for field in ("title", "summary", "source_reference")
-                for found in re.findall(r"\b[A-Z]{1,3}\d{2,5}/\d{2}\b", str(item.get(field) or ""))
+                for found in _source_notice_tokens(str(item.get(field) or ""), declared_notice_ids)
             }
             # ATC-FIR-BOBCAT-416 (24 Sep 2026): the FIR / COMMUNICATION rows on
             # the closing page are analysed consequences of the composed
@@ -411,10 +457,10 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
             enroute_ids = {
                 normalized(identity)
                 for line in enroute_lines
-                for identity in [*(line.get("notam_ids") or []), *re.findall(r"\b[A-Z]{1,3}\d{2,5}/\d{2}\b", str(line.get("text") or ""))]
+                for identity in [*(line.get("notam_ids") or []), *_source_notice_tokens(str(line.get("text") or ""), declared_notice_ids)]
             }
             for index, page in enumerate(pages):
-                for notice_id in re.findall(r"\b[A-Z]{1,3}\d{2,5}/\d{2}\b", page):
+                for notice_id in _source_notice_tokens(page, declared_notice_ids):
                     if index == ANALYSIS_PAGE and normalized(notice_id) in ranked_ids:
                         continue
                     if index == ASSURANCE_PAGE and normalized(notice_id) in enroute_ids:

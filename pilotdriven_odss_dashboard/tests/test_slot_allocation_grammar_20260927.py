@@ -295,6 +295,6 @@ def test_page_six_prints_an_unread_allocation_as_printed_not_absent(tmp_path_fac
 
 
 def test_the_tokens_move_together():
-    assert EXTRACTION_RULES == "2026-09-27-notam-airspace-headings-v5"
-    assert ENROUTE_CONTACT_RULE == "enroute-contact-v10"
-    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-09-27-checklist-held-evidence-v76"
+    assert EXTRACTION_RULES == "2026-09-30-atc-source-coverage-v6"
+    assert ENROUTE_CONTACT_RULE == "enroute-contact-v11"
+    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-09-30-atc-source-coverage-v77"

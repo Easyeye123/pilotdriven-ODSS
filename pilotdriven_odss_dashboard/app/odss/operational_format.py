@@ -471,7 +471,7 @@ def compact_conditions_summary(summary: Any, limit: int | None = 72) -> str:
         return " · ".join(parts)
     if limit == 0:
         *clauses, state = parts
-        kept = [part for part in clauses if part == "ATC provision" or _VALIDITY_CLAUSE.fullmatch(part)]
+        kept = [part for part in clauses if part in ("ATC provision", "Other actor duty", "Actor unresolved", "ATC duty", "ATC restriction", "ATC service availability", "No ATC duty", "Communications availability", "No call requirement", "Communication prohibition") or _VALIDITY_CLAUSE.fullmatch(part)]
         counted = len(clauses) - len(kept)
         return " · ".join(kept + ([f"+{counted} further condition(s) on the dashboard"] if counted else []) + [state])
     compacted = []
@@ -482,6 +482,50 @@ def compact_conditions_summary(summary: Any, limit: int | None = 72) -> str:
             part = (cut[:space] if space > limit // 2 - 6 else cut).rstrip(" ,;:") + "…"
         compacted.append(part)
     return " · ".join(compacted)
+
+
+def _untimed_status_key(line: dict) -> tuple:
+    summary = re.sub(r"source FIR [A-Z]{4};", "source FIR;", line["conditions_summary"])
+    return (line["text"], summary, line.get("further_actions", 0))
+
+
+def _compact_untimed_availability_lines(lines: list[dict]) -> list[dict]:
+    """Quote identical untimed status once, retaining each FIR, notice and page.
+
+    Only the source FIR label may differ. Full validity/conditions and further
+    action counts must agree; source-held objects remain untouched.
+    """
+    rendered = []
+    groups = {}
+    for line in lines:
+        if line.get("instruction_effect") != "availability" or line.get("actm"):
+            rendered.append(line)
+            continue
+        key = _untimed_status_key(line)
+        group = groups.get(key)
+        if group is None:
+            group = {**line, "notam_ids": list(line["notam_ids"]), "source_pages": list(line["source_pages"])}
+            groups[key] = group
+            rendered.append(group)
+        else:
+            original_fir = group["fir"]
+            group["fir"] = "/".join(dict.fromkeys([*original_fir.split("/"), line["fir"]]))
+            group["conditions_summary"] = group["conditions_summary"].replace(f"source FIR {original_fir};", f"source FIR {group['fir']};")
+            group["notam_ids"] = list(dict.fromkeys([*group["notam_ids"], *line["notam_ids"]]))
+            group["source_pages"] = sorted(set([*group["source_pages"], *line["source_pages"]]))
+    return rendered
+
+
+def _first_untimed_status_lines(lines: list[dict]) -> list[dict]:
+    """Final capacity step: first printed untimed status, including identical
+    quotations. Physical source-page order is evidence order, not operating
+    priority. Other whole rows stay held and are explicitly identified."""
+    untimed = [line for line in lines if line.get("instruction_effect") == "availability" and not line.get("actm")]
+    if not untimed:
+        return []
+    ordered = sorted(untimed, key=lambda line: min(line.get("source_pages") or [10 ** 6]))
+    first_key = _untimed_status_key(ordered[0])
+    return [line for line in untimed if _untimed_status_key(line) == first_key]
 
 
 def plan_page(title: str, bookmark: str, rows: list[tuple[Any, list[Card]]], *,
@@ -1986,13 +2030,31 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         # quoted condition clauses are cut to a prefix, the dashboard holds
         # them whole.
         pages = ", ".join(f"p{page}" for page in line["source_pages"]) or "page not held"
-        head = f"+{line['actm']} {line['fir']} entry." if line["actm"] else f"{line['fir'] or 'FIR not derived'} (crossing not derived)."
+        head = f"+{line['actm']} {line['fir']} entry." if line["actm"] else f"{line['fir'] or 'FIR not derived'} (source held; route/time unresolved)."
         values = printed_values(line)
+        if compact:
+            # Quote source values once. Derived deadlines/next-boundary
+            # values still print; a repeated frequency/lead adds no evidence.
+            values = [value for value in values if value not in line["text"]]
         printed = f" Printed: {' · '.join(values)}." if values else ""
         further = line.get("further_actions") or 0
         more = (f" +{further} more on the dashboard." if compact else
-                f" +{further} further instruction sentence(s) of this notice on the dashboard.") if further else ""
-        summary = compact_summary(line, limit) if compact else line["conditions_summary"]
+                f" +{further} further source statement(s) of this notice on the dashboard.") if further else ""
+        source_summary = line["conditions_summary"]
+        if compact and not line.get("actm") and line.get("fir") and line.get("instruction_effect") == "availability":
+            # The compact head states the source FIR and unresolved route/time.
+            # Do not repeat the same association clause in the conditions.
+            source_summary = " · ".join(part for part in source_summary.split(" · ") if not re.fullmatch(
+                r"source FIR [A-Z]{4}(?:/[A-Z]{4})*; route association and crossing time unresolved", part))
+        summary = compact_conditions_summary(source_summary, limit) if compact else source_summary
+        if compact and line.get("instruction_effect") == "availability":
+            # The source sentence already carries the status/frequency. Keep
+            # it once, retain the whole validity clause and final condition
+            # state, and count the other clauses using the existing ladder.
+            head = f"+{line['actm']} {line['fir']}." if line["actm"] else f"Source FIR {line['fir']}; route/time unresolved." if line.get("fir") else "FIR association/time unresolved."
+            summary = summary.replace("Communications availability · ", "").replace("ATC service availability · ", "").replace("validity ", "valid ")
+            summary = summary.replace(": not evaluable (at no FIR crossing time held)", " (time unresolved)")
+            return f"{head} {line['text']} NOTAM {', '.join(line['notam_ids'])}, OFP {pages}; {summary}.{more}"
         return (f"{head} {line['text']}{printed} "
                 f"NOTAM {', '.join(line['notam_ids'])}, OFP {pages}; {summary}.{more}")
 
@@ -2035,6 +2097,15 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         ("all", 24, None), ("all", 12, None), ("calls", 8, None), ("valued_per_fir", 8, None),
         ("valued_per_fir", 8, 72), ("valued_per_fir", 8, 44), ("valued_per_fir", 8, 24), ("valued_per_fir", 8, 0),
         ("primary", 8, None), ("primary", 8, 72), ("primary", 8, 44), ("primary", 8, 24), ("primary", 8, 0),
+        # Only after all availability rows have been tried at every existing
+        # readable layout: whole timed rows may defer to the dashboard. An
+        # untimed FIR status still prints; a missing boundary must not erase
+        # departure/near-departure service evidence.
+        ("primary_untimed", 8, 72), ("primary_untimed", 8, 24), ("primary_untimed", 8, 0),
+        # Multiple distinct untimed statuses can also exceed six pages. Only
+        # after every whole-quotation step: retain the first printed status
+        # and identify each deferred untimed notice by FIR/ID/source page.
+        ("primary_source_status", 8, 24), ("primary_source_status", 8, 0),
     )
 
     def fir_card(gap, weight, step=0):
@@ -2054,11 +2125,37 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                     seen.add(line["fir"])
         else:
             shown = [primary] if primary else []
+        # Service status matters independently of a crew call. Try all full
+        # availability quotations at the existing layout steps. Only the
+        # primary_untimed steps may defer timed rows; the final source-status
+        # step identifies deferred untimed rows as well. No held row changes.
+        if rows_kind == "primary_source_status":
+            shown = [line for line in procedure_lines if line in shown or line in _first_untimed_status_lines(procedure_lines)]
+        else:
+            shown = [line for line in procedure_lines if line in shown or
+                     (line.get("instruction_effect") == "availability" and (rows_kind != "primary_untimed" or not line.get("actm")))]
         deferred = [line for line in procedure_lines if line not in shown]
-        lines = [fir_state, *fir_calls, *(fir_row(line, compact, 72 if clause_limit is None else clause_limit) for line in shown)]
+        rendered_shown = _compact_untimed_availability_lines(shown) if compact else shown
+        state_line = fir_state
+        if compact and enroute_contact.get("procedures") and not fir_calls:
+            counts = {state: sum(row["applicability_state"] == state for row in enroute_contact["procedures"])
+                      for state in ("conditions_held", "conditions_unresolved", "not_applicable")}
+            state_line = (f"No approved early-call rule held. {len(enroute_contact['procedures'])} source-held ATC/communications notices: "
+                          f"{counts['conditions_held']} conditions met, {counts['conditions_unresolved']} unresolved, "
+                          f"{counts['not_applicable']} not applicable.")
+            if not (enroute_contact.get("extraction") or {}).get("current"):
+                state_line += " Held extraction predates the current parser; update re-reads the OFP."
+        lines = [state_line, *fir_calls, *(fir_row(line, compact, 72 if clause_limit is None else clause_limit) for line in rendered_shown)]
         if deferred:
-            lines.append(f"Further rows on the dashboard: {identities(deferred, compact)}." if not compact
-                         else f"+{len(deferred)} further rows on the dashboard ({identities(deferred, compact)}).")
+            if rows_kind == "primary_source_status":
+                untimed = [line for line in deferred if not line.get("actm") and line.get("instruction_effect") == "availability"]
+                others = [line for line in deferred if line not in untimed]
+                pointers = "; ".join(f"{line['fir'] or 'FIR unresolved'} {','.join(line['notam_ids'])} ({','.join(f'p{p}' for p in line['source_pages']) or 'page not held'})" for line in untimed)
+                details = "; ".join(part for part in (pointers, identities(others, True)) if part)
+                lines.append(f"+{len(deferred)} further rows on the dashboard ({details}).")
+            else:
+                lines.append(f"Further rows on the dashboard: {identities(deferred, compact)}." if not compact
+                             else f"+{len(deferred)} further rows on the dashboard ({identities(deferred, compact)}).")
         lines.append(text(enroute_contact.get("slot_sentence")))
         crossing_line = crossing_sequence_limited(enroute_contact.get("crossings") or [], pairs, compact)
         lines.append("FIR crossings (OFP ACTM): " + (crossing_line or "no boundary row held."))

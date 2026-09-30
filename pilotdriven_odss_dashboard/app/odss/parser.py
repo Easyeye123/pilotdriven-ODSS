@@ -287,7 +287,8 @@ _NOTAM_FIR_HEADING = re.compile(
 _NOTAM_SEGMENT_HEADING = re.compile(r"^(?P<from>[A-Z]{2,5})\s*/(?P<rest>[A-Z]{3,7}\d{1,3})$")
 _AIRWAY_SPLIT = re.compile(r"^(?P<to>[A-Z]{2,5})(?P<airway>[A-Z]{1,2}\d{1,3})$")
 # A NOTAM-series label printed above a record ("UT O0287/26", "WS A2306/26", and with a location prefix
-# "KZLA A1657/26"): a continuation inside the current section, never a new section.
+# "KZLA A1657/26"). A compatible prefix continues a proved owner; changed
+# prefixes stay literal and unresolved. Keep the label/page separately.
 _NOTAM_SERIES_LABEL = re.compile(r"^[A-Z]{1,4}\s+[A-Z]\d{3,5}/\d{2}$")
 # AIRSPACE-HEADINGS-436 (independent QA of release 436, 27 Sep 2026): a FIR heading may print the airspace part after its
 # designator - "RJJJ FUKUOKA FIR OCEANIC", "UBBA BAKU FIR LOWER", "LFFF FRANCE UIR" - or name the part without the word
@@ -411,9 +412,16 @@ def _notam_section_events(pages: list[str], bounds: tuple[int, int]) -> Iterator
                 if candidate < count and _NOTAM_RULE.fullmatch(lines[candidate][1]):
                     underline_at = candidate
             if underline_at is not None:
-                yield {"event": "heading", "text": compact, "page": page_number, "underline_page": lines[underline_at][0]}
-                index = underline_at + 1
-                continue
+                following = substantive(underline_at + 1)
+                established_kind = fir_or_segment or bool(_NOTAM_AIRPORT_HEADING.match(compact))
+                fresh_declaration = following < count and _NOTAM_PROCEDURE_HEADER.match(lines[following][1])
+                # Unknown underlined body titles do not change source owner.
+                # A literal bulletin topic/series label owns a fresh notice,
+                # including a declaration continuing on the next page.
+                if established_kind or fresh_declaration:
+                    yield {"event": "heading", "text": compact, "page": page_number, "underline_page": lines[underline_at][0]}
+                    index = underline_at + 1
+                    continue
             following = substantive(index + 1)
             if fir_or_segment and following < count and _NOTAM_PROCEDURE_HEADER.match(lines[following][1]):
                 yield {"event": "unconfirmed_heading", "text": compact, "page": page_number}
@@ -483,6 +491,7 @@ def _parse_notam_procedure_records(
         return []
     records: list[dict[str, Any]] = []
     heading: dict[str, Any] | None = None
+    source_label: dict[str, Any] = {}
     current: dict[str, Any] | None = None
     body_lines: list[str] = []
 
@@ -513,7 +522,18 @@ def _parse_notam_procedure_records(
             flush()
             compact = event["text"]
             if _NOTAM_SERIES_LABEL.fullmatch(compact.upper()):
-                continue  # a series label inside the current section
+                prefix = compact.upper().split()[0]
+                source_label = {"source_label": compact, "source_label_page": event["page"]}
+                owner = heading.get("fir") if heading else None
+                # Preserve a proved matching owner or literal route/topic
+                # context. A short incompatible prefix is not FIR evidence;
+                # a parentless series label remains its own literal topic.
+                if (owner and owner.startswith(prefix)) or (
+                    heading and not owner and not _NOTAM_SERIES_LABEL.fullmatch(heading["heading"].upper())
+                ):
+                    continue
+            else:
+                source_label = {}
             fir_match = _NOTAM_FIR_HEADING.fullmatch(compact)
             part_match = _airspace_heading(compact)
             segment = _split_segment_heading(compact, route_names)
@@ -534,6 +554,7 @@ def _parse_notam_procedure_records(
         if kind == "title":
             flush()
             heading = None
+            source_label = {}
             area_part = bool(_NOTAM_AREA_TITLE.match(event["text"]))
             continue
         if kind == "unconfirmed_heading" or (kind == "rule" and event["after_blank"]):
@@ -542,6 +563,7 @@ def _parse_notam_procedure_records(
             if heading is not None:
                 flush()
                 heading = unresolved(event.get("text", ""), event["page"])
+                source_label = {}
             continue
         if kind != "line":
             continue
@@ -554,6 +576,7 @@ def _parse_notam_procedure_records(
                     "notam_id": declaration.group("identity").upper(),
                     "validity": " ".join(declaration.group("validity").split()),
                     **heading,
+                    **source_label,
                     "source_page": event["page"],
                 }
             continue

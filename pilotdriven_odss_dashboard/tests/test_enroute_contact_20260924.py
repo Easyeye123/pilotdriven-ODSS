@@ -13,6 +13,7 @@ applicability is stated as not inferred.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
@@ -37,7 +38,7 @@ ENROUTE_PAGE = 5  # page 6, zero-based
 
 FLIGHTS = {
     "SQ366": "SQ36604082026SIN.pdf",              # BOBCAT allocation + Jakarta AFN notice, 24 crossings
-    "SQ882": "lido-briefing_SQ_882_10Sep2026_SIN_HKG.pdf",  # crossings, no procedure notice, no allocation
+    "SQ882": "lido-briefing_SQ_882_10Sep2026_SIN_HKG.pdf",  # conditional ash/equipage notices; no unconditional early call/allocation
     "SQ23": "SQ02325072026JFK.pdf",                # 36 crossings: the page-6 capacity case
 }
 
@@ -50,12 +51,10 @@ def rendered(key: str, tmp_path_factory, mutate=None) -> dict:
         return _RENDERED[cache_key]
     source = CORPUS / FLIGHTS[key]
     if not source.is_file():
-        candidates = [p for p in CORPUS.glob("*.pdf") if key.replace("SQ", "SQ_") in p.name or key in p.name]
-        if key == "SQ23":
-            candidates = [p for p in CORPUS.glob("*SQ_23_*.pdf")] + [p for p in CORPUS.glob("SQ23*.pdf")]
-        if not candidates:
-            pytest.skip(f"private CFP corpus file for {key} is not available")
-        source = candidates[0]
+        pytest.skip(f"exact private CFP source for {key} is not available: {source}")
+    manifest = json.loads((ROOT / "tests/private_cfp_corpus_manifest.json").read_text())
+    pinned = next(case for case in manifest["cases"] if case["filename"] == source.name)
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == pinned["source_sha256"], key
     root = tmp_path_factory.mktemp(f"enroute-{cache_key.replace(':', '-')}")
     result = run_odss_analysis(source, root / "analysis", root / "reports", 1)
     payload = json.loads(Path(result["analysis_path"]).read_text(encoding="utf-8"))
@@ -130,7 +129,7 @@ def test_sq366_composition_from_the_genuine_analysis(tmp_path_factory):
     assert composed["slot_sentence"] == "BOBCAT BIROS FL380: CTOT 1752Z + ACTM 05:35 = 2327Z, 1 min before CTO 2328Z (OFP p1, p11)."
     # ATC-RADIO-SOURCE-418: every printed instruction is held, so the Kabul, Karachi and Turkmenabat pages join the provenance.
     # AIRSPACE-HEADINGS-436: p93 is 1A2595/26 (UAV flights, voice contact) under the topic heading "UAV 401614N 0250927E".
-    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-89, p93"
+    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-90, pp93-94, pp98-100"
     assert [line["notam_ids"] for line in composed["procedure_lines"] if line["fir"] == "WIIF"] == [["1A1891/26"], ["SX50/25"]]
     # The composition is published on the view so the dashboard and the PDF read one record.
     assert case["payload"]["view"]["briefing"]["enroute_contact"] == composed
@@ -144,19 +143,22 @@ def test_sq366_page_six_prints_his_fir_communication_column_with_the_allocation_
     page = case["folded"][ENROUTE_PAGE]
     raw = case["pages"][ENROUTE_PAGE]
     assert "FIR / COMMUNICATION" in raw
-    assert normalized("No approved early-call rule is held.") in page
+    assert normalized("No approved early-call rule held. 26 source-held ATC/communications notices: 9 conditions met, 15 unresolved, 2 not applicable.") in page
     # ATC-RADIO-SOURCE-418: page 6 holds one full row on this OFP (the first call row with a printed frequency, by the
     # shared rule) and names every deferred row; the Jakarta note is on the dashboard and named here.
     composed = case["payload"]["view"]["briefing"]["enroute_contact"]
     primary = primary_procedure_line(composed["procedure_lines"])
     assert primary["notam_ids"] == ["1G216/26"]
-    assert normalized("+05:35 OAKX entry. ALL OVERFLIGHTS SHALL COMPLY WITH TIBA PROCEDURE FOR BROADCAST INTENTIONS ON FREQ 125.2MHZ 10 MINS PRIOR ENTERING TO FIR. Printed: 125.2MHZ · 10 MINS PRIOR ENTERING TO FIR · not later than ACTM 05:25. NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM) · overflight: met · conditions held.") in page
-    assert normalized("Further rows on the dashboard: WIIF 1A1891/26, SX50/25;") in page
-    # AIRSPACE-HEADINGS-436: the UAV topic notice is named among the deferred rows, under no FIR.
-    assert normalized("FIR not derived 1A2595/26.") in page
+    assert normalized("+05:35 OAKX entry. ALL OVERFLIGHTS SHALL COMPLY WITH TIBA PROCEDURE FOR BROADCAST INTENTIONS ON FREQ 125.2MHZ 10 MINS PRIOR ENTERING TO FIR. Printed: not later than ACTM 05:25. NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM) · overflight: met · conditions held.") in page
+    assert normalized("Source FIR LIMM; route/time unresolved. STATION 'MILANO ACC/FIC' SERVICE 'EMERGENCY' FREQUENCY 243.000MHZ COMPLETELY WITHDRAWN REF AIP ENR 2.1.1.1-3 NOTAM 1E1741/26, OFP p98; valid 10-JUL-26 0000 - PERM (time unresolved) · conditions unresolved.") in page
+    assert normalized("+24 further rows on the dashboard (WIIF 2, VABF 1, OPKR 2, OAKX 9, UTAV 1, LTAA 1, LGGG 1, LIBB 1, LOVV 2, FIR not derived 1, LSAS 1, LIMM 2).") in page
+    # The topic row is source-held without a FIR/clock, included in that exact
+    # whole-row deferral; no individual identity is invented in a count group.
+    topic = next(row for row in composed["procedures"] if row["notam_id"] == "1A2595/26")
+    assert not topic["fir"] and topic["actm"] is None and topic["on_route"] is None
     assert normalized("BOBCAT BIROS FL380: CTOT 1752Z + ACTM 05:35 = 2327Z, 1 min before CTO 2328Z (OFP p1, p11).") in page
     assert normalized("FIR crossings (OFP ACTM): WIIF 00:03 · WSJC 00:06 · WMFC 00:07 · WSJC 00:07 · WMFC 00:08") in page
-    assert "FPL pp8-14 / NOTAM p67, pp85-89" in raw
+    assert "FPL pp8-14 / NOTAM p67, pp85-90, pp93-94, pp98-100" in raw
     # Whole pairs only, in the OFP order; when the page cannot hold all 24 the deferral is stated.
     printed_pairs, line = _printed_pairs(raw)
     expected = [(row["fir"], row["actm"]) for row in composed["crossings"]]
@@ -172,12 +174,27 @@ def test_sq366_page_six_prints_his_fir_communication_column_with_the_allocation_
     assert len(case["pages"]) == 6
 
 
-def test_sq882_page_six_states_the_absent_case_without_filling_it(tmp_path_factory):
+def test_sq882_page_six_keeps_conditional_source_duties_without_an_unconditional_early_call(tmp_path_factory):
     case = rendered("SQ882", tmp_path_factory)
     page = case["folded"][ENROUTE_PAGE]
     raw = case["pages"][ENROUTE_PAGE]
     assert "FIR / COMMUNICATION" in raw
-    assert normalized("No early-contact requirement is held in this OFP's FIR notices or in an approved reference; lead times and frequencies are not held and are not inferred from crossing times.") in page
+    composed = case["payload"]["view"]["briefing"]["enroute_contact"]
+    assert [row["notam_id"] for row in composed["procedures"]] == ["1A3438/26", "1A1997/26"]
+    assert composed["required_calls"] == []
+    assert all(row["applicability_state"] == "conditions_unresolved" and row["latest_actm"] is None
+               and row["printed_details"]["lead"] is None and not row["printed_details"]["frequencies"]
+               for row in composed["procedures"])
+    report = next(row for row in composed["procedures"] if row["notam_id"] == "1A3438/26")
+    assert any(c["text"] == "report trigger: VOLCANIC ASH" and c["result"] == "unresolved" for c in report["conditions"])
+    equipage = next(row for row in composed["procedures"] if row["notam_id"] == "1A1997/26")
+    assert equipage["kind"] == "atc_duty" and equipage["instruction_effect"] == "prohibited"
+    assert any(c["text"] == "WITHOUT OPERABLE ADS-B OUT EQUIPAGE" and c["result"] == "unresolved" for c in equipage["conditions"])
+    assert normalized(composed["state_sentence"]) in page
+    assert "NOTAM 1A3438/26" in raw
+    assert normalized("report trigger: VOLCANIC ASH: not evaluable from the OFP") in page
+    assert "ATC restriction" in raw and "NOTAM 1A1997/26" in raw
+    assert "not later than ACTM" not in raw
     assert normalized("No slot-control allocation is printed in this OFP.") in page
     assert normalized("FIR crossings (OFP ACTM):") in page
     assert "BOBCAT" not in raw.replace("No slot-control", "")
@@ -187,10 +204,12 @@ def test_sq882_page_six_states_the_absent_case_without_filling_it(tmp_path_facto
 
 def _strip_fir_rows(payload: dict) -> dict:
     """LABELLED SYNTHETIC: the genuine SQ882 analysis with every FIR boundary
-    marker removed from the parsed route - the unresolved-source case."""
+    marker AND held notice removed - the true absent-source case. Retained
+    untimed notices are a separate positive control in completeness tests."""
     payload = copy.deepcopy(payload)
     for waypoint in payload["flight"].get("route_waypoints") or []:
         waypoint["fir_boundary"] = None
+    payload["flight"]["notam_procedure_records"] = []
     return payload
 
 
@@ -226,7 +245,8 @@ def test_sq23_the_longest_crossing_sequence_fits_page_six_or_defers_whole_pairs_
 def test_the_concise_gate_explains_only_the_identities_the_composed_record_names(tmp_path_factory):
     """The gate admits a NOTAM identity on page 6 only when the published
     enroute_contact record names it; with that record withheld the same page
-    is refused for SX50/25 exactly as before this repair."""
+    is refused for the actually printed numeric source identities. Count-only
+    deferred SX50/25 is no longer a printed-ID control."""
     from app.odss.concise_pdf_gate import check_concise_pdf
     from app.odss.airport_pdf_analysis import airport_pdf_analysis, alternate_pdf_analysis
 
@@ -238,4 +258,52 @@ def test_the_concise_gate_explains_only_the_identities_the_composed_record_names
     withheld = {key: value for key, value in view.items() if key != "enroute_contact"}
     result = check_concise_pdf(case["path"], view=withheld, **kwargs)
     codes = [(v["code"], v["message"]) for v in result["violations"] if v["code"] == "NON_INLINE_NOTAM_ID"]
-    assert codes and any("SX50/25" in message for _, message in codes), result["violations"]
+    assert codes and any("1G216/26" in message for _, message in codes), result["violations"]
+    assert any("1E1741/26" in message for _, message in codes), result["violations"]
+
+
+@pytest.mark.parametrize("damaged", ["1G216/260", "1G2160/26", "1G216/26X", "1G216/26x", "ZZ1G216/26", "1z99999/26", "SX99999/26", "SX8/13", "NOTAM ZZ1/260", "NOTAM: ZZ1/260"])
+def test_labelled_synthetic_unknown_or_damaged_printed_identity_fails_the_native_gate(tmp_path_factory, damaged):
+    """Mutate only the actual local PDF copy; originals and genuine PDFs stay exact."""
+    from app.odss.concise_pdf_gate import check_concise_pdf
+    from app.odss.airport_pdf_analysis import airport_pdf_analysis, alternate_pdf_analysis
+    case = rendered("SQ366", tmp_path_factory)
+    flight, view = case["payload"]["flight"], case["payload"]["view"]["briefing"]
+    assert all(damaged not in line["notam_ids"] for line in view["enroute_contact"]["procedure_lines"])
+    directory = tmp_path_factory.mktemp("synthetic-id-corruption")
+    candidate = directory / "labelled-synthetic-corrupted-id.pdf"
+    with fitz.open(case["path"]) as document:
+        page = document[ENROUTE_PAGE]
+        hits = page.search_for("1G216/26")
+        assert len(hits) == 1
+        rect = hits[0]
+        page.add_redact_annot(rect, fill=(1, 1, 1))
+        page.apply_redactions()
+        page.insert_text((rect.x0, rect.y1 - 1), damaged, fontsize=6)
+        document.save(candidate)
+    panels = view.get("airport_operational_panels") or []
+    result = check_concise_pdf(candidate, view=view, flight=flight,
+                              airport_analysis=airport_pdf_analysis(flight, panels),
+                              alternate_analysis=alternate_pdf_analysis(flight, panels))
+    identity = damaged.split()[-1]
+    assert any(v["code"] == "NON_INLINE_NOTAM_ID" and v["message"].endswith(f": {identity}.") for v in result["violations"]), result["violations"]
+
+
+def test_labelled_synthetic_aviation_values_are_not_notice_identities(tmp_path_factory):
+    """Exercise physical PDF scanning with ordinary value grammars, not IDs."""
+    from app.odss.concise_pdf_gate import check_concise_pdf
+    from app.odss.airport_pdf_analysis import airport_pdf_analysis, alternate_pdf_analysis
+    case = rendered("SQ366", tmp_path_factory)
+    flight, view = case["payload"]["flight"], case["payload"]["view"]["briefing"]
+    candidate = tmp_path_factory.mktemp("synthetic-value-control") / "labelled-synthetic-values.pdf"
+    values = "TX32/1006Z TN26/0922Z FL330/350 TAS450/460 02C/20C 04L/22R 409FT/1200M 200FT/550M"
+    with fitz.open(case["path"]) as document:
+        document[4].insert_text((24, 24), "LABELLED SYNTHETIC VALUE CONTROL " + values, fontsize=4)
+        document.save(candidate)
+    with fitz.open(candidate) as document:
+        assert values in document[4].get_text(), "the complete value control must be physically present"
+    panels = view.get("airport_operational_panels") or []
+    result = check_concise_pdf(candidate, view=view, flight=flight,
+                              airport_analysis=airport_pdf_analysis(flight, panels),
+                              alternate_analysis=alternate_pdf_analysis(flight, panels))
+    assert result["valid"], result["violations"]

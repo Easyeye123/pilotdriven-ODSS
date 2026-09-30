@@ -155,8 +155,11 @@ def test_sq23_source_admits_the_kabul_instructions_and_the_opposite_direction_tu
     assert aic["heading"] == "NINOP/LEMODA909" and aic["segment"] == {"from": "NINOP", "to": "LEMOD", "airway": "A909"} and aic["source_page"] == 107
     karachi = by_id(records, "SX33/26")
     assert karachi["heading"] == "OPLR LAHORE FIR" and "SHALL CTC KARACHI, LAHORE OR ISLAMABAD ACC AT LEAST 15 MIN PRIOR TO ENTERING" in karachi["text"]
-    # Not communication instructions: a phone number to call, GNSS-jamming vigilance, VOR selection, spoofed-call caution.
-    assert not {"1A141/25", "1A412/26", "1A1533/26", "1A582/26"} & ids
+    # ITEM1 independent original review: GNSS reporting, initial-contact NDB
+    # contingency and suspicious-call verification are actual qualified duties.
+    assert {"1A412/26", "1A1533/26"} <= ids
+    assert "1A141/25" not in ids, "an optional telephone contact is not a radio duty"
+    assert "1A582/26" not in ids, "the independent SQ23 original does not print this SQ366/SQ326 notice"
 
 
 def test_synthetic_layouts_series_label_continuation_ocr_split_and_airport_exclusion():
@@ -190,13 +193,14 @@ def test_the_kind_is_decided_by_the_printed_instruction_only():
     assert procedure_kind("ALL TFC ENTERING KARACHI AND LAHORE FIRS FM KABUL FIR SHALL CTC KARACHI, LAHORE OR ISLAMABAD ACC AT LEAST 15 MIN PRIOR") == "voice_contact"
     assert procedure_kind("SSR TRANSPONDERS SHALL BE OPERATED AT ALL TIMES. SQUAWK A2000.") is None
     assert procedure_kind("RADIOTELEPHONY CALL SIGN ASSIGNED TO AD OPERATOR") is None
-    # Found by running the rule over all 28 corpus OFPs: none of these is an instruction to the crew.
+    # Radio-selection/reference/telephone controls stay excluded. Explicit
+    # reporting and suspicious-call verification remain qualified crew duties.
     assert procedure_kind("FOR QUESTIONS, CALL BOSTON/ZBW/ARTCC TM TFC MANAGEMENT 1-603-879-6666.") is None
-    assert procedure_kind("AIR CREWS TO REMAIN VIGILANT AND REPORT TO ATC.") is None
+    assert procedure_kind("AIR CREWS TO REMAIN VIGILANT AND REPORT TO ATC.") == "voice_contact"
     assert procedure_kind("FLIGHT CREWS ARE ADVISED TO MONITOR THE CORRECT SELECTION OF THE VOR FOR EN-ROUTE OPERATIONS.") is None
     assert procedure_kind("TIMELY UPDATES REGARDING THE ZONES AND AREAS AFFECTED CAN BE BROADCAST ON GROUND/AIR/GROUND FREQUENCIES.") is None
     assert procedure_kind("FOR AVAILABILITY OF FLT LEVELS AND TIBA PROCEDURES IN KABUL FIR SEE LATEST NOTAM ISSUED BY KABUL NOF IN THIS REGARD.") is None
-    assert procedure_kind("PILOTS SHALL DISREGARD ANY NON-STANDARD CALLS AND IF IN DOUBT, VERIFY THE CALL AND REPORT TIME, LOCATION AND FL OF THE OCCURRENCE TO ATC UNIT IN CTC.") is None
+    assert procedure_kind("PILOTS SHALL DISREGARD ANY NON-STANDARD CALLS AND IF IN DOUBT, VERIFY THE CALL AND REPORT TIME, LOCATION AND FL OF THE OCCURRENCE TO ATC UNIT IN CTC.") == "voice_contact"
     assert procedure_kind("IT IS HIGHLY RECOMMENDED THAT A PILOT CONTINUOUSLY MONITOR VHF FREQUENCY 121.5 OR UHF FREQUENCY 243.0 FOR EMERGENCY INSTRUCTIONS") == "voice_contact"
 
 
@@ -249,23 +253,26 @@ def test_sq366_composition_publishes_the_source_held_calls_with_their_printed_co
     # sentence) are explicit unresolved conditions; the failed direction still decides.
     assert {c["kind"]: c["result"] for c in karachi["conditions"]} == {"validity": "met", "direction": "not_met", "route": "met", "qualifier": "unresolved", "restriction": "unresolved"}
     assert next(c for c in karachi["conditions"] if c["kind"] == "qualifier")["text"] == "DRG THE NON AVAILABILITY OF ATS (ATS) IN KABUL FIR"
-    assert next(c for c in karachi["conditions"] if c["kind"] == "direction")["text"] == "OAKX → OPKR/LAHORE"
+    assert next(c for c in karachi["conditions"] if c["kind"] == "direction")["text"] == "OAKX → OPKR/OPLR", "the retained SX9/26 source supplies OPLR/LAHORE"
     assert karachi["printed_details"]["lead"] == "AT LEAST 15 MIN PRIOR TO ENTERING KARACHI OR LAHORE FIR"
     # The aerodrome TIBA notice (arrival / departure operations) does not apply to an overflight.
     aerodrome = rows["1G272/26"]
     assert aerodrome["applicability_state"] == "not_applicable" and any(c["kind"] == "scope" and c["result"] == "not_met" for c in aerodrome["conditions"])
     # AIRSPACE-HEADINGS-436 (27 Sep): 1A2595/26 (UAV flights within ATHINAI FIR, voice contact) is printed under the
     # enroute topic heading "UAV 401614N 0250927E" on p93 and is now held, with no owner established.
-    assert set(rows) == {"1A1891/26", "SX50/25", "1G803/26", "SX33/26", "1G272/26", "1G216/26", "1G197/26", "1G220/26", "AX1/23", "1A2595/26"}
+    assert set(rows) == {"1A1891/26", "SX50/25", "1G803/26", "SX33/26", "SX9/26", "1G272/26", "1G216/26", "1G197/26", "1G220/26", "AX1/23", "1A2595/26",
+                         "1A1816/26", "1E1916/26", "1A1533/26", "1A582/26", "1E1548/26", "1E1741/26", "1E1936/26", "1A1531/26"}
     assert rows["1A2595/26"]["association"] == "unresolved" and rows["1A2595/26"]["fir"] == ""
     assert composed["state"] == "source_procedures_held"
     assert composed["state_sentence"] == (
-        "No approved early-call rule is held. 10 source-held communication notice(s) on the parsed route "
-        "(7 voice/broadcast, 3 datalink): printed conditions met on 3, unresolved on 5, not applicable on 2. "
+        "No approved early-call rule is held. 19 source-held communication notice(s): "
+        "printed conditions met on 5, unresolved on 12, not applicable on 2. "
         "Frequencies and lead times are the source's own printed values; none is inferred from crossing times."
     )
-    assert composed["other_procedure_count"] == 1, "the Vienna CPDLC logon notice is held but LOVV is not on this route; the firefighting, VOR and spoofed-call notices are not instructions"
-    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-89, p93"
+    assert composed["other_procedure_count"] == 0
+    assert rows["1A1531/26"]["actm"] is None and rows["1A1531/26"]["on_route"] is None
+    assert rows["1A1531/26"]["applicability_state"] == "conditions_unresolved"
+    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-89, pp93-94, pp98-100"
     # Display rows fall due in time order: the latest ACTM a printed lead gives, else the boundary ACTM.
     lines = composed["procedure_lines"]
     anchors = [line["latest_actm"] or line["actm"] for line in lines]
@@ -310,11 +317,16 @@ def test_sq23_composition_keeps_the_opposite_direction_control_distinct(tmp_path
     assert karachi["latest_actm"] == "11:41"
 
 
-def test_sq882_composition_still_states_the_genuine_absence(tmp_path_factory):
+def test_sq882_contingency_report_does_not_invent_an_early_call(tmp_path_factory):
     case = rendered("SQ882", tmp_path_factory)
     composed = case["payload"]["view"]["briefing"]["enroute_contact"]
-    assert composed["procedures"] == [] and composed["state"] == "no_procedure_held"
-    assert composed["state_sentence"] == "No early-contact requirement is held in this OFP's FIR notices or in an approved reference; lead times and frequencies are not held and are not inferred from crossing times."
+    assert composed["state"] == "source_procedures_held" and not composed["required_calls"]
+    assert [row["notam_id"] for row in composed["procedures"]] == ["1A3438/26"]
+    row = composed["procedures"][0]
+    assert row["source_page"] == 45 and row["actor"] == "crew"
+    assert row["applicability_state"] == "conditions_unresolved" and row["latest_actm"] is None
+    assert not row["printed_details"]["frequencies"] and not row["printed_details"]["lead"]
+    assert any(c["kind"] == "qualifier" and c["text"] == "report trigger: VOLCANIC ASH" for c in row["conditions"])
 
 
 def test_consecutive_duplicate_boundary_rows_are_repeated_rows_not_re_entries(tmp_path_factory):
@@ -355,8 +367,9 @@ def test_sq366_page_six_prints_the_applicable_voice_row_with_the_printed_frequen
     case = rendered("SQ366", tmp_path_factory)
     page, raw = case["folded"][ENROUTE_PAGE], case["pages"][ENROUTE_PAGE]
     assert "FIR / COMMUNICATION" in raw
-    # Ten since AIRSPACE-HEADINGS-436: the UAV topic notice (1A2595/26) is held.
-    assert normalized("No approved early-call rule is held. 10 source-held communication notice(s) on the parsed route") in page
+    # New service/notification notices are source-held, with untimed owners
+    # unresolved; page capacity can defer whole rows, never the primary call.
+    assert normalized("19 source-held communication notices") in page
     assert normalized("lead times and frequencies are not held") not in page
     assert normalized("+05:35 OAKX entry.") in page and "125.2MHZ" in raw and "1G216/26" in raw
     assert normalized("10 MINS PRIOR ENTERING TO FIR") in page
