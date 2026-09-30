@@ -136,7 +136,7 @@ _STATE_RANK = {"conditions_held": 0, "conditions_unresolved": 1, "not_applicable
 # Source service status is retained as communications evidence. These words
 # classify the quotation; they do not supply a substitute crew instruction.
 _COMMUNICATION_SERVICE = re.compile(r"\b(?:CPDLC|ADS-C|DATA[ -]?LINK|COM|COMMUNICATIONS?|HF|VHF|UHF|SATCOM|SELCAL|RCO|DRCO|RADIO(?! ALTIMETER| NAVIGATION| BEACON)|EMERGENCY|GUARD|A/G FAC)\b|\b(?:ACC|FIC|CENTRE|CENTER|ARTCC)\b.{0,180}\b(?:FREQ(?:UENCY)?|\d{2,3}\.\d{1,3}\s*MHZ)\b")
-_SERVICE_STATUS = re.compile(r"\b(?:NOT (?:AVBL|AVAILABLE)|UN[- ]?(?:AVBL|AVAILABLE|SERVICEABLE|SERVICEABILITY)|UNMONITORED|WITHDRAWN|SUSPENDED|OUT OF SERVICE|LIMITED (?:RADIO )?COVERAGE|SUBJ(?:ECT)? TO (?:INTRP|INTERRUPTION))\b|\bU/S\b")
+_SERVICE_STATUS = re.compile(r"\b(?:NOT (?:BE )?(?:AVBL|AVAILABLE)|UN[- ]?(?:AVBL|AVAILABLE|SERVICEABLE|SERVICEABILITY)|UNMONITORED|WITHDRAWN|SUSPENDED|OUT OF SERVICE|LIMITED (?:RADIO )?COVERAGE|SUBJ(?:ECT)? TO (?:INTRP|INTERRUPTION))\b|\bU/S\b")
 # Equipment plus an obligation/restriction, never surveillance coverage alone.
 _NONVOICE_EQUIPMENT = re.compile(r"\b(?:SSR|IFF|TRANSPONDERS?|ADS-B OUT EQUIPAGE)\b")
 _NONVOICE_DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|ARE REQUIRED TO|IS REQUIRED TO|NOT REQUIRED TO|(?:ARE|IS) NOT PERMITTED|(?:ARE|IS) (?:TEMPORARILY )?PROHIBITED)\b")
@@ -144,7 +144,7 @@ _OPERATING_SUBJECT = re.compile(r"\b(?:FLIGHT CREWS?|AIR CREWS?|CREWS?|PILOTS?|F
 _OPERATING_DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|ARE REQUIRED TO|IS REQUIRED TO|(?:ARE|IS) NOT PERMITTED TO|(?:ARE|IS) (?:TEMPORARILY )?PROHIBITED FROM)\s+(?:(?:NOT|CONTINUE TO|BE|FLT|FLIGHT)\s+)*(?:SQUAWK(?:ING)?|OPERAT(?:E|ED|ING)|DISPLAY(?:ED)?|CHANGE|MAINTAIN|FLY|ENTER(?:ING)?|DEPART(?:ING)?|CROSS|FOLLOW|AVOID|FILE|PLANNED|HAVE|REMAIN|BE CAPABLE OF CRUISING|APPROVED|COORDINATE|ON|IN)\b")
 _OPERATING_TARGET = re.compile(r"^(?:(?:THEIR|ITS|THE|A|AN|ASSIGNED|CRUISING|LAST|NEW|PUBLISHED|MANDATORY|CURRENT|REQUIRED|WI|WITHIN|IN|ON|VIA|ABOVE|BELOW|OVER|WITH|BY|AT|HIGH|LOW|AND|SECTORS?)\s+)*(?:SSR|IFF|TRANSPONDERS?|ADS-B|(?:FLIGHT|FLT) LEVELS?|FL\d{2,3}|ALTITUDE|IAS|MACH|IAS\/MACH|ATS|ATC|TIBA|FIRS?|AIRSPACE|AERODROMES?|RUNWAYS?|RWY|ROUTES?|RTE|FPLS?|FLT PLAN|FLIGHT PLAN|WRA|TSA|TRA|NAVIGATION LIGHTS|ANTI-COLLISION LIGHTS|M\d{3}|MACH \d(?:\.\d+)?|TWO-WAY (?:RADIO )?(?:COMMUNICATIONS?|COM) WITH (?:ATC|ATS)|(?:AD|AERODROME|ATC|ATS) WATCH SUPERVISOR|(?:ACTIVE|FILED) (?:IFR|VFR)(?: OR (?:A )?(?:ACTIVE|FILED) (?:IFR|VFR))? (?:FPL|FLT PLAN|FLIGHT PLAN)|(?:[A-Z][A-Z0-9-]*\s+){1,4}(?:FIRS?|AIRSPACE))\b")
 _ATC_SERVICE = re.compile(r"^(?:ATS|AIR TRAFFIC SERVICES?|AIR TRAFFIC CONTROL)\b")
-_ATC_SERVICE_STATUS = re.compile(r"\b(?:NOT (?:AVBL|AVAILABLE|PROVIDED)|UN[- ]?(?:AVBL|AVAILABLE))\b")
+_ATC_SERVICE_STATUS = re.compile(r"\b(?:NOT (?:BE )?(?:AVBL|AVAILABLE|PROVIDED)|UN[- ]?(?:AVBL|AVAILABLE))\b")
 _PRIOR_ATS_APPROVAL = re.compile(r"\b(?:EXEMPTION|APPROVAL|PERMISSION)\b.{0,100}\bPRIOR (?:COOR|COORDINATION|APPROVAL)\b.{0,100}\b(?:ATS|ATC)\b")
 _PRINTED_RADIO_ADVICE = re.compile(r"\bCHECK (?:ACT|ACTIVITY) WITH\b.{0,100}\b(?:APP|FIC|ACC|ATC)\b|\b(?:ADVICE|ADVISE|ADVISED)\s+(?:TO\s+)?(?:CTC|CONTACT)\s+(?:[A-Z]+\s+){0,4}(?:ACC|ATC|CONTROL|RADIO|FIR)\b|\bTRY\s+(?:ALTN|ALTERNATE)\s+FREQ(?:UENCY)?\b|\b(?:DISREGARD\s+(?:ANY\s+)?(?:NON-STANDARD|SUSPICIOUS)\s+(?:OR\s+SUSPICIOUS\s+)?CALLS|VERIFY\s+AUTHENTICITY\s+OF\s+ATS\s+INSTRUCTIONS|MAINTAIN\s+STRICT\s+ADHERENCE\s+TO\s+ASSIGNED\s+FREQUENCIES)\b")
 _ATC_RECIPIENT = re.compile(r"\b(?:ATC|AIR TRAFFIC CONTROL)\s+(?:SHALL|MUST|SHOULD)\s+BE\s+INFORMED\b")
@@ -152,7 +152,9 @@ _ATC_REPORT = re.compile(r"\b(?:REPORT(?:ING)?|REP|INFORM|ADVISE|NOTIFY)\b.{0,30
 _RETIRED_REPORT = re.compile(r"\b(?:NO LONGER|NOT) REQUIRED TO SEND\b.{0,100}\b(?:POSITION|PSN) REPORT\b|\b(?:WO|WITHOUT) THE REQUIREMENT FOR VOICE (?:POSITION|PSN) (?:REPORT|REP)\b|\b(?:POSITION|PSN) REPORT(?:ING)?\b.{0,60}\b(?:WITHDRAWN|NO LONGER REQUIRED)\b")
 _REPORT_EVENT = re.compile(r"\b(?:GNSS (?:INTERFERENCE|JAMMING|SPOOFING)|RADIO ALTIMETER ANOMALIES|UNAUTHORIZED RADIO TRANSMISSIONS|SUSPICIOUS CALLS|VOLCANIC ASH|SIGHTING|ENCOUNTER|OCCURRENCE)\b")
 _NEGATED_CALL = re.compile(r"\b(?:(?:ARE|IS)\s+)?NOT REQUIRED TO\s+(?:CONTACT|CTC|CALL|LOGON|BROADCAST|MONITOR|TRANSMIT|REPORT|REP|INFORM|NOTIFY|ADVISE)\b")
-_PROHIBITED_CALL = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|DO|DOES)\s+NOT\s+(?:CONTACT|CTC|CALL|LOGON|BROADCAST|MONITOR|TRANSMIT|REPORT|REP|INFORM|NOTIFY|ADVISE)\b")
+_PROHIBITED_CALL = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|DO|DOES)\s+NOT\s+(?:CONTACT|CTC|CALL|LOGON|BROADCAST|MONITOR|TRANSMIT|REPORT|REP|INFORM|NOTIFY|ADVISE)\b")
+# MAY NOT prohibits a printed act, not possible inability.
+_NONVOICE_PROHIBITION = re.compile(r"\b(?:NOT PERMITTED|PROHIBITED|SHALL NOT|MUST NOT|DO NOT)\b|\bMAY NOT\s+(?:BE\s+)?(?:SQUAWK(?:ING)?|OPERAT(?:E|ED|ING)|DISPLAY(?:ED)?|USE(?:D)?|CHANGE(?:D)?|MAINTAIN(?:ED)?|FLY|FLOWN|ENTER(?:ED|ING)?|DEPART(?:ED|ING)?|CROSS(?:ED)?|FOLLOW(?:ED)?|AVOID(?:ED)?|FILE(?:D)?|HAVE|REMAIN|CONTINUE)\b")
 # A sentence ends at "." or ";" after a word of two or more characters; a list
 # marker ("A.", "1.") and a unit abbreviation ("MIN.", "HRS.") do not end one.
 _SENTENCE_SPLIT = re.compile(r"(?<=\S\S[.;])\s+")
@@ -221,7 +223,7 @@ _CREW_ACT_NOUN = re.compile(r"^(?:THE\s+)?(?:CALL ?SIGNS?|FLIGHT IDENTIFIERS?|AI
 # 24 Sep 2026): a crew noun introduced by a population connector and followed by a restrictive modifier - "BTN ADS-B
 # EQUIPPED ACFT THAT ARE CORRELATED WITH CPL ...", "FOR ACFT DEPARTING RJTT", "TO FLIGHTS UNABLE TO LOGON". It is
 # evaluated exactly like a subject qualifier; an object mention without a modifier ("REPORT ANY ACFT") is not one.
-_POPULATION_MODIFIER = r"(?:THAT|WHICH|WHO|EQUIPPED|CORRELATED|OPERATING|OPTG|OPERATED|PLANNED|PLANNING|FLYING|ENTERING|LEAVING|DEPARTING|ARRIVING|TRANSITING|OVERFLYING|CROSSING|HAVING|CAPABLE|ABLE|UNABLE|NOT|IN POSITIVE|IN CONTACT|IN CTC|WITH|WITHOUT|WITHIN|INSIDE|OUTSIDE|USING|CONDUCTING|MAINTAINING|EXPERIENCING|LOGGED|BOUND|INBOUND|OUTBOUND|REQUESTING|INTENDING|EXPECTING|CLEARED|APPROACHING|HOLDING|PROCEEDING|ROUTING|CARRYING)"
+_POPULATION_MODIFIER = r"(?:THAT|WHICH|WHO|EQUIPPED|CORRELATED|OPERATING|OPTG|OPERATED|PLANNED|PLANNING|FLYING|ENTERING|LEAVING|DEP(?:ARTING)?|ARRIVING|TRANSITING|OVERFLYING|CROSSING|HAVING|CAPABLE|ABLE|UNABLE|NOT|IN POSITIVE|IN CONTACT|IN CTC|WITH|WITHOUT|WITHIN|WI|INSIDE|OUTSIDE|USING|CONDUCTING|MAINTAINING|EXPERIENCING|LOGGED|BOUND|INBOUND|OUTBOUND|REQUESTING|INTENDING|EXPECTING|CLEARED|APPROACHING|HOLDING|PROCEEDING|ROUTING|CARRYING)"
 _CREW_QUALIFIER_START = re.compile(r"^(?:" + _POPULATION_MODIFIER + r"|VIA|FLW|F(?:RO)?M|TO|IN|AT|ON|AND|OR)\b|^\(")
 _POPULATION = re.compile(
     r"\b(?:BTN|BETWEEN|FOR|TO|OF|BY|APPLICABLE TO|APPLIES TO|APPLY TO|ONLY (?:TO|FOR)|AVAILABLE TO|PROVIDED TO)\s+"
@@ -252,6 +254,8 @@ _PASSIVE_CREW_CONTROL = re.compile(r"\b(?:TRANSPONDERS?|(?:NAVIGATION|ANTI-COLLI
 _PASSIVE_NAMED_AGENT = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|ARE|IS)\s+(?:[A-Z-]+\s+){0,2}BE\s+[A-Z-]+(?:ED|EN)\s+BY\s+(?:THE\s+|ALL\s+)?[A-Z][A-Z-]*(?:\s+[A-Z][A-Z-]*)*")
 _ATC_AGENT = re.compile(r"\bBY (?:THE )?(?:ATC|ATS|ACC|ARTCC|ATSU|GROUND SYSTEM|(?:[A-Z]+ ){0,2}(?:CENTRE|CENTER|CONTROL|CTL|OCEANIC|RADIO|APPROACH|TOWER))\b")
 _DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE REQUESTED TO|IS REQUESTED TO|ARE REQUIRED TO|IS REQUIRED TO|ARE TO|IS TO|NEED TO|EXPECTED TO)\b")
+_OBLIGATION_MODAL = re.compile(r"\b(?:SHALL|MUST|SHOULD|ARE REQUESTED TO|IS REQUESTED TO|ARE REQUIRED TO|IS REQUIRED TO|ARE TO|IS TO|NEED TO|EXPECTED TO)\b")
+_MIXED_MODAL_SCOPE = "permission and obligation clause scope unresolved"
 # Aerodrome restrictions inside a qualifier: "PLANNED TO DEP CYMM/OILSANDS", "ARR KJFK", "OPERATING TO/FROM WSSS".
 _AIRPORT_CONDITION = re.compile(r"\b(?P<kind>DEP(?:ARTING|ARTURE)?(?: FROM)?|ARR(?:IVING|IVAL)?(?: AT| TO)?|LANDING AT|OPERATING (?:TO/FROM|TO OR FROM|TO|FROM|AT)|TO OR FROM|BOUND FOR)\s+(?P<icao>[A-Z]{4})\b(?:/[A-Z-]+)?")
 _ICAO_STOPWORDS = {"FROM", "WITH", "THAT", "THIS", "INTO", "OVER", "WHEN", "ONLY", "ALSO", "THEN", "THEM", "THEY", "WILL", "SHALL", "MUST", "AREA", "ZONE", "SAME", "EACH", "BOTH", "NEXT", "LAST", "FIRS", "AIRP"}
@@ -303,6 +307,8 @@ _ONLY_TIMING = re.compile(r"\bONLY\b(?:\s+[A-Z-]+){0,3}?\s+(?:AFTER|BEFORE|UPON|
 # A timing of the action itself ("AFTER LANDING", "BEFORE CLIMBING ABV FL180", "UNTIL FURTHER NOTICE"); it stops before a
 # spatial restriction, which stays one.
 _TIMING_PHRASE = re.compile(r"\b(?:AFTER|BEFORE|PRIOR TO|UPON|ONCE|UNTIL|TIL)\b(?:(?!\b(?:WITHIN|WI|INSIDE|OUTSIDE|BEYOND|OUT OF)\b)[^\x00;.,:])*")
+# Operating events do not prove a timestamp or cruise-level state.
+_OPERATING_EVENT_TIMING = re.compile(r"^(?:AFTER|BEFORE|PRIOR TO|UPON|ONCE|UNTIL|TIL)\s+(?:THE\s+)?(?:DEP(?:ARTURE)?|ARR(?:IVAL)?|TAKE-?OFF|LANDING|CLIMB(?:ING)?|DESCENT|DESCEND(?:ING)?)\b")
 _PREFIXED_POPULATION = re.compile(r"\b(?P<prefix>(?:(?:" + _EQUIPMENT_FORMS + r"|IFR|VFR|MILITARY|CIVIL|NON-RVSM|RVSM)\s*,?\s+)+)(?P<noun>" + _SUBJECT_NOUN + r")\b")
 _SPATIAL_OPENERS = (r"AT OR ABOVE|AT OR BELOW|OUT OF|(?:NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW|N|S|E|W) OF|WITHIN|WI|INSIDE|OUTSIDE|BEYOND|THROUGH|THRU|ALONG|VIA"
                     r"|ABOVE|ABV|BELOW|BLW|BTN|BETWEEN|FROM|FM|FOR|IN|ON|AT")
@@ -386,16 +392,48 @@ def _instruction_effect(sentence: str, subject: dict[str, Any]) -> str:
     upper = _semantic(sentence)
     if _NEGATED_CALL.search(upper) or _RETIRED_REPORT.search(upper):
         return "not_required"
+    if _possible_capability(sentence):
+        return "capability"
     if _PROHIBITED_CALL.search(upper):
         return "prohibited"
-    if _nonvoice_duty(upper) and re.search(r"\b(?:NOT PERMITTED|PROHIBITED|SHALL NOT|MUST NOT|DO NOT)\b", upper):
+    if _nonvoice_duty(upper) and _NONVOICE_PROHIBITION.search(upper):
         return "prohibited"
     # A positive crew instruction that contains an outage qualifier remains
     # an instruction ("if CPDLC is unavailable, contact ...").
     directed = bool(_CREW_DIRECTIVE.search(upper) or _IMPERATIVE.match(upper) or _PRINTED_RADIO_ADVICE.search(upper) or _ATC_REPORT.search(upper))
     if not directed and ((_COMMUNICATION_SERVICE.search(upper) and _SERVICE_STATUS.search(upper)) or (_ATC_SERVICE.search(upper) and _ATC_SERVICE_STATUS.search(upper))):
         return "availability"
+    # The main subject's modal grants permission; a later exception, service
+    # uncertainty or calendar date cannot replace a governing SHALL.
+    leading = _LEADING_CLAUSE.match(upper)
+    body = upper[leading.end():] if leading else upper
+    modal_subject = _SUBJECT.match(body) or _OTHER_SUBJECT.match(body)
+    if modal_subject and modal_subject.group("modal") == "MAY" and not _calendar_may(body, modal_subject.end() - 3) and not _OBLIGATION_MODAL.search(upper) and re.match(r"\s+(?!(?:NOT|SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b|\d)[A-Z]", body[modal_subject.end():]):
+        return "permission"
     return "instruction"
+
+
+def _possible_capability(sentence: str) -> bool:
+    upper = _semantic(sentence)
+    leading = _LEADING_CLAUSE.match(upper)
+    body = upper[leading.end():] if leading else upper
+    subject = _SUBJECT.match(body) or _OTHER_SUBJECT.match(body)
+    return bool(subject and subject.group("modal") == "MAY" and not _calendar_may(body, subject.end() - 3)
+                and not _OBLIGATION_MODAL.search(upper)
+                and re.match(r"\s+(?:NOT\s+)?BE\s+(?:ABLE|UNABLE)\s+TO\b", body[subject.end():]))
+
+
+def _calendar_may(upper: str, index: int) -> bool:
+    # Date spelling is excluded only from the new modal checks, without
+    # interpreting or modifying the original source's dates.
+    return bool(re.search(r"\b(?:0?[1-9]|[12]\d|3[01])[- ]+$", upper[:index])
+                or re.match(r"[- ]+(?:0?[1-9]|[12]\d|3[01]|\d{4})\b", upper[index + 3:]))
+
+
+def _mixed_permission(sentence: str) -> bool:
+    upper = _semantic(sentence)
+    return any(not _calendar_may(upper, optional.start()) and _OBLIGATION_MODAL.search(upper[optional.end():])
+               for optional in re.finditer(r"\bMAY\b", upper))
 
 
 def _nonvoice_duty(upper: str) -> bool:
@@ -965,7 +1003,8 @@ def _accounted_spans(upper: str, ctx: dict[str, Any] | None) -> list[tuple[int, 
     if leading:
         spans.append((0, leading.end()))
     stated = _SUBJECT.match(upper[offset:]) or _SUBJECT_TO.match(upper[offset:])
-    if stated:
+    # Only a qualifier accepted by _subject_conditions has been accounted for.
+    if stated and (not stated.group("qualifier").strip() or _CREW_QUALIFIER_START.match(stated.group("qualifier").strip())):
         spans.append((offset, offset + stated.start("modal")))
     trailing = _TRAILING_CLAUSE.search(upper)
     if trailing:
@@ -1036,7 +1075,9 @@ def _restriction_conditions(sentence: str, flight: dict[str, Any], ctx: dict[str
     only = list(_ONLY_TIMING.finditer(residual))
     phrases.extend(m.span() for m in only)
     residual = _blank(residual, [m.span() for m in only])
-    residual = _blank(residual, [m.span() for m in _TIMING_PHRASE.finditer(residual)])
+    timings = list(_TIMING_PHRASE.finditer(residual))
+    phrases.extend(m.span() for m in timings if _OPERATING_EVENT_TIMING.match(m.group(0)))
+    residual = _blank(residual, [m.span() for m in timings])
     populations = list(_PREFIXED_POPULATION.finditer(residual))
     for match in populations:
         pseudo = {"kind": "population", "prefix": match.group("prefix").strip(" ,"), "qualifier": "", "leading": None}
@@ -1288,6 +1329,12 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
             conditions.append({"kind": "other", "text": unresolved.group(0).lower().replace(" ", "-"), "result": "unresolved"})
         # The completeness boundary: whatever restriction the sentence prints that no rule above consumed (release-430 QA, F1).
         conditions.extend(_restriction_conditions(part, flight, ctx))
+        # Preserve a subordinate/mixed MAY-before-SHALL statement without
+        # guessing which activity or channel each modal governs.
+        if _mixed_permission(part):
+            conditions.append({"kind": "restriction", "text": part, "result": "unresolved", "note": _MIXED_MODAL_SCOPE})
+        if effect == "capability":
+            conditions.append({"kind": "qualifier", "text": part, "result": "unresolved", "note": "capability not held"})
         fallback = re.search(r"\bIN CASE OF NO CONTACT\b", classify_text(part))
         if fallback:
             conditions.append({"kind": "qualifier", "text": fallback.group(0), "result": "unresolved"})
@@ -1388,7 +1435,8 @@ def _time_order(row: dict[str, Any]) -> tuple[int, int, int, str]:
 def is_call_line(line: dict[str, Any]) -> bool:
     """A voice / broadcast / logon row whose printed conditions are not failed."""
     return (line["kind"] in {"voice_contact", "tiba_broadcast", "contact_logon"} and line["applicability_state"] != "not_applicable"
-            and line.get("actor", "crew") == "crew" and line.get("instruction_effect", "instruction") == "instruction")
+            and line.get("actor", "crew") == "crew" and line.get("instruction_effect", "instruction") == "instruction"
+            and not any(c.get("kind") == "restriction" and c.get("note") == _MIXED_MODAL_SCOPE for c in line.get("conditions") or []))
 
 
 def has_printed_values(line: dict[str, Any]) -> bool:
@@ -1470,10 +1518,16 @@ STATE_PHRASES = {"conditions_held": "conditions held", "conditions_unresolved": 
 
 def conditions_summary(row: dict[str, Any]) -> str:
     """The row's conditions and state in one line; an ATC provision says so first (release-424 QA, F1)."""
-    labels = ({"instruction": "ATC duty", "availability": "ATC service availability", "not_required": "No ATC duty", "prohibited": "ATC restriction"}
-              if row.get("kind") == "atc_duty" else {"availability": "Communications availability", "not_required": "No call requirement", "prohibited": "Communication prohibition"})
+    labels = ({"instruction": "ATC duty", "permission": "ATC permission", "availability": "ATC service availability", "not_required": "No ATC duty", "prohibited": "ATC restriction"}
+              if row.get("kind") == "atc_duty" else {"permission": "Communications permission", "availability": "Communications availability", "not_required": "No call requirement", "prohibited": "Communication prohibition"})
     label = labels.get(row.get("instruction_effect"))
+    if row.get("instruction_effect") == "capability":
+        label = "Capability unresolved"
     actor_label = {"atc": "ATC provision", "other": "Other actor duty", "unresolved": "Actor unresolved"}.get(row.get("actor"))
+    if row.get("actor") == "other" and row.get("instruction_effect") == "permission":
+        actor_label = "Other actor permission"
+    if row.get("actor") == "other" and row.get("instruction_effect") == "capability":
+        actor_label = "Other actor capability unresolved"
     phrases = [actor_label] if actor_label else [label] if label else []
     phrases.extend(condition_phrase(c) for c in row.get("conditions") or [])
     phrases.append(STATE_PHRASES[row["applicability_state"]])

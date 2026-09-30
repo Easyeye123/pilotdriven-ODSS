@@ -471,7 +471,7 @@ def compact_conditions_summary(summary: Any, limit: int | None = 72) -> str:
         return " · ".join(parts)
     if limit == 0:
         *clauses, state = parts
-        kept = [part for part in clauses if part in ("ATC provision", "Other actor duty", "Actor unresolved", "ATC duty", "ATC restriction", "ATC service availability", "No ATC duty", "Communications availability", "No call requirement", "Communication prohibition") or _VALIDITY_CLAUSE.fullmatch(part)]
+        kept = [part for part in clauses if part in ("ATC provision", "Other actor duty", "Other actor permission", "Other actor capability unresolved", "Capability unresolved", "Actor unresolved", "ATC duty", "ATC permission", "ATC restriction", "ATC service availability", "No ATC duty", "Communications permission", "Communications availability", "No call requirement", "Communication prohibition") or _VALIDITY_CLAUSE.fullmatch(part)]
         counted = len(clauses) - len(kept)
         return " · ".join(kept + ([f"+{counted} further condition(s) on the dashboard"] if counted else []) + [state])
     compacted = []
