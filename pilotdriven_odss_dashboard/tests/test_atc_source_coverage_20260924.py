@@ -9,7 +9,7 @@ records under a named FIR heading that print CPDLC / ADS-C, so voice-only and
 airway-headed procedures never reached the composed record, and the composer
 then asserted a blanket absence.
 
-The general rule replacing it (no flight, FIR, notice or frequency is special-
+The historical rule replacing it (no flight, FIR, notice or frequency is special-
 cased; every answer is derived from the uploaded source):
   headings   FIR ("OAKX  KABUL FIR"), airway segment ("ENRON/RANAHL750",
              "ZB    /BIROSL750"), NOTAM-series labels ("UT O0287/26" - a
@@ -34,6 +34,12 @@ lead times, and keeps every unresolved or not-applicable state explicit.
 
 F2: approved-library findings keep `finding.details` (action / frequency /
 backup / lead / notes) on both surfaces; the library stays unapproved.
+
+The 30 Sep ITEM1 source review also retains explicit nonvoice aircraft-control
+duties and service availability. A source-held notice is not automatically a
+crew radio call: its subject, qualifications and unproved route/time remain
+explicit. The assertions below preserve the original voice/TIBA controls while
+binding these independently reviewed additions and whole-row PDF deferral.
 """
 from __future__ import annotations
 
@@ -48,7 +54,7 @@ from app.analysis import run_odss_analysis
 from app.odss import reference_conformance as conformance
 from app.odss.combined_brief import render_combined_briefing
 from app.odss.concise_pdf_gate import normalized
-from app.odss.enroute_contact import compose_enroute_contact, primary_procedure_line, procedure_kind
+from app.odss.enroute_contact import compose_enroute_contact, is_call_line, primary_procedure_line, procedure_kind
 from app.odss.parser import _detect_sections, _parse_notam_procedure_records, extract_pages
 from tests.test_r2_reminder_wording import david_format_labels, reminder_lines, source_quotations
 
@@ -109,8 +115,13 @@ def test_sq366_source_admits_the_voice_tiba_and_contact_procedures_the_ofp_print
     records = genuine_procedures("SQ366")
     ids = {r["notam_id"] for r in records}
     assert {"1G216/26", "1G197/26", "1G220/26", "AX1/23", "1A1891/26", "SX50/25", "1G803/26"} <= ids
-    # Not communication instructions: transponder, spacing, permissions, route closures, a prohibition.
-    assert not {"1G218/26", "1G199/26", "1G223/26", "1O288/26", "1O275/26", "1G269/26", "1G217/26"} & ids
+    # ITEM1 includes source-backed nonvoice aircraft-control duties. Retaining
+    # SSR/speed constraints does not turn them into radio calls; other activity
+    # and route references still stay outside the first-layer duty collection.
+    assert {"1G218/26", "1G269/26"} <= ids
+    assert all(procedure_kind(by_id(records, identity)["text"]) == "atc_duty"
+               for identity in ("1G218/26", "1G269/26"))
+    assert not {"1G199/26", "1G223/26", "1O288/26", "1O275/26", "1G217/26"} & ids
     tiba = by_id(records, "1G216/26")
     assert tiba["heading"] == "OAKX KABUL FIR" and tiba["heading_kind"] == "fir" and tiba["fir"] == "OAKX"
     assert tiba["source_page"] == 88 and tiba["validity"] == "10-JUN-26 0600 - 05-SEP-26 2359 EST"
@@ -158,7 +169,10 @@ def test_sq23_source_admits_the_kabul_instructions_and_the_opposite_direction_tu
     # ITEM1 independent original review: GNSS reporting, initial-contact NDB
     # contingency and suspicious-call verification are actual qualified duties.
     assert {"1A412/26", "1A1533/26"} <= ids
-    assert "1A141/25" not in ids, "an optional telephone contact is not a radio duty"
+    routing = by_id(records, "1A141/25")
+    assert routing["source_page"] == 98 and routing["fir"] == "KZBW"
+    assert "MUST FILE A RTE" in routing["text"] and "FOR QUESTIONS, CALL BOSTON/ZBW/ARTCC" in routing["text"]
+    assert procedure_kind(routing["text"]) == "atc_duty", "the own routing duty is distinct from its optional telephone reference"
     assert "1A582/26" not in ids, "the independent SQ23 original does not print this SQ366/SQ326 notice"
 
 
@@ -177,11 +191,15 @@ def test_synthetic_layouts_series_label_continuation_ocr_split_and_airport_exclu
         ),
     ]
     records = _parse_notam_procedure_records(pages, (1, 2))
-    assert [r["notam_id"] for r in records] == ["1O287/26"]
+    assert [r["notam_id"] for r in records] == ["1O287/26", "1X1/26"]
     assert records[0]["heading"] == "ZAMIR/KEMORB449", "a NOTAM-series label under a segment heading is a continuation, not a new section"
     assert records[0]["segment"] == {"from": "ZAMIR", "to": "KEMOR", "airway": "B449"}
     assert "CON TACT" in records[0]["text"]
     assert procedure_kind(records[0]["text"]) == "voice_contact", "OCR-split CON TACT is recognised for classification"
+    assert records[0]["source_label"] == "UT O0287/26" and records[0]["source_label_page"] == 2
+    assert records[1]["heading"] == "XXXX NOWHERE FIR" and records[1]["source_page"] == 2
+    assert procedure_kind(records[1]["text"]) == "atc_duty", "the labelled synthetic SSR instruction remains a nonvoice duty"
+    assert "1A2382/26" not in {r["notam_id"] for r in records}, "the airport exclusion is unchanged"
 
 
 def test_the_kind_is_decided_by_the_printed_instruction_only():
@@ -191,7 +209,7 @@ def test_the_kind_is_decided_by_the_printed_instruction_only():
     assert procedure_kind("AFN LOGON PROCESS WILL BE INITIATED BY THE PILOT") == "contact_logon"
     assert procedure_kind("ADS-C/CPDLC OPERATIONAL TRIAL ... 10 MINUTES SEPARATION") == "datalink_other"
     assert procedure_kind("ALL TFC ENTERING KARACHI AND LAHORE FIRS FM KABUL FIR SHALL CTC KARACHI, LAHORE OR ISLAMABAD ACC AT LEAST 15 MIN PRIOR") == "voice_contact"
-    assert procedure_kind("SSR TRANSPONDERS SHALL BE OPERATED AT ALL TIMES. SQUAWK A2000.") is None
+    assert procedure_kind("SSR TRANSPONDERS SHALL BE OPERATED AT ALL TIMES. SQUAWK A2000.") == "atc_duty"
     assert procedure_kind("RADIOTELEPHONY CALL SIGN ASSIGNED TO AD OPERATOR") is None
     # Radio-selection/reference/telephone controls stay excluded. Explicit
     # reporting and suspicious-call verification remain qualified crew duties.
@@ -261,18 +279,19 @@ def test_sq366_composition_publishes_the_source_held_calls_with_their_printed_co
     # AIRSPACE-HEADINGS-436 (27 Sep): 1A2595/26 (UAV flights within ATHINAI FIR, voice contact) is printed under the
     # enroute topic heading "UAV 401614N 0250927E" on p93 and is now held, with no owner established.
     assert set(rows) == {"1A1891/26", "SX50/25", "1G803/26", "SX33/26", "SX9/26", "1G272/26", "1G216/26", "1G197/26", "1G220/26", "AX1/23", "1A2595/26",
-                         "1A1816/26", "1E1916/26", "1A1533/26", "1A582/26", "1E1548/26", "1E1741/26", "1E1936/26", "1A1531/26"}
+                         "1A1816/26", "1E1916/26", "1A1533/26", "1A582/26", "1E1548/26", "1E1741/26", "1E1936/26", "1A1531/26",
+                         "1G198/26", "1G218/26", "1G221/26", "1G193/26", "1G219/26", "1G269/26", "SX16/25"}
     assert rows["1A2595/26"]["association"] == "unresolved" and rows["1A2595/26"]["fir"] == ""
     assert composed["state"] == "source_procedures_held"
     assert composed["state_sentence"] == (
-        "No approved early-call rule is held. 19 source-held communication notice(s): "
-        "printed conditions met on 5, unresolved on 12, not applicable on 2. "
+        "No approved early-call rule is held. 26 source-held ATC/communications notice(s): "
+        "printed conditions met on 9, unresolved on 15, not applicable on 2. "
         "Frequencies and lead times are the source's own printed values; none is inferred from crossing times."
     )
     assert composed["other_procedure_count"] == 0
     assert rows["1A1531/26"]["actm"] is None and rows["1A1531/26"]["on_route"] is None
     assert rows["1A1531/26"]["applicability_state"] == "conditions_unresolved"
-    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-89, pp93-94, pp98-100"
+    assert composed["provenance"] == "FPL pp8-14 / NOTAM p67, pp85-90, pp93-94, pp98-100"
     # Display rows fall due in time order: the latest ACTM a printed lead gives, else the boundary ACTM.
     lines = composed["procedure_lines"]
     anchors = [line["latest_actm"] or line["actm"] for line in lines]
@@ -280,7 +299,12 @@ def test_sq366_composition_publishes_the_source_held_calls_with_their_printed_co
     assert timed == sorted(timed), anchors
     # A row bound to no crossing (the UAV topic notice, AIRSPACE-HEADINGS-436) has no time and follows the timed rows.
     assert all(anchor is None for anchor in anchors[len(timed):]), anchors
-    assert [line["notam_ids"][0] for line in lines if line["fir"] == "OAKX"] == ["1G216/26", "1G220/26", "1G272/26", "1G197/26"]
+    assert [line["notam_ids"][0] for line in lines if line["fir"] == "OAKX"] == [
+        "1G216/26", "1G198/26", "1G218/26", "1G221/26", "1G220/26", "1G193/26", "1G219/26", "1G269/26", "1G272/26", "1G197/26"]
+    assert [line["notam_ids"][0] for line in lines if line["fir"] == "OAKX" and is_call_line(line)] == ["1G216/26", "1G220/26", "1G197/26"]
+    for identity in ("1G218/26", "1G221/26", "1G193/26", "1G219/26", "1G269/26", "SX16/25"):
+        assert rows[identity]["kind"] == "atc_duty" and not is_call_line(rows[identity])
+        assert rows[identity]["latest_actm"] is None
     assert primary_procedure_line(lines)["notam_ids"] == ["1G216/26"], "the first call row that prints a frequency (page 6 always prints it)"
     assert all(line["applicability_state"] and line["conditions_summary"] for line in lines)
 
@@ -315,18 +339,29 @@ def test_sq23_composition_keeps_the_opposite_direction_control_distinct(tmp_path
     assert next(c for c in karachi["conditions"] if c["kind"] == "route")["text"] == "N644 DOBAT LAHORE ACC WEST 124.100 MHZ 118.950 MHZ"
     assert karachi["printed_details"] == {"frequencies": ["124.100 MHZ", "118.950 MHZ"], "lead": "AT LEAST 15 MIN PRIOR TO ENTERING KARACHI OR LAHORE FIR", "interval": None, "addresses": []}
     assert karachi["latest_actm"] == "11:41"
+    routing = rows["1A141/25"]
+    assert routing["kind"] == "atc_duty" and routing["source_page"] == 98 and routing["fir"] == "KZBW"
+    assert "MUST FILE A RTE" in routing["instruction"] and routing["applicability_state"] == "conditions_unresolved"
+    assert not is_call_line(routing) and routing["latest_actm"] is None
+    assert routing["printed_details"]["frequencies"] == [] and routing["printed_details"]["lead"] is None
 
 
 def test_sq882_contingency_report_does_not_invent_an_early_call(tmp_path_factory):
     case = rendered("SQ882", tmp_path_factory)
     composed = case["payload"]["view"]["briefing"]["enroute_contact"]
     assert composed["state"] == "source_procedures_held" and not composed["required_calls"]
-    assert [row["notam_id"] for row in composed["procedures"]] == ["1A3438/26"]
+    assert [row["notam_id"] for row in composed["procedures"]] == ["1A3438/26", "1A1997/26"]
     row = composed["procedures"][0]
     assert row["source_page"] == 45 and row["actor"] == "crew"
     assert row["applicability_state"] == "conditions_unresolved" and row["latest_actm"] is None
     assert not row["printed_details"]["frequencies"] and not row["printed_details"]["lead"]
     assert any(c["kind"] == "qualifier" and c["text"] == "report trigger: VOLCANIC ASH" for c in row["conditions"])
+    equipment = composed["procedures"][1]
+    assert equipment["kind"] == "atc_duty" and equipment["source_page"] == 47
+    assert equipment["applicability_state"] == "conditions_unresolved" and not is_call_line(equipment)
+    assert equipment["latest_actm"] is None and not equipment["printed_details"]["frequencies"]
+    assert any(action["instruction_effect"] == "permission" and action["actor"] == "other"
+               and action["applicability_state"] == "conditions_unresolved" for action in equipment["actions"])
 
 
 def test_consecutive_duplicate_boundary_rows_are_repeated_rows_not_re_entries(tmp_path_factory):
@@ -369,10 +404,15 @@ def test_sq366_page_six_prints_the_applicable_voice_row_with_the_printed_frequen
     assert "FIR / COMMUNICATION" in raw
     # New service/notification notices are source-held, with untimed owners
     # unresolved; page capacity can defer whole rows, never the primary call.
-    assert normalized("19 source-held communication notices") in page
+    assert normalized("26 source-held ATC/communications notices: 9 conditions met, 15 unresolved, 2 not applicable.") in page
+    assert normalized("FPL pp8-14 / NOTAM p67, pp85-90, pp93-94, pp98-100") in page
     assert normalized("lead times and frequencies are not held") not in page
     assert normalized("+05:35 OAKX entry.") in page and "125.2MHZ" in raw and "1G216/26" in raw
     assert normalized("10 MINS PRIOR ENTERING TO FIR") in page
+    assert normalized("NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM)") in page
+    assert normalized("Source FIR LIMM; route/time unresolved.") in page
+    assert normalized("NOTAM 1E1741/26, OFP p98; valid 10-JUL-26 0000 - PERM (time unresolved) · conditions unresolved.") in page
+    assert normalized("+24 further rows on the dashboard (WIIF 2, VABF 1, OPKR 2, OAKX 9, UTAV 1, LTAA 1, LGGG 1, LIBB 1, LOVV 2, FIR not derived 1, LSAS 1, LIMM 2).") in page
     assert normalized("BOBCAT BIROS FL380: CTOT 1752Z + ACTM 05:35 = 2327Z, 1 min before CTO 2328Z (OFP p1, p11).") in page
     assert reminder_lines(raw, source_quotations(case["payload"]), david_format_labels()) == []
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
