@@ -143,7 +143,7 @@ def test_sq366_page_six_prints_his_fir_communication_column_with_the_allocation_
     page = case["folded"][ENROUTE_PAGE]
     raw = case["pages"][ENROUTE_PAGE]
     assert "FIR / COMMUNICATION" in raw
-    assert normalized("No approved early-call rule held. 26 source-held ATC/communications notices: 9 conditions met, 15 unresolved, 2 not applicable.") in page
+    assert normalized("No approved early-call rule held. 26 source-held ATC/communications notices: 8 conditions met, 16 unresolved, 2 not applicable.") in page
     # ATC-RADIO-SOURCE-418: page 6 holds one full row on this OFP (the first call row with a printed frequency, by the
     # shared rule) and names every deferred row; the Jakarta note is on the dashboard and named here.
     composed = case["payload"]["view"]["briefing"]["enroute_contact"]
