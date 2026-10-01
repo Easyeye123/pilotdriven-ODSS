@@ -20,4 +20,8 @@ the two are bumped together whenever the parser's extraction changes.
 # v5 (release-436 QA, ATC completeness): FIR headings that name the airspace part ("... FIR OCEANIC", "... FIR LOWER",
 # "... DOMESTIC LOWER", "... UIR") own their notices and keep the part ("airspace"); location-prefixed series labels continue
 # a section; topic headings in an enroute part hold their communication notices with no owning FIR ("topic").
-EXTRACTION_RULES = "2026-09-30-atc-source-coverage-v6"
+# v6 (30 Sep 2026, ITEM1 ATC source coverage): source-backed communications and qualified aircraft-control duties are held.
+# v7 (1 Oct 2026, ATC-CLEARANCE-FAMILY): a request / clarification / confirmation addressed to a unit and the refusal or
+# acceptance of an ATC clearance or ATC-qualified instruction are held (CO188/02 under LTAA ANKARA FIR, the NON-RNAV
+# radar-vector requests to DAEGU/INCHEON ACC); a stop printed without a following space ends a sentence outside an address.
+EXTRACTION_RULES = "2026-10-01-atc-clearance-family-v7"

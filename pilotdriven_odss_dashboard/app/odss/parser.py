@@ -469,7 +469,10 @@ def _parse_notam_procedure_records(
     ("ENRON/RANAHL750") and its body prints a communication instruction of any
     kind - contact / call / report / monitor with a unit or frequency, TIBA /
     broadcast / transmission, logon, CPDLC / ADS-C (enroute_contact.
-    procedure_kind; OCR-split words are joined for the test only). A NOTAM-
+    procedure_kind; OCR-split words are joined for the test only).
+    ATC-CLEARANCE-FAMILY (1 Oct 2026, extraction v7): a request, clarification
+    or confirmation addressed to a unit, and the refusal or acceptance of an
+    ATC clearance or ATC-qualified instruction, are such instructions too. A NOTAM-
     series label under a heading is a continuation of that section. Airport
     and other sections are never inherited. The record is not claimed route-
     applicable here: it is held with its identity, validity, heading, heading
@@ -499,7 +502,7 @@ def _parse_notam_procedure_records(
         nonlocal current, body_lines
         if current is not None:
             body = " ".join(body_lines).strip()
-            if procedure_kind(body):
+            if procedure_kind(body, f"{current.get('heading') or ''} {body}"):
                 records.append({
                     **current,
                     "text": body,

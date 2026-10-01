@@ -42,6 +42,12 @@ CASES = (
     # sits under the enroute topic heading "VAA GREAT SITKIN" and SQ366's UAV notice under "UAV 401614N 0250927E".
     ("SQ34-SIN-SFO", "lido-briefing_SQ_34_15Aug2026_SIN_SFO.pdf"),
     ("SQ38-SIN-LAX-29AUG", "SQ38-29AUG2026-OFP-for-prod-proof.pdf"),
+    # ATC-CLEARANCE-FAMILY (1 Oct 2026): NON-RNAV radar-vector requests to DAEGU/INCHEON ACC under the navaid topic headings
+    # "SOT SONGTAN" (SQ605 p60, SQ606 p72) and "PSN BUSAN" (SQ606 p75); SQ194's permission to request vectors beside an
+    # equipment duty (SX54/24). CO188/02 is held by SQ23, SQ303, SQ304, SQ322, SQ352 and SQ366 above.
+    ("SQ605-ICN-SIN-08SEP", "SQ60508092026ICN.pdf"),
+    ("SQ606-SIN-ICN-06SEP", "SQ60606092026SIN.pdf"),
+    ("SQ194-SIN-HAN", "lido-briefing_SQ_194_16Aug2026_SIN_HAN.pdf"),
 )
 WAYPOINT_FIELDS = ("name", "fir_boundary", "actm_minutes", "source_page")
 FLIGHT_FIELDS = ("departure", "destination", "planned_level_profile", "scheduled_departure_utc", "actual_takeoff_utc", "extraction_rules", "notam_procedure_records", "notam_fir_names", "bobcat", "slot_allocation_unread")

@@ -280,15 +280,18 @@ def test_sq366_composition_publishes_the_source_held_calls_with_their_printed_co
     # enroute topic heading "UAV 401614N 0250927E" on p93 and is now held, with no owner established.
     assert set(rows) == {"1A1891/26", "SX50/25", "1G803/26", "SX33/26", "SX9/26", "1G272/26", "1G216/26", "1G197/26", "1G220/26", "AX1/23", "1A2595/26",
                          "1A1816/26", "1E1916/26", "1A1533/26", "1A582/26", "1E1548/26", "1E1741/26", "1E1936/26", "1A1531/26",
-                         "1G198/26", "1G218/26", "1G221/26", "1G193/26", "1G219/26", "1G269/26", "SX16/25"}
+                         "1G198/26", "1G218/26", "1G221/26", "1G193/26", "1G219/26", "1G269/26", "SX16/25", "CO188/02"}
     assert rows["1A2595/26"]["association"] == "unresolved" and rows["1A2595/26"]["fir"] == ""
+    # ATC-CLEARANCE-FAMILY (1 Oct 2026): CO188/02 (LTAA ANKARA FIR p90) is now held - the crew refusal of Ercan-issued
+    # clearances and the contention clarification - with its Nicosia context and company annotation unresolved.
+    assert rows["CO188/02"]["applicability_state"] == "conditions_unresolved" and rows["CO188/02"]["fir"] == "LTAA"
     assert composed["state"] == "source_procedures_held"
     # SX9's own interference event is unproved, so it joins unresolved rows.
     assert rows["SX9/26"]["applicability_state"] == "conditions_unresolved"
     assert next(c for c in rows["SX9/26"]["conditions"] if c["text"] == "report trigger: SUCH INTERFERENCE")["result"] == "unresolved"
     assert composed["state_sentence"] == (
-        "No approved early-call rule is held. 26 source-held ATC/communications notice(s): "
-        "printed conditions met on 8, unresolved on 16, not applicable on 2. "
+        "No approved early-call rule is held. 27 source-held ATC/communications notice(s): "
+        "printed conditions met on 8, unresolved on 17, not applicable on 2. "
         "Frequencies and lead times are the source's own printed values; none is inferred from crossing times."
     )
     assert composed["other_procedure_count"] == 0
@@ -407,7 +410,8 @@ def test_sq366_page_six_prints_the_applicable_voice_row_with_the_printed_frequen
     assert "FIR / COMMUNICATION" in raw
     # New service/notification notices are source-held, with untimed owners
     # unresolved; page capacity can defer whole rows, never the primary call.
-    assert normalized("26 source-held ATC/communications notices: 8 conditions met, 16 unresolved, 2 not applicable.") in page
+    # ATC-CLEARANCE-FAMILY: CO188/02 adds one source-held notice whose conditions are unresolved.
+    assert normalized("27 source-held ATC/communications notices: 8 conditions met, 17 unresolved, 2 not applicable.") in page
     assert normalized("FPL pp8-14 / NOTAM p67, pp85-90, pp93-94, pp98-100") in page
     assert normalized("lead times and frequencies are not held") not in page
     assert normalized("+05:35 OAKX entry.") in page and "125.2MHZ" in raw and "1G216/26" in raw
