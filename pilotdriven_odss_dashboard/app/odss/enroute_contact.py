@@ -1490,7 +1490,10 @@ def condition_phrase(condition: dict[str, Any]) -> str:
     if kind in ("departure", "arrival"):
         return f"{kind} {text}: " + {"met": "met", "not_met": "not met", "unresolved": "not evaluable"}[result]
     if kind == "qualifier":
-        return f"{text}: not evaluable from the OFP"
+        # Publish the generated event label in plain language while retaining
+        # the held condition identity and literal source qualifiers.
+        published = "reporting condition: " + text[len("report trigger: "):] if text.startswith("report trigger: ") else text
+        return f"{published}: not evaluable from the OFP"
     if kind == "equipment":
         return f"equipment {text}: not held for this aircraft"
     if kind == "flight_rules":
