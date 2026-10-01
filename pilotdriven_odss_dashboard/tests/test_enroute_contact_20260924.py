@@ -192,7 +192,8 @@ def test_sq882_page_six_keeps_conditional_source_duties_without_an_unconditional
     assert any(c["text"] == "WITHOUT OPERABLE ADS-B OUT EQUIPAGE" and c["result"] == "unresolved" for c in equipage["conditions"])
     assert normalized(composed["state_sentence"]) in page
     assert "NOTAM 1A3438/26" in raw
-    assert normalized("report trigger: VOLCANIC ASH: not evaluable from the OFP") in page
+    assert normalized("reporting condition: VOLCANIC ASH: not evaluable from the OFP") in page
+    assert normalized("report trigger: VOLCANIC ASH: not evaluable from the OFP") not in page
     assert "ATC restriction" in raw and "NOTAM 1A1997/26" in raw
     assert "not later than ACTM" not in raw
     assert normalized("No slot-control allocation is printed in this OFP.") in page
