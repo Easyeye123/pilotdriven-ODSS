@@ -8,8 +8,7 @@ import pytest
 from app.odss.enroute_contact import compose_enroute_contact, is_call_line, primary_procedure_line
 from app.odss.extraction_rules import EXTRACTION_RULES
 from app.odss.parser import extract_pages, parse_lido
-
-CORPUS = Path(__file__).resolve().parents[2] / 'private_cfp_corpus'
+from tests.atc_test_inputs import private_cfp_source
 
 
 @pytest.mark.parametrize('label', ['ZZAA A1234/26', 'ZZ A1234/26', 'ZZBB A1234/26', 'ZY A1234/26'])
@@ -44,7 +43,7 @@ def test_an_internal_underlined_title_without_a_new_declaration_keeps_complete_c
 
 def test_genuine_tfr_location_labels_do_not_inherit_boston_owner_or_clock():
     import hashlib
-    source = CORPUS / 'lido-briefing_SQ_24_15Aug2026_SIN_JFK.pdf'
+    source = private_cfp_source('lido-briefing_SQ_24_15Aug2026_SIN_JFK.pdf')
     assert hashlib.sha256(source.read_bytes()).hexdigest() == 'ef773ec3cc808f2269522ae608750e4bd1cdab33a17603842c3fd7837815e240'
     parsed = parse_lido(extract_pages(source), source.name)
     composed = compose_enroute_contact(parsed)
@@ -69,9 +68,7 @@ def test_genuine_tfr_location_labels_do_not_inherit_boston_owner_or_clock():
     ('lido-briefing_SQ_322_16Aug2026_SIN_LHR.pdf', '1F1665/25'),
 ])
 def test_genuine_fir_notice_without_timed_boundary_is_retained_unresolved_and_cited(filename, identity):
-    source = CORPUS / filename
-    if not source.is_file():
-        pytest.skip(f'private genuine source absent: {filename}')
+    source = private_cfp_source(filename)
     flight = parse_lido(extract_pages(source), source.name)
     original = next(r for r in flight['notam_procedure_records'] if r['notam_id'] == identity)
     composed = compose_enroute_contact(flight)
@@ -164,9 +161,7 @@ def test_notice_with_no_boundary_rows_still_names_its_notam_pages_and_no_route_s
     ('SQ30316072026BRU 81.pdf', '1E45/26', 73, 'instruction'),
 ])
 def test_independent_original_duty_and_availability_classes(filename, identity, page, effect):
-    source = CORPUS / filename
-    if not source.is_file():
-        pytest.skip(f'private genuine source absent: {filename}')
+    source = private_cfp_source(filename)
     flight = parse_lido(extract_pages(source), source.name)
     original = next(r for r in flight['notam_procedure_records'] if r['notam_id'] == identity)
     row = next(r for r in compose_enroute_contact(flight)['procedures'] if r['notam_id'] == identity)
@@ -231,7 +226,8 @@ def test_frequency_navigation_weather_and_telephone_are_not_crew_contact_evidenc
     ('SQ02325072026JFK.pdf', '1G221/26', 108),
 ])
 def test_genuine_nonvoice_atc_duties_keep_source_population_and_never_become_calls(filename, identity, page):
-    flight = parse_lido(extract_pages(CORPUS / filename), filename)
+    source = private_cfp_source(filename)
+    flight = parse_lido(extract_pages(source), filename)
     original = next(r for r in flight['notam_procedure_records'] if r['notam_id'] == identity)
     composed = compose_enroute_contact(flight)
     row = next(r for r in composed['procedures'] if r['notam_id'] == identity)
@@ -290,9 +286,7 @@ def test_independent_unpunctuated_transponder_subjects_do_not_share_aerodrome_sc
 def test_sq23_physical_pdf_keeps_outage_text_and_source_identity_in_its_six_page_format(tmp_path):
     from app.analysis import run_odss_analysis
     from app.odss.combined_brief import render_combined_briefing
-    source = CORPUS / 'SQ02325072026JFK.pdf'
-    if not source.is_file():
-        pytest.skip('private genuine SQ23 absent')
+    source = private_cfp_source('SQ02325072026JFK.pdf')
     import json
     result = run_odss_analysis(source, tmp_path / 'analysis', tmp_path / 'reports', 1)
     payload = json.loads(Path(result['analysis_path']).read_text())
@@ -408,7 +402,7 @@ def test_explicit_source_subject_determines_actor_and_displayed_duty(text, actor
 ])
 def test_genuine_publication_public_health_reference_not_admitted_as_atc_crew_duty(filename, identity):
     """The original bulletin remains in the app's full-source surface; no duty is invented."""
-    source = CORPUS / filename
+    source = private_cfp_source(filename)
     flight = parse_lido(extract_pages(source), source.name)
     assert not any(r['notam_id'] == identity for r in flight['notam_procedure_records'])
     assert not any(r['notam_id'] == identity for r in compose_enroute_contact(flight)['procedures'])
@@ -456,7 +450,7 @@ def test_labelled_synthetic_crew_code_instruction_does_not_inherit_the_assigner(
 ])
 def test_genuine_qualified_aircraft_atc_duty_reaches_first_layer(filename, sha256, identity, page):
     import hashlib
-    source = CORPUS / filename
+    source = private_cfp_source(filename)
     assert hashlib.sha256(source.read_bytes()).hexdigest() == sha256
     parsed = parse_lido(extract_pages(source), source.name)
     record = next((row for row in parsed['notam_procedure_records'] if row['notam_id'] == identity and row['source_page'] == page), None)
@@ -481,9 +475,7 @@ def test_other_genuine_six_page_pdfs_keep_untimed_outage_identities_and_truthful
     import json
     from app.analysis import run_odss_analysis
     from app.odss.combined_brief import render_combined_briefing
-    source = CORPUS / filename
-    if not source.is_file():
-        pytest.skip(f'private genuine source absent: {filename}')
+    source = private_cfp_source(filename)
     result = run_odss_analysis(source, tmp_path / 'analysis', tmp_path / 'reports', 1)
     payload = json.loads(Path(result['analysis_path']).read_text())
     original = deepcopy(payload['flight']['notam_procedure_records'])

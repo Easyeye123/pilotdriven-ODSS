@@ -1,14 +1,15 @@
-import json
-from pathlib import Path
-
 import pytest
 
 from app.odss.enroute_contact import compose_enroute_contact, is_call_line
 from app.odss.operational_format import compact_conditions_summary
+from tests.atc_test_inputs import load_enroute_fixture
 
-APP = Path(__file__).resolve().parents[3] / 'pd-code-e-helpyou-20260921'
-FIXTURE = json.loads((APP / 'tests/fixtures/enroute-contact/SQ24-SIN-JFK-15AUG.json').read_text())
 PERMISSION = 'ACFT WI VHF COVERAGE MAY MAKE POSITION REPORTS VIA CPDLC COMMUNICATIONS.'
+
+
+@pytest.fixture
+def FIXTURE():
+    return load_enroute_fixture('SQ24-SIN-JFK-15AUG')
 
 
 def synthetic(text):
@@ -18,7 +19,7 @@ def synthetic(text):
             'heading': 'ZZAA SYNTHETIC FIR', 'heading_kind': 'fir', 'fir': 'ZZAA', 'source_page': 2, 'text': text}]}
 
 
-def test_genuine_paza_permission_retains_unproved_coverage_and_printed_may():
+def test_genuine_paza_permission_retains_unproved_coverage_and_printed_may(FIXTURE):
     assert FIXTURE['source']['sha256'] == 'ef773ec3cc808f2269522ae608750e4bd1cdab33a17603842c3fd7837815e240'
     held = next(r for r in FIXTURE['flight']['notam_procedure_records'] if r['notam_id'] == '1A44/24')
     assert held['source_page'] == 84 and PERMISSION in held['text']
@@ -45,7 +46,7 @@ def test_labelled_optional_logon_preserves_qualifier_without_call_deadline(quali
     assert compact_conditions_summary(summary, 0).startswith('Communications permission · ')
 
 
-def test_genuine_paza_abbreviated_departure_and_logon_event_remain_unproved():
+def test_genuine_paza_abbreviated_departure_and_logon_event_remain_unproved(FIXTURE):
     text = 'ACFT DEP ALASKAN AP ARE REQUESTED TO LOGON AFTER DEP BUT BEFORE CLIMBING ABV FL180.'
     held = next(r for r in FIXTURE['flight']['notam_procedure_records'] if r['notam_id'] == '1A44/24')
     assert text in held['text']

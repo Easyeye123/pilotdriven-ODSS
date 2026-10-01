@@ -2,17 +2,12 @@
 from __future__ import annotations
 
 import copy
-import json
-import os
 import re
-from pathlib import Path
 
 import pytest
 
 from app.odss.enroute_contact import compose_enroute_contact, condition_phrase
-
-ROOT = Path(__file__).resolve().parents[1]
-APP = Path(os.environ.get('PILOTDRIVEN_APP_ROOT') or ROOT.parent.parent / 'pd-code-e-helpyou-20260921')
+from tests.atc_test_inputs import load_enroute_fixture
 
 
 @pytest.mark.parametrize('event', ['VOLCANIC ASH', 'GNSS JAMMING', 'GNSS INTERFERENCE'])
@@ -34,7 +29,7 @@ def test_ordinary_qualifiers_and_literal_trigger_words_remain_unchanged():
 
 @pytest.mark.parametrize('name', ['SQ882-SIN-HKG-10SEP', 'SQ366-SIN-FCO', 'SQ23-JFK-SIN'])
 def test_genuine_reporting_rows_preserve_source_conditions_and_values_with_plain_labels(name):
-    fixture = json.loads((APP / 'tests/fixtures/enroute-contact' / f'{name}.json').read_text())
+    fixture = load_enroute_fixture(name)
     contact = compose_enroute_contact(fixture['flight'], fixture.get('findings') or [], {})
     reporting = [row for row in contact['procedures'] if any(
         condition['kind'] == 'qualifier' and condition['text'].startswith('report trigger: ')
