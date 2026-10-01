@@ -152,7 +152,9 @@ def test_sq366_page_six_prints_his_fir_communication_column_with_the_allocation_
     assert primary["notam_ids"] == ["1G216/26"]
     assert normalized("+05:35 OAKX entry. ALL OVERFLIGHTS SHALL COMPLY WITH TIBA PROCEDURE FOR BROADCAST INTENTIONS ON FREQ 125.2MHZ 10 MINS PRIOR ENTERING TO FIR. Printed: not later than ACTM 05:25. NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM) · overflight: met · conditions held.") in page
     assert normalized("Source FIR LIMM; route/time unresolved. STATION 'MILANO ACC/FIC' SERVICE 'EMERGENCY' FREQUENCY 243.000MHZ COMPLETELY WITHDRAWN REF AIP ENR 2.1.1.1-3 NOTAM 1E1741/26, OFP p98; valid 10-JUL-26 0000 - PERM (time unresolved) · conditions unresolved.") in page
-    assert normalized("+24 further rows on the dashboard (WIIF 2, VABF 1, OPKR 2, OAKX 9, UTAV 1, LTAA 1, LGGG 1, LIBB 1, LOVV 2, FIR not derived 1, LSAS 1, LIMM 2).") in page
+    # ATC-CLEARANCE-FAMILY (1 Oct 2026): the added CO188/02 row (LTAA p90) is a named whole-row deferral - one more
+    # deferred row, one more under LTAA.
+    assert normalized("+25 further rows on the dashboard (WIIF 2, VABF 1, OPKR 2, OAKX 9, UTAV 1, LTAA 2, LGGG 1, LIBB 1, LOVV 2, FIR not derived 1, LSAS 1, LIMM 2).") in page
     # The topic row is source-held without a FIR/clock, included in that exact
     # whole-row deferral; no individual identity is invented in a count group.
     topic = next(row for row in composed["procedures"] if row["notam_id"] == "1A2595/26")

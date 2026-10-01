@@ -174,8 +174,9 @@ def test_page_six_holds_a_primary_row_with_many_printed_conditions(tmp_path):
     assert "125.2MHZ 10 MINS PRIOR ENTERING TO FIR" in page6
     assert "not later than ACTM 05:24" in page6 and "conditions held" in page6
     assert "NOTAM SX33/26" not in page6, "the opposite-direction notice is not promoted to the primary call"
-    assert len(composed["procedure_lines"]) == 27
-    assert "+26 further rows on the dashboard" in page6 and "OPKR 2, OPLR 1" in page6
+    # ATC-CLEARANCE-FAMILY (1 Oct 2026): the added CO188/02 row (LTAA p74) is one more line and one more deferred row.
+    assert len(composed["procedure_lines"]) == 28
+    assert "+27 further rows on the dashboard" in page6 and "OPKR 2, OPLR 1" in page6
 
 
 def test_page_six_cuts_clauses_before_it_drops_a_valued_call_row(tmp_path):
@@ -201,8 +202,9 @@ def test_page_six_cuts_clauses_before_it_drops_a_valued_call_row(tmp_path):
     assert "AT LEAST 15 MIN PRIOR TO ENTERING KARACHI OR LAHORE FIR" in row, row
     assert "not later than ACTM 11:41" in row, row
     assert "DRG THE NON AVAILABILITY" in row, row
-    assert len(composed["procedure_lines"]) == 31 and "+28 further rows on the dashboard" in page6
-    deferred = page6.split("+28 further rows on the dashboard", 1)[1].split("No slot-control", 1)[0]
+    # ATC-CLEARANCE-FAMILY (1 Oct 2026): the added CO188/02 row (LTAA p106) is one more line and one more deferred row.
+    assert len(composed["procedure_lines"]) == 32 and "+29 further rows on the dashboard" in page6
+    deferred = page6.split("+29 further rows on the dashboard", 1)[1].split("No slot-control", 1)[0]
     assert "SX33/26" not in deferred, "the qualifying call prints rather than becoming a dashboard-only row"
     assert "Source FIR KZDC; route/time unresolved." in page6
     assert "NOTAM 1A1513/26, OFP p94" in page6 and "KZNY 1A487/26 (p98)" in page6

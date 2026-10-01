@@ -419,7 +419,9 @@ def test_sq366_page_six_prints_the_applicable_voice_row_with_the_printed_frequen
     assert normalized("NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM)") in page
     assert normalized("Source FIR LIMM; route/time unresolved.") in page
     assert normalized("NOTAM 1E1741/26, OFP p98; valid 10-JUL-26 0000 - PERM (time unresolved) · conditions unresolved.") in page
-    assert normalized("+24 further rows on the dashboard (WIIF 2, VABF 1, OPKR 2, OAKX 9, UTAV 1, LTAA 1, LGGG 1, LIBB 1, LOVV 2, FIR not derived 1, LSAS 1, LIMM 2).") in page
+    # ATC-CLEARANCE-FAMILY (1 Oct 2026): the added CO188/02 row (LTAA p90) is a named whole-row deferral - one more
+    # deferred row, one more under LTAA.
+    assert normalized("+25 further rows on the dashboard (WIIF 2, VABF 1, OPKR 2, OAKX 9, UTAV 1, LTAA 2, LGGG 1, LIBB 1, LOVV 2, FIR not derived 1, LSAS 1, LIMM 2).") in page
     assert normalized("BOBCAT BIROS FL380: CTOT 1752Z + ACTM 05:35 = 2327Z, 1 min before CTO 2328Z (OFP p1, p11).") in page
     assert reminder_lines(raw, source_quotations(case["payload"]), david_format_labels()) == []
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
