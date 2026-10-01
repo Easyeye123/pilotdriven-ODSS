@@ -151,6 +151,7 @@ _ATC_RECIPIENT = re.compile(r"\b(?:ATC|AIR TRAFFIC CONTROL)\s+(?:SHALL|MUST|SHOU
 _ATC_REPORT = re.compile(r"\b(?:REPORT(?:ING)?|REP|INFORM|ADVISE|NOTIFY)\b.{0,300}\b(?:ATC|AIR TRAFFIC CONTROL|AIR TRAFFIC SERVICES|ATS UNIT|ATSU|ATS)\b|\b(?:ATC|AIR TRAFFIC CONTROL)\s+(?:SHALL|MUST|SHOULD)\s+BE\s+INFORMED\b|\bMAKE ATC AWARE\b")
 _RETIRED_REPORT = re.compile(r"\b(?:NO LONGER|NOT) REQUIRED TO SEND\b.{0,100}\b(?:POSITION|PSN) REPORT\b|\b(?:WO|WITHOUT) THE REQUIREMENT FOR VOICE (?:POSITION|PSN) (?:REPORT|REP)\b|\b(?:POSITION|PSN) REPORT(?:ING)?\b.{0,60}\b(?:WITHDRAWN|NO LONGER REQUIRED)\b")
 _REPORT_EVENT = re.compile(r"\b(?:GNSS (?:INTERFERENCE|JAMMING|SPOOFING)|RADIO ALTIMETER ANOMALIES|UNAUTHORIZED RADIO TRANSMISSIONS|SUSPICIOUS CALLS|VOLCANIC ASH|SIGHTING|ENCOUNTER|OCCURRENCE)\b")
+_REFERENTIAL_REPORT_EVENT = re.compile(r"\b(?:SUCH|THIS|THESE|THOSE|ANY) (?:INTERFERENCES?|ADVERSE IMPACTS?|ANOMALIES|OCCURRENCES?)\b")
 _NEGATED_CALL = re.compile(r"\b(?:(?:ARE|IS)\s+)?NOT REQUIRED TO\s+(?:CONTACT|CTC|CALL|LOGON|BROADCAST|MONITOR|TRANSMIT|REPORT|REP|INFORM|NOTIFY|ADVISE)\b")
 _PROHIBITED_CALL = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|DO|DOES)\s+NOT\s+(?:CONTACT|CTC|CALL|LOGON|BROADCAST|MONITOR|TRANSMIT|REPORT|REP|INFORM|NOTIFY|ADVISE)\b")
 # MAY NOT prohibits a printed act, not possible inability.
@@ -194,18 +195,25 @@ _LIST_MARKER = r"(?:\(?[A-Z]\)?[.)]\s+|\d{1,2}[.)]\s+|-\s*)?"
 # ("FANS 1/A, PACKAGE AIRCRAFT", "ADS-B EQUIPPED ACFT", "DATA LINK - EQUIPPED AIRCRAFT"); items may be comma-separated.
 _EQUIPMENT_FORMS = r"FANS[- ]?1/A(?:[ ,]+(?:PACKAGE|EQUIPPED|CAPABLE))?|DATA[- ]?LINK\s*-?\s*EQUIPPED|ADS-[BC](?:[- ]EQUIPPED)?|CPDLC(?:[- ]EQUIPPED)?|APPROPRIATELY EQUIPPED|SUITABLY EQUIPPED|EQUIPPED"
 _SUBJECT_PREFIX = r"(?:(?:ALL|ANY|EVERY|IFR|VFR|MILITARY|CIVIL|NON-RVSM|RVSM|" + _EQUIPMENT_FORMS + r")\s*,?\s+)*"
-_SUBJECT_NOUN = r"(?:FLIGHT CREWS?|AIR CREWS?|THE PILOTS?|THE CREWS?|FLIGHTS?|FLTS?|ACFT|AIRCRAFT|AFCT|TFC|TRAFFIC|OVERFLIGHTS?|PILOTS?|CREWS?|OPERATORS?|AIRLINES?|PERSONS?|USERS?)(?:\s+(?:FLT|FLIGHTS?|OPERATIONS?|OPERATORS?))?"
+# Read the whole compound subject before its aircraft abbreviation; CREWS is the actor, not a population qualifier.
+_SUBJECT_NOUN = r"(?:(?:AIRCRAFT|ACFT|AFCT) CREWS?|FLIGHT CREWS?|AIR CREWS?|THE PILOTS?|THE CREWS?|FLIGHTS?|FLTS?|ACFT|AIRCRAFT|AFCT|TFC|TRAFFIC|OVERFLIGHTS?|PILOTS?|CREWS?|OPERATORS?|AIRLINES?|PERSONS?|USERS?)(?:\s+(?:FLT|FLIGHTS?|OPERATIONS?|OPERATORS?))?"
 _SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b(?P<qualifier>.*?)\s*\b(?P<modal>SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
 # A headline AIR CREWS TO REPORT directive is not the infinitive within an
 # ACFT UNABLE TO CTC ... SHOULD CTC qualifier. Prefer the finite modal, then
 # accept an abbreviated TO directive only directly after its subject.
 _SUBJECT_TO = re.compile(r"^" + _LIST_MARKER + r"(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b(?P<qualifier>)\s+(?P<modal>TO)(?= (?:REMAIN|REPORT|REP|INFORM|NOTIFY|CONTACT|CTC|BROADCAST|MONITOR|TRANSMIT)\b)")
+# A direct pilot/crew report can omit a modal. Read only the explicit
+# headline subject and manner, not a pilot noun in another actor's object.
+_REPORTING_SUBJECT = re.compile(r"^" + _LIST_MARKER + r"(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>(?:(?:AIRCRAFT|ACFT|AFCT|FLIGHT|AIR) CREWS?|(?:THE )?(?:PILOTS?|CREWS?)))\b(?P<qualifier>)\s+(?:(?:PROMPTLY|IMMEDIATELY)\s+)?(?P<modal>)(?=(?:REPORT|REP|INFORM|NOTIFY|ADVISE)\b)")
 _EMBEDDED_SUBJECT = re.compile(r"\b(?P<prefix>" + _SUBJECT_PREFIX + r")(?P<noun>" + _SUBJECT_NOUN + r")\b(?P<qualifier>.*?)\s*\b(?P<modal>SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b")
 _JOINED_CREW_SUBJECT = re.compile(r"\s+(?=" + _SUBJECT_PREFIX + _SUBJECT_NOUN + r"\b[^.;]*?\b(?:SHALL|MUST|SHOULD|WILL|MAY|CAN|ARE|IS|NEED|HAVE|HAS)\b)")
-_IMPERATIVE = re.compile(r"^" + _LIST_MARKER + r"(?:USE|SELECT|CONTACT|CTC|CALL|MONITOR|LOGON|LOG ON|BROADCAST|REPORT|MAINTAIN|ESTABLISH|COMPLY|SQUAWK|TRANSMIT|NOTIFY|REFER|ADVISE|REQUEST|EXPECT|FILE|OPERATE|AVOID|DO NOT|CONTINUE|PROCEED|REMAIN)\b")
+_IMPERATIVE = re.compile(r"^" + _LIST_MARKER + r"(?:USE|SELECT|CONTACT|CTC|CALL|MONITOR|LOGON|LOG ON|BROADCAST|REPORT|REP|INFORM|MAINTAIN|ESTABLISH|COMPLY|SQUAWK|TRANSMIT|NOTIFY|REFER|ADVISE|REQUEST|EXPECT|FILE|OPERATE|AVOID|DO NOT|CONTINUE|PROCEED|REMAIN)\b")
 # The circumstance words a leading clause opens with (the ICAO abbreviation DRG included - release-430 QA, audit of SQ23 SX33/26).
 _LEADING_OPENERS = r"WHENEVER|WHEN|IF|WHILE|UNLESS|IN CASE(?: OF)?|IN THE CASE OF|IN THE EVENT OF|AFTER|BEFORE|DURING|DRG|PROVIDED|WHEREVER|WHERE|AS LONG AS"
-_LEADING_CLAUSE = re.compile(r"^" + _LIST_MARKER + r"(?P<clause>(?:" + _LEADING_OPENERS + r")\b[^,]{3,120}),\s*")
+# A comma-ended literal date qualifies the following subject. Keep it as
+# an unresolved clause; recognizing its syntax does not prove its calendar.
+_LITERAL_DATE_PREFIX = r"ON (?:0?[1-9]|[12]\d|3[01]) (?:" + "|".join(_MONTHS) + r")(?: \d{2}(?:\d{2})?)?"
+_LEADING_CLAUSE = re.compile(r"^" + _LIST_MARKER + r"(?P<clause>(?:(?:" + _LEADING_OPENERS + r")\b[^,]{3,120}|" + _LITERAL_DATE_PREFIX + r")),\s*")
 # "PROVIDED" is a condition only as a conjunction ("PROVIDED THAT ...", "PROVIDED THE CREW ..."), never the passive
 # participle of a service ("WILL BE PROVIDED BY TOKYO CONTROL", "PROVIDED TO THE BORDER").
 _TRAILING_CLAUSE = re.compile(r"\s\b(?P<clause>(?:WHEN|IF|WHILE|UNLESS|WHERE|EXCEPT WHEN|ONLY WHEN|ONLY IF|PROVIDED(?!\s+(?:BY|TO|FOR|ON|VIA|FROM|WITH|AT|IN|UNTIL|THROUGH)\b))\b.{3,200}?)(?:[.;:]|$)")
@@ -251,7 +259,7 @@ _SERVICE_PASSIVE = re.compile(r"\b(?:SHALL|WILL|MAY|IS|ARE)\s+(?:(?!BE\b)[A-Z]+\
 # An agent phrase naming the crew keeps a passive sentence the crew's ("... SHALL BE APPLIED BY ALL AIRCRAFT").
 _CREW_AGENT = re.compile(r"\bBY\s+(?:ALL\s+|THE\s+|EACH\s+)?(?:AIRCRAFT|ACFT|AFCT|PILOTS?|CREWS?|FLIGHT CREWS?|FLIGHTS?|OPERATORS?|TRAFFIC|TFC)\b")
 _PASSIVE_CREW_CONTROL = re.compile(r"\b(?:TRANSPONDERS?|(?:NAVIGATION|ANTI-COLLISION|POSITION)(?: AND (?:NAVIGATION|ANTI-COLLISION|POSITION))? LIGHTS)\s+(?:SHALL|MUST|SHOULD)\s+BE\s+(?:OPERATED|DISPLAYED|ON|ACTIVE|ACT|OPN)\b|\b(?:CLIMBS?|DESCENTS?)(?: AND (?:CLIMBS?|DESCENTS?))? (?:SHALL|MUST|SHOULD) BE (?:CARRIED OUT|CONDUCTED|PERFORMED)\b")
-_PASSIVE_NAMED_AGENT = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|ARE|IS)\s+(?:[A-Z-]+\s+){0,2}BE\s+[A-Z-]+(?:ED|EN)\s+BY\s+(?:THE\s+|ALL\s+)?[A-Z][A-Z-]*(?:\s+[A-Z][A-Z-]*)*")
+_PASSIVE_NAMED_AGENT = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|ARE|IS)\s+(?:[A-Z-]+\s+){0,2}BE\s+(?:[A-Z-]+(?:ED|EN)|SENT)\s+BY\s+(?:THE\s+|ALL\s+)?[A-Z][A-Z-]*(?:\s+[A-Z][A-Z-]*)*")
 _ATC_AGENT = re.compile(r"\bBY (?:THE )?(?:ATC|ATS|ACC|ARTCC|ATSU|GROUND SYSTEM|(?:[A-Z]+ ){0,2}(?:CENTRE|CENTER|CONTROL|CTL|OCEANIC|RADIO|APPROACH|TOWER))\b")
 _DIRECTIVE = re.compile(r"\b(?:SHALL|MUST|SHOULD|WILL|MAY|ARE REQUESTED TO|IS REQUESTED TO|ARE REQUIRED TO|IS REQUIRED TO|ARE TO|IS TO|NEED TO|EXPECTED TO)\b")
 _OBLIGATION_MODAL = re.compile(r"\b(?:SHALL|MUST|SHOULD|ARE REQUESTED TO|IS REQUESTED TO|ARE REQUIRED TO|IS REQUIRED TO|ARE TO|IS TO|NEED TO|EXPECTED TO)\b")
@@ -770,7 +778,7 @@ def _subject_of(sentence: str) -> dict[str, Any]:
     leading = _LEADING_CLAUSE.match(upper)
     body = upper[leading.end():] if leading else upper
     clause = leading.group("clause").strip() if leading else None
-    match = _SUBJECT.match(body) or _SUBJECT_TO.match(body)
+    match = _SUBJECT.match(body) or _SUBJECT_TO.match(body) or _REPORTING_SUBJECT.match(body)
     if match and (not match.group("qualifier").strip() or _CREW_QUALIFIER_START.match(match.group("qualifier").strip())):
         return {"kind": "stated", "prefix": match.group("prefix").strip(), "qualifier": match.group("qualifier").strip(), "leading": clause, "continuation": False}
     act = _CREW_ACT_SUBJECT.match(body)
@@ -1002,7 +1010,7 @@ def _accounted_spans(upper: str, ctx: dict[str, Any] | None) -> list[tuple[int, 
     offset = leading.end() if leading else 0
     if leading:
         spans.append((0, leading.end()))
-    stated = _SUBJECT.match(upper[offset:]) or _SUBJECT_TO.match(upper[offset:])
+    stated = _SUBJECT.match(upper[offset:]) or _SUBJECT_TO.match(upper[offset:]) or _REPORTING_SUBJECT.match(upper[offset:])
     # Only a qualifier accepted by _subject_conditions has been accounted for.
     if stated and (not stated.group("qualifier").strip() or _CREW_QUALIFIER_START.match(stated.group("qualifier").strip())):
         spans.append((offset, offset + stated.start("modal")))
@@ -1161,6 +1169,24 @@ def _governing_index(parts: list[str], subjects: list[dict[str, Any]], index: in
 def _state_of(conditions: list[dict[str, Any]]) -> str:
     results = [c["result"] for c in conditions]
     return "not_applicable" if "not_met" in results else "conditions_unresolved" if "unresolved" in results else "conditions_held"
+
+
+def _report_conditions(sentence: str, source: str) -> list[dict[str, Any]]:
+    if not _ATC_REPORT.search(classify_text(sentence)):
+        return []
+    event = _REPORT_EVENT.search(classify_text(source))
+    if event:
+        return [{"kind": "qualifier", "text": f"report trigger: {event.group(0)}", "result": "unresolved"}]
+    reference = _REFERENTIAL_REPORT_EVENT.search(classify_text(sentence))
+    if not reference:
+        return []
+    conditions = [{"kind": "qualifier", "text": f"report trigger: {reference.group(0)}", "result": "unresolved"}]
+    # Preserve a referential event's literal context without claiming that
+    # the OFP establishes its event, schedule or geographic limits.
+    start = source.find(sentence)
+    if start > 0:
+        conditions.append({"kind": "qualifier", "text": f"reporting context: {source[:start].strip()}", "result": "unresolved"})
+    return conditions
 
 
 def _dedupe(conditions: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1338,9 +1364,7 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
         fallback = re.search(r"\bIN CASE OF NO CONTACT\b", classify_text(part))
         if fallback:
             conditions.append({"kind": "qualifier", "text": fallback.group(0), "result": "unresolved"})
-        event = _REPORT_EVENT.search(classify_text(text)) if _ATC_REPORT.search(classify_text(part)) else None
-        if event:
-            conditions.append({"kind": "qualifier", "text": f"report trigger: {event.group(0)}", "result": "unresolved"})
+        conditions.extend(_report_conditions(part, text))
         conditions = _dedupe(conditions)
         details = printed_details(part)
         if route_frequencies is not None and not details["frequencies"]:
