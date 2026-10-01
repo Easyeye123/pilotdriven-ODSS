@@ -528,6 +528,19 @@ def _first_untimed_status_lines(lines: list[dict]) -> list[dict]:
     return [line for line in untimed if _untimed_status_key(line) == first_key]
 
 
+def _primary_and_next_valued_call(lines: list[dict], primary: dict | None) -> list[dict]:
+    """Bounded capacity attempt in existing action order, before primary-only.
+
+    A second row must be a qualifying crew contact with printed values at
+    another FIR. A failed source condition or another actor cannot consume
+    that slot. Selection never changes a held row or its applicability.
+    """
+    next_call = next((line for line in lines if line is not primary and
+                      is_call_line(line) and has_printed_values(line) and
+                      (not primary or line["fir"] != primary["fir"])), None)
+    return [line for line in lines if line is primary or line is next_call]
+
+
 def plan_page(title: str, bookmark: str, rows: list[tuple[Any, list[Card]]], *,
               ribbon_index: int = 0, assurance: str = "", aliases: tuple[str, ...] = (),
               body: float = BODY, leading: float = LEADING) -> list[Page]:
@@ -2070,32 +2083,27 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     # state, the BOBCAT sentence, the primary row (the first call row with
     # printed values - the row parity binds on both surfaces) and at least
     # eight crossing pairs; every row is always on the dashboard.
-    #   0  every row, every pair            3  the primary + one valued call row per FIR
-    #   1  every row, 12 pairs               4  step 3 with each clause cut to a prefix (72)
-    #   2  the call rows in full, the rest as identities, 8 pairs
-    #   5  step 3 with each clause cut to 44 characters   6  ... to its opening words (24)
-    #   7  step 3 with the clauses counted, not printed (validity and state print)
-    #   8  the primary row only
-    #   9  the primary row with its condition clauses cut to a prefix and the
-    #      deferred rows as per-FIR counts (rule v3: the rows grew by the
-    #      timing basis and the further-sentence count; SQ24 / SQ322 / SQ366
-    #      then failed closed at the primary-only step - the F5 class again)
-    #   10, 11  step 9 with each clause cut to 44 / 24 characters
-    #   12 the primary row with its clauses counted - the last resort, never false
-    #   Rule v7 (release-430 QA, F1) states every printed restriction as a
-    #   condition, so a row can carry more clauses. Clauses are cut before a
-    #   row is dropped: step 4 keeps step 3's rows with each clause cut to a
-    #   prefix (genuine SQ23 keeps its Karachi row, prerequisite included),
-    #   then to its opening words, then counts them (genuine SQ322's Karachi
-    #   row missed release 430's last step by 2 pt). The state always
-    #   prints; the dashboard carries every clause in full. The validity
-    #   clause and its timing basis are never cut (release-432 QA, O2: the
-    #   gate's page 6, without production's reference data, reached these
-    #   steps and printed "(at…").
+    # Try all rows, then calls, then one valued crew call per FIR. Before
+    # primary-only, try those valued calls with untimed statuses and then
+    # the primary plus the next qualifying valued call at another FIR.
+    # Each row budget tries whole clauses, source prefixes, then counted
+    # clause deferral; the dashboard carries every clause in full. Validity,
+    # timing basis and final state always print (release-432 QA, O2).
     #   step: (rows, crossing pairs, clause prefix or None for whole clauses)
     FIR_STEPS = (
         ("all", 24, None), ("all", 12, None), ("calls", 8, None), ("valued_per_fir", 8, None),
         ("valued_per_fir", 8, 72), ("valued_per_fir", 8, 44), ("valued_per_fir", 8, 24), ("valued_per_fir", 8, 0),
+        # Before dropping valued crew contacts, try deferring timed service
+        # rows, then whole untimed statuses with their own ID/page pointers.
+        ("valued_per_fir_untimed", 8, 72), ("valued_per_fir_untimed", 8, 44),
+        ("valued_per_fir_untimed", 8, 24), ("valued_per_fir_untimed", 8, 0),
+        ("valued_per_fir_source_status", 8, 72), ("valued_per_fir_source_status", 8, 44),
+        ("valued_per_fir_source_status", 8, 24), ("valued_per_fir_source_status", 8, 0),
+        # If one valued row per FIR still exceeds the fixed page, retain the
+        # mandatory primary plus the next valued crew contact at another FIR
+        # in the existing action-time order before trying primary-only.
+        ("primary_plus_source_status", 8, 72), ("primary_plus_source_status", 8, 44),
+        ("primary_plus_source_status", 8, 24), ("primary_plus_source_status", 8, 0),
         ("primary", 8, None), ("primary", 8, 72), ("primary", 8, 44), ("primary", 8, 24), ("primary", 8, 0),
         # Only after all availability rows have been tried at every existing
         # readable layout: whole timed rows may defer to the dashboard. An
@@ -2116,24 +2124,26 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
             shown = list(procedure_lines)
         elif rows_kind == "calls":
             shown = [line for line in procedure_lines if line is primary or is_call_line(line)]
-        elif rows_kind == "valued_per_fir":
+        elif rows_kind.startswith("valued_per_fir"):
             seen: set[str] = set()
             shown = []
             for line in procedure_lines:
                 if line is primary or (is_call_line(line) and has_printed_values(line) and line["fir"] not in seen):
                     shown.append(line)
                     seen.add(line["fir"])
+        elif rows_kind == "primary_plus_source_status":
+            shown = _primary_and_next_valued_call(procedure_lines, primary)
         else:
             shown = [primary] if primary else []
         # Service status matters independently of a crew call. Try all full
         # availability quotations at the existing layout steps. Only the
-        # primary_untimed steps may defer timed rows; the final source-status
-        # step identifies deferred untimed rows as well. No held row changes.
-        if rows_kind == "primary_source_status":
+        # untimed steps may defer timed rows; source-status steps identify
+        # each deferred untimed row as well. No held row changes.
+        if rows_kind.endswith("source_status"):
             shown = [line for line in procedure_lines if line in shown or line in _first_untimed_status_lines(procedure_lines)]
         else:
             shown = [line for line in procedure_lines if line in shown or
-                     (line.get("instruction_effect") == "availability" and (rows_kind != "primary_untimed" or not line.get("actm")))]
+                     (line.get("instruction_effect") == "availability" and (not rows_kind.endswith("untimed") or not line.get("actm")))]
         deferred = [line for line in procedure_lines if line not in shown]
         rendered_shown = _compact_untimed_availability_lines(shown) if compact else shown
         state_line = fir_state
@@ -2147,7 +2157,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                 state_line += " Held extraction predates the current parser; update re-reads the OFP."
         lines = [state_line, *fir_calls, *(fir_row(line, compact, 72 if clause_limit is None else clause_limit) for line in rendered_shown)]
         if deferred:
-            if rows_kind == "primary_source_status":
+            if rows_kind.endswith("source_status"):
                 untimed = [line for line in deferred if not line.get("actm") and line.get("instruction_effect") == "availability"]
                 others = [line for line in deferred if line not in untimed]
                 pointers = "; ".join(f"{line['fir'] or 'FIR unresolved'} {','.join(line['notam_ids'])} ({','.join(f'p{p}' for p in line['source_pages']) or 'page not held'})" for line in untimed)

@@ -143,18 +143,39 @@ from tests.test_service_api_v06 import service_app  # noqa: E402,F401 - the serv
 
 
 def test_page_six_holds_a_primary_row_with_many_printed_conditions(tmp_path):
-    """RESTRICTION-COMPLETENESS-430: rule v7 states every printed restriction as a condition, so a row can carry more
-    clauses than step 5 of the FIR / COMMUNICATION ladder holds (genuine SQ322: the Karachi row's DRG prerequisite and
-    VIA MOTMO scope). The last step quotes each clause's opening words only - the restriction stays identifiable, the
-    final state is printed, and the dashboard carries every clause in full - instead of failing closed."""
+    """The historical SQ322 stress source is an opposite-direction control.
+
+    Its many-clause SX33 notice applies FROM Kabul; this flight reaches
+    Pakistan before Kabul. Keep the whole qualified source and its failed
+    direction, never promote it as an unresolved primary call. The next
+    genuine SQ23 test remains the qualifying positive capacity case.
+    """
+    from app.odss.enroute_contact import is_call_line, primary_procedure_line
+
     payload = genuine_analysis("SQ322-SIN-LHR")
+    composed = payload["view"]["briefing"]["enroute_contact"]
+    opposite = next(row for row in composed["procedures"] if row["notam_id"] == "SX33/26")
+    assert opposite["source_page"] == 69 and opposite["kind"] == "voice_contact"
+    assert opposite["applicability_state"] == "not_applicable" and opposite["latest_actm"] is None
+    assert next(c for c in opposite["conditions"] if c["kind"] == "direction")["result"] == "not_met"
+    assert next(c for c in opposite["conditions"] if c["text"].startswith("DRG THE NON AVAILABILITY"))["result"] == "unresolved"
+    assert opposite["printed_details"]["frequencies"] == ["124.100 MHZ", "118.950 MHZ"]
+    assert opposite["printed_details"]["lead"] == "AT LEAST 15 MIN PRIOR TO ENTERING KARACHI OR LAHORE FIR"
+    assert "VIA MOTMO (P500)" in opposite["instruction"] and not is_call_line(opposite)
+    assert opposite["actions"][0]["printed_details"]["frequencies"] == [
+        "128.350 MHZ", "121.650 MHZ", "124.100 MHZ", "118.950 MHZ", "120.750 MHZ", "125.750 MHZ"]
+    primary = primary_procedure_line(composed["procedure_lines"])
+    assert primary["notam_ids"] == ["1G216/26"] and primary["source_pages"] == [71]
     pages = render(payload, tmp_path / "sq322.pdf")
     assert len(pages) == 6
     page6 = " ".join(pages[5].split())
     assert "FIR / COMMUNICATION" in page6
-    assert "SX33/26" in page6, "the primary row still prints"
-    assert "DRG THE NON" in page6, "the prerequisite's opening words stay on the page"
-    assert "conditions unresolved" in page6
+    assert "+05:34 OAKX entry." in page6 and "NOTAM 1G216/26, OFP p71" in page6
+    assert "125.2MHZ 10 MINS PRIOR ENTERING TO FIR" in page6
+    assert "not later than ACTM 05:24" in page6 and "conditions held" in page6
+    assert "NOTAM SX33/26" not in page6, "the opposite-direction notice is not promoted to the primary call"
+    assert len(composed["procedure_lines"]) == 27
+    assert "+26 further rows on the dashboard" in page6 and "OPKR 2, OPLR 1" in page6
 
 
 def test_page_six_cuts_clauses_before_it_drops_a_valued_call_row(tmp_path):
@@ -163,10 +184,53 @@ def test_page_six_cuts_clauses_before_it_drops_a_valued_call_row(tmp_path):
     its frequencies, its prerequisite's opening words and its unresolved state (on the earlier ladder it went to the
     dashboard list)."""
     payload = genuine_analysis("SQ23-JFK-SIN")
+    composed = payload["view"]["briefing"]["enroute_contact"]
+    qualified = next(row for row in composed["procedures"] if row["notam_id"] == "SX33/26")
+    assert qualified["source_page"] == 110 and qualified["fir"] == "OPLR"
+    assert qualified["applicability_state"] == "conditions_unresolved"
+    assert next(c for c in qualified["conditions"] if c["kind"] == "direction")["result"] == "met"
+    assert qualified["printed_details"]["frequencies"] == ["124.100 MHZ", "118.950 MHZ"]
+    assert qualified["printed_details"]["lead"] == "AT LEAST 15 MIN PRIOR TO ENTERING KARACHI OR LAHORE FIR"
+    assert qualified["latest_actm"] == "11:41"
     pages = render(payload, tmp_path / "sq23.pdf")
+    assert len(pages) == 6
     page6 = " ".join(pages[5].split())
     row = page6[page6.index("OPLR entry."):]
     row = row[:row.index("conditions unresolved") + len("conditions unresolved")]
-    assert "NOTAM SX33/26" in row and "124.100 MHZ" in row, row
+    assert "NOTAM SX33/26, OFP p110" in row and "124.100 MHZ, 118.950 MHZ" in row, row
+    assert "AT LEAST 15 MIN PRIOR TO ENTERING KARACHI OR LAHORE FIR" in row, row
+    assert "not later than ACTM 11:41" in row, row
     assert "DRG THE NON AVAILABILITY" in row, row
-    assert "OPLR SX33/26" not in page6.split("Further rows on the dashboard")[-1] if "Further rows on the dashboard" in page6 else True
+    assert len(composed["procedure_lines"]) == 31 and "+28 further rows on the dashboard" in page6
+    deferred = page6.split("+28 further rows on the dashboard", 1)[1].split("No slot-control", 1)[0]
+    assert "SX33/26" not in deferred, "the qualifying call prints rather than becoming a dashboard-only row"
+    assert "Source FIR KZDC; route/time unresolved." in page6
+    assert "NOTAM 1A1513/26, OFP p94" in page6 and "KZNY 1A487/26 (p98)" in page6
+
+
+@pytest.mark.parametrize("state", ["conditions_held", "conditions_unresolved"])
+def test_capacity_attempt_keeps_primary_and_next_qualifying_other_fir_call(state):
+    """LABELLED SYNTHETIC: own eligibility and existing order govern the extra
+    slot, not notice identity, number of frequencies or apparent urgency.
+    """
+    from app.odss.operational_format import _primary_and_next_valued_call
+
+    def line(label, fir="ZZBB", **changes):
+        return {"label": label, "fir": fir, "kind": "voice_contact", "actor": "crew",
+                "instruction_effect": "instruction", "applicability_state": "conditions_held",
+                "printed_details": {"lead": "SYNTHETIC PRINTED LEAD"}, **changes}
+
+    primary = line("primary", "ZZAA")
+    same_fir = line("same FIR", "ZZAA")
+    opposite = line("opposite direction", applicability_state="not_applicable")
+    other_actor = line("other actor", actor="other")
+    permission = line("permission", instruction_effect="permission")
+    no_values = line("no printed value", printed_details={})
+    qualified = line("qualified", applicability_state=state)
+    later = line("later", "ZZCC")
+    rows = [primary, same_fir, opposite, other_actor, permission, no_values, qualified, later]
+    original = copy.deepcopy(rows)
+    assert _primary_and_next_valued_call(rows, primary) == [primary, qualified]
+    assert rows == original
+    assert _primary_and_next_valued_call([primary, same_fir, opposite, other_actor, permission, no_values], primary) == [primary]
+    assert _primary_and_next_valued_call([], None) == []
