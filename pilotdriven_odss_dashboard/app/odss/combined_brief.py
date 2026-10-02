@@ -166,7 +166,9 @@ WAFC_CHARTS_PER_PAGE = 3
 # Release-422 independent QA, F2: the token is minted together with the composition it publishes
 # (tests/fixtures/publication_rules_manifest.json pins it beside the enroute rule and the extraction rules).
 # 2 Oct 2026 (v79, ATC-PDF-PRIORITY): page 6 prints calls whose printed conditions are held before unresolved ones.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-02-atc-pdf-priority-v79"
+# 2 Oct 2026 (v80, ATC-AIRWAY-BOUNDARIES): an airway-limited row stays unresolved when a leg inside or crossing out of its
+# FIR has no airway held, so its printed state can differ from v79.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-02-atc-airway-boundaries-v80"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

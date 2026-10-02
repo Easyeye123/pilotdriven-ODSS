@@ -106,7 +106,9 @@ from .extraction_rules import EXTRACTION_RULES
 
 # v13 (ATC-PDF-PRIORITY, 2 Oct 2026): the primary row prefers a call whose printed conditions are held; an airway-only route
 # list ("VIA RTE B346, R474, W21 AND G473") is read against the airways the OFP files inside the notice's own FIR.
-ENROUTE_CONTACT_RULE = "enroute-contact-v13"
+# v14 (ATC-AIRWAY-BOUNDARIES, Codex QA of release 448): an exit leg whose airway is not held, an exit leg after consecutive
+# boundary rows and an exit boundary with no following waypoint leave the FIR's filed airways incomplete.
+ENROUTE_CONTACT_RULE = "enroute-contact-v14"
 # A record whose owning heading the source layout does not establish (parser heading_kind "unresolved").
 _UNRESOLVED_OWNER = "section heading not established from the source layout"
 
@@ -786,25 +788,26 @@ def _route(flight: dict[str, Any]) -> dict[str, Any]:
 
 def _fir_airways(route: dict[str, Any], fir: str) -> tuple[set[str], bool]:
     """The airways the OFP files inside one FIR - every leg from an entry boundary row to the next boundary row, and the
-    leg that crosses out of it - and whether every such leg's airway (or DCT) is held. False when the FIR is never entered."""
+    leg that crosses out of it - and whether every such leg's airway (or DCT) is held. False when the FIR is never entered.
+
+    The crossing-out leg is the first waypoint after the exit, however many boundary rows the OFP prints in between; a
+    leg whose airway is not held, or an exit with no following waypoint, leaves the FIR's airways incomplete
+    (ATC-AIRWAY-BOUNDARIES, Codex QA of release 448)."""
     filed: set[str] = set()
     entered, complete, inside, leaving = False, True, False, False
     for boundary, airway in zip(route.get("boundaries") or [], route.get("airways") or []):
         if boundary:
-            leaving = inside and boundary != fir
+            leaving = (leaving or inside) and boundary != fir
             inside = boundary == fir
             entered = entered or inside
             continue
-        if inside:
+        if inside or leaving:
             if airway is None:
                 complete = False
             elif airway != "DCT":
                 filed.add(airway)
-        elif leaving:
-            if airway and airway != "DCT":
-                filed.add(airway)
             leaving = False
-    return filed, entered and complete
+    return filed, entered and complete and not leaving
 
 
 def _airway_list_condition(text: str, route: dict[str, Any], fir: str) -> dict[str, Any] | None:
