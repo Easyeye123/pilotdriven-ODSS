@@ -108,7 +108,9 @@ from .extraction_rules import EXTRACTION_RULES
 # list ("VIA RTE B346, R474, W21 AND G473") is read against the airways the OFP files inside the notice's own FIR.
 # v14 (ATC-AIRWAY-BOUNDARIES, Codex QA of release 448): an exit leg whose airway is not held, an exit leg after consecutive
 # boundary rows and an exit boundary with no following waypoint leave the FIR's filed airways incomplete.
-ENROUTE_CONTACT_RULE = "enroute-contact-v14"
+# v15 (ATC-AIRWAY-LEG-TRANSITIONS, Codex QA of release 450): a leg touching the FIR stays open across any boundary rows
+# until a waypoint closes it; a touching leg still open at the end of the route leaves the FIR's airways incomplete.
+ENROUTE_CONTACT_RULE = "enroute-contact-v15"
 # A record whose owning heading the source layout does not establish (parser heading_kind "unresolved").
 _UNRESOLVED_OWNER = "section heading not established from the source layout"
 
@@ -787,27 +789,28 @@ def _route(flight: dict[str, Any]) -> dict[str, Any]:
 
 
 def _fir_airways(route: dict[str, Any], fir: str) -> tuple[set[str], bool]:
-    """The airways the OFP files inside one FIR - every leg from an entry boundary row to the next boundary row, and the
-    leg that crosses out of it - and whether every such leg's airway (or DCT) is held. False when the FIR is never entered.
+    """The airways the OFP files on every leg that touches one FIR, and whether each such leg's airway (or DCT) is held.
+    False when the FIR is never entered.
 
-    The crossing-out leg is the first waypoint after the exit, however many boundary rows the OFP prints in between; a
-    leg whose airway is not held, or an exit with no following waypoint, leaves the FIR's airways incomplete
-    (ATC-AIRWAY-BOUNDARIES, Codex QA of release 448)."""
+    A leg runs from one waypoint to the next and its airway is the closing waypoint's airway_in. It touches the FIR when it
+    starts inside it or crosses one of its boundary rows, however many boundary rows it crosses. Boundary rows only move
+    the location; only a waypoint closes a leg, so a touching leg still open at the end of the route is unknown
+    (ATC-AIRWAY-LEG-TRANSITIONS, Codex QA of releases 448 and 450)."""
     filed: set[str] = set()
-    entered, complete, inside, leaving = False, True, False, False
+    entered, complete, inside, touching = False, True, False, False
     for boundary, airway in zip(route.get("boundaries") or [], route.get("airways") or []):
         if boundary:
-            leaving = (leaving or inside) and boundary != fir
+            touching = touching or inside or boundary == fir
             inside = boundary == fir
             entered = entered or inside
             continue
-        if inside or leaving:
+        if touching or inside:
             if airway is None:
                 complete = False
             elif airway != "DCT":
                 filed.add(airway)
-            leaving = False
-    return filed, entered and complete and not leaving
+        touching = False
+    return filed, entered and complete and not touching
 
 
 def _airway_list_condition(text: str, route: dict[str, Any], fir: str) -> dict[str, Any] | None:

@@ -168,7 +168,9 @@ WAFC_CHARTS_PER_PAGE = 3
 # 2 Oct 2026 (v79, ATC-PDF-PRIORITY): page 6 prints calls whose printed conditions are held before unresolved ones.
 # 2 Oct 2026 (v80, ATC-AIRWAY-BOUNDARIES): an airway-limited row stays unresolved when a leg inside or crossing out of its
 # FIR has no airway held, so its printed state can differ from v79.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-02-atc-airway-boundaries-v80"
+# 3 Oct 2026 (v81, ATC-AIRWAY-LEG-TRANSITIONS): an airway-limited row stays unresolved when a leg touching its FIR is
+# still open at the end of the route, so its printed state can differ from v80.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-03-atc-airway-legs-v81"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
