@@ -212,8 +212,10 @@ def test_page_six_cuts_clauses_before_it_drops_a_valued_call_row(tmp_path):
 
 @pytest.mark.parametrize("state", ["conditions_held", "conditions_unresolved"])
 def test_capacity_attempt_keeps_primary_and_next_qualifying_other_fir_call(state):
-    """LABELLED SYNTHETIC: own eligibility and existing order govern the extra
-    slot, not notice identity, number of frequencies or apparent urgency.
+    """LABELLED SYNTHETIC: own eligibility, then held printed conditions, then
+    existing order govern the extra slot - not notice identity, number of
+    frequencies or apparent urgency (ATC-PDF-PRIORITY, 2 Oct 2026: a held call
+    is preferred over an earlier unresolved one).
     """
     from app.odss.operational_format import _primary_and_next_valued_call
 
@@ -232,7 +234,7 @@ def test_capacity_attempt_keeps_primary_and_next_qualifying_other_fir_call(state
     later = line("later", "ZZCC")
     rows = [primary, same_fir, opposite, other_actor, permission, no_values, qualified, later]
     original = copy.deepcopy(rows)
-    assert _primary_and_next_valued_call(rows, primary) == [primary, qualified]
+    assert _primary_and_next_valued_call(rows, primary) == [primary, qualified if state == "conditions_held" else later]
     assert rows == original
     assert _primary_and_next_valued_call([primary, same_fir, opposite, other_actor, permission, no_values], primary) == [primary]
     assert _primary_and_next_valued_call([], None) == []

@@ -165,7 +165,8 @@ WAFC_CHARTS_PER_PAGE = 3
 # is re-created under these rules, never served from the old composition.
 # Release-422 independent QA, F2: the token is minted together with the composition it publishes
 # (tests/fixtures/publication_rules_manifest.json pins it beside the enroute rule and the extraction rules).
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-01-atc-clearance-family-v78"
+# 2 Oct 2026 (v79, ATC-PDF-PRIORITY): page 6 prints calls whose printed conditions are held before unresolved ones.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-02-atc-pdf-priority-v79"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

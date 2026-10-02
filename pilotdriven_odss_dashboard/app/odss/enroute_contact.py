@@ -104,7 +104,9 @@ from typing import Any
 
 from .extraction_rules import EXTRACTION_RULES
 
-ENROUTE_CONTACT_RULE = "enroute-contact-v12"
+# v13 (ATC-PDF-PRIORITY, 2 Oct 2026): the primary row prefers a call whose printed conditions are held; an airway-only route
+# list ("VIA RTE B346, R474, W21 AND G473") is read against the airways the OFP files inside the notice's own FIR.
+ENROUTE_CONTACT_RULE = "enroute-contact-v13"
 # A record whose owning heading the source layout does not establish (parser heading_kind "unresolved").
 _UNRESOLVED_OWNER = "section heading not established from the source layout"
 
@@ -256,6 +258,12 @@ _ROUTE_LIST = re.compile(r"\b([A-Z]{5})-([A-Z]{1,2}\d{1,3})-([A-Z]{5})(?:-([A-Z]
 _ROUTE_PAIR = re.compile(r"(?:\(|, )([A-Z]{1,2}\d{1,3}) ([A-Z]{5})(?=[,)])")
 # A printed contact table row: airway, transfer point, the unit, its primary and secondary frequency.
 _ROUTE_FREQ_ROW = re.compile(r"\b([A-Z]{1,2}\d{1,3}) ([A-Z]{5}) ((?:[A-Z]+ ){1,4}?)(\d{2,3}\.\d{1,3} MHZ)(?: (\d{2,3}\.\d{1,3} MHZ))?")
+# An airway-only route list ("ALL ACFT VIA RTE B346, R474, W21 AND G473 ..."): no waypoint is printed, so the list is read
+# against the airways the OFP files inside the notice's own FIR (ATC-PDF-PRIORITY, 2 Oct 2026).
+_AIRWAY = r"[A-Z]{1,2}\d{1,3}"
+_AIRWAY_EXCEPTION = re.compile(r"\b(?:EXC|EXCEPT|EXCEPTING|EXCLUDING|OTHER THAN|NOT|UNLESS|OUTSIDE|BEYOND|AVOID(?:ING)?)\b")
+_AIRWAY_LIST = re.compile(r"\b(?:VIA|ON|ALONG|USING)\s+(?:ATS\s+)?(?:RTES?|ROUTES?|AWYS?|AIRWAYS?)\s+"
+                          rf"({_AIRWAY}(?:\s*(?:,|/|&|\bAND\b|\bOR\b)\s*{_AIRWAY})*)\b")
 # Printed logon addresses: "USE LOGON ADDRESS PAZN", "THE AFN LOGON ADDRESS FOR JAKARTA FIR IS WIIF", "LOGON TO KZAK".
 _ADDRESS = re.compile(r"\bLOGON ADDRESS(?:ES)?(?: FOR [A-Z][A-Z ]*? FIR)?(?: IS| ARE)? ([A-Z]{4})\b|\bLOG ?ON TO ([A-Z]{4})\b")
 _ADDRESS_STOPWORDS = {"WHEN", "WITH", "THAT", "THIS", "FROM", "INTO", "OVER", "ONLY", "ALSO", "THEN", "THEM", "THEY", "WILL", "BASED", "UPON", "EACH", "BOTH", "SAME", "MUST", "SHALL"}
@@ -754,6 +762,8 @@ def validity_window(validity: Any) -> tuple[datetime | None, datetime | None] | 
 def _route(flight: dict[str, Any]) -> dict[str, Any]:
     names: list[str] = []
     fir_in_effect: list[str | None] = []
+    boundaries: list[str | None] = []
+    airways: list[str | None] = []
     current: str | None = None
     for waypoint in flight.get("route_waypoints") or []:
         if not isinstance(waypoint, dict):
@@ -763,13 +773,59 @@ def _route(flight: dict[str, Any]) -> dict[str, Any]:
             current = boundary
         names.append(_normalise(waypoint.get("name")).upper().lstrip("-"))
         fir_in_effect.append(current)
+        boundaries.append(boundary)
+        airways.append(_normalise(waypoint.get("airway_in")).upper() or None)
     profile: list[tuple[str, int]] = []
     tokens = [t for t in _normalise(flight.get("planned_level_profile")).upper().split("/") if t]
     for index in range(0, len(tokens) - 1, 2):
         if tokens[index + 1].isdigit():
             profile.append((tokens[index], int(tokens[index + 1])))
     last = max((m for m in (_integer(w.get("actm_minutes")) for w in flight.get("route_waypoints") or [] if isinstance(w, dict)) if m is not None), default=None)
-    return {"names": names, "fir_in_effect": fir_in_effect, "profile": profile, "last_minutes": last}
+    return {"names": names, "fir_in_effect": fir_in_effect, "boundaries": boundaries, "airways": airways, "profile": profile, "last_minutes": last}
+
+
+def _fir_airways(route: dict[str, Any], fir: str) -> tuple[set[str], bool]:
+    """The airways the OFP files inside one FIR - every leg from an entry boundary row to the next boundary row, and the
+    leg that crosses out of it - and whether every such leg's airway (or DCT) is held. False when the FIR is never entered."""
+    filed: set[str] = set()
+    entered, complete, inside, leaving = False, True, False, False
+    for boundary, airway in zip(route.get("boundaries") or [], route.get("airways") or []):
+        if boundary:
+            leaving = inside and boundary != fir
+            inside = boundary == fir
+            entered = entered or inside
+            continue
+        if inside:
+            if airway is None:
+                complete = False
+            elif airway != "DCT":
+                filed.add(airway)
+        elif leaving:
+            if airway and airway != "DCT":
+                filed.add(airway)
+            leaving = False
+    return filed, entered and complete
+
+
+def _airway_list_condition(text: str, route: dict[str, Any], fir: str) -> dict[str, Any] | None:
+    """An airway-only route list read against the airways filed inside the notice's FIR: met when one of them is filed
+    there, not met only when every leg there is known and none is; otherwise no condition is added (it stays unresolved)."""
+    upper = classify_text(text)
+    match = _AIRWAY_LIST.search(upper)
+    if not match or not fir:
+        return None
+    # A list inside an exception or negation ("CPDLC SHALL BE USED EXC ON ROUTE L774") does not limit the statement to
+    # those airways; it is left to the restriction it already is.
+    clause = re.split(r"[.;:]", upper[:match.start()])[-1]
+    if _AIRWAY_EXCEPTION.search(clause):
+        return None
+    listed = re.findall(_AIRWAY, match.group(1))
+    filed, known = _fir_airways(route, fir)
+    if any(airway in filed for airway in listed):
+        return {"kind": "route", "text": match.group(0).strip(), "result": "met"}
+    if known:
+        return {"kind": "route", "text": match.group(0).strip(), "result": "not_met"}
+    return None
 
 
 def _planned_level_at(route: dict[str, Any], waypoint: str) -> int | None:
@@ -1486,6 +1542,10 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
                 "result": "unresolved" if level is None else "met" if low <= level <= high else "not_met",
                 "note": f"planned FL{level}" if level is not None else "planned level not held",
             })
+    else:
+        airway_condition = _airway_list_condition(text, route, fir)
+        if airway_condition:
+            notice_conditions.append(airway_condition)
     if re.search(r"\b(?:TEMPORARY FLIGHT RESTRICTIONS?|TFR)\b", classify_text(text)):
         # A later TFR SSR/continuous-communications action retains the
         # notice's geographic/population/exception boundary as unresolved.
@@ -1688,9 +1748,13 @@ def has_printed_values(line: dict[str, Any]) -> bool:
 
 def primary_procedure_line(lines: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The one row every page-6 ladder step prints in full and parity binds on both surfaces: in time order, the first
-    call row that prints a frequency, else the first with any printed value, else the first call row, else the first row."""
+    call row whose printed conditions are held and that prints a frequency, else any printed value; then the same
+    without held conditions; else the first call row, else the first row (ATC-PDF-PRIORITY, 2 Oct 2026)."""
+    held = [l for l in lines if l.get("applicability_state") == "conditions_held"]
     return (
-        next((l for l in lines if is_call_line(l) and (l.get("printed_details") or {}).get("frequencies")), None)
+        next((l for l in held if is_call_line(l) and (l.get("printed_details") or {}).get("frequencies")), None)
+        or next((l for l in held if is_call_line(l) and has_printed_values(l)), None)
+        or next((l for l in lines if is_call_line(l) and (l.get("printed_details") or {}).get("frequencies")), None)
         or next((l for l in lines if is_call_line(l) and has_printed_values(l)), None)
         or next((l for l in lines if is_call_line(l)), None)
         or (lines[0] if lines else None)

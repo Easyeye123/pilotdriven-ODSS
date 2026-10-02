@@ -532,12 +532,15 @@ def _primary_and_next_valued_call(lines: list[dict], primary: dict | None) -> li
     """Bounded capacity attempt in existing action order, before primary-only.
 
     A second row must be a qualifying crew contact with printed values at
-    another FIR. A failed source condition or another actor cannot consume
-    that slot. Selection never changes a held row or its applicability.
+    another FIR; one whose printed conditions are held comes first
+    (ATC-PDF-PRIORITY). A failed source condition or another actor cannot
+    consume that slot. Selection never changes a held row or its applicability.
     """
-    next_call = next((line for line in lines if line is not primary and
-                      is_call_line(line) and has_printed_values(line) and
-                      (not primary or line["fir"] != primary["fir"])), None)
+    candidates = [line for line in lines if line is not primary and
+                  is_call_line(line) and has_printed_values(line) and
+                  (not primary or line["fir"] != primary["fir"])]
+    next_call = next((line for line in candidates if line.get("applicability_state") == "conditions_held"),
+                     candidates[0] if candidates else None)
     return [line for line in lines if line is primary or line is next_call]
 
 
@@ -2125,12 +2128,16 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         elif rows_kind == "calls":
             shown = [line for line in procedure_lines if line is primary or is_call_line(line)]
         elif rows_kind.startswith("valued_per_fir"):
-            seen: set[str] = set()
-            shown = []
-            for line in procedure_lines:
-                if line is primary or (is_call_line(line) and has_printed_values(line) and line["fir"] not in seen):
-                    shown.append(line)
-                    seen.add(line["fir"])
+            # One valued crew call per FIR, the FIR's held one first (ATC-PDF-PRIORITY).
+            valued = [line for line in procedure_lines if is_call_line(line) and has_printed_values(line)]
+            chosen: dict[str, dict] = {}
+            for line in valued:
+                current = chosen.get(line["fir"])
+                if current is None or (current.get("applicability_state") != "conditions_held"
+                                       and line.get("applicability_state") == "conditions_held"):
+                    chosen[line["fir"]] = line
+            shown = [line for line in procedure_lines if line is primary or
+                     (any(line is pick for pick in chosen.values()) and not (primary and line["fir"] == primary["fir"]))]
         elif rows_kind == "primary_plus_source_status":
             shown = _primary_and_next_valued_call(procedure_lines, primary)
         else:

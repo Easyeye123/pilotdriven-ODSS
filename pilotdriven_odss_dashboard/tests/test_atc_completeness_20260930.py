@@ -173,6 +173,11 @@ def test_independent_original_duty_and_availability_classes(filename, identity, 
         assert row['actor'] == 'service'
     elif effect == 'not_required':
         assert not is_call_line(row)
+    elif identity == '1A2393/26':
+        # ATC-PDF-PRIORITY (2 Oct 2026): none of its listed airways is filed inside VTBB on this OFP.
+        assert row['actor'] == 'crew'
+        assert {'kind': 'route', 'text': 'VIA RTE B346, R474, W21 AND G473', 'result': 'not_met'} in row['conditions']
+        assert row['applicability_state'] == 'not_applicable'
     else:
         assert row['actor'] == 'crew'
         assert row['applicability_state'] == 'conditions_unresolved'

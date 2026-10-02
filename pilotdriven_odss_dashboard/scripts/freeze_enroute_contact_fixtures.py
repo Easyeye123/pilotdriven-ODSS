@@ -49,7 +49,8 @@ CASES = (
     ("SQ606-SIN-ICN-06SEP", "SQ60606092026SIN.pdf"),
     ("SQ194-SIN-HAN", "lido-briefing_SQ_194_16Aug2026_SIN_HAN.pdf"),
 )
-WAYPOINT_FIELDS = ("name", "fir_boundary", "actm_minutes", "source_page")
+# ATC-PDF-PRIORITY (2 Oct 2026): each leg's filed airway, so an airway-only route list is read the same on both sides.
+WAYPOINT_FIELDS = ("name", "fir_boundary", "actm_minutes", "source_page", "airway_in")
 FLIGHT_FIELDS = ("departure", "destination", "planned_level_profile", "scheduled_departure_utc", "actual_takeoff_utc", "extraction_rules", "notam_procedure_records", "notam_fir_names", "bobcat", "slot_allocation_unread")
 
 
