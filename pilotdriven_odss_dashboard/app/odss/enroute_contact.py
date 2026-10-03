@@ -110,7 +110,9 @@ from .extraction_rules import EXTRACTION_RULES
 # boundary rows and an exit boundary with no following waypoint leave the FIR's filed airways incomplete.
 # v15 (ATC-AIRWAY-LEG-TRANSITIONS, Codex QA of release 450): a leg touching the FIR stays open across any boundary rows
 # until a waypoint closes it; a touching leg still open at the end of the route leaves the FIR's airways incomplete.
-ENROUTE_CONTACT_RULE = "enroute-contact-v15"
+# v16 (ATC-ABSENCE-WORDING, Codex review of release 452): an empty call list states only that no early-contact
+# instruction was identified - never that the source's frequencies or lead times are absent (SQ882 09 Sep 1A2345/26).
+ENROUTE_CONTACT_RULE = "enroute-contact-v16"
 # A record whose owning heading the source layout does not establish (parser heading_kind "unresolved").
 _UNRESOLVED_OWNER = "section heading not established from the source layout"
 
@@ -457,7 +459,7 @@ _CRUISE_MARGIN_MINUTES = 60
 
 STATE_SENTENCES = {
     "no_fir_rows_held": "No FIR boundary row is held in the parsed OFP; early-contact requirements are not established from this source.",
-    "no_procedure_held": "No early-contact requirement is held in this OFP's FIR notices or in an approved reference; lead times and frequencies are not held and are not inferred from crossing times.",
+    "no_procedure_held": "No early-contact instruction is identified in this OFP's FIR notices or in an approved reference; the full FIR NOTAM source records hold the OFP's other communications notices. Lead times and frequencies are not inferred from crossing times.",
 }
 NO_ALLOCATION_SENTENCE = "No slot-control allocation is printed in this OFP."
 

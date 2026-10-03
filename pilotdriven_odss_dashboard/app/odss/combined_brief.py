@@ -170,7 +170,9 @@ WAFC_CHARTS_PER_PAGE = 3
 # FIR has no airway held, so its printed state can differ from v79.
 # 3 Oct 2026 (v81, ATC-AIRWAY-LEG-TRANSITIONS): an airway-limited row stays unresolved when a leg touching its FIR is
 # still open at the end of the route, so its printed state can differ from v80.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-03-atc-airway-legs-v81"
+# 4 Oct 2026 (v82, ATC-ABSENCE-WORDING): an empty early-call list no longer says frequencies and lead times are not held;
+# the communications finding no longer says procedures are unavailable, so its printed wording can differ from v81.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-04-atc-absence-wording-v82"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

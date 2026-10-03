@@ -82,7 +82,7 @@ def _run(name: str, source: Path, root: Path, flight_id: int) -> dict:
         communications = [item for item in findings if item["engine"] == "communications"]
         assert len(communications) == 1
         assert communications[0]["severity"] == "unknown"
-        assert communications[0]["title"] == "FIR communication procedures unavailable"
+        assert communications[0]["title"] == "No approved FIR communication reference"
         assert communications[0]["data"]["reference_status"] != "approved"
         assert max(
             item["data"].get("maximum_msa_hundreds_ft", 0)

@@ -3495,11 +3495,14 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         findings.append(finding(
             "communications",
             "unknown",
-            "FIR communication procedures unavailable",
-            "Current approved communication procedures are unavailable.",
+            "No approved FIR communication reference",
+            "No approved communications reference library is held; early-contact instructions are read from the OFP's own FIR notices.",
             [
                 f"OFP route crosses {len(boundary_names)} FIR boundary or boundaries.",
-                "Early-contact, frequency and reporting requirements are not held.",
+                # ATC-ABSENCE-WORDING (4 Oct 2026): an unapproved library is not the absence of the source's own values.
+                "Early ATC / FIR calls lists the instructions identified in the OFP's FIR notices with their printed "
+                "frequencies and lead times; the full FIR NOTAM source records keep the other notices. Lead times and "
+                "frequencies are not inferred from crossing times.",
             ],
             {
                 "reference_status": REFERENCE_LIBRARY_METADATA["status"],

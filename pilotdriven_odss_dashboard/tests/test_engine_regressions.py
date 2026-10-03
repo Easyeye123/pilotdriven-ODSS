@@ -2674,8 +2674,9 @@ def test_unapproved_communication_samples_fail_closed() -> None:
         if item["engine"] == "communications"
     )
     assert communication["severity"] == "unknown"
-    assert communication["title"] == "FIR communication procedures unavailable"
-    assert "approved communication procedures are unavailable" in communication["summary"]
+    # ATC-ABSENCE-WORDING (4 Oct 2026): the unapproved library is stated as such, never as absent source values.
+    assert communication["title"] == "No approved FIR communication reference"
+    assert "No approved communications reference library is held" in communication["summary"]
     assert all("ACTM 00.00" not in item["summary"] for item in findings)
     assert all("Chennai ATS/FIS" not in str(item) for item in findings)
 
