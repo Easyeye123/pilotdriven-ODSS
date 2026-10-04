@@ -34,6 +34,7 @@ from concurrent.futures import (
 )
 from datetime import datetime, timezone
 from hashlib import sha256
+import math
 import os
 import re
 import shutil
@@ -48,6 +49,10 @@ from pypdf import PdfReader
 CHART_KINDS = ("sigwx_high_level", "sigwx_mid_level", "wind_temperature", "other")
 _MAX_TEXT_CHARS = 200
 _MIN_IMAGE_BYTES = 30 * 1024
+_MIN_IMAGE_DIMENSION = 600
+_MIN_IMAGE_PIXELS = 500_000
+_MIN_RENDERED_PAGE_COVERAGE = 0.48
+_MIN_RENDERED_PAGE_SPAN = 0.55
 _MAX_CLASSIFIED_CHARTS = 40
 _TOOL_NAME = "record_chart_classification"
 _OCR_ENGINE = "tesseract"
@@ -298,21 +303,284 @@ def _bedrock_client():
     return boto3.client("bedrock-runtime", region_name=region) if region else boto3.client("bedrock-runtime")
 
 
-def largest_page_image(page: Any) -> bytes | None:
-    """The biggest embedded image on a page, or None."""
-    best: bytes | None = None
+def _page_box(page: Any) -> tuple[float, float, float, float] | None:
+    """Return a finite, positive crop/media box in page user-space units."""
+    box = getattr(page, "cropbox", None) or getattr(page, "mediabox", None)
+    if box is None:
+        return None
+    try:
+        values = tuple(float(value) for value in (
+            box.left,
+            box.bottom,
+            box.right,
+            box.top,
+        ))
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+    left, bottom, right, top = values
+    if not all(math.isfinite(value) for value in values):
+        return None
+    if right <= left or top <= bottom:
+        return None
+    return left, bottom, right, top
+
+
+def _polygon_area(points: list[tuple[float, float]]) -> float:
+    if len(points) < 3:
+        return 0.0
+    return abs(sum(
+        x1 * y2 - x2 * y1
+        for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1])
+    )) / 2.0
+
+
+def _clip_polygon_to_page(
+    points: list[tuple[float, float]],
+    page_box: tuple[float, float, float, float],
+) -> list[tuple[float, float]]:
+    """Clip a transformed unit-image rectangle to the visible page box."""
+    left, bottom, right, top = page_box
+
+    def clip(
+        polygon: list[tuple[float, float]],
+        inside: Any,
+        intersect: Any,
+    ) -> list[tuple[float, float]]:
+        if not polygon:
+            return []
+        output: list[tuple[float, float]] = []
+        previous = polygon[-1]
+        previous_inside = inside(previous)
+        for current in polygon:
+            current_inside = inside(current)
+            if current_inside != previous_inside:
+                output.append(intersect(previous, current))
+            if current_inside:
+                output.append(current)
+            previous = current
+            previous_inside = current_inside
+        return output
+
+    def vertical_intersection(
+        first: tuple[float, float],
+        second: tuple[float, float],
+        x_value: float,
+    ) -> tuple[float, float]:
+        x1, y1 = first
+        x2, y2 = second
+        if x2 == x1:
+            return x_value, y1
+        ratio = (x_value - x1) / (x2 - x1)
+        return x_value, y1 + ratio * (y2 - y1)
+
+    def horizontal_intersection(
+        first: tuple[float, float],
+        second: tuple[float, float],
+        y_value: float,
+    ) -> tuple[float, float]:
+        x1, y1 = first
+        x2, y2 = second
+        if y2 == y1:
+            return x1, y_value
+        ratio = (y_value - y1) / (y2 - y1)
+        return x1 + ratio * (x2 - x1), y_value
+
+    clipped = points
+    clipped = clip(
+        clipped,
+        lambda point: point[0] >= left,
+        lambda first, second: vertical_intersection(first, second, left),
+    )
+    clipped = clip(
+        clipped,
+        lambda point: point[0] <= right,
+        lambda first, second: vertical_intersection(first, second, right),
+    )
+    clipped = clip(
+        clipped,
+        lambda point: point[1] >= bottom,
+        lambda first, second: horizontal_intersection(first, second, bottom),
+    )
+    return clip(
+        clipped,
+        lambda point: point[1] <= top,
+        lambda first, second: horizontal_intersection(first, second, top),
+    )
+
+
+def _rendered_image_geometry(
+    matrix: Any,
+    page_box: tuple[float, float, float, float] | None,
+) -> dict[str, float] | None:
+    """Measure the visible footprint of a PDF image's transformed unit box."""
+    if page_box is None:
+        return None
+    try:
+        a, b, c, d, e, f = (float(value) for value in matrix[:6])
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not all(math.isfinite(value) for value in (a, b, c, d, e, f)):
+        return None
+    points = [
+        (e, f),
+        (a + e, b + f),
+        (a + c + e, b + d + f),
+        (c + e, d + f),
+    ]
+    clipped = _clip_polygon_to_page(points, page_box)
+    visible_area = _polygon_area(clipped)
+    if visible_area <= 0:
+        return None
+    left, bottom, right, top = page_box
+    page_width = right - left
+    page_height = top - bottom
+    visible_width = max(x for x, _ in clipped) - min(x for x, _ in clipped)
+    visible_height = max(y for _, y in clipped) - min(y for _, y in clipped)
+    return {
+        "coverage": min(1.0, visible_area / (page_width * page_height)),
+        "width_span": min(1.0, max(0.0, visible_width) / page_width),
+        "height_span": min(1.0, max(0.0, visible_height) / page_height),
+    }
+
+
+def _image_key(image: Any) -> str | None:
+    name = str(getattr(image, "name", "") or "")
+    if not name:
+        return None
+    stem = name.rsplit(".", 1)[0]
+    return stem if stem.startswith("/") else f"/{stem}"
+
+
+def _image_dimensions(image: Any) -> tuple[int, int] | None:
+    try:
+        raster = image.image
+        width, height = (int(value) for value in raster.size)
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def _page_image_details(
+    page: Any,
+    placements: dict[str, dict[str, float]] | None = None,
+) -> list[dict[str, Any]]:
+    details: list[dict[str, Any]] = []
     try:
         images = list(page.images)
     except Exception:
-        return None
+        return details
     for image in images:
         try:
             data = image.data
         except Exception:
             continue
-        if data and (best is None or len(data) > len(best)):
-            best = data
-    return best
+        if not data:
+            continue
+        dimensions = _image_dimensions(image)
+        width, height = dimensions or (None, None)
+        details.append({
+            "data": data,
+            "width": width,
+            "height": height,
+            "pixels": width * height if width and height else 0,
+            "geometry": (placements or {}).get(_image_key(image) or ""),
+        })
+    return details
+
+
+def _substantial_raster_candidate(details: dict[str, Any]) -> bool:
+    """Accept a page-dominating raster, including highly compressed charts."""
+    geometry = details.get("geometry")
+    dimension_evidence = bool(
+        int(details.get("width") or 0) >= _MIN_IMAGE_DIMENSION
+        and int(details.get("height") or 0) >= _MIN_IMAGE_DIMENSION
+        and int(details.get("pixels") or 0) >= _MIN_IMAGE_PIXELS
+    )
+    if geometry is None:
+        # Compatibility for PageObject-like readers without pypdf's visitor
+        # geometry. Intrinsic dimensions preserve sparse, highly compressed
+        # charts; the previous byte threshold remains the final fallback.
+        return bool(
+            dimension_evidence or len(details["data"]) >= _MIN_IMAGE_BYTES
+        )
+    return bool(
+        dimension_evidence
+        and geometry["coverage"] >= _MIN_RENDERED_PAGE_COVERAGE
+        and geometry["width_span"] >= _MIN_RENDERED_PAGE_SPAN
+        and geometry["height_span"] >= _MIN_RENDERED_PAGE_SPAN
+    )
+
+
+def _page_text_and_image_placements(
+    page: Any,
+) -> tuple[str, dict[str, dict[str, float]]]:
+    """Extract page text and the largest visible placement per image."""
+    page_box = _page_box(page)
+    placements: dict[str, dict[str, float]] = {}
+
+    def record_placement(
+        operator: Any,
+        operands: Any,
+        matrix: Any,
+        _tm: Any,
+    ) -> None:
+        if operator != b"Do" or not operands:
+            return
+        geometry = _rendered_image_geometry(matrix, page_box)
+        if geometry is None:
+            return
+        key = str(operands[0])
+        previous = placements.get(key)
+        if previous is None or geometry["coverage"] > previous["coverage"]:
+            placements[key] = geometry
+
+    try:
+        text = (page.extract_text(visitor_operand_before=record_placement) or "").strip()
+    except TypeError:
+        try:
+            text = (page.extract_text() or "").strip()
+        except Exception:
+            text = ""
+    except Exception:
+        text = ""
+    return text, placements
+
+
+def _select_chart_image_details(
+    page: Any,
+    placements: dict[str, dict[str, float]] | None = None,
+) -> dict[str, Any] | None:
+    """Select one substantial chart raster by rendered coverage first.
+
+    Detection, re-extraction, OCR and AI classification must all consume the
+    same embedded image.  Intrinsic pixels and encoded bytes are deterministic
+    tie-breakers only; they must not let a large logo or inset panel replace a
+    page-dominating chart when placement geometry is available.
+    """
+    if placements is None:
+        _, placements = _page_text_and_image_placements(page)
+    candidates = [
+        details
+        for details in _page_image_details(page, placements)
+        if _substantial_raster_candidate(details)
+    ]
+    return max(
+        candidates,
+        key=lambda item: (
+            (item.get("geometry") or {}).get("coverage", 0.0),
+            item["pixels"],
+            len(item["data"]),
+        ),
+        default=None,
+    )
+
+
+def largest_page_image(page: Any) -> bytes | None:
+    """The largest-coverage embedded image on a page, or None."""
+    details = _select_chart_image_details(page)
+    return details["data"] if details else None
 
 
 def detect_chart_appendix(pdf_path: str | Path) -> list[dict[str, Any]]:
@@ -320,20 +588,36 @@ def detect_chart_appendix(pdf_path: str | Path) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     reader = PdfReader(str(pdf_path))
     for number, page in enumerate(reader.pages, start=1):
-        try:
-            text = (page.extract_text() or "").strip()
-        except Exception:
-            text = ""
+        text, placements = _page_text_and_image_placements(page)
         if len(text) > _MAX_TEXT_CHARS:
             continue
-        data = largest_page_image(page)
-        if not data or len(data) < _MIN_IMAGE_BYTES:
+        details = _select_chart_image_details(page, placements)
+        if details is None:
             continue
+        data = details["data"]
+        geometry = details.get("geometry")
+        dimension_evidence = bool(
+            int(details.get("width") or 0) >= _MIN_IMAGE_DIMENSION
+            and int(details.get("height") or 0) >= _MIN_IMAGE_DIMENSION
+            and int(details.get("pixels") or 0) >= _MIN_IMAGE_PIXELS
+        )
         media = _media_type(data)
         candidates.append({
             "page_number": number,
             "image_sha256": sha256(data).hexdigest(),
             "image_bytes": len(data),
+            "image_width": details.get("width"),
+            "image_height": details.get("height"),
+            "rendered_page_coverage": (
+                round(geometry["coverage"], 6) if geometry else None
+            ),
+            "detection_basis": (
+                "page-dominating-raster"
+                if geometry
+                else "intrinsic-raster-dimensions"
+                if dimension_evidence
+                else "legacy-byte-fallback"
+            ),
             "media_type": media,
         })
     return candidates
@@ -456,6 +740,10 @@ def build_weather_chart_manifest(pdf_path: str | Path) -> dict[str, Any]:
             "media_type": candidate["media_type"],
             "image_sha256": candidate["image_sha256"],
             "image_bytes": candidate["image_bytes"],
+            "image_width": candidate.get("image_width"),
+            "image_height": candidate.get("image_height"),
+            "rendered_page_coverage": candidate.get("rendered_page_coverage"),
+            "detection_basis": candidate.get("detection_basis"),
             "kind": "unclassified",
             "classification_status": "unclassified",
             "verified": False,

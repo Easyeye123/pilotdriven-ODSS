@@ -1,0 +1,44 @@
+{
+  "A3918/26": {
+    "notam_id": "A3918/26",
+    "item_e_text": "RWY 01L/19R CLSD EXC TAX BTN TWY C AND TWY V",
+    "raw": null,
+    "summary": "Rwy 01L/19R closed or unavailable during the applicable destination window."
+  },
+  "A3920/26": {
+    "notam_id": "A3920/26",
+    "item_e_text": "RWY 01L/19R CLSD EXC TAX BTN TWY W AND TWY H",
+    "raw": null,
+    "summary": "Rwy 01L/19R closed or unavailable during the applicable destination window."
+  },
+  "A2888/26": {
+    "notam_id": "A2888/26",
+    "item_e_text": "IAC ILS-01 ILS Z RWY 03L DATED 10 JAN 2013 SUSPENDED. IAC VOR-01 VOR Z RWY 21R DATED 04 APR 2013 SUSPENDED. IAC RNAV-01 RNAV (GNSS) RWY 03R DATED 31 DEC 2020 SUSPENDED. AERONAUTICAL DATA TABULATION RNAV-01A RNAV (GNSS) RWY 03R DATED 09 JAN 2014 SUSPENDED. IAC RNAV-02 RNAV (GNSS) RWY 21L DATED 31 DEC 2020 SUSPENDED. AERONAUTICAL DATA TABULATION RNAV-02A RNAV (GNSS) RWY 21L DATED 01 MAY 2014 SUSPENDED.",
+    "raw": null,
+    "summary": "ILS RWY 03L unavailable during the applicable departure window."
+  },
+  "A2891/26": {
+    "notam_id": "A2891/26",
+    "item_e_text": "IAC VOR-02 VOR Y RWY 21R DATED 10 JAN 2013 WITHDRAWN. IAC ILS-02 ILS Y RWY 03L DATED 18 AUG 2016 WITHDRAWN. IAC ILS-05 ILS X RWY 03R DATED 21 AUG 2014 WITHDRAWN. IAC ILS-06 ILS W RWY 03R DATED 21 AUG 2014 WITHDRAWN.",
+    "raw": null,
+    "summary": "VOR RWY 21R unavailable during the applicable departure window."
+  },
+  "A2886/26": {
+    "notam_id": "A2886/26",
+    "item_e_text": "IAC VOR-01 VOR Z RWY 06 DATED 05 JAN 2017 SUSPENDED. IAC VOR-02 VOR Z RWY 24 DATED 05 JAN 2017 SUSPENDED. IAC RNAV-01 RNAV (GNSS) RWY 06 DATED 17 AUG 2017 SUSPENDED. AERONAUTICAL DATA TABULATION RNAV-01A RNAV (GNSS) RWY 06 DATED 18 NOV 2010 SUSPENDED. IAC RNAV-02 RNAV (GNSS) RWY 24 DATED 17 AUG 2017 SUSPENDED. AERONAUTICAL DATA TABULATION RNAV-02A RNAV (GNSS) RWY 24 DATED 18 NOV 2010 SUSPENDED.",
+    "raw": null,
+    "summary": "VOR RWY 06 unavailable during the applicable alternate window."
+  },
+  "A2885/26": {
+    "notam_id": "A2885/26",
+    "item_e_text": "IAC ILS-01 ILS Z RWY 06 CAT II DATED 08 DEC 2016 WITHDRAWN. IAC ILS-03 ILS Z RWY 24 CAT II DATED 08 DEC 2016 WITHDRAWN.",
+    "raw": null,
+    "summary": "ILS RWY 06 unavailable during the applicable alternate window."
+  },
+  "A2654/26": {
+    "notam_id": "A2654/26",
+    "item_e_text": "IAC VOR-01 VOR Z RWY 01 DATED 03 JAN 2019 SUSPENDED. IAC RNAV-05 RNAV (GNSS) RWY 01 DATED 23 MAY 2019 SUSPENDED. AERONAUTICAL DATA TABULATION RNAV-05A RNAV (GNSS) RWY 01 DATED 26 MAR 2020 SUSPENDED. IAC RNAV-06 RNAV (GNSS) RWY 19 DATED 24 MAY 2018 SUSPENDED. AERONAUTICAL DATA TABULATION RNAV-06A RNAV (GNSS) RWY 19 DATED 01 FEB 2018 SUSPENDED.",
+    "raw": null,
+    "summary": "VOR RWY 01 unavailable during the applicable alternate window."
+  }
+}

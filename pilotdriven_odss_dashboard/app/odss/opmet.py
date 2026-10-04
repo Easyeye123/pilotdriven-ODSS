@@ -26,6 +26,7 @@ from urllib.parse import urlencode
 
 import httpx
 
+from .report_facts import operational_reference_times
 from .snapshot_governance import (
     govern_snapshot,
     mark_snapshot_reused,
@@ -207,10 +208,11 @@ def _station_forecast_window(
         if isinstance(item, dict)
     }
     before_minutes, after_minutes = _weather_window_minutes(flight)
+    departure_time, arrival_time = operational_reference_times(flight)
     anchor = (
-        _utc(flight.get("scheduled_departure_utc"))
+        departure_time
         if station == departure
-        else _utc(flight.get("scheduled_arrival_utc"))
+        else arrival_time
         if station == destination or station in destination_alternates
         else None
     )
@@ -526,8 +528,7 @@ def enrich_official_opmet(
         flight["official_weather_review"] = review
         return review
 
-    departure = _utc(flight.get("scheduled_departure_utc"))
-    arrival = _utc(flight.get("scheduled_arrival_utc"))
+    departure, arrival = operational_reference_times(flight)
     supplied = snapshots or {}
     raw_metar_snapshot = supplied.get("metar") or fetch_awc_product(
         AWC_METAR_PATH,

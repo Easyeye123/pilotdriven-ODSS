@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import base64
 from collections.abc import Callable
+from contextlib import asynccontextmanager, contextmanager
+import fcntl
 from hashlib import sha256
-from contextlib import asynccontextmanager
 import json
 import logging
 import os
@@ -12,6 +14,7 @@ import secrets
 import sqlite3
 from pathlib import Path
 import traceback
+from typing import Any
 from urllib.parse import urlsplit
 import uuid
 
@@ -31,12 +34,15 @@ from .analysis import (
 )
 from .config import APP_VERSION, BASE_DIR, DATA_DIR
 from .database import (
+    abort_company_briefing_reference_publication,
     attach_report,
     claim_analysis,
+    commit_company_briefing_reference_publication,
     complete_analysis,
     create_flight,
     create_personal_note,
     delete_personal_note,
+    fail_company_briefing_reference_publication,
     get_flight_by_analysis_id,
     get_flight_by_service_request,
     get_flight_for_tenant,
@@ -44,6 +50,8 @@ from .database import (
     init_db,
     list_flights,
     record_audit_event,
+    find_company_briefing_reference_publication,
+    prepare_company_briefing_reference_publication,
     restore_analysis_snapshot,
     restore_personal_note,
     restore_analysis_state,
@@ -61,8 +69,14 @@ from .odss.profile_chart_delivery import (
     held_profile_chart,
     render_held_profile_chart_page,
 )
+from .odss.governed_deferred_extract import (
+    governed_deferred_extracts,
+    normalize_governed_deferred_reference_payload,
+)
 from .odss.combined_brief import (
-    COMBINED_BRIEFING_SCHEMA_VERSION,
+    COMBINED_BRIEFING_FORMAT_HEADER,
+    COMBINED_BRIEFING_PUBLICATION_FORMAT,
+    combined_briefing_cache_token,
     combined_briefing_filename,
     render_combined_briefing,
 )
@@ -70,6 +84,7 @@ from .odss.reporting import render_pdf
 from .odss.surface_overlays import (
     SurfaceOverlayRequest,
     attach_surface_report_maps,
+    validated_airport_surface_index,
     validated_surface_overlays,
 )
 from .odss_map_v06.api import (
@@ -114,6 +129,48 @@ UPLOAD_CHUNK_BYTES = 1024 * 1024
 AUTH_REALM = "PilotDriven ODSS"
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _combined_report_lock(flight_id: Any):
+    """Serialise one flight's on-demand combined-report cache writers.
+
+    The file lock also coordinates separate service worker processes. Cache
+    files are content-addressed, but a lock still prevents duplicate renders
+    and keeps pruning from racing another writer.
+    """
+
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = REPORT_DIR / f".flight_{int(flight_id)}_combined.lock"
+    with lock_path.open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _prune_combined_report_cache(
+    flight_id: Any,
+    *,
+    keep: Path,
+    max_entries: int = 4,
+) -> None:
+    """Bound content-addressed cache growth while the flight lock is held."""
+
+    candidates = sorted(
+        REPORT_DIR.glob(f"flight_{int(flight_id)}_combined_*.pdf"),
+        key=lambda path: path.stat().st_mtime_ns,
+        reverse=True,
+    )
+    retained = {keep}
+    for candidate in candidates:
+        if candidate == keep:
+            continue
+        if len(retained) < max_entries:
+            retained.add(candidate)
+            continue
+        candidate.unlink(missing_ok=True)
 
 
 def _configured_auth() -> tuple[str, str] | None:
@@ -512,6 +569,74 @@ def _refresh_reports_with_primary_map(flight, result: dict) -> None:
         _record_map_refresh_warning(result.get("analysis_path"), error_type)
 
 
+def _carry_forward_company_briefing_references(
+    result: dict,
+    previous_analysis: dict | None,
+    *,
+    tenant_id: str | None,
+    actor_id: str | None,
+    analysis_id: str,
+    previous_analysis_path: str | None,
+) -> dict[str, Any] | None:
+    """Retain still-valid governed PDF evidence across timing re-analysis."""
+
+    previous = (previous_analysis or {}).get("company_briefing_references")
+    if not isinstance(previous, dict) or not result.get("analysis_path"):
+        return None
+    analysis_path = Path(str(result["analysis_path"]))
+    current = load_analysis(str(analysis_path))
+    if not current:
+        raise OSError("Regenerated analysis JSON is unavailable")
+    try:
+        normalized = normalize_governed_deferred_reference_payload(
+            (current.get("flight") or {}).get("deferred_items") or [],
+            previous,
+            flight=current.get("flight") or {},
+        )
+    except ValueError:
+        logger.warning(
+            "Stored company briefing references no longer bind after "
+            "re-analysis; governed PDF evidence was cleared."
+        )
+        return None
+    current["company_briefing_references"] = normalized
+    staged = analysis_path.with_name(
+        f"{analysis_path.name}.company-briefing-carry-{uuid.uuid4().hex}.tmp"
+    )
+    try:
+        staged.write_text(json.dumps(current, indent=2), encoding="utf-8")
+        publish_staged_artifacts([(staged, analysis_path)])
+        if tenant_id and actor_id:
+            prior_sha256 = None
+            source_publication_id = None
+            if previous_analysis_path:
+                previous_path = Path(str(previous_analysis_path))
+                if previous_path.is_file():
+                    prior_sha256 = sha256(previous_path.read_bytes()).hexdigest()
+                    source_publication = (
+                        find_company_briefing_reference_publication(
+                            tenant_id=tenant_id,
+                            analysis_id=analysis_id,
+                            target_analysis_path=str(previous_path),
+                            states=("committed",),
+                        )
+                    )
+                    if source_publication is not None:
+                        source_publication_id = str(source_publication["id"])
+            return {
+                "tenant_id": tenant_id,
+                "actor_id": actor_id,
+                "analysis_id": analysis_id,
+                "reference_count": len(normalized["references"]),
+                "governed_reference_status": normalized["status"],
+                "prior_artifact_sha256": prior_sha256,
+                "source_publication_operation_id": source_publication_id,
+            }
+    finally:
+        staged.unlink(missing_ok=True)
+    return None
+
+
 def _execute_analysis(
     flight_id: int,
     flight,
@@ -533,6 +658,12 @@ def _execute_analysis(
     previous_analysis = load_analysis(flight["analysis_path"])
     previous_surface_overlays = (
         (previous_analysis or {}).get("flight", {}).get("surface_overlays") or []
+    )
+    previous_airport_surface_index = (
+        (previous_analysis or {})
+        .get("flight", {})
+        .get("airport_surface_index")
+        or []
     )
     previous_weather_window = (
         (previous_analysis or {})
@@ -564,6 +695,7 @@ def _execute_analysis(
                 timing_reference=_timing_reference_from_row(flight),
                 personal_notes=[dict(note) for note in list_personal_notes(flight_id)],
                 surface_overlays=previous_surface_overlays,
+                airport_surface_index=previous_airport_surface_index,
                 weather_window_preference=(
                     weather_window_preference or previous_weather_window
                 ),
@@ -584,6 +716,14 @@ def _execute_analysis(
                 exc.error_type,
                 exc_info=True,
             )
+        carried_company_references = _carry_forward_company_briefing_references(
+            result,
+            previous_analysis,
+            tenant_id=tenant_id,
+            actor_id=(str(flight["user_id"]) if flight["user_id"] else None),
+            analysis_id=_public_analysis_id(flight),
+            previous_analysis_path=flight["analysis_path"],
+        )
         if flight["tenant_id"] and flight["user_id"]:
             result.update(
                 generate_level3_artifacts(
@@ -614,6 +754,35 @@ def _execute_analysis(
         )
         if report_failure is None:
             _refresh_reports_with_primary_map(flight, result)
+        if carried_company_references is not None:
+            final_analysis_path = Path(str(result["analysis_path"]))
+            record_audit_event(
+                tenant_id=str(carried_company_references["tenant_id"]),
+                actor_id=str(carried_company_references["actor_id"]),
+                action="analysis.company_briefing_references_carried_forward",
+                resource_type="analysis",
+                resource_id=str(carried_company_references["analysis_id"]),
+                details={
+                    "reference_count": carried_company_references[
+                        "reference_count"
+                    ],
+                    "governed_reference_status": carried_company_references[
+                        "governed_reference_status"
+                    ],
+                    "prior_artifact_sha256": carried_company_references[
+                        "prior_artifact_sha256"
+                    ],
+                    "new_artifact_sha256": sha256(
+                        final_analysis_path.read_bytes()
+                    ).hexdigest(),
+                    "source_publication_operation_id": (
+                        carried_company_references[
+                            "source_publication_operation_id"
+                        ]
+                    ),
+                    "reason": "analysis_recalculated_and_binding_revalidated",
+                },
+            )
         update_status(flight_id, "Completed", tenant_id=tenant_id)
         for (previous_path, directory), (new_path, _) in zip(
             previous_artifacts,
@@ -1215,6 +1384,9 @@ class ServiceTimingRequest(BaseModel):
     reference_waypoint: str | None = None
     weather_before_minutes: int | None = Field(default=None, ge=0, le=720)
     weather_after_minutes: int | None = Field(default=None, ge=0, le=720)
+    # Release-430 QA, O1: answer 202 at once and finish the re-analysis off-request (the delivery path cuts a response
+    # at 120 s); the caller polls the analysis and verifies the committed timing the summary states.
+    respond_async: bool = False
 
 
 class ServiceWeatherWindowRequest(BaseModel):
@@ -1229,6 +1401,13 @@ class ServicePersonalNoteRequest(BaseModel):
     note_text: str = Field(min_length=1, max_length=2_000)
     include_level1: StrictBool
     include_level2: StrictBool
+
+
+class ServiceCompanyBriefingReferencesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    status: str = Field(pattern="^(available|unavailable)$")
+    references: list[dict[str, Any]] = Field(min_length=0, max_length=16)
 
 
 class ServiceLevel3AnswerRequest(BaseModel):
@@ -1293,6 +1472,7 @@ def _publish_surface_overlay_reports(
     flight,
     analysis: dict,
     overlays: list[dict],
+    airport_surface_index: list[dict] | None = None,
 ) -> None:
     analysis_path = _stored_file(
         flight["analysis_path"],
@@ -1312,9 +1492,16 @@ def _publish_surface_overlay_reports(
     updated = json.loads(json.dumps(analysis))
     updated_flight = updated.setdefault("flight", {})
     updated_flight["surface_overlays"] = overlays
+    if airport_surface_index is not None:
+        updated_flight["airport_surface_index"] = airport_surface_index
     updated.setdefault("view", {})["surface_overlays"] = _surface_overlay_summary(
         overlays
     )
+    if airport_surface_index is not None:
+        updated_view = updated.setdefault("view", {})
+        updated_view.setdefault("briefing", {})["airport_surface_index"] = (
+            airport_surface_index
+        )
     route_map_path, route_map_label = _surface_report_route_map(updated)
     warnings = (updated.get("view") or {}).get("warnings") or []
     findings = updated.get("findings") or []
@@ -1379,6 +1566,22 @@ def _require_current_reports(flight) -> None:
     raise HTTPException(status_code=409, detail=REPORTS_NOT_CURRENT_DETAIL)
 
 
+def _service_timing_summary(flight) -> dict | None:
+    keys = flight.keys() if hasattr(flight, "keys") else ()
+    if "actual_takeoff_utc" not in keys:
+        return None
+    reference_utc = flight["timing_reference_utc"] if "timing_reference_utc" in keys else None
+    actual = flight["actual_takeoff_utc"]
+    if not reference_utc and not actual:
+        return None
+    return {
+        "reference_type": (flight["timing_reference_type"] if "timing_reference_type" in keys else None) or "takeoff",
+        "reference_utc": reference_utc or actual,
+        "reference_waypoint": flight["timing_reference_waypoint"] if "timing_reference_waypoint" in keys else None,
+        "actual_takeoff_utc": actual,
+    }
+
+
 def _service_summary(flight) -> dict:
     analysis_id = _public_analysis_id(flight)
     report_refresh = _report_refresh_summary(flight)
@@ -1422,6 +1625,9 @@ def _service_summary(flight) -> dict:
         },
         "warnings": warnings,
         "report_refresh": report_refresh,
+        # The committed take-off reference (release-430 QA, O1): a caller that could not read a mutation's own response
+        # verifies what was applied from here, never from the request it sent.
+        "timing": _service_timing_summary(flight),
         "links": {
             "self": f"/v1/analyses/{analysis_id}",
             "briefing": f"/v1/analyses/{analysis_id}/briefing",
@@ -1438,6 +1644,9 @@ def _service_summary(flight) -> dict:
             "level_3_report": f"/v1/analyses/{analysis_id}/reports/level-3",
             "timing": f"/v1/analyses/{analysis_id}/timing",
             "surface_overlays": f"/v1/analyses/{analysis_id}/surface-overlays",
+            "company_briefing_references": (
+                f"/v1/analyses/{analysis_id}/company-briefing-references"
+            ),
             "weather_charts": f"/v1/analyses/{analysis_id}/weather-charts/{{chart_number}}",
             "render_reports": f"/v1/analyses/{analysis_id}/reports/render",
         },
@@ -1666,6 +1875,21 @@ async def _execute_service_analysis_in_background(
         )
 
 
+async def _execute_service_mutation_in_background(flight_id: int, claimed_flight, mutation: dict) -> None:
+    """Finish a claimed analysis mutation off-request (release-430 QA, O1). Its outcome is the stored row: the new
+    reference with status Completed, or the previous one restored with a "Rejected ..." warning, or Failed."""
+    failure = await asyncio.to_thread(
+        functools.partial(_execute_analysis, flight_id, claimed_flight, claimed_flight=claimed_flight, **mutation),
+    )
+    if failure:
+        logger.warning(
+            "Asynchronous %s failed flight_id=%s error_type=%s",
+            mutation.get("failure_label", "analysis mutation"),
+            flight_id,
+            failure.partition(":")[0],
+        )
+
+
 def _release_async_analysis_task(task: asyncio.Task[None]) -> None:
     _async_analysis_tasks.discard(task)
     if task.cancelled():
@@ -1855,17 +2079,66 @@ def get_service_briefing(request: Request, analysis_id: str):
     identity = request_service_identity(request)
     flight, analysis = _service_analysis(analysis_id, identity)
     view = analysis.get("view") or {}
+    # A saved pack's dashboard and its re-created download read the same
+    # publication rules. An analysis stored under older rules is rebuilt from
+    # the same held flight, findings, timing and OFP the download uses; nothing
+    # is re-analysed and the stored analysis is not rewritten.
+    from .odss.flight_briefing_publication import current_rules_briefing
+    try:
+        held_source = str(_stored_file(flight["source_path"], UPLOAD_DIR, "Source PDF not found"))
+    except HTTPException:
+        held_source = None
+    served = current_rules_briefing(analysis, held_source)
+    if served["rebuilt_from_held_analysis"]:
+        analysis = {
+            **analysis,
+            "flight": served["flight"],
+            "findings": served["findings"],
+            "view": {**view, "briefing": served["briefing"]},
+        }
+        view = analysis["view"]
     analysis_flight = analysis.get("flight") or {}
     notam_snapshot = _service_notam_snapshot(analysis)
     report_refresh = _report_refresh_summary(flight)
+    # Surface publication can append Airport Notes after the initial analysis.
+    # Project the checklist from the complete held view on every read, just as
+    # the PDF does; a cached pre-surface receipt is not an authoritative input.
+    briefing_view = view.get("briefing") or {}
+    attached_references = (
+        analysis.get("company_briefing_references")
+        if isinstance(analysis.get("company_briefing_references"), dict)
+        else None
+    )
     warnings = list(view.get("warnings") or [])
+    from app.odss.combined_brief import _operational_coverage_receipt
+    try:
+        coverage_receipt = _operational_coverage_receipt(
+            analysis_flight, briefing_view, analysis.get("findings") or [], attached_references,
+        )
+    except (ValueError, TypeError, KeyError, AttributeError):
+        # Never fall back to stale success rows when current evidence is invalid.
+        coverage_receipt = None
+        warnings.append("PD checklist could not be composed from the held evidence.")
+    briefing_view = {**briefing_view, "coverage_receipt": coverage_receipt}
     if report_refresh["warning"] and report_refresh["warning"] not in warnings:
         warnings.append(report_refresh["warning"])
     return JSONResponse({
         "analysis_id": analysis_id,
         "schema_version": analysis.get("schema_version"),
         "flight": analysis_flight,
-        "briefing": view.get("briefing"),
+        "briefing": briefing_view,
+        "publication_rules": served["publication_rules"],
+        # The extraction rules the held analysis was parsed under (None for an
+        # analysis stored before the parser stamped them); the app compares
+        # them with the value in service when it reopens a saved pack (F2).
+        "extraction_rules": analysis_flight.get("extraction_rules"),
+        "rebuilt_from_held_analysis": served["rebuilt_from_held_analysis"],
+        "coverage_receipt": coverage_receipt,
+        "company_briefing_references": (
+            analysis.get("company_briefing_references")
+            if isinstance(analysis.get("company_briefing_references"), dict)
+            else None
+        ),
         "timing": view.get("timing"),
         "personal_notes": analysis_flight.get("personal_notes") or [],
         "warnings": warnings,
@@ -1961,13 +2234,13 @@ def get_service_weather_chart(
 
 
 @app.post("/v1/analyses/{analysis_id}/timing")
-def update_service_timing(
+async def update_service_timing(
     request: Request,
     analysis_id: str,
     payload: ServiceTimingRequest,
 ):
     identity = request_service_identity(request)
-    flight, analysis = _service_analysis(analysis_id, identity)
+    flight, analysis = await asyncio.to_thread(_service_analysis, analysis_id, identity)
     try:
         parsed_reference_utc = parse_utc(payload.reference_utc).isoformat()
         # Reject malformed request data before claiming the analysis. The same
@@ -2060,15 +2333,34 @@ def update_service_timing(
             tenant_id=identity.tenant_id,
         )
 
-    failure_detail = _execute_analysis(
-        flight_id,
-        flight,
-        weather_window_preference=requested_weather_window,
-        locked_mutation=apply_timing,
-        rollback_locked_mutation=rollback_timing,
-        preserve_previous_on_failure=True,
-        commit_locked_mutation_on_report_failure=True,
-        failure_label="timing update",
+    mutation = {
+        "weather_window_preference": requested_weather_window,
+        "locked_mutation": apply_timing,
+        "rollback_locked_mutation": rollback_timing,
+        "preserve_previous_on_failure": True,
+        "commit_locked_mutation_on_report_failure": True,
+        "failure_label": "timing update",
+    }
+    if payload.respond_async:
+        # Claim now, answer 202 at once, finish off-request under the same claim, rollback and report semantics
+        # (release-430 QA, O1): the re-analysis never depends on the delivery path's 120-second response cap.
+        claimed_flight = await asyncio.to_thread(claim_analysis, flight_id, identity.tenant_id)
+        if claimed_flight is None:
+            raise HTTPException(status_code=409, detail="Analysis is already in progress")
+        task = asyncio.create_task(
+            _execute_service_mutation_in_background(flight_id, claimed_flight, mutation),
+            name=f"odss-timing-{_public_analysis_id(claimed_flight)}",
+        )
+        _retain_async_analysis_task(task)
+        processing = get_flight_for_tenant(flight_id, identity.tenant_id)
+        if not processing:
+            raise HTTPException(status_code=500, detail="Analysis record was lost")
+        return _async_analysis_response(
+            processing,
+            status_code=202 if processing["status"] == "Processing" else 200,
+        )
+    failure_detail = await asyncio.to_thread(
+        functools.partial(_execute_analysis, flight_id, flight, **mutation),
     )
     if failure_detail:
         raise HTTPException(status_code=422, detail=failure_detail)
@@ -2235,6 +2527,293 @@ def delete_service_personal_note(
     )
 
 
+@app.post("/v1/analyses/{analysis_id}/company-briefing-references")
+def update_service_company_briefing_references(
+    request: Request,
+    analysis_id: str,
+    payload: ServiceCompanyBriefingReferencesRequest,
+):
+    """Store only complete source-bound MEL/CDL evidence for the PDF.
+
+    The combined report is generated on demand and its cache key includes the
+    exact analysis JSON content digest. Publishing the normalized JSON
+    therefore invalidates every previous combined-report cache token without
+    changing the already-current Level 1/2 reports.
+    """
+
+    identity = request_service_identity(request)
+    flight = _service_flight(analysis_id, identity)
+    if str(flight["status"] or "") != "Completed":
+        raise HTTPException(
+            status_code=409,
+            detail="Company briefing references require a completed analysis.",
+        )
+
+    analysis_path = _stored_file(
+        flight["analysis_path"],
+        RESULT_DIR,
+        "Analysis not generated",
+    )
+    try:
+        prior_artifact = analysis_path.read_bytes()
+        current = json.loads(prior_artifact)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="The current analysis artifact is unavailable or invalid.",
+        ) from exc
+    if not isinstance(current, dict):
+        raise HTTPException(status_code=409, detail="Analysis is not complete")
+
+    deferred_items = (current.get("flight") or {}).get("deferred_items") or []
+    try:
+        normalized = normalize_governed_deferred_reference_payload(
+            deferred_items,
+            payload.model_dump(),
+            flight=current.get("flight") or {},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    publication_changed = current.get("company_briefing_references") != normalized
+    updated = json.loads(json.dumps(current))
+    updated["company_briefing_references"] = normalized
+    target_artifact = (
+        json.dumps(updated, indent=2).encode("utf-8")
+        if publication_changed
+        else prior_artifact
+    )
+    prior_artifact_sha256 = sha256(prior_artifact).hexdigest()
+    target_artifact_sha256 = sha256(target_artifact).hexdigest()
+    payload_sha256 = sha256(
+        json.dumps(
+            normalized,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+    existing = find_company_briefing_reference_publication(
+        tenant_id=identity.tenant_id,
+        analysis_id=analysis_id,
+        payload_sha256=payload_sha256,
+        target_artifact_sha256=target_artifact_sha256,
+        target_analysis_path=str(analysis_path),
+        states=("committed",),
+    )
+    if existing is not None and not publication_changed:
+        return JSONResponse({
+            "analysis_id": analysis_id,
+            "company_briefing_references": normalized,
+            "publication": {"state": "unchanged"},
+            "audit": {
+                "state": "recorded",
+                "event_id": str(existing["audit_event_id"]),
+            },
+            "combined_report": {
+                "state": "unchanged",
+                "render": "on_demand",
+                "href": f"/v1/analyses/{analysis_id}/reports/combined",
+            },
+        })
+
+    target_path = analysis_path
+    if publication_changed:
+        target_path = analysis_path.with_name(
+            f"{analysis_path.stem}.company-briefing-{uuid.uuid4().hex}.json"
+        )
+        staged = target_path.with_name(f"{target_path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with staged.open("wb") as output:
+                output.write(target_artifact)
+                output.flush()
+                os.fsync(output.fileno())
+            publish_staged_artifacts([(staged, target_path)])
+        except Exception as exc:
+            target_valid = False
+            try:
+                target_valid = (
+                    target_path.is_file()
+                    and sha256(target_path.read_bytes()).hexdigest()
+                    == target_artifact_sha256
+                )
+            except OSError:
+                pass
+            if target_valid:
+                logger.warning(
+                    "Company briefing target committed with a cleanup warning "
+                    "tenant=%s analysis=%s error_type=%s",
+                    identity.tenant_id,
+                    analysis_id,
+                    type(exc).__name__,
+                )
+            else:
+                target_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "message": (
+                            "The governed reference artifact could not be prepared. "
+                            "The prior analysis remains active; retry the same payload."
+                        ),
+                        "publication_persisted": False,
+                        "publication_state": "unchanged",
+                        "audit_state": "not_started",
+                        "retry_same_payload": True,
+                    },
+                ) from exc
+        finally:
+            staged.unlink(missing_ok=True)
+        try:
+            directory_fd = os.open(str(target_path.parent), os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError as exc:
+            target_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": (
+                        "The governed reference artifact could not be made durable. "
+                        "The prior analysis remains active; retry the same payload."
+                    ),
+                    "publication_persisted": False,
+                    "publication_state": "unchanged",
+                    "audit_state": "not_started",
+                    "retry_same_payload": True,
+                },
+            ) from exc
+    governed_extract_ids = [
+        str(extract["extract_id"])
+        for extract in governed_deferred_extracts(deferred_items, normalized)
+    ]
+    operation = prepare_company_briefing_reference_publication(
+        flight_id=int(flight["id"]),
+        tenant_id=identity.tenant_id,
+        analysis_id=analysis_id,
+        actor_id=identity.user_id,
+        payload_sha256=payload_sha256,
+        prior_analysis_path=str(analysis_path),
+        target_analysis_path=str(target_path),
+        prior_artifact_sha256=prior_artifact_sha256,
+        target_artifact_sha256=target_artifact_sha256,
+        audit_details={
+            "reference_count": len(normalized["references"]),
+            "governed_reference_status": normalized["status"],
+            "governed_extract_ids": governed_extract_ids,
+            "prior_artifact_sha256": prior_artifact_sha256,
+            "new_artifact_sha256": target_artifact_sha256,
+            "combined_report": (
+                "invalidated_for_on_demand_render"
+                if publication_changed
+                else "publication_unchanged"
+            ),
+        },
+    )
+    if operation is None:
+        if publication_changed:
+            target_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=409,
+            detail="Company briefing references require a completed, idle analysis.",
+        )
+
+    operation_id = str(operation["id"])
+    try:
+        claimed_prior_sha256 = sha256(analysis_path.read_bytes()).hexdigest()
+    except OSError:
+        claimed_prior_sha256 = None
+    if claimed_prior_sha256 != prior_artifact_sha256:
+        abort_company_briefing_reference_publication(
+            operation_id,
+            error="The analysis artifact changed before the claim was acquired.",
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="The analysis changed concurrently; retry against the latest briefing.",
+        )
+
+    try:
+        committed = commit_company_briefing_reference_publication(operation_id)
+    except Exception as exc:
+        # A commit can report an error after SQLite made it durable. Re-read
+        # before compensating so a successful newer state is never undone.
+        committed = find_company_briefing_reference_publication(
+            tenant_id=identity.tenant_id,
+            analysis_id=analysis_id,
+            payload_sha256=payload_sha256,
+            target_artifact_sha256=target_artifact_sha256,
+            target_analysis_path=str(target_path),
+            states=("committed",),
+        )
+        if committed is None:
+            prior_valid = False
+            try:
+                prior_valid = (
+                    analysis_path.is_file()
+                    and sha256(analysis_path.read_bytes()).hexdigest()
+                    == prior_artifact_sha256
+                )
+            except OSError:
+                pass
+            if prior_valid:
+                released = abort_company_briefing_reference_publication(
+                    operation_id,
+                    error=f"Atomic commit failed: {type(exc).__name__}: {exc}",
+                )
+            else:
+                released = fail_company_briefing_reference_publication(
+                    operation_id,
+                    error=(
+                        "Atomic commit failed and the prior analysis artifact "
+                        f"is invalid: {type(exc).__name__}: {exc}"
+                    ),
+                )
+            if publication_changed:
+                target_path.unlink(missing_ok=True)
+            logger.exception(
+                "Company briefing atomic audit/pointer commit failed "
+                "tenant=%s analysis=%s operation_id=%s",
+                identity.tenant_id,
+                analysis_id,
+                operation_id,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": (
+                        "The governed reference publication was not activated "
+                        "because its atomic audit commit failed."
+                    ),
+                    "publication_persisted": False,
+                    "publication_state": (
+                        "unchanged" if released and prior_valid else "indeterminate"
+                    ),
+                    "audit_state": "failed",
+                    "retry_same_payload": bool(released and prior_valid),
+                },
+            ) from exc
+
+    return JSONResponse({
+        "analysis_id": analysis_id,
+        "company_briefing_references": normalized,
+        "publication": {
+            "state": "published" if publication_changed else "unchanged",
+        },
+        "audit": {
+            "state": "recorded",
+            "event_id": str(committed["audit_event_id"]),
+        },
+        "combined_report": {
+            "state": "invalidated" if publication_changed else "unchanged",
+            "render": "on_demand",
+            "href": f"/v1/analyses/{analysis_id}/reports/combined",
+        },
+    })
+
+
 @app.post("/v1/analyses/{analysis_id}/surface-overlays")
 async def update_service_surface_overlays(
     request: Request,
@@ -2254,12 +2833,29 @@ async def update_service_surface_overlays(
             payload,
             analysis.get("flight") or {},
         )
+        airport_surface_index = validated_airport_surface_index(
+            payload,
+            analysis.get("flight") or {},
+        )
+        published_airport_surface_index = (
+            airport_surface_index
+            if airport_surface_index is not None
+            else list(
+                (analysis.get("flight") or {}).get("airport_surface_index")
+                or []
+            )
+        )
         prepared = await attach_surface_report_maps(
             analysis_id,
             overlays,
             map_settings,
         )
-        _publish_surface_overlay_reports(claimed_flight, analysis, prepared)
+        _publish_surface_overlay_reports(
+            claimed_flight,
+            analysis,
+            prepared,
+            airport_surface_index,
+        )
         record_audit_event(
             tenant_id=identity.tenant_id,
             actor_id=identity.user_id,
@@ -2272,6 +2868,7 @@ async def update_service_surface_overlays(
             resource_id=analysis_id,
             details={
                 "cleared": not prepared,
+                "airport_index_count": len(published_airport_surface_index),
                 "airports": [
                     {
                         "icao": overlay["icao"],
@@ -2300,6 +2897,7 @@ async def update_service_surface_overlays(
     return JSONResponse({
         "analysis_id": analysis_id,
         "surface_overlays": _surface_overlay_summary(prepared),
+        "airport_surface_index": published_airport_surface_index,
         "report_links": _service_summary(claimed_flight)["links"],
     })
 
@@ -2343,7 +2941,11 @@ def get_service_combined_report(request: Request, analysis_id: str):
     analysis_path = _stored_file(
         flight["analysis_path"], RESULT_DIR, "Analysis not generated"
     )
-    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    # Parse and key the exact same immutable byte snapshot. An atomic governed
+    # reference update between separate read/stat calls must never let old
+    # evidence be cached under the new publication identity.
+    analysis_snapshot = analysis_path.read_bytes()
+    analysis = json.loads(analysis_snapshot)
     analysis_flight = analysis.get("flight") or {}
     findings = analysis.get("findings") or []
     warnings = (analysis.get("view") or {}).get("warnings") or []
@@ -2367,30 +2969,53 @@ def get_service_combined_report(request: Request, analysis_id: str):
             )
         except (OSError, ValueError):
             analysis_flight["fuel_summary"] = None
-    token = sha256(
-        (
-            f"{analysis_path.stat().st_mtime_ns}:{flight['id']}:"
-            f"{COMBINED_BRIEFING_SCHEMA_VERSION}"
-        ).encode("utf-8")
-    ).hexdigest()[:16]
+    token = combined_briefing_cache_token(
+        sha256(analysis_snapshot).hexdigest(),
+        flight["id"],
+    )
     cache_path = REPORT_DIR / f"flight_{flight['id']}_combined_{token}.pdf"
-    if not cache_path.exists():
-        staging = cache_path.with_suffix(".tmp")
-        try:
-            render_combined_briefing(
-                analysis_flight,
-                findings,
-                warnings,
-                staging,
-                source_pdf_path=source_path,
-                weather_charts=weather_charts,
+    with _combined_report_lock(flight["id"]):
+        if not cache_path.exists():
+            staging = REPORT_DIR / (
+                f".{cache_path.name}.{uuid.uuid4().hex}.tmp"
             )
-            staging.replace(cache_path)
-        finally:
-            staging.unlink(missing_ok=True)
-        for stale in REPORT_DIR.glob(f"flight_{flight['id']}_combined_*.pdf"):
-            if stale != cache_path:
-                stale.unlink(missing_ok=True)
+            try:
+                try:
+                    render_combined_briefing(
+                        analysis_flight,
+                        findings,
+                        warnings,
+                        staging,
+                        source_pdf_path=source_path,
+                        weather_charts=weather_charts,
+                        company_briefing_references=(
+                            analysis.get("company_briefing_references")
+                            if isinstance(
+                                analysis.get("company_briefing_references"),
+                                dict,
+                            )
+                            else None
+                        ),
+                    )
+                except ValueError as exc:
+                    # F5 of the release-420 independent QA (24 Sep 2026): a
+                    # fresh SQ24 answered a bare 500 here when page 5 could
+                    # not be composed, and the app could only say "blocked".
+                    # A composition refusal is a stated condition of this
+                    # analysis, not a transport failure: name the page and
+                    # the reason, never a stale or partial PDF.
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "code": "briefing_composition_failed",
+                            "message": f"The Flight Briefing could not be composed for this analysis: {exc}",
+                            "retryable": False,
+                        },
+                    ) from exc
+                staging.replace(cache_path)
+            finally:
+                staging.unlink(missing_ok=True)
+        _prune_combined_report_cache(flight["id"], keep=cache_path)
     return FileResponse(
         cache_path,
         filename=combined_briefing_filename(
@@ -2398,6 +3023,10 @@ def get_service_combined_report(request: Request, analysis_id: str):
             analysis_flight.get("flight_date"),
         ),
         media_type="application/pdf",
+        # A client that stores this PDF in a flight pack cannot tell later
+        # which publication format produced it. State it here so a reopened
+        # pack can refuse a superseded file instead of handing it back.
+        headers={COMBINED_BRIEFING_FORMAT_HEADER: COMBINED_BRIEFING_PUBLICATION_FORMAT},
     )
 
 

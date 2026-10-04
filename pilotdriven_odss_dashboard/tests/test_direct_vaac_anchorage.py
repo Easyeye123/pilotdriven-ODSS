@@ -47,8 +47,10 @@ LISTING = {
 }
 
 ADVISORY = {
+    "id": "8c6cf528-48f3-4898-970c-664a9e850514",
     "issuingOffice": "PAWU",
     "issuanceTime": "2026-08-05T00:12:00+00:00",
+    "wmoCollectiveId": "FVAK22",
     "productText": (
         "\n000\nFVAK22 PAWU 050012\nVAAAK2\nVA ADVISORY\n\n"
         "DTG: 20260805/0008Z\n\nVAAC: ANCHORAGE\n\n"
@@ -57,11 +59,17 @@ ADVISORY = {
         "ADVISORY NR: 2026/252\n\n"
         "OBS VA DTG: 05/0008Z\n\n"
         "OBS VA CLD: SFC/FL200 N5639 E16122 - N5700 E16200 - N5639 E16300\n\n"
-        "FCST VA CLD +6 HR: 05/0600Z SFC/FL200 N5639 E16122 - N5700 E16200\n\n"
+        "FCST VA CLD +6HR: 05/0600Z SFC/FL200 N5639 E16122 - N5700 E16200\n\n"
         "RMK: PLEASE SEE FVFE01 RJTD ISSUED BY VAAC TOKYO WHICH DESCRIBES\n"
         "CONDITIONS NEAR THE VAAC ANCHORAGE AREA OF RESPONSIBILITY...SC\n\n"
         "NXT ADVISORY: NO LATER THAN 20260805/0600Z\n"
     ),
+}
+
+LISTING_METADATA = {
+    "issued_at_utc": "2026-08-05T00:12:00+00:00",
+    "wmo_id": "FVAK22",
+    "product_id": "8c6cf528-48f3-4898-970c-664a9e850514",
 }
 
 
@@ -85,12 +93,18 @@ def test_listing_keeps_only_advisories_anchorage_issued() -> None:
 def test_advisory_identity_is_verified_from_the_advisory_itself() -> None:
     parsed = parse_anchorage_vaac_advisory(
         ADVISORY,
-        {"issued_at_utc": "2026-08-05T00:12:00+00:00"},
+        LISTING_METADATA,
     )
 
     assert parsed["provider"] == "nws-anchorage-vaac"
     assert parsed["vaac"] == "ANCHORAGE"
+    assert parsed["centre"] == "ANCHORAGE"
+    assert parsed["aviation_colour_code"] is None
     assert parsed["advisory_number"] == "2026/252"
+    assert parsed["volcano_position"] == {
+        "latitude": 56.65,
+        "longitude": 161.36667,
+    }
     assert [item["phase"] for item in parsed["phases"]] == [
         "observed",
         "forecast_plus_6_hours",
@@ -103,6 +117,15 @@ def test_advisory_identity_is_verified_from_the_advisory_itself() -> None:
     # so a reader is not left thinking the area was assessed as clear.
     assert "VAAC TOKYO" in parsed["remarks"]
 
+    malformed = {
+        **ADVISORY,
+        "productText": ADVISORY["productText"].replace("N5639 E16122", "N5660 E16122"),
+    }
+    assert parse_anchorage_vaac_advisory(
+        malformed,
+        LISTING_METADATA,
+    )["volcano_position"] is None
+
 
 def test_an_advisory_from_another_centre_is_rejected() -> None:
     relayed = {
@@ -114,8 +137,109 @@ def test_an_advisory_from_another_centre_is_rejected() -> None:
 
     with pytest.raises(ValueError):
         parse_anchorage_vaac_advisory(
-            relayed, {"issued_at_utc": "2026-08-05T00:12:00+00:00"}
+            relayed, LISTING_METADATA
         )
+
+
+def test_anchorage_exercise_advisory_is_rejected() -> None:
+    exercise = {
+        **ADVISORY,
+        "productText": ADVISORY["productText"].replace(
+            "VA ADVISORY\n\n",
+            "VA ADVISORY\n\nSTATUS: EXER\n\n",
+        ),
+    }
+
+    with pytest.raises(ValueError, match="exercise advisory"):
+        parse_anchorage_vaac_advisory(exercise, LISTING_METADATA)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("INFO SOURCE", "TEST"),
+        ("ERUPTION DETAILS", "TEST ADVISORY"),
+    ),
+)
+def test_anchorage_live_test_markers_are_rejected(field, value) -> None:
+    exercise = {
+        **ADVISORY,
+        "productText": ADVISORY["productText"].replace(
+            "OBS VA DTG: 05/0008Z",
+            f"{field}: {value}\n\nOBS VA DTG: 05/0008Z",
+        ),
+    }
+
+    with pytest.raises(ValueError, match="exercise advisory"):
+        parse_anchorage_vaac_advisory(exercise, LISTING_METADATA)
+
+
+def test_anchorage_operational_parser_requires_complete_listing_identity() -> None:
+    for missing in ("issued_at_utc", "product_id", "wmo_id"):
+        metadata = {
+            key: value
+            for key, value in LISTING_METADATA.items()
+            if key != missing
+        }
+        with pytest.raises(ValueError, match="listing identity"):
+            parse_anchorage_vaac_advisory(ADVISORY, metadata)
+
+    for missing in ("id", "issuingOffice", "issuanceTime", "wmoCollectiveId"):
+        payload = {
+            key: value
+            for key, value in ADVISORY.items()
+            if key != missing
+        }
+        with pytest.raises(ValueError, match="detail identity"):
+            parse_anchorage_vaac_advisory(payload, LISTING_METADATA)
+
+
+def test_anchorage_live_two_digit_year_dtg_uses_trusted_listing_year() -> None:
+    metadata = {
+        "issued_at_utc": "2026-08-30T14:20:00+00:00",
+        "wmo_id": "FVAK21",
+        "product_id": "live-pawu-product",
+    }
+    payload = {
+        "id": "live-pawu-product",
+        "issuingOffice": "PAWU",
+        "issuanceTime": "2026-08-30T14:20:00+00:00",
+        "wmoCollectiveId": "FVAK21",
+        "productText": ADVISORY["productText"]
+        .replace("FVAK22 PAWU 050012", "FVAK21 PAWU 301420")
+        .replace("DTG: 20260805/0008Z", "DTG: 260830/1418Z"),
+    }
+
+    parsed = parse_anchorage_vaac_advisory(payload, metadata)
+
+    assert parsed["issued_at_utc"] == "2026-08-30T14:20:00+00:00"
+    assert parsed["advisory_number"] == "2026/252"
+
+
+@pytest.mark.parametrize(
+    ("payload_change", "text_change"),
+    (
+        ({"id": "swapped-product"}, None),
+        ({"issuingOffice": "KKCI"}, None),
+        ({"issuanceTime": "2026-08-05T00:13:00+00:00"}, None),
+        ({"wmoCollectiveId": "FVAK23"}, None),
+        ({}, ("FVAK22 PAWU 050012", "FVAK23 PAWU 050012")),
+        ({}, ("FVAK22 PAWU 050012", "FVAK22 KKCI 050012")),
+        ({}, ("FVAK22 PAWU 050012", "FVAK22 PAWU 050013")),
+        ({}, ("20260805/0008Z", "20260805/0013Z")),
+        ({}, ("20260805/0008Z", "20260801/0008Z")),
+    ),
+)
+def test_anchorage_detail_must_match_listing_and_body_identity(
+    payload_change,
+    text_change,
+) -> None:
+    payload = {**ADVISORY, **payload_change}
+    if text_change:
+        payload["productText"] = payload["productText"].replace(*text_change)
+
+    with pytest.raises(ValueError):
+        parse_anchorage_vaac_advisory(payload, LISTING_METADATA)
 
 
 def test_snapshot_retrieves_only_advisories_inside_the_flight_window() -> None:
@@ -137,6 +261,8 @@ def test_snapshot_retrieves_only_advisories_inside_the_flight_window() -> None:
     assert snapshot["provider"] == "nws-anchorage-vaac"
     assert snapshot["advisory_count"] == 1
     assert snapshot["coverage_status"] == "anchorage_vaac_area_direct_advisories"
+    assert snapshot["next_advisory_due"] == "NO LATER THAN 20260805/0600Z"
+    assert snapshot["next_advisory_notes"] == []
     assert not any("outside-window" in url for url in requested)
 
 

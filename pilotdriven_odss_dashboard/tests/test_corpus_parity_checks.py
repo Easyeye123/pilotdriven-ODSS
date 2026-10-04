@@ -11,6 +11,7 @@ from app.odss.briefing import (
     _edto_operational_rows,
     build_briefing_view,
 )
+from app.odss.combined_brief import _fuel_panel_rows
 from app.odss.parser import parse_lido
 from scripts.run_private_cfp_corpus import check_cross_surface_parity
 
@@ -64,7 +65,9 @@ def _passing_text(flight: dict) -> str:
         if weather.get("taf"):
             parts.append(f"TAF {weather['taf']}")
     for item in (flight.get("fuel_summary") or {}).get("excess_breakdown") or []:
-        if item.get("fuel_kg"):
+        fuel_kg = item.get("fuel_kg")
+        label = str(item.get("label") or "").strip().upper()
+        if fuel_kg is not None and (fuel_kg != 0 or label == "MEL"):
             parts.append(f"{item['label']} {item['fuel_kg']:,} kg")
     return "\n".join(parts)
 
@@ -76,9 +79,88 @@ def test_complete_output_passes() -> None:
         assert result["valid"], result["failures"]
 
 
+@pytest.mark.parametrize("publication_header", [
+    "FLIGHT BRIEFING - MASTER SUMMARY",
+    "FLIGHT BRIEFING | PAGE 1 OF 6",
+])
+def test_analysed_publication_checks_current_ash_projection(publication_header) -> None:
+    from app.odss.weather_publication import volcanic_ash_lines
+
+    flight = _flight(LOG_PAGE_LOW)
+    flight["direct_vaa_source_review"] = {
+        "source_status": "partial",
+        "applicability_status": "not_assessed",
+        "official_advisories": [{"volcano": "TEST"}],
+    }
+    view = build_briefing_view(flight, [], [])
+    base = _passing_text(flight) + "\n" + publication_header + "\n"
+    text = base + "\n".join(volcanic_ash_lines(flight, view))
+    complete = check_cross_surface_parity(flight, [], [], text, unit_output_text=text)
+    assert complete["valid"], complete["failures"]
+    omitted = check_cross_surface_parity(flight, [], [], base, unit_output_text=base)
+    assert not omitted["valid"]
+    assert any("vaa: analysed consequence" in failure for failure in omitted["failures"])
+
+
+def test_analysed_publication_accepts_each_complete_volcanic_form_and_nothing_less() -> None:
+    """VOLCANIC-CHECK-436: page 5 prints the live volcanic sources by name, as counts, or - beside held OFP records, at
+    its capacity step - leaves them to page 6's source line; the gate accepts one complete form, and the page-6 form
+    only when page 6 names every unmet source. LABELLED SYNTHETIC flight."""
+    from app.odss.weather_publication import volcanic_ash_lines
+
+    flight = _flight(LOG_PAGE_LOW)
+    flight["weather"] = [{"location": "WIIF", "record_type": "VA_SIGMET", "source_page": 13, "text": (
+        "WIIF JAKARTA FIR WV SIGMET 08 VALID 220400/220700 VA ERUPTION MT KRAKATAU WI S0200 E10400 - S0200 E10600 - "
+        "N0200 E10600 SFC/FL400")}]
+    view = build_briefing_view(flight, [], [])
+    base = _passing_text(flight) + "\nFLIGHT BRIEFING | PAGE 1 OF 6\nVOLCANIC ASH\n"
+    whole, compact, omit = (volcanic_ash_lines(flight, view, live) for live in ("whole", "compact", "omit"))
+    assert whole != compact and omit != whole
+    for form in (whole, compact):
+        text = base + "\n".join(form)
+        result = check_cross_surface_parity(flight, [], [], text, unit_output_text=text)
+        assert result["valid"], result["failures"]
+    unmet = [row["source"] for row in view["source_assurance"] if row["status"] not in {"HELD", "REACHED"}]
+    assert unmet
+    named = base + "\n".join(omit) + "\nSOURCE ASSURANCE: " + ", ".join(unmet) + " not reached."
+    assert check_cross_surface_parity(flight, [], [], named, unit_output_text=named)["valid"]
+    unnamed = base + "\n".join(omit)
+    result = check_cross_surface_parity(flight, [], [], unnamed, unit_output_text=unnamed)
+    assert not result["valid"] and any("on neither page 5 nor page 6" in failure for failure in result["failures"]), result["failures"]
+
+
+def test_edto_operational_rows_retain_real_edto_sector_and_fuel_facts() -> None:
+    rows = _edto_operational_rows(
+        "EDTO",
+        {
+            "assessment": {"status": "verified"},
+            "sectors": [{
+                "number": 1,
+                "entry": "01.00",
+                "exit": "02.00",
+                "etps": ["01.30"],
+                "etp_count": 1,
+            }],
+            "airports": [],
+        },
+        {
+            "source_classification": "EDTO",
+            "rows": {"edto_top_up": {"fuel_kg": 1_200}},
+        },
+    )
+
+    labels = [label for label, _ in rows]
+    assert labels == ["CLASSIFICATION", "SECTOR 1", "ETPS 1", "FUEL", "GATE"]
+    assert ("FUEL", "EDTO top-up 1,200 kg.") in rows
+
+
 def test_terrain_contradiction_fails() -> None:
     flight = _flight(LOG_PAGE_HIGH)
-    text = _passing_text(flight) + "\nNo strict MSA >100* window detected"
+    text = (
+        _passing_text(flight)
+        + "\nCFP route/profile trigger not activated: no parsed route waypoint "
+        "MSA exceeded 10,000 ft."
+    )
     result = check_cross_surface_parity(flight, [], [], text)
     assert not result["valid"]
     assert any("terrain" in failure for failure in result["failures"])
@@ -86,7 +168,8 @@ def test_terrain_contradiction_fails() -> None:
 
 def test_missing_no_window_sentence_fails() -> None:
     flight = _flight(LOG_PAGE_LOW)
-    text = _passing_text(flight).replace("No strict MSA >100* window detected", "")
+    terrain_summary = build_briefing_view(flight, [], [])["terrain"]["summary"]
+    text = _passing_text(flight).replace(terrain_summary, "")
     result = check_cross_surface_parity(flight, [], [], text)
     assert not result["valid"]
     assert any("terrain" in failure for failure in result["failures"])
@@ -104,6 +187,29 @@ def test_missing_edto_row_fails() -> None:
     assert any("edto" in failure for failure in result["failures"])
 
 
+def test_frozen_audit_classification_is_an_explicit_semantic_alias() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    operational_text = _passing_text(flight)
+    current_classification = _edto_operational_rows(
+        _edto_classification(flight),
+        build_briefing_view(flight, [], [])["edto"],
+        flight.get("fuel_summary") or {},
+    )[0][1]
+    frozen_audit_text = operational_text.replace(
+        current_classification,
+        "OFP P1 source: SUMMARY STANDARD CFP (interpreted as non-EDTO).",
+    )
+
+    result = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        frozen_audit_text,
+    )
+
+    assert result["valid"], result["failures"]
+
+
 def test_unprinted_bulletin_fails() -> None:
     flight = _flight(LOG_PAGE_LOW)
     text = _passing_text(flight).replace("METAR SA 010200", "METAR WITHHELD")
@@ -119,6 +225,200 @@ def test_excess_item_without_kg_fails() -> None:
     result = check_cross_surface_parity(flight, [], [], text)
     assert not result["valid"]
     assert any("units" in failure for failure in result["failures"])
+
+
+def test_zero_mass_excess_item_is_still_a_required_published_fact() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["fuel_summary"] = {
+        "excess_breakdown": [{"label": "MEL", "fuel_kg": 0}],
+        "rows": {},
+    }
+
+    missing = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        _passing_text(flight).replace("\nMEL 0 kg", ""),
+    )
+    held = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        _passing_text(flight),
+    )
+
+    assert not missing["valid"]
+    assert any("units" in failure for failure in missing["failures"])
+    assert held["valid"], held["failures"]
+
+
+def test_zero_mel_accepts_the_bounded_operational_excess_fuel_row() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["fuel_summary"] = {
+        "excess_breakdown": [{"label": "MEL", "fuel_kg": 0}],
+        "rows": {},
+    }
+    audit_text = _passing_text(flight).replace("\nMEL 0 kg", "")
+
+    result = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        audit_text,
+        unit_output_text="MEL EXCESS-FUEL · 0 kg",
+    )
+
+    assert result["valid"], result["failures"]
+
+
+def test_non_mel_zero_allocation_is_not_a_publication_requirement() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["fuel_summary"] = {
+        "excess_breakdown": [
+            {"label": "INTAM", "fuel_kg": 0},
+            {"label": "TANKER", "fuel_kg": 0},
+            {"label": "POLICY", "fuel_kg": 0},
+        ],
+        "rows": {},
+    }
+
+    result = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        _passing_text(flight),
+    )
+
+    assert result["valid"], result["failures"]
+
+
+@pytest.mark.parametrize(
+    ("label", "fuel_kg", "operational_row"),
+    [
+        ("POLICY", 1_500, "POLICY · 00:17 | 1,500 kg"),
+        ("TANKER", 18_847, "TANKER · 03:16 | 18,847 kg"),
+    ],
+)
+def test_excess_mass_unit_accepts_the_bounded_operational_fuel_row(
+    label: str,
+    fuel_kg: int,
+    operational_row: str,
+) -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["fuel_summary"]["excess_breakdown"] = [
+        {"label": label, "fuel_kg": fuel_kg}
+    ]
+    text = _passing_text(flight).replace(f"\n{label} {fuel_kg:,} kg", "")
+
+    result = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        text,
+        unit_output_text=operational_row,
+    )
+
+    assert result["valid"], result["failures"]
+
+
+def test_excess_mass_unit_still_rejects_a_unitless_operational_fuel_row() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["fuel_summary"]["excess_breakdown"] = [
+        {"label": "POLICY", "fuel_kg": 1_500}
+    ]
+    text = _passing_text(flight).replace("\nPOLICY 1,500 kg", "")
+
+    result = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        text,
+        unit_output_text="POLICY · 00:17 | 1,500",
+    )
+
+    assert not result["valid"]
+    assert any("units" in failure for failure in result["failures"])
+
+
+def test_excess_mass_unit_accepts_each_item_in_one_allocation_row() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["fuel_summary"]["excess_breakdown"] = [
+        {"label": "INTAM", "fuel_kg": 3_200},
+        {"label": "TMM", "fuel_kg": 3_200},
+    ]
+    text = _passing_text(flight)
+    text = text.replace("\nINTAM 3,200 kg", "")
+    text = text.replace("\nTMM 3,200 kg", "")
+
+    result = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        text,
+        unit_output_text="ALLOCATION · INTAM 3,200 kg + TMM 3,200 kg",
+    )
+
+    assert result["valid"], result["failures"]
+
+
+@pytest.mark.parametrize(
+    "operational_row",
+    [
+        "ALLOCATION · INTAM 3,200 + TMM 3,200 kg",
+        "ALLOCATION · INTAM 3,100 kg + TMM 3,200 kg",
+        "ALLOCATION · FMC 3,200 kg + TMM 3,200 kg",
+        "ALLOCATION · INTAM\n3,200 kg + TMM 3,200 kg",
+    ],
+)
+def test_excess_allocation_row_rejects_missing_or_cross_row_mass_evidence(
+    operational_row: str,
+) -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["fuel_summary"]["excess_breakdown"] = [
+        {"label": "INTAM", "fuel_kg": 3_200},
+        {"label": "TMM", "fuel_kg": 3_200},
+    ]
+    text = _passing_text(flight)
+    text = text.replace("\nINTAM 3,200 kg", "")
+    text = text.replace("\nTMM 3,200 kg", "")
+
+    result = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        text,
+        unit_output_text=operational_row,
+    )
+
+    assert not result["valid"]
+    assert any("units" in failure for failure in result["failures"])
+
+
+def test_operational_fuel_rows_preserve_single_source_allocation_label() -> None:
+    rows = _fuel_panel_rows({
+        "rows": {
+            "excess_fuel": {"time_minutes": 17, "fuel_kg": 1_500},
+        },
+        "excess_breakdown": [{"label": "POLICY", "fuel_kg": 1_500}],
+    })
+
+    assert ("POLICY", "00:17 | 1,500 kg") in rows
+    assert not any(label == "EXCESS" for label, _ in rows)
+
+
+def test_operational_fuel_rows_keep_each_mixed_allocation_with_kg() -> None:
+    rows = _fuel_panel_rows({
+        "rows": {
+            "excess_fuel": {"time_minutes": 17, "fuel_kg": 1_500},
+        },
+        "excess_breakdown": [
+            {"label": "POLICY", "fuel_kg": 1_000},
+            {"label": "TANKER", "fuel_kg": 500},
+        ],
+    })
+
+    assert ("EXCESS", "00:17 | 1,500 kg") in rows
+    assert ("ALLOCATION", "POLICY 1,000 kg + TANKER 500 kg") in rows
 
 
 def test_banned_wording_fails() -> None:
@@ -170,10 +470,66 @@ def test_missing_derived_screening_line_fails() -> None:
     result = check_cross_surface_parity(flight, [], [], named)
     assert not result["valid"]
     assert any("derived" in failure for failure in result["failures"])
+    derived = next(
+        item["derived"]
+        for item in build_briefing_view(flight, [], [])["vaa"]["cfp_advisories"]
+        if item.get("advisory_kind") == "VA_SIGMET"
+    )
     result_ok = check_cross_surface_parity(
-        flight, [], [], named + "\nClosest approach 60 NM near ALPHA; ash layer SFC/FL070"
+        flight,
+        [],
+        [],
+        named + "\n" + derived,
     )
     assert result_ok["valid"], result_ok["failures"]
+
+
+def test_cfp_vaa_parity_uses_operational_atomic_identity_and_derived_line() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["volcanic_advisories"] = [{
+        "volcano": "MAYON",
+        "notam_id": "1B4235/26",
+        "text": "MAYON VOLCANO ON ALERT LEVEL 2.",
+        "source_page": 34,
+    }]
+    audit_text = (
+        _passing_text(flight)
+        + "\nCFP VOLCANO ADVISORY · MAYON · 1B4235/26"
+    )
+    derived = (
+        "Source-held OFP notice; operational applicability remains "
+        "a crew/dispatch review."
+    )
+    operational_text = f"MAYON · 1B4235/26\n{derived}"
+
+    passed = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        audit_text,
+        unit_output_text=operational_text,
+    )
+    assert passed["valid"], passed["failures"]
+
+    missing_identity = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        audit_text,
+        unit_output_text=f"MAYON\n{derived}",
+    )
+    assert not missing_identity["valid"]
+    assert any("advisory identity" in row for row in missing_identity["failures"])
+
+    missing_derived = check_cross_surface_parity(
+        flight,
+        [],
+        [],
+        audit_text,
+        unit_output_text="MAYON · 1B4235/26",
+    )
+    assert not missing_derived["valid"]
+    assert any("derived applicability" in row for row in missing_derived["failures"])
 
 
 def _extraction_flight() -> dict:
@@ -238,6 +594,34 @@ def _extraction_flight() -> dict:
             {"name": "BRAVO", "airway_in": "A1", "msa_hundreds_ft": 40},
             {"name": "CHARLIE", "airway_in": "B2", "msa_hundreds_ft": 50},
         ],
+        "flight_planning_etps": [
+            {"label": "ETP A", "distance_nm": 721, "source_page": 10},
+        ],
+        "intam_records": [
+            {
+                "identity": "ALL FLEETS-TEST",
+                "body_text": "FULL SOURCE BODY",
+                "source_page": 39,
+            },
+        ],
+        "notam_procedure_records": [
+            {
+                "notam_id": "1A0001/26",
+                "text": "FULL PROCEDURE SOURCE",
+                "source_page": 32,
+            },
+        ],
+        "performance": {"maximum_landing_weight_kg": 205_000},
+        "fuel_summary": {
+            "excess_breakdown": [{"label": "MEL", "fuel_kg": 0}],
+        },
+        "zfw_change_burn_kg_per_1000": 69,
+        "zfw_change_burn_add_kg_per_1000": 69,
+        "zfw_change_burn_less_kg_per_1000": 73,
+        "lower_cruise_sensitivity": {
+            "offset_ft": 2_000,
+            "burn_add_kg": 398,
+        },
     }
 
 
@@ -282,6 +666,9 @@ def test_extraction_weather_pin_excludes_live_noaa_awc() -> None:
         ("edto", "airports", "edto.airports"),
         ("flight", "fuel_enroute_airports", "fuel_enroute_airports"),
         ("flight", "route_waypoints", "route_waypoints"),
+        ("flight", "flight_planning_etps", "flight_planning_etps"),
+        ("flight", "intam_records", "intam_records"),
+        ("flight", "notam_procedure_records", "notam_procedure_records"),
     ],
 )
 def test_extraction_contract_rejects_a_missing_whole_domain(
@@ -347,6 +734,73 @@ def test_extraction_contract_hashes_full_waypoint_record_not_only_route_identity
     assert result["failures"] == ["route_waypoints.identity_sha256 changed"]
 
 
+@pytest.mark.parametrize(
+    ("domain", "mutate"),
+    [
+        (
+            "flight_planning_etps",
+            lambda flight: flight["flight_planning_etps"][0].update(
+                distance_nm=720
+            ),
+        ),
+        (
+            "intam_records",
+            lambda flight: flight["intam_records"][0].update(
+                body_text="CHANGED SOURCE BODY"
+            ),
+        ),
+        (
+            "notam_procedure_records",
+            lambda flight: flight["notam_procedure_records"][0].update(
+                text="CHANGED PROCEDURE SOURCE"
+            ),
+        ),
+        (
+            "planning_publication",
+            lambda flight: flight["performance"].update(
+                maximum_landing_weight_kg=204_000
+            ),
+        ),
+        (
+            "planning_publication",
+            lambda flight: flight["lower_cruise_sensitivity"].update(
+                burn_add_kg=399
+            ),
+        ),
+    ],
+)
+def test_extraction_contract_pins_new_source_critical_domains(
+    domain: str,
+    mutate,
+) -> None:
+    from scripts.run_private_cfp_corpus import check_extraction_expectations
+
+    flight = _extraction_flight()
+    expected = _extraction_expectation(flight)
+    changed = deepcopy(flight)
+    mutate(changed)
+
+    result = check_extraction_expectations(changed, expected)
+
+    assert result["valid"] is False
+    assert f"{domain}.identity_sha256 changed" in result["failures"]
+
+
+def test_extraction_contract_rejects_missing_planning_publication_input() -> None:
+    from scripts.run_private_cfp_corpus import check_extraction_expectations
+
+    flight = _extraction_flight()
+    expected = _extraction_expectation(flight)
+    changed = deepcopy(flight)
+    del changed["performance"]
+
+    result = check_extraction_expectations(changed, expected)
+
+    assert result["valid"] is False
+    assert "performance is missing" in result["failures"]
+    assert "planning_publication.identity_sha256 changed" in result["failures"]
+
+
 def test_manifest_requires_static_extraction_expectations_for_every_case(
     tmp_path: Path,
 ) -> None:
@@ -398,13 +852,49 @@ def test_parsed_fact_coverage_normalises_times_wraps_and_registrations() -> None
     assert result["valid"], result["missing"]
 
 
+def test_parsed_fact_coverage_accepts_a_fact_on_either_pdf_surface() -> None:
+    from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
+
+    flight = {
+        "fuel_summary": {
+            "derived_fuel_kg": {"takeoff": 43_291, "landing": 23_924},
+        },
+    }
+    audit_text = "FROZEN AUDIT FUEL TABLE"
+    operational_text = "DERIVED T/O FUEL 43,291 KG / LDG FUEL 23,924 KG"
+
+    paired = check_parsed_fact_coverage(
+        flight,
+        audit_text,
+        operational_output_text=operational_text,
+    )
+    assert paired["valid"], paired["missing"]
+
+    audit_only = check_parsed_fact_coverage(flight, audit_text)
+    assert not audit_only["valid"]
+    assert any(
+        "derived_fuel_kg.takeoff" in row for row in audit_only["missing"]
+    )
+
+    missing_from_both = check_parsed_fact_coverage(
+        flight,
+        "FROZEN AUDIT T/O FUEL 43,291 KG",
+        operational_output_text="OPERATIONAL FUEL TABLE",
+    )
+    assert not missing_from_both["valid"]
+    assert any(
+        "derived_fuel_kg.landing" in row
+        for row in missing_from_both["missing"]
+    )
+
+
 def test_long_route_fact_accepts_visible_ordered_tokens_across_page_chrome() -> None:
     from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
 
     route_tokens = [f"RTE{index:03d}" for index in range(1, 81)]
     flight = {"route_text": " ".join(route_tokens)}
     visible_text = (
-        "CFP ROUTE "
+        "OFP ROUTE "
         + " ".join(route_tokens[:40])
         + " PAGE 2 OF 2 AIRPORTS CONTINUED SOURCE "
         + " ".join(route_tokens[40:])
@@ -433,6 +923,32 @@ def test_fact_waivers_are_explained_and_limited_to_non_operational_metadata() ->
         assert not path.startswith("fuel_summary.excess_breakdown"), (
             f"pilot-visible excess-fuel fact cannot be waived: {path}"
         )
+
+
+def test_internal_unclassified_deferred_type_requires_the_safe_pilot_label() -> None:
+    from scripts.run_private_cfp_corpus import check_parsed_fact_coverage
+
+    flight = {
+        "deferred_items": [{
+            "item_type": "UNCLASSIFIED",
+            "reference": "ECDL007905",
+            "description": "SEAT 21A TRAY TABLE UNABLE TO STOW",
+        }],
+    }
+    safe_surface = (
+        "DEFERRED ITEM ECDL007905 SEAT 21A TRAY TABLE UNABLE TO STOW"
+    )
+    passed = check_parsed_fact_coverage(flight, safe_surface)
+    assert passed["valid"], passed["missing"]
+
+    missing_safe_label = check_parsed_fact_coverage(
+        flight,
+        "ECDL007905 SEAT 21A TRAY TABLE UNABLE TO STOW",
+    )
+    assert not missing_safe_label["valid"]
+    assert missing_safe_label["missing"] == [
+        "deferred_items[].item_type = 'UNCLASSIFIED'"
+    ]
 
 
 def test_pdf_fact_coverage_requires_every_alternate() -> None:
@@ -488,7 +1004,7 @@ def test_pdf_fact_coverage_rejects_performance_fuel_and_deferred_omissions() -> 
             "item_type": "MEL",
             "reference": "21-01-01",
             "description": "PACK FLOW CONTROL VALVE INOPERATIVE",
-            "company_remark": "APPLY THE CFP OPERATING RESTRICTION",
+            "company_remark": "APPLY THE OFP OPERATING RESTRICTION",
         }],
     }
     complete_text = " ".join([
@@ -500,7 +1016,7 @@ def test_pdf_fact_coverage_rejects_performance_fuel_and_deferred_omissions() -> 
         "DEST HOLD TOP UP 1,000 00.30 EDTO TOP UP 500 00.15",
         "EXCESS ALLOCATION POLICY 1,500",
         "MEL 21-01-01 PACK FLOW CONTROL VALVE INOPERATIVE",
-        "APPLY THE CFP OPERATING RESTRICTION",
+        "APPLY THE OFP OPERATING RESTRICTION",
     ])
 
     complete = check_parsed_fact_coverage(flight, complete_text)
@@ -512,7 +1028,7 @@ def test_pdf_fact_coverage_rejects_performance_fuel_and_deferred_omissions() -> 
         ("PACKS / ANTI-ICE ON / OFF", "performance.packs_on"),
         ("9,316", "fuel.planned_destination_fuel_kg"),
         ("POLICY", "fuel_summary.excess_breakdown[].label"),
-        ("APPLY THE CFP OPERATING RESTRICTION", "deferred_items[].company_remark"),
+        ("APPLY THE OFP OPERATING RESTRICTION", "deferred_items[].company_remark"),
     ]
     for token, expected_path in omissions:
         incomplete = complete_text.replace(token, "", 1)
@@ -526,11 +1042,28 @@ def test_pdf_renderer_raw_flight_reads_only_shrink() -> None:
     # renderer is invisible to the dashboard (the VAAC reach leaked this way,
     # deploy #20). New content goes through build_briefing_view, where every
     # surface inherits it - so this count may fall but never rise.
+    import ast
     import re
     from pathlib import Path
 
     source = Path("app/odss/combined_brief.py").read_text(encoding="utf-8")
-    count = len(re.findall(r"flight\.get\(|flight\[", source))
+    # The explicit REV3-v8 audit compatibility functions reproduce an
+    # immutable historical renderer and are separately guarded by exact
+    # raster equality.  They do not compose new product content, so exclude
+    # only those named functions from this current-surface purity budget.
+    source_lines = source.splitlines(keepends=True)
+    for node in ast.parse(source).body:
+        if (
+            isinstance(node, ast.FunctionDef)
+            and "audit_rev3_v8" in node.name
+        ):
+            source_lines[node.lineno - 1:node.end_lineno] = [
+                "\n" for _ in range(node.lineno - 1, node.end_lineno)
+            ]
+    current_renderer_source = "".join(source_lines)
+    count = len(
+        re.findall(r"flight\.get\(|flight\[", current_renderer_source)
+    )
     assert count <= 83, (
         f"combined_brief.py now reads raw flight data {count} times (baseline 83). "
         "Compose the new content in build_briefing_view instead, so the dashboard "

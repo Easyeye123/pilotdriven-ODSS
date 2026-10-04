@@ -3,7 +3,11 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime
 
+import pytest
+
 from app.odss.briefing import (
+    _COMPACT_ENROUTE_FAMILY_ORDER,
+    _COMPACT_PRIMARY_FAMILY_ORDER,
     _compact_notam_lines,
     _terrain_summary,
     build_briefing_view,
@@ -53,18 +57,276 @@ def _flight(log_page: str) -> dict:
 def test_terrain_key_is_engine_backed_and_always_present() -> None:
     high = build_briefing_view(_flight(LOG_PAGE_HIGH), [], [])
     assert high["terrain"]["events"], "a >100* waypoint must produce a terrain event"
-    assert "No strict MSA" not in high["terrain"]["summary"]
+    assert "trigger not activated" not in high["terrain"]["summary"]
 
     low = build_briefing_view(_flight(LOG_PAGE_LOW), [], [])
     assert low["terrain"]["events"] == []
-    assert low["terrain"]["summary"] == "No strict MSA >100* window detected"
+    assert low["terrain"]["summary"] == (
+        "OFP route/profile trigger not activated: no parsed route waypoint MSA "
+        "exceeded 10,000 ft (maximum OFP MSA 5,600 ft; maximum planned VWS "
+        "005). This is only the bounded OFP trigger result, not a "
+        "terrain-clearance finding."
+    )
+    assert ">100*" not in low["terrain"]["summary"]
 
 
 def test_terrain_summary_and_events_can_never_disagree() -> None:
     view = build_briefing_view(_flight(LOG_PAGE_HIGH), [], [])
     has_events = bool(view["terrain"]["events"])
-    says_none = "No strict MSA" in view["terrain"]["summary"]
+    says_none = "trigger not activated" in view["terrain"]["summary"]
     assert has_events != says_none
+
+
+def test_vws_review_is_published_even_when_the_same_route_has_high_terrain() -> None:
+    """A terrain trigger must never hide the independently reviewed VWS result."""
+
+    view = build_briefing_view(_flight(LOG_PAGE_HIGH), [], [])
+
+    assert view["terrain"]["events"]
+    assert view["terrain"]["vws_review"] == {
+        "status": "review_required",
+        "threshold": ">004",
+        "event_count": 1,
+        "maximum": 5,
+        "maximum_display": "005",
+        "maximum_waypoint": "ALPHA",
+        "maximum_actm_minutes": 85,
+        "maximum_actm_display": "01.25",
+        "source_page": 7,
+        "summary": (
+            "VWS: 1 planned >004 trigger window; maximum 005 at ALPHA "
+            "(ACTM 01.25, OFP p7)."
+        ),
+    }
+
+
+def test_vws_review_publishes_a_bounded_no_trigger_result() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["route_waypoints"] = [
+        {
+            "name": "CRUISE",
+            "actm_minutes": 90,
+            "msa_hundreds_ft": 30,
+            "vws": 1,
+            "source_page": 7,
+        },
+        {
+            "name": "ARRIVAL",
+            "actm_minutes": 180,
+            "msa_hundreds_ft": 70,
+            "vws": 4,
+            "source_page": 8,
+        },
+    ]
+
+    review = build_briefing_view(flight, [], [])["terrain"]["vws_review"]
+
+    assert review["status"] == "reviewed_no_trigger"
+    assert review["event_count"] == 0
+    assert review["maximum"] == 4
+    assert review["maximum_waypoint"] == "ARRIVAL"
+    assert review["summary"] == (
+        "VWS review: no planned >004 trigger in the source-held route values; "
+        "maximum 004 at ARRIVAL (ACTM 03.00, OFP p8)."
+    )
+
+
+def test_vws_review_never_turns_missing_route_values_into_zero() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["route_waypoints"] = [{
+        "name": "SOURCE-GAP",
+        "actm_minutes": 90,
+        "msa_hundreds_ft": None,
+        "vws": None,
+        "source_page": 7,
+    }]
+
+    review = build_briefing_view(flight, [], [])["terrain"]["vws_review"]
+
+    assert review == {
+        "status": "unavailable",
+        "threshold": ">004",
+        "event_count": 0,
+        "maximum": None,
+        "maximum_display": None,
+        "maximum_waypoint": None,
+        "maximum_actm_minutes": None,
+        "maximum_actm_display": None,
+        "source_page": None,
+        "summary": "VWS review unavailable: no planned VWS value is held in the parsed OFP route.",
+    }
+
+
+def test_terrain_no_trigger_summary_reports_sq910_compatible_source_maxima() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["route_waypoints"] = [
+        {
+            "name": "CRUISE",
+            "actm_minutes": 90,
+            "msa_hundreds_ft": 30,
+            "vws": 1,
+        },
+        {
+            "name": "ARRIVAL",
+            "actm_minutes": 180,
+            "msa_hundreds_ft": 70,
+            "vws": 4,
+        },
+    ]
+
+    view = build_briefing_view(flight, [], [])
+
+    assert view["terrain"]["events"] == []
+    assert "trigger not activated" in view["terrain"]["summary"]
+    assert "maximum OFP MSA 7,000 ft" in view["terrain"]["summary"]
+    assert "maximum planned VWS 004" in view["terrain"]["summary"]
+    assert "not a terrain-clearance finding" in view["terrain"]["summary"]
+
+
+def test_terrain_no_trigger_summary_does_not_invent_missing_source_maxima() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["route_waypoints"] = [
+        {
+            "name": "SOURCE-GAP",
+            "actm_minutes": 90,
+            "msa_hundreds_ft": None,
+            "vws": None,
+        }
+    ]
+
+    view = build_briefing_view(flight, [], [])
+
+    assert view["terrain"]["events"] == []
+    assert "trigger not evaluated" in view["terrain"]["summary"]
+    assert "MSA data unavailable" in view["terrain"]["summary"]
+    assert "planned VWS data unavailable" in view["terrain"]["summary"]
+    assert "maximum OFP MSA" not in view["terrain"]["summary"]
+    assert "maximum planned VWS 000" not in view["terrain"]["summary"]
+
+
+def test_standard_cfp_planning_facts_share_one_view_for_dashboard_and_pdf() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight.update({
+        "scheduled_departure_utc": "2026-08-21T00:50:00+00:00",
+        "scheduled_arrival_utc": "2026-08-21T04:45:00+00:00",
+        "departure": "WSSS",
+        "departure_iata": "SIN",
+        "destination": "RPLL",
+        "planned_level_profile": "SIN/360/VERIN/400/LAGOT/390",
+        "zfw_change_burn_add_kg_per_1000": 69,
+        "zfw_change_burn_less_kg_per_1000": 73,
+        "lower_cruise_sensitivity": {
+            "offset_ft": 2_000,
+            "cost_index": 70,
+            "burn_add_kg": 398,
+            "time_token": "03.18",
+        },
+        "flight_planning_etps": [{
+            "label": "ETP A",
+            "from": "SIN",
+            "to": "MNL",
+            "distance_nm": 721,
+            "eet_token": "01.40",
+            "eet_minutes": 100,
+            "source_page": 10,
+        }],
+        "route_waypoints": [
+            {"name": "WSSS", "actm_minutes": 0},
+            {"name": "-WIIF", "fir_boundary": "WIIF", "actm_minutes": 3},
+            {"name": "-WSJC", "fir_boundary": "WSJC", "actm_minutes": 14},
+            {"name": "VERIN", "actm_minutes": 34},
+            {"name": "LAGOT", "actm_minutes": 88},
+            {"name": "-RPHI", "fir_boundary": "RPHI", "actm_minutes": 121},
+            {"name": "LUBAN", "actm_minutes": 174},
+            {"name": "TOD", "actm_minutes": 174},
+            # A later filed boundary must not replace the first boundary
+            # after ETP A merely because it is last in the route log.
+            {"name": "-WSJC", "fir_boundary": "WSJC", "actm_minutes": 190},
+            {"name": "RPLL", "actm_minutes": 201},
+        ],
+    })
+
+    view = build_briefing_view(flight, [], [])
+
+    assert [anchor["label"] for anchor in view["overview"]["timeline"]] == [
+        "DEP",
+        "VERIN",
+        "LAGOT",
+        "ETP A",
+        "RPHI",
+        "LUBAN/TOD",
+        "ARR",
+    ]
+    assert [anchor["kind"] for anchor in view["overview"]["timeline"]] == [
+        "departure",
+        "level_change",
+        "level_change",
+        "flight_planning_etp",
+        "fir",
+        "tod",
+        "arrival",
+    ]
+    planning = view["performance_publication"]["planning_sensitivity"]
+    assert planning["zfw_change_burn_add_kg_per_1000"] == 69
+    assert planning["zfw_change_burn_less_kg_per_1000"] == 73
+    assert planning["lower_cruise_sensitivity"]["burn_add_kg"] == 398
+    assert planning["flight_planning_etps"][0]["distance_nm"] == 721
+
+
+def test_edto_cfp_planning_etp_does_not_replace_governed_timeline_anchors() -> None:
+    flight = _flight(LOG_PAGE_HIGH)
+    flight["fuel_summary"]["source_classification"] = "EDTO"
+    flight["flight_planning_etps"] = [{
+        "label": "ETP A",
+        "from": "SIN",
+        "to": "MNL",
+        "distance_nm": 721,
+        "eet_token": "01.40",
+        "eet_minutes": 100,
+        "source_page": 10,
+    }]
+    flight["edto"]["entry_actm_minutes"] = 25
+    flight["route_waypoints"] = [
+        {
+            "name": "WSSS",
+            "actm_minutes": 0,
+            "msa_hundreds_ft": 20,
+            "msa_asterisk": False,
+            "vws": 1,
+        },
+        {
+            "name": "WINDY",
+            "actm_minutes": 40,
+            "msa_hundreds_ft": 30,
+            "msa_asterisk": False,
+            "vws": 5,
+        },
+        {
+            "name": "HIGH",
+            "actm_minutes": 70,
+            "msa_hundreds_ft": 111,
+            "msa_asterisk": True,
+            "vws": 2,
+        },
+        {
+            "name": "VTBS",
+            "actm_minutes": 150,
+            "msa_hundreds_ft": 50,
+            "msa_asterisk": False,
+            "vws": 1,
+        },
+    ]
+
+    timeline = build_briefing_view(flight, [], [])["overview"]["timeline"]
+
+    assert [item["kind"] for item in timeline] == [
+        "departure",
+        "edto",
+        "vws",
+        "terrain",
+        "arrival",
+    ]
+    assert all(item["kind"] != "flight_planning_etp" for item in timeline)
 
 
 def test_terrain_summary_requires_a_validated_controlled_profile_match() -> None:
@@ -87,7 +349,7 @@ def test_terrain_summary_requires_a_validated_controlled_profile_match() -> None
     }
     candidate_view = build_briefing_view(flight, [candidate], [])
     assert "0/1 terrain windows have validated profile matches" in candidate_view["terrain"]["summary"]
-    assert "manual review required" in candidate_view["terrain"]["summary"]
+    assert "1 unmatched terrain window" in candidate_view["terrain"]["summary"]
 
     stale = {
         **candidate,
@@ -102,7 +364,7 @@ def test_terrain_summary_requires_a_validated_controlled_profile_match() -> None
     }
     stale_view = build_briefing_view(flight, [stale], [])
     assert "0/1 terrain windows have validated profile matches" in stale_view["terrain"]["summary"]
-    assert "manual review required" in stale_view["terrain"]["summary"]
+    assert "1 unmatched terrain window" in stale_view["terrain"]["summary"]
 
     validated = {
         **candidate,
@@ -146,7 +408,7 @@ def test_terrain_summary_requires_every_detected_window_to_have_its_own_match() 
     summary = _terrain_summary(events, [one_match])
 
     assert "1/2 terrain windows have validated profile matches" in summary
-    assert "manual review required for 1 unmatched terrain window" in summary
+    assert "; 1 unmatched terrain window" in summary
 
 
 def test_airport_panels_carry_raw_metar_and_taf() -> None:
@@ -201,6 +463,7 @@ def test_shared_weather_chart_selection_holds_unclassified_pages_for_review() ->
         "reason": "No governed route-context classification is available.",
         "selected_charts": [],
         "raw_chart_count": 10,
+        "held_pages": list(range(31, 41)),
     }
 
 
@@ -262,6 +525,7 @@ def test_printed_chart_selection_matches_identity_and_nearest_flight_validity() 
             "kind": "sigwx_high_level",
             "valid_time_utc": valid_time,
             "flight_levels": "FL250-FL600",
+            "label": f"SIGWX · FL250-FL600 · valid {valid_time}",
             "source": "uploaded_package",
             "route_context": {
                 "status": "printed",
@@ -295,11 +559,17 @@ def test_printed_chart_selection_matches_identity_and_nearest_flight_validity() 
     assert selection["status"] == "selected"
     assert selection["raw_chart_count"] == 3
     assert [item["page_number"] for item in selection["selected_charts"]] == [47]
-    context = selection["selected_charts"][0]["route_context"]
+    selected = selection["selected_charts"][0]
+    context = selected["route_context"]
     assert context["status"] == "matched"
     assert context["governed"] is True
     assert context["flight_number"] == "SQ999"
-    assert "validity ranked against the CFP flight window" in context["basis"]
+    assert "validity ranked against the OFP flight window" in context["basis"]
+    assert selected["valid_time_utc"] == "2026-08-01T04:00:00+00:00"
+    assert selected["valid_time_display"] == "01 AUG 0400Z"
+    assert selected["display_label"] == "SIGWX · FL250-FL600 · valid 01 AUG 0400Z"
+    assert manifest["charts"][2].get("display_label") is None
+    assert manifest["charts"][2]["label"].endswith("2026-08-01T04:00:00+00:00")
 
 
 def test_printed_chart_selection_does_not_invent_carrier_code_aliases() -> None:
@@ -627,6 +897,483 @@ def test_shared_airport_panels_carry_selected_source_facts_for_every_role() -> N
         assert panel["card_summary_lines"][-1]["text"] == selected["summary"]
 
 
+def test_every_selected_notam_carries_its_own_compact_line_and_family() -> None:
+    """Consumers must never re-classify item E to build a short line.
+
+    The compact one-liner and its signal family are published on every
+    selected record, not only on the two or three that reach the card, so a
+    surface that shows a different subset shows exactly the same wording as
+    the card for any record they both hold.
+    """
+
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{
+        "airport": "WMKK",
+        "runway": "32L",
+        "approach": "ILS",
+        "minima": "220FT/800M",
+    }]
+    flight["edto"]["airports"] = [{
+        "airport": "WADD",
+        "runway": "27",
+        "approach": "RNP",
+        "minima": "453FT/1900M",
+        "period_start_utc": "2026-08-01T03:00:00+00:00",
+        "period_end_utc": "2026-08-01T04:00:00+00:00",
+    }]
+    role_by_station = {
+        "WSSS": "departure",
+        "VTBS": "destination",
+        "WMKK": "destination alternate",
+        "WADD": "EDTO",
+    }
+    records = (
+        (
+            "RWY 20C CLSD DUE WIP",
+            "RUNWAY",
+            1,
+            "runway_closure",
+        ),
+        (
+            "TWY W1 CLSD DUE MAINT",
+            "TAXIWAY",
+            4,
+            "taxiway_closure",
+        ),
+        (
+            "ILS GP RWY 19L U/S",
+            "NAVAID",
+            2,
+            "approach_navaid_closure",
+        ),
+    )
+    findings = [
+        {
+            "engine": "notam",
+            "severity": "warning",
+            "title": f"{role.title()} NOTAM {station[1:]}{index}/26",
+            "summary": f"Derived summary {station} {index}",
+            "details": [],
+            "data": {
+                "role": role,
+                "location": station,
+                "notam_id": f"{station[1:]}{index}/26",
+                "raw_text": f"{raw_text} AT {station}",
+                "category": category,
+                "priority_score": 5,
+                "pertinence_rank": rank,
+                "pertinence_kind": kind,
+                "applicability": "active",
+                "valid_from_utc": "2026-07-01T00:00:00+00:00",
+                "valid_to_utc": "2026-09-01T00:00:00+00:00",
+                "window_start_utc": "2026-08-01T02:00:00+00:00",
+                "window_end_utc": "2026-08-01T06:00:00+00:00",
+                "source_page": 20 + index,
+            },
+        }
+        for station, role in role_by_station.items()
+        for index, (raw_text, category, rank, kind) in enumerate(records, start=1)
+    ]
+
+    panels = build_briefing_view(flight, findings, [])["airport_operational_panels"]
+    known_families = set(_COMPACT_PRIMARY_FAMILY_ORDER) | set(
+        _COMPACT_ENROUTE_FAMILY_ORDER
+    )
+    assert panels
+    for panel in panels:
+        selected = panel["selected_notams"]
+        assert len(selected) == len(records)
+        by_id = {}
+        for item in selected:
+            assert isinstance(item["compact_text"], str)
+            assert item["compact_text"].strip()
+            assert item["signal_family"] in known_families
+            by_id[item["notam_id"]] = item
+        notam_lines = [
+            line
+            for line in panel["card_summary_lines"]
+            if line["kind"] == "notam"
+        ]
+        assert notam_lines
+        for line in notam_lines:
+            record = by_id[line["notam_id"]]
+            assert line["text"] == record["compact_text"]
+            assert line["signal_family"] == record["signal_family"]
+
+
+IAP_MINIMA_TEXT = (
+    "IAP TEST INTL. RNAV (GPS) RWY 34L, AMDT 2. LPV DA 721/HAT 342 ALL CATS. "
+    "TEMPORARY CRANE 260 MSL 3100FT NW OF AD"
+)
+
+
+def test_a_navaid_outage_and_a_minima_change_both_reach_the_card() -> None:
+    """An unserviceable ILS/GP must never be evicted by a changed minimum.
+
+    Both facts are approach facts, but only one of them takes an approach
+    away. They now sit in separate compact families, so the card shows both
+    and puts the outage first - on a departure card (limit 3) and on an
+    EDTO card (limit 2) alike.
+    """
+
+    flight = _flight(LOG_PAGE_LOW)
+    flight["edto"]["airports"] = [{
+        "airport": "WADD",
+        "runway": "27",
+        "approach": "RNP",
+        "minima": "453FT/1900M",
+        "period_start_utc": "2026-08-01T03:00:00+00:00",
+        "period_end_utc": "2026-08-01T04:00:00+00:00",
+    }]
+    role_by_station = {"WSSS": "departure", "WADD": "EDTO"}
+    records = (
+        ("OUT", "ILS/GP RWY 34R U/S", "NAVAID", 2, "approach_navaid_closure"),
+        ("MIN", IAP_MINIMA_TEXT, "APPROACH PROCEDURE", 2, "approach_minima_change"),
+    )
+    findings = [
+        {
+            "engine": "notam",
+            "severity": "critical",
+            "title": f"{role.title()} NOTAM {tag}{index}/26",
+            "summary": f"Derived summary {station} {tag}",
+            "details": [],
+            "data": {
+                "role": role,
+                "location": station,
+                "notam_id": f"{tag}{index}/26",
+                "raw_text": raw_text,
+                "category": category,
+                "priority_score": 5,
+                "pertinence_rank": rank,
+                "pertinence_kind": kind,
+                "approach_affected": True,
+                "applicability": "active",
+                "valid_from_utc": "2026-07-01T00:00:00+00:00",
+                "valid_to_utc": "2026-09-01T00:00:00+00:00",
+                "window_start_utc": "2026-08-01T02:00:00+00:00",
+                "window_end_utc": "2026-08-01T06:00:00+00:00",
+                "source_page": 20 + index,
+            },
+        }
+        for station, role in role_by_station.items()
+        for index, (tag, raw_text, category, rank, kind) in enumerate(records, start=1)
+    ]
+
+    panels = build_briefing_view(flight, findings, [])["airport_operational_panels"]
+    tested = [panel for panel in panels if panel["icao"] in role_by_station]
+    assert {panel["icao"] for panel in tested} == set(role_by_station)
+    for panel in tested:
+        families = {
+            item["notam_id"]: item["signal_family"]
+            for item in panel["selected_notams"]
+        }
+        assert families == {
+            "OUT1/26": "approach_navaid",
+            "MIN2/26": "approach_minima",
+        }
+        notam_lines = [
+            line
+            for line in panel["card_summary_lines"]
+            if line["kind"] == "notam"
+        ]
+        assert [line["signal_family"] for line in notam_lines] == [
+            "approach_navaid",
+            "approach_minima",
+        ], panel["icao"]
+        assert [line["notam_id"] for line in notam_lines] == [
+            "OUT1/26",
+            "MIN2/26",
+        ], panel["icao"]
+
+
+def _ranked_families(order: dict[str, int]) -> list[str]:
+    return sorted(order, key=order.__getitem__)
+
+
+def test_enroute_order_puts_approach_minima_immediately_after_approach_navaid() -> None:
+    """The new family only splits the slot; it never reorders the rest."""
+
+    assert _ranked_families(_COMPACT_ENROUTE_FAMILY_ORDER) == [
+        "airport_closure",
+        "approach_navaid",
+        "approach_minima",
+        "information_service",
+        "runway_closure",
+        "runway_restriction",
+        "taxiway",
+        "apron_stand",
+        "obstacle",
+        "other",
+    ]
+
+
+def test_primary_order_puts_approach_minima_immediately_after_approach_navaid() -> None:
+    """Pinned as its own assertion: a conditional expression hid this one."""
+
+    assert _ranked_families(_COMPACT_PRIMARY_FAMILY_ORDER) == [
+        "airport_closure",
+        "runway_closure",
+        "approach_navaid",
+        "approach_minima",
+        "runway_restriction",
+        "taxiway",
+        "apron_stand",
+        "information_service",
+        "obstacle",
+        "other",
+    ]
+
+
+def test_alternate_assessment_rows_bind_each_station_to_its_own_sources() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [
+        {
+            "airport": "WMKK",
+            "runway": "32L",
+            "approach": "ILS",
+            "minima": "220FT/800M",
+            "distance_nm": 160,
+            "time_minutes": 31,
+            "fuel_kg": 2800,
+        },
+        {
+            "airport": "WADD",
+            "runway": "27",
+            "approach": "RNP",
+            "minima": "453FT/1900M",
+            "distance_nm": 890,
+            "time_minutes": 112,
+            "fuel_kg": 9200,
+        },
+    ]
+    flight["weather"] = [
+        {
+            "location": airport,
+            "record_type": "TAF",
+            "text": f"TAF EXACT {airport}",
+            "source_page": page,
+        }
+        for airport, page in (("WMKK", 14), ("WADD", 15))
+    ]
+    findings = [
+        {
+            "engine": "notam",
+            "severity": "warning",
+            "title": f"Alternate {airport} NOTAM {identity}",
+            "summary": summary,
+            "details": [],
+            "data": {
+                "role": "destination alternate",
+                "location": airport,
+                "notam_id": identity,
+                "raw_text": summary,
+                "category": "AIRPORT",
+                "priority_score": 5,
+                "pertinence_rank": 3,
+                "pertinence_kind": "runway_approach_restriction",
+                "applicability": "active",
+                "valid_from_utc": "2026-07-01T00:00:00+00:00",
+                "valid_to_utc": "2026-09-01T00:00:00+00:00",
+                "window_start_utc": "2026-08-01T02:00:00+00:00",
+                "window_end_utc": "2026-08-01T06:00:00+00:00",
+                "source_page": page,
+            },
+        }
+        for airport, identity, summary, page in (
+            ("WMKK", "A1/26", "WMKK RWY 32L constraint.", 24),
+            ("WADD", "B2/26", "WADD RWY 27 constraint.", 25),
+        )
+    ]
+
+    rows = build_briefing_view(flight, findings, [])["alternate_assessment_rows"]
+
+    assert [row["airport"] for row in rows] == ["WMKK", "WADD"]
+    assert [row["role"] for row in rows] == ["preferred", "alternate"]
+    assert rows[0]["forecast"]["status"] == "held"
+    assert rows[0]["forecast"]["selection_basis"] == "taf"
+    assert rows[0]["forecast"]["record_type"] == "TAF"
+    assert rows[0]["forecast"]["source_icao"] == "WMKK"
+    assert rows[0]["forecast"]["text"] == "TAF EXACT WMKK"
+    assert rows[0]["forecast"]["source_page"] == 14
+    assert rows[0]["forecast"]["source_reference"] == "OFP p14"
+    assert rows[1]["forecast"]["text"] == "TAF EXACT WADD"
+    assert rows[1]["forecast"]["source_reference"] == "OFP p15"
+    assert rows[0]["constraint"]["notam_id"] == "A1/26"
+    assert rows[0]["constraint"]["source_reference"] == "OFP p24"
+    assert rows[0]["constraint"]["applicability_inferred"] is False
+    assert rows[1]["constraint"]["notam_id"] == "B2/26"
+    assert rows[1]["constraint"]["source_reference"] == "OFP p25"
+    assert all(
+        row["assessment"]["text"]
+        == "REVIEW - source held; suitability not concluded."
+        and row["assessment"]["suitability_concluded"] is False
+        for row in rows
+    )
+
+
+def test_alternate_assessment_rows_fallback_and_missing_sources_fail_closed() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [
+        {"airport": "WMKK", "runway": "32L"},
+        {"airport": "WADD", "runway": "27"},
+        {"airport": "WIII", "runway": "25R"},
+    ]
+    flight["weather"] = [
+        {
+            "location": "WADD",
+            "record_type": "METAR",
+            "text": "METAR EXACT WADD",
+            "source_page": 15,
+        },
+        {
+            "location": "WIII",
+            "record_type": "TAF",
+            "text": "TAF EXACT WIII",
+            "source_page": 16,
+        },
+    ]
+    finding = {
+        "engine": "notam",
+        "severity": "warning",
+        "title": "WADD NOTAM B2/26",
+        "summary": "WADD RWY 27 constraint.",
+        "details": [],
+        "data": {
+            "role": "destination alternate",
+            "source_role": "destination alternate",
+            "location": "WADD",
+            "notam_id": "B2/26",
+            "raw_text": "WADD RWY 27 constraint.",
+            "category": "AIRPORT",
+            "priority_score": 5,
+            "pertinence_rank": 3,
+            "pertinence_kind": "runway_approach_restriction",
+            "applicability": "active",
+            "valid_from_utc": "2026-07-01T00:00:00+00:00",
+            "valid_to_utc": "2026-09-01T00:00:00+00:00",
+            "window_start_utc": "2026-08-01T02:00:00+00:00",
+            "window_end_utc": "2026-08-01T06:00:00+00:00",
+            "source_page": 25,
+        },
+    }
+
+    view = build_briefing_view(
+        flight,
+        [finding],
+        [],
+    )
+    wmkk, wadd, wiii = view["alternate_assessment_rows"]
+
+    assert view["status"] == "UNRESOLVED ITEMS"
+    assert view["status_severity"] == "warning"
+
+    assert wmkk["forecast"]["status"] == "unavailable"
+    assert wmkk["constraint"]["status"] == "unavailable"
+    assert wmkk["assessment"]["source_status"] == "unavailable"
+    assert wmkk["assessment"]["text"] == (
+        "REVIEW - source unavailable; suitability not concluded."
+    )
+
+    assert wadd["forecast"]["selection_basis"] == "metar_fallback"
+    assert wadd["forecast"]["text"] == "METAR EXACT WADD"
+    assert wadd["constraint"]["notam_id"] == "B2/26"
+    assert wadd["constraint"]["source_icao"] == "WADD"
+    assert wadd["constraint"]["source_role"] == "destination alternate"
+    assert wadd["constraint"]["applicability_inferred"] is False
+    assert wadd["assessment"]["source_status"] == "held"
+
+    assert wiii["forecast"]["selection_basis"] == "taf"
+    assert wiii["constraint"]["status"] == "unavailable"
+    assert wiii["assessment"]["source_status"] == "partial"
+    assert wiii["assessment"]["text"] == (
+        "REVIEW - source partially held; suitability not concluded."
+    )
+
+
+def test_alternate_assessment_never_borrows_fuel_enroute_sources() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{"airport": "YGEL", "runway": "03"}]
+    flight["fuel_enroute_airports"] = [{
+        "airport": "YGEL",
+        "role": "fuel_enroute_airport",
+        "source_pages": [15, 24],
+    }]
+    flight["weather"] = [{
+        "location": "YGEL",
+        "record_type": "TAF",
+        "text": "FT FUEL-ENROUTE-ONLY YGEL",
+        "source_page": 15,
+        "source_role": "fuel_enroute_airport",
+    }]
+    fuel_notam = {
+        "engine": "notam",
+        "severity": "warning",
+        "title": "Fuel-enroute YGEL NOTAM 1F2187/26",
+        "summary": "NDB unavailable in the fuel-enroute window.",
+        "details": [],
+        "data": {
+            "role": "fuel enroute airport",
+            "source_role": "fuel_enroute_airport",
+            "location": "YGEL",
+            "notam_id": "1F2187/26",
+            "raw_text": "NDB GEL 359KHZ U/S",
+            "category": "APPROACH PROCEDURE",
+            "priority_score": 10,
+            "pertinence_rank": 2,
+            "pertinence_kind": "approach_navaid_closure",
+            "applicability": "active",
+            "window_start_utc": "2026-08-16T01:30:00+00:00",
+            "window_end_utc": "2026-08-16T08:40:00+00:00",
+            "source_page": 24,
+        },
+    }
+
+    row = build_briefing_view(
+        flight,
+        [fuel_notam],
+        [],
+    )["alternate_assessment_rows"][0]
+
+    assert row["airport"] == "YGEL"
+    assert row["forecast"]["status"] == "unavailable"
+    assert "FUEL-ENROUTE-ONLY" not in row["forecast"]["text"]
+    assert row["constraint"]["status"] == "unavailable"
+    assert row["constraint"]["notam_id"] is None
+    assert "1F2187/26" not in row["constraint"]["text"]
+    assert row["assessment"]["source_status"] == "unavailable"
+
+
+def test_alternate_constraint_without_page_provenance_fails_closed() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{"airport": "WADD", "runway": "27"}]
+    finding = {
+        "engine": "notam",
+        "severity": "warning",
+        "title": "Alternate WADD NOTAM B2/26",
+        "summary": "WADD RWY 27 constraint.",
+        "details": [],
+        "data": {
+            "role": "destination alternate",
+            "location": "WADD",
+            "notam_id": "B2/26",
+            "raw_text": "RWY 27 CLSD",
+            "pertinence_rank": 1,
+            "pertinence_kind": "runway_closure",
+            "applicability": "active",
+            "source_page": 0,
+        },
+    }
+
+    row = build_briefing_view(
+        flight,
+        [finding],
+        [],
+    )["alternate_assessment_rows"][0]
+
+    assert row["constraint"]["status"] == "unavailable"
+    assert row["constraint"]["source_reference"] == "SOURCE PAGE UNAVAILABLE"
+
+
 def test_overlapping_airport_roles_share_one_panel_and_keep_all_planning_rows() -> None:
     flight = _flight(LOG_PAGE_LOW)
     flight["edto"]["airports"] = [{
@@ -688,6 +1435,191 @@ def test_overlapping_airport_roles_share_one_panel_and_keep_all_planning_rows() 
     assert [item["icao"] for item in view["fuel_enroute_airports"]] == ["WADD"]
 
 
+def test_approach_criticality_is_machine_readable_on_shared_airport_lines() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{"airport": "WIII", "runway": "25"}]
+    raw_item_e = "ILS AND GP RWY 25 U/S"
+    finding = {
+        "engine": "notam",
+        "severity": "critical",
+        "title": "Alternate WIII NOTAM ALT-ILS/26",
+        "summary": "ILS RWY 25 unavailable during the applicable alternate window.",
+        "details": [],
+        "data": {
+            "role": "destination alternate",
+            "source_role": "destination alternate",
+            "location": "WIII",
+            "notam_id": "ALT-ILS/26",
+            "raw_text": raw_item_e,
+            "category": "APPROACH PROCEDURE",
+            "priority_score": 10,
+            "pertinence_rank": 2,
+            "pertinence_kind": "approach_navaid_closure",
+            "approach_affected": True,
+            "applicability": "active",
+            "valid_from_utc": "2026-07-01T00:00:00+00:00",
+            "valid_to_utc": "2026-09-01T00:00:00+00:00",
+            "window_start_utc": "2026-08-01T02:00:00+00:00",
+            "window_end_utc": "2026-08-01T06:00:00+00:00",
+            "source_page": 25,
+        },
+    }
+
+    view = build_briefing_view(flight, [finding], [])
+    panel = next(
+        row
+        for row in view["airport_operational_panels"]
+        if row["icao"] == "WIII"
+    )
+    selected = panel["selected_notams"][0]
+    compact = next(
+        row
+        for row in panel["card_summary_lines"]
+        if row.get("notam_id") == "ALT-ILS/26"
+    )
+
+    for row in (selected, compact):
+        assert row["notam_id"] == "ALT-ILS/26"
+        assert row["item_e_text"] == raw_item_e
+        assert row["severity"] == "critical"
+        assert row["category"] == "APPROACH PROCEDURE"
+        assert row["pertinence_kind"] == "approach_navaid_closure"
+        assert row["approach_affected"] is True
+
+
+@pytest.mark.parametrize(
+    ("state", "applicability", "expected_label"),
+    (
+        ("active_at_reference", "active", "CRITICAL - APPROACH AFFECTED"),
+        ("begins_after_reference", "active", "CRITICAL - APPROACH SCHEDULED"),
+        (
+            "unknown_at_reference",
+            "review",
+            "CRITICAL - APPROACH CONDITION REVIEW",
+        ),
+    ),
+)
+def test_real_station_card_preserves_approach_timing_state(
+    state,
+    applicability,
+    expected_label,
+) -> None:
+    from app.odss.combined_brief import _station_card_lines
+
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{"airport": "WIII", "runway": "25"}]
+    finding = {
+        "engine": "notam",
+        "severity": "critical",
+        "title": "Alternate WIII NOTAM ALT-ILS-TIME/26",
+        "summary": "Exact ILS condition retained.",
+        "details": [],
+        "data": {
+            "role": "destination alternate",
+            "source_role": "destination alternate",
+            "location": "WIII",
+            "notam_id": "ALT-ILS-TIME/26",
+            "raw_text": "ILS RWY 25 U/S",
+            "category": "APPROACH PROCEDURE",
+            "priority_score": 10,
+            "pertinence_rank": 2,
+            "pertinence_kind": "approach_navaid_closure",
+            "approach_affected": True,
+            "applicability": applicability,
+            "stateAtReference": state,
+            "referenceAt": "2026-08-01T04:00:00+00:00",
+            "minutesDelta": 15,
+            "valid_from_utc": "2026-07-01T00:00:00+00:00",
+            "valid_to_utc": "2026-09-01T00:00:00+00:00",
+            "source_page": 25,
+        },
+    }
+
+    view = build_briefing_view(flight, [finding], [])
+    panel = next(
+        row
+        for row in view["airport_operational_panels"]
+        if row["icao"] == "WIII"
+    )
+    compact = next(
+        row
+        for row in panel["card_summary_lines"]
+        if row.get("notam_id") == "ALT-ILS-TIME/26"
+    )
+
+    assert compact["stateAtReference"] == state
+    assert compact["referenceAt"] == "2026-08-01T04:00:00+00:00"
+    assert compact["minutesDelta"] == 15
+    assert expected_label in {
+        label
+        for label, _ in _station_card_lines(panel)
+    }
+
+
+def test_shared_airport_lines_preserve_absent_approach_flag_as_absent() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{"airport": "WIII", "runway": "25"}]
+    finding = {
+        "engine": "notam",
+        "severity": "critical",
+        "title": "Alternate WIII NOTAM LEGACY-ILS/26",
+        "summary": "Legacy payload retains exact approach source wording.",
+        "details": [],
+        "data": {
+            "role": "destination alternate",
+            "source_role": "destination alternate",
+            "location": "WIII",
+            "notam_id": "LEGACY-ILS/26",
+            "raw_text": "ILS AND GP RWY 25 U/S",
+            "category": "APPROACH PROCEDURE",
+            "priority_score": 10,
+            "pertinence_rank": 2,
+            "pertinence_kind": "approach_navaid_closure",
+            "applicability": "active",
+        },
+    }
+
+    view = build_briefing_view(flight, [finding], [])
+    panel = next(
+        row
+        for row in view["airport_operational_panels"]
+        if row["icao"] == "WIII"
+    )
+    selected = panel["selected_notams"][0]
+    compact = next(
+        row
+        for row in panel["card_summary_lines"]
+        if row.get("notam_id") == "LEGACY-ILS/26"
+    )
+
+    assert "approach_affected" not in selected
+    assert "approach_affected" not in compact
+
+    malformed = {
+        **finding,
+        "data": {
+            **finding["data"],
+            # A string is not a machine boolean.  In particular, Python's
+            # bool("false") must never manufacture a critical flag.
+            "approach_affected": "false",
+        },
+    }
+    malformed_view = build_briefing_view(flight, [malformed], [])
+    malformed_panel = next(
+        row
+        for row in malformed_view["airport_operational_panels"]
+        if row["icao"] == "WIII"
+    )
+    malformed_selected = malformed_panel["selected_notams"][0]
+    malformed_compact = next(
+        row
+        for row in malformed_panel["card_summary_lines"]
+        if row.get("notam_id") == "LEGACY-ILS/26"
+    )
+    assert "approach_affected" not in malformed_selected
+    assert "approach_affected" not in malformed_compact
+
+
 def test_metrics_carry_the_captain() -> None:
     view = build_briefing_view(_flight(LOG_PAGE_LOW), [], [])
     assert view["metrics"]["captain"] == "TESTA B C"
@@ -706,7 +1638,9 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
         "sid": "ALFA2",
         "star": "BRAVO1",
         "route_identifier": "GENERIC7",
-        "edto_rvsm": "EDTO/RVSM",
+        # This fixture is a SUMMARY STANDARD CFP whose separate FLT RULES
+        # token is RVSM. Both source facts must survive as distinct chips.
+        "edto_rvsm": "RVSM",
         "cost_index": 42,
         "apd_percent": 1.7,
         "route_waypoints": [
@@ -853,13 +1787,28 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
     flight_before = deepcopy(flight)
     findings_before = deepcopy(findings)
 
-    overview = build_briefing_view(flight, findings, [])["overview"]
+    view = build_briefing_view(flight, findings, [])
+    overview = view["overview"]
 
     assert flight == flight_before
     assert findings == findings_before
+    departure_panel = next(
+        panel
+        for panel in view["airport_operational_panels"]
+        if "departure" in set(panel.get("role_keys") or [])
+    )
+    departure_relations = {
+        line["notam_id"]: line
+        for line in departure_panel["card_summary_lines"]
+        if line.get("kind") == "notam"
+    }
+    assert departure_relations["A1001/26"]["different_runway"] is True
+    assert departure_relations["A1001/26"]["planned_match"] is False
+    assert departure_relations["A1002/26"]["different_runway"] is False
+    assert departure_relations["A1002/26"]["planned_match"] is True
     assert [(chip["key"], chip["label"]) for chip in overview["chips"]] == [
         ("route_identifier", "GENERIC7"),
-        ("edto_rvsm", "EDTO/RVSM"),
+        ("edto_rvsm", "RVSM"),
         # SUMMARY STANDARD CFP states its classification as a chip (23 Aug).
         ("classification", "NON-EDTO"),
         ("cost_index", "CI 42"),
@@ -875,6 +1824,9 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
     ]
     assert overview["departure"]["forecast_at_reference"] == {
         "applicable_conditions": "wind 170 degrees 8 kt · visibility 10 km or more",
+        # 23 Sep 2026 (T3): the coded groups travel with the decoding; this
+        # synthetic finding publishes none.
+        "applicable_groups": [],
         "utc_window": "01 AUG 0200-0330Z",
         "timing": "TAF base group at the reference time",
         "window_status": "no_significant_overlap",
@@ -888,10 +1840,10 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
     assert departure_highlight["source_page"] == 22
     destination_highlight = overview["destination"]["primary_operational_highlight"]
     assert destination_highlight == {
-        "text": "Planned runway closes after arrival.",
-        "signal_family": "runway_closure",
-        "notam_id": "B2001/26",
-        "source_page": 31,
+        "text": "ILS/GP RWY35 unavailable.",
+        "signal_family": "approach_navaid",
+        "notam_id": "B2002/26",
+        "source_page": 32,
     }
     assert [anchor["kind"] for anchor in overview["timeline"]] == [
         "departure",
@@ -904,6 +1856,60 @@ def test_shared_overview_is_source_backed_generic_and_does_not_mutate_inputs() -
     assert overview["timeline"][2]["detail"] == "VWS 005"
     assert overview["timeline"][3]["label"] == "HIGH1-HIGH2"
     assert overview["timeline"][3]["detail"] == "111*-124*"
+
+
+def test_cfp_weather_count_excludes_live_enrichment_without_source_pages() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["weather"] = [
+        {
+            "location": flight["departure"],
+            "record_type": "METAR",
+            "text": "METAR LIVE ENRICHMENT",
+            "source": "noaa_awc_live",
+            "provider": "noaa-awc-data-api",
+            "source_page": None,
+        },
+        {
+            "location": flight["departure"],
+            "record_type": "METAR",
+            "text": "SA 010200 17008KT 9999 FEW020",
+            "source_page": 14,
+        },
+        {
+            "location": flight["departure"],
+            "record_type": "TAF",
+            "text": "FT 010100 0102/0208 17008KT 9999 FEW020",
+            "source_page": 14,
+        },
+    ]
+
+    view = build_briefing_view(flight, [], [])
+
+    assert view["cfp_weather"] == {
+        "record_count": 2,
+        "source_pages": [14],
+    }
+    cfp_assurance = next(
+        row
+        for row in view["source_assurance"]
+        if row["source"] == "OFP WEATHER"
+    )
+    assert cfp_assurance == {
+        "source": "OFP WEATHER",
+        "status": "HELD",
+        "detail": "2 parsed bulletin record(s).",
+    }
+    departure_panel = next(
+        panel
+        for panel in view["airport_operational_panels"]
+        if "departure" in set(panel.get("role_keys") or [])
+    )
+    assert departure_panel["weather"]["metar"] == {
+        "record_type": "METAR",
+        "text": "SA 010200 17008KT 9999 FEW020",
+        "source_page": 14,
+        "source_role": None,
+    }
 
 
 def test_shared_performance_publication_owns_rtow_selection_and_margin() -> None:
@@ -995,8 +2001,11 @@ def test_edto_operational_rows_are_part_of_the_view() -> None:
     view = build_briefing_view(_flight(LOG_PAGE_LOW), [], [])
     rows = view["edto"]["operational_rows"]
     assert rows and rows[0]["label"] == "CLASSIFICATION"
+    assert rows[0]["value"] == (
+        "OFP P1 classification: STANDARD (interpreted as NON-EDTO)."
+    )
     labels = [row["label"] for row in rows]
-    assert "GATE" in labels and "FUEL" in labels
+    assert labels == ["CLASSIFICATION", "GATE"]
     assert all(isinstance(row["value"], str) and row["value"] for row in rows)
 
 
@@ -1100,6 +2109,25 @@ def test_va_advisory_without_readable_polygon_has_no_derived_line() -> None:
     assert view["vaa"]["cfp_advisories"][0]["derived"] is None
 
 
+def test_sigmet_cards_keep_each_message_fir_and_do_not_drop_shared_ids() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    messages = [
+        "WS SIGMET 8 VALID 161000/161300 YMMC- YMMM MELBOURNE FIR SEV TURB FCST ENTIRE FIR NC=",
+        "WS SIGMET 8 VALID 161000/161300 WMKK- WMFC KUALA LUMPUR FIR EMBD TS OBS ENTIRE FIR NC=",
+        "WS SIGMET 8 VALID 161000/161300 WIII- WIIF JAKARTA FIR EMBD TS OBS ENTIRE FIR NC=",
+        "WS SIGMET 8 VALID 161000/161300 EMBD TS OBS ENTIRE FIR NC=",
+    ]
+    record = {"location": "YMMM", "record_type": "SIGMET", "text": " ".join(messages)}
+    flight["weather"] = [record, deepcopy(record)]
+    held = deepcopy(flight["weather"])
+    cards = build_briefing_view(flight, [], [])["hazards"]["sigmet_cards"]
+    assert len(cards) == 4, "same numbers in different FIRs are separate source messages"
+    assert [card["fir"] for card in cards] == ["YMMM", "WMFC", "WIIF", None]
+    assert [card["text"] for card in cards] == messages
+    assert cards[-1]["name"].startswith("FIR UNRESOLVED SIGMET 8")
+    assert flight["weather"] == held
+
+
 def test_sigmet_cards_split_merged_records_and_carry_verdict_reasons() -> None:
     flight = _flight(LOG_PAGE_LOW)
     # One CFP FIR block printing two SIGMETs, exactly as Lido does. ALPHA is
@@ -1152,8 +2180,8 @@ def test_sigmet_inside_validity_is_promoted_and_no_polygon_is_review() -> None:
     assert cards["C03"]["disposition"] == "PROMOTED"
     assert "inside the product's validity" in cards["C03"]["screening"]
     # ENTIRE FIR carries no polygon: screening honestly unavailable.
-    assert cards["D04"]["disposition"] == "REVIEW REQUIRED"
-    assert "review the original SIGMET" in cards["D04"]["screening"]
+    assert cards["D04"]["disposition"] == "UNRESOLVED"
+    assert "screening unavailable" in cards["D04"]["screening"]
 
 
 def test_coverage_ledger_marks_absent_sections_unavailable() -> None:
@@ -1177,7 +2205,17 @@ def test_vaac_reach_is_composed_in_the_view_for_every_surface() -> None:
     flight["vaa_review"] = {
         "status": "review_required",
         "vaac_centre_ledger": [
-            {"centre": "Anchorage", "status": "available"},
+            {
+                "centre": "Anchorage",
+                "status": "available",
+                "coverage_status": "anchorage_vaac_area_direct_advisories",
+                "advisory_count": 1,
+                "source_url": "https://example.test/anchorage",
+                "freshness_status": None,
+                "listing_latest_utc": "2026-08-30T12:00:00+00:00",
+                "next_advisory_due": "20260830/1800Z",
+                "next_advisory_notes": ["NO FURTHER ADVISORIES"],
+            },
             {"centre": "Darwin", "status": "partial"},
             {"centre": "Tokyo", "status": "available"},
             {"centre": "London", "status": "unavailable"},
@@ -1187,7 +2225,17 @@ def test_vaac_reach_is_composed_in_the_view_for_every_surface() -> None:
     view = build_briefing_view(flight, [], [])
     reach = view["hazards"]["vaac_reach"]
     assert reach["summary"] == "3/5 reached"
-    assert reach["centres"][0] == {"centre": "ANCHORAGE", "status": "reached"}
+    assert reach["centres"][0] == {
+        "centre": "ANCHORAGE",
+        "status": "reached",
+        "coverage_status": "anchorage_vaac_area_direct_advisories",
+        "advisory_count": 1,
+        "source_url": "https://example.test/anchorage",
+        "freshness_status": None,
+        "listing_latest_utc": "2026-08-30T12:00:00+00:00",
+        "next_advisory_due": "20260830/1800Z",
+        "next_advisory_notes": ["NO FURTHER ADVISORIES"],
+    }
     assert reach["centres"][1] == {"centre": "DARWIN", "status": "partial"}
     assert reach["centres"][4] == {"centre": "WELLINGTON", "status": "not mounted"}
 
@@ -1284,3 +2332,107 @@ def test_compact_notam_holds_wrong_direction_and_prefers_return_runway_signal() 
         "LOC IGD 109.5 RWY21 subject to interruption / possible signal "
         "oscillation due crane operations; runway is not reported closed."
     )
+
+
+def test_vaac_reach_counts_drawn_advisory_polygons() -> None:
+    # Boss 30 Aug: the dashboard states how many ash polygons are actually
+    # drawn on the map, split by whether one intersects the route.
+    flight = _flight(LOG_PAGE_LOW)
+    flight["vaa_review"] = {"status": "review_required", "vaac_centre_ledger": []}
+    flight["va_sigmet_review"] = {
+        "status": "not_applicable",
+        "hazard_features": [],
+        "monitoring_features": [
+            {"type": "Feature", "id": "2026/51", "geometry": {}, "properties": {}},
+        ],
+    }
+    view = build_briefing_view(flight, [], [])
+    polygons = view["hazards"]["vaac_reach"]["advisory_polygons"]
+    assert polygons == {"affecting": 0, "monitoring": 1}
+
+    flight["va_sigmet_review"] = {
+        "status": "affected",
+        "hazard_features": [
+            {"type": "Feature", "id": "2026/52", "geometry": {}, "properties": {}},
+        ],
+        "monitoring_features": [],
+    }
+    view = build_briefing_view(flight, [], [])
+    polygons = view["hazards"]["vaac_reach"]["advisory_polygons"]
+    assert polygons == {"affecting": 1, "monitoring": 0}
+
+
+def test_volcano_proximity_rides_the_hazard_view() -> None:
+    flight = _flight(LOG_PAGE_LOW)
+    flight["va_sigmet_review"] = {
+        "status": "not_applicable",
+        "volcano_proximity": {
+            "corridor_nm": 200.0,
+            "entries": [{
+                "volcano": "GREAT SITKIN 311120",
+                "distance_nm": 31.5,
+                "within_corridor": True,
+                "aviation_colour_code": "ORANGE",
+            }],
+        },
+    }
+    view = build_briefing_view(flight, [], [])
+    proximity = view["hazards"]["volcano_proximity"]
+    assert proximity["entries"][0]["volcano"].startswith("GREAT SITKIN")
+    assert proximity["entries"][0]["within_corridor"] is True
+
+
+def test_a_minima_change_wins_the_page_one_highlight_like_an_outage() -> None:
+    """The page-one slot ranks by family; the split must not demote minima.
+
+    Before the split an FAA minima record resolved to `approach_navaid` and
+    took the highlight ahead of a runway notice. Its own family must inherit
+    that standing, or the page-one fact silently changes on US flights.
+    """
+
+    from app.odss.briefing import _overview_primary_highlight
+
+    panels = [{
+        "role_keys": ["departure"],
+        "card_summary_lines": [
+            {
+                "kind": "notam",
+                "text": "RWY 20C closed during the applicable departure window.",
+                "signal_family": "runway_closure",
+                "notam_id": "A1/26",
+                "source_page": 5,
+            },
+            {
+                "kind": "notam",
+                "text": (
+                    "RNAV (GPS) RWY 20C minima changed (DA 710/HAT 388) "
+                    "during the applicable departure window."
+                ),
+                "signal_family": "approach_minima",
+                "notam_id": "B2/26",
+                "source_page": 6,
+            },
+        ],
+    }]
+
+    highlight = _overview_primary_highlight(panels, role_key="departure")
+    assert highlight is not None
+    assert highlight["signal_family"] == "approach_minima"
+    assert highlight["notam_id"] == "B2/26"
+
+
+def test_overview_schedule_publishes_the_station_local_clock_beside_utc() -> None:
+    """David's page-1 SCHEDULE is ``0050Z / 0850 LT`` (B4 fix round 1, 17 Sep).
+
+    The local clock is published in the contract so the dashboard and the
+    PDF print one value from one registry; a station the registry does not
+    hold publishes None and both surfaces print "LT not held".
+    """
+    from app.odss.briefing import _overview_schedule
+
+    schedule = _overview_schedule("2026-08-21T00:50:00+00:00", 0, "WSSS")
+    assert schedule["display_utc"] == "21 AUG 0050Z"
+    assert schedule["display_local"] == "0850 LT"
+    assert _overview_schedule("2026-08-21T04:45:00+00:00", 201, "RPLL")["display_local"] == "1245 LT"
+    assert _overview_schedule("2026-08-21T00:50:00+00:00", 0, "ZZZZ")["display_local"] is None
+    assert _overview_schedule(None, 0, "WSSS")["display_local"] is None

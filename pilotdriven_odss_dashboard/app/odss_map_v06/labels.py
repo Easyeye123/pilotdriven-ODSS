@@ -16,6 +16,7 @@ ROLE_PRIORITY: dict[str, int] = {
     "edto_etp": 80,
     "edto_exit": 80,
     "depressurisation_critical": 75,
+    "vws_trigger": 72,
     "terrain_critical": 70,
     "toc": 60,
     "tod": 60,
@@ -44,7 +45,7 @@ def choose_priority_labels(
         markers,
         key=lambda item: (
             -int(item.get("properties", {}).get("priority", 0)),
-            int(item.get("properties", {}).get("actm_minutes", 0)),
+            int(item.get("properties", {}).get("actm_minutes") or 0),
             str(item.get("properties", {}).get("name", "")),
         ),
     )

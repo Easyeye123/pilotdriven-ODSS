@@ -39,6 +39,20 @@ NXT ADVISORY: 20260816/1200Z
 =
 """
 
+WASHINGTON_NO_SPACE_FORECAST = """\
+FVXX01 KWBC 160600
+VA ADVISORY
+DTG: 20260816/0600Z
+VAAC: WASHINGTON
+VOLCANO: TEST THREE 999003
+AREA: TEST AREA
+ADVISORY NR: 2026/303
+OBS VA DTG: 16/0600Z
+OBS VA CLD: SFC/FL200 N2000 W10000 - N2100 W09900 - N2000 W09800
+FCST VA CLD +6HR: 16/1200Z SFC/FL200 N2100 W09900 - N2200 W09800 - N2100 W09700
+NXT ADVISORY: 20260816/1200Z
+"""
+
 
 def _flight() -> dict[str, str]:
     return {
@@ -55,6 +69,34 @@ def test_wifs_collective_verifies_centre_identity_and_keeps_official_phases() ->
     assert advisories[0]["advisory_number"] == "2026/202"
     assert advisories[0]["phases"][0]["state"] == "polygon_available"
     assert advisories[1]["phases"][1]["state"] == "no_ash_expected"
+
+
+def test_washington_no_space_forecast_key_is_canonicalized() -> None:
+    advisories, errors = parse_wifs_vaa_collective(
+        WASHINGTON_NO_SPACE_FORECAST
+    )
+
+    assert errors == []
+    assert [item["centre"] for item in advisories] == ["WASHINGTON"]
+    assert [phase["phase"] for phase in advisories[0]["phases"]] == [
+        "observed",
+        "forecast_plus_6_hours",
+    ]
+
+
+def test_wifs_exercise_advisory_is_a_coverage_error_not_nil() -> None:
+    exercise = WASHINGTON_NO_SPACE_FORECAST.replace(
+        "VA ADVISORY\n",
+        "VA ADVISORY\nSTATUS: EXERCISE\n",
+    )
+
+    advisories, errors = parse_wifs_vaa_collective(exercise)
+
+    assert advisories == []
+    assert errors == [{
+        "record": "1",
+        "error": "Exercise VAA is not operational evidence",
+    }]
 
 
 def test_wifs_collective_rejects_an_unknown_vaac_instead_of_guessing() -> None:

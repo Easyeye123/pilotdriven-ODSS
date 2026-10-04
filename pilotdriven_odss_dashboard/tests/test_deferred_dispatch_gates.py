@@ -116,6 +116,74 @@ def test_unnumbered_cddl_uses_only_source_bounded_uplift_reference() -> None:
     assert gates[0]["publication_rows"][0]["reference"] == "212"
 
 
+def test_bare_cddl_without_subject_uses_its_printed_declaration_not_placeholder() -> None:
+    gates = build_deferred_dispatch_gates([{
+        "item_type": "CDDL",
+        "reference": "UNSPECIFIED",
+        "source_declaration": "BB CDDL",
+        "description": "",
+        "company_remark": "",
+    }])
+
+    assert gates[0]["title"] == "BB CDDL"
+    assert gates[0]["publication_rows"][0]["title"] == "CDDL"
+    assert "UNSPECIFIED" not in str(gates[0])
+
+
+def test_internal_only_unknown_declaration_never_becomes_a_pilot_gate() -> None:
+    assert build_deferred_dispatch_gates([{
+        "item_type": "UNCLASSIFIED",
+        "reference": "UNSPECIFIED",
+        "description": "",
+        "company_remark": "",
+    }]) == []
+
+    gates = build_deferred_dispatch_gates([{
+        "item_type": "UNCLASSIFIED",
+        "reference": "IFEDDL",
+        "description": "SEAT IFE AUDIO UNAVAILABLE",
+        "company_remark": "",
+    }])
+    assert gates[0]["title"] == "DEFERRED ITEM IFEDDL"
+    pilot_projection = {
+        "title": gates[0]["title"],
+        "summary": gates[0]["summary"],
+        "references": gates[0]["references"],
+        "publication_rows": gates[0]["publication_rows"],
+    }
+    assert "UNCLASSIFIED" not in str(pilot_projection)
+    assert "UNSPECIFIED" not in str(pilot_projection)
+
+
+def test_explicit_internal_declaration_never_becomes_a_pilot_gate_title() -> None:
+    assert build_deferred_dispatch_gates([{
+        "item_type": "UNCLASSIFIED",
+        "reference": "UNSPECIFIED",
+        "source_declaration": "UNCLASSIFIED UNSPECIFIED",
+        "description": "",
+        "company_remark": "",
+    }]) == []
+
+    raw_item = {
+        "item_type": "UNCLASSIFIED",
+        "reference": "UNSPECIFIED",
+        "source_declaration": "AA UNCLASSIFIED UNSPECIFIED",
+        "description": "SEAT IFE AUDIO UNAVAILABLE",
+        "company_remark": "",
+    }
+    gates = build_deferred_dispatch_gates([raw_item])
+    pilot_projection = {
+        "title": gates[0]["title"],
+        "summary": gates[0]["summary"],
+        "references": gates[0]["references"],
+        "publication_rows": gates[0]["publication_rows"],
+    }
+    assert "UNCLASSIFIED" not in str(pilot_projection)
+    assert "UNSPECIFIED" not in str(pilot_projection)
+    assert gates[0]["title"] != "AA"
+    assert raw_item["source_declaration"] == "AA UNCLASSIFIED UNSPECIFIED"
+
+
 def test_ambiguous_uppercase_prose_is_not_promoted_to_a_source_gate() -> None:
     deferred_items = [{
         "item_type": "MEL",
@@ -132,6 +200,38 @@ def test_ambiguous_uppercase_prose_is_not_promoted_to_a_source_gate() -> None:
     assert build_deferred_dispatch_gates(deferred_items)[0]["title"] == (
         "MEL 40-40"
     )
+
+
+def test_source_segments_carry_crop_provenance_into_the_shared_view() -> None:
+    deferred_items = [{
+        "item_type": "CDL",
+        "reference": "10-10",
+        "source_declaration": "AA CDL 10-10",
+        "source_page": 1,
+        "description": "FORWARD SEAL DAMAGED",
+        "company_remark": "ZZ IN OPS/42 R3 BOTH CTRL REMOVED",
+    }, {
+        "item_type": "MEL",
+        "reference": "20-20",
+        "source_declaration": "BB MEL 20-20",
+        "source_page": 2,
+        "description": "AFT SYSTEM INOPERATIVE",
+        "company_remark": "",
+    }]
+
+    segments = split_deferred_source_segments(deferred_items)
+
+    first_item_segments = [
+        segment
+        for segment in segments
+        if segment["source_item_index"] == 0
+    ]
+    assert {segment["source_page"] for segment in first_item_segments} == {1}
+    assert {
+        segment["crop_end_needle"] for segment in first_item_segments
+    } == {"BB MEL 20-20"}
+    assert segments[-1]["source_page"] == 2
+    assert segments[-1]["crop_end_needle"] == "PLAN"
 
 
 def test_briefing_exposes_projection_without_replacing_raw_deferred_items() -> None:
@@ -162,3 +262,102 @@ def test_briefing_exposes_projection_without_replacing_raw_deferred_items() -> N
 def test_empty_source_has_no_synthetic_dispatch_gate() -> None:
     assert build_deferred_dispatch_gates([]) == []
     assert build_deferred_dispatch_gates(None) == []
+
+
+def _rendered_download_pages(tmp_path, flight):
+    """Render the exact artefact the Download PDF button produces.
+
+    ``app/main.py`` calls ``render_combined_briefing`` with the default
+    ``include_audit_appendix=False``, which routes to the six-page analysed
+    format. The lossless historical composition in ``combined_brief.py`` -
+    the one that draws a dispatch-gate row above one source panel per
+    segment - is reached only with ``include_audit_appendix=True``, and no
+    service or production download passes that.
+    """
+    import fitz
+
+    from app.odss.briefing import build_briefing_view
+    from app.odss.combined_brief import render_combined_briefing
+
+    flight = deepcopy(flight)
+    flight["briefing"] = build_briefing_view(flight, [], [])
+    path = tmp_path / "download.pdf"
+    render_combined_briefing(flight, [], [], path)
+    with fitz.open(path) as document:
+        return [page.get_text() for page in document]
+
+
+def _folded(value: str) -> str:
+    import re
+
+    return " " + re.sub(r"\s+", " ", value or "").strip().upper() + " "
+
+
+def test_the_downloaded_briefing_never_draws_a_second_copy_of_a_declaration(
+    tmp_path,
+) -> None:
+    """David, 9 Sep 2026: "Why are the MEL/CDL content repeated?"
+
+    The dashboard fix of 15-16 Sep stopped the dispatch-gate panel reprinting
+    a declaration the report already publishes in full. The download is a
+    second surface and he tests it at least as often as the tab, but the
+    dashboard/PDF parity gate only proves every dashboard fact *reaches* the
+    PDF - never that it reaches it once - so nothing guarded this.
+
+    The declaration is published once, on the technical-status page, with its
+    condition; page 1 carries only its label, exactly as David's own reference
+    briefing of 9 Sep does.
+    """
+    from app.odss.concise_pdf_gate import PERFORMANCE_PAGE
+
+    flight = _parsed_flight()
+    flight["deferred_items"] = [
+        {
+            "item_type": "MEL",
+            "reference": "25-20-50A",
+            "description": "D4L GALLEY CHILLER NO.1 RED LIGHT BLINKING",
+            "company_remark": "TO UPLIFT DRY ICE",
+        },
+        {
+            "item_type": "CDL",
+            "reference": "57-21",
+            "description": "RIGHT WING ACCESS PANEL SEAL TORN",
+            "company_remark": "X PERFORMANCE [P]",
+        },
+    ]
+    pages = _rendered_download_pages(tmp_path, flight)
+
+    assert len(pages) == 6
+    whole = _folded(" ".join(pages))
+    # The block that carried the second copy on the dashboard is not drawn on
+    # this surface at all.
+    assert "DISPATCH CONFIRMATION GATES" not in whole
+
+    technical = _folded(pages[PERFORMANCE_PAGE])
+    # Count the subject as a plain substring. The published sentence ends in a
+    # full stop ("D4L galley chiller no.1 red light blinking."), so a
+    # space-bounded count would match nothing and pass on any output at all.
+    for description in (
+        "D4L GALLEY CHILLER NO.1 RED LIGHT BLINKING",
+        "RIGHT WING ACCESS PANEL SEAL TORN",
+    ):
+        subject = _folded(description).strip()
+        assert technical.count(subject) == 1, (
+            f"the technical-status page prints {subject!r} "
+            f"{technical.count(subject)} time(s), not once"
+        )
+
+    # Nothing is hidden to achieve that: the condition the pilot acts on is
+    # printed with the declaration, not dropped with the duplicate.
+    assert "D4L GALLEY CHILLER NO.1 RED LIGHT BLINKING" in technical
+    assert "UPLIFT" in technical
+
+    # And the other surface carries the label only, so the two never both
+    # print the wording - the shape of David's own reference briefing, whose
+    # page-1 TECH STATUS tile reads "MEL 25-20-50A / DRY ICE" while page 3
+    # reads "D4L galley chiller No.1 red light blinking. Uplift dry ice."
+    from app.odss.concise_pdf_gate import OVERVIEW_PAGE
+
+    overview = _folded(pages[OVERVIEW_PAGE])
+    assert "MEL 25-20-50A" in overview
+    assert "D4L GALLEY CHILLER NO.1 RED LIGHT BLINKING" not in overview

@@ -415,14 +415,14 @@ def validate_flight_briefing_publication(
             violations,
             "FULL_CFP_APPENDED",
             "report.full_cfp_appended",
-            "The complete CFP must not be appended to the Flight Briefing.",
+            "The complete OFP must not be appended to the Flight Briefing.",
         )
     if report.get("full_cfp_embedded") is True:
         _violation(
             violations,
             "FULL_CFP_EMBEDDED",
             "report.full_cfp_embedded",
-            "The complete CFP must not be embedded in the Flight Briefing.",
+            "The complete OFP must not be embedded in the Flight Briefing.",
         )
     attachments = report.get("embedded_files") or []
     if any(
@@ -434,7 +434,7 @@ def validate_flight_briefing_publication(
             violations,
             "FULL_CFP_ATTACHMENT_PRESENT",
             "report.embedded_files",
-            "The complete CFP must not be attached to the primary report.",
+            "The complete OFP must not be attached to the primary report.",
         )
 
     if _text(page1.get("information_side")).casefold() != "left":
@@ -749,7 +749,7 @@ def validate_flight_briefing_publication(
             violations,
             "HAZARD_COVERAGE_MANIFEST_EMPTY",
             "hazard_assessment",
-            "Every CFP requires reviewed products or explicit coverage gaps.",
+            "Every OFP requires reviewed products or explicit coverage gaps.",
         )
     for index, gap in enumerate(gaps):
         if not isinstance(gap, dict) or not _text(gap.get("product_class")) or not _text(gap.get("reason")):
@@ -821,3 +821,64 @@ __all__ = [
     "required_source_crop_categories",
     "validate_flight_briefing_publication",
 ]
+
+
+
+def current_rules_briefing(analysis: dict, source_pdf_path=None) -> dict:
+    """The stored analysis' briefing, under the publication rules in service.
+
+    Download PDF re-creates a saved pack's briefing from the held analysis with
+    the current build; a reopened pack's dashboard must read the same rules or
+    the two surfaces of one pack can disagree (independent review, 19 Sep
+    2026). An analysis whose stored view carries the current ``publication_rules``
+    is served as stored. An older one is rebuilt exactly as the download does
+    it: the held flight, findings, warnings, timing and weather charts, the
+    page-1 declarations re-read from the held OFP, findings reconciled through
+    the shared assessments. Nothing is re-analysed, no clock or source moves,
+    and the held analysis is never rewritten. A rebuild that cannot complete
+    serves the stored view and says so.
+    """
+    from .briefing import build_briefing_view
+    from .combined_brief import COMBINED_BRIEFING_SCHEMA_VERSION, source_verified_flight
+    from .runway_closure_schedule import reconcile_runway_closure_findings
+
+    view = analysis.get("view") or {}
+    stored = view.get("briefing")
+    flight = analysis.get("flight") or {}
+    findings = analysis.get("findings") or []
+    served = {
+        "briefing": stored,
+        "flight": flight,
+        "findings": findings,
+        "timing": view.get("timing"),
+        "publication_rules": (stored or {}).get("publication_rules"),
+        "rebuilt_from_held_analysis": False,
+    }
+    # An analysis whose held extraction predates the parser in service is rebuilt too (release-422 QA, F2):
+    # the composition states that on the record, and the stored view - made when that extraction was current -
+    # cannot. The stamp itself is what the parser held and is never rewritten.
+    from .extraction_rules import EXTRACTION_RULES
+    older_extraction = (flight.get("extraction_rules") or None) != EXTRACTION_RULES
+    if not isinstance(stored, dict) or (stored.get("publication_rules") == COMBINED_BRIEFING_SCHEMA_VERSION and not older_extraction):
+        return served
+    try:
+        verified = source_verified_flight(flight, source_pdf_path)
+        rebuilt = build_briefing_view(
+            verified,
+            findings,
+            list(view.get("warnings") or []),
+            view.get("timing"),
+            analysis.get("weather_charts"),
+            include_dashboard_only_panels=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - an old pack must still open
+        return {**served, "rebuild_error": f"{type(exc).__name__}: {exc}"}
+    rebuilt["publication_rules"] = COMBINED_BRIEFING_SCHEMA_VERSION
+    return {
+        **served,
+        "briefing": rebuilt,
+        "flight": verified,
+        "findings": reconcile_runway_closure_findings(findings, verified),
+        "publication_rules": COMBINED_BRIEFING_SCHEMA_VERSION,
+        "rebuilt_from_held_analysis": True,
+    }

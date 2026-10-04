@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
+from pathlib import Path
+from types import SimpleNamespace
+
 import app.odss.weather_charts as weather_charts
+import pytest
 from app.odss.weather_charts import (
     build_weather_chart_manifest,
     detect_chart_appendix,
@@ -57,6 +62,235 @@ def test_detection_finds_raster_pages_without_fixed_numbers(monkeypatch):
     assert [item["page_number"] for item in found] == [3, 4]
     assert all(item["media_type"] == "image/png" for item in found)
     assert found[0]["image_sha256"] != found[1]["image_sha256"]
+
+
+def test_detection_keeps_large_compressed_chart_below_byte_threshold(monkeypatch):
+    class _Raster:
+        size = (900, 710)
+
+    class _CompressedFullPageImage:
+        data = PNG_MAGIC + b"\x00" * (23 * 1024)
+        image = _Raster()
+
+    class _CompressedChartPage:
+        images = [_CompressedFullPageImage()]
+
+        @staticmethod
+        def extract_text() -> str:
+            return "Page 49 of 59"
+
+    class _CompressedReader:
+        def __init__(self, path):
+            self.pages = [_CompressedChartPage()]
+
+    monkeypatch.setattr(weather_charts, "PdfReader", _CompressedReader)
+
+    found = detect_chart_appendix("ignored.pdf")
+
+    assert len(found) == 1
+    assert found[0]["page_number"] == 1
+    assert found[0]["image_bytes"] < weather_charts._MIN_IMAGE_BYTES
+    assert (found[0]["image_width"], found[0]["image_height"]) == (900, 710)
+    assert found[0]["detection_basis"] == "intrinsic-raster-dimensions"
+
+
+class _GeometryImage:
+    def __init__(
+        self,
+        data: bytes,
+        *,
+        name: str,
+        width: int,
+        height: int,
+    ) -> None:
+        self.data = data
+        self.name = name
+        self.image = SimpleNamespace(size=(width, height))
+
+
+class _GeometryBox:
+    left = 0
+    bottom = 0
+    right = 595
+    top = 842
+
+
+class _GeometryPage:
+    cropbox = _GeometryBox()
+
+    def __init__(
+        self,
+        text: str,
+        image: _GeometryImage,
+        matrix: list[float],
+    ) -> None:
+        self._text = text
+        self.images = [image]
+        self._matrix = matrix
+
+    def extract_text(self, *, visitor_operand_before=None) -> str:
+        if visitor_operand_before:
+            visitor_operand_before(
+                b"Do",
+                [f"/{self.images[0].name.rsplit('.', 1)[0]}"],
+                self._matrix,
+                [1, 0, 0, 1, 0, 0],
+            )
+        return self._text
+
+
+def test_detection_uses_rendered_coverage_not_compressed_bytes_or_pixels(
+    monkeypatch,
+) -> None:
+    compressed_chart = PNG_MAGIC + b"\x00" * (12 * 1024)
+    ordinary_illustration = PNG_MAGIC + b"\x11" * (80 * 1024)
+    pages = [
+        _GeometryPage(
+            "Page 1 of 3",
+            _GeometryImage(
+                compressed_chart,
+                name="Im1.png",
+                width=900,
+                height=710,
+            ),
+            [515, 0, 0, 652, 40, 95],
+        ),
+        _GeometryPage(
+            "Illustrated information page",
+            _GeometryImage(
+                ordinary_illustration,
+                name="Im2.png",
+                width=1600,
+                height=1200,
+            ),
+            [180, 0, 0, 120, 50, 500],
+        ),
+        _GeometryPage(
+            "NORMAL TEXT " * 40,
+            _GeometryImage(
+                ordinary_illustration,
+                name="Im3.png",
+                width=1600,
+                height=1200,
+            ),
+            [515, 0, 0, 652, 40, 95],
+        ),
+    ]
+
+    class _GeometryReader:
+        def __init__(self, path):
+            self.pages = pages
+
+    monkeypatch.setattr(weather_charts, "PdfReader", _GeometryReader)
+
+    found = detect_chart_appendix("ignored.pdf")
+
+    assert [item["page_number"] for item in found] == [1]
+    assert found[0]["image_bytes"] < weather_charts._MIN_IMAGE_BYTES
+    assert found[0]["detection_basis"] == "page-dominating-raster"
+    assert found[0]["rendered_page_coverage"] > 0.60
+
+
+def test_multi_image_page_uses_same_coverage_ranked_raster_everywhere(
+    monkeypatch,
+) -> None:
+    chart_image = PNG_MAGIC + b"\x22" * (12 * 1024)
+    oversized_panel = PNG_MAGIC + b"\x33" * (80 * 1024)
+
+    class _MultiImagePage:
+        cropbox = _GeometryBox()
+        images = [
+            _GeometryImage(
+                oversized_panel,
+                name="ImPanel.png",
+                width=1800,
+                height=1200,
+            ),
+            _GeometryImage(
+                chart_image,
+                name="ImChart.png",
+                width=900,
+                height=710,
+            ),
+        ]
+
+        @classmethod
+        def extract_text(cls, *, visitor_operand_before=None) -> str:
+            if visitor_operand_before:
+                visitor_operand_before(
+                    b"Do",
+                    ["/ImPanel"],
+                    [180, 0, 0, 120, 50, 500],
+                    [1, 0, 0, 1, 0, 0],
+                )
+                visitor_operand_before(
+                    b"Do",
+                    ["/ImChart"],
+                    [515, 0, 0, 652, 40, 95],
+                    [1, 0, 0, 1, 0, 0],
+                )
+            return "Page 1 of 1"
+
+    class _MultiImageReader:
+        def __init__(self, path):
+            self.pages = [_MultiImagePage()]
+
+    ocr_images: list[bytes] = []
+    ai_images: list[bytes] = []
+
+    def record_ocr(image: bytes, _deadline=None) -> dict[str, str]:
+        ocr_images.append(image)
+        return {"ocr_status": "unclassified"}
+
+    def record_ai(_client, _model_id, image: bytes, _media) -> dict[str, str]:
+        ai_images.append(image)
+        return {"classification_status": "error:test"}
+
+    monkeypatch.setattr(weather_charts, "PdfReader", _MultiImageReader)
+    monkeypatch.setattr(weather_charts, "_ocr_enabled", lambda: True)
+    monkeypatch.setattr(weather_charts, "_ocr_chart_image", record_ocr)
+    monkeypatch.setattr(weather_charts, "_classification_enabled", lambda: True)
+    monkeypatch.setattr(weather_charts, "_model_id", lambda: "test-model")
+    monkeypatch.setattr(weather_charts, "_bedrock_client", object)
+    monkeypatch.setattr(weather_charts, "_classify_one", record_ai)
+
+    detected = detect_chart_appendix("ignored.pdf")
+    extracted = weather_charts.extract_chart_image("ignored.pdf", 1)
+    manifest = build_weather_chart_manifest("ignored.pdf")
+
+    expected_sha = sha256(chart_image).hexdigest()
+    assert detected[0]["image_sha256"] == expected_sha
+    assert manifest["charts"][0]["image_sha256"] == expected_sha
+    assert extracted == chart_image
+    assert ocr_images == [chart_image]
+    assert ai_images == [chart_image]
+
+
+def test_sq910_offline_detection_holds_all_raster_chart_pages(monkeypatch) -> None:
+    private_cfp = (
+        Path(__file__).resolve().parents[2]
+        / "private_cfp_corpus"
+        / "SQ91021082026SIN.pdf"
+    )
+    if not private_cfp.is_file():
+        pytest.skip("private SQ910 release-gate CFP is not available")
+    monkeypatch.setenv("ODSS_WEATHER_CHART_OCR", "disabled")
+    monkeypatch.setenv("ODSS_WEATHER_CHART_AI", "disabled")
+
+    detected = detect_chart_appendix(private_cfp)
+    manifest = build_weather_chart_manifest(private_cfp)
+
+    expected_pages = list(range(46, 58))
+    assert [item["page_number"] for item in detected] == expected_pages
+    assert [item["page_number"] for item in manifest["charts"]] == expected_pages
+    assert manifest["status"] == "held"
+    assert manifest["ocr"]["enabled"] is False
+    assert manifest["classifier"]["enabled"] is False
+    vertical_profile = next(
+        item for item in detected if item["page_number"] == 49
+    )
+    assert vertical_profile["image_bytes"] == 23_778
+    assert vertical_profile["detection_basis"] == "page-dominating-raster"
 
 
 def test_manifest_holds_pages_even_with_ai_disabled(monkeypatch):

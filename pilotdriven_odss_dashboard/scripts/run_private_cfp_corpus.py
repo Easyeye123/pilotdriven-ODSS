@@ -16,7 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.analysis import run_odss_analysis
-from app.odss.combined_brief import render_combined_briefing
+from app.odss.combined_brief import (
+    _audit_rev3_v8_classification_sentence,
+    render_combined_briefing,
+)
+# One vocabulary, shared with the parser rule that refuses these lines.
+from app.odss.enrichment import NON_STATION_ABBREVIATIONS
 from app.odss.report_quality import validate_combined_briefing_pdf
 
 
@@ -46,10 +51,16 @@ REQUIRED_CASE_IDS = frozenset({
     "SQ34-SIN-SFO",
     "SQ365-FCO-SIN",
     "SQ214-PER-SIN-19AUG",
+    "SQ910-SIN-MNL-21AUG",
+    "SQ481-JNB-SIN-25AUG",
+    "SQ38-SIN-LAX-29AUG",
+    "SQ605-ICN-SIN-08SEP",
+    "SQ606-SIN-ICN-06SEP",
+    "SQ882-SIN-HKG-09SEP",
 })
 DEFERRED_TYPES = {"MEL", "CDL", "CDDL"}
 DEFERRED_REFERENCE = re.compile(r"^[A-Z0-9]+(?:-[A-Z0-9]+)+$")
-EXTRACTION_CONTRACT_VERSION = 1
+EXTRACTION_CONTRACT_VERSION = 2
 EXTRACTION_COUNT_FIELDS = (
     "notams",
     "weather",
@@ -59,9 +70,26 @@ EXTRACTION_COUNT_FIELDS = (
     "edto_airports",
     "fuel_enroute_airports",
     "route_waypoints",
+    "flight_planning_etps",
+    "intam_records",
+    "notam_procedure_records",
+    "planning_publication",
 )
 EXTRACTION_DIGEST_FIELDS = EXTRACTION_COUNT_FIELDS
 _LIVE_OPMET_SOURCE = "noaa_awc_live"
+_BOSS_FLOW_SOURCE_EXPECTATIONS = {
+    "SQ910-SIN-MNL-21AUG": {
+        "intam_count": 21,
+        "intam_pages": list(range(39, 46)),
+        "weather_chart_pages": list(range(46, 58)),
+        "fir_boundaries": [
+            ("WIIF", 3, 7),
+            ("WSJC", 14, 7),
+            ("WSJC", 56, 7),
+            ("RPHI", 121, 8),
+        ],
+    },
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -70,6 +98,36 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def build_analysis_receipt_binding(
+    analysis_path: Path,
+    output_root: Path,
+) -> dict[str, str]:
+    """Bind the exact analysis consumed by the publication parity gate.
+
+    Resolving both paths before calculating the relative name prevents an
+    analysis symlink from certifying bytes outside this corpus run.  A missing
+    or out-of-root artifact is a release failure, not an optional receipt.
+    """
+
+    resolved_root = output_root.resolve(strict=True)
+    resolved_analysis = analysis_path.resolve(strict=True)
+    if not resolved_analysis.is_file():
+        raise AssertionError(
+            f"Analysis artifact is not a regular file: {resolved_analysis}."
+        )
+    try:
+        relative_path = resolved_analysis.relative_to(resolved_root)
+    except ValueError as exc:
+        raise AssertionError(
+            "Analysis artifact must be contained by the private corpus output: "
+            f"{resolved_analysis}."
+        ) from exc
+    return {
+        "analysis_json": relative_path.as_posix(),
+        "analysis_sha256": sha256_file(resolved_analysis),
+    }
 
 
 def _record_digest(rows: list[Any]) -> str:
@@ -129,6 +187,42 @@ def build_extraction_snapshot(flight: dict[str, Any]) -> dict[str, Any]:
         "fuel_enroute_airports",
     )
     route_waypoints = records(flight, "route_waypoints", "route_waypoints")
+    flight_planning_etps = records(
+        flight,
+        "flight_planning_etps",
+        "flight_planning_etps",
+    )
+    intam_records = records(flight, "intam_records", "intam_records")
+    notam_procedure_records = records(
+        flight,
+        "notam_procedure_records",
+        "notam_procedure_records",
+    )
+
+    def required_value(key: str) -> Any:
+        if key not in flight:
+            structure_failures.append(f"{key} is missing")
+        return flight.get(key)
+
+    # These values publish as one governed planning block.  A singleton
+    # collection keeps the generic count/digest contract while pinning the
+    # complete nested fuel, performance/MLGW and sensitivity inputs.
+    planning_publication = [{
+        "performance": required_value("performance"),
+        "fuel_summary": required_value("fuel_summary"),
+        "zfw_change_burn_kg_per_1000": required_value(
+            "zfw_change_burn_kg_per_1000"
+        ),
+        "zfw_change_burn_add_kg_per_1000": required_value(
+            "zfw_change_burn_add_kg_per_1000"
+        ),
+        "zfw_change_burn_less_kg_per_1000": required_value(
+            "zfw_change_burn_less_kg_per_1000"
+        ),
+        "lower_cruise_sensitivity": required_value(
+            "lower_cruise_sensitivity"
+        ),
+    }]
 
     collections = {
         "notams": notams,
@@ -139,6 +233,10 @@ def build_extraction_snapshot(flight: dict[str, Any]) -> dict[str, Any]:
         "edto_airports": edto_airports,
         "fuel_enroute_airports": fuel_airports,
         "route_waypoints": route_waypoints,
+        "flight_planning_etps": flight_planning_etps,
+        "intam_records": intam_records,
+        "notam_procedure_records": notam_procedure_records,
+        "planning_publication": planning_publication,
     }
     counts = {
         "notams": len(notams),
@@ -149,6 +247,10 @@ def build_extraction_snapshot(flight: dict[str, Any]) -> dict[str, Any]:
         "edto_airports": len(edto_airports),
         "fuel_enroute_airports": len(fuel_airports),
         "route_waypoints": len(route_waypoints),
+        "flight_planning_etps": len(flight_planning_etps),
+        "intam_records": len(intam_records),
+        "notam_procedure_records": len(notam_procedure_records),
+        "planning_publication": len(planning_publication),
     }
     return {
         "counts": counts,
@@ -183,6 +285,100 @@ def check_extraction_expectations(
         "failures": failures,
         "actual": actual,
     }
+
+
+def check_boss_flow_source_expectations(
+    case_id: str,
+    flight: dict[str, Any],
+    weather_charts: dict[str, Any],
+) -> list[str]:
+    """Pin boss-reviewed package facts outside the generic corpus digest."""
+    expected = _BOSS_FLOW_SOURCE_EXPECTATIONS.get(case_id)
+    if not expected:
+        return []
+    failures: list[str] = []
+    intam_records = list(flight.get("intam_records") or [])
+    intam_pages = sorted({
+        int(row["source_page"])
+        for row in intam_records
+        if isinstance(row, dict) and isinstance(row.get("source_page"), int)
+    })
+    chart_pages = [
+        int(row["page_number"])
+        for row in weather_charts.get("charts") or []
+        if isinstance(row, dict) and isinstance(row.get("page_number"), int)
+    ]
+    fir_boundaries = [
+        (
+            str(row.get("fir_boundary") or ""),
+            int(row.get("actm_minutes")),
+            int(row.get("source_page")),
+        )
+        for row in flight.get("route_waypoints") or []
+        if isinstance(row, dict)
+        and row.get("fir_boundary")
+        and isinstance(row.get("actm_minutes"), int)
+        and isinstance(row.get("source_page"), int)
+    ]
+    if len(intam_records) != expected["intam_count"]:
+        failures.append(
+            f"INTAM count expected {expected['intam_count']}, got {len(intam_records)}"
+        )
+    if intam_pages != expected["intam_pages"]:
+        failures.append(
+            f"INTAM pages expected {expected['intam_pages']}, got {intam_pages}"
+        )
+    if chart_pages != expected["weather_chart_pages"]:
+        failures.append(
+            "weather chart pages expected "
+            f"{expected['weather_chart_pages']}, got {chart_pages}"
+        )
+    if fir_boundaries != expected["fir_boundaries"]:
+        failures.append(
+            f"FIR boundaries expected {expected['fir_boundaries']}, got {fir_boundaries}"
+        )
+    return failures
+
+
+def check_required_publication_markers(
+    case: dict[str, Any],
+    audit_text: str,
+    operational_text: str,
+) -> list[str]:
+    """Check markers on the publication surface that owns each contract.
+
+    The lossless audit publication intentionally preserves the frozen REV3-v8
+    page-one layout, while the pilot download owns the current seven-page
+    boss flow and its five-phase action strip. Requiring an operational-only label
+    from the audit PDF makes a valid pair fail after both files render cleanly.
+    """
+    common = (
+        "FLIGHT BRIEFING",
+        f"{case['departure_iata']} / {case['departure']}",
+        f"{case['destination_iata']} / {case['destination']}",
+    )
+    required_by_surface = {
+        "audit": common,
+        "operational": (
+            ("FLIGHT BRIEFING - MASTER SUMMARY", "ROUTE HAZARD OVERLAY",
+             "VWS, CAT AND TERRAIN", "FUEL, MASS AND PERFORMANCE",
+             "DEPARTURE SURFACE", "DESTINATION SURFACE",
+             "ALTERNATES AND AIRCRAFT TECHNICAL STATUS",
+             "REVIEW RECORD AND RELEASE CONDITIONS")
+            if "FLIGHT BRIEFING - MASTER SUMMARY" in operational_text.upper()
+            else (*common, "RELEASE", "BEFORE PUSH", "ROUTE", "ARRIVAL", "WEATHER")
+        ),
+    }
+    text_by_surface = {
+        "audit": audit_text.upper(),
+        "operational": operational_text.upper(),
+    }
+    return [
+        f"{surface}: {marker}"
+        for surface, markers in required_by_surface.items()
+        for marker in markers
+        if marker.upper() not in text_by_surface[surface]
+    ]
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
@@ -414,6 +610,292 @@ def deferred_items(flight: dict[str, Any]) -> list[dict[str, str]]:
     return rows
 
 
+# --------------------------------------------------------------------------
+# Independent source oracles (production audit, 19 Sep 2026).
+#
+# Every other expectation in this gate is minted from the analysis under test,
+# so a fact no parser extracted is absent from both sides of every comparison
+# and the gate agrees with itself. These two checks look at the source page and
+# at the published statements directly. They deliberately share no pattern or
+# helper with app.odss.parser or the renderers.
+# --------------------------------------------------------------------------
+
+def source_declaration_labels(page_one_text: str) -> list[str]:
+    """Page-1 declaration lines as the OFP prints them, read without the parser.
+
+    A declaration opens with Lido's sequence label - one capital letter twice -
+    at the remarks block's own margin, in ascending order, before the plan
+    block. A wrapped body line is indented or does not ascend.
+    """
+    labels: list[str] = []
+    margin: int | None = None
+    last = ""
+    for raw in str(page_one_text or "").splitlines():
+        text = raw.strip()
+        words = text.split()
+        # Lido's plan block opens "PLAN 8" / "PLAN 27/0/1"; a dispatcher remark
+        # such as "PLAN WITH PACKS OFF" is still part of the remarks.
+        plan_header = (
+            len(words) == 2 and words[0] == "PLAN"
+            and all(part.isdigit() for part in words[1].split("/"))
+        )
+        if plan_header or words[:2] == ["RTE", "NO"]:
+            break
+        parts = text.split(None, 1)
+        if len(parts) != 2:
+            continue
+        token = parts[0]
+        if len(token) != 2 or token[0] != token[1] or not ("A" <= token[0] <= "Z"):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        if token <= last or (margin is not None and indent != margin):
+            continue
+        margin, last = indent, token
+        labels.append(" ".join(text.split()))
+    return labels
+
+
+def _plan_block_opens(text: str) -> bool:
+    words = text.split()
+    return (
+        len(words) == 2 and words[0] == "PLAN"
+        and all(part.isdigit() for part in words[1].split("/"))
+    ) or words[:2] == ["RTE", "NO"]
+
+
+def source_declaration_bodies(page_one_text: str) -> list[dict[str, Any]]:
+    """Each declaration's own lines, and the remark lines no declaration owns.
+
+    Read straight off the page. A body is the lines under a label; it ends at
+    the next label, at the plan block, or at a paragraph break followed by a
+    line back at the block's margin (the dispatcher moving on). Lines after
+    that belong to no declaration.
+    """
+    bodies: list[dict[str, Any]] = []
+    margin: int | None = None
+    last = ""
+    gap = False
+    current: dict[str, Any] | None = None
+    unowned: list[str] = []
+    for raw in str(page_one_text or "").splitlines():
+        text = " ".join(raw.split())
+        if not text:
+            gap = True
+            continue
+        if _plan_block_opens(text):
+            break
+        indent = len(raw) - len(raw.lstrip())
+        parts = text.split(None, 1)
+        token = parts[0]
+        is_label = (
+            len(parts) == 2 and len(token) == 2 and token[0] == token[1]
+            and "A" <= token[0] <= "Z" and token > last and margin in (None, indent)
+        )
+        if is_label:
+            margin, last, gap = indent, token, False
+            current = {"declaration": text, "lines": []}
+            bodies.append(current)
+            continue
+        if current is not None and gap and indent <= (margin or 0):
+            current = None
+        if current is not None:
+            current["lines"].append(text)
+            gap = False
+        elif bodies:
+            unowned.append(text)
+    return [*bodies, {"declaration": None, "lines": unowned}]
+
+
+_REQUEST_LINE_OPENERS = ("TO ", "PLS ", "PLSE ", "PLEASE ", "UPLIFT ", "DO NOT ")
+_FORM_FIELD_LINES = ("X PERFORMANCE", "PERFORMANCE [P]", "X CLASS", "CLASS ")
+
+
+def _condition_identifiers(lines: list[str]) -> list[str]:
+    """What pins a condition down: tokens that carry a digit (part numbers,
+    breaker ids, positions, quantities, years) in the statement lines - the
+    lines before the engineer's first request or form field. A number cited
+    after CDL/MEL/CDDL on a FROM/WRT line points at other paperwork, and a
+    bare number on its own line is the form's own serial."""
+    tokens: list[str] = []
+    for line in lines:
+        upper = line.upper()
+        if upper.startswith(_REQUEST_LINE_OPENERS):
+            break
+        if upper.startswith(_FORM_FIELD_LINES) or upper.replace(" ", "").isdigit() or upper.startswith("ECDL"):
+            continue
+        words = upper.replace(",", " ").replace(";", " ").replace("(", " ").replace(")", " ").split()
+        cites_paperwork = upper.startswith(("FROM ", "WRT ")) or " WRT " in f" {upper} "
+        for index, word in enumerate(words):
+            if word in {"X"} or " UPLIFT" in f" {' '.join(words[index:index + 2])}":
+                # "... NOISY PLSE UPLIFT", "923 UPLIFT TRASH BAG": the rest of
+                # the line is the request.
+                if "UPLIFT" in words[index:index + 2]:
+                    break
+            core = word.strip(".:#&/-'\"")
+            if len(core) < 3 or not any(character.isdigit() for character in core):
+                continue
+            if cites_paperwork and index and words[index - 1] in {"CDL", "MEL", "CDDL"}:
+                continue
+            if core not in tokens:
+                tokens.append(core)
+    return tokens
+
+
+def _alnum(value: str) -> str:
+    return " ".join("".join(character if character.isalnum() else " " for character in str(value or "").upper()).split())
+
+
+def check_source_declaration_coverage(
+    page_one_text: str,
+    flight: dict[str, Any],
+    download_text: str,
+    expectations: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    """Every declaration the OFP prints is held, keeps only its own words, and
+    reaches the download with what identifies its condition.
+
+    19 Sep 2026 review: the first version of this check passed a download that
+    named CDL 57-16 and EN A35MEN-21-28871 but had lost "572HB", "573BB AND
+    573DB", "1003HW" and "10 JUNE 2027". Identity is not coverage.
+    """
+    failures: list[str] = []
+    held: dict[str, dict[str, Any]] = {}
+    for item in flight.get("deferred_items") or []:
+        declaration = " ".join(str(item.get("source_declaration") or "").split())
+        for token in item.get("source_group_tokens") or [declaration[:2]]:
+            held[str(token)] = item
+    folded = " ".join(str(download_text or "").upper().split())
+    download = f" {_alnum(download_text)} "
+    bodies = source_declaration_bodies(page_one_text)
+    unowned = [line for body in bodies if body["declaration"] is None for line in body["lines"]]
+    for body in bodies:
+        declaration = body["declaration"]
+        if declaration is None:
+            continue
+        item = held.get(declaration[:2])
+        if item is None:
+            failures.append(f"{declaration}: printed on OFP page 1 but not held as a declaration.")
+            continue
+        reference = " ".join(str(item.get("reference") or "").upper().split())
+        identity = reference if any(character.isdigit() for character in reference) else ""
+        if identity and identity not in folded:
+            failures.append(f"{declaration}: identity {identity} is printed nowhere in the download.")
+        for token in _condition_identifiers(body["lines"]):
+            if f" {_alnum(token)} " not in download:
+                failures.append(f"{declaration}: condition identifier {token} is not published in the download.")
+        held_words = _alnum(" ".join(str(item.get(field) or "") for field in ("description", "company_remark")))
+        for line in unowned:
+            if len(line.split()) >= 3 and _alnum(line) in held_words:
+                failures.append(
+                    f"{declaration}: holds '{line}', which the OFP prints outside every declaration."
+                )
+    for row in expectations or []:
+        for phrase in row.get("download_words") or []:
+            if f" {_alnum(phrase)} " not in download:
+                failures.append(
+                    f"{row['declaration']}: reviewed condition '{phrase}' is not published in the download."
+                )
+    return failures
+
+
+def check_station_identities(flight: dict[str, Any]) -> list[str]:
+    """No airport the analysis carries may be an equipment or obstacle line.
+
+    A LIDO NOTAM item-E body sits inside the appendix the station scanner
+    walks, and prints in the same ``AAAA/BBB text`` shape a station header
+    uses. Before 22 Sep 2026 that published two stations that are not
+    aerodromes - ``ELEV/HGT (FT) - 135/153`` and
+    ``DVOR/DME STJ 113.200MHZ/CH 79X U/S`` - into SQ303's airport list, and the
+    dashboard's "Jump to airport" offered both.
+
+    The web parser was corrected first, which is why the analysis had to be
+    checked separately: it parses the uploaded OFP itself, so a client-side
+    rule never reaches it. This check reads the analysis's own airports, so it
+    fails whichever parser regresses.
+    """
+    failures: list[str] = []
+    seen: set[tuple[str, str]] = set()
+
+    def inspect(where: str, code: Any, name: Any = "") -> None:
+        icao = str(code or "").strip().upper()
+        if not icao or (where, icao) in seen:
+            return
+        seen.add((where, icao))
+        label = " ".join(str(name or "").split())
+        if icao in NON_STATION_ABBREVIATIONS:
+            failures.append(f"{where}: {icao} is an abbreviation, not an aerodrome ({label!r}).")
+            return
+        if label and any(character.isdigit() for character in label):
+            failures.append(f"{where}: {icao} carries equipment prose as its name ({label!r}).")
+
+    inspect("departure", flight.get("departure"))
+    inspect("destination", flight.get("destination"))
+    for alternate in flight.get("alternates") or []:
+        inspect("alternate", (alternate or {}).get("airport"), (alternate or {}).get("name"))
+    for airport in (flight.get("edto") or {}).get("airports") or []:
+        inspect("edto", (airport or {}).get("airport"), (airport or {}).get("name"))
+    for station in flight.get("fuel_enroute_airports") or []:
+        inspect("fuel_enroute_airport", (station or {}).get("airport"), (station or {}).get("name"))
+    for notam in flight.get("notams") or []:
+        inspect("notam", (notam or {}).get("location"))
+    return failures
+
+
+_UNRESOLVED_NOTICE = "COULD NOT BE RESOLVED"
+
+
+def check_notam_statement_consistency(
+    view: dict[str, Any],
+    download_pages: list[str],
+) -> list[str]:
+    """One notice, one story: no surface may call a notice unresolved while
+    another publishes an evaluated consequence for the same notice."""
+    evaluated: dict[str, str] = {}
+    for analysis in [*(view.get("airport_pdf_analysis") or []), *(view.get("alternate_pdf_analysis") or [])]:
+        for line in analysis.get("lines") or []:
+            if line.get("state") != "scheduled":
+                continue
+            for notam_id in line.get("notam_ids") or []:
+                evaluated.setdefault(str(notam_id), str(line.get("consequence") or ""))
+    if not evaluated:
+        return []
+    conflicts: list[str] = []
+    surfaces: list[tuple[str, str, str]] = []
+    for panel in view.get("airport_operational_panels") or []:
+        for notice in panel.get("selected_notams") or []:
+            for field in ("summary", "compact_text"):
+                surfaces.append((str(notice.get("notam_id")), f"dashboard {field}", str(notice.get(field) or "")))
+        for line in panel.get("card_summary_lines") or []:
+            if line.get("kind") == "notam":
+                surfaces.append((str(line.get("notam_id") or line.get("label")), "dashboard card line", str(line.get("text") or "")))
+    for finding in view.get("decision_findings") or []:
+        title = str(finding.get("title") or "")
+        for notam_id in evaluated:
+            if title.endswith(f"NOTAM {notam_id}"):
+                surfaces.append((notam_id, "decision finding", str(finding.get("summary") or "")))
+    for notam_id, surface, text in surfaces:
+        if notam_id in evaluated and _UNRESOLVED_NOTICE in text.upper():
+            conflicts.append(
+                f"{notam_id}: {surface} calls the notice unresolved while the Airports analysis evaluates it."
+            )
+    for number, page in enumerate(download_pages or [], start=1):
+        folded = " ".join(str(page or "").split())
+        upper = folded.upper()
+        for notam_id in evaluated:
+            start = 0
+            while (found := upper.find(notam_id.upper(), start)) >= 0:
+                start = found + len(notam_id)
+                # The statement bound to this id runs to the next sentence end.
+                segment = upper[start:start + 220].split(". ")[0]
+                if _UNRESOLVED_NOTICE in segment:
+                    conflicts.append(
+                        f"{notam_id}: download page {number} calls the notice unresolved "
+                        "while the Airports analysis evaluates it."
+                    )
+                    break
+    return list(dict.fromkeys(conflicts))
+
+
 def governed_link_parameters(uri: str) -> dict[str, list[str]] | None:
     parts = urlsplit(uri)
     fragment_path, separator, fragment_query = parts.fragment.partition("?")
@@ -451,7 +933,7 @@ def inspect_deferred_contract(
         if len(matching) != 1:
             missing_links.append({**item, "matching_link_count": len(matching)})
         if item["has_cfp_remark"]:
-            label = f"CFP REMARK - NOT THE APPROVED {item['type']} REMEDY"
+            label = f"OFP REMARK - NOT THE APPROVED {item['type']} REMEDY"
             if label not in folded_text:
                 missing_labels.append(label)
     return {
@@ -542,6 +1024,13 @@ def _iter_fact_leaves(node: Any, path: str = "") -> Any:
 def _fact_forms(path: str, value: Any) -> list[str]:
     text = str(value).strip().upper()
     forms = [text]
+    # UNCLASSIFIED is an internal fail-closed parser state, never pilot-facing
+    # wording. The operational renderer truthfully labels that row DEFERRED
+    # ITEM while the separately checked reference, declaration, description,
+    # and source lines retain its exact identity. Accept only that explicit
+    # safe label for this one internal value; do not waive any deferred fact.
+    if path == "deferred_items[].item_type" and text == "UNCLASSIFIED":
+        forms.append("DEFERRED ITEM")
     if isinstance(value, (int, float)) and not isinstance(value, bool) and float(value) == int(value):
         number = int(value)
         forms.append(f"{number:,}")
@@ -553,12 +1042,34 @@ def _fact_forms(path: str, value: Any) -> list[str]:
     return [form for form in forms if len(form) >= 3]
 
 
-def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict[str, Any]:
-    """Every parsed CFP fact prints, or carries a written waiver."""
-    text = " ".join(output_text.upper().split())
-    text_packed = text.replace(" ", "")
+def check_parsed_fact_coverage(
+    flight: dict[str, Any],
+    output_text: str,
+    *,
+    operational_output_text: str | None = None,
+) -> dict[str, Any]:
+    """Every parsed CFP fact prints on either publication, or is waived.
 
-    def visible_tokens_in_order(source: Any) -> bool:
+    The audit PDF is the lossless/frozen compatibility publication and the
+    operational PDF is the current pilot download. One parsed fact needs to
+    be complete on at least one surface; it does not have to be duplicated in
+    both, and tokens from two surfaces are never spliced into false evidence.
+    """
+    texts = [" ".join(output_text.upper().split())]
+    if operational_output_text is not None:
+        texts.append(" ".join(operational_output_text.upper().split()))
+    packed_texts = [text.replace(" ", "") for text in texts]
+
+    def forms_visible(forms: list[str]) -> bool:
+        if any(form in text for text in texts for form in forms):
+            return True
+        return any(
+            len(form) >= 24 and form.replace(" ", "") in packed
+            for packed in packed_texts
+            for form in forms
+        )
+
+    def visible_tokens_in_order(source: Any, text: str) -> bool:
         """Accept wrapped visible source tokens even when page chrome intervenes."""
         expected = str(source).upper().split()
         if not expected:
@@ -582,9 +1093,7 @@ def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict
             forms = _fact_forms(path, value)
             if not forms:
                 continue
-            if any(form in text for form in forms):
-                continue
-            if any(len(form) >= 24 and form.replace(" ", "") in text_packed for form in forms):
+            if forms_visible(forms):
                 continue
             missing.append(f"{path} = {str(value)[:60]!r}")
 
@@ -601,7 +1110,7 @@ def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict
             "ON" if anti_ice_on is True else "OFF" if anti_ice_on is False else "--"
         )
         switch_row = f"PACKS / ANTI-ICE {packs_value} / {anti_ice_value}"
-        if switch_row not in text:
+        if not any(switch_row in text for text in texts):
             if isinstance(packs_on, bool):
                 missing.append(f"performance.packs_on = {packs_on!r}")
             if isinstance(anti_ice_on, bool):
@@ -615,11 +1124,11 @@ def check_parsed_fact_coverage(flight: dict[str, Any], output_text: str) -> dict
         forms = _fact_forms(key, value)
         if not forms:
             continue
-        if any(form in text for form in forms):
+        if forms_visible(forms):
             continue
-        if any(len(form) >= 24 and form.replace(" ", "") in text_packed for form in forms):
-            continue
-        if key == "route_text" and visible_tokens_in_order(value):
+        if key == "route_text" and any(
+            visible_tokens_in_order(value, text) for text in texts
+        ):
             continue
         missing.append(f"{key} = {str(value)[:60]!r}")
     return {"valid": not missing, "checked": checked, "missing": missing}
@@ -630,6 +1139,8 @@ def check_cross_surface_parity(
     findings: list[dict[str, Any]],
     warnings: list[str],
     output_text: str,
+    *,
+    unit_output_text: str | None = None,
 ) -> dict[str, Any]:
     """Parsed fact = printed fact, for the facts a captain reads first.
 
@@ -641,26 +1152,116 @@ def check_cross_surface_parity(
 
     view = build_briefing_view(flight, findings, warnings)
     folded = " ".join(output_text.upper().split())
+    operational_folded = " ".join(
+        (
+            unit_output_text
+            if unit_output_text is not None
+            else output_text
+        ).upper().split()
+    )
+    unit_rows = tuple(
+        " ".join(line.upper().split())
+        for line in (
+            unit_output_text if unit_output_text is not None else output_text
+        ).splitlines()
+        if line.strip()
+    )
     failures: list[str] = []
 
     def printed(text: str) -> bool:
         return " ".join(str(text).upper().split()) in folded
 
-    terrain_events = (view.get("terrain") or {}).get("events") or []
-    says_none = "NO STRICT MSA" in folded
-    if terrain_events and says_none:
+    def operational_printed(text: str) -> bool:
+        return " ".join(str(text).upper().split()) in operational_folded
+
+    def printed_mass(label: Any, fuel_kg: Any) -> bool:
+        """Match the bounded fuel-row forms emitted by the PDF renderer.
+
+        Rows may be direct (``POLICY 1,500 kg``) or include the renderer's
+        separator and ACTM column (``TANKER · 03:16 | 18,847 kg``).  The
+        amount and explicit kg unit remain mandatory; arbitrary intervening
+        prose is deliberately not accepted.
+        """
+        normalized_label = " ".join(str(label).upper().split())
+        amount = f"{int(fuel_kg):,}"
+        plain_forms = {
+            f"{normalized_label} {amount} KG",
+            f"{normalized_label} +{amount} KG",
+        }
+        direct_row = re.compile(
+            rf"^{re.escape(normalized_label)}\s*[·:]\s*"
+            rf"(?:\d{{1,2}}[:.]\d{{2}}\s*\|\s*)?"
+            rf"\+?{re.escape(amount)}\s+KG"
+            rf"(?:\s*\|\s*RETURN SECTOR REQ"
+            rf"(?:\s+\d{{1,3}}(?:,\d{{3}})*\s+KG)?)?$"
+        )
+        mel_zero_row = re.compile(
+            r"^MEL\s+EXCESS-FUEL\s*[·:]\s*0\s+KG$"
+        )
+        expected_allocation_forms = {
+            f"{normalized_label} {amount} KG",
+            f"{normalized_label} +{amount} KG",
+        }
+        for row in unit_rows:
+            if (
+                normalized_label == "MEL"
+                and amount == "0"
+                and mel_zero_row.fullmatch(row)
+            ):
+                return True
+            if row in plain_forms or direct_row.fullmatch(row):
+                return True
+            allocation = re.fullmatch(
+                r"ALLOCATION\s*[·:]\s*(?P<body>.+)",
+                row,
+            )
+            if not allocation:
+                continue
+            body = re.sub(
+                r"\s*\|\s*RETURN SECTOR REQ"
+                r"(?:\s+\d{1,3}(?:,\d{3})*\s+KG)?$",
+                "",
+                allocation.group("body"),
+            )
+            components = {
+                component.strip()
+                for component in re.split(r"\s+\+\s+", body)
+                if component.strip()
+            }
+            if components & expected_allocation_forms:
+                return True
+        return False
+
+    terrain = view.get("terrain") or {}
+    terrain_events = terrain.get("events") or []
+    terrain_summary = str(terrain.get("summary") or "").strip()
+    says_no_trigger = (
+        "CFP ROUTE/PROFILE TRIGGER NOT ACTIVATED" in folded
+        or "NO STRICT MSA" in folded
+    )
+    if terrain_events and says_no_trigger:
         failures.append(
-            "terrain: PDF prints 'No strict MSA' while the engine holds "
+            "terrain: PDF prints a no-trigger result while the engine holds "
             f"{len(terrain_events)} event(s)"
         )
-    if not terrain_events and not says_none:
-        failures.append("terrain: PDF omits the no-window sentence while the engine holds none")
+    if not terrain_events and not printed(terrain_summary):
+        failures.append(
+            "terrain: PDF omits the bounded route/profile result while the "
+            "engine holds no trigger window"
+        )
 
     edto_rows = (view.get("edto") or {}).get("operational_rows") or []
     for row in edto_rows:
         label = str(row.get("label") or "")
         value = str(row.get("value") or "")
-        if not printed(value):
+        frozen_audit_alias = (
+            _audit_rev3_v8_classification_sentence(flight)
+            if label.strip().upper() == "CLASSIFICATION"
+            else ""
+        )
+        if not printed(value) and not (
+            frozen_audit_alias and printed(frozen_audit_alias)
+        ):
             failures.append(f"edto: row {label!r} ({value!r}) not printed")
 
     for role in ("departure", "destination"):
@@ -673,8 +1274,10 @@ def check_cross_surface_parity(
                     failures.append(f"weather: {role} {kind} bulletin not printed")
 
     for item in (flight.get("fuel_summary") or {}).get("excess_breakdown") or []:
-        if item.get("fuel_kg"):
-            if not printed(f"{item['label']} {item['fuel_kg']:,} kg"):
+        fuel_kg = item.get("fuel_kg")
+        label = str(item.get("label") or "").strip().upper()
+        if fuel_kg is not None and (fuel_kg != 0 or label == "MEL"):
+            if not printed_mass(item.get("label"), item.get("fuel_kg")):
                 failures.append(
                     f"units: excess item {item['label']!r} not printed with kg"
                 )
@@ -685,18 +1288,63 @@ def check_cross_surface_parity(
         record.get("record_type") == "VA_SIGMET"
         for record in flight.get("weather") or []
     )
-    if has_va and "VOLCANIC ASH" not in folded:
-        failures.append("vaa: CFP carries a VA SIGMET but the briefing never says VOLCANIC ASH")
+    if has_va and "VOLCANIC ASH" not in operational_folded:
+        failures.append(
+            "vaa: CFP carries a VA SIGMET but the operational briefing never "
+            "says VOLCANIC ASH"
+        )
+    # The current publication compares computed VA consequences. Raw volcano
+    # notices stay in the SHA-pinned parsed input and app source disclosure;
+    # requiring their text here would reintroduce the prohibited appendix.
+    analysed_publication = (
+        "FLIGHT BRIEFING - MASTER SUMMARY" in operational_folded
+        or re.search(r"\bFLIGHT BRIEFING\s*\|\s*PAGE 1 OF 6\b", operational_folded) is not None
+    )
+    if analysed_publication:
+        from app.odss.weather_publication import volcanic_ash_lines
+        # VOLCANIC-CHECK-436: page 5's volcanic card prints its live sources by name, as counts, or - beside held OFP
+        # records, at the page's own capacity step - leaves them to page 6's source line. One of the three complete
+        # forms must be printed, and a page that leaves them to page 6 must name every unmet source there.
+        forms = [volcanic_ash_lines(flight, view, live) for live in ("whole", "compact", "omit")]
+        printed_form = next((index for index, form in enumerate(forms)
+                             if all(operational_printed(line) for line in form)), None)
+        if printed_form is None:
+            for consequence in forms[0]:
+                if not operational_printed(consequence):
+                    failures.append(f"vaa: analysed consequence {consequence!r} missing")
+        elif printed_form == 2 and forms[2] != forms[0]:
+            for entry in view.get("source_assurance") or []:
+                if str(entry.get("status") or "").upper() not in {"HELD", "REACHED"} and not operational_printed(str(entry.get("source") or "")):
+                    failures.append(f"vaa: unmet source {entry.get('source')!r} is on neither page 5 nor page 6")
     for advisory in (view.get("vaa") or {}).get("cfp_advisories") or []:
-        if advisory.get("name") and not printed(advisory["name"]):
-            failures.append(f"vaa: advisory name {advisory['name']!r} not printed")
-        derived = str(advisory.get("derived") or "").strip()
-        if derived:
-            head = " ".join(derived.split()[:4])
-            if not printed(head):
-                failures.append(
-                    f"vaa: derived screening line ({head!r}...) not printed"
+        if analysed_publication:
+            continue
+        if advisory.get("advisory_kind") == "CFP_VAA_NOTICE":
+            identity = " · ".join(
+                value
+                for value in (
+                    str(advisory.get("volcano") or "").strip(),
+                    str(advisory.get("notam_id") or "").strip(),
                 )
+                if value
+            )
+            if identity and not operational_printed(identity):
+                failures.append(
+                    f"vaa: advisory identity {identity!r} not printed atomically "
+                    "on the operational surface"
+                )
+        elif advisory.get("name") and not operational_printed(advisory["name"]):
+            failures.append(
+                f"vaa: advisory name {advisory['name']!r} not printed on the "
+                "operational surface"
+            )
+        derived = str(advisory.get("derived") or "").strip()
+        if derived and not operational_printed(derived):
+            head = " ".join(derived.split()[:4])
+            failures.append(
+                f"vaa: derived applicability line ({head!r}...) not printed "
+                "on the operational surface"
+            )
 
     pilot_lines = {
         " ".join(line.upper().split())
@@ -723,7 +1371,8 @@ def run_case(
         case_root / "legacy-reports",
         flight_id,
     )
-    payload = json.loads(Path(result["analysis_path"]).read_text(encoding="utf-8"))
+    analysis_path = Path(result["analysis_path"])
+    payload = json.loads(analysis_path.read_text(encoding="utf-8"))
     flight = payload["flight"]
     extraction = check_extraction_expectations(
         flight,
@@ -734,6 +1383,16 @@ def run_case(
             f"{case['case_id']} frozen extraction baseline changed: "
             f"{extraction['failures']}. Deliberately review and remint the "
             "manifest before accepting parser changes."
+        )
+    boss_flow_source_failures = check_boss_flow_source_expectations(
+        str(case["case_id"]),
+        flight,
+        payload.get("weather_charts") or {},
+    )
+    if boss_flow_source_failures:
+        raise AssertionError(
+            f"{case['case_id']} boss-flow source evidence changed: "
+            f"{boss_flow_source_failures}."
         )
     map_contract = payload.get("map_contract") or {}
     checks = {
@@ -760,7 +1419,7 @@ def run_case(
         source_pdf_path=str(preflight["source"]),
         weather_charts=payload.get("weather_charts") or {},
         # The private corpus proves lossless publication coverage. Production
-        # callers intentionally use the seven-page operational default.
+        # callers intentionally use the six-page analysed default.
         include_audit_appendix=True,
     )
     quality = validate_combined_briefing_pdf(combined)
@@ -774,18 +1433,122 @@ def run_case(
         raise AssertionError(
             f"{case['case_id']} physical PDF failed: {physical['violations'][:3]}."
         )
+
+    # The lossless appendix above proves parsed-fact coverage, while pilots
+    # download six analysed pages. Scan that exact production format and
+    # reject any raw-source reproduction or excess page. Audit-only checks
+    # cannot certify this different publication contract.
+    # Keep this name distinct from the lossless ``*_Flight_Briefing.pdf``
+    # suffix consumed by the dashboard/PDF fact-parity harness below.
+    operational = case_root / f"{case['case_id']}_Operational_Flight_Briefing.pdf"
+    render_combined_briefing(
+        flight,
+        payload["findings"],
+        payload.get("view", {}).get("warnings") or [],
+        operational,
+        source_pdf_path=str(preflight["source"]),
+        weather_charts=payload.get("weather_charts") or {},
+        include_audit_appendix=False,
+    )
+    operational_quality = validate_combined_briefing_pdf(operational)
+    from app.odss.concise_pdf_gate import MAX_BRIEFING_PAGES
+    if (not operational_quality["valid"]
+            or operational_quality["page_count"] != MAX_BRIEFING_PAGES):
+        messages = [
+            item.message
+            for item in operational_quality["violations"]
+        ]
+        if operational_quality["page_count"] != MAX_BRIEFING_PAGES:
+            messages.append(
+                "Production Flight Briefing must be David's "
+                f"{MAX_BRIEFING_PAGES}-page reference format; "
+                f"generated {operational_quality['page_count']}."
+            )
+        raise AssertionError(
+            f"{case['case_id']} operational report quality failed: "
+            + "; ".join(messages)
+        )
+    from app.odss.concise_pdf_gate import check_concise_pdf
+    from app.odss.briefing import build_briefing_view
+    publication_view = build_briefing_view(flight, payload["findings"], payload.get("view", {}).get("warnings") or [], timing_view=flight.get("timing_view"))
+    concise_publication = check_concise_pdf(
+        operational, flight=flight, view=publication_view,
+        airport_analysis=publication_view["airport_pdf_analysis"],
+        alternate_analysis=publication_view["alternate_pdf_analysis"],
+    )
+    if not concise_publication["valid"]:
+        raise AssertionError(f"{case['case_id']} concise publication failed: {concise_publication['violations']}")
+    # David, 9 Sep 2026: "So you have to check and make sure the memory losses
+    # and standard established does not degenerate. How do you ensure that???"
+    # Every corpus flight's download is compared with the structure read out of
+    # his own reference briefings, not with our own constants.
+    from app.odss.reference_conformance import (
+        check_reference_conformance,
+        load_manifest,
+    )
+    reference_manifest = load_manifest()
+    reference_format = check_reference_conformance(
+        operational,
+        structure=reference_manifest["reference_structure"],
+        contract_extensions=reference_manifest.get("contract_extensions") or {},
+    )
+    if not reference_format["valid"]:
+        raise AssertionError(
+            f"{case['case_id']} download drifted from David's reference format: "
+            + "; ".join(
+                f"{item['code']}: {item['message']}"
+                for item in reference_format["violations"]
+            )
+        )
+    operational_physical = scan_physical_pdf(operational)
+    if not operational_physical["valid"]:
+        raise AssertionError(
+            f"{case['case_id']} operational physical PDF failed: "
+            f"{operational_physical['violations'][:3]}."
+        )
     with fitz.open(combined) as document:
         output_text = "\n".join(page.get_text() for page in document).upper()
-    required_text = (
-        "FLIGHT BRIEFING",
-        "CFP P1 - MASS / FUEL",
-        f"{case['departure_iata']} / {case['departure']}",
-        f"{case['destination_iata']} / {case['destination']}",
+    with fitz.open(operational) as document:
+        operational_text = "\n".join(page.get_text() for page in document).upper()
+    missing_text = check_required_publication_markers(
+        case,
+        output_text,
+        operational_text,
     )
-    missing_text = [marker for marker in required_text if marker.upper() not in output_text]
     if missing_text:
         raise AssertionError(
             f"{case['case_id']} output is missing required text: {missing_text}."
+        )
+    # Independent source oracles: what the OFP prints against what was held and
+    # published, and one story per notice across every surface.
+    with fitz.open(preflight["source"]) as document:
+        source_page_one = document[0].get_text("text")
+    with fitz.open(operational) as document:
+        operational_pages = [page.get_text() for page in document]
+    reviewed = json.loads(
+        (ROOT / "tests" / "fixtures" / "page1_source_declarations.json").read_text(encoding="utf-8")
+    )
+    declaration_failures = check_source_declaration_coverage(
+        source_page_one, flight, "\n".join(operational_pages),
+        # What a person read under each declaration of this OFP, where recorded.
+        expectations=(reviewed.get("flights") or {}).get(str(case["filename"])),
+    )
+    for line in (reviewed.get("general_remarks") or {}).get(str(case["filename"])) or []:
+        if not any(line == row.get("text") for row in flight.get("page1_remarks") or []):
+            declaration_failures.append(f"general remark '{line}' is not held in the page-1 remarks domain.")
+    if declaration_failures:
+        raise AssertionError(
+            f"{case['case_id']} page-1 declaration coverage failed: {declaration_failures}."
+        )
+    identity_failures = check_station_identities(flight)
+    if identity_failures:
+        raise AssertionError(
+            f"{case['case_id']} carries a non-aerodrome airport identity: {identity_failures}."
+        )
+    notice_conflicts = check_notam_statement_consistency(publication_view, operational_pages)
+    if notice_conflicts:
+        raise AssertionError(
+            f"{case['case_id']} publishes one notice two ways: {notice_conflicts}."
         )
     deferred = inspect_deferred_contract(combined, flight)
     if not deferred["valid"]:
@@ -797,12 +1560,17 @@ def run_case(
         payload["findings"],
         payload.get("view", {}).get("warnings") or [],
         output_text,
+        unit_output_text=operational_text,
     )
     if not parity["valid"]:
         raise AssertionError(
             f"{case['case_id']} cross-surface parity failed: {parity['failures']}."
         )
-    fact_coverage = check_parsed_fact_coverage(flight, output_text)
+    fact_coverage = check_parsed_fact_coverage(
+        flight,
+        output_text,
+        operational_output_text=operational_text,
+    )
     if not fact_coverage["valid"]:
         raise AssertionError(
             f"{case['case_id']} parsed facts never printed and carry no waiver: "
@@ -820,9 +1588,14 @@ def run_case(
         "route_point_count": len(flight.get("route_waypoints") or []),
         "route_hash": map_contract["route_hash"],
         "extraction_contract": extraction["actual"],
+        **build_analysis_receipt_binding(analysis_path, output_root),
         "combined_pdf": str(combined.relative_to(output_root)),
         "combined_sha256": sha256_file(combined),
         "combined_page_count": quality["page_count"],
+        "operational_pdf": str(operational.relative_to(output_root)),
+        "operational_sha256": sha256_file(operational),
+        "operational_page_count": operational_quality["page_count"],
+        "concise_publication": concise_publication,
         "physical_pdf": {
             "page_count": physical["page_count"],
             "outside_text_box_count": sum(
@@ -834,6 +1607,22 @@ def run_case(
             "blank_or_flat_page_count": sum(
                 not page["raster_has_contrast"] or page["text_characters"] < 50
                 for page in physical["pages"]
+            ),
+        },
+        "operational_physical_pdf": {
+            "page_count": operational_physical["page_count"],
+            "outside_text_box_count": sum(
+                page["outside_text_box_count"]
+                for page in operational_physical["pages"]
+            ),
+            "visible_overlap_count": sum(
+                page["visible_overlap_count"]
+                for page in operational_physical["pages"]
+            ),
+            "blank_or_flat_page_count": sum(
+                not page["raster_has_contrast"]
+                or page["text_characters"] < 50
+                for page in operational_physical["pages"]
             ),
         },
         "deferred_contract": deferred,
@@ -858,7 +1647,7 @@ def main() -> int:
     output_root.mkdir(parents=True, exist_ok=True)
     receipt_path = output_root / "private-cfp-corpus-receipt.json"
     receipt: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "gate": "private-cfp-physical-pdf",
         "status": "failed",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),

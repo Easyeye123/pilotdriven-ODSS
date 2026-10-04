@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
 
 import fitz
+import pytest
 
 from scripts.run_private_cfp_corpus import (
+    EXTRACTION_COUNT_FIELDS,
+    EXTRACTION_DIGEST_FIELDS,
     REQUIRED_CASE_IDS,
+    check_required_publication_markers,
     load_manifest,
     scan_physical_pdf,
 )
@@ -26,6 +31,15 @@ def test_private_release_manifest_holds_at_least_the_pinned_set():
     cases = payload["cases"]
 
     case_ids = {case["case_id"] for case in cases}
+    # This is the exact boss-reviewed HelpYou/briefing flow.  Keep the literal
+    # assertion as well as the generic subset check so a future edit cannot
+    # remove the case from both the manifest and REQUIRED_CASE_IDS unnoticed.
+    assert "SQ910-SIN-MNL-21AUG" in REQUIRED_CASE_IDS
+    assert "SQ910-SIN-MNL-21AUG" in case_ids
+    # SQ481 is the current literal boss-feedback OFP. Keep it pinned as a
+    # release requirement, not merely present as an optional manifest row.
+    assert "SQ481-JNB-SIN-25AUG" in REQUIRED_CASE_IDS
+    assert "SQ481-JNB-SIN-25AUG" in case_ids
     assert REQUIRED_CASE_IDS <= case_ids
     assert len(case_ids) == len(cases), "case ids must be unique"
     assert len({case["filename"] for case in cases}) == len(cases)
@@ -39,12 +53,75 @@ def test_private_release_manifest_holds_at_least_the_pinned_set():
     assert all(int(case["route_point_count"]) > 0 for case in cases)
 
 
-def test_manifest_is_plain_json_and_contains_no_private_pdf_bytes():
-    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+def assert_manifest_metadata_only(payload):
+    """Bound individual metadata fields, rather than the growing case/history total.
 
+    Sources and bodies stay outside this manifest. Every case may contain only
+    short identities, counts and SHA-256 digests; review history is bounded prose.
+    """
+    assert set(payload) == {"schema_version", "extraction_contract_version", "description", "extraction_baseline_policy", "cases"}
     assert payload["schema_version"] == 1
-    assert payload["extraction_contract_version"] == 1
-    assert MANIFEST.stat().st_size < 64_000
+    assert payload["extraction_contract_version"] == 2
+    for field, limit in {"description": 256, "extraction_baseline_policy": 16_384}.items():
+        assert isinstance(payload[field], str) and 0 < len(payload[field]) <= limit, field
+    # Raw, base64 and hex PDF header forms must not be hidden in prose/metadata.
+    assert not re.search(r"%PDF-|JVBERi0|255044462d", json.dumps(payload), re.IGNORECASE)
+    assert isinstance(payload["cases"], list) and payload["cases"]
+    fields = {"case_id", "filename", "source_sha256", "source_page_count", "flight_number", "departure", "destination",
+              "departure_iata", "destination_iata", "route_point_count", "route_hash", "extraction_expectations"}
+    for case in payload["cases"]:
+        assert isinstance(case, dict) and set(case) == fields
+        for field, limit in {"case_id": 128, "filename": 256, "flight_number": 16}.items():
+            assert isinstance(case[field], str) and 0 < len(case[field]) <= limit, field
+        assert re.fullmatch(r"[A-Z0-9]+(?:-[A-Z0-9]+)*", case["case_id"])
+        assert Path(case["filename"]).name == case["filename"] and case["filename"].endswith(".pdf")
+        assert re.fullmatch(r"[A-Z0-9]{2,3}\d{1,4}", case["flight_number"])
+        for field in ("departure", "destination"):
+            assert re.fullmatch(r"[A-Z]{4}", case[field]), field
+        for field in ("departure_iata", "destination_iata"):
+            assert re.fullmatch(r"[A-Z]{3}", case[field]), field
+        for field in ("source_sha256", "route_hash"):
+            assert re.fullmatch(r"[0-9a-f]{64}", case[field]), field
+        for field in ("source_page_count", "route_point_count"):
+            assert type(case[field]) is int and case[field] > 0, field
+        expectations = case["extraction_expectations"]
+        assert isinstance(expectations, dict) and set(expectations) == {"counts", "identity_sha256"}
+        assert set(expectations["counts"]) == set(EXTRACTION_COUNT_FIELDS)
+        assert set(expectations["identity_sha256"]) == set(EXTRACTION_DIGEST_FIELDS)
+        assert all(type(count) is int and count >= 0 for count in expectations["counts"].values())
+        assert all(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)
+                   for digest in expectations["identity_sha256"].values())
+
+
+def test_manifest_is_plain_json_and_contains_no_private_pdf_bytes():
+    payload = load_manifest(MANIFEST)
+    assert_manifest_metadata_only(payload)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("pdf_bytes", "%PDF-1.7 SYNTHETIC PRIVATE BYTES"),
+    ("notam_body", "SYNTHETIC SOURCE BODY MUST NOT BE IN METADATA"),
+    ("blob", [37, 80, 68, 70, 45, 49, 46, 55]),
+])
+def test_metadata_contract_rejects_extra_private_content_fields(field, value):
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    # Labelled single-case metadata subset: exact legitimate values, not a
+    # release manifest. Prove the private sentinel is rejected below the old cap.
+    payload["cases"] = payload["cases"][:1]
+    assert_manifest_metadata_only(payload)
+    assert len(json.dumps(payload).encode("utf-8")) < 64_000
+    payload["cases"][0][field] = value
+    assert len(json.dumps(payload).encode("utf-8")) < 64_000
+    with pytest.raises(AssertionError):
+        assert_manifest_metadata_only(payload)
+
+
+@pytest.mark.parametrize("content", ["%PDF-1.7 SYNTHETIC", "JVBERi0xLjc=", "255044462D312E37", "x" * 16_385])
+def test_metadata_contract_rejects_pdf_headers_or_unbounded_history(content):
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    payload["extraction_baseline_policy"] = content
+    with pytest.raises(AssertionError):
+        assert_manifest_metadata_only(payload)
 
 
 def test_odss_runtime_image_is_reachable_only_through_the_full_pytest_stage():
@@ -54,16 +131,59 @@ def test_odss_runtime_image_is_reachable_only_through_the_full_pytest_stage():
     assert "COPY --from=test /tmp/odss-tests-passed" in dockerfile
 
 
-def test_private_corpus_explicitly_requests_the_lossless_audit_publication():
-    """The pilot download defaults to seven pages; only the completeness
-    corpus opts into every measured continuation page."""
+def test_private_corpus_checks_lossless_and_operational_publications():
+    """The corpus proves both complete facts and the eight-page download."""
     runner = (ROOT / "scripts" / "run_private_cfp_corpus.py").read_text(
         encoding="utf-8"
     )
     production = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
     assert "include_audit_appendix=True" in runner
+    assert "include_audit_appendix=False" in runner
+    assert "_Operational_Flight_Briefing.pdf" in runner
     assert "include_audit_appendix=True" not in production
+
+
+def test_required_markers_are_checked_on_the_surface_that_owns_them():
+    case = {
+        "departure_iata": "SIN",
+        "departure": "WSSS",
+        "destination_iata": "PER",
+        "destination": "YPPH",
+    }
+    common = "FLIGHT BRIEFING SIN / WSSS PER / YPPH"
+    phases = "RELEASE BEFORE PUSH ROUTE ARRIVAL WEATHER"
+
+    assert check_required_publication_markers(
+        case,
+        audit_text=common,
+        operational_text=f"{common} {phases}",
+    ) == []
+    assert check_required_publication_markers(
+        case,
+        audit_text=common,
+        operational_text=common,
+    ) == [
+        "operational: RELEASE",
+        "operational: BEFORE PUSH",
+        "operational: ROUTE",
+        "operational: ARRIVAL",
+        "operational: WEATHER",
+    ]
+    assert check_required_publication_markers(
+        case,
+        audit_text="FLIGHT BRIEFING SIN / WSSS",
+        operational_text=f"{common} {phases}",
+    ) == ["audit: PER / YPPH"]
+
+    # The former category/status-only strip must not certify a production PDF.
+    assert "operational: BEFORE PUSH" in check_required_publication_markers(
+        case,
+        audit_text=common,
+        operational_text=(
+            f"{common} PERFORMANCE STATUS AIRPORTS WEATHER ROUTE OPEN REVIEW"
+        ),
+    )
 
 
 def test_physical_scanner_accepts_a_readable_non_overlapping_page(tmp_path):

@@ -81,6 +81,7 @@ def run_odss_analysis(
     timing_reference: dict[str, Any] | None = None,
     personal_notes: list[dict[str, Any]] | None = None,
     surface_overlays: list[dict[str, Any]] | None = None,
+    airport_surface_index: list[dict[str, Any]] | None = None,
     weather_window_preference: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the deterministic Flight Briefing analysis.
@@ -104,6 +105,10 @@ def run_odss_analysis(
     flight["surface_overlays"] = [
         dict(overlay)
         for overlay in (surface_overlays or [])
+    ]
+    flight["airport_surface_index"] = [
+        dict(entry)
+        for entry in (airport_surface_index or [])
     ]
     if weather_window_preference is not None:
         flight["weather_window_preference"] = dict(weather_window_preference)
@@ -146,7 +151,15 @@ def run_odss_analysis(
         warnings,
         timing_view,
         weather_charts,
+        # The dashboard alone shows the rest-of-route station panels (boss
+        # 03 Sep); the PDF and every report keep the planning panels only.
+        include_dashboard_only_panels=True,
     )
+    # Which publication rules produced this view. A reopened pack compares it
+    # with the rules in service, so its dashboard and its re-created download
+    # are never read under two different rule sets.
+    from .odss.combined_brief import COMBINED_BRIEFING_SCHEMA_VERSION
+    briefing_view["publication_rules"] = COMBINED_BRIEFING_SCHEMA_VERSION
     flight_briefing_plan = build_combined_report_plan(flight, findings)
 
     grouped_raw: dict[str, list[dict[str, Any]]] = defaultdict(list)

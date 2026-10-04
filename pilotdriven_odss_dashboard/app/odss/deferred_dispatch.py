@@ -41,6 +41,8 @@ _MAINTENANCE_PREFIX = re.compile(
     re.IGNORECASE,
 )
 _UPLIFT_INSTRUCTION = re.compile(r"\bTO\s+UPLIFT\s+[^.]+", re.IGNORECASE)
+_INTERNAL_REFERENCE_PLACEHOLDERS = {"UNSPECIFIED", "UNKNOWN"}
+_INTERNAL_TYPE_PLACEHOLDERS = {"UNCLASSIFIED", "UNSPECIFIED", "UNKNOWN"}
 
 # These words express source boilerplate, position, quantity or condition.
 # Excluding them from a two-word subject fingerprint lets two declarations of
@@ -76,6 +78,44 @@ def _clean(value: Any) -> str:
     return _NORMALIZED_SPACE.sub(" ", str(value or "")).strip()
 
 
+def deferred_reference_for_display(value: Any) -> str:
+    """Return a printed reference or empty text for an internal marker.
+
+    An older stored analysis may retain a placeholder value. Publication
+    keeps that absence truthful instead of turning the marker into identity
+    text shown to a pilot.
+    """
+    reference = _clean(value).upper()
+    return "" if reference in _INTERNAL_REFERENCE_PLACEHOLDERS else reference
+
+
+def deferred_item_type_for_display(value: Any) -> str:
+    """Return a pilot-safe type label without changing the parsed value."""
+    item_type = _clean(value).upper()
+    if not item_type or item_type in _INTERNAL_TYPE_PLACEHOLDERS:
+        return "DEFERRED ITEM"
+    return item_type
+
+
+def deferred_source_declaration_for_display(value: Any) -> str:
+    """Hide only synthetic placeholder-only declarations from publication.
+
+    A meaningful printed declaration remains verbatim, even if one of its
+    words happens to resemble a parser state. The raw parsed value is never
+    mutated; this helper is only for pilot-facing projections.
+    """
+    declaration = _clean(value)
+    tokens = re.findall(r"[A-Z0-9]+", declaration.upper())
+    if len(tokens) > 1 and re.fullmatch(r"[A-Z]{2}", tokens[0]):
+        tokens = tokens[1:]
+    if tokens and all(
+        token in (_INTERNAL_TYPE_PLACEHOLDERS | _INTERNAL_REFERENCE_PLACEHOLDERS)
+        for token in tokens
+    ):
+        return ""
+    return declaration
+
+
 def _accepted_markers(text: str) -> list[re.Match[str]]:
     """Return unambiguous embedded declarations in flattened source text.
 
@@ -96,18 +136,18 @@ def _accepted_markers(text: str) -> list[re.Match[str]]:
 
 
 def _main_declaration(item: Mapping[str, Any]) -> str | None:
-    explicit = _clean(item.get("source_declaration"))
+    explicit = deferred_source_declaration_for_display(
+        item.get("source_declaration")
+    )
     if explicit:
         return explicit
     item_type = _clean(item.get("item_type")).upper()
-    reference = _clean(item.get("reference")).upper()
-    if not item_type:
+    reference = deferred_reference_for_display(item.get("reference"))
+    if item_type in _INTERNAL_TYPE_PLACEHOLDERS:
+        item_type = ""
+    if not item_type and not reference:
         return None
-    return " ".join(
-        value
-        for value in (item_type, reference if reference != "UNSPECIFIED" else "")
-        if value
-    )
+    return " ".join(value for value in (item_type, reference) if value)
 
 
 def _source_text(description: str, restriction: str | None) -> str:
@@ -125,8 +165,17 @@ def split_deferred_source_segments(
     an index/field trail back to the raw item.
     """
     segments: list[dict[str, Any]] = []
-    for source_item_index, source in enumerate(deferred_items or []):
+    sources = list(deferred_items or [])
+    for source_item_index, source in enumerate(sources):
         item = dict(source)
+        next_declaration = (
+            deferred_source_declaration_for_display(
+                sources[source_item_index + 1].get("source_declaration")
+            )
+            if source_item_index + 1 < len(sources)
+            else ""
+        )
+        source_page = item.get("source_page")
         description = _clean(item.get("description"))
         company_remark = _clean(item.get("company_remark"))
         markers = _accepted_markers(company_remark)
@@ -136,7 +185,7 @@ def split_deferred_source_segments(
             else company_remark
         )
         item_type = _clean(item.get("item_type")).upper() or "UNCLASSIFIED"
-        reference = _clean(item.get("reference")).upper() or None
+        reference = deferred_reference_for_display(item.get("reference")) or None
         if description or main_restriction or _main_declaration(item):
             segments.append({
                 "source_item_index": source_item_index,
@@ -145,12 +194,24 @@ def split_deferred_source_segments(
                 "source_field": f"deferred_items[{source_item_index}]",
                 "source_token": None,
                 "source_declaration": _main_declaration(item),
+                "source_page": source_page,
+                "crop_end_needle": next_declaration or "PLAN",
                 "declaration_kind": item_type,
                 "item_type": item_type,
                 "reference": reference,
                 "description": description,
                 "restriction": main_restriction or None,
                 "source_text": _source_text(description, main_restriction),
+                "deferred_entry_id": item.get("deferred_entry_id"),
+                "classification_status": item.get("classification_status"),
+                "classification_reason": item.get("classification_reason"),
+                "governed_match_status": item.get("governed_match_status"),
+                "source_identifier": item.get("source_identifier"),
+                "source_identifiers": list(item.get("source_identifiers") or []),
+                "source_group_tokens": list(item.get("source_group_tokens") or []),
+                "source_line_start": item.get("source_line_start"),
+                "source_line_end": item.get("source_line_end"),
+                "source_lines": list(item.get("source_lines") or []),
             })
 
         for embedded_index, marker in enumerate(markers, start=1):
@@ -181,6 +242,8 @@ def split_deferred_source_segments(
                 ),
                 "source_token": marker.group("token"),
                 "source_declaration": declaration,
+                "source_page": source_page,
+                "crop_end_needle": next_declaration or "PLAN",
                 "declaration_kind": (
                     deferred_kind or marker.group("operational_kind")
                 ),
@@ -216,11 +279,10 @@ def _same_reference(
     left: Mapping[str, Any],
     right: Mapping[str, Any],
 ) -> bool:
-    left_reference = _clean(left.get("reference")).upper()
-    right_reference = _clean(right.get("reference")).upper()
+    left_reference = deferred_reference_for_display(left.get("reference"))
+    right_reference = deferred_reference_for_display(right.get("reference"))
     return bool(
         left_reference
-        and left_reference != "UNSPECIFIED"
         and left_reference == right_reference
     )
 
@@ -293,30 +355,49 @@ def _operational_equipment(group: list[dict[str, Any]]) -> list[str]:
 
 def _gate_title(group: list[dict[str, Any]]) -> str:
     item_type = str(group[0].get("item_type") or "UNCLASSIFIED")
+    display_item_type = deferred_item_type_for_display(item_type)
     if item_type == "OPERATIONAL_RESTRICTION":
         equipment = _operational_equipment(group)
         if equipment:
             return " / ".join(equipment)
-        declaration = _clean(group[0].get("source_declaration"))
+        declaration = deferred_source_declaration_for_display(
+            group[0].get("source_declaration")
+        )
         return declaration or "OPERATIONAL RESTRICTION"
 
     references = list(dict.fromkeys(
         reference
         for reference in (
-            _clean(segment.get("reference")).upper()
+            deferred_reference_for_display(segment.get("reference"))
             for segment in group
         )
-        if reference and reference != "UNSPECIFIED"
+        if reference
     ))
     if references:
-        return f"{item_type} " + " / ".join(references)
+        return f"{display_item_type} " + " / ".join(references)
 
+    declaration = deferred_source_declaration_for_display(
+        group[0].get("source_declaration")
+    )
+    if (
+        len(group) == 1
+        and item_type in _INTERNAL_TYPE_PLACEHOLDERS
+        and group[0].get("classification_status") == "unresolved"
+        and declaration
+    ):
+        # A declaration of a kind the parser does not classify ("AA WEIGHT
+        # AND BALANCE MANUAL CHAPTER 8", SQ606 6 Sep) is named by the words
+        # the OFP printed for it, never by a fragment picked from its defect.
+        printed = declaration.split(None, 1)
+        if len(printed) == 2 and re.fullmatch(r"([A-Z])\1", printed[0]):
+            return printed[1]
+        return declaration
     subject = _common_subject(group)
     if subject:
         if len(group) > 1 and not subject.endswith("S"):
             subject += "S"
         return subject
-    return f"{item_type} UNSPECIFIED"
+    return declaration or f"{display_item_type} ITEM"
 
 
 def _grouping_basis(group: list[dict[str, Any]]) -> str:
@@ -327,9 +408,9 @@ def _grouping_basis(group: list[dict[str, Any]]) -> str:
             else "single-source-declaration"
         )
     references = {
-        _clean(segment.get("reference")).upper()
+        deferred_reference_for_display(segment.get("reference"))
         for segment in group
-        if _clean(segment.get("reference")).upper() not in {"", "UNSPECIFIED"}
+        if deferred_reference_for_display(segment.get("reference"))
     }
     if len(references) == 1:
         return "same-governing-reference"
@@ -346,8 +427,9 @@ def _publication_row(segment: Mapping[str, Any]) -> dict[str, Any]:
     never changes the parsed source item or its governing status.
     """
     item_type = _clean(segment.get("item_type")).upper() or "UNCLASSIFIED"
-    reference = _clean(segment.get("reference")).upper()
-    if reference in {"", "UNSPECIFIED"} and item_type == "CDDL":
+    display_item_type = deferred_item_type_for_display(item_type)
+    reference = deferred_reference_for_display(segment.get("reference"))
+    if not reference and item_type == "CDDL":
         match = _UPLIFT_REFERENCE.search(
             _clean(segment.get("restriction") or segment.get("source_text")).upper()
         )
@@ -355,7 +437,9 @@ def _publication_row(segment: Mapping[str, Any]) -> dict[str, Any]:
     title = (
         reference
         if item_type == "OPERATIONAL_RESTRICTION" and reference
-        else " ".join(value for value in (item_type, reference) if value)
+        else " ".join(
+            value for value in (display_item_type, reference) if value
+        )
     )
     description = _clean(segment.get("description"))
     restriction = _clean(segment.get("restriction"))
@@ -401,7 +485,7 @@ def _publication_row(segment: Mapping[str, Any]) -> dict[str, Any]:
         .replace("PARTIALLY", "PARTLY")
     )
     return {
-        "title": title or item_type,
+        "title": title or f"{display_item_type} ITEM",
         "category": item_type.lower().replace("_", "-"),
         "summary": summary,
         "reference": reference or None,
@@ -409,6 +493,9 @@ def _publication_row(segment: Mapping[str, Any]) -> dict[str, Any]:
         "source_segment_index": int(segment["source_segment_index"]),
         "source_field": segment.get("source_field"),
         "source_declaration": segment.get("source_declaration"),
+        "deferred_entry_id": segment.get("deferred_entry_id"),
+        "classification_status": segment.get("classification_status"),
+        "governed_match_status": segment.get("governed_match_status"),
     }
 
 
@@ -454,6 +541,7 @@ def build_deferred_dispatch_gates(
         # annotate (SQ910 21 Aug: ENG 2 fan-cowl latch check), ahead of
         # cabin-only IFE deferrals.
         "IN": 4,
+        "EN": 4,
         "IFEDDL": 5,
         "UNCLASSIFIED": 6,
     }
@@ -472,10 +560,10 @@ def build_deferred_dispatch_gates(
         references = list(dict.fromkeys(
             reference
             for reference in (
-                _clean(segment.get("reference")).upper()
+                deferred_reference_for_display(segment.get("reference"))
                 for segment in group
             )
-            if reference and reference != "UNSPECIFIED"
+            if reference
         ))
         source_texts = list(dict.fromkeys(
             _clean(segment.get("source_text"))
@@ -503,5 +591,8 @@ def build_deferred_dispatch_gates(
 
 __all__ = [
     "build_deferred_dispatch_gates",
+    "deferred_item_type_for_display",
+    "deferred_reference_for_display",
+    "deferred_source_declaration_for_display",
     "split_deferred_source_segments",
 ]

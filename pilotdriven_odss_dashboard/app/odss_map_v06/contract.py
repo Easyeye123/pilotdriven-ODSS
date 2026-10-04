@@ -21,6 +21,7 @@ MarkerRole = Literal[
     "edto_exit",
     "depressurisation_critical",
     "terrain_critical",
+    "vws_trigger",
     "toc",
     "tod",
     "orientation",

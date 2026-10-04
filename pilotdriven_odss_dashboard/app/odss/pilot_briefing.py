@@ -13,15 +13,22 @@ _ROLE_RANK = {
     "informational": 4,
 }
 _CLOSURE_WORD = r"(?:CLSD|CLOSED|NOT\s+AVBL|NOT\s+AVAILABLE|SUSPENDED)"
-_UNAVAILABLE_WORD = rf"(?:{_CLOSURE_WORD}|U/S|UNSERVICEABLE)"
+_UNAVAILABLE_WORD = (
+    rf"(?:{_CLOSURE_WORD}|U/S|UNSERVICEABLE|UNSERVICEABILITY|WITHDRAWN)"
+)
+_NEGATED_UNAVAILABLE_PREFIX = re.compile(
+    r"(?:\bWITHOUT|\bNO|\bNOT)(?:\s+[A-Z0-9/-]+){0,5}\s*$"
+)
 _RUNWAY_ID = r"(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
 _TAXIWAY_ID = r"(?:TWY|TAXIWAY)\s+[A-Z0-9][A-Z0-9/-]*"
 _APPROACH_SYSTEM = (
-    r"(?:APPROACH|APCH|ILS|LOC|LOCALIZER|GLIDE\s*PATH|GLIDESLOPE|"
-    r"DME|VOR|NDB|RNP|PAPI|OCA|OCH|MINIMA)"
+    r"(?:(?:APPROACH|APCH)(?!\s+(?:LGT(?:S)?|LIGHT(?:S|ING)?))|"
+    r"ILS|LOC|LOCALIZER|GP|GS|GLIDE\s*PATH|GLIDESLOPE|"
+    r"DME|DVOR|VOR|NDB|RNP|GLS|PAPI|OCA|OCH|MINIMA|"
+    r"CAT\s+I{1,3}(?:/I{1,3})?(?:\s+AND\s+CAT\s+I{1,3})?\s+(?:OPS|FAC))"
 )
 _LIGHTING = (
-    r"(?:LGT|LIGHT|LIGHTS|RCLL|RTHL|RTZL|RENL|HIRL|MIRL|LIRL|"
+    r"(?:LGT|LIGHT|LIGHTS|LIGHTING|RCLL|RTHL|RTZL|RENL|HIRL|MIRL|LIRL|"
     r"TKOF\s+HOLD\s+LGT|LEAD\s+(?:ON|OFF)\s+LGT)"
 )
 _PREFIXED_NOTAM_REFERENCE = re.compile(
@@ -33,6 +40,77 @@ _APPLICABLE_WINDOW_SUFFIX = re.compile(
     r"(?:departure|destination|alternate|EDTO|flight) window\.?$",
     re.IGNORECASE,
 )
+# A US "IAP ... <procedure> RWY nn ... DA/MDA nnn[/HAT nnn]" notice republishes
+# approach minima.  The cause is often a temporary crane, but the operational
+# fact is the changed minima, so the notice must not be filed as an obstacle.
+# Both the procedure and its published minima are required: naming a crane
+# near an IAP chart is not, on its own, a minima change.
+_IAP_TOKEN = re.compile(r"\bIAP\b")
+_IAP_PROCEDURE_TITLE = re.compile(
+    r"(?:(?:ILS|LOC)\s+(?:OR|AND)\s+)?"
+    r"(?:ILS|LOC|VOR|NDB|RNAV(?:\s*\(GPS\))?|RNP)"
+    r"(?:\s+[XYZ])?\s+RWY\s*\d{1,2}[LCR]?"
+)
+_IAP_PUBLISHED_MINIMA = re.compile(
+    r"(?:DA|MDA)\s*\d{2,5}(?:\s*/\s*HAT\s*\d{2,5})?"
+)
+# One notice can republish several charts, and a chart can carry more than one
+# minimum.  A procedure or a competing SID/STAR/surface procedure standing
+# between a title and a minimum ends that title's claim on it.
+_IAP_COMPETING_PROCEDURE = (
+    r"(?:(?:SID|STAR|DP|DEPARTURE|ARRIVAL|TAKEOFF|TAXI|RUNWAY|PAPI|"
+    r"ATIS|RVR|NOISE(?:\s+ABATEMENT)?)(?:\s+[A-Z0-9-]+){0,5}"
+    r"\s*[:,-]?\s+PROC(?:EDURE)?S?)"
+)
+_IAP_COMPETING_PROCEDURE_MATCH = re.compile(rf"\b{_IAP_COMPETING_PROCEDURE}\b")
+_IAP_MINIMA_BINDING_SPAN = 300
+
+
+def iap_minima_changes(text: Any, category: Any = "") -> list[tuple[str, str]]:
+    """Return each republished minimum bound to the procedure that owns it.
+
+    One haystack - category then item E - serves every caller. The kind, the
+    approach flag and the printed sentence read the record as received, so
+    they can never disagree about it.
+
+    Pairing is bound rather than positional: a minimum belongs to the nearest
+    procedure title before it, within one binding span and with no competing
+    procedure in between. Taking the first title and the first altitude after
+    it would print one chart's name against another chart's minimum.
+    """
+
+    haystack = " ".join(f"{category or ''} {text or ''}".upper().split())
+    anchors = [match.end() for match in _IAP_TOKEN.finditer(haystack)]
+    if not anchors:
+        return []
+    procedures = [
+        match
+        for match in _IAP_PROCEDURE_TITLE.finditer(haystack)
+        if any(
+            0 <= match.start() - anchor <= _IAP_MINIMA_BINDING_SPAN
+            for anchor in anchors
+        )
+    ]
+    if not procedures:
+        return []
+    changes: dict[str, str] = {}
+    for minimum in _IAP_PUBLISHED_MINIMA.finditer(haystack):
+        owner = None
+        for procedure in procedures:
+            if procedure.end() > minimum.start():
+                break
+            owner = procedure
+        if owner is None:
+            continue
+        between = haystack[owner.end():minimum.start()]
+        if len(between) > _IAP_MINIMA_BINDING_SPAN:
+            continue
+        if _IAP_COMPETING_PROCEDURE_MATCH.search(between):
+            continue
+        # A chart that republishes both its ILS and its LOC line is one
+        # changed procedure, named once, with the first minimum it prints.
+        changes.setdefault(owner.group(0), minimum.group(0))
+    return list(changes.items())
 
 
 def normalize_notam_references(value: Any) -> str:
@@ -44,11 +122,79 @@ def normalize_notam_references(value: Any) -> str:
     )
 
 
+def _canonical_notam_identity(value: Any) -> str:
+    """Return one pilot-facing identity for parser-indexed NOTAM labels."""
+
+    normalized = normalize_notam_references(value).strip().upper()
+    return normalized if re.fullmatch(r"[A-Z]{1,3}\d{2,5}/\d{2}", normalized) else ""
+
+
 def pilot_notam_condition(value: Any) -> str:
     """Keep the condition separate from its reference-time applicability."""
 
     normalized = normalize_notam_references(value)
     return _APPLICABLE_WINDOW_SUFFIX.sub(".", normalized)
+
+
+
+def _bound_unavailable(text: str, subject_pattern: str, *, surface: bool = False, state_pattern: str = _UNAVAILABLE_WORD) -> bool:
+    """A current state must belong to its subject, within the same clause.
+
+    Procedure instructions and possible suspensions retain review status.
+    Category labels are not operational assertions and are not searched here.
+    """
+    for clause in re.split(r"\.(?=\s|$)|;", text):
+        for state in re.finditer(rf"\b{state_pattern}\b", clause):
+            if _NEGATED_UNAVAILABLE_PREFIX.search(clause[:state.start()]):
+                continue
+            if re.search(r"\b(?:MAY|MIGHT|COULD)\s+(?:BE\s+)?$", clause[:state.start()]):
+                continue
+            if re.search(r"\b(?:IF|WHEN|UNLESS)\b", clause[:state.start()]):
+                continue
+            for subject in re.finditer(rf"\b{subject_pattern}\b", clause):
+                if surface and re.search(r"\b(?:TWY|TAXIWAY|TXL|TAXILANE|LGT|LIGHTS?|FREQ|CTL|CONTROL)\b", clause[:subject.start()]):
+                    continue
+                between = (clause[subject.end():state.start()] if subject.end() <= state.start()
+                           else clause[state.end():subject.start()] if state.end() <= subject.start() else None)
+                if between is None or len(between.split()) > 12:
+                    continue
+                if state.end() <= subject.start() and not re.fullmatch(r"\s+(?:(?:OF|THE)\s+)*", between):
+                    continue
+                if re.search(r"\b(?:AVBL|AVAILABLE|OPEN|SERVICEABLE|SID|STAR|TAXI|GUIDANCE|LIGHTS?|LGT|IF|WHEN|MAY|MIGHT|COULD)\b", between):
+                    continue
+                if surface and re.search(r"\b(?:TWY|TAXIWAY|TXL|TAXILANE|FREQ|CTL|CONTROL)\b", between):
+                    continue
+                if re.search(r"^[\s,]*(?:(?:NOW\s+)?(?:AVAILABLE|AVBL|RESTORED)|(?:CONDITION|CLOSURE)\s+CANCELLED)\b", clause[state.end():]):
+                    continue
+                return True
+    return False
+
+def retired_taxiway_lighting_summary(text: str) -> str:
+    """Removed aids belonging to retired pavement do not establish a runway-light outage.
+
+    Recognise only an affirmative named-pavement clause plus its explicit
+    associated-aids context. Completion and current geometry remain unverified.
+    """
+    upper = " ".join(text.upper().split())
+    if not re.search(r"\bVISUAL AIDS OF THE DECOMMISSIONED (?:TWY|TAXIWAYS?)\b", upper):
+        return ""
+    ref = r"[A-Z]{1,3}\d{0,2}"
+    feature = r"(?:TWY|TAXIWAY)"
+    subject = rf"(?:THE\s+)?(?:FORMER\s+)?(?:(?:SECTION|PART|PORTION)\s+OF\s+)?{feature}\s+{ref}(?:\s+(?:BTN|BETWEEN)\s+(?:{feature}\s+)?{ref}\s+AND\s+(?:{feature}\s+)?{ref})?"
+    clause = re.search(rf"\b({subject}(?:\s+AND\s+{subject})*)\s+(?:(?:HAD|HAS|HAVE)\s+BEEN|IS|ARE|WAS|WERE)\s+DECOMMISSIONED\b", upper)
+    prefix = upper[max(0, clause.start()-60):clause.start()] if clause else ""
+    if not clause or re.search(r"\b(?:NOT|IF|WHEN|UNLESS)\s*$", prefix):
+        return ""
+    if re.search(r"\b(?:LIGHTS?|LGT|MARKINGS?|SIGNS?|VISUAL AIDS)\s+(?:AT|ON|OF|FOR)\s*$", prefix):
+        return ""
+    labels = []
+    for part in re.finditer(subject, clause.group(1)):
+        label = re.sub(r"\b(?:THE|FORMER|SECTION|PART|PORTION|OF|AND|BETWEEN)\b", lambda m: m.group().lower(), part.group())
+        label = re.sub(r"\b(?:TWY|TAXIWAY)\b", "taxiway", label)
+        label = re.sub(r"\bBTN\b", "between", label)
+        labels.append(label.removeprefix("the "))
+    return (f"The held notice identifies {' and '.join(labels)} as decommissioned. "
+            "Current pavement identity and availability are unverified.")
 
 
 def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
@@ -60,7 +206,10 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     """
 
     upper = f"{category} {text}".upper()
-    unavailable = bool(re.search(rf"\b{_UNAVAILABLE_WORD}\b", upper))
+    unavailable = any(
+        not _NEGATED_UNAVAILABLE_PREFIX.search(upper[:match.start()])
+        for match in re.finditer(rf"\b{_UNAVAILABLE_WORD}\b", upper)
+    )
     runway_match = re.search(rf"\b{_RUNWAY_ID}\b", upper)
     taxiway_match = re.search(rf"\b{_TAXIWAY_ID}\b", upper)
     runway = bool(runway_match)
@@ -69,6 +218,16 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
     )
     taxiway = bool(taxiway_match or re.search(r"\b(?:TAXILANE|STOP\s*BAR)\b", upper))
     lighting = bool(re.search(rf"\b{_LIGHTING}\b", upper))
+    lighting_runway = bool(
+        runway
+        or (
+            lighting
+            and re.search(
+                r"\b(?:RWY|RUNWAY)\s*\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?\b",
+                upper,
+            )
+        )
+    )
     obstacle = bool(re.search(r"\b(?:OBST|OBSTACLES?|CRANES?|POLES?)\b", upper))
 
     airport_closure = bool(
@@ -77,31 +236,40 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
             upper,
         )
     )
+    direct_runway_closure = re.search(
+        rf"\b{_RUNWAY_ID}\s+(?:WILL\s+BE\s+|IS\s+)?{_CLOSURE_WORD}\b",
+        upper,
+    )
+    runway_is_other_subject_qualifier = bool(
+        direct_runway_closure
+        and re.search(
+            r"\b(?:APCH\s+LGT|APPROACH\s+LIGHTS?|PAPI|SFL|"
+            r"SEQUENCE(?:D)?\s+(?:FLASHING|FLG)\s+(?:LGT|LIGHTS?)|"
+            r"LGT|LIGHTS?)\s+(?:FOR\s+)?$",
+            upper[:direct_runway_closure.start()],
+        )
+    )
+    runway_state_is_subordinate_condition = bool(
+        direct_runway_closure
+        and re.search(
+            r"\b(?:ONLY\s+)?WHEN\b[^.;]*$",
+            upper[:direct_runway_closure.start()],
+        )
+    )
     runway_closure = bool(
-        re.search(
-            rf"\b{_RUNWAY_ID}\s+(?:WILL\s+BE\s+|IS\s+)?{_CLOSURE_WORD}\b",
-            upper,
+        (
+            direct_runway_closure
+            and not runway_is_other_subject_qualifier
+            and not runway_state_is_subordinate_condition
         )
         or re.search(rf"\bCLOSURE\s+OF\s+{_RUNWAY_ID}\b", upper)
     )
-    taxiway_closure = bool(
-        re.search(
-            rf"\b{_TAXIWAY_ID}\s+(?:WILL\s+BE\s+|IS\s+)?{_CLOSURE_WORD}\b",
-            upper,
-        )
-        or re.search(rf"\bCLOSURE\s+OF\s+{_TAXIWAY_ID}\b", upper)
-        or (
-            taxiway_match
-            and (not runway_match or taxiway_match.start() < runway_match.start())
-            and re.search(rf"\b{_CLOSURE_WORD}\b", upper[taxiway_match.start():])
-        )
-    )
+    taxiway_closure = _bound_unavailable(text.upper(), r"(?:TWY|TAXIWAY|TXL|TAXILANE)", state_pattern=_CLOSURE_WORD)
     stand_or_apron = bool(
         re.search(r"\b(?:ACFT\s+STAND|STAND|APRON|APN|RAMP|GATE)\b", upper)
     )
-    stand_or_apron_closure = bool(
-        stand_or_apron
-        and re.search(rf"\b(?:CLOSURE|{_CLOSURE_WORD})\b", upper)
+    stand_or_apron_closure = _bound_unavailable(
+        text.upper(), r"(?:ACFT\s+STANDS?|STANDS?|APRON|APN|RAMP|GATE|PRKG\s+PSN\s+BAYS?)", surface=True,
     )
     primary_taxiway = bool(
         taxiway_match
@@ -112,15 +280,44 @@ def notam_pertinence(text: str, category: str = "") -> tuple[int, str]:
         return 5, "apron_stand_closure"
     if airport_closure:
         return 0, "airport_closure"
-    if unavailable and approach:
+    if iap_minima_changes(text, category):
+        return 2, "approach_minima_change"
+    if approach and _bound_unavailable(text.upper(), _APPROACH_SYSTEM):
         return 2, "approach_navaid_closure"
     if taxiway_closure and primary_taxiway:
         return 4, "taxiway_closure"
     if runway_closure:
         return 1, "runway_closure"
+    if retired_taxiway_lighting_summary(text):
+        # Keep independent affirmative restrictions ahead of this review.
+        # The runway named in a supplement heading is not a light outage,
+        # but a separately source-bound unavailable aid still is.
+        if taxiway_closure:
+            return 4, "taxiway_closure"
+        lighting_clauses = [
+            clause for clause in re.split(r"\.(?=\s|$)|;", text.upper())
+            if _bound_unavailable(clause, _LIGHTING)
+            and re.search(
+                rf"\b{_LIGHTING}(?:\s+(?:FOR\s+)?{_RUNWAY_ID})?\s+(?:IS\s+|ARE\s+)?{_UNAVAILABLE_WORD}\b",
+                clause,
+            )
+            and not retired_taxiway_lighting_summary(clause)
+        ]
+        if lighting_clauses:
+            # Resolve a separate outage in its own clause; a preceding retired
+            # taxiway must not become the subject of a runway-light outage.
+            return min((notam_pertinence(clause) for clause in lighting_clauses), key=lambda row: row[0])
+        return 4, "surface_identity_review"
     if unavailable and taxiway and lighting and primary_taxiway:
         return 6, "taxiway_restriction"
-    if unavailable and runway and lighting:
+    if unavailable and lighting and (
+        lighting_runway
+        or re.search(
+            r"\b(?:(?:APCH|APPROACH)\s+(?:LGT|LIGHT(?:S|ING)?)|"
+            r"SEQUENCE(?:D)?\s+(?:FLASHING|FLG)\s+(?:LGT|LIGHTS?))\b",
+            upper,
+        )
+    ):
         return 3, "runway_lighting_restriction"
     if obstacle:
         return 8, "obstacle"
@@ -200,7 +397,7 @@ def pilot_notam_key(item: dict[str, Any]) -> tuple[str, ...] | None:
     )
 
 
-def notam_sort_key(item: dict[str, Any]) -> tuple[int, int, int, int, int, str]:
+def notam_sort_key(item: dict[str, Any]) -> tuple[int, int, int, int, int, int, str]:
     data = item.get("data") or {}
     rank = data.get("pertinence_rank")
     if rank is None:
@@ -214,12 +411,18 @@ def notam_sort_key(item: dict[str, Any]) -> tuple[int, int, int, int, int, str]:
     # global rank-first order could fill the 24-item pilot view with alternate
     # runway records before a departure taxiway closure was reached.
     primary_airport_band = 0 if role in {"departure", "destination"} else 1
+    printed_notam_id = str(data.get("notam_id") or "").strip().upper()
+    canonical_notam_id = _canonical_notam_identity(printed_notam_id)
+    parser_prefix_penalty = int(
+        bool(canonical_notam_id) and canonical_notam_id != printed_notam_id
+    )
     return (
         primary_airport_band,
         int(rank),
         _ROLE_RANK.get(role, 5),
         -_SEVERITY_RANK.get(str(item.get("severity") or "information"), 0),
         -int(data.get("priority_score") or 0),
+        parser_prefix_penalty,
         str(item.get("title") or ""),
     )
 
@@ -234,10 +437,22 @@ def select_pertinent_notams(
     ordered = sorted(findings, key=notam_sort_key)
     selected: list[dict[str, Any]] = []
     seen: set[tuple[str, ...]] = set()
+    seen_notam_ids: set[tuple[str, str, str]] = set()
     for item in ordered:
+        data = item.get("data") or {}
+        canonical_notam_id = _canonical_notam_identity(data.get("notam_id"))
+        notam_identity = (
+            str(data.get("role") or "informational"),
+            str(data.get("location") or "").upper(),
+            canonical_notam_id,
+        )
+        if canonical_notam_id and notam_identity in seen_notam_ids:
+            continue
         key = pilot_notam_key(item)
         if key is not None and key in seen:
             continue
+        if canonical_notam_id:
+            seen_notam_ids.add(notam_identity)
         if key is not None:
             seen.add(key)
         selected.append(item)
@@ -273,14 +488,8 @@ def _weather_effect(phase: str, mechanism: str) -> str:
     if "no adverse mechanism" in lower:
         return "No adverse weather mechanism was identified in the parsed station record."
     if "requires operational interpretation" in lower:
-        return (
-            "Flight-specific operational effect is not stated by the source; "
-            "review required."
-        )
-    return (
-        "Flight-specific operational effect is not stated by the source; "
-        "review required."
-    )
+        return "Flight-specific operational effect is not stated by the source."
+    return "Flight-specific operational effect is not stated by the source."
 
 
 def concise_weather_finding(item: dict[str, Any]) -> dict[str, Any]:

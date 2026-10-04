@@ -78,10 +78,11 @@ def _run(name: str, source: Path, root: Path, flight_id: int) -> dict:
 
     if name == "SQ303":
         assert flight.get("bobcat") is None
+        assert flight.get("slot_allocation_unread") is None
         communications = [item for item in findings if item["engine"] == "communications"]
         assert len(communications) == 1
         assert communications[0]["severity"] == "unknown"
-        assert communications[0]["title"] == "FIR communication review required"
+        assert communications[0]["title"] == "No approved FIR communication reference"
         assert communications[0]["data"]["reference_status"] != "approved"
         assert max(
             item["data"].get("maximum_msa_hundreds_ft", 0)
@@ -90,12 +91,16 @@ def _run(name: str, source: Path, root: Path, flight_id: int) -> dict:
         ) == 166
         assert flight["edto"]["airports"][0]["airport"] == "VTBD"
     else:
+        # SLOT-ALLOCATION-434: the allocation also names the system and page it is printed under.
         assert flight["bobcat"] == {
             "waypoint": "BIROS",
             "flight_level": 360,
             "cto_utc": "2026-07-12T21:58:00+00:00",
             "ctot_utc": "2026-07-12T16:25:00+00:00",
+            "system": "BOBCAT",
+            "source_page": 1,
         }
+        assert flight.get("slot_allocation_unread") is None
         depressurisation = [item for item in findings if item["engine"] == "depressurisation"]
         assert [item["title"] for item in depressurisation] == [
             "Profile unresolved - ZB to RANAH",

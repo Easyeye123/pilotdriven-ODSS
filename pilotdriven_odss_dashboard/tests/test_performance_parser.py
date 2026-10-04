@@ -15,6 +15,7 @@ QNH : 1021HPA           A/ICE : OFF
 KJFK RWY         RATING:
 RWY COND:
 RTOW(LAND) 312027
+MLGW 205000
 RTOW(STRUC) 280000
 EOSID     :
 OBSTACLES :
@@ -33,6 +34,7 @@ MAX FUEL AVAIL: 115274
     assert performance["eosid"] is None
     assert performance["obstacle_rtow_kg"] == 297_400
     assert performance["landing_rtow_kg"] == 312_027
+    assert performance["maximum_landing_weight_kg"] == 205_000
     assert performance["structural_rtow_kg"] == 280_000
 
 

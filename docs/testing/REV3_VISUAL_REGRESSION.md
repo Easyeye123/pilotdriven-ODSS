@@ -2,7 +2,7 @@
 
 ## What this checks
 
-This gate answers one narrow question: does the candidate SQ214 combined Flight Briefing (all 41 pages, as produced by the private CFP corpus run) render to exactly the same pixels as the approved reference render?
+This gate answers one narrow question: does the candidate SQ214 combined Flight Briefing (all pages, as produced by the private CFP corpus run) render to exactly the same pixels as the approved reference render?
 
 The comparison uses the pinned PyMuPDF runtime from `pilotdriven_odss_dashboard/requirements.txt`. Every page is rendered at scale 1 into DeviceRGB with annotations enabled and no alpha channel. Page count, physical page size, raster size and every RGB pixel must match. There is no visual tolerance.
 
@@ -10,13 +10,52 @@ For example, if one card moves by one pixel on page 4, the command exits `1` and
 
 ## Current approved reference
 
-`SQ214_REV3_reference_v6.pdf` — the SQ214-PER-SIN-19AUG corpus render under
-`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-23-flow-round-v6"`, minted on
-23 Aug 2026 after the flow round (page-1 PERFORMANCE card, pertinent NOTAM
-lines, ETA basis line, route-version / NON-EDTO / CRZ chips, page-2 clock-basis
-sentence). It supersedes v5 (`73475f4c…`, the 20–21 Aug punch-list skin) and
-the original 7-page pypdf REV3 artefact (`b02b0b36…`), which could never match
-the combined briefing the release gate actually compares.
+The pinned manifest (`tests/rev3_visual_reference_manifest.json`) is the
+authority for the current reference — this section is prose and has gone
+stale before (30 Aug: a deploy was attempted against v9 while the manifest
+pinned v10).
+
+`SQ214_REV3_reference_v13_REV1_SIX_BOX_AND_NOTAM_EVIDENCE.pdf`
+(`2f026325…ccb5`) — the
+SQ214-PER-SIN-19AUG corpus render under
+`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-31-rev1-six-box-notam-evidence-v33"`,
+minted on 31 Aug 2026. It carries the approved REV1 six-box page-one hierarchy,
+the corrected approach-evidence ownership, and the complete selected-NOTAM
+evidence appendices. All 46 lossless audit pages and all 39 operational pages
+were inspected as contact sheets and as individual renders; there is no
+clipping, overlap, blank-page, footer or source-retention regression.
+
+Superseded: `SQ214_REV3_reference_v12_APPROACH_EVIDENCE_CORRECTED.pdf`
+(`8bf7b209…42e2`) — the 41-page render under
+`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-31-surface-shortening-v32"`.
+
+Superseded without deployment:
+`SQ214_REV3_reference_v11_CRITICAL_APPROACH_EVIDENCE.pdf`
+(`4c679dfe…6027a`) — an intermediate candidate that incorrectly promoted the
+WMKK sequence-flashing-light notice despite its explicit statement that the
+approach lights remained available.
+
+Superseded: `SQ214_REV3_reference_v10_VAA_SOURCE_SEPARATION.pdf`
+(`1521203d…b57f`) — the render under
+`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-26-vaa-source-separation-v27"`,
+minted on 26 Aug 2026. Relative to v9, page 37 intentionally separates the VA
+SIGMET review from direct VAA source reach and applicability; the other 40
+pages are pixel-identical to v9.
+
+Superseded: `SQ214_REV3_reference_v9_OFP_VWS.pdf` (`4df2f631…4f78`) — the
+render under
+`COMBINED_BRIEFING_SCHEMA_VERSION = "2026-08-25-vws-fir-ofp-v26"`, minted on
+25 Aug 2026. Relative to v8, generated product labels say OFP, exact printed
+Lido `SUMMARY … CFP` headings remain identified as source text, and the
+deterministic terrain summary always includes the VWS review. The corrected
+render remains 41 pages with zero outside text boxes, visible overlaps, or
+blank pages; all pages were inspected as a contact sheet and pages 1, 2, and
+13 at full size. It supersedes v8 (`a4774fc0…970a`, ATOT/ETA parity), v7
+(`dba0f288…d434e`, compact visible
+`BACK TO OVERVIEW`), v6 (`4397ed3f…`, the flow-round reference), v5
+(`73475f4c…`, the 20–21 Aug punch-list skin), and the original 7-page pypdf
+REV3 artefact (`b02b0b36…`), which could never match the combined briefing the
+release gate actually compares.
 
 The deploy and release-gate scripts read the reference path from
 `PILOTDRIVEN_REV3_REFERENCE_PDF`; the filename must equal the one pinned in the
@@ -35,6 +74,12 @@ The approved reference PDF is proprietary and must not be committed. Git contain
 
 Keep the reference PDF in approved private storage or an ignored local path. Keep generated receipts and difference PNGs under the repository's ignored `tmp/` directory. Do not add the PDF or PNGs to Git.
 
+The 46-page combined corpus artifact deliberately includes private lossless
+audit evidence. The pilot-facing operational download is a separately scanned
+39-page artifact; the combined reference preserves the parsed-fact publication
+coverage that the private corpus gate verifies and is not a page-count target
+for the operational download.
+
 ## Run the gate
 
 From `pilotdriven-ODSS`:
@@ -44,7 +89,7 @@ cd pilotdriven_odss_dashboard
 python -m pip install -r requirements.txt
 cd ..
 
-export ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v6.pdf
+export ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v9_OFP_VWS.pdf
 export ODSS_REV3_VISUAL_CANDIDATE_PDF=/private/output/SQ214-PER-SIN-19AUG/SQ214-PER-SIN-19AUG_Flight_Briefing.pdf
 
 python pilotdriven_odss_dashboard/scripts/check_rev3_visual_regression.py \
@@ -59,7 +104,7 @@ Exit `0` means exact equality. Exit `1` means the reference preflight failed, th
 The same check is available as an opt-in test:
 
 ```bash
-ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v6.pdf \
+ODSS_REV3_VISUAL_REFERENCE_PDF=/secure/path/SQ214_REV3_reference_v9_OFP_VWS.pdf \
 ODSS_REV3_VISUAL_CANDIDATE_PDF=/private/output/SQ214-PER-SIN-19AUG/SQ214-PER-SIN-19AUG_Flight_Briefing.pdf \
 python -m pytest -q pilotdriven_odss_dashboard/tests/test_rev3_visual_regression.py
 ```
@@ -77,7 +122,7 @@ Do not weaken thresholds or replace the pinned hashes to make a candidate pass. 
 
 ```bash
 python pilotdriven_odss_dashboard/scripts/mint_rev3_visual_reference.py \
-  --reference /secure/path/SQ214_REV3_reference_v6.pdf \
+  --reference /secure/path/SQ214_REV3_reference_v9.pdf \
   --approval-basis "who approved it, when, and why" \
   --combined-briefing-schema-version "<COMBINED_BRIEFING_SCHEMA_VERSION>"
 ```

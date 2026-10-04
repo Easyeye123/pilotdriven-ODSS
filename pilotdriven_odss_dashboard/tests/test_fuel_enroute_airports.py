@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
+from pathlib import Path
+
+import pytest
 
 from app.odss.briefing import build_briefing_view
 from app.odss.engines import _notam_role_window, _weather_role_window, analyse
-from app.odss.parser import parse_lido
+from app.odss.parser import extract_pages, parse_lido
 
 
 def _fuel_enroute_flight(
     *,
     weather_role_heading: str = "FUEL ENROUTE AIRPORT:",
     notam_role_heading: str = "FUEL ENROUTE AIRPORT",
+    closing_heading: str = "EDTO SUITABLE ENROUTE AIRPORT(S)",
 ) -> dict:
     page1 = (
         "SUMMARY STANDARD CFP\n"
@@ -69,7 +74,7 @@ def _fuel_enroute_flight(
         "1A2574/26 VALID: 22-JUL-26 0743 - 30-SEP-26 2359\n"
         "  D-ATIS LIMITED TRIAL IN PROGRESS. VOICE ATIS REMAINS PRIMARY.\n"
         "================================\n"
-        "EDTO SUITABLE ENROUTE AIRPORT(S)\n"
+        f"{closing_heading}\n"
         "================================\n"
         "WADD /DPS BALI/I GUSTI NGURAH RAI /ADEQ\n"
         "-----------------------------------------\n"
@@ -210,11 +215,11 @@ def test_fuel_enroute_role_reaches_analysis_and_shared_briefing_view() -> None:
     assert station["weather"]["taf"]["text"].startswith("FT 312300")
     assert station["weather"]["metar"]["source_page"] == 3
     assert {item["notam_id"] for item in station["selected_notams"]} == {
-        "1A2868/26",
-        "1A2870/26",
-        "1A2872/26",
+        "A2868/26",
+        "A2870/26",
+        "A2872/26",
         "SX74/25",
-        "1A2574/26",
+        "A2574/26",
     }
     assert any(
         "D-ATIS LIMITED TRIAL" in item["item_e_text"]
@@ -232,16 +237,46 @@ def test_fuel_enroute_role_reaches_analysis_and_shared_briefing_view() -> None:
             "label": "SX74/25",
             "text": "ILS/GP RWY24 unavailable.",
             "notam_id": "SX74/25",
+            "item_e_text": "THE UNSERVICEABILITY OF ILS AND GP RWY 24",
             "source_page": 4,
+            "source_role": "fuel_enroute_airport",
+                "role": "fuel enroute airport",
+                "applicability": "active",
+                "stateAtReference": "active_at_reference",
+                "referenceAt": "2026-08-01T02:50:00+00:00",
+                "minutesDelta": 0,
+                "severity": "critical",
+            "category": "APPROACH PROCEDURE",
+            "pertinence_kind": "approach_navaid_closure",
+            "approach_affected": True,
+            "approach_condition_review": False,
             "signal_family": "approach_navaid",
+            "planned_match": None,
+            "different_runway": False,
         },
         {
             "kind": "notam",
-            "label": "1A2574/26",
+            "label": "A2574/26",
             "text": "D-ATIS limited trial; voice ATIS remains primary.",
-            "notam_id": "1A2574/26",
+            "notam_id": "A2574/26",
+            "item_e_text": (
+                "D-ATIS LIMITED TRIAL IN PROGRESS. VOICE ATIS REMAINS PRIMARY."
+            ),
             "source_page": 4,
+            "source_role": "fuel_enroute_airport",
+                "role": "fuel enroute airport",
+                "applicability": "active",
+                "stateAtReference": "active_at_reference",
+                "referenceAt": "2026-08-01T02:50:00+00:00",
+                "minutesDelta": 0,
+                "severity": "information",
+            "category": "AIRPORT",
+            "pertinence_kind": "other_operational",
+            "approach_affected": False,
+            "approach_condition_review": False,
             "signal_family": "information_service",
+            "planned_match": None,
+            "different_runway": False,
         },
     ]
     assert [
@@ -284,10 +319,118 @@ def test_compact_card_category_coverage_cannot_drop_full_selected_notams() -> No
         "EX2/26",
         "EX3/26",
         "SX74/25",
-        "1A2574/26",
+        "A2574/26",
     }
     assert [
         item["notam_id"]
         for item in panel["card_summary_lines"]
         if item["kind"] == "notam"
-    ] == ["SX74/25", "1A2574/26"]
+    ] == ["SX74/25", "A2574/26"]
+
+
+# ---------------------------------------------------------------------------
+# The fuel-enroute section ends at the next airport section, whichever LIDO
+# prints. Independent QA of release 402 (SQ365 LIRF-WSSS, 23 Sep 2026): a NON
+# EDTO CFP prints FUEL ENROUTE AIRPORT (p39) and then EDTO ADEQUATE ENROUTE
+# AIRPORT(S) (p40) - no SUITABLE section between them - and the fuel section
+# ran on to ENROUTE AIRPORT(S) on p55, so all 34 adequate stations were held as
+# fuel-enroute airports: VAAH's card said EDTO adequate enroute, then "Checked
+# window · fuel enroute airport", then "during the applicable fuel enroute
+# airport window". The same shape is printed on SQ605 (NON EDTO) and on the
+# EDTO flights SQ303 16 Jul and SQ214 16 Aug.
+
+
+@pytest.mark.parametrize(
+    "closing_heading",
+    [
+        "EDTO ADEQUATE ENROUTE AIRPORT(S)",
+        "ETOPS SUITABLE ENROUTE AIRPORT(S)",
+        "ETOPS ADEQUATE ENROUTE AIRPORT(S)",
+        "ADEQUATE ENROUTE AIRPORT(S)",
+        # The weather list of SQ482 14 Aug prints these after FUEL ENROUTE AIRPORT.
+        "CRITICAL EDTO AIRPORTS:",
+        "EDTO ENROUTE ALTN AIRPORTS:",
+        "DESTINATION ALTERNATE(S)",
+    ],
+)
+def test_the_fuel_enroute_section_ends_at_every_airport_section_heading(closing_heading: str) -> None:
+    flight = _fuel_enroute_flight(closing_heading=closing_heading)
+
+    assert [station["airport"] for station in flight["fuel_enroute_airports"]] == ["WIII"]
+    # Only WIII prints a NOTAM block in this fixture; WADD, past the heading, is not held as a fuel station.
+    assert {record["location"] for record in flight["notams"]} == {"WIII"}
+    # The heading is a section boundary, not the tail of the notice before it.
+    last = next(record for record in flight["notams"] if record["notam_id"] == "1A2574/26")
+    assert last["text"] == "D-ATIS LIMITED TRIAL IN PROGRESS. VOICE ATIS REMAINS PRIMARY."
+
+
+def test_the_edto_suitable_heading_still_ends_the_fuel_enroute_section() -> None:
+    flight = _fuel_enroute_flight()
+
+    assert [station["airport"] for station in flight["fuel_enroute_airports"]] == ["WIII"]
+
+
+_CORPUS = Path(__file__).resolve().parents[2] / "private_cfp_corpus"
+
+
+@pytest.mark.parametrize(
+    ("filename", "fuel", "analysed_stations", "not_a_fuel_station"),
+    [
+        # NON EDTO: FUEL ENROUTE p39, EDTO ADEQUATE ENROUTE p40, ENROUTE p55. The
+        # stations analysed are the planning stations that print a NOTAM block
+        # (EDDM through the engine's standing Munich exception), 7 instead of 36.
+        ("SQ36507082026FCO.pdf", ["WIMM"], {"LIRF", "WSSS", "WSAP", "WMKK", "WIDD", "WIMM", "EDDM"}, "VAAH"),
+        # NON EDTO: the same shape, both headings on p39; 6 instead of 21.
+        ("SQ60508092026ICN.pdf", ["VVTS"], {"RKSI", "WSSS", "WSAP", "WMKK", "WIDD", "VVTS"}, "WMSA"),
+        # EDTO, the adequate section follows the fuel section directly (p41); 7 instead of 50.
+        ("SQ30316072026BRU 81.pdf", ["VTSP"], {"EBBR", "WSSS", "WSAP", "WMKK", "VTSP", "VTBD", "EDDM"}, "EBOS"),
+        # EDTO, the same shape (p25/p26); WIII is both the fuel and the EDTO airport; 6 instead of 12.
+        ("lido-briefing_SQ_214_16Aug2026_PER_SIN.pdf", ["WIII"], {"YPPH", "WSSS", "WSAP", "WMKK", "WIDD", "WIII"}, "WADD"),
+        # Control: an EDTO SUITABLE section already closed the fuel section; 6, as before.
+        ("lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf", ["EPWA"], {"WSSS", "EKCH", "ESMS", "EDDF", "EPWA", "VOMM"}, "WMSA"),
+        # The weather list runs FUEL ENROUTE AIRPORT (FQMA), CRITICAL EDTO
+        # AIRPORTS (WIMM, VCBI, FIMP), ADEQUATE ENROUTE AIRPORT(S): 15 fuel
+        # stations before, one now.
+        ("lido-briefing_SQ_482_14Aug2026_SIN_JNB.pdf", ["FQMA"], {"FACT", "FALE", "FAOR", "FIMP", "FQMA", "VCBI", "WSSS"}, "WIMM"),
+    ],
+)
+def test_real_ofps_hold_only_their_fuel_enroute_section_as_fuel_stations(
+    filename: str, fuel: list[str], analysed_stations: set[str], not_a_fuel_station: str
+) -> None:
+    source = _CORPUS / filename
+    if not source.exists():
+        pytest.skip("the private OFP corpus is not available")
+    flight = parse_lido(extract_pages(source), filename)
+
+    assert [station["airport"] for station in flight["fuel_enroute_airports"]] == fuel
+    assert {record["location"] for record in flight["notams"]} == analysed_stations
+    assert not_a_fuel_station not in analysed_stations
+
+
+@pytest.mark.skipif(not (_CORPUS / "SQ30316072026BRU 81.pdf").exists(), reason="the private OFP corpus is not available")
+def test_an_edto_airport_the_over_run_swallowed_keeps_its_edto_window_only() -> None:
+    # SQ303's EDTO alternate VTBD sits in the adequate section the fuel section
+    # ran into, so its window was widened to the whole flight under the fuel
+    # role and its reference moved to departure.
+    filename = "SQ30316072026BRU 81.pdf"
+    flight = parse_lido(extract_pages(_CORPUS / filename), filename)
+    from app.odss.engines import _notam_role_windows
+
+    windows = _notam_role_windows(flight, "VTBD", {a["airport"] for a in flight["alternates"]}, {s["airport"] for s in flight["fuel_enroute_airports"]}, "")
+    assert [(role, start.isoformat(), end.isoformat()) for role, start, end in windows] == [
+        ("EDTO", "2026-07-16T19:53:00+00:00", "2026-07-16T22:09:00+00:00"),
+    ]
+    assert {record.get("source_role") for record in flight["notams"] if record["location"] == "VTBD"} == {None}
+
+
+@pytest.mark.skipif(not (_CORPUS / "lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf").exists(), reason="the private OFP corpus is not available")
+def test_no_notice_ends_with_the_next_section_heading() -> None:
+    # SQ352 EKCH SX1/26 ended "… GP (ILS) AVBL. DESTINATION ALTERNATE(S)" and
+    # VOMM 1G1146/24 "… (2010) EDTO ADEQUATE ENROUTE AIRPORT(S)".
+    filename = "lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf"
+    flight = parse_lido(extract_pages(_CORPUS / filename), filename)
+    heading_tail = re.compile(r"(?:AIRPORT\(S\)|AIRPORTS|ALTERNATE\(S\)|ALTERNATES)\s*$")
+    assert [r["notam_id"] for r in flight["notams"] if heading_tail.search(r["text"])] == []
+    ekch = next(r for r in flight["notams"] if r["location"] == "EKCH" and r["notam_id"] == "SX1/26")
+    assert ekch["text"].endswith("GP (ILS) AVBL.")
+

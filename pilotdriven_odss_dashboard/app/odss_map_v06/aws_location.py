@@ -316,5 +316,6 @@ def _marker_colour(role: str) -> str:
         "edto_etp": "#55D6BE",
         "edto_exit": "#55D6BE",
         "depressurisation_critical": "#FF7F66",
+        "vws_trigger": "#FFB84D",
         "terrain_critical": "#FF7F66",
     }.get(role, "#DCEEFF")

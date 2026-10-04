@@ -9,7 +9,7 @@ Layout contract (approved reference v1.3):
 - an UNMATCHED EXPOSURES panel that never substitutes a nearby or generic
   chart.
 
-Every number shown is computed from the parsed CFP or the approved
+Every number shown is computed from the parsed OFP or the approved
 controlled index; nothing is invented at render time.
 """
 
@@ -330,7 +330,7 @@ def _draw_card(
         rows.append(
             (
                 (
-                    "CFP ROUTE EXPOSURE"
+                    "OFP ROUTE EXPOSURE"
                     if len(related_events) == 1
                     else f"EXPOSURE {index}"
                 ),
@@ -437,7 +437,7 @@ def draw_depressurisation_analysis(
         top - 12,
         (
             f"Approved A350 profile set {issue_date or 'not stated'} | "
-            "CFP route exposure and chart coverage shown separately"
+            "OFP route exposure and chart coverage shown separately"
         ),
     )
 
@@ -530,7 +530,7 @@ def draw_depressurisation_analysis(
             ]
         else:
             lines = [
-                "NO CFP ROUTE HIGH-TERRAIN EXPOSURE DETECTED"
+                "NO OFP ROUTE HIGH-TERRAIN EXPOSURE DETECTED"
                 if not events
                 else "No approved profile match in the mounted controlled index."
             ]
@@ -645,7 +645,7 @@ def draw_depressurisation_analysis(
                 )
                 if events
                 else (
-                    "No strict MSA >100* window was detected in the parsed CFP "
+                    "No strict MSA >100* window was detected in the parsed OFP "
                     "route; no profile match was required."
                 )
             )[:180],
@@ -706,9 +706,9 @@ def draw_depressurisation_analysis(
     )
     if pages:
         chips.append(
-            "CFP P" + "-".join(str(page) for page in (pages[0], pages[-1]))
+            "OFP P" + "-".join(str(page) for page in (pages[0], pages[-1]))
             if len(pages) > 1
-            else f"CFP P{pages[0]}"
+            else f"OFP P{pages[0]}"
         )
     for finding in matched[:2]:
         chart = str((finding.get("data") or {}).get("chart_number") or "")

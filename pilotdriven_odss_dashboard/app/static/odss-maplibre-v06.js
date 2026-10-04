@@ -423,7 +423,7 @@
         : null,
     );
     appendDefinition(list, "VWS", properties.vws);
-    appendDefinition(list, "Source", properties.source_page ? `CFP page ${properties.source_page}` : null);
+    appendDefinition(list, "Source", properties.source_page ? `OFP page ${properties.source_page}` : null);
     card.append(list);
     return card;
   }
@@ -464,7 +464,7 @@
     const fallback = shell.querySelector("[data-odss-map-fallback]");
     const reset = shell.querySelector("[data-odss-map-reset]");
     if (mode) mode.textContent = "Schematic fallback";
-    if (message) message.textContent = reason || "Realistic basemap unavailable; showing the offline CFP route.";
+    if (message) message.textContent = reason || "Realistic basemap unavailable; showing the offline OFP route.";
     if (reset) reset.hidden = true;
 
     const fallbackUrl = shell.dataset.fallbackUrl;
@@ -507,7 +507,7 @@
     const message = shell.querySelector("[data-odss-map-message]");
     const reset = shell.querySelector("[data-odss-map-reset]");
     if (!container || !window.maplibregl) {
-      await showWorkspaceFallback(shell, "Interactive map support unavailable; showing the offline CFP route.");
+      await showWorkspaceFallback(shell, "Interactive map support unavailable; showing the offline OFP route.");
       return;
     }
 
@@ -527,7 +527,7 @@
         throw new Error("Canonical route version changed");
       }
       if (!config.styleUrl || !config.route || !config.markers || !config.bounds) {
-        await showWorkspaceFallback(shell, "Approved basemap configuration is unavailable; showing the offline CFP route.");
+        await showWorkspaceFallback(shell, "Approved basemap configuration is unavailable; showing the offline OFP route.");
         return;
       }
 
@@ -539,7 +539,7 @@
           try { shell._odssMap.remove(); } catch (_) { /* no-op */ }
           shell._odssMap = null;
         }
-        await showWorkspaceFallback(shell, "Realistic basemap did not load; showing the offline CFP route.");
+        await showWorkspaceFallback(shell, "Realistic basemap did not load; showing the offline OFP route.");
       };
       const map = createOperationalMap(container, config, {
         onLayersReady: (loadedMap) => installWorkspaceInteractions(loadedMap, shell),
@@ -563,7 +563,7 @@
       });
       shell._odssMap = map;
     } catch (_) {
-      await showWorkspaceFallback(shell, "Map configuration could not be loaded; showing the offline CFP route.");
+      await showWorkspaceFallback(shell, "Map configuration could not be loaded; showing the offline OFP route.");
     }
   }
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from hashlib import sha256
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,21 +10,151 @@ from .constants import MONTHS, OPERATIONAL_KEYWORDS
 _NOTAM_START = re.compile(r"^(?P<id>[A-Z0-9]+/\d{2})\s+VALID:\s+(?P<validity>.+)$")
 _SCHEDULE_LINE = re.compile(
     r"^(?:DAILY|DLY|MON|TUE|WED|THU|FRI|SAT|SUN|"
-    r"JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b"
+    r"JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|\d{2}(?=[ ,\d-]*\s+\d{4}))\b"
 )
 _FUEL_ENROUTE_HEADING = re.compile(
     r"^FUEL\s+ENROUTE\s+AIRPORT(?:\(S\)|S)?\s*:?\s*$",
     re.IGNORECASE,
 )
+# Every airport-section heading LIDO prints, so that a section opened by one of
+# them is closed by the next. The adequate headings were missing: a NON EDTO
+# CFP prints FUEL ENROUTE AIRPORT and then EDTO ADEQUATE ENROUTE AIRPORT(S)
+# with no SUITABLE section between (SQ365 LIRF-WSSS p39/p40; SQ605), as do
+# some EDTO CFPs (SQ303 16 Jul, SQ214 16 Aug), and the fuel-enroute section ran
+# on through every adequate station to ENROUTE AIRPORT(S) - 34 of SQ365's
+# stations were held as fuel-enroute airports (independent QA of release 402,
+# 23 Sep 2026).
+# The vocabulary is the one the 28 held OFPs print, in either appendix:
+# DEPARTURE / DESTINATION AIRPORT, DESTINATION ALTERNATE(S) (the bulletin
+# prints no AIRPORT word), FUEL ENROUTE AIRPORT, ENROUTE AIRPORT(S), ADEQUATE
+# ENROUTE AIRPORT(S), EDTO/ETOPS SUITABLE and ADEQUATE ENROUTE AIRPORT(S),
+# CRITICAL EDTO AIRPORTS and EDTO ENROUTE ALTN AIRPORTS (the weather list).
+# A heading the pattern did not name was appended to the last notice before
+# it (SQ352 EKCH SX1/26 ended "… DESTINATION ALTERNATE(S)").
 _AIRPORT_SECTION_HEADING = re.compile(
-    r"^(?:(?:DEPARTURE|DESTINATION|ALTERNATE|DESTINATION\s+ALTERNATE|"
-    r"FUEL\s+ENROUTE|ENROUTE|EDTO\s+SUITABLE\s+ENROUTE)\s+)"
-    r"AIRPORT(?:\(S\)|S)?\s*:?\s*$",
+    r"^(?:DEPARTURE\s+AIRPORT(?:\(S\)|S)?"
+    r"|DESTINATION\s+AIRPORT(?:\(S\)|S)?"
+    r"|(?:DESTINATION\s+)?ALTERNATE(?:\(S\)|S)?(?:\s+AIRPORT(?:\(S\)|S)?)?"
+    r"|FUEL\s+ENROUTE\s+AIRPORT(?:\(S\)|S)?"
+    r"|(?:ADEQUATE\s+)?ENROUTE\s+AIRPORT(?:\(S\)|S)?"
+    r"|(?:EDTO|ETOPS)\s+(?:SUITABLE|ADEQUATE)\s+ENROUTE\s+AIRPORT(?:\(S\)|S)?"
+    r"|CRITICAL\s+(?:EDTO|ETOPS)\s+AIRPORT(?:\(S\)|S)?"
+    r"|(?:EDTO|ETOPS)\s+ENROUTE\s+ALTN\s+AIRPORT(?:\(S\)|S)?)"
+    r"\s*:?\s*$",
     re.IGNORECASE,
 )
 _STATION_HEADER = re.compile(
     r"^(?P<icao>[A-Z]{4})\s*/\s*(?P<iata>[A-Z0-9]{3})"
     r"(?:\s+(?P<name>.+?))?\s*$",
+    re.IGNORECASE,
+)
+
+# Equipment, obstacle and airspace abbreviations that LIDO prints in the same
+# ``AAAA/BBB text`` shape a station header uses. A NOTAM's item-E body sits
+# inside the appendix this scanner walks, so "DVOR/DME STJ 113.200MHZ/CH 79X
+# U/S" and "ELEV/HGT (FT) - 135/153" both satisfy the header pattern.
+#
+# This is the Python twin of ``NON_STATION_ABBREVIATIONS`` and
+# ``classifyBulletinStationLine`` in the web parser's ``cfp.mjs``. The two
+# parsers read the same OFP independently - the client parses it for the
+# manifest, ODSS parses the uploaded file again for the analysis - so a rule
+# applied to only one of them leaves the other publishing the false station.
+# That is exactly what happened: the client-side fix left ELEV and DVOR in the
+# analysis panels, and the merged airport index still offered them
+# (SQ303, 22 Sep 2026: "Jump to airport has 68 options including the
+# placeholder", with "ELEV - (FT) - 135/153" and "DVOR - STJ 113.200MHZ/CH79X
+# U/S"). Keep the two lists together when either changes.
+AIRSPACE_VOLUME_CODES = frozenset({"FIR", "UIR"})
+NON_STATION_ABBREVIATIONS = frozenset({
+    "ALTN", "ATIS", "AWOS", "DME", "DVOR", "ELEV", "FIR", "FRZ", "GNSS", "GP",
+    "GPS", "HGT", "ILS", "LOC", "NDB", "PAPI", "RVR", "RWY", "SFRA", "TAC",
+    "TACAN", "TWY", "UIR", "VASI", "VOR", "VORD", "VOT",
+})
+_AIRSPACE_VOLUME_NAME = re.compile(r"\b(?:FIR|UIR|CTA|TMA|SFRA)\b")
+# The same page chrome the web parser skips (``isPageChrome`` in cfp.mjs).
+_PAGE_CHROME = re.compile(
+    r"^(?:PAGE\s+\d+\s+OF\s+\d+|SIA\s+\d+/[0-9A-Z]+/[A-Z]{3}-[A-Z]{3})$", re.IGNORECASE,
+)
+_WEATHER_RECORD = re.compile(r"^(?:SA|SP|FT|FC|METAR|SPECI|TAF)\s")
+
+
+def _heads_station_block(lines: list[str], index: int) -> bool:
+    """Whether the line at ``index`` heads its own block, as every real station
+    row does: its dashed underline follows in the NOTAM appendix, its own
+    records in the weather appendix. An item-E body line - where every false
+    station so far was printed (ELEV/HGT, DVOR/DME, EBBU/FIR) - is followed by
+    more of its notice. Twin of ``headsStationBlock`` in cfp.mjs."""
+    following = [line for line in lines[index + 1:index + 8] if line]
+    while following and _PAGE_CHROME.match(following[0]) and len(following) > 1:
+        following = following[1:]
+    return bool(following) and bool(re.match(r"^-{5,}$", following[0]) or _WEATHER_RECORD.match(following[0]))
+
+
+def classify_bulletin_station_line(line: str) -> dict[str, str] | None:
+    """One line of a LIDO airport section, read as a station row or refused.
+
+    Returns ``{"icao", "iata", "name"}`` or ``None``. Public so the rule can be
+    tested against real bulletin lines rather than only through a whole OFP.
+
+    A station name is a place name. Measurements, frequencies and channel
+    numbers belong to equipment prose, and a row naming an airspace volume is a
+    FIR/UIR line printed in an airport section, not an aerodrome. Across the
+    29-OFP private corpus this refuses exactly two identities - ELEV/HGT and
+    DVOR/DME - and keeps all 93 genuine ones, none of which carries a digit in
+    its name.
+    """
+    match = _STATION_HEADER.fullmatch(str(line or "").strip())
+    if not match:
+        return None
+    icao = str(match.group("icao") or "").upper()
+    iata = str(match.group("iata") or "").upper()
+    name = str(match.group("name") or "").strip()
+    # Facility and measurement abbreviations are checked against the LEADING
+    # column only. An equipment line leads with its equipment word -
+    # ``DVOR/DME ...``, ``ELEV/HGT ...``, ``GNSS/GPS ...`` - so that is where
+    # the refusal belongs. The second column is real IATA code space, where
+    # three-letter codes legitimately collide with abbreviations: DME is Moscow
+    # Domodedovo, and ``UUDD/DME MOSCOW/DOMODEDOVO`` was being refused as
+    # equipment prose (independent review, 22 Sep 2026). A code space cannot be
+    # a denylist.
+    if icao in NON_STATION_ABBREVIATIONS:
+        return None
+    # FIR and UIR used to be refused in the IATA column too, on the claim that
+    # no aerodrome could be lost. One is: UIR is Quirindi (YQDI) in IATA's own
+    # code search (independent review, 22 Sep 2026). What marks the real
+    # airspace row is its NAME - ``EBBU/FIR - RESTRICTIONS RELATED TO ...`` -
+    # which is prose, not a place; a colliding row must at least carry a name,
+    # and ``_fuel_enroute_stations`` also requires it to head its own block.
+    #
+    # A station name is a place name, and a place name begins with a letter.
+    if iata in AIRSPACE_VOLUME_CODES and not name:
+        return None
+    if name and not re.match(r"[A-Z]", name, re.IGNORECASE):
+        return None
+    if re.search(r"\d", name):
+        return None
+    if _AIRSPACE_VOLUME_NAME.search(name):
+        return None
+    return {"icao": icao, "iata": iata, "name": name}
+
+
+_VOLCANO_ADVISORY_HEADING = re.compile(
+    r"^VAA\s+(?P<volcano>[A-Z][A-Z0-9 -]{1,48})$",
+    re.IGNORECASE,
+)
+_ROUTE_AIRSPACE_SCOPE = re.compile(
+    r"^(?:EXTENDED\s+AREA\s+AROUND\s+DEPARTURE|"
+    r"AREA\s+ENROUTE\s+DEPARTURE\s*-\s*DESTINATION)$",
+    re.IGNORECASE,
+)
+_TOP_LEVEL_NOTAM_SCOPE = re.compile(
+    r"^(?:EXTENDED\s+AREA\s+AROUND\s+.+|AREA\s+ENROUTE\s+.+)$",
+    re.IGNORECASE,
+)
+_ROUTE_AIRSPACE_SIGNAL = re.compile(
+    r"\b(?:DANGER\s+AREA|RESTRICTED\s+AREA|PROHIBITED\s+AREA|"
+    r"MIL(?:ITARY)?\s+(?:TRAINING|EXER(?:CISE)?)|"
+    r"[A-Z]{2}[DRP]\d+[A-Z]?\s+(?:ACT|ACTIVE))\b",
     re.IGNORECASE,
 )
 
@@ -71,8 +202,8 @@ def _fuel_enroute_stations(section_text: str) -> list[dict[str, str]]:
     stations: list[dict[str, str]] = []
     seen: set[str] = set()
     in_fuel_section = False
-    for raw_line in section_text.splitlines():
-        line = raw_line.strip()
+    lines = [raw_line.strip() for raw_line in section_text.splitlines()]
+    for index, line in enumerate(lines):
         if _FUEL_ENROUTE_HEADING.fullmatch(line):
             in_fuel_section = True
             continue
@@ -81,22 +212,26 @@ def _fuel_enroute_stations(section_text: str) -> list[dict[str, str]]:
             continue
         if not in_fuel_section:
             continue
-        match = _STATION_HEADER.fullmatch(line)
-        if not match:
+        station = classify_bulletin_station_line(line)
+        if station is None:
             continue
-        icao = match.group("icao").upper()
+        # A row whose IATA column is also an airspace-volume abbreviation
+        # cannot be judged by its shape; its place in the OFP settles it.
+        if station["iata"] in AIRSPACE_VOLUME_CODES and not _heads_station_block(lines, index):
+            continue
+        icao = station["icao"]
         if icao in seen:
             continue
         seen.add(icao)
         name = re.sub(
             r"\s*/\s*ADEQ\s*$",
             "",
-            str(match.group("name") or "").strip(),
+            station["name"],
             flags=re.IGNORECASE,
         )
         stations.append({
             "airport": icao,
-            "iata": match.group("iata").upper(),
+            "iata": station["iata"],
             "name": name,
             "role": "fuel_enroute_airport",
         })
@@ -173,30 +308,81 @@ def _extract_station_block(weather_text: str, icao: str) -> str:
     return match.group("body").strip() if match else ""
 
 
-def _parse_station_weather(icao: str, block: str) -> list[dict[str, str]]:
-    records: list[dict[str, str]] = []
+def _parse_station_weather(
+    icao: str, block: str, *, source_pages: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     current_type: str | None = None
     current_lines: list[str] = []
 
     def flush() -> None:
         nonlocal current_type, current_lines
         if current_type and current_lines:
-            records.append({
+            record = {
                 "location": icao,
                 "record_type": current_type,
                 "text": " ".join(x.strip() for x in current_lines if x.strip()),
-            })
+            }
+            if source_pages is not None:
+                needle = " ".join(record["text"].upper().split())
+                matches = [
+                    index for index, page in enumerate(source_pages, start=1)
+                    if needle in " ".join(page.split()).upper()
+                ]
+                if not matches:
+                    # A report can continue on another page. Use its first
+                    # printed line only when the full message spans pages.
+                    start = " ".join(current_lines[0].split()).upper()
+                    matches = [
+                        index for index, page in enumerate(source_pages, start=1)
+                        if start in " ".join(page.split()).upper()
+                    ]
+                if len(matches) > 1:
+                    # NIL / WX NOT AVAILABLE may repeat at many airports.
+                    # Require this station's printed header to disambiguate.
+                    header = re.compile(
+                        rf"(?m)^\s*{re.escape(icao)}\s*/\s*[A-Z0-9]{{3}}\b",
+                        re.IGNORECASE,
+                    )
+                    matches = [index for index in matches if header.search(source_pages[index - 1])]
+                record["source_page"] = matches[0] if len(matches) == 1 else None
+            records.append(record)
         current_type, current_lines = None, []
 
     for raw in block.splitlines():
-        line = raw.strip()
-        if re.match(r"^(SA|FT|FC)\s+", line):
+        # PDF layout may append the document footer to an unfinished weather
+        # row. Strip that furniture without ending a valid page continuation.
+        line = re.sub(
+            r"\b[A-Z0-9]{2,3}\s+\d{1,4}/\d{1,2}[A-Z]{3}\d{2}/[A-Z]{3,4}-[A-Z]{3,4}"
+            r"(?:\s+Reg:\s*\S+\s+OFP:\s*\S+)?(?:\s+Page\s+\d+\s+of\s+\d+)?",
+            "", raw, flags=re.IGNORECASE,
+        )
+        line = re.sub(r"\bPage\s+\d+\s+of\s+\d+\s*$", "", line, flags=re.IGNORECASE).strip()
+        if not line or line.upper() == "AIRPORT WX LIST":
+            continue
+        if re.match(
+            r"^(?:AIRPORTLIST ENDED|AIRMET|SIGMET|Tropical Cyclone|Volcanic Ash|Space Weather)",
+            line, flags=re.IGNORECASE,
+        ):
+            break
+        remaining = line
+        while remaining:
+            if re.match(r"^(SA|FT|FC)\s+", remaining):
+                flush()
+                token = remaining[:2]
+                current_type = {"SA": "METAR", "FT": "TAF", "FC": "TAF"}[token]
+            if not current_type:
+                break
+            # Keep the explicit message terminator, then close the product so
+            # following list material cannot become METAR/TAF source text.
+            terminator = remaining.find("=")
+            current_lines.append(remaining if terminator < 0 else remaining[:terminator + 1])
+            if terminator < 0:
+                break
             flush()
-            token = line[:2]
-            current_type = {"SA": "METAR", "FT": "TAF", "FC": "TAF"}[token]
-            current_lines = [line]
-        elif current_type and line and not line.startswith(("SIA ", "Page ")):
-            current_lines.append(line)
+            remaining = remaining[terminator + 1:].strip()
+            if not re.match(r"^(SA|FT|FC)\s+", remaining):
+                break
     flush()
     return records
 
@@ -214,9 +400,10 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
     if "EDDM/MUC" in text:
         locations.append("EDDM")
     for icao in dict.fromkeys(locations):
-        records = _parse_station_weather(icao, _extract_station_block(text, icao))
+        records = _parse_station_weather(
+            icao, _extract_station_block(text, icao), source_pages=pages,
+        )
         for record in records:
-            record["source_page"] = _record_source_page(pages, record["text"])
             if icao in fuel_icaos:
                 record["source_role"] = "fuel_enroute_airport"
         flight["weather"].extend(records)
@@ -232,12 +419,18 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
         body = " ".join(volcanic.group("body").split())
         if body and "NO WX DATA" not in body.upper():
             fir = re.search(r"\b([A-Z]{4})\s+[A-Z ]+FIR\b", body)
-            flight["weather"].append({
+            record = {
                 "location": fir.group(1) if fir else "FIR",
                 "record_type": "VA_SIGMET",
                 "text": body,
                 "source_page": _record_source_page(pages, body),
-            })
+            }
+            # Retain the printed section while locating each message on its
+            # own page. The section may span pages and more than one FIR.
+            flight["weather"].append(record)
+            flight.setdefault("ofp_va_sigmet_messages", []).extend(
+                _split_cfp_va_sigmets(record, pages)
+            )
 
     sigmet = re.search(r"(?ms)^SIGMETs:\s*(?P<body>.*?)(?=^Tropical Cyclone SIGMETs:)", text)
     if sigmet:
@@ -251,6 +444,240 @@ def enrich_weather(flight: dict[str, Any], pages: list[str]) -> None:
                 "source_page": _record_source_page(pages, body),
             })
 
+
+def _cfp_volcano_position(text: str, volcano: str) -> dict[str, Any] | None:
+    """Read a position immediately attached to the named volcano, never ash vertices.
+
+    Accept printed degree/minute and degree/minute/second positions in the
+    named volcano's position field, with prefix or suffix hemispheres.
+    Ambiguous, invalid or
+    missing positions remain unplotted; no catalogue or name lookup is used.
+    """
+    pattern = re.compile(
+        rf"\b{re.escape(volcano)}\b(?:\s+VOLCANO)?\s*"
+        r"(?:\([A-Z][A-Z -]{1,60}\)\s*)?"
+        r"(?:\(CAVW\s+[\d -]+\)|(?:ID\s+)?\d{3,7}(?:-\d{2})?[,;]?)?\s*"
+        r"(?:(?:PSN\s*:?(?:\s*COORDINATES)?|D\))\s*)?(?:\(|/)?\s*"
+        r"(?P<position>[NS]\d{4}(?:\d{2})?\s*[EW]\d{5}(?:\d{2})?"
+        r"|\d{4}(?:\d{2})?[NS]\s*\d{5}(?:\d{2})?[EW])(?![A-Z0-9])",
+        re.IGNORECASE,
+    )
+    positions = set()
+    for match in pattern.finditer(text):
+        position = re.sub(r"\s+", "", match["position"].upper())
+        if position[0] in "NS":
+            coordinates = re.fullmatch(r"([NS])(\d+)([EW])(\d+)", position)
+            ns, lat, ew, lon = coordinates.groups()
+        else:
+            coordinates = re.fullmatch(r"(\d+)([NS])(\d+)([EW])", position)
+            lat, ns, lon, ew = coordinates.groups()
+        lat_minutes, lon_minutes = int(lat[2:4]), int(lon[3:5])
+        lat_seconds, lon_seconds = int(lat[4:] or 0), int(lon[5:] or 0)
+        if max(lat_minutes, lon_minutes, lat_seconds, lon_seconds) >= 60:
+            return None
+        latitude = int(lat[:2]) + lat_minutes / 60 + lat_seconds / 3600
+        longitude = int(lon[:3]) + lon_minutes / 60 + lon_seconds / 3600
+        if latitude > 90 or longitude > 180:
+            return None
+        positions.add((latitude * (-1 if ns == "S" else 1),
+                       longitude * (-1 if ew == "W" else 1)))
+    if len(positions) != 1:
+        return None
+    latitude, longitude = positions.pop()
+    return {"latitude": latitude, "longitude": longitude, "source": "ofp_printed_position"}
+
+
+def _split_cfp_va_sigmets(
+    record: dict[str, Any], pages: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Separate messages by their own WV SIGMET header and '=' terminator.
+
+    An old saved aggregate has no per-message page provenance. Its positions
+    can still be read, but reanalysis is needed to locate the source pages.
+    """
+    text = " ".join(str(record.get("text") or "").split())
+    headers = list(re.finditer(
+        r"\bWV\s+SIGMET\s+[A-Z0-9]+\s+VALID\s+\d{6}/\d{6}\b",
+        text, re.IGNORECASE,
+    ))
+    if len(headers) <= 1:
+        return [{**record, "text": text}]
+    messages = []
+    for index, header in enumerate(headers):
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
+        message = text[header.start():end].strip()
+        terminator = message.find("=")
+        if terminator >= 0:
+            message = message[:terminator + 1]
+        fir = re.search(r"\b([A-Z]{4})\s+[A-Z ]+?FIR\b", message, re.IGNORECASE)
+        messages.append({
+            "record_type": "VA_SIGMET",
+            "location": fir.group(1).upper() if fir else "FIR",
+            "text": message,
+            "source_page": _record_source_page(pages, message) if pages is not None else None,
+        })
+    return messages
+
+
+def _cfp_ashtam_fir(text: str) -> str | None:
+    """Read ASHTAM item A as printed; do not resolve a FIR from the volcano."""
+    if not re.search(r"\bASHTAM\b", text, re.IGNORECASE):
+        return None
+    fields = re.findall(r"\bA\)\s*(.*?)(?=\b[A-K]\)|$)", text, re.IGNORECASE | re.DOTALL)
+    if len(fields) != 1:
+        return None
+    value = " ".join(fields[0].upper().split())
+    if value in {"NIL", "UNKNOWN", "NOT STATED", "NOT AVAILABLE", "NOT AVBL"}:
+        return None
+    return value if re.fullmatch(r"[A-Z][A-Z0-9 /().'-]{1,119}", value) else None
+
+
+def ofp_volcano_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
+    """Give cards and maps the same source-bound OFP notices, including SIGMETs.
+
+    Every position is read from its own record. A nearby ash vertex or a
+    second notice about the same volcano never fills a missing position.
+    Source identity keeps separate SIGMET/ASHTAM evidence selectable even
+    when both markers occupy the same coordinates.
+    """
+    records = [{**item, "fir": _cfp_ashtam_fir(str(item.get("text") or ""))}
+               for item in flight.get("volcanic_advisories") or []]
+    seen = set()
+    sigmets = flight.get("ofp_va_sigmet_messages")
+    if sigmets is None:
+        sigmets = [message
+                   for record in flight.get("weather") or []
+                   if record.get("record_type") == "VA_SIGMET"
+                   for message in (record.get("messages") or _split_cfp_va_sigmets(record))]
+    for record in sigmets:
+        text = " ".join(str(record.get("text") or "").split())
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        names = {name.upper() for name in re.findall(r"\bVA ERUPTION\s+((?:MT|MOUNT)\s+[A-Z]+)", text, re.IGNORECASE)}
+        # JMA also prints 'MT <name> (<alias>) PSN ...' without the eruption
+        # phrase. Anchor that form to the volcano's own PSN field.
+        names.update(name.upper() for name in re.findall(
+            r"\b((?:MT|MOUNT)\s+[A-Z]+)\s+(?:\([A-Z][A-Z -]{1,60}\)\s+)?PSN\b",
+            text, re.IGNORECASE,
+        ))
+        volcano = next(iter(names)) if len(names) == 1 else None
+        records.append({
+            **record,
+            "advisory_kind": "VA_SIGMET",
+            "volcano": volcano,
+            "notam_id": None,
+            "source_id": f"ofp-va-sigmet:{sha256(text.encode()).hexdigest()[:24]}",
+            "volcano_position": _cfp_volcano_position(text, volcano) if volcano else None,
+        })
+    return records
+
+
+def _parse_cfp_volcano_advisories(
+    pages: list[str],
+    fallback: datetime,
+) -> list[dict[str, Any]]:
+    """Capture the CFP's named ``VAA <volcano>`` notice blocks verbatim.
+
+    These are notice-package volcano advisories, not VA SIGMET bulletins.
+    Keeping them in a separate source projection prevents an unavailable
+    live VA-SIGMET feed from erasing advisory text that is physically held
+    in the uploaded CFP, or from being presented as the same product.
+    """
+    advisories: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for page_number, page in enumerate(pages, start=1):
+        lines = page.splitlines()
+        index = 0
+        while index < len(lines):
+            heading = _VOLCANO_ADVISORY_HEADING.fullmatch(lines[index].strip())
+            if not heading:
+                index += 1
+                continue
+            declaration_index = index + 1
+            while (
+                declaration_index < len(lines)
+                and (
+                    not lines[declaration_index].strip()
+                    or re.fullmatch(r"[-=]{3,}", lines[declaration_index].strip())
+                )
+            ):
+                declaration_index += 1
+            declaration = (
+                _NOTAM_START.match(lines[declaration_index].strip())
+                if declaration_index < len(lines)
+                else None
+            )
+            if declaration is None:
+                index += 1
+                continue
+
+            body_lines: list[str] = []
+            cursor = declaration_index + 1
+            while cursor < len(lines):
+                stripped = lines[cursor].strip()
+                if _VOLCANO_ADVISORY_HEADING.fullmatch(stripped):
+                    break
+                if _NOTAM_START.match(stripped):
+                    break
+                # Named airspace blocks need not carry an ICAO/FIR heading.
+                # Keep their title out of the volcano notice too, but require
+                # the underline and next NOTAM declaration as evidence.
+                if stripped and cursor + 1 < len(lines) and re.fullmatch(
+                    r"[-=]{3,}", lines[cursor + 1].strip(),
+                ):
+                    next_declaration = cursor + 2
+                    while next_declaration < len(lines) and not lines[next_declaration].strip():
+                        next_declaration += 1
+                    if next_declaration < len(lines) and _NOTAM_START.match(lines[next_declaration].strip()):
+                        break
+                # A named FIR heading starts the next NOTAM block.  Without
+                # this boundary the final VAA on a page can absorb unrelated
+                # FIR notices until the footer, corrupting both the evidence
+                # text and the generated weather page.
+                if (
+                    re.fullmatch(r"[A-Z]{4}\s+.+\bFIR", stripped)
+                    and cursor + 1 < len(lines)
+                    and re.fullmatch(r"[-=]{3,}", lines[cursor + 1].strip())
+                ):
+                    break
+                if re.fullmatch(
+                    r"(?:AREA\s+.+|(?:DEPARTURE|DESTINATION|ALTERNATE|ENROUTE)\s+AIRPORT(?:\(S\)|S)?\s*:?)",
+                    stripped,
+                    re.IGNORECASE,
+                ):
+                    break
+                if (
+                    stripped
+                    and not re.fullmatch(r"[-=]{3,}", stripped)
+                    and not stripped.startswith(("SIA ", "Page "))
+                ):
+                    body_lines.append(stripped)
+                cursor += 1
+
+            body = " ".join(body_lines).strip()
+            volcano = heading.group("volcano").strip().upper()
+            notam_id = declaration.group("id").upper()
+            key = (volcano, notam_id)
+            if body and key not in seen:
+                valid_from, valid_to, validity_parsed = _parse_validity(
+                    declaration.group("validity"),
+                    fallback,
+                )
+                advisories.append({
+                    "advisory_kind": "CFP_VAA_NOTICE",
+                    "volcano": volcano,
+                    "notam_id": notam_id,
+                    "text": body,
+                    "valid_from_utc": valid_from.isoformat(),
+                    "valid_to_utc": valid_to.isoformat() if valid_to else None,
+                    "validity_review": not validity_parsed,
+                    "source_page": page_number,
+                    "volcano_position": _cfp_volcano_position(body, volcano),
+                })
+                seen.add(key)
+            index = max(cursor, index + 1)
+    return advisories
 
 def _notam_section_bounds(pages: list[str]) -> tuple[int, int] | None:
     start = next(
@@ -437,6 +864,109 @@ def _parse_airport_notams(
     return [record for _, record in notices]
 
 
+def _parse_route_airspace_notices(
+    pages: list[str],
+    fallback: datetime,
+) -> list[dict[str, Any]]:
+    """Hold route-context airspace notices without inferring intersection.
+
+    LIDO prints departure-area and enroute-area notices outside the airport
+    station blocks consumed by :func:`_parse_airport_notams`.  Those records
+    are still source evidence.  This parser retains only clearly identified
+    airspace activity from those two bounded sections; it does not decide
+    whether a polygon, level band or affected ATS route intersects the filed
+    route.  That decision remains an explicit controlled-product review.
+    """
+    bounds = _notam_section_bounds(pages)
+    if bounds is None:
+        return []
+    start, end = bounds
+    records: list[dict[str, Any]] = []
+    in_route_scope = False
+    source_scope: str | None = None
+    source_heading: str | None = None
+    current: dict[str, Any] | None = None
+    body_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal current, body_lines
+        if current is None:
+            return
+        body = " ".join(line for line in body_lines if line).strip()
+        if body and _ROUTE_AIRSPACE_SIGNAL.search(body):
+            valid_from, valid_to, validity_parsed = _parse_validity(
+                str(current["validity"]),
+                fallback,
+            )
+            activity_kind = (
+                "military_training"
+                if re.search(
+                    r"\bMIL(?:ITARY)?\s+(?:TRAINING|EXER(?:CISE)?)\b",
+                    body,
+                    re.IGNORECASE,
+                )
+                else "danger_area"
+                if re.search(r"\bDANGER\s+AREA\b", body, re.IGNORECASE)
+                else "airspace_activation"
+            )
+            records.append({
+                "notam_id": current["notam_id"],
+                "heading": current.get("heading"),
+                "text": body,
+                "activity_kind": activity_kind,
+                "source_scope": current.get("source_scope"),
+                "source_page": current["source_page"],
+                "valid_from_utc": valid_from.isoformat(),
+                "valid_to_utc": valid_to.isoformat() if valid_to else None,
+                "validity_review": not validity_parsed,
+                "applicability_status": "review_required",
+            })
+        current = None
+        body_lines = []
+
+    for page_index in range(start, end):
+        lines = pages[page_index].splitlines()
+        for line_index, raw_line in enumerate(lines):
+            stripped = raw_line.strip()
+            if _TOP_LEVEL_NOTAM_SCOPE.fullmatch(stripped):
+                flush()
+                in_route_scope = bool(_ROUTE_AIRSPACE_SCOPE.fullmatch(stripped))
+                source_scope = " ".join(stripped.split()).upper()
+                source_heading = None
+                continue
+            if not in_route_scope:
+                continue
+            if (
+                stripped
+                and line_index + 1 < len(lines)
+                and re.fullmatch(r"[-=]{3,}", lines[line_index + 1].strip())
+                and not _NOTAM_START.match(stripped)
+            ):
+                flush()
+                source_heading = " ".join(stripped.split())
+                continue
+            declaration = _NOTAM_START.match(stripped)
+            if declaration:
+                flush()
+                current = {
+                    "notam_id": declaration.group("id").upper(),
+                    "validity": declaration.group("validity"),
+                    "heading": source_heading,
+                    "source_scope": source_scope,
+                    "source_page": page_index + 1,
+                }
+                continue
+            if (
+                current is not None
+                and stripped
+                and not re.fullmatch(r"[-=]{3,}", stripped)
+                and not stripped.startswith(("SIA ", "Page "))
+            ):
+                body_lines.append(" ".join(stripped.split()))
+    flush()
+    return records
+
+
 def enrich_notams(flight: dict[str, Any], pages: list[str]) -> None:
     text = _notam_section(pages)
     if not text:
@@ -450,6 +980,14 @@ def enrich_notams(flight: dict[str, Any], pages: list[str]) -> None:
     if "EDDM /MUC" in text:
         locations.append("EDDM")
     fallback = datetime.fromisoformat(flight["scheduled_departure_utc"])
+    flight["volcanic_advisories"] = _parse_cfp_volcano_advisories(
+        pages,
+        fallback,
+    )
+    flight["route_airspace_notices"] = _parse_route_airspace_notices(
+        pages,
+        fallback,
+    )
     for icao in dict.fromkeys(locations):
         block = _extract_airport_notam_block(text, icao)
         records = _parse_airport_notams(

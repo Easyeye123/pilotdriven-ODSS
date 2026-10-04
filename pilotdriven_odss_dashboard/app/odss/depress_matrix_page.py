@@ -151,7 +151,7 @@ def draw_match_matrix_page(
 
     columns = [
         ("REF", 0.055),
-        ("CFP ROUTE EXPOSURE", 0.155),
+        ("OFP ROUTE EXPOSURE", 0.155),
         ("FILED SEGMENT", 0.24),
         ("PROFILE / SOURCE", 0.24),
         ("CP / EFFECTIVITY", 0.16),
@@ -300,7 +300,7 @@ def draw_match_matrix_page(
     rules = [
         "1. Profile charts are embedded on the following pages; profile "
         "identifiers alone are not a compliant release.",
-        "2. CFP route exposure is not replaced by chart altitude. The CFP "
+        "2. OFP route exposure is not replaced by chart altitude. The OFP "
         "window and approved chart coverage are presented separately.",
         "3. Exact 100* rows terminate an active event. FIR-boundary rows "
         "without a parsed MSA do not terminate an active event.",
@@ -349,9 +349,9 @@ def draw_match_matrix_page(
     )
     if pages:
         chips.append(
-            "CFP P" + "-".join(str(page) for page in (pages[0], pages[-1]))
+            "OFP P" + "-".join(str(page) for page in (pages[0], pages[-1]))
             if len(pages) > 1
-            else f"CFP P{pages[0]}"
+            else f"OFP P{pages[0]}"
         )
     for finding in _matched_findings(findings)[:2]:
         chart_number = str((finding.get("data") or {}).get("chart_number") or "")

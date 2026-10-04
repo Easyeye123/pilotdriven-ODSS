@@ -20,6 +20,7 @@ from app.odss.engines import (
 from app.odss.enrichment import (
     _notice_score,
     _parse_airport_notams,
+    _parse_cfp_volcano_advisories,
     _parse_notam_datetime,
     _record_source_page,
 )
@@ -31,7 +32,7 @@ from app.odss.parser import (
     _parse_named_procedure,
     parse_lido,
 )
-from app.odss.pilot_briefing import concise_weather_finding
+from app.odss.pilot_briefing import concise_weather_finding, select_pertinent_notams
 
 
 UTC = timezone.utc
@@ -114,8 +115,8 @@ def test_sia722_aa_ifeddl_never_enters_the_mel_cdl_or_cddl_engines() -> None:
     )
     assert declaration["title"] == "AA IFEDDL"
     assert declaration["summary"] == (
-        "Unclassified CFP deferred declaration; acronym meaning is not inferred "
-        "and it is not classified as MEL, CDL or CDDL."
+        "OFP deferred declaration is unresolved; acronym meaning is not "
+        "inferred and no MEL, CDL or CDDL classification is asserted."
     )
     assert declaration["details"] == [
         "CONNECTIVITY, WIFI INTERNET",
@@ -124,6 +125,28 @@ def test_sia722_aa_ifeddl_never_enters_the_mel_cdl_or_cddl_engines() -> None:
     assert not any(
         item["engine"] in {"mel", "cdl", "cddl"} for item in findings
     )
+
+
+def test_internal_only_deferred_declaration_is_not_published_by_analysis() -> None:
+    flight = _flight()
+    raw_item = {
+        "item_type": "UNCLASSIFIED",
+        "reference": "UNSPECIFIED",
+        "source_declaration": "UNCLASSIFIED UNSPECIFIED",
+        "description": "SOURCE TEXT REQUIRES REVIEW",
+    }
+    flight["deferred_items"] = [raw_item]
+
+    findings, _ = analyse(flight)
+    declaration = next(
+        item for item in findings if item["engine"] == "deferred_declaration"
+    )
+    pilot_projection = " ".join(
+        [declaration["title"], declaration["summary"], *declaration["details"]]
+    ).upper()
+    assert "UNCLASSIFIED" not in pilot_projection
+    assert "UNSPECIFIED" not in pilot_projection
+    assert raw_item["source_declaration"] == "UNCLASSIFIED UNSPECIFIED"
 
 
 def test_normalized_source_locator_finds_record_page_without_flight_specific_rules() -> None:
@@ -214,6 +237,42 @@ def _flight(
         "notams": notams or [],
         "weather": weather or [],
     }
+
+
+def test_forecast_provenance_tracks_the_exact_decoded_taf_not_a_neighbouring_record():
+    from app.odss.briefing import _overview_forecast_at_reference
+    ofp = "TAF RJBB 160500Z 1606/1706 16008KT 9999 SCT020"
+    amended = "TAF AMD RJBB 160930Z 1610/1712 27015G25KT 3000 TSRA BKN015CB"
+    flight = _flight(weather=[
+        {"location": "RJBB", "record_type": "TAF", "text": ofp, "source_page": 12},
+        {"location": "RJBB", "record_type": "TAF", "text": amended,
+         "source": "noaa_awc_live", "provider": "noaa-awc-data-api",
+         "retrieved_at_utc": "2026-07-16T10:00:00Z"},
+        {"location": "RJBB", "record_type": "METAR", "text": "METAR RJBB 161200Z 09005KT 9999 SCT030"},
+    ])
+    findings, _ = analyse(flight)
+    forecast = _overview_forecast_at_reference(findings, location="RJBB", phase="Destination")
+    assert "270°" in forecast["applicable_conditions"]
+    source = forecast["forecast_source"]
+    assert source["raw_text"] == amended
+    assert source["provider"] == "noaa-awc-data-api"
+    assert source["issued_at_utc"] == "2026-07-16T09:30:00+00:00"
+    assert source["valid_from_utc"] == "2026-07-16T10:00:00+00:00"
+    assert source["valid_to_utc"] == "2026-07-17T12:00:00+00:00"
+    assert forecast["utc_window"] == "16 JUL 1100Z-1300Z"
+    assert flight["weather"][0]["text"] == ofp
+
+
+def test_forecast_outside_window_keeps_its_source_and_review_state():
+    from app.odss.briefing import _overview_forecast_at_reference
+    raw = "TAF RJBB 160500Z 1606/1609 16008KT 9999 SCT020"
+    findings, _ = analyse(_flight(weather=[
+        {"location": "RJBB", "record_type": "TAF", "text": raw, "source_page": 12},
+    ]))
+    forecast = _overview_forecast_at_reference(findings, location="RJBB", phase="Destination")
+    assert forecast["window_status"] == "review_required"
+    assert forecast["forecast_source"]["raw_text"] == raw
+    assert forecast["forecast_source"]["source_type"] == "uploaded_cfp"
 
 
 @pytest.mark.parametrize(
@@ -539,6 +598,1052 @@ def test_notams_are_semantically_deduplicated_and_ranked_after_sta_filter() -> N
     assert duplicate["raw_text"] in {"RWY 24L CLSD", "RUNWAY 24L CLOSED"}
 
 
+def test_exact_approach_outages_are_critical_for_every_applicable_airport_role() -> None:
+    valid_from = "2026-07-16T09:00:00+00:00"
+    valid_to = "2026-07-16T15:00:00+00:00"
+    notams = [
+        _record(
+            "ALT-ILS/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-COMMA/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 24, U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-TWO-RUNWAYS/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 24 AND RWY 25 U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-CAT-AFTER-RWY/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 CAT II NOT AVBL",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-CAT-LIST/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 CAT I/II U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-WITHDRAWN/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 WITHDRAWN",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "EDTO-RNP/26",
+            "WADD",
+            valid_from,
+            valid_to,
+            text="RNP APCH RWY 27 NOT AVBL",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "FUEL-LOC/26",
+            "WIMM",
+            valid_from,
+            valid_to,
+            text="THE UNSERVICEABILITY OF ILS AND GP RWY 23",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-LOC-OSC/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="LOC 'LAA' RWY 25 MAY INTERRUPT OR OSCILLATE DUE CRANE",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "EDTO-RNAV/26",
+            "WADD",
+            valid_from,
+            valid_to,
+            text="RNAV RWY 27 NOT AVBL",
+            category="NAVIGATION",
+        ),
+        _record(
+            "FUEL-DME-IAP/26",
+            "WIMM",
+            valid_from,
+            valid_to,
+            text="DME MIM U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-TWY/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="TWY A CLSD",
+            category="TWY",
+        ),
+    ]
+    flight = _flight(notams=notams)
+    flight["edto"]["airports"] = [{
+        "airport": "WADD",
+        "period_start_utc": "2026-07-16T10:30:00+00:00",
+        "period_end_utc": "2026-07-16T11:30:00+00:00",
+    }]
+    flight["fuel_enroute_airports"] = [{
+        "airport": "WIMM",
+        "role": "fuel_enroute_airport",
+    }]
+
+    findings, _ = analyse(flight)
+    by_id = {
+        item["data"]["notam_id"]: item
+        for item in findings
+        if item.get("engine") == "notam"
+    }
+
+    for notam_id, role in (
+        ("ALT-ILS/26", "destination alternate"),
+        ("ALT-ILS-COMMA/26", "destination alternate"),
+        ("ALT-ILS-TWO-RUNWAYS/26", "destination alternate"),
+        ("ALT-ILS-CAT-AFTER-RWY/26", "destination alternate"),
+        ("ALT-ILS-CAT-LIST/26", "destination alternate"),
+        ("ALT-ILS-WITHDRAWN/26", "destination alternate"),
+        ("EDTO-RNP/26", "EDTO"),
+        ("FUEL-LOC/26", "fuel enroute airport"),
+    ):
+        assert by_id[notam_id]["severity"] == "critical"
+        assert by_id[notam_id]["data"]["role"] == role
+        assert by_id[notam_id]["data"]["pertinence_kind"] == (
+            "approach_navaid_closure"
+        )
+        assert by_id[notam_id]["data"]["approach_affected"] is True
+
+    for notam_id, role in (
+        ("ALT-LOC-OSC/26", "destination alternate"),
+        ("EDTO-RNAV/26", "EDTO"),
+        ("FUEL-DME-IAP/26", "fuel enroute airport"),
+    ):
+        assert by_id[notam_id]["severity"] == "critical"
+        assert by_id[notam_id]["data"]["role"] == role
+        assert by_id[notam_id]["data"]["approach_affected"] is True
+
+    assert by_id["ALT-TWY/26"]["severity"] == "warning"
+    assert by_id["ALT-TWY/26"]["data"]["approach_affected"] is False
+
+
+def test_sequence_flashing_light_outage_does_not_close_available_approach_lights() -> None:
+    valid_from = "2026-07-16T09:00:00+00:00"
+    valid_to = "2026-07-16T15:00:00+00:00"
+    flight = _flight(notams=[
+        _record(
+            "SX55/25",
+            "WMKK",
+            valid_from,
+            valid_to,
+            text=(
+                "SX0055/25 AIP SUPPLEMENT WMKK/KUALA LUMPUR/SEPANG INTL "
+                "SEQUENCE FLASHING LIGHT (SFL) RWY 14R VALIDITY: 27NOV25 - "
+                "UFN THIS AIRAC AIP SUP IS TO INFORM ALL CONCERNED OF THE "
+                "UNSERVICEABILITY OF THE SEQUENCE FLG LGT (SFL) FOR RWY 14R. "
+                "APCH LGT FOR RWY 14R AVBL FOR OPR USE."
+            ),
+            category="RUNWAY",
+        )
+    ])
+    flight["alternates"] = [{"airport": "WMKK"}]
+
+    findings, _ = analyse(flight)
+    item = next(
+        row
+        for row in findings
+        if row.get("engine") == "notam" and row["data"]["notam_id"] == "SX55/25"
+    )
+
+    assert item["severity"] == "warning"
+    assert item["data"]["pertinence_kind"] == "runway_lighting_restriction"
+    assert item["data"]["approach_affected"] is False
+    assert "approach/navaid" not in item["summary"].lower()
+    assert "approach lights are reported available" in item["summary"].lower()
+    assert engines._approach_lights_reported_available(
+        "RWY 27 HIGH INTENSITY APCH LGT FOR RWY 27 AVBL FOR OPR USE"
+    )
+
+    negated_availability = engines._notam_operational_summary(
+        (
+            "SEQUENCE FLASHING LIGHT (SFL) RWY 14R U/S. "
+            "APCH LGT FOR RWY 14R NOT CURRENTLY AVBL."
+        ),
+        "runway_lighting_restriction",
+        "destination alternate",
+    )
+    assert "reported available" not in negated_availability.lower()
+
+    competing_subject = engines._notam_operational_summary(
+        (
+            "SEQUENCE FLASHING LIGHT (SFL) RWY 14R U/S. "
+            "APCH LGT FOR RWY 14R STATUS UNKNOWN. PAPI AVBL FOR OPR USE."
+        ),
+        "runway_lighting_restriction",
+        "destination alternate",
+    )
+    assert "reported available" not in competing_subject.lower()
+
+
+@pytest.mark.parametrize(
+    ("notam_id", "text"),
+    (
+        (
+            "SX23/26",
+            "SX0023/26 AIP SUPPLEMENT LGRP/RODOS/DIAGORAS VALIDITY: "
+            "09JUL26 - 23DEC26 FIRST 180M (20PCT) OF APCH LGT RWY 24 U/S.",
+        ),
+        (
+            "SX40/24",
+            "SX0040/24 AIP SUPPLEMENT VTSS/SONGKHLA/HAT YAI VALIDITY: "
+            "15SEP24 1001UTC - UFN UNSERVICEABILITY OF APCH LGT AND "
+            "SEQUENCED FLG LGT 2.1 SALS AND SEQUENCED FLG LGT OF RWY 08 "
+            "WILL BE U/S. 2.2 SALS AND SEQUENCE FLG LGT OF RWY 26 WILL BE U/S.",
+        ),
+        (
+            "1C3691/26",
+            "THREE SEQUENCE FLASHING LGT 32L U/S. APPLY PROC FOR HIGH "
+            "INTST APCH LGT INOPERATIVE (AIP AD 2.22.4)",
+        ),
+        (
+            "1A2927/26",
+            "APPROACH LIGHTING SYSTEM PALS CAT I RWY 11 U/S DUE TO MAINT",
+        ),
+        (
+            "1A76/26",
+            "APPROACH LIGHTING SYSTEM RWY23 CROSS BAR U/S.",
+        ),
+    ),
+)
+def test_approach_lighting_outages_remain_lighting_warnings(
+    notam_id: str,
+    text: str,
+) -> None:
+    flight = _flight(notams=[
+        _record(
+            notam_id,
+            "WIII",
+            "2026-07-16T09:00:00+00:00",
+            "2026-07-16T15:00:00+00:00",
+            text=text,
+            category="RUNWAY",
+        )
+    ])
+
+    findings, _ = analyse(flight)
+    item = next(row for row in findings if row.get("engine") == "notam")
+
+    assert item["severity"] == "warning"
+    assert item["data"]["approach_affected"] is False
+    assert item["data"]["pertinence_kind"] == "runway_lighting_restriction"
+    assert "lighting" in item["summary"].lower()
+    assert "approach/navaid" not in item["summary"].lower()
+
+
+def test_approach_critical_gate_rejects_standalone_navaids_and_papi() -> None:
+    valid_from = "2026-07-16T09:00:00+00:00"
+    valid_to = "2026-07-16T15:00:00+00:00"
+    flight = _flight(notams=[
+        _record(
+            "DEP-ILS-NOT-US/26",
+            "WSSS",
+            valid_from,
+            valid_to,
+            text="ILS RWY 20C NOT U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "DEST-ILS-NOT-WITHDRAWN/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="ILS RWY 24L NOT WITHDRAWN",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-PAPI/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="PAPI RWY 25 U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-PAPI-DIRECTIONAL/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="PAPI RIGHT SIDE RWY 03 U/S",
+            category="RUNWAY",
+        ),
+        _record(
+            "ALT-PAPI-RWY-FIRST/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="RWY 01L PAPI U/S",
+            category="RUNWAY",
+        ),
+        _record(
+            "ALT-VOR/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="VOR ABC U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "ALT-DVOR-DME/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="DVOR/DME PEL U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "ALT-NDB-FREQ/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="NDB GEL/GERALDTON 359KHZ U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "ALT-PAPI-CONTEXT/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 AVBL. PAPI RWY 25 U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-VOR-PAPI-CONTEXT/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="VOR ABC AVBL. PAPI RWY 25 U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "ALT-APCH-LGT/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="APCH LGT FOR RWY 25 NOT AVBL",
+            category="RUNWAY",
+        ),
+        _record(
+            "ALT-ILS-AVAILABLE/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 AVBL WHILE RWY 25 CLSD",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-CHECK/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY25 FLIGHT CHECK IN PROGRESS, RWY26 CLSD",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-CHECK-NOCOMMA/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS FLIGHT CHECK IN PROGRESS RWY 26 CLSD",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-CALIBRATION/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS CALIBRATION IN PROGRESS RWY 26 CLSD",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "ALT-ILS-MONITORED/26",
+            "WIII",
+            valid_from,
+            valid_to,
+            text="ILS RWY25 SIGNAL MONITORED, TWY A CLSD",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "EDTO-NDB/26",
+            "WADD",
+            valid_from,
+            valid_to,
+            text="NDB DEF U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "EDTO-RNP10/26",
+            "WADD",
+            valid_from,
+            valid_to,
+            text="RNP 10 NOT AVBL",
+            category="NAVIGATION",
+        ),
+        _record(
+            "EDTO-ILS-NO-OSC/26",
+            "WADD",
+            valid_from,
+            valid_to,
+            text="ILS RWY25 NOT EXPECTED TO OSCILLATE",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "FUEL-DME/26",
+            "WIMM",
+            valid_from,
+            valid_to,
+            text="DME GHI U/S",
+            category="NAVAID",
+        ),
+        _record(
+            "FUEL-ILS-NOT-US/26",
+            "WIMM",
+            valid_from,
+            valid_to,
+            text="ILS RWY25 NOT U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "FUEL-ILS-NOT-CURRENTLY-US/26",
+            "WIMM",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 NOT CURRENTLY U/S",
+            category="APPROACH PROCEDURE",
+        ),
+    ])
+    flight["edto"]["airports"] = [{
+        "airport": "WADD",
+        "period_start_utc": "2026-07-16T10:30:00+00:00",
+        "period_end_utc": "2026-07-16T11:30:00+00:00",
+    }]
+    flight["fuel_enroute_airports"] = [{
+        "airport": "WIMM",
+        "role": "fuel_enroute_airport",
+    }]
+
+    findings, _ = analyse(flight)
+    by_id = {
+        item["data"]["notam_id"]: item
+        for item in findings
+        if item.get("engine") == "notam"
+    }
+
+    for notam_id in (
+        "DEP-ILS-NOT-US/26",
+        "DEST-ILS-NOT-WITHDRAWN/26",
+        "ALT-PAPI/26",
+        "ALT-PAPI-DIRECTIONAL/26",
+        "ALT-PAPI-RWY-FIRST/26",
+        "ALT-PAPI-CONTEXT/26",
+        "ALT-VOR-PAPI-CONTEXT/26",
+        "ALT-APCH-LGT/26",
+        "ALT-ILS-AVAILABLE/26",
+        "ALT-ILS-CHECK/26",
+        "ALT-ILS-CHECK-NOCOMMA/26",
+        "ALT-ILS-CALIBRATION/26",
+        "ALT-ILS-MONITORED/26",
+        "ALT-VOR/26",
+        "ALT-DVOR-DME/26",
+        "ALT-NDB-FREQ/26",
+        "EDTO-NDB/26",
+        "EDTO-RNP10/26",
+        "EDTO-ILS-NO-OSC/26",
+        "FUEL-DME/26",
+        "FUEL-ILS-NOT-US/26",
+        "FUEL-ILS-NOT-CURRENTLY-US/26",
+    ):
+        assert by_id[notam_id]["severity"] == "warning"
+        assert by_id[notam_id]["data"]["approach_affected"] is False
+
+    for notam_id, subject in (
+        ("ALT-PAPI/26", "PAPI"),
+        ("ALT-PAPI-DIRECTIONAL/26", "PAPI RIGHT SIDE RWY 03"),
+        ("ALT-PAPI-RWY-FIRST/26", "PAPI RWY 01L"),
+        ("ALT-VOR/26", "VOR"),
+        ("ALT-DVOR-DME/26", "DME"),
+        ("ALT-NDB-FREQ/26", "NDB"),
+    ):
+        assert by_id[notam_id]["data"]["pertinence_kind"] == (
+            "approach_navaid_closure"
+        )
+        assert subject.lower() in by_id[notam_id]["summary"].lower()
+        # Boss 02 Sep 2026: a navaid line states the aid's own state - "unserviceable" for U/S.
+        assert any(word in by_id[notam_id]["summary"].lower() for word in ("unavailable", "unserviceable"))
+    for notam_id, available_subject in (
+        ("ALT-PAPI-CONTEXT/26", "ILS"),
+        ("ALT-VOR-PAPI-CONTEXT/26", "VOR"),
+    ):
+        summary = by_id[notam_id]["summary"]
+        assert "PAPI RWY 25 unavailable" in summary
+        assert f"{available_subject} RWY 25 unavailable" not in summary
+        assert f"{available_subject} unavailable" not in summary
+
+    assert by_id["ALT-APCH-LGT/26"]["data"]["pertinence_kind"] == (
+        "runway_lighting_restriction"
+    )
+    assert "closed" not in by_id["ALT-APCH-LGT/26"]["summary"].lower()
+
+    for notam_id in (
+        "DEP-ILS-NOT-US/26",
+        "DEST-ILS-NOT-WITHDRAWN/26",
+    ):
+        assert by_id[notam_id]["data"]["pertinence_kind"] == (
+            "runway_approach_restriction"
+        )
+        assert "unavailable" not in by_id[notam_id]["summary"].lower()
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "ILS Z RWY 25 U/S",
+        "ILS Y RWY 25 U/S",
+        "RNP Z RWY 25 NOT AVBL",
+        "RNAV (GNSS) Z RWY 25 NOT AVBL",
+        "ILS 'IPH' 109.9 RWY 24 U/S",
+        "ILS RWY 25 FREQ 109.9MHZ U/S",
+        "ILS RWY 25 109.9MHZ U/S",
+        "LOC RWY 25 109.9 MHZ NOT AVBL",
+        "LLZ RWY 25 U/S",
+        "GP 332.6 MHZ RWY 25 U/S",
+        "GLIDE PATH 332.6 MHZ RWY 25 U/S",
+        "GBAS RWY 25 U/S",
+        "ILS RWY 35 GP UNUSABLE SFC-2900FT",
+        "LOC RWY 16 BC UNUSABLE BEYOND 6DEG RIGHT OF COURSE",
+        "ILS RWY 35L UNREL",
+        "ILS RWY25 UNRELIABLE",
+        "ILS RWY25 FREQ 109.9MHZ U/S",
+        "GLIDE PATH RWY25 U/S",
+        "ILS RWY25 UNAVAILABLE FOR TESTING",
+        "NO APCH OR DEPARTURES TO OR FM RWY 09R/27L WILL TAKE PLACE "
+        "WHEN CRANE IS OPR AT FULL HEIGHT",
+        "LPV MINIMA SHALL BE RAISED TO THE RESPECTIVE LNAV/VNAV MINIMA. "
+        "RNP Z RWY 16, REF AIP AUSTRIA, LOWW AD 2 MAP 13-2-3",
+        "NO APCH TO RWY 25 WILL TAKE PLACE WHEN CRANE IS AT FULL HEIGHT "
+        "AND PAPI NOW AVAILABLE",
+        "NO APCH TO RWY 25 WILL TAKE PLACE WHEN CRANE IS AT FULL HEIGHT "
+        "AND TWY A NOW AVAILABLE",
+        "NO APCH TO RWY 25 WILL TAKE PLACE WHEN CRANE IS AT FULL HEIGHT "
+        "AND ILS RWY 07 NOW AVAILABLE",
+        "LPV MINIMA SHALL BE RAISED TO LNAV/VNAV MINIMA AND PAPI NOW AVAILABLE",
+        "ILS RWY 25 U/S AND VOR ABC NOW AVAILABLE",
+        "ILS RWY 25 U/S AND LOC RWY 07 NOW AVAILABLE",
+        "ILS RWY 25 U/S AND GP NOW AVAILABLE",
+        "ILS RWY 25 U/S AND GBAS NOW AVAILABLE",
+        "ILS RWY 25 U/S AND PAPI NOW AVAILABLE",
+        "ILS RWY 25 U/S AND APPROACH LIGHTING NOW AVAILABLE",
+        "ILS RWY 25 U/S AND TAXIWAY LIGHTS NOW AVAILABLE",
+        "ILS RWY 25 U/S AND RUNWAY LIGHTS NOW AVAILABLE",
+        "ILS RWY 25 U/S NOT CANCELLED",
+        "ILS RWY 25 U/S NOT CANCELED",
+        "ILS RWY 25 U/S NOT REVOKED",
+        "ILS RWY 25 U/S NOT RESTORED",
+        "AUTO-COUPLED APCH SHOULD NOT BE FLOWN",
+        "IAC ILS/VOR/RNAV PROCEDURES SUSPENDED",
+        "IAC ILS/VOR/RNAV PROCEDURES WITHDRAWN",
+        "RWY 22L CAT II/III OPS NOT AVBL",
+        "VOR RWY 07 PROC WITHDRAWN",
+        "ILS RWY 04 ON TEST. DO NOT USE.",
+        "ILS/LOC RWY 13 U/S",
+        "ILS/GP RWY 13 U/S",
+        "ILS GP RWY 32L OUT OF SVC",
+        "ILS RWY 25 PROCEDURE NA",
+        "ILS RWY 25 CAT II/III NA",
+        "ILS RWY 25 AVBL, CAT III OPS NOT AVBL",
+        "ILS RWY 25 LOC AVAILABLE GP U/S",
+        "ILS RWY 25 LOCALIZER AVBL, GLIDE PATH U/S",
+        "ILS RWY 25 AVBL EXCEPT CAT II/III OPS NOT AVBL",
+        "CAT III OPS RWY 25 NOT AVBL",
+        "ILS RWY 25 AVAILABLE. CAT III OPS NOT AVAILABLE",
+    ),
+)
+def test_named_instrument_approach_procedure_outages_are_critical(
+    text: str,
+) -> None:
+    assert engines._instrument_approach_affected(
+        text,
+        "APPROACH PROCEDURE",
+    ) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        (
+            "IAC ILS-01 ILS Z RWY 03L DATED 10 JAN 2013 SUSPENDED. "
+            "IAC VOR-01 VOR Z RWY 21R DATED 04 APR 2013 SUSPENDED. "
+            "IAC RNAV-01 RNAV (GNSS) RWY 03R DATED 31 DEC 2020 SUSPENDED."
+        ),
+        (
+            "IAC VOR-02 VOR Y RWY 21R DATED 10 JAN 2013 WITHDRAWN. "
+            "IAC ILS-02 ILS Y RWY 03L DATED 18 AUG 2016 WITHDRAWN."
+        ),
+    ),
+)
+def test_numbered_iac_corpus_outages_are_critical(text: str) -> None:
+    valid_from = "2026-07-16T09:00:00+00:00"
+    valid_to = "2026-07-16T15:00:00+00:00"
+    findings, _ = analyse(_flight(notams=[
+        _record(
+            "1A2888/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text=text,
+            category="APPROACH PROCEDURE",
+        )
+    ]))
+    item = next(row for row in findings if row.get("engine") == "notam")
+
+    assert item["severity"] == "critical"
+    assert item["data"]["approach_affected"] is True
+    assert item["data"]["pertinence_kind"] == "approach_navaid_closure"
+    assert "unavailable" in item["summary"].lower()
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        (
+            "IAP SEATTLE-TACOMA INTL, SEATTLE, WA. ILS RWY 34L "
+            "(SA CAT I AND II), AMDT 1F ... PROCEDURE NA. TEMPORARY CRANE."
+        ),
+        (
+            "IAP ILS RWY 02/20 (CAT A,B,C,D) SUSPENDED DUE ILS CAT I "
+            "RWY 02/20 ON TEST. REF AIP RPLC AD CHART 2-35 TO 2-36."
+        ),
+        "ILS/LOC RWY 13 IUPG FREQ 111.3MHZ U/S DUE TO INTERFERENCE FREQUENCY",
+        "LOC RWY 13R IVP 110.300MHZ U/S.",
+        (
+            "CAT (ROMAN)III ILS RWY 11R IDENT IDMR (LOC 111.300MHZ, "
+            "GP 332.300MHZ,DME IDMR CH50X) NOT AVBL DUE EQUIPMENT REPLACEMENT."
+        ),
+        "INSTRUMENT LANDING SYSTEM (ILS) RWY35R ON TEST, DO NOT USE.",
+        (
+            "ILS RWY23 LLZ MA FREQ 110.3MHZ AND GP FREQ 335.0 MHZ "
+            "ON TEST, DO NOT USE."
+        ),
+        (
+            "DAILY 2200-0630 ILS 'IBS' 110.1 RWY19L ON TEST, DO NOT USE "
+            "FALSE INDICATIONS POSSIBLE."
+        ),
+        "NDB GEL/GERALDTON 359KHZ U/S",
+        "DME 'CGN' CH100Y U/S.",
+        "RWY 14 'SD' 110.3MHZ ILS LOC UNUSABLE SOUTH OF THE 17NM ARC",
+        "RWY 14 CH40X ILS DME UNUSABLE SOUTH OF THE 17NM ARC",
+        "ILS UNREL",
+        "LOC NA",
+        "GP DO NOT USE",
+        "VOR UNSERVICEABILITY",
+        "NDB INOPERATIVE",
+        "DME INTERRUPTED",
+        "VOR INTERRUPTION",
+        "NDB OSCILLATION",
+        "DME DEGRADED",
+        "VOR DEGRADATION",
+        "NDB DOWNGRADED",
+        "DME UNRELIABLE",
+        "VOR UNREL",
+        "NDB NA",
+        "DME DO NOT USE",
+        "VOR SHOULD NOT BE FLOWN",
+        (
+            "LOC IGD 109.5 RWY21 SUBJECT TO INTERRUPTION / POSSIBLE SIGNAL "
+            "OSCILLATION DUE CRANE OPERATIONS."
+        ),
+        "ILS/MM RWY 17 FREQ 75MHZ U/S",
+        "OM (ILS 'FSS') RWY34R COMPLETELY WITHDRAWN",
+        "RWY 24 ILS OM 75MHZ OUT OF SERVICE",
+        "I-PHL INNER MARKER OUT OF SERVICE",
+        "ILS RWY09R INNER MARKER OUT OF SERVICE",
+        "INNER MARKER (ILS I-PHL) OUT OF SERVICE",
+        "MIDDLE MARKER RWY25 U/S",
+        "OUTER MARKER RWY25 U/S",
+        "INNER MARKER U/S",
+        "MIDDLE MARKER U/S",
+        "OUTER MARKER U/S",
+        "IAP ILS RWY34L PROCEDURE NA. SID CANCELLED.",
+        "IAP ILS RWY34L PROCEDURE NA, SID CANCELLED.",
+        "IAP ILS RWY25 SUSPENDED, SID CANCELLED.",
+        "IAC ILS/VOR/RNAV PROCEDURES SUSPENDED, SID CANCELLED",
+        "ILS RWY25 ON TEST DO NOT USE, SID CANCELLED",
+        "ILS RWY25 ON TEST DO NOT USE, ATIS CANCELLED",
+        "LPV APCH Z RWY 07L SUSPENDED",
+        "LPV APCH RNP Y RWY 34 IS SUSPENDED",
+        "ILS AND LOC APCH TEMPO SUSPENDED",
+        "DME READINGS ON ILS/LOC RWY 15 FINAL NOT AVBL",
+        "PROC ILS OR LOC RWY 19R TEMPO WITHDRAWN",
+        "IAP ILS RWY25 CAT I AVAILABLE. ILS RWY25 CAT II PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE, S-ILS 25 CAT II NA.",
+        "IAP ILS RWY25 CAT I AVAILABLE, CAT II PROCEDURE NA.",
+        "IAC ILS-01 ILS Z RWY 06 CAT II DATED 08 DEC 2016 WITHDRAWN",
+        "IAC-23 ILS Z CAT I OR LOC Z RWY 21L PROCEDURES ARE SUSPENDED",
+        "ILS RWY 11R CAT II AND III PROCEDURE WITHDRAWN",
+        "PROC ILS RWY 29L CAT II AND III WITHDRAWN",
+        "ILS RWY 27R SPECIAL AUTH CAT II NA",
+        "IAP ILS CAT I RWY 27 THE G.P INOPERATIVE",
+        "LOC IGD 109.5 RWY 21 SUBJ TO INTRP",
+        "ILS FOR RWY 31L OUT OF SERVICE DUE TO MAINT",
+        "LOC FOR RWY 31R OUT OF SERVICE DUE TO MAINT",
+        (
+            "IAP JOHN F KENNEDY INTL, NEW YORK, NY. ILS OR LOC RWY 22R, "
+            "AMDT 3. PROCEDURE NA EXCEPT FOR ACFT EQUIPPED WITH SUITABLE "
+            "RNAV SYSTEM WITH GPS. JFK VOR/DME OUT OF SERVICE."
+        ),
+    ),
+)
+def test_authentic_published_approach_outage_syntaxes_are_critical(
+    text: str,
+) -> None:
+    assert engines._instrument_approach_affected(
+        text,
+        "APPROACH PROCEDURE",
+    ) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        (
+            "LAS IAP HARRY REID INTL, LAS VEGAS, NV. VOR/DME-A, ORIG-E... "
+            "PROCEDURE NA."
+        ),
+        (
+            "PHL IAP PHILADELPHIA INTL, PHILADELPHIA, PA. ILS Z RWY 9R, "
+            "AMDT 1. S-ILS 9R CAT II NA EXCEPT FOR AIRCRAFT EQUIPPED "
+            "WITH RADIO ALTIMETER."
+        ),
+    ),
+)
+def test_exact_faa_iap_unavailability_is_text_authoritative_across_categories(
+    text: str,
+) -> None:
+    assert engines._instrument_approach_affected(text, "RUNWAY") is True
+
+
+def test_conditional_crane_runway_state_is_not_promoted_to_a_closure() -> None:
+    text = (
+        "2130-0330 LIT CRANE OPR WI HOUNSLOW. MAX HGT 246FT AGL. "
+        "CRANE WILL ONLY OPERATE WHEN RWY 09L/27R IS CLSD. "
+        "NO CRANE OPR IN LVP."
+    )
+
+    rank, kind = engines.notam_pertinence(text, "AIRPORT")
+
+    assert (rank, kind) == (8, "obstacle")
+    assert "runway is not reported closed" in engines._notam_operational_summary(
+        text,
+        kind,
+        "destination",
+    ).lower()
+
+
+def test_conditional_crane_approach_prohibition_stays_critical_review() -> None:
+    text = (
+        "LIT CRANE OPR AT HEATHROW. NO APCH OR DEPARTURES TO OR FM "
+        "RWY 09R/27L WILL TAKE PLACE WHEN CRANE IS OPR AT FULL HEIGHT."
+    )
+
+    assert engines._instrument_approach_affected(text, "AIRPORT") is True
+    assert engines._conditional_instrument_approach_impact(text) is True
+
+
+def test_parser_number_prefix_does_not_duplicate_one_notam_identity() -> None:
+    def finding(notam_id: str, raw_text: str) -> dict[str, object]:
+        return {
+            "engine": "notam",
+            "severity": "warning",
+            "title": f"NOTAM {notam_id}",
+            "summary": "Taxiway restriction requires review.",
+            "data": {
+                "role": "destination",
+                "location": "WSSS",
+                "pertinence_kind": "taxiway_restriction",
+                "notam_id": notam_id,
+                "raw_text": raw_text,
+                "valid_from_utc": "2026-08-29T00:00:00Z",
+                "valid_to_utc": "2026-09-01T00:00:00Z",
+                "window_start_utc": "2026-08-29T04:00:00Z",
+                "window_end_utc": "2026-08-29T06:00:00Z",
+                "applicability": "active",
+            },
+        }
+
+    selected = select_pertinent_notams([
+        finding("A2876/26", "A2876/26 TWY A CLSD"),
+        finding("1A2876/26", "1A2876/26 TWY A CLOSED - SOURCE COPY"),
+    ], limit=10)
+
+    assert len(selected) == 1
+    assert selected[0]["data"]["notam_id"] == "A2876/26"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "RNP 10 NOT AVBL",
+        "ILS Z FLIGHT CHECK IN PROGRESS RWY 26 CLSD",
+        "ILS RWY 34R U/S CANCELLED",
+        "ILS RWY 25 U/S CONDITION CANCELLED, NOW OPERATIONAL",
+        "ILS RWY 25 WAS U/S NOW AVAILABLE",
+        "ILS RWY 25 U/S UNTIL 1200Z THEN AVAILABLE",
+        "ILS RWY 25 U/S REVOKED",
+        "ILS RWY 25 U/S RESTORED",
+        "NO APCH TO RWY 25 WILL TAKE PLACE CONDITION CANCELLED",
+        "LPV MINIMA SHALL BE RAISED TO LNAV/VNAV MINIMA CONDITION CANCELLED",
+        "ILS RWY 25 PROCEDURE NOT NA",
+        "ILS RWY 25 ON TEST. DO NOT USE CONDITION CANCELLED.",
+        "AUTO-COUPLED APCH SHOULD NOT BE FLOWN CONDITION CANCELLED",
+        "SID PROCEDURE SUSPENDED",
+        "STAR PROCEDURE WITHDRAWN",
+        "IAP ILS RWY 25 PROCEDURE AVAILABLE. SID PROCEDURE SUSPENDED.",
+        "IAP ILS RWY 25 PROCEDURE AVAILABLE. STAR PROCEDURE WITHDRAWN.",
+        "IAP ILS RWY 25 PROCEDURE AVAILABLE. RUNWAY 25 SUSPENDED.",
+        "IAP ILS RWY34L PROCEDURE NA CONDITION CANCELLED.",
+        "IAP ILS RWY34L PROCEDURE NA. NOTICE CANCELLED.",
+        "IAC ILS RWY25 AVAILABLE, SID PROCEDURE SUSPENDED",
+        "IAC ILS RWY25 AVAILABLE, STAR PROCEDURE WITHDRAWN",
+        "IAC ILS RWY25 NOT SUSPENDED",
+        "IAC ILS RWY25 SUSPENDED CONDITION CANCELLED",
+        "IAC ILS RWY25 SUSPENDED, NOW AVAILABLE",
+        "ILS RWY 25 STATUS UNKNOWN, PAPI ON TEST DO NOT USE",
+        "ILS RWY 25 STATUS UNKNOWN, RWY EDGE LIGHTS ON TEST DO NOT USE",
+        "ILS RWY 25 (PAPI U/S) AVAILABLE",
+        "ILS RWY 25 (RWY EDGE LIGHTS U/S) AVAILABLE",
+        "ILS RWY 25 (TEMPORARY CRANE U/S) AVAILABLE",
+        "ILS RWY25 (PAPI) U/S",
+        "ILS RWY 25 LIGHTS FREQ 100 U/S",
+        "ILS RWY 25 CRANE 123 U/S",
+        "TWY IM U/S",
+        "TWY MM U/S",
+        "TWY OM U/S",
+        "TAXIWAY IM CLOSED",
+        "STAND IM U/S",
+        "APRON IM U/S",
+        "TWY A MIDDLE MARKER RWY25 U/S",
+        "STAND INNER MARKER (ILS I-PHL) OUT OF SERVICE",
+        "ILS RWY25 STATUS UNKNOWN, TAXIWAY A STOP BAR ON TEST DO NOT USE",
+        "ILS RWY25 STATUS UNKNOWN, ATIS ON TEST DO NOT USE",
+        "ILS RWY25 STATUS UNKNOWN, RVR EQUIPMENT ON TEST DO NOT USE",
+        "IAP ILS RWY25 AVAILABLE. DEPARTURE PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. DP KENNEDY FIVE DEPARTURE PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. TAXI PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. RUNWAY PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. PAPI PROCEDURE NA.",
+        "IAP ILS RWY25 STATUS UNKNOWN, DEPARTURE PROCEDURE SUSPENDED",
+        "IAP ILS RWY25 STATUS UNKNOWN, NOISE ABATEMENT PROCEDURE WITHDRAWN",
+        "ILS RWY25 SFL U/S",
+        "ILS RWY25 SALS U/S",
+        "ILS RWY25 MALSR U/S",
+        "ILS RWY25 PALS U/S",
+        "ILS RWY25 SSALR U/S",
+        "ILS RWY25 REIL U/S",
+        "ILS RWY25 TDZL U/S",
+        "ILS RWY25 RCLL U/S",
+        "ILS RWY25 RTIL U/S",
+        "ILS RWY25 TWR 118.1 U/S",
+        "ILS RWY25 ATIS 126.0 U/S",
+        "ILS RWY25 RVR 100 U/S",
+        "ILS SFL RWY25 U/S",
+        "ILS MALSR RWY25 U/S",
+        "ILS PALS RWY25 U/S",
+        "ILS ATIS ON TEST DO NOT USE",
+        "ILS RVR ON TEST DO NOT USE",
+        "ILS TWR ON TEST DO NOT USE",
+        "IAP ILS RWY25 AVAILABLE. DEPARTURE: PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. DEPARTURE CHART PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. ATIS PROCEDURE NA.",
+        "IAP ILS RWY25 AVAILABLE. RVR PROCEDURE NA.",
+    ),
+)
+def test_named_procedure_support_preserves_non_approach_boundaries(
+    text: str,
+) -> None:
+    assert engines._instrument_approach_affected(
+        text,
+        "APPROACH PROCEDURE",
+    ) is False
+
+
+def test_authentic_corpus_approach_wording_reaches_machine_contract() -> None:
+    valid_from = "2026-07-16T09:00:00+00:00"
+    valid_to = "2026-07-16T15:00:00+00:00"
+    flight = _flight(notams=[
+        _record(
+            "1F2548/26",
+            "NZCH",
+            valid_from,
+            valid_to,
+            text="AUTO-COUPLED APCH SHOULD NOT BE FLOWN",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1A2888/26",
+            "RJBB",
+            valid_from,
+            valid_to,
+            text="IAC ILS/VOR/RNAV PROCEDURES SUSPENDED",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1A1312/26",
+            "EKCH",
+            valid_from,
+            valid_to,
+            text="RWY 22L CAT II/III OPS NOT AVBL",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1G681/26",
+            "VOMM",
+            valid_from,
+            valid_to,
+            text="VOR RWY 07 PROC WITHDRAWN",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1A399/26",
+            "VCBI",
+            valid_from,
+            valid_to,
+            text="ILS RWY 04 ON TEST. DO NOT USE.",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "CAT-PARTIAL/26",
+            "VOMM",
+            valid_from,
+            valid_to,
+            text="ILS RWY 25 AVBL, CAT III OPS NOT AVBL",
+            category="APPROACH PROCEDURE",
+        ),
+    ])
+    flight["destination"] = "NZCH"
+    flight["alternates"] = [
+        {"airport": "EKCH"},
+        {"airport": "VOMM"},
+        {"airport": "VCBI"},
+    ]
+
+    findings, _ = analyse(flight)
+    by_id = {
+        item["data"]["notam_id"]: item
+        for item in findings
+        if item.get("engine") == "notam"
+    }
+
+    for notam_id in (
+        "1F2548/26",
+        "1A2888/26",
+        "1A1312/26",
+        "1G681/26",
+        "1A399/26",
+        "CAT-PARTIAL/26",
+    ):
+        assert by_id[notam_id]["severity"] == "critical"
+        assert by_id[notam_id]["data"]["approach_affected"] is True
+
+
+def test_authentic_sq322_approach_impacts_are_critical_without_losing_condition() -> None:
+    valid_from = "2026-06-01T00:00:00+00:00"
+    valid_to = "2026-11-03T23:59:00+00:00"
+    flight = _flight(notams=[
+        _record(
+            "1A2085/26",
+            "EGLL",
+            valid_from,
+            valid_to,
+            text=(
+                "LIT CRANE OPR AT PSN 512741N 0002747W (HEATHROW). "
+                "MAX HGT 125FT AGL, 203FT AMSL. NO CRANE OPR IN LVP. "
+                "NO APCH OR DEPARTURES TO OR FM RWY 09R/27L WILL TAKE "
+                "PLACE WHEN CRANE IS OPR AT FULL HEIGHT."
+            ),
+            category="OBSTACLE",
+        ),
+        _record(
+            "1A2954/26",
+            "EGCC",
+            valid_from,
+            valid_to,
+            text="ILS RWY 05L U/S",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1A2951/26",
+            "EGCC",
+            valid_from,
+            valid_to,
+            text="ILS RWY 05L OUT OF SERVICE.",
+            category="APPROACH PROCEDURE",
+        ),
+        _record(
+            "1A1998/26",
+            "LOWW",
+            valid_from,
+            valid_to,
+            text=(
+                "LPV MINIMA SHALL BE RAISED TO THE RESPECTIVE LNAV/VNAV "
+                "MINIMA. RNP RWY 11. RNP RWY 29. RNP Z RWY 16. RNP RWY 34."
+            ),
+            category="APPROACH PROCEDURE",
+        ),
+    ])
+    flight["destination"] = "EGLL"
+    flight["alternates"] = [{"airport": "EGCC"}]
+    flight["fuel_enroute_airports"] = [{
+        "airport": "LOWW",
+        "role": "fuel_enroute_airport",
+    }]
+
+    findings, _ = analyse(flight)
+    by_id = {
+        item["data"]["notam_id"]: item
+        for item in findings
+        if item.get("engine") == "notam"
+    }
+
+    for notam_id in ("1A2085/26", "1A2954/26", "1A2951/26", "1A1998/26"):
+        assert by_id[notam_id]["severity"] == "critical"
+        assert by_id[notam_id]["data"]["approach_affected"] is True
+    assert "only under the exact condition stated in item E" in by_id[
+        "1A2085/26"
+    ]["summary"]
+    assert "is not evaluated for the applicable" in by_id["1A2085/26"]["summary"]
+    assert "closed" not in by_id["1A2085/26"]["summary"].lower()
+    assert "LPV minima are raised" in by_id["1A1998/26"]["summary"]
+
+
 def test_notam_subject_outages_are_not_promoted_to_full_surface_closures() -> None:
     valid_from = "2026-07-16T10:00:00+00:00"
     valid_to = "2026-07-16T14:00:00+00:00"
@@ -617,7 +1722,30 @@ def test_unresolved_notam_schedule_is_review_required_not_declared_active() -> N
 
     assert item["data"]["applicability"] == "review"
     assert "could not be resolved" in item["summary"]
-    assert "review required" in item["summary"]
+    assert "review required" not in item["summary"]  # R2: the state, not the suffix
+    assert "closed or unavailable during" not in item["summary"]
+
+
+def test_exact_approach_outage_survives_unresolved_schedule_as_critical_review() -> None:
+    record = _record(
+        "SCHED-ILS/26",
+        "RJBB",
+        "2026-07-01T00:00:00+00:00",
+        "2026-07-31T23:59:00+00:00",
+        text="ILS RWY 24L U/S",
+        category="APPROACH PROCEDURE",
+    )
+    record["schedule"] = "ON REQUEST EXC PUBLISHED PERIODS"
+    record["schedule_review"] = True
+
+    findings, _ = analyse(_flight(notams=[record]))
+    item = next(row for row in findings if row["engine"] == "notam")
+
+    assert item["severity"] == "critical"
+    assert item["data"]["approach_affected"] is True
+    assert item["data"]["applicability"] == "review"
+    assert item["data"]["schedule_status"] == "review_required"
+    assert "could not be resolved" in item["summary"]
     assert "closed or unavailable during" not in item["summary"]
 
 
@@ -908,9 +2036,25 @@ def test_taxiway_summaries_never_promote_grammar_or_pavement_words_as_ids() -> N
         if item["engine"] == "notam"
     }
 
-    assert "TANGO TWY SEGMENT" in summaries["SX124/26"]
-    assert "W4/W5 HIGH-SPEED TURN-OFFS" in summaries["SX124/26"]
-    assert "TWY M BETWEEN BM3 AND BM5" in summaries["A4644/26"]
+    # Subject extraction must still reject grammar/pavement words as IDs.
+    # A5 now quotes the filed restriction instead of printing that subject in
+    # a generic "restriction applies" template; retain both identity checks.
+    subjects = {
+        record["notam_id"]: engines._notam_subject(record["text"], "taxiway_restriction")
+        for record in flight["notams"]
+    }
+    assert "TANGO TWY SEGMENT" in subjects["SX124/26"].upper()
+    assert "W4/W5 HIGH-SPEED TURN-OFFS" in subjects["SX124/26"].upper()
+    assert "TWY M BETWEEN BM3 AND BM5" in subjects["A4644/26"].upper()
+    assert "TANGO TWY with closure" in summaries["SX124/26"]
+    # C1: this clause runs 22 source words before its first stop, so a line that
+    # reached its "W4 AND W5" would reproduce an 18-word run of the record and
+    # the concise PDF gate would refuse the page. The subject extractor above
+    # still holds both turn-offs; the published line stops at the runway
+    # surface it names and marks the rest.
+    assert summaries["SX124/26"].endswith("This NOTAM has further content; open the full NOTAM.")
+    assert "W4/W5 HIGH-SPEED TURN-OFFS" in subjects["SX124/26"].upper()
+    assert "TWY M BETWEEN BM3 AND BM5 closed" in summaries["A4644/26"]
     assert "taxilanes R1/R2/R3" in summaries["SX176/24"]
     assert all(
         bad not in " ".join(summaries.values())
@@ -938,8 +2082,7 @@ def test_weather_is_grouped_into_phase_window_mechanism_and_effect_with_raw_audi
     assert item["data"]["utc_window"] == "16 JUL 1100Z-1300Z"
     assert "convection / thunderstorms" in item["data"]["mechanism"]
     assert item["data"]["flight_effect"] == (
-        "Flight-specific operational effect is not stated by the source; "
-        "review required."
+        "Flight-specific operational effect is not stated by the source."
     )
     assert not any(
         rejected in item["data"]["flight_effect"]
@@ -993,7 +2136,7 @@ def test_official_weather_source_gap_is_pilot_facing_and_fails_closed() -> None:
 
     weather = [item for item in findings if item["engine"] == "weather"]
     assert len(weather) == 1
-    assert weather[0]["title"] == "Official weather source review required"
+    assert weather[0]["title"] == "Official weather coverage incomplete"
     assert weather[0]["severity"] == "unknown"
     assert weather[0]["data"]["window_status"] == "review_required"
     assert weather[0]["data"]["source_references"][0]["source_url"] == (
@@ -1143,8 +2286,7 @@ def test_destination_taf_keeps_significant_group_overlapping_arrival_window() ->
     assert "convection / thunderstorms" in item["data"]["mechanism"]
     assert "20:30Z-22:30Z" in item["data"]["timing"]
     assert item["data"]["flight_effect"] == (
-        "Flight-specific operational effect is not stated by the source; "
-        "review required."
+        "Flight-specific operational effect is not stated by the source."
     )
 
 
@@ -1170,8 +2312,7 @@ def test_weather_fallback_never_invents_phase_specific_operational_effects(
 
     effect = item["data"]["flight_effect"]
     assert effect == (
-        "Flight-specific operational effect is not stated by the source; "
-        "review required."
+        "Flight-specific operational effect is not stated by the source."
     )
     assert not any(
         rejected in effect
@@ -1203,7 +2344,7 @@ def test_destination_taf_incomplete_coverage_fails_closed() -> None:
     assert item["severity"] == "warning"
     assert item["data"]["window_status"] == "review_required"
     assert "does not fully cover" in item["data"]["timing"]
-    assert "review required" in item["summary"].lower()
+    assert "incomplete" in item["summary"].lower()
 
 
 def test_incomplete_lido_pages_fail_before_zero_value_analysis() -> None:
@@ -1213,7 +2354,7 @@ def test_incomplete_lido_pages_fail_before_zero_value_analysis() -> None:
             "SCHED DEP 1000 UTC SCHED ARR 1800 UTC",
         )
     )
-    with pytest.raises(ValueError, match="Incomplete or unsupported Lido CFP"):
+    with pytest.raises(ValueError, match="Incomplete or unsupported Lido OFP"):
         parse_lido([page], "partial.pdf")
 
 
@@ -1449,12 +2590,16 @@ N03 10.0 E105 40.0 090
 
     flight = parse_lido(pages, "bobcat.pdf")
 
+    # SLOT-ALLOCATION-434: the allocation also names the system and page it is printed under.
     assert flight["bobcat"] == {
         "waypoint": "BOBI1",
         "flight_level": 360,
         "cto_utc": "2026-07-16T22:15:00+00:00",
         "ctot_utc": "2026-07-16T22:05:00+00:00",
+        "system": "BOBCAT",
+        "source_page": 1,
     }
+    assert flight["slot_allocation_unread"] is None
 
 
 def test_depressurisation_profiles_require_aircraft_effectivity(
@@ -1529,8 +2674,9 @@ def test_unapproved_communication_samples_fail_closed() -> None:
         if item["engine"] == "communications"
     )
     assert communication["severity"] == "unknown"
-    assert communication["title"] == "FIR communication review required"
-    assert "approved communication procedures are unavailable" in communication["summary"]
+    # ATC-ABSENCE-WORDING (4 Oct 2026): the unapproved library is stated as such, never as absent source values.
+    assert communication["title"] == "No approved FIR communication reference"
+    assert "No approved communications reference library is held" in communication["summary"]
     assert all("ACTM 00.00" not in item["summary"] for item in findings)
     assert all("Chennai ATS/FIS" not in str(item) for item in findings)
 
@@ -1601,3 +2747,167 @@ N03 10.0 E105 40.0 090
     # ACTM 00.15 after CTOT 2205Z is 2220Z, five minutes after the allocated CTO.
     assert "2220Z" in summary, "the computed crossing time must be printed"
     assert "+5 min" in summary
+
+
+def test_cfp_volcano_advisories_stop_at_page_separators_and_next_fir() -> None:
+    page = """
+            VAA TAAL
+--------------------
+1B4233/26                 VALID: 20-AUG-26 0115 - 21-AUG-26 0100 EST
+  TAAL VOLCANO ON ALERT LVL 1.
+  FLT OPS ARE ADZ TO AVOID FLY CLOSE TO THE VOLCANO.
+  F) SFC G) FL110
+===================================================
+AREA ENROUTE DESTINATION - DESTINATION ALTERNATE(S)
+===================================================
+            VAA KANLAON
+-----------------------
+1B4236/26                 VALID: 20-AUG-26 0140 - 20-AUG-26 2124 EST
+  ERUPTION OF VOLCANO KANLAON.
+  SOURCE OF INFO: PHIVOLCS VONA
+  F) SFC G) FL110
+RCAA        TAIPEI FIR
+----------------------
+1A600/26                  VALID: 16-MAR-26 0000 - 31-MAR-27 2359 EST
+  UNRELATED AIR TRAFFIC FLOW MANAGEMENT NOTICE.
+"""
+
+    advisories = _parse_cfp_volcano_advisories(
+        [page],
+        datetime(2026, 8, 20, tzinfo=UTC),
+    )
+
+    assert [item["volcano"] for item in advisories] == ["TAAL", "KANLAON"]
+    assert "FLT OPS ARE ADZ" in advisories[0]["text"]
+    assert "=" not in advisories[0]["text"]
+    assert "RCAA" not in advisories[1]["text"]
+    assert "AIR TRAFFIC FLOW" not in advisories[1]["text"]
+
+
+@pytest.mark.parametrize("next_heading", ["", "SPEEDAIR CENTRAL\n--------------------\n", "SPEEDAIR CENTRAL\n--------------------\n\n"])
+def test_cfp_volcano_advisory_does_not_absorb_the_next_notice(next_heading: str) -> None:
+    page = f"""
+VAA GREAT SITKIN
+--------------------
+1A1227/25 VALID: 26-OCT-25 0352 - 26-OCT-26 0352
+VOLCANIC ACTIVITY ADVISORY FOR GREAT SITKIN VOLCANO.
+CONTACT ANCHORAGE ARTCC FOR ADDITIONAL INFORMATION.
+F) SFC G) UNL
+
+{next_heading}1A2616/26 VALID: 02-JUN-26 1500 - 31-DEC-26 0700
+DAILY 1500-0700
+UNRELATED AIRSPACE BOUNDARIES HAVE EXTENDED TO THE WEST.
+F) FL055 G) FL230
+"""
+    advisories = _parse_cfp_volcano_advisories([page], datetime(2026, 8, 29, tzinfo=UTC))
+
+    assert len(advisories) == 1
+    assert advisories[0]["notam_id"] == "1A1227/25"
+    assert advisories[0]["text"] == (
+        "VOLCANIC ACTIVITY ADVISORY FOR GREAT SITKIN VOLCANO. "
+        "CONTACT ANCHORAGE ARTCC FOR ADDITIONAL INFORMATION. F) SFC G) UNL"
+    )
+    assert advisories[0]["source_page"] == 1
+
+
+def test_notam_gap_between_two_role_windows_is_not_an_applicable_window():
+    record = _record('GAP1/26','WIII','2026-07-16T14:30:00+00:00','2026-07-16T15:30:00+00:00')
+    flight = _flight(notams=[record])
+    flight['edto']['airports'] = [{'airport':'WIII','period_start_utc':'2026-07-16T16:00:00+00:00','period_end_utc':'2026-07-16T17:00:00+00:00'}]
+    findings, _ = analyse(flight)
+    assert not [item for item in findings if item['engine']=='notam']
+    evaluations=flight['audit_evidence']['notam']['records'][0]['role_applicability']
+    assert [item['applicability'] for item in evaluations] == ['outside_time_window','outside_time_window']
+
+
+def test_notam_role_results_keep_edto_separate_from_an_alternate_window():
+    record = _record('ROLE1/26','WIII','2026-07-16T00:00:00+00:00','2026-07-17T00:00:00+00:00')
+    record['schedule']='16 1600-1700'
+    flight=_flight(notams=[record])
+    flight['edto']['airports']=[{'airport':'WIII','period_start_utc':'2026-07-16T16:00:00+00:00','period_end_utc':'2026-07-16T17:00:00+00:00'}]
+    findings,_=analyse(flight)
+    item=next(item for item in findings if item['engine']=='notam')
+    assert item['data']['role']=='EDTO'
+    assert item['data']['referenceAt']=='2026-07-16T16:00:00+00:00'
+    assert [(row['role'],row['applicability']) for row in item['data']['role_applicability']] == [('destination alternate','outside_schedule'),('EDTO','active')]
+
+
+def test_schedule_overlap_must_also_be_inside_bc_validity():
+    record=_record('CLIP1/26','RJBB','2026-07-16T11:00:00+00:00','2026-07-16T12:00:00+00:00')
+    record['schedule']='DAILY 1300-1400'
+    findings,_=analyse(_flight(notams=[record]))
+    assert not [item for item in findings if item['engine']=='notam']
+
+
+def test_a_station_assessed_from_a_metar_alone_publishes_the_observation_as_its_source():
+    """B4 fix round 1 (17 Sep 2026): the METAR-only path published no source.
+
+    The dashboard's Weather block fell back to "Forecast source details
+    unavailable" - the sentence David photographed on 9 Sep - for every
+    station whose assessment came from an observation. The basis is a source
+    like a TAF is; it is published with its record type and observation time
+    so the surfaces can name it as an observation, never as a forecast.
+    """
+    from app.odss.briefing import _overview_forecast_at_reference
+    # The shape that reaches this path in production: an official observation
+    # in the ICAO form with its observation time (an OFP "SA DDHHMM" record
+    # carries no Z-time and yields no observation summary at all).
+    raw = "METAR WSSS 160930Z 20005KT 9999 FEW018 BKN300 30/24 Q1010 NOSIG"
+    findings, _ = analyse(_flight(weather=[
+        {"location": "WSSS", "record_type": "METAR", "text": raw,
+         "source": "noaa_awc_live", "provider": "noaa-awc-data-api",
+         "observed_at_utc": "2026-07-16T09:30:00+00:00"},
+    ]))
+    forecast = _overview_forecast_at_reference(findings, location="WSSS", phase="Departure")
+    assert forecast is not None, "a nearby observation still yields a departure assessment"
+    assert forecast["window_status"] == "no_significant_observation"
+    source = forecast["forecast_source"]
+    assert source["record_type"] == "METAR"
+    assert source["raw_text"] == raw
+    assert source["source_type"] == "noaa_awc_live"
+    assert source["display_title"] == "NOAA Aviation Weather Center"
+    assert source["observed_at_utc"].startswith("2026-07-16T09:30")
+    assert not source.get("valid_from_utc") and not source.get("issued_at_utc")
+    # A TAF-assessed station is unchanged: its source is still the forecast.
+    taf = "TAF WSSS 160500Z 1606/1712 20005KT 9999 FEW018"
+    findings, _ = analyse(_flight(weather=[
+        {"location": "WSSS", "record_type": "TAF", "text": taf, "source_page": 15},
+        {"location": "WSSS", "record_type": "METAR", "text": raw,
+         "source": "noaa_awc_live", "provider": "noaa-awc-data-api",
+         "observed_at_utc": "2026-07-16T09:30:00+00:00"},
+    ]))
+    forecast = _overview_forecast_at_reference(findings, location="WSSS", phase="Departure")
+    assert forecast["forecast_source"]["raw_text"] == taf
+    assert forecast["forecast_source"].get("record_type") is None
+
+
+@pytest.mark.parametrize("with_taf", [False, True])
+def test_physical_weather_page_does_not_publish_an_observation_as_a_forecast(tmp_path, with_taf):
+    import fitz
+    from app.odss.combined_brief import render_combined_briefing
+    from app.odss.concise_pdf_gate import WEATHER_PAGE
+
+    raw = "METAR WSSS 160930Z 20005KT 9999 FEW018 BKN300 30/24 Q1010 NOSIG"
+    records = [{"location": "WSSS", "record_type": "METAR", "text": raw,
+                "source": "noaa_awc_live", "provider": "noaa-awc-data-api",
+                "observed_at_utc": "2026-07-16T09:30:00+00:00"}]
+    if with_taf:
+        records.append({"location": "WSSS", "record_type": "TAF",
+                        "text": "TAF WSSS 160500Z 1606/1712 20005KT 9999 FEW018", "source_page": 15})
+    flight = _flight(weather=records)
+    findings, warnings = analyse(flight)
+    path = tmp_path / "weather-basis.pdf"
+    render_combined_briefing(flight, findings, warnings, path)
+    with fitz.open(path) as doc:
+        body = " ".join(doc[WEATHER_PAGE].get_text().split())
+    # 23 Sep 2026 (T3): "Do NOT decipher. Your user is a pilot." The page
+    # prints the coded groups the assessment used, never their decoding.
+    assert "wind 200° 5 kt" not in body
+    if with_taf:
+        assert "WSSS forecast 16 JUL 0900Z-1100Z: 20005KT 9999 FEW018" in body
+        assert "WSSS observation used:" not in body
+    else:
+        assert "WSSS observation used: METAR WSSS 160930Z 20005KT 9999 FEW018 BKN300 30/24 Q1010 NOSIG" in body
+        assert "WSSS forecast" not in body
+        assert "Basis: METAR observation 16JUL 0930Z" in body
+        assert "valid 16JUL" not in body

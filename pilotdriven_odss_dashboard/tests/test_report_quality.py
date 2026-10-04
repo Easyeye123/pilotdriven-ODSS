@@ -47,7 +47,7 @@ def test_quality_gate_accepts_three_page_a4_landscape_level1(tmp_path: Path) -> 
         pages=3,
         page_texts=[
                 "APPLICABLE NOTAMS WITHIN STD / STA ±2 HOURS\n"
-                "Filed route from CFP coordinates",
+                "Filed route from OFP coordinates",
             "SQ304 - OPERATIONAL TIMING",
             "DEPRESSURISATION PROFILE ANALYSIS",
         ],
@@ -68,7 +68,7 @@ def test_quality_gate_accepts_non_sq_level1_operational_timing_title(
         pages=3,
         page_texts=[
             "APPLICABLE NOTAMS WITHIN STD / STA +/- 2 HOURS\n"
-            "Filed route from CFP coordinates",
+            "Filed route from OFP coordinates",
             "BAW304 - OPERATIONAL TIMING",
             "DEPRESSURISATION PROFILE ANALYSIS",
         ],
@@ -111,12 +111,292 @@ def test_quality_gate_rejects_extra_level1_pages(tmp_path: Path) -> None:
 
 def _combined_pages(*middle: str) -> list[str]:
     return [
-        "FLIGHT BRIEFING\nCFP P1 - ROUTE / LEVELS",
+        "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS",
         "FLIGHT BRIEFING\nDECISION ANALYSIS\nFLIGHT-PHASE DECISION TIMELINE",
         "FLIGHT BRIEFING\nMEL/CDL AND CDDL",
         *[f"FLIGHT BRIEFING\n{text}" for text in middle],
         "FLIGHT BRIEFING\nHIGH TERRAIN EXPOSURE AND DEPRESSURISATION",
     ]
+
+
+def test_combined_quality_gate_accepts_lossless_eosid_continuation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-eosid-continuation.pdf"
+    page_texts = [
+        (
+            "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
+            "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
+        ),
+        (
+            "FLIGHT BRIEFING\nDECISION ANALYSIS\n"
+            "FLIGHT-PHASE DECISION TIMELINE\nSOURCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nPERFORMANCE / FUEL / STATUS\n"
+            "RECONCILIATION / RELEASE REVIEW\n"
+            "EOSID LOSSLESS CONTINUATION: 1 PAGE START P4"
+        ),
+        (
+            "FLIGHT BRIEFING\nEOSID / ESCAPE ROUTING\n"
+            "LOSSLESS CONTINUATION 1/1"
+        ),
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL\nSOURCE DECLARATION",
+        (
+            "FLIGHT BRIEFING\nAIRPORTS / ALTERNATES\n"
+            "DESTINATION ALTERNATE ASSESSMENT MATRIX"
+        ),
+        (
+            "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
+            "NAMED DIRECT / OFP VOLCANO ADVISORIES"
+        ),
+        (
+            "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
+            "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nCOVERAGE CHECKLIST\n"
+            "CAT / VWS EVIDENCE\nAIREP / PIREP"
+        ),
+    ]
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is True
+    assert result["violations"] == []
+
+
+def test_combined_quality_gate_accepts_declared_airport_index_pages(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-airport-index.pdf"
+    airport_codes = [
+        "FAOR", "FMMI", "FIMP", "VCBI", "WIMM", "WITT", "WADD",
+        "WMKK", "WSSS", "WMSA", "VTBS", "VHHH", "RCTP", "RPLL",
+        "VVTS", "VVDN", "WIHH", "WIII", "WBSB",
+    ]
+    page_texts = [
+        (
+            "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
+            "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
+        ),
+        (
+            "FLIGHT BRIEFING\nDECISION ANALYSIS\n"
+            "FLIGHT-PHASE DECISION TIMELINE\nSOURCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nPERFORMANCE / FUEL / STATUS\n"
+            "RECONCILIATION / RELEASE REVIEW"
+        ),
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL\nSOURCE DECLARATION",
+        (
+            "FLIGHT BRIEFING\nAIRPORTS / ALTERNATES\n"
+            "DESTINATION ALTERNATE ASSESSMENT MATRIX\n"
+            "19 FILED SURFACE/NOTES AIRPORTS · 2 INDEX PAGES FOLLOW"
+        ),
+        (
+            "FLIGHT BRIEFING\nAIRPORT SURFACE / NOTES INDEX · 1/2\n"
+            + "\n".join(
+                f"AIRPORT {index}/19 · {code}"
+                for index, code in enumerate(airport_codes[:10], start=1)
+            )
+        ),
+        (
+            "FLIGHT BRIEFING\nAIRPORT SURFACE / NOTES INDEX · 2/2\n"
+            + "\n".join(
+                f"AIRPORT {index}/19 · {code}"
+                for index, code in enumerate(airport_codes[10:], start=11)
+            )
+        ),
+        (
+            "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
+            "NAMED DIRECT / OFP VOLCANO ADVISORIES"
+        ),
+        (
+            "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
+            "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nCOVERAGE CHECKLIST\n"
+            "CAT / VWS EVIDENCE\nAIREP / PIREP"
+        ),
+    ]
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is True
+    assert result["violations"] == []
+
+
+def test_combined_quality_gate_rejects_broken_airport_index_sequence(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-broken-airport-index.pdf"
+    page_texts = [
+        (
+            "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
+            "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
+        ),
+        (
+            "FLIGHT BRIEFING\nDECISION ANALYSIS\n"
+            "FLIGHT-PHASE DECISION TIMELINE\nSOURCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nPERFORMANCE / FUEL / STATUS\n"
+            "RECONCILIATION / RELEASE REVIEW"
+        ),
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL\nSOURCE DECLARATION",
+        (
+            "FLIGHT BRIEFING\nAIRPORTS / ALTERNATES\n"
+            "DESTINATION ALTERNATE ASSESSMENT MATRIX\n"
+            "19 FILED SURFACE/NOTES AIRPORTS · 2 INDEX PAGES FOLLOW"
+        ),
+        "FLIGHT BRIEFING\nAIRPORT SURFACE / NOTES INDEX · 2/2\nAIRPORT 1/19 · FAOR",
+        (
+            "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
+            "NAMED DIRECT / OFP VOLCANO ADVISORIES"
+        ),
+        (
+            "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
+            "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nCOVERAGE CHECKLIST\n"
+            "CAT / VWS EVIDENCE\nAIREP / PIREP"
+        ),
+    ]
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        violation.code == "COMBINED_AIRPORT_INDEX_STRUCTURE"
+        for violation in result["violations"]
+    )
+
+
+def test_combined_quality_gate_rejects_missing_operational_coverage_page(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-missing-coverage.pdf"
+    page_texts = [
+        (
+            "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
+            "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
+        ),
+        (
+            "FLIGHT BRIEFING\nDECISION ANALYSIS\n"
+            "FLIGHT-PHASE DECISION TIMELINE\nSOURCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nPERFORMANCE / FUEL / STATUS\n"
+            "RECONCILIATION / RELEASE REVIEW"
+        ),
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL\nSOURCE DECLARATION",
+        (
+            "FLIGHT BRIEFING\nAIRPORTS / ALTERNATES\n"
+            "DESTINATION ALTERNATE ASSESSMENT MATRIX"
+        ),
+        (
+            "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
+            "NAMED DIRECT / OFP VOLCANO ADVISORIES"
+        ),
+        (
+            "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
+            "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+        "FLIGHT BRIEFING\nHIGH TERRAIN EXPOSURE AND DEPRESSURISATION",
+    ]
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        violation.code == "COMBINED_BOSS_FLOW_STRUCTURE"
+        and "COVERAGE CHECKLIST" in violation.message
+        for violation in result["violations"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("declaration", "continuations"),
+    [
+        (
+            "EOSID LOSSLESS CONTINUATION: 2 PAGES START P4",
+            ["LOSSLESS CONTINUATION 2/2"],
+        ),
+        (
+            "EOSID LOSSLESS CONTINUATION: 2 PAGES START P4",
+            ["LOSSLESS CONTINUATION 1/2", "LOSSLESS CONTINUATION 1/2"],
+        ),
+        (
+            "EOSID LOSSLESS CONTINUATION: 2 PAGES START P4",
+            ["LOSSLESS CONTINUATION 1/2", "LOSSLESS CONTINUATION 2/3"],
+        ),
+        ("", ["LOSSLESS CONTINUATION 1/1"]),
+    ],
+    ids=[
+        "missing-first-page",
+        "duplicate-index",
+        "inconsistent-total",
+        "undeclared-continuation",
+    ],
+)
+def test_combined_quality_gate_rejects_broken_eosid_continuation_sequence(
+    tmp_path: Path,
+    declaration: str,
+    continuations: list[str],
+) -> None:
+    path = tmp_path / "combined-broken-eosid-continuation.pdf"
+    page_texts = [
+        (
+            "FLIGHT BRIEFING\nOFP P1 - ROUTE / LEVELS\nRELEASE\nBEFORE PUSH\nROUTE\nARRIVAL\n"
+            "PERFORMANCE\nFUEL\nSTATUS\nWEATHER\nALTERNATES"
+        ),
+        (
+            "FLIGHT BRIEFING\nDECISION ANALYSIS\n"
+            "FLIGHT-PHASE DECISION TIMELINE\nSOURCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nPERFORMANCE / FUEL / STATUS\n"
+            "RECONCILIATION / RELEASE REVIEW\n"
+            + declaration
+        ),
+        *[
+            "FLIGHT BRIEFING\nEOSID / ESCAPE ROUTING\n" + continuation
+            for continuation in continuations
+        ],
+        "FLIGHT BRIEFING\nMEL/CDL AND CDDL\nSOURCE DECLARATION",
+        (
+            "FLIGHT BRIEFING\nAIRPORTS / ALTERNATES\n"
+            "DESTINATION ALTERNATE ASSESSMENT MATRIX"
+        ),
+        (
+            "FLIGHT BRIEFING\nWEATHER / ROUTE HAZARDS\n"
+            "NAMED DIRECT / OFP VOLCANO ADVISORIES"
+        ),
+        (
+            "FLIGHT BRIEFING\nENROUTE / ASSURANCE\n"
+            "NUMBERED RELEASE GATES\nSOURCE ASSURANCE"
+        ),
+        (
+            "FLIGHT BRIEFING\nCOVERAGE CHECKLIST\n"
+            "CAT / VWS EVIDENCE\nAIREP / PIREP"
+        ),
+    ]
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        violation.code == "COMBINED_EOSID_CONTINUATION_STRUCTURE"
+        for violation in result["violations"]
+    )
 
 
 def test_combined_quality_gate_accepts_ordered_section_continuations(
@@ -137,6 +417,44 @@ def test_combined_quality_gate_accepts_ordered_section_continuations(
 
     assert result["valid"] is True
     assert result["violations"] == []
+
+
+def test_combined_quality_gate_accepts_non_edto_destination_alternates_section(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-non-edto.pdf"
+    page_texts = _combined_pages(
+        "DESTINATION ALTERNATES",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is True
+    assert result["violations"] == []
+
+
+def test_combined_quality_gate_rejects_mixed_alternate_section_continuations(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "combined-mixed-alternate-sections.pdf"
+    page_texts = _combined_pages(
+        "DESTINATION ALTERNATES",
+        "EDTO / ENROUTE AIRPORTS - CONTINUED (2/2)",
+        "AIRPORTS / NOTAM APPLICABILITY",
+        "OPERATIONAL HAZARD ASSESSMENT",
+    )
+    _pdf(path, pages=len(page_texts), page_texts=page_texts)
+
+    result = validate_combined_briefing_pdf(path)
+
+    assert result["valid"] is False
+    assert any(
+        violation.code == "COMBINED_PAGE_STRUCTURE"
+        for violation in result["violations"]
+    )
 
 
 def test_combined_quality_gate_accepts_critical_analysis_continuation(
@@ -439,8 +757,8 @@ def test_quality_gate_rejects_incomplete_fail_closed_advisory_result(
             "DEPRESSURISATION PROFILE MATCH MATRIX",
             (
                 "WEATHER AND PROMOTION RESULT\n"
-                "Volcanic ash review required\n"
-                "The official sources could not safely confirm that volcanic ash is not"
+                "Volcanic ash applicability unresolved\n"
+                "The official sources do not establish that volcanic ash is not"
             ),
         ],
     )

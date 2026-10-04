@@ -19,6 +19,7 @@ from shapely.geometry import LineString, MultiPolygon, Polygon, mapping
 from shapely.ops import split
 
 from .snapshot_governance import govern_snapshot, mark_snapshot_reused
+from .vaac_areas import responsible_vaac_centres
 
 
 AWC_ISIGMET_URL = "https://aviationweather.gov/api/data/isigmet?format=json"
@@ -42,7 +43,7 @@ _CACHE_BY_HAZARD: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def extract_embedded_vaa(pages: list[str]) -> dict[str, Any]:
-    """Extract the CFP's volcanic-ash source statement without interpreting it."""
+    """Extract the OFP's volcanic-ash source statement without interpreting it."""
     for page_number, page in enumerate(pages, start=1):
         match = re.search(r"VOLCANIC\s+ASH\s+SIGMETS?\s*:", page, re.IGNORECASE)
         if not match:
@@ -641,6 +642,7 @@ def evaluate_vaa(
         "reason_codes": [],
         "matches": [],
         "hazard_features": [],
+        "monitoring_features": [],
     }
 
     if snapshot.get("status") == "disabled":
@@ -755,6 +757,7 @@ def evaluate_vaa(
                         else hazard_label
                     ),
                     "hazard_code": advisory.get("hazard"),
+                    "hazard_state": "affecting",
                     "fir_id": advisory.get("fir_id"),
                     "valid_from_utc": advisory.get("valid_from_utc"),
                     "valid_to_utc": advisory.get("valid_to_utc"),
@@ -764,6 +767,45 @@ def evaluate_vaa(
                     "not_for_navigation": True,
                 },
             }
+
+    monitoring_features: list[dict[str, Any]] = []
+    if hazard_label == "volcanic_ash":
+        # Boss 30 Aug: "develop the polygon" — a held advisory stays drawable
+        # even when the verified result is no-intersection. The map layer tags
+        # it as monitoring, so absence of a match never hides the ash cloud;
+        # SIGMET and TC labels stay matched-only to keep the map readable.
+        for advisory in snapshot.get("advisories") or []:
+            advisory_id = str(advisory.get("advisory_id") or default_advisory_id)
+            if advisory_id in matched_features:
+                continue
+            geometry = advisory.get("geometry") or {}
+            if not geometry:
+                continue
+            try:
+                safe_geometry = _map_safe_geometry(geometry)
+            except (TypeError, ValueError):
+                continue
+            if not safe_geometry:
+                continue
+            monitoring_features.append({
+                "type": "Feature",
+                "id": advisory_id,
+                "geometry": safe_geometry,
+                "properties": {
+                    "advisory_id": advisory_id,
+                    "hazard": hazard_label,
+                    "hazard_code": advisory.get("hazard"),
+                    "hazard_state": "monitoring",
+                    "fir_id": advisory.get("fir_id"),
+                    "valid_from_utc": advisory.get("valid_from_utc"),
+                    "valid_to_utc": advisory.get("valid_to_utc"),
+                    "lower_flight_level": advisory.get("lower_flight_level"),
+                    "upper_flight_level": advisory.get("upper_flight_level"),
+                    "source": snapshot.get("provider"),
+                    "not_for_navigation": True,
+                },
+            })
+    result["monitoring_features"] = monitoring_features
 
     result["matches"] = matches
     result["hazard_features"] = list(matched_features.values())
@@ -817,6 +859,7 @@ _VAAC_CENTRES: dict[str, dict[str, str]] = {
     "jma-tokyo": {"centre": "TOKYO", "provider": "jma-tokyo-vaac"},
     "anchorage": {"centre": "ANCHORAGE", "provider": "nws-anchorage-vaac"},
     "darwin-gts": {"centre": "DARWIN", "provider": "noaa-gts-darwin-vaa"},
+    "toulouse": {"centre": "TOULOUSE", "provider": "meteo-france-toulouse-vaac"},
 }
 # Spellings accepted for the same centre, kept so existing deployments that set
 # a single legacy value keep working unchanged.
@@ -831,9 +874,17 @@ _VAAC_ALIASES: dict[str, str] = {
     "darwin-gts": "darwin-gts",
     "bom-darwin": "darwin-gts",
     "adrm": "darwin-gts",
+    "toulouse": "toulouse",
+    "meteo-france-toulouse": "toulouse",
+    "lfpw": "toulouse",
     "wifs": "wifs-global",
     "wifs-global": "wifs-global",
     "all": "wifs-global",
+    # One open-mirror token reaches every ICAO centre (boss 30 Aug: reliable
+    # VAA without waiting on the authenticated WIFS application).
+    "gts": "gts-mirror",
+    "gts-mirror": "gts-mirror",
+    "noaa-gts": "gts-mirror",
 }
 _VAAC_DISABLED = {"", "disabled", "off", "none"}
 
@@ -849,11 +900,33 @@ def mounted_vaac_centres() -> list[dict[str, str]]:
         token = _VAAC_ALIASES.get(piece.strip())
         if not token:
             continue
+        if token == "gts-mirror":
+            # Expands like wifs-global: unmounted centres get the mirror as
+            # their source, already-named centres keep their connector and
+            # gain the mirror as fallback.
+            for centre in ICAO_VAAC_CENTRES:
+                if centre in seen_centres:
+                    for entry in mounted:
+                        if entry["centre"] == centre and not entry.get("fallback_token"):
+                            entry["fallback_token"] = (
+                                f"gts-mirror:{centre.lower().replace(' ', '-')}"
+                            )
+                            break
+                    continue
+                seen_centres.add(centre)
+                mounted.append({
+                    "token": f"gts-mirror:{centre.lower().replace(' ', '-')}",
+                    "centre": centre,
+                    "provider": "noaa-gts-vaa",
+                })
+            continue
         if token == "wifs-global":
             for centre in ICAO_VAAC_CENTRES:
                 if centre in seen_centres:
                     for entry in mounted:
-                        if entry["centre"] == centre:
+                        # First-listed fallback wins, so "gts-mirror,wifs-global"
+                        # keeps the open mirror as the near fallback.
+                        if entry["centre"] == centre and not entry.get("fallback_token"):
                             entry["fallback_token"] = (
                                 f"wifs-global:{centre.lower().replace(' ', '-')}"
                             )
@@ -881,6 +954,7 @@ def fetch_mounted_vaac_snapshots(
     """One snapshot per mounted centre, each tagged with the centre it came from."""
     snapshots: list[dict[str, Any]] = []
     wifs_snapshot: dict[str, Any] | None = None
+    gts_snapshots: dict[str, dict[str, Any]] | None = None
 
     def wifs_for(centre: str) -> dict[str, Any]:
         nonlocal wifs_snapshot
@@ -892,6 +966,22 @@ def fetch_mounted_vaac_snapshots(
         if wifs_snapshot is None:
             wifs_snapshot = live_wifs_global_vaac_snapshot(flight)
         return wifs_centre_snapshot(wifs_snapshot, centre)
+
+    def gts_for(centre: str) -> dict[str, Any]:
+        # One mirror pass serves every centre that needs it, primary or
+        # fallback alike.
+        nonlocal gts_snapshots
+        from .direct_vaac_gts import live_gts_vaac_snapshots
+
+        if gts_snapshots is None:
+            gts_snapshots = live_gts_vaac_snapshots(flight)
+        return gts_snapshots.get(centre) or {
+            "schema_version": "1.0",
+            "status": "unavailable",
+            "provider": "noaa-gts-vaa",
+            "coverage_status": "unavailable",
+            "advisories": [],
+        }
 
     for entry in mounted:
         if entry["token"] == "jma-tokyo":
@@ -906,13 +996,29 @@ def fetch_mounted_vaac_snapshots(
             from .direct_vaac_darwin import live_darwin_vaac_snapshot
 
             snapshot = live_darwin_vaac_snapshot(flight)
+        elif entry["token"] == "toulouse":
+            from .direct_vaac_toulouse import live_toulouse_vaac_snapshot
+
+            snapshot = live_toulouse_vaac_snapshot(flight)
         elif entry["token"].startswith("wifs-global:"):
             snapshot = wifs_for(entry["centre"])
+        elif entry["token"].startswith("gts-mirror:"):
+            snapshot = gts_for(entry["centre"])
         else:  # pragma: no cover - guarded by mounted_vaac_centres
             continue
-        if entry.get("fallback_token") and snapshot.get("status") != "available":
-            fallback = wifs_for(entry["centre"])
-            if fallback.get("status") == "available":
+        fallback_token = entry.get("fallback_token") or ""
+        if fallback_token and snapshot.get("status") != "available":
+            fallback = (
+                gts_for(entry["centre"])
+                if fallback_token.startswith("gts-mirror:")
+                else wifs_for(entry["centre"])
+            )
+            primary_status = str(snapshot.get("status") or "").strip().lower()
+            fallback_status = str(fallback.get("status") or "").strip().lower()
+            if fallback_status == "available" or (
+                primary_status == "unavailable"
+                and fallback_status == "partial"
+            ):
                 snapshot = fallback
         snapshots.append({**snapshot, "centre": entry["centre"]})
     return snapshots
@@ -929,6 +1035,7 @@ def vaac_centre_ledger(
         "jma-tokyo-vaac": "TOKYO",
         "nws-anchorage-vaac": "ANCHORAGE",
         "noaa-gts-darwin-vaa": "DARWIN",
+        "meteo-france-toulouse-vaac": "TOULOUSE",
     }
     for snapshot in snapshots:
         centre = str(snapshot.get("centre") or "").strip().upper()
@@ -949,6 +1056,15 @@ def vaac_centre_ledger(
                 "coverage_status": snapshot.get("coverage_status") or "unavailable",
                 "advisory_count": snapshot.get("advisory_count") or 0,
                 "source_url": snapshot.get("source_url"),
+                # Freshness receipts (boss 30 Aug): when the centre answered,
+                # the row says how current its picture is and when the next
+                # advisory is due — never just a bare "reached".
+                "freshness_status": snapshot.get("freshness_status"),
+                "listing_latest_utc": snapshot.get("listing_latest_utc"),
+                "next_advisory_due": snapshot.get("next_advisory_due"),
+                "next_advisory_notes": list(
+                    snapshot.get("next_advisory_notes") or []
+                ),
             })
         elif mounted_entry:
             rows.append({
@@ -1023,6 +1139,12 @@ def merge_vaac_snapshots(
                 "status": snapshot.get("status"),
                 "source_url": snapshot.get("source_url"),
                 "coverage_status": snapshot.get("coverage_status"),
+                "freshness_status": snapshot.get("freshness_status"),
+                "listing_latest_utc": snapshot.get("listing_latest_utc"),
+                "next_advisory_due": snapshot.get("next_advisory_due"),
+                "next_advisory_notes": list(
+                    snapshot.get("next_advisory_notes") or []
+                ),
             }
             for snapshot in snapshots
         ],
@@ -1032,6 +1154,353 @@ def merge_vaac_snapshots(
             "centres only and is not presented as global VAAC coverage."
         ),
     }
+
+
+_DIRECT_VAAC_PROVIDER_CENTRES = {
+    "jma-tokyo-vaac": "TOKYO",
+    "nws-anchorage-vaac": "ANCHORAGE",
+    "noaa-gts-darwin-vaa": "DARWIN",
+    "meteo-france-toulouse-vaac": "TOULOUSE",
+}
+
+
+def _direct_snapshot_centre(snapshot: dict[str, Any]) -> str:
+    centre = str(snapshot.get("centre") or "").strip().upper()
+    if centre:
+        return centre
+    centres = snapshot.get("centres") or []
+    if isinstance(centres, list) and len(centres) == 1:
+        return str(centres[0] or "").strip().upper()
+    return _DIRECT_VAAC_PROVIDER_CENTRES.get(
+        str(snapshot.get("provider") or ""),
+        "",
+    )
+
+
+def build_direct_vaa_source_review(
+    flight: dict[str, Any],
+    *,
+    snapshots: list[dict[str, Any]],
+    mounted: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Compose direct-VAA source/reach truth without inventing applicability.
+
+    Direct VAAC connectors retain official observed and forecast *snapshots*.
+    Their phase geometry has a ``valid_at_utc`` instant, not a validity
+    interval, and the connectors deliberately do not interpolate between
+    phases.  The held payload can therefore prove which responsible sources
+    answered and which official advisories they returned, but a source-only
+    zero cannot prove a full-flight route/time/level non-intersection.
+
+    This contract is intentionally separate from ``va_sigmet_review``.  Its
+    ``applicability_status`` remains ``not_assessed`` until a governed direct-
+    VAA evaluator exists; it never emits a checked-no-match result.
+    """
+    waypoints = flight.get("route_waypoints") or []
+    route_points = [
+        (waypoint.get("latitude"), waypoint.get("longitude"))
+        for waypoint in waypoints
+        if isinstance(waypoint.get("latitude"), (int, float))
+        and isinstance(waypoint.get("longitude"), (int, float))
+    ]
+    route_firs = [
+        waypoint.get("fir_boundary")
+        for waypoint in waypoints
+        if waypoint.get("fir_boundary")
+    ]
+    responsibility = responsible_vaac_centres(route_points, route_firs)
+    responsible = [
+        str(centre).strip().upper()
+        for centre in responsibility.get("centres") or []
+        if str(centre).strip()
+    ]
+    responsibility_review_required = bool(
+        responsibility.get("review_required")
+    ) or not responsible
+
+    snapshots_by_centre = {
+        centre: snapshot
+        for snapshot in snapshots
+        if (centre := _direct_snapshot_centre(snapshot))
+    }
+    mounted_by_centre = {
+        str(entry.get("centre") or "").strip().upper(): entry
+        for entry in mounted
+        if str(entry.get("centre") or "").strip()
+    }
+
+    receipts: list[dict[str, Any]] = []
+    advisories: list[dict[str, Any]] = []
+    seen_advisories: set[tuple[str, str, str, str]] = set()
+    for centre in responsible:
+        snapshot = snapshots_by_centre.get(centre)
+        mounted_entry = mounted_by_centre.get(centre)
+        status = str((snapshot or {}).get("status") or "").strip().lower()
+        if not status:
+            status = "unavailable" if mounted_entry else "not_mounted"
+        centre_advisories: list[dict[str, Any]] = []
+        for advisory in (snapshot or {}).get("advisories") or []:
+            held = {**advisory, "centre": centre}
+            identity = (
+                centre,
+                str(held.get("advisory_number") or ""),
+                str(held.get("issued_at_utc") or ""),
+                str(held.get("raw_sha256") or ""),
+            )
+            if identity in seen_advisories:
+                continue
+            seen_advisories.add(identity)
+            centre_advisories.append(held)
+            advisories.append(held)
+        receipts.append({
+            "centre": centre,
+            "provider": (snapshot or mounted_entry or {}).get("provider"),
+            "status": status,
+            "coverage_status": (
+                (snapshot or {}).get("coverage_status")
+                or ("fetch_not_returned" if mounted_entry else "not_mounted")
+            ),
+            "reached": status in {"available", "partial"},
+            "advisory_count": len(centre_advisories),
+            "source_url": (snapshot or {}).get("source_url"),
+            "freshness_status": (snapshot or {}).get("freshness_status"),
+            "listing_latest_utc": (snapshot or {}).get("listing_latest_utc"),
+            "next_advisory_due": (snapshot or {}).get("next_advisory_due"),
+            "next_advisory_notes": list(
+                (snapshot or {}).get("next_advisory_notes") or []
+            ),
+        })
+
+    reached = [
+        str(receipt["centre"])
+        for receipt in receipts
+        if receipt["reached"]
+    ]
+    if (
+        responsible
+        and not responsibility_review_required
+        and all(receipt["status"] == "available" for receipt in receipts)
+    ):
+        source_status = "available"
+    elif reached:
+        source_status = "partial"
+    else:
+        source_status = "unavailable"
+
+    reasons = {"direct_vaa_applicability_not_assessed"}
+    if responsibility_review_required:
+        reasons.add("responsible_vaac_unresolved")
+    if source_status == "partial":
+        reasons.add("direct_vaac_coverage_partial")
+    elif source_status == "unavailable":
+        relevant_mounted = any(centre in mounted_by_centre for centre in responsible)
+        reasons.add(
+            "direct_vaac_advisory_source_unavailable"
+            if relevant_mounted
+            else "direct_vaac_advisory_source_not_mounted"
+        )
+
+    if not route_points:
+        responsible_line = (
+            "Responsible VAAC for this route is unresolved - no route "
+            "coordinates are held; review coverage directly."
+        )
+    elif responsible:
+        named = ", ".join(responsible)
+        missing = [
+            str(receipt["centre"])
+            for receipt in receipts
+            if not receipt["reached"]
+        ]
+        responsible_line = (
+            f"Responsible for this route: {named}"
+            + (
+                " - all reached"
+                if not missing
+                else f" - NOT reached: {', '.join(missing)} (review gap)"
+            )
+            + (
+                "; boundary segments need review"
+                if responsibility.get("review_required")
+                else ""
+            )
+        )
+    else:
+        responsible_line = (
+            "Responsible VAAC for this route could not be settled from the "
+            "Doc 9766 areas - review coverage directly."
+        )
+
+    return {
+        "schema_version": "1.0",
+        "product": "VAA",
+        "status": "review_required",
+        "source_status": source_status,
+        "applicability_status": "not_assessed",
+        "reason_codes": sorted(reasons),
+        "responsible_centres": responsible,
+        "reached_responsible_centres": reached,
+        "responsible_centre_receipts": receipts,
+        "responsible_line": responsible_line,
+        "responsibility_review_required": responsibility_review_required,
+        "unresolved_route_points": int(
+            responsibility.get("unresolved_points") or 0
+        ),
+        "responsibility_source": responsibility.get("source"),
+        "official_advisory_count": len(advisories),
+        "official_advisories": advisories,
+        "source_note": (
+            "Official direct VAAC VAA snapshots from route-responsible centres. "
+            "Source reach and held advisory count are reported; route/time/level "
+            "applicability is not assessed from point-in-time phases."
+        ),
+    }
+
+
+_EARTH_RADIUS_NM = 3440.065
+
+
+def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    from math import asin, cos, radians, sin, sqrt
+
+    phi1, phi2 = radians(lat1), radians(lat2)
+    dphi = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlon / 2) ** 2
+    return 2 * _EARTH_RADIUS_NM * asin(sqrt(a))
+
+
+def _point_to_route_distance_nm(
+    waypoints: list[dict[str, Any]],
+    latitude: float,
+    longitude: float,
+) -> float | None:
+    """Great-circle distance from a point to the filed route polyline."""
+    from math import asin, atan2, cos, radians, sin
+
+    points = [
+        (float(wp["latitude"]), float(wp["longitude"]))
+        for wp in waypoints
+        if wp.get("latitude") is not None and wp.get("longitude") is not None
+    ]
+    if not points:
+        return None
+    if len(points) == 1:
+        return _haversine_nm(points[0][0], points[0][1], latitude, longitude)
+
+    def bearing(a: tuple[float, float], b: tuple[float, float]) -> float:
+        phi1, phi2 = radians(a[0]), radians(b[0])
+        dlon = radians(b[1] - a[1])
+        y = sin(dlon) * cos(phi2)
+        x = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(dlon)
+        return atan2(y, x)
+
+    best: float | None = None
+    for start, end in zip(points, points[1:]):
+        d_start = _haversine_nm(start[0], start[1], latitude, longitude)
+        d_end = _haversine_nm(end[0], end[1], latitude, longitude)
+        segment_nm = _haversine_nm(start[0], start[1], end[0], end[1])
+        candidate = min(d_start, d_end)
+        if segment_nm > 0.1:
+            delta13 = d_start / _EARTH_RADIUS_NM
+            theta13 = bearing(start, (latitude, longitude))
+            theta12 = bearing(start, end)
+            xt = asin(max(
+                -1.0,
+                min(1.0, sin(delta13) * sin(theta13 - theta12)),
+            )) * _EARTH_RADIUS_NM
+            # atan2 preserves the along-track sign.  The former acos form
+            # discarded it, so a point behind the segment start could appear
+            # to sit on the route and produce a false corridor hit.
+            along = atan2(
+                sin(delta13) * cos(theta13 - theta12),
+                cos(delta13),
+            ) * _EARTH_RADIUS_NM
+            if 0.0 <= along <= segment_nm:
+                candidate = min(candidate, abs(xt))
+        best = candidate if best is None else min(best, candidate)
+    return best
+
+
+def volcano_proximity_from_snapshots(
+    flight: dict[str, Any],
+    snapshots: list[dict[str, Any]],
+    corridor_nm: float = 200.0,
+) -> dict[str, Any]:
+    """Distance from the filed route to each advisory's printed volcano PSN.
+
+    Built only from official advisories already held (their own PSN line), so
+    there is no external volcano catalogue to license or go stale — a volcano
+    appears here exactly when a VAAC is talking about it (boss's REV1 page 2:
+    named volcanoes with distances and colour codes).
+    """
+    waypoints = [
+        waypoint
+        for waypoint in (flight.get("route_waypoints") or [])
+        if waypoint.get("latitude") is not None
+        and waypoint.get("longitude") is not None
+    ]
+    result: dict[str, Any] = {
+        "corridor_nm": corridor_nm,
+        "basis": (
+            "Great-circle distance from the filed route to each held "
+            "advisory's printed PSN; proximity is not ash presence."
+        ),
+        "entries": [],
+    }
+    if len(waypoints) < 2:
+        result["status"] = "route_geometry_unavailable"
+        return result
+    latest_by_volcano: dict[str, dict[str, Any]] = {}
+    for snapshot in snapshots or []:
+        for advisory in snapshot.get("advisories") or []:
+            position = advisory.get("volcano_position")
+            volcano = str(advisory.get("volcano") or "").strip()
+            if not position or not volcano:
+                continue
+            key = volcano.upper()
+            held = latest_by_volcano.get(key)
+            if held and str(held.get("issued_at_utc") or "") >= str(
+                advisory.get("issued_at_utc") or ""
+            ):
+                continue
+            centre = " ".join(
+                str(
+                    advisory.get("centre")
+                    or advisory.get("vaac")
+                    or snapshot.get("centre")
+                    or ""
+                ).upper().split()
+            )
+            latest_by_volcano[key] = {
+                **advisory,
+                "centre": centre or None,
+            }
+    entries: list[dict[str, Any]] = []
+    for advisory in latest_by_volcano.values():
+        position = advisory["volcano_position"]
+        distance = _point_to_route_distance_nm(
+            waypoints,
+            float(position["latitude"]),
+            float(position["longitude"]),
+        )
+        if distance is None:
+            continue
+        entries.append({
+            "volcano": advisory.get("volcano"),
+            "centre": advisory.get("centre"),
+            "advisory_number": advisory.get("advisory_number"),
+            "aviation_colour_code": advisory.get("aviation_colour_code"),
+            "position": position,
+            "distance_nm": round(distance, 1),
+            "within_corridor": distance <= corridor_nm,
+            "issued_at_utc": advisory.get("issued_at_utc"),
+            "next_advisory": advisory.get("next_advisory"),
+        })
+    entries.sort(key=lambda entry: entry["distance_nm"])
+    result["entries"] = entries
+    result["status"] = "held"
+    return result
 
 
 def assess_volcanic_ash(
@@ -1067,7 +1536,11 @@ def assess_volcanic_ash(
                 "advisories": [],
                 "error": "Unsupported ODSS_VA_SIGMET_SOURCE setting",
             }
-    review = evaluate_vaa(flight, snapshot, embedded)
+    # ``evaluate_vaa`` evaluates the international VA SIGMET feed.  Preserve
+    # that result as its own product contract before adding the historical
+    # direct-VAAC coverage fields used by older callers.
+    va_sigmet_review = evaluate_vaa(flight, snapshot, embedded)
+    va_sigmet_review["product"] = "VA_SIGMET"
     mounted = mounted_vaac_centres()
     direct_snapshots = (
         [direct_snapshot]
@@ -1075,11 +1548,21 @@ def assess_volcanic_ash(
         else fetch_mounted_vaac_snapshots(flight, mounted)
     )
     direct_snapshots = [item for item in direct_snapshots if item]
+    direct_vaa_source_review = build_direct_vaa_source_review(
+        flight,
+        snapshots=direct_snapshots,
+        mounted=mounted,
+    )
     direct_snapshot = merge_vaac_snapshots(direct_snapshots)
     direct_vaac_available = bool(
         direct_snapshot
         and direct_snapshot.get("status") in {"available", "partial"}
     )
+
+    # Backward-compatible combined review.  Its historical fail-closed status
+    # and reason codes remain available to existing reports while new callers
+    # consume ``va_sigmet_review`` and ``direct_vaa_source_review`` directly.
+    review = deepcopy(va_sigmet_review)
     review["direct_vaac_snapshot"] = direct_snapshot
     # Every ICAO centre is named. Unmounted centres remain explicit gaps rather
     # than vanishing from the receipt and making partial coverage look global.
@@ -1103,6 +1586,12 @@ def assess_volcanic_ash(
             "review_required_when_missing": True,
         },
     }
+    review["direct_vaa_source_review"] = direct_vaa_source_review
+    # REV1 page 2: named volcanoes with route distances and colour codes,
+    # derived only from advisories actually held.
+    volcano_proximity = volcano_proximity_from_snapshots(flight, direct_snapshots)
+    review["volcano_proximity"] = volcano_proximity
+    va_sigmet_review["volcano_proximity"] = volcano_proximity
     if snapshot.get("provider") == "noaa-awc-international-sigmet" and not direct_vaac_available:
         # A centre that is mounted but did not answer is a different gap from no
         # centre being mounted at all, and the pilot receipt says which it was.
@@ -1124,6 +1613,8 @@ def assess_volcanic_ash(
         ))
         if review.get("status") == "not_applicable":
             review["status"] = "review_required"
+    flight["va_sigmet_review"] = va_sigmet_review
+    flight["direct_vaa_source_review"] = direct_vaa_source_review
     flight["vaa_review"] = review
     return review
 
@@ -1132,6 +1623,7 @@ __all__ = [
     "AWC_ISIGMET_URL",
     "AWC_SUPPORTED_HAZARDS",
     "assess_volcanic_ash",
+    "build_direct_vaa_source_review",
     "evaluate_vaa",
     "extract_embedded_vaa",
     "fetch_awc_snapshot",
@@ -1143,4 +1635,5 @@ __all__ = [
     "merge_vaac_snapshots",
     "mounted_vaac_centres",
     "vaac_centre_ledger",
+    "volcano_proximity_from_snapshots",
 ]

@@ -1,12 +1,43 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from math import isfinite
 from typing import Any
 
 from ..odss.constants import edto_sectors
+from ..odss.enrichment import ofp_volcano_records
 from .config import MapSettings
 from .contract import MapBounds, MapContract
 from .labels import choose_priority_labels, role_priority
+
+
+def _circle_geometry(
+    latitude: float,
+    longitude: float,
+    radius_nm: float,
+    points: int = 36,
+) -> dict[str, Any]:
+    """A great-circle ring polygon around a point, for proximity display."""
+    from math import asin, atan2, cos, degrees, radians, sin
+
+    delta = radius_nm / 3440.065
+    phi = radians(latitude)
+    lam = radians(longitude)
+    ring: list[list[float]] = []
+    for index in range(points + 1):
+        theta = radians(index * 360.0 / points)
+        phi2 = asin(
+            sin(phi) * cos(delta) + cos(phi) * sin(delta) * cos(theta)
+        )
+        lam2 = lam + atan2(
+            sin(theta) * sin(delta) * cos(phi),
+            cos(delta) - sin(phi) * sin(phi2),
+        )
+        ring.append([
+            round(((degrees(lam2) + 540.0) % 360.0) - 180.0, 5),
+            round(degrees(phi2), 5),
+        ])
+    return {"type": "Polygon", "coordinates": [ring]}
 
 
 def build_map_contract(
@@ -157,7 +188,7 @@ def build_map_contract(
         "type": "FeatureCollection",
         "features": marker_features,
     }
-    vaa_review = flight.get("vaa_review") or {}
+    va_sigmet_review = flight.get("va_sigmet_review") or flight.get("vaa_review") or {}
     sigmet_review = flight.get("sigmet_review") or {}
     tropical_cyclone_review = flight.get("tropical_cyclone_review") or {}
     sigmet_features = (
@@ -166,10 +197,87 @@ def build_map_contract(
         else []
     )
     vaa_features = (
-        list(vaa_review.get("hazard_features") or [])
-        if vaa_review.get("status") == "affected"
+        list(va_sigmet_review.get("hazard_features") or [])
+        if va_sigmet_review.get("status") == "affected"
         else []
     )
+    # A held ash advisory is drawn even when the verified result is
+    # no-intersection (boss 30 Aug: "develop the polygon"); the feature's
+    # hazard_state property lets the client style monitoring vs affecting.
+    vaa_features = vaa_features + list(
+        va_sigmet_review.get("monitoring_features") or []
+    )
+    # REV1 page 2: a proximity ring per advisory volcano near the corridor.
+    # Rings ride the hazards collection tagged volcano_ring/volcano_marker so
+    # the client styles them apart from ash geometry; proximity is not ash.
+    volcano_proximity = va_sigmet_review.get("volcano_proximity") or {}
+    corridor_nm = float(volcano_proximity.get("corridor_nm") or 200.0)
+    for entry in volcano_proximity.get("entries") or []:
+        position = entry.get("position") or {}
+        latitude = position.get("latitude")
+        longitude = position.get("longitude")
+        if latitude is None or longitude is None:
+            continue
+        distance_nm = float(entry.get("distance_nm") or 0.0)
+        if distance_nm > corridor_nm * 3:
+            # Display bound only: distant advisory volcanoes stay in the
+            # review list; drawing every global ring would bury the route.
+            continue
+        properties = {
+            "volcano": entry.get("volcano"),
+            "centre": entry.get("centre"),
+            "aviation_colour_code": entry.get("aviation_colour_code"),
+            "distance_nm": distance_nm,
+            "within_corridor": bool(entry.get("within_corridor")),
+            "corridor_nm": corridor_nm,
+            "not_for_navigation": True,
+        }
+        vaa_features = vaa_features + [
+            {
+                "type": "Feature",
+                "id": f"volcano-ring:{entry.get('volcano')}",
+                "geometry": _circle_geometry(
+                    float(latitude), float(longitude), corridor_nm
+                ),
+                "properties": {**properties, "volcano_ring": True},
+            },
+            {
+                "type": "Feature",
+                "id": f"volcano:{entry.get('volcano')}",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(longitude), float(latitude)],
+                },
+                "properties": {**properties, "volcano_marker": True},
+            },
+        ]
+    # A source-held NOTAM position is a location marker, not an ash polygon,
+    # proximity finding or current activity claim. Preserve source identity
+    # even when an official VAAC advisory also names the same volcano.
+    for advisory in ofp_volcano_records(flight):
+        position = advisory.get("volcano_position") or {}
+        if position.get("source") != "ofp_printed_position":
+            continue
+        latitude, longitude = position.get("latitude"), position.get("longitude")
+        if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
+                   for value in (latitude, longitude)):
+            continue
+        if abs(latitude) > 90 or abs(longitude) > 180:
+            continue
+        vaa_features.append({
+            "type": "Feature",
+            "id": advisory.get("source_id") or f"ofp-volcano:{advisory.get('volcano')}:{advisory.get('notam_id')}",
+            "geometry": {"type": "Point", "coordinates": [longitude, latitude]},
+            "properties": {
+                "volcano_marker": True,
+                "volcano": advisory.get("volcano"),
+                "notam_id": advisory.get("notam_id"),
+                "source_id": advisory.get("source_id"),
+                "source_page": advisory.get("source_page"),
+                "source": "ofp_printed_position",
+                "not_for_navigation": True,
+            },
+        })
     tropical_cyclone_features = (
         list(tropical_cyclone_review.get("hazard_features") or [])
         if tropical_cyclone_review.get("status") == "affected"
@@ -219,7 +327,9 @@ def build_map_contract(
             "label_count": len(labels),
             "hazard_count": len(hazard_features),
             "sigmet_status": sigmet_review.get("status"),
-            "vaa_status": vaa_review.get("status"),
+            "va_sigmet_status": va_sigmet_review.get("status"),
+            # Deprecated alias retained for older map clients.
+            "vaa_status": va_sigmet_review.get("status"),
             "tropical_cyclone_status": tropical_cyclone_review.get("status"),
             "actual_takeoff_utc": flight.get("actual_takeoff_utc"),
             "edto_sector_count": len(edto_sectors(flight.get("edto"))),
@@ -306,6 +416,17 @@ def _significance_index(
     for point in points:
         name = _normalized_name(point)
         raw_name = str(point.get("name") or "").upper()
+        vws = point.get("vws")
+        # The controlled ODSS engine defines a trigger as strictly greater
+        # than 004. Publish that governed result as a marker role so browser
+        # presentation never reinterprets or relaxes the threshold.
+        if (
+            isinstance(vws, (int, float))
+            and not isinstance(vws, bool)
+            and isfinite(float(vws))
+            and float(vws) > 4
+        ):
+            index[name].add("vws_trigger")
         if point.get("fir_boundary"):
             index[name].add("fir")
         if raw_name == "TOC":

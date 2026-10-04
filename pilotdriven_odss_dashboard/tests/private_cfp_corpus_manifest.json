@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
- "extraction_contract_version": 1,
+ "extraction_contract_version": 2,
  "description": "Private physical-PDF release corpus. Files remain outside git; exact hashes make the gate reproducible and fail closed.",
- "extraction_baseline_policy": "Frozen and reviewed from fresh current full-analysis outputs of the exact SHA-pinned sources with live NOAA AWC disabled. Counts and SHA-256 digests cover all full ordered deterministic records. Any parser change requires deliberate evidence review and explicit remint; the release runner never derives or blesses these values.",
+ "extraction_baseline_policy": "Frozen and reviewed from fresh current full-analysis outputs of the exact SHA-pinned sources with live NOAA AWC disabled. Counts and SHA-256 digests cover all full ordered deterministic records. Any parser change requires deliberate evidence review and explicit remint; the release runner never derives or blesses these values. On 2026-09-09, 22 planning-publication digests were deliberately reminted after independent source-page verification of previously omitted inline PLAN QNH and PLAN WIND values. All source hashes, counts and other extraction digests remain unchanged; wind tokens are retained as printed without conversion. On 2026-09-19, five deferred_items counts and digests were deliberately reminted (SQ882-SIN-HKG-10SEP 5->7, SQ214-PER-SIN-19AUG 5->6, SQ606-SIN-ICN-06SEP 3->5, SQ322-SIN-LHR 2->3, SQ482-SIN-JNB 1->2) after the production audit found page-1 declarations the parser never extracted (labels beyond EE, the EN kind, unrecognised kinds). Each new value was checked against an independent hand reading of the source page cross-checked with Poppler (tests/fixtures/page1_source_declarations.json); the remint aborted unless every other pinned count and digest was byte-identical, and they were. Later the same day, after independent review, the SQ24-SIN-JFK-15AUG deferred_items digest (count unchanged at 1) was deliberately reminted: its one CDL no longer holds the general ZFW, EDTO, take-off and excess-fuel remarks printed after a paragraph break beneath it, which are now held in page1_remarks. Every other pinned count and digest was byte-identical. On 2026-09-22, two fuel_enroute_airports counts and digests were deliberately reminted (SQ303-BRU-SIN 52->50, SQ352-SIN-CPH 2->1) after the production audit found two NOTAM item-E lines being read as aerodromes. A LIDO item-E body sits inside the appendix the station scanner walks and prints in the same AAAA/BBB name shape a station header uses, so 'ELEV/HGT (FT) - 135/153' and 'DVOR/DME STJ 113.200MHZ/CH 79X U/S' were published as airports and the dashboard's Jump to airport offered both. The removed identities are exactly ELEV and DVOR, in exactly the two corpus files whose sources contain those lines; the other 27 files' station lists are byte-identical, no file lost a genuine aerodrome, and every other pinned count and digest was byte-identical. Each new value was checked against an independent recomputation from the source PDF before the remint was accepted. Evidence: output/pd-boss-fixes-20260922/b5-odss-station-identity/. On 2026-09-23, after the independent production audit of release 402 found the fuel-enroute section of SQ365 running on into its EDTO ADEQUATE ENROUTE AIRPORT(S) section, the airport-section heading pattern was completed to every heading the 28 held OFPs print (EDTO/ETOPS suitable and adequate, bare adequate, CRITICAL EDTO AIRPORTS, EDTO ENROUTE ALTN AIRPORTS, DESTINATION ALTERNATE(S)) and 25 cases were deliberately reminted. Five had held every station after their fuel-enroute section as a fuel-enroute airport with its notices and weather: SQ365-FCO-SIN fuel/notams/weather 35/206/154 -> 1/62/17, SQ605-ICN-SIN-08SEP 17/128/77 -> 1/42/13, SQ303-BRU-SIN 50/289/212 -> 1/64/17, SQ214-PER-SIN 7/56/46 -> 1/41/16, SQ482-SIN-JNB 15/122/66 -> 1/56/22 (the weather list runs FUEL ENROUTE, CRITICAL EDTO, ADEQUATE). In every one of the 25 the last notice before a heading the pattern had not named had that heading appended to its text (SQ352 EKCH SX1/26 ended 'DESTINATION ALTERNATE(S)', VOMM 1G1146/24 'EDTO ADEQUATE ENROUTE AIRPORT(S)'); only the notams digest moves on the other 20 and the counts are unchanged. Each new value was recomputed by this runner's own snapshot from the full corpus run on the fixed tree; a verifier classed every changed record as either a removed fuel-station record, a dropped heading tail, or the false fuel source_role removed from a retained weather record at a planning station the source does not file as fuel-enroute (SQ303 VTBD/EDDM, SQ365 EDDM, SQ482 WIMM/VCBI/FIMP; text, other fields and order unchanged), and required every other pinned count and digest, and every planning station's applicability windows, byte-identical - they were. 50 pinned values move in 25 cases. Live NOAA AWC weather is not pinned. Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r9-adequate-roles/. On 2026-09-24, after the independent production QA of release 418 found the genuine SQ366 and SQ23 OFPs printing TIBA / contact / voice instructions the parser never held (it admitted only FIR-headed CPDLC / ADS-C notices), the notam_procedure_records counts and digests were deliberately reminted in 24 cases: the parser now holds every record under a FIR or airway-segment heading whose body prints a communication instruction (contact / CTC / call, establish or maintain contact, report position, monitor a frequency, comply with TIBA / broadcast / transmission, logon, CPDLC / ADS-C) and each record carries heading_kind, fir and segment. A verifier over this runner's own full corpus run on the fixed tree, against the release-418 gate-6 analyses, required every previously held record to be retained with identical identity, validity, heading, page and text (it was, in every case), classified every added record by heading kind and instruction kind ({'fir/voice_contact': 22, 'fir/tiba_broadcast': 16, 'segment/tiba_broadcast': 11, 'segment/voice_contact': 10}), and required every other pinned count and digest to be byte-identical (they were). No source hash, route hash or other extraction field moved. Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r20-atc-source-coverage/design/remint-verifier-report.txt. On 2026-09-26, after the independent production QA of release 432 found the genuine SQ322 Kabul notices (1G272/26, 1G216/26, 1G197/26) held under the previous airway-segment heading because 'OAKX  KABUL FIR' is printed at the foot of p70 with its underline on p71, the NOTAM heading readers were made to read across page breaks and every procedure record was given heading_page (the page its heading is printed on); the notam_procedure_records digests were deliberately reminted in 24 cases (counts unchanged). A verifier (remint_verifier.py) required release 432's own gate-6 analyses to reproduce every previously pinned value, required every other pinned count and digest to be byte-identical on the repaired tree, and classified every record: 121 gained only heading_page and 3 changed owner - exactly the three SQ322 Kabul records, each now under the heading an independent poppler-text oracle names (124/124 records agree, heading and page). Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r26-heading-ownership/corpus-audit/. On 2026-09-27, after the independent QA of release 436 asked for ATC/FIR completeness under headings such as 'UBBA BAKU FIR LOWER' and 'KZNY NEW YORK DOMESTIC LOWER', the NOTAM heading readers were made to recognise FIR headings that name the airspace part (FIR/UIR followed by LOWER, UPPER, OCEANIC or DOMESTIC, and DOMESTIC or OCEANIC with LOWER or UPPER), kept as the record's `airspace`, and to hold notices under enroute topic headings (heading_kind 'topic', owner not established); the notam_procedure_records counts and digests were deliberately reminted in 7 cases. A verifier (remint_verifier_r28.py) required release 436's own gate-6 analyses to reproduce every previously pinned value, required every other pinned count and digest to be byte-identical on the repaired tree, and required all 124 previously held records to be kept byte-identical and in order; the 14 added records (11 under airspace-part FIR headings, 3 under topic headings) each sit under the heading and page an independent poppler-text oracle names (138/138 records agree). Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r28-remaining-gaps/corpus-audit/. On 2026-09-30, after the independent ITEM1 source/body/owner/label/page, admission, condition and saved-source review cleared freeze4 SHA 7ef7fe8e2a3e83df713591affddc4b0399e880537a1973e5fdfb6cfa3de06bd1, only notam_procedure_records counts and digests were deliberately reminted from the exact 28 unchanged originals. All 138 previously held full ordered records retain every original field and value; 177 source-backed records were added, yielding 315 held and 315 composed. Structural headings and qualified communications/aircraft-control duties are retained without inventing applicability, calls, channels or crossing times. Owning headings and literal series labels are separate provenance; incompatible series prefixes remain unassociated. Every unrelated extraction count/digest, route identity and source hash is unchanged. Evidence: output/pd-item1-atc-repair-20260930/freeze-4/extraction-delta-verification.json and output/pd-item1-atc-qa-20260930/LOCAL-DONECHECK-freeze4.md. These local corpus pins do not establish production acceptance. On 2026-10-01, after the independent production QA of release 444 found SQ23 CO188/02 (LTAA ANKARA FIR p106: a crew refusal of Ercan-issued clearances and a contention-conditioned clarification from Nicosia Control) in the normal raw FIR source but absent from the structured ATC record, and the same enumerated-verb gap dropped the SQ605/SQ606 NON-RNAV radar-vector requests to DAEGU/INCHEON ACC, the parser admission (extraction v7, ATC-CLEARANCE-FAMILY) was extended to a request, clarification or confirmation addressed to an ATC unit and the refusal or acceptance of an ATC clearance or ATC instruction, on positive ATC evidence only. Only notam_procedure_records counts and digests were deliberately reminted, in exactly 11 cases: 13 records were added (CO188/02 x9 at its own LTAA heading and page in SQ23, SQ303, SQ304, SQ314, SQ322, SQ326, SQ352, SQ365 and SQ366; 1Z624/26 under SOT SONGTAN in SQ605 p60 and SQ606 p72; SX62/26 and SX40/26 under PSN BUSAN in SQ606 p75). All 315 previously held full records are byte-identical and in order; every other pinned count and digest and every source and route identity is unchanged. Each added record's heading, page, validity and full body equals the independent original-source acceptance packet (output/pd-item1-atc-repair-20260930/support-readonly/CO188-ACC-acceptance-20261001/SOURCE-ACCEPTANCE.json); the CO188/02 bodies on the other eight originals are identical to the SQ23 p106 body it checks. Evidence: output/pd-item1-atc-repair-20260930/clearance-family-20261001/extraction-delta-verification.json. These local corpus pins do not establish production acceptance.",
  "cases": [
   {
    "case_id": "SQ223-SIN-PER",
@@ -25,17 +25,25 @@
      "edto_sectors": 1,
      "edto_airports": 1,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 39
+     "route_waypoints": 39,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "2f35e6693251f393237b9f6275cd56cf503824b8b1545028fa067094e5748175",
-     "weather": "3e53cff3cdf3dd4d2332f3b38c98b2329d9153708a833c47cff21c5fb65fe2c1",
+     "notams": "cc927a8a35262c4e0a6dc433ddf0d4fff8b6a48f7cf377d26ec51ca9c499a69c",
+     "weather": "0f5628f4d6b00a0448563756f5b68dbe2474d6bb86748000eb011533918e57d6",
      "alternates": "783af50ccf71cd6c45bd4b76ba6a17820b236412ee01c697491d6a7f6432c0ad",
      "deferred_items": "0183b22bc39d341a31fcf8c87cf46d48670822948dc768a0b0c3744cd8d37b37",
      "edto_sectors": "acb73c0ea7e122dcb4674c256186b30d1ca4d431661eee6a8b53ccdbfa4b4d73",
      "edto_airports": "ebc205db3f05c7fbe07ebbd2e64d8410bc898711d9638772d9fc524c5e2c74e4",
      "fuel_enroute_airports": "59db7d337dccc8331aa924dfac93fdce2bc4060595b9239d368f6455e6fb8d87",
-     "route_waypoints": "db36152e3f1aa73c5d1f51e626cd08fb6b3b7483618c4eff19e48e2c5dcb3280"
+     "route_waypoints": "db36152e3f1aa73c5d1f51e626cd08fb6b3b7483618c4eff19e48e2c5dcb3280",
+     "flight_planning_etps": "aaecdfb584379fd1a3aafc81264646be44a6cde0dff98d34bccf5b9ceff72c64",
+     "intam_records": "dd4f7a08be7b2f5e06f2d67a43f4830c453ff8f4845b4a7fc3b66fecab53e174",
+     "notam_procedure_records": "bff05f723a37132fab271eb228e3c8556de4e13505674be51c5a5b384bf00f62",
+     "planning_publication": "19feddc18047821672e92180586799eec23b2f4ea96c4c41339e68f8eadf8ca3"
     }
    }
   },
@@ -60,17 +68,25 @@
      "edto_sectors": 1,
      "edto_airports": 2,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 146
+     "route_waypoints": 146,
+     "flight_planning_etps": 1,
+     "intam_records": 25,
+     "notam_procedure_records": 29,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "8a52c2b905490e893537b907de147ea35e7e9a40339525f0a82362435e91630c",
-     "weather": "e28cf06072b1220efa4d1093ed0bbdb52b62bba018ee270cd32deb38eb5d9296",
+     "notams": "3d6a01b7a992137856b83e389744400e0ed3aa923f296f32938e4d7fe07ef356",
+     "weather": "c428c953c1ac258e4950b10b1191ecb6ee76ce066140c37af0c5be4aafbfd2df",
      "alternates": "69076fdb860bf4254ea6d895250c47a53d9b03299dd3ca2ad5d62b7a8e916419",
      "deferred_items": "0b9dc0d7a292d031805a92552367f9a4f2404f6f352ef597f6ba29556f956a70",
      "edto_sectors": "381804694bf9dcbdf1e6abad6d2bc091ca3b0c6b2bf68dd5a19004aa35598426",
      "edto_airports": "6a55be0b1e5ad04b15638b830907a50909e9869bfe4782fb0ceab3967176d079",
      "fuel_enroute_airports": "6a2dbed52390b4a496f37ff0d450a27a8cc4e67242406d55745d4b22ffb78fa0",
-     "route_waypoints": "f3e0800a81011b4f2ad9ba41141f0c8c33204b2088ad72d15382bb816e961740"
+     "route_waypoints": "f3e0800a81011b4f2ad9ba41141f0c8c33204b2088ad72d15382bb816e961740",
+     "flight_planning_etps": "e5a4f69f2481b12d94f77f9ebba9a7b0f15834fafaddf01b497a42bc84664cbf",
+     "intam_records": "72ee05763a4c2534c3cccb578dab3b145f56b352b9ba441320c47d818136221d",
+     "notam_procedure_records": "a9f39fe26c8e76235bf65007172437072a074327ef377df7ade575d7ca6d44b5",
+     "planning_publication": "ec24addb0b44ba46d992f1cbfe4b004622ce9c9585a43aa47f373eff20d6dcfe"
     }
    }
   },
@@ -95,17 +111,25 @@
      "edto_sectors": 1,
      "edto_airports": 2,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 150
+     "route_waypoints": 150,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 27,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "5989a74ad95687411f7c34e313083983e01f94d5620c68fbf3e145b3188e4476",
-     "weather": "77959b63b59f28b392c2b2c63bcce102450cf0122b3c92331c2d54b4769dbb91",
+     "notams": "407c1daed37ebe9f88cac0acb103a2272c96f7f60fdf49bf0083f6f219e5e2b9",
+     "weather": "5844e78ad7afaca457e3a7d1ce0da2ae1ea5e37cc2b9d555c4ef39a7ca6c96df",
      "alternates": "f8a95e642e2fe8e84b891188f9eacef962d3e62d89ccafc814aca8ded776bdb6",
      "deferred_items": "f190c4c2073a874f5caf9effebe3be6981c25551e50ee236bea41019bda0092e",
      "edto_sectors": "1620ff3bdf564d303b6146e57e808317f9606f433dc6d4a39a764d31d9df9ae9",
      "edto_airports": "6dcd1d15fd65818a0559072cc78c0e2f759f518a517f2b50ea98ee548ea0c417",
      "fuel_enroute_airports": "f8b8a2b8de228247d9e0a919d13a6c3c716b5225d7c745a27e3d70daffdd4bde",
-     "route_waypoints": "44ff1d518a617c00dbda09f69f364654b544ff36bae4afa90bbdb09dd4a7a124"
+     "route_waypoints": "44ff1d518a617c00dbda09f69f364654b544ff36bae4afa90bbdb09dd4a7a124",
+     "flight_planning_etps": "4cf0397bf273f76cba282861907348cb695a30748a9b02d778e655ca56ee0844",
+     "intam_records": "d06bdb33f281385042f7b58ea777b88e73e10dde710048fe095a52c7eeb3b5a2",
+     "notam_procedure_records": "80f41ed78f321b6f49aef081b980c306a1b9e6abe830cfc48e76c6a3bf4307c1",
+     "planning_publication": "81e857ce472c8a7020068307ff01f4e05f4f8de52a95037417bd9dc744c74706"
     }
    }
   },
@@ -130,17 +154,25 @@
      "edto_sectors": 3,
      "edto_airports": 4,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 118
+     "route_waypoints": 118,
+     "flight_planning_etps": 1,
+     "intam_records": 24,
+     "notam_procedure_records": 19,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "802b9169ba2b378e91516a10ab85ec2fe34c0507a1ad08211c5a379691cf3172",
-     "weather": "67bf4cb0addbddbc02b223f9bcea7549f1da3529244693e547cd3e98ba68b36a",
+     "notams": "1dd4563bb9fbb1180690900127277cf2764e3295f8e26c80741347c7c2735766",
+     "weather": "8631e5a81d72909411973fa5607d6ff86861e9bb9547c5729ce130d97485cf0b",
      "alternates": "842c0e1f52804ea76d5752f9ac5a7109030347153f63d66ef70ad40ed02c1402",
      "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_sectors": "d6dcda71bed7681e3155966f1f237b0db2414118b788e0d1a344630712730a88",
      "edto_airports": "d7d102f47dccb9fee84ebe75ef9203c5a6eb309ec57f01dfcdf5bed4534e9c26",
      "fuel_enroute_airports": "959b2668d13b6cab6a541661e4cfdbb7647f1fb50c3fafe27252c90a6da1e7a3",
-     "route_waypoints": "3e434a6893583b69393d8191a7ce3167c165cfdc68de04294516e50f13048648"
+     "route_waypoints": "3e434a6893583b69393d8191a7ce3167c165cfdc68de04294516e50f13048648",
+     "flight_planning_etps": "357499099f6612be6f5fa6d02cdeaef37bd9358ce5277797b70cef0f3afff974",
+     "intam_records": "426c82d5c0f74c341ffdb0882d23e79944e6e2d66f484b67048fdfbb891a916e",
+     "notam_procedure_records": "e0bee3efe4bafb5aee860470d872c875e9b6fe725a737632e359dcd579ca4d3c",
+     "planning_publication": "8f2da52b8caed129ee7f54f0fc19582482dd4c46014f5326499dc98fff4351e8"
     }
    }
   },
@@ -158,24 +190,32 @@
    "route_hash": "73af662d43350cd49c945af48febdf2da14d38099429ee3d87d2488353943f60",
    "extraction_expectations": {
     "counts": {
-     "notams": 289,
-     "weather": 212,
+     "notams": 64,
+     "weather": 17,
      "alternates": 3,
      "deferred_items": 4,
      "edto_sectors": 1,
      "edto_airports": 1,
-     "fuel_enroute_airports": 52,
-     "route_waypoints": 143
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 143,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 35,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "1005eee2daaeeeb5080c1f1f5480fade9bbeaf028afffd2cb704f49dcc8b4e75",
-     "weather": "14e050672f2846149b1c224bdf73c85a1cadbb2475d7fd5b5284b67c63ab2141",
+     "notams": "c68ba7234757ec3baebacfc3ee856cd15b105e4c56dd5e4de39e348ff398214a",
+     "weather": "67063a220ae6da048a882772797f9d5f25aaad37fd86d99ab7766efa7f3e9694",
      "alternates": "d277f508ed8bb35a0c9d2f927300237d0b4e846ddfa351377f855aa45d7704cf",
      "deferred_items": "3f7f48446b51ccd7663465e2d957da5ac6a08f836279a58cd3151b8ee1b80066",
      "edto_sectors": "2b3bd9e532a4c4ff8761c9e98d60cd33ba03a1bb18f07bd5d7e17ae48078c945",
      "edto_airports": "8025b688e14d257cbd84f8aceb9621b49ae80e11c8c19b403134f5a2240571bc",
-     "fuel_enroute_airports": "3573788ff8e24e7d5bb68c7bdf91e1e05b00f7bfc82f8c63d9f479624d002bd2",
-     "route_waypoints": "4ddbb6361f37b2da373a76eb931b9473fa54c094329b69854dd02334860616c5"
+     "fuel_enroute_airports": "3034c7f5867c3f2b929131d8b45bcfe622313f84b0a4eaa265519dcd43bf2faf",
+     "route_waypoints": "4ddbb6361f37b2da373a76eb931b9473fa54c094329b69854dd02334860616c5",
+     "flight_planning_etps": "8b464f682668d7b649467fce902930f2ed9c7ca0ef0fab3c60404cd5a3e18f5c",
+     "intam_records": "65ef8a0f126b707ec66023dd254bd80bffbeb42f483d2044a408840bd4b6b2e8",
+     "notam_procedure_records": "69d8646419ff9533cf94d8e5f4b8bb56411cb4821a87fb6f8bde533519c6fbe8",
+     "planning_publication": "0932aef41a9c1a37055d15b0e671224bf48711f65d04855b4247503c4c15c15f"
     }
    }
   },
@@ -200,7 +240,11 @@
      "edto_sectors": 2,
      "edto_airports": 3,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 169
+     "route_waypoints": 169,
+     "flight_planning_etps": 1,
+     "intam_records": 28,
+     "notam_procedure_records": 32,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "74e0e21df17fb6e41e55f2ca839d89727022e6d5daecab878482265b0b1db7a5",
@@ -210,7 +254,11 @@
      "edto_sectors": "c755447ef1968a168a17d7c178648a773786368f1e5027cbff21f950286b2aa9",
      "edto_airports": "2df0af0da646f48449b79acf08ed4b42f41c067cd55b265e65b5ff543955cb5a",
      "fuel_enroute_airports": "961983ce7148ce2adff27486879055aa725faa8b9f4af14068565fd6434014d1",
-     "route_waypoints": "bb36bac2a262d2258aee9c75f734304eec938abf74ce265ae3c17bde75622850"
+     "route_waypoints": "bb36bac2a262d2258aee9c75f734304eec938abf74ce265ae3c17bde75622850",
+     "flight_planning_etps": "f27c5eb8e72c1f9af336566d068e3c4fcff94a1ef45364453bc27c89f240905b",
+     "intam_records": "a033de7f3bb34e55ca2b64e8561136f8e8302906bad0579d1e49037ad0ade326",
+     "notam_procedure_records": "5340460725e44cde10fa92f407f0cceb79047f72af1944625e2d54f3b6c75180",
+     "planning_publication": "884af2c66be6762af8d90b5ae54a1f031b58aa180ce281758ee32558a65da23a"
     }
    }
   },
@@ -231,21 +279,29 @@
      "notams": 58,
      "weather": 17,
      "alternates": 4,
-     "deferred_items": 2,
+     "deferred_items": 3,
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 150
+     "route_waypoints": 150,
+     "flight_planning_etps": 1,
+     "intam_records": 25,
+     "notam_procedure_records": 28,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "797cdf922a70442cc913e39a218040c3f2a2c18d88665e0b0ed37adbdf3172d7",
-     "weather": "10060b58e05a25237e6f496d4cfe288166038fc938085bae6e09e46e956cc1dc",
+     "notams": "3f447c110c5b1c3639a1c380dde4d8b25632b6fa18a5310b7517fa55de876cee",
+     "weather": "e29b90df74ffc253fcd4a6b6ad67cfbad7a020defce75363b948be21210e78a4",
      "alternates": "288f7f225355337ffdc6e2d99d9d668d9e0380c6a719d6ee956550477201dedf",
-     "deferred_items": "0b3c39b03283fa4f005f401246f915c44640c287c2535ea24477d12798f4ebfe",
+     "deferred_items": "7c4abb55f6fe86369b544054b9f320fb52225517e5f8779330852796197f70e6",
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "c33b764bc4473320ad2225f19f0a0d55301ed64751b134f731d8ed51639895a0",
-     "route_waypoints": "b56187828bd4d1182c7f176708e012d07591f7ba11ecc7dba490a5e4e55c126f"
+     "route_waypoints": "b56187828bd4d1182c7f176708e012d07591f7ba11ecc7dba490a5e4e55c126f",
+     "flight_planning_etps": "a30172ac419e5cee49fb5b7301e10992f8e6c52bc8f6cdb19ba8ecd41d4600b4",
+     "intam_records": "cab900f03ff720d466ef7708fb3ce1367d51ca19eef0476bd5caa64a3e84e68a",
+     "notam_procedure_records": "41f4ca226ca6ae6ae56711f18ba76f2b1164309d531de1b4eee8f8077d998ccf",
+     "planning_publication": "2752a79afb9f1f72d1daea4d9c2df2db3a6ce3b313eaab0e34bb25ac20adbb4c"
     }
    }
   },
@@ -270,17 +326,25 @@
      "edto_sectors": 1,
      "edto_airports": 3,
      "fuel_enroute_airports": 0,
-     "route_waypoints": 34
+     "route_waypoints": 34,
+     "flight_planning_etps": 1,
+     "intam_records": 26,
+     "notam_procedure_records": 2,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "83745381283da1b913f5253d2af892a43becc8bb0a80c59a4e5bb39965766daa",
+     "notams": "4ccee9b4cfde99ef1e491b84da6979db0838ac7375329e69c656af7ad55b4698",
      "weather": "838e1744f2c5a395789ba64841fe3927761bb5aeee4752962bd38e6d38c62732",
      "alternates": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "deferred_items": "a16cb468f932caf5c1c236d7ed52191cc993161cb214db49f5e7927856b6a2c3",
      "edto_sectors": "9be0b9a6c6c63073d56b31c4e65d6ceb124545f75aae6a66f899a5da8cdf9acd",
      "edto_airports": "4975e31dff3fb7fd4c20921fd0e575fe1f7b836589101659c001c109c45246a4",
      "fuel_enroute_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-     "route_waypoints": "6b3af45ed7054b046091db4a0b509acc2fb6955a7f46c3e04dc7ea66464cb8e5"
+     "route_waypoints": "6b3af45ed7054b046091db4a0b509acc2fb6955a7f46c3e04dc7ea66464cb8e5",
+     "flight_planning_etps": "7ad1ccd21fa42498db94d7cfe38d45190e180120141c7c7a6c17e6f93eb789b7",
+     "intam_records": "1a3d6150908d3e99d9fa2f8fdc4565d14bb1579138d2643b036008516e5f8335",
+     "notam_procedure_records": "634adc0c9693c2d2e610172a3dc3bfd913bf1867d46cac94a073789562b5556d",
+     "planning_publication": "c22a459844c7f02a835af18756f76ad6427e589b0079de1a2231ae8e3c859906"
     }
    }
   },
@@ -305,17 +369,25 @@
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 147
+     "route_waypoints": 147,
+     "flight_planning_etps": 1,
+     "intam_records": 25,
+     "notam_procedure_records": 24,
+     "planning_publication": 1
     },
     "identity_sha256": {
      "notams": "f11b7f3e269fb86031700d77d6136a80145974f6f8cca73f5702c01aa3f70a40",
-     "weather": "afe62f57ab4d5d7481a2c01f32b814a6660f617f28541d7c217fbcba90656c87",
+     "weather": "5a86b1b5b396dcddb20d2541e6bafd618e26a861f76aa02a653d9a118087f591",
      "alternates": "b296fbe48627e5a1c1267b7fa70040b6491d56dbe8846619b7c7c1825466a6da",
      "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "2e3c06c090256cd787470c9d8a3c56699c2ad8021b79b830ddf33659550f355e",
-     "route_waypoints": "959b6bd6aa163df5401e7fbb4e624f0fada4b125372ad0aa470132eb469181eb"
+     "route_waypoints": "959b6bd6aa163df5401e7fbb4e624f0fada4b125372ad0aa470132eb469181eb",
+     "flight_planning_etps": "e8e1a11d84ab102107d10636537058a7b9aee0dc65f20d7aefcbe35b3f3fcf1f",
+     "intam_records": "b64e24e8dbe14f9139a69655bd881a959f0aabb6b2abd15b3911ab3c4253fb72",
+     "notam_procedure_records": "7e9f6befad97cfd8ff7533ec6803849e0a01286dd54cd2f4f470ed0c5ed9d8e8",
+     "planning_publication": "0ef38f51b4a5a7af6c5be2651a79c853453a636e55a52ab6e4f1756bddd74a58"
     }
    }
   },
@@ -333,24 +405,32 @@
    "route_hash": "4ca54149b13be764e4887c8493235cf46adce29f7266285fdf196c3d49cb99c9",
    "extraction_expectations": {
     "counts": {
-     "notams": 122,
-     "weather": 66,
+     "notams": 56,
+     "weather": 22,
      "alternates": 2,
-     "deferred_items": 1,
+     "deferred_items": 2,
      "edto_sectors": 2,
      "edto_airports": 4,
-     "fuel_enroute_airports": 15,
-     "route_waypoints": 51
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 51,
+     "flight_planning_etps": 1,
+     "intam_records": 22,
+     "notam_procedure_records": 6,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "68880895c4d9c19f41590ce850b6e4edd3d4cee05028a5e4f962a9b5f328c2cc",
-     "weather": "8fe96640ac25725823dda0d2bc732e7f92af9a3c5d23069195012b5d7903a7ca",
+     "notams": "5df67ddc2b433dea52db12d5f3f8c16e0d22eb5fc278b4506db06987b62513aa",
+     "weather": "897ae460ae35f8fabb763cb059e8f1728a2e9df76122496ebe66e41080957604",
      "alternates": "34d77872f5207ffee40353a3eee4a7e97781d28b9b1297d516d6e5deb7381508",
-     "deferred_items": "ba0e08fbcd972ecdeefadd7f64892dfe4ec2ab1d696ec442e38b59cc4d29a2be",
+     "deferred_items": "fc900a86121249debcd8bf17d7bfc1a6ade5d03d8b1fe9ccd87d00607854b6f3",
      "edto_sectors": "49cd18d157e20010575aad82eb62152a43a7bc681843f53d807656aafc21178a",
      "edto_airports": "4b202d934f0630f352b4b96b22d49baeb40ed0e64d2d7d57f71b3d25e2ac546a",
-     "fuel_enroute_airports": "a9267bdc48a38687c14f12f22c68478eac62eef276b13aa7297468a6f6fb684d",
-     "route_waypoints": "6807557227188f1e2cc0c4bf26ccad0f1120f90029af56d180a684ff03f566d1"
+     "fuel_enroute_airports": "8f419d95a0a1473803efc10a64bb2d801fec351f32b6942c98bd234f44d3a488",
+     "route_waypoints": "6807557227188f1e2cc0c4bf26ccad0f1120f90029af56d180a684ff03f566d1",
+     "flight_planning_etps": "54482314069d3c3fa59f08cf34d7d53b5aa587d85b0c5860c56928045366653d",
+     "intam_records": "3beac5c403f08aaabb23cb4bbd5695f8c05d6901b46910961e0da225f9e364ee",
+     "notam_procedure_records": "b11d06cb7caa09ff042bea2abad91271ad63d2d3af3f64fff5bf263e70ed2a02",
+     "planning_publication": "12f4a8692818591d12df28123741822a2a9e4c69b0de8a82908dd9cd8742a6c5"
     }
    }
   },
@@ -375,17 +455,25 @@
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 0,
-     "route_waypoints": 35
+     "route_waypoints": 35,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "32569fd13a00f777666c37ea955215965817e3b02c0f3636adf409a44a045e0a",
-     "weather": "ab5ca259642c53d7b0040908e25571810601f97e0c7f68e9f8e1962bdb7e0d6f",
+     "notams": "694122ff4aa4bbafea976dd3a335c505ef4a0f4f979e535e98a72b897f413113",
+     "weather": "3ebee3874ec63a2011afe5c6b454ae34485eb3e1afdf294782ea5fa1ab3157ca",
      "alternates": "36a5e336f0f0098ca545f4705c144f68cea4f535780572adcd26761062489502",
      "deferred_items": "1321a574fe109497b8c391cf276eeeb0718f2e427e92b17eefc7be5acbea7f4c",
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-     "route_waypoints": "8990e9ddbc7aac0c90767ebe0c9167a381c704a0114dd7e93072cfca16fbdfad"
+     "route_waypoints": "8990e9ddbc7aac0c90767ebe0c9167a381c704a0114dd7e93072cfca16fbdfad",
+     "flight_planning_etps": "2dd51bbe50331b65900957e35d984187f3bf1fde2347691942ee8c2935e8010e",
+     "intam_records": "2b982bbd65edd31a015719a494c1a19c222400391cb3a62af5d2faf2cac4a97d",
+     "notam_procedure_records": "29d8a6e6fe2f39af4a73b33e1892c98863e85c0359490b57412855ccdb9d56d2",
+     "planning_publication": "cff7d5266043ed05fd6cdf30a81ff2b7aea1f55d355e0924a575a43a4e5296d2"
     }
    }
   },
@@ -410,17 +498,25 @@
      "edto_sectors": 1,
      "edto_airports": 1,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 35
+     "route_waypoints": 35,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "711972215a1c48561626f04100d90d2fb654fd8b72eac1b25fb4496414ef3bda",
+     "notams": "a56a58e5c700f5f91587aa07a92c8b02657300be4e57fecd3e1cdd7e2b048cb3",
      "weather": "f23236c20562b2953307ccdc49bbf091815e6341a84fb57cc40540ed6a44cbd2",
      "alternates": "7b217e90572e17d22f7548b244acf0a3c15f1ed9639aae89ba530c009a8c19aa",
      "deferred_items": "a24267045327e2fe9e7c44fb6318d212bd72d7404b016e7997cda04925bd636e",
      "edto_sectors": "5c4bc64224e6824ecfc969bb9ab88f2b49fab9dedf05f4cb6bb7b33aeb7fa154",
      "edto_airports": "a07ac79d69366853880b4da511d048505a1766d3a5b11c5435a759b67a7bcca1",
      "fuel_enroute_airports": "76c812382fbb2d17efad94f6b54708cfe8206f457200b07d259c01d016681571",
-     "route_waypoints": "77ea09a8a715a5c25ef66e8bbc3b71f6a90663d3be1cc021ed33b5e63124ac52"
+     "route_waypoints": "77ea09a8a715a5c25ef66e8bbc3b71f6a90663d3be1cc021ed33b5e63124ac52",
+     "flight_planning_etps": "bb08e0766ac9ef70c76b3483e522286a3f639f139180226255e39b4200467355",
+     "intam_records": "903bccad94d90d9638f5b0408e87d552137a9a47ff696e3a2f6e05489467df83",
+     "notam_procedure_records": "eb98da544e88d9b726d2277870ed1ba186b9cf0a9560452b57eb6a000eb03cc7",
+     "planning_publication": "f89cb10c5f2fb0d8821d4fccdc3942c628600add63930ef5bf35468fa832ae76"
     }
    }
   },
@@ -445,17 +541,25 @@
      "edto_sectors": 2,
      "edto_airports": 4,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 55
+     "route_waypoints": 55,
+     "flight_planning_etps": 1,
+     "intam_records": 22,
+     "notam_procedure_records": 2,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "01f8fa6049e7cbd5d993ed72dbface49d9dc927d87c1c838ebcb865a89b55ed2",
-     "weather": "85a455ef0513b1c17f14bef85ad878dad6dc952ba612860ffd8598912d22b7c9",
+     "notams": "cc10f39628c94c641d2887dddb3043413108c73acf24de8e2bec868a90bea57b",
+     "weather": "76d01adae76cfc86f7579400884785f51277c5414aa561e449903f4cf20c2957",
      "alternates": "e05d8b3a78cba7922f3896cc1518600073eda962f1a9c813e7bc37f7bd545f95",
      "deferred_items": "024f4cef5f720c6c47304020c4b399b257d8f9c3b443be6ad268f16706655265",
      "edto_sectors": "8414413547ba147f5d7bc8ad9ad76ac2e27b85cf7a4fc3c4b0d2e322cc7eb427",
      "edto_airports": "1000b49a1589c17258eb451ac2227f57a13871102b8f1787a67e11b317963781",
      "fuel_enroute_airports": "8544adf8b3606cd44d97b2256f78dbc8d440a51d5780ce5980ffc474a2de5135",
-     "route_waypoints": "b07641bd9f028b895aadb37a695bfded1b88c15e3022abb82f68009f814f5251"
+     "route_waypoints": "b07641bd9f028b895aadb37a695bfded1b88c15e3022abb82f68009f814f5251",
+     "flight_planning_etps": "034cb796ac91b3837c8f0190b5e283c2c2f56eab044d258631655bb20b0165af",
+     "intam_records": "48c69703cac36d0684269fba1c22ef601233b2dc93aad1047d417d6e44e03580",
+     "notam_procedure_records": "9437e3c72bc946d5920ab8cb93011db3cf603883fa177abd0c59e862b413c4b2",
+     "planning_publication": "c1c2c88e607bf8709b79c8f05c209f3b283b0a0c5dbb0fabb164868a9430bc63"
     }
    }
   },
@@ -480,17 +584,25 @@
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 43
+     "route_waypoints": 43,
+     "flight_planning_etps": 1,
+     "intam_records": 19,
+     "notam_procedure_records": 3,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "1c778ad3afe70cb91835bcb624185e3fe6b33ddeeb662c36ea8c15ae8bc49c98",
-     "weather": "3dc934a4c36f49684c1582b1e4349c7ad74023ce334ed52d52a893146b24dfcf",
+     "notams": "bd7f8b05869e97b5893d52abf4c5605ca1133a1a786538adf50c573a0e1e5867",
+     "weather": "b55e988b54f5d56b656eb6b77989fd9dd21637c5b7a9b3636758f39e72417376",
      "alternates": "b1a98239764554434d76aede17d0957af04c03d422a36cbb72910b52a3f693ad",
      "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "f4bf5868ca001263e6f0abd6d2bd33659bd292a4877f67d1fe330399e70a442a",
-     "route_waypoints": "1511ebff726efaa46de541a53cc490870ca0c0dfcbb19801ad58392c57529cba"
+     "route_waypoints": "1511ebff726efaa46de541a53cc490870ca0c0dfcbb19801ad58392c57529cba",
+     "flight_planning_etps": "11827c46cb95ccfb71914506062412159c0a5f03d381c866c291f77d9985ae91",
+     "intam_records": "452669c5f08cf3c325730be6edda0ca3bfe36b3c3d817802c9d787dd9edaa46b",
+     "notam_procedure_records": "60aae177f14a1b0180ed1aa15f233c6469e38398a017f0b8d40634f822d83dc1",
+     "planning_publication": "3c12f4b262f916a7f40604be4f7a4200658af739876e1e921ae4d377855b2366"
     }
    }
   },
@@ -508,24 +620,32 @@
    "route_hash": "7eca5c601c924442eefb1805eb2aab952a86608d567451011820c355d061379e",
    "extraction_expectations": {
     "counts": {
-     "notams": 56,
-     "weather": 46,
+     "notams": 41,
+     "weather": 16,
      "alternates": 4,
      "deferred_items": 2,
      "edto_sectors": 1,
      "edto_airports": 1,
-     "fuel_enroute_airports": 7,
-     "route_waypoints": 32
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 32,
+     "flight_planning_etps": 1,
+     "intam_records": 20,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "f1c9e07ea7d2ab655d855ec38bb122865642fce618e433a38684ad69708acf99",
-     "weather": "ec602e745cea9a29d4cfee87095469e454ac02b5dd9339cf8583d32f68efd2cd",
+     "notams": "b7bb3b5134ab809ff5831f25674cea32e219212e1b5ae25c41560f30711beaa3",
+     "weather": "ae415cf0b1242093e7b7dc5456de0626fc6fa547f17b6be81136bbf1909d48b2",
      "alternates": "294476f5c8f53959a7e10bf0c0b2e1af98436c1dc8908c668be719ad3b7ff67c",
      "deferred_items": "5b5e15c22aa0eba47cb094f439174cda899d9eaaf5bca319f391af7a28551216",
      "edto_sectors": "b076275d82bd185e12557c97c9ccd6bd3994c58315c74eca8d544598b7de92db",
      "edto_airports": "101b3a09e104e26abb647bbaa6d6b39b9df946f825f56308721d8ef3603fec54",
-     "fuel_enroute_airports": "81cd51ecbc4cfc764c692b87fab935f49710b1913c8a39b06db5933d1dc2447d",
-     "route_waypoints": "dff8403d0696f9ecc57de6e1ec4fb85d5376cd8c6b178007ea2376ded53cf31a"
+     "fuel_enroute_airports": "81402e9cfdcbfbd999547f3783593c5bc7d00dac6c1dd1c3140f6bcb779ef7dc",
+     "route_waypoints": "dff8403d0696f9ecc57de6e1ec4fb85d5376cd8c6b178007ea2376ded53cf31a",
+     "flight_planning_etps": "3e6a4e09001f23a5d8b3f573c5f24c6369b495e67c17e2e255ba43e7c4e1ba96",
+     "intam_records": "6daa20e7e8af9f03f5fe9dca04b506f5a8b0b7e596ec4f179239b8bb45fb24df",
+     "notam_procedure_records": "bff05f723a37132fab271eb228e3c8556de4e13505674be51c5a5b384bf00f62",
+     "planning_publication": "616063e8224ff6e872ad1086dc7f9dd296154a9c4ce3505634c2ff2aa877387d"
     }
    }
   },
@@ -550,17 +670,25 @@
      "edto_sectors": 4,
      "edto_airports": 4,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 119
+     "route_waypoints": 119,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 20,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "9db5a225ad3067a81afd712759fde7a54bea86c2d9f9dca7b3b1026a7c2c04c2",
-     "weather": "8bb55f502ca4d6dd43e14ecdb6b95eabdafaf83dab5ac77c3f30a5b1e2251194",
+     "notams": "34a2badc24bbfc330353d73263aa7ebb9b1b9e68a5c6aee4a12d599f7f718c66",
+     "weather": "d9aa842196288e9f42d337d2f8e717429e2cf6b8644a6043c683f673c31cf033",
      "alternates": "6f3db68ba37a30e013d2b5d5bead5f4e8cddf7c1c824f3458d8c7e9a8cb9ca79",
-     "deferred_items": "27f6a25710d6196a9644937973106693b6a31bde721ceefe8c9c496646da1214",
+     "deferred_items": "392baf0d8d564874a567d50aa2fa0d98d3ef0f086a14ea53f06cb7577051282c",
      "edto_sectors": "a6eabfd011b18999053a584de3560a4045a3ae8969627fcf17796249161e4b61",
      "edto_airports": "8bf49ca686c624003fa84f0941819d6a8758b11bf13e609d16b19bab6f7ed63c",
      "fuel_enroute_airports": "b72892505004f3a1cacac315e66d62ba83218f008824880a2bea6fc58f76dd68",
-     "route_waypoints": "9a5015618cc1be93dc076cd8535512e563ecc6cf2fdc3e95e5ccc1f855b647a3"
+     "route_waypoints": "9a5015618cc1be93dc076cd8535512e563ecc6cf2fdc3e95e5ccc1f855b647a3",
+     "flight_planning_etps": "07818955ea1662d41e9c1f117cae81847f3ff4e441a8a5ce80d6e934c953e4a7",
+     "intam_records": "3587e008c0aa57ae7264ae28788408903d78f79d12ebb2088b580fbc01b52c9f",
+     "notam_procedure_records": "2e72d5a6cb24cb8caafab393b39a3f4087377f7f9c7302f663e350b75cbfad41",
+     "planning_publication": "01d35fdb52d1ddd9836a73d1cfbb14be38b27c2d7cdd5c0aa30a9193ae0ff0aa"
     }
    }
   },
@@ -585,17 +713,25 @@
      "edto_sectors": 1,
      "edto_airports": 2,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 149
+     "route_waypoints": 149,
+     "flight_planning_etps": 1,
+     "intam_records": 26,
+     "notam_procedure_records": 27,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "bfd1f229501c5ed3fe7076c435f04f5543649dd720b2548b5531348471e4851a",
-     "weather": "e84603ccb7ea3d761b562fdbb717f067035703842da2dc5d3d4dd8bd9614847b",
+     "notams": "e03e3ef222610ad0f3f45faa8b8ca4aab5fa3376ecaae81ee8f88339ddd15201",
+     "weather": "af6cc4c06d68c5de4c60c8c0e964f70c7859311859a9e98a1c10340cac7b4889",
      "alternates": "7d99a903d679770e1008dbe0facaaad69971b0c1da75e6ca1ca34f2e949d5cae",
      "deferred_items": "492924b28aac8df0d3cb05015e81328b713cd639a1c5aa98b64fe2d9b0fec14e",
      "edto_sectors": "1f0849d5c531418299185f59337467fafea4b7c9babde3228f342a06166b19cf",
      "edto_airports": "35e822be53fcb03ff8dd0fc1303339184218aa21e34f728ef2d941d76c6e0455",
      "fuel_enroute_airports": "c98081804bb027fb48564ef7087843ff2323384551b7a094af2a4726726a2007",
-     "route_waypoints": "a166f16ad9abc5717e241fcc901ffdbc4bb0b23effcb88e7ecc9867bb6f99d73"
+     "route_waypoints": "a166f16ad9abc5717e241fcc901ffdbc4bb0b23effcb88e7ecc9867bb6f99d73",
+     "flight_planning_etps": "6dacd8ccccc4f8ba17489bfb49bd7126563dd40979f9560f0fcf77ee9374bd09",
+     "intam_records": "ad53bc86d1c0da11b39e7defc5f034b1d4853ec3c1b835491e6d0af38ab367a9",
+     "notam_procedure_records": "87e9169e50cf9f579dcef9e168b929f3a9b16744e63b998369b7fc6e44c493c7",
+     "planning_publication": "edd1d9d0ded850ea35f1f1574ad853b65f5d2e17fe386c922618cf6b9f227fd0"
     }
    }
   },
@@ -619,18 +755,26 @@
      "deferred_items": 0,
      "edto_sectors": 1,
      "edto_airports": 1,
-     "fuel_enroute_airports": 2,
-     "route_waypoints": 134
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 134,
+     "flight_planning_etps": 1,
+     "intam_records": 25,
+     "notam_procedure_records": 21,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "87dd6a23eca6c2f79182e203c5491e3b248fd65a99a416ac2d44d887dd266c2b",
-     "weather": "5b875b159bd219d97b50cbb4e05e0e0abbce22d710aa8a1de3b8c16600a5e283",
+     "notams": "8f15abbe3ea661486e3c5510ef0416ac2f13a3c0b39188cddca5966246e9a396",
+     "weather": "fe7f2893b59385f2ace8cd99f98621a2b6af86e17ee6b9ac4ec592ed0e182ee7",
      "alternates": "b13534685adc73b96c0803c0fb44c52ccbbcb15257a278c6e98ff659881da3d5",
      "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_sectors": "0e910e5583d186fb8dda8cf09fe04b193cf0b10fb65bbd2f676934d112d0fe0f",
      "edto_airports": "c22dcf6f6a5f19dde3829e420cf040b2cc6db1280815eae76db53714594da95b",
-     "fuel_enroute_airports": "7e514df64697e383c0cd73c06a876e45dc993d2efed230955fc644205c7dfd58",
-     "route_waypoints": "f7d221e8c1a7df77ca2522374edca8beed39101dc5c247f39a2ace2c26386c6c"
+     "fuel_enroute_airports": "2de461646dea0f3238d4fa98b24baa0429ebcee4126cb7e68fb4667255eba152",
+     "route_waypoints": "f7d221e8c1a7df77ca2522374edca8beed39101dc5c247f39a2ace2c26386c6c",
+     "flight_planning_etps": "6351d9c813e999a5e0c59f871835152835e960f9405a20b984d433da90ab8ebb",
+     "intam_records": "3c40734c8e3187863b8a45c300f8c3968cdf7750a3ccdb7b8967693199d8e09e",
+     "notam_procedure_records": "231bac2f770b9a2499987d8962991b9af7ab4e0670ac6826eff85142313223eb",
+     "planning_publication": "eef56d90f4b9217df2161bcda7709437c1fab3644c593cee77ef3c7303ee06dc"
     }
    }
   },
@@ -655,17 +799,25 @@
      "edto_sectors": 1,
      "edto_airports": 6,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 53
+     "route_waypoints": 53,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 5,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "81b8ad1c938cb9ce97910bbec0a5b1008bbbd6041d879be7014503b5d990c385",
-     "weather": "4dbdd7abba63956a2d56cb544190bce08a8c8511baf648f947a9a72aa064f4d7",
+     "notams": "cdec5a8b7096cd9ee0dc57a68b1e75f35c31bf2f38d879f3e5ee6a7f11e3b6b8",
+     "weather": "5be9b67d7008c9f00f718f088c328b5ca29d83cb98f4450c0a53a703f2df331a",
      "alternates": "7e986c29d5bd40396e9ae6f4c6d2f9194bc777bbd8295d78c81a12f468f81f05",
      "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_sectors": "f87001a3548ca118a90120ac0e5b3db37dfba6d5350b6be728483d87de5f540c",
      "edto_airports": "bf3826a9d44db40f43e063c70abaa49e229e3c169eef9533d178ac7e9ca8457a",
      "fuel_enroute_airports": "88a98bc60ab3fbf3374ca2e2658de75c9869732485129c68b46db5af1ecc0fe8",
-     "route_waypoints": "96fc23b81156d10c9238053abb0fa8994821cafd3a5dcfd6e30fae3a2f19ea25"
+     "route_waypoints": "96fc23b81156d10c9238053abb0fa8994821cafd3a5dcfd6e30fae3a2f19ea25",
+     "flight_planning_etps": "8d5ec37e52fef7de4cf22e165fbd677a636a782de7301e186e3c061d7c41f385",
+     "intam_records": "501199b1f7ccb336ef833c06431d745463c3592c7cd1679e86596de60e694fab",
+     "notam_procedure_records": "eed79f86a176401e72f9ec955356d28fa2b0082e29bece1034037727995ccbeb",
+     "planning_publication": "d3f22609c79495e944cc2087b8f0bb22abb5e5812c1ce30dc6615da105c07877"
     }
    }
   },
@@ -683,24 +835,32 @@
    "route_hash": "7800a2c72e432de9630eaf1c00a2e2c4d58917e48fd34599ee651f9cdbb210dc",
    "extraction_expectations": {
     "counts": {
-     "notams": 206,
-     "weather": 154,
+     "notams": 62,
+     "weather": 17,
      "alternates": 3,
      "deferred_items": 2,
      "edto_sectors": 0,
      "edto_airports": 0,
-     "fuel_enroute_airports": 35,
-     "route_waypoints": 138
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 138,
+     "flight_planning_etps": 1,
+     "intam_records": 26,
+     "notam_procedure_records": 20,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "300fb44417eb9a9e1eac54a44ba6a712c7b1dea4a52b193b6373ce6a2e2fc1c9",
-     "weather": "c81ff4f2360ff1c9ea743cdc5aa71612a928eee7add02ec801d24e5b9f118f23",
+     "notams": "561d70310f63bcdf2a3b98d7b1a40e464c5edb111961d21daf8e75c3a26c4f19",
+     "weather": "b188d1a08ce42b3cd696b345224d399da5f84dd6473deb5e6e52f9854b873371",
      "alternates": "767cd949307d49e550680d3bf628e4fa3d98af2ccdddddebb9ebf7374cd9c041",
      "deferred_items": "3b6e05499f4570d32a6a04cb906f7854276019edf3f4a5e466205f394a18448a",
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-     "fuel_enroute_airports": "16d9287b2e23d044c271b46866ed3734c7d33b2bbe12573e6bfaf0ce3859eae7",
-     "route_waypoints": "c04e537f591e22c73666a8d7dfa4f0013d1469b13b7054c7211e7468684c9889"
+     "fuel_enroute_airports": "273261fa4f71902bc91c3e51a0bd2b22c4c923c2a47e35ac997b313dc9ca6bff",
+     "route_waypoints": "c04e537f591e22c73666a8d7dfa4f0013d1469b13b7054c7211e7468684c9889",
+     "flight_planning_etps": "95561b4964d9dcd76c3e45132c9d0afc9303f2c7062151713684e7e1c04e128e",
+     "intam_records": "3457e705ab4f80b93e5d9ee1878b29b020fe4084d206418d834e5c886dd0362d",
+     "notam_procedure_records": "9c9386048e19df2b3f0a27c22676920777c98ac9d0eed3ccea7726180bd2d628",
+     "planning_publication": "022fda05cf8101a435ff9f9d1e6f5963468cc84cb1c84c68413448804e87b0d3"
     }
    }
   },
@@ -721,21 +881,29 @@
      "notams": 48,
      "weather": 19,
      "alternates": 4,
-     "deferred_items": 5,
+     "deferred_items": 6,
      "edto_sectors": 1,
      "edto_airports": 1,
      "fuel_enroute_airports": 1,
-     "route_waypoints": 38
+     "route_waypoints": 38,
+     "flight_planning_etps": 1,
+     "intam_records": 20,
+     "notam_procedure_records": 2,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "59b3c0c1f81dfbef6b52d0130e5a49234c0e8194ebd1fe4cbc3a33899a9ab545",
+     "notams": "7c61255b36e3f49f99fcfc8c71cc8d233b766cb4502e7c7bd0907c40cc313a87",
      "weather": "cced751f0bf1158bf7da43151ea245d8b2a2bd675ea31929e21450502c8c90fd",
      "alternates": "0e10a411902ce4ba3a018b1891951a2aa22d6ca957e22805995c01d196bf0b3b",
-     "deferred_items": "32ea99ccdd81a1dfbc9966c0fa7093bd399f4fd8752c2b9a1e9fa23895c96646",
+     "deferred_items": "d04e2a32d7a1829ee176c0d13369005112a1a262246f730d34ed30f893e2fbef",
      "edto_sectors": "a0619a9bfe00b2e1376842e8c3eed18af882b70fbb61c80bd9e03ed9cdd009aa",
      "edto_airports": "4a062bc81d5231de5229c470177582658ec22261491be633be6e0ebcef2058a4",
      "fuel_enroute_airports": "3a19aebfd2a206d2520b24cd475ab6a24b3c586f76ed6f2da0cadaec99520055",
-     "route_waypoints": "aa8113b5c1122d8d3ac9fc6df1e1fe3e0402a9752d0c51249e380d9a9a236f11"
+     "route_waypoints": "aa8113b5c1122d8d3ac9fc6df1e1fe3e0402a9752d0c51249e380d9a9a236f11",
+     "flight_planning_etps": "02066ab32e4248a3e7ee2da2966530d6e6db361fe9ffbc7f9b47db2fbdbef5e4",
+     "intam_records": "8d961c45b46b548e364c3ce54246c5ba79e0fd423b28ed2015d00d422ad30614",
+     "notam_procedure_records": "4a0261363b322b80d7a0f324b4568361c7080e261d641effed44e0a7db8c5b74",
+     "planning_publication": "2291efce9d7f363eff72482695a61a344edb630aeccd9c3e87baf8cf5cd9f377"
     }
    }
   },
@@ -760,17 +928,283 @@
      "edto_sectors": 0,
      "edto_airports": 0,
      "fuel_enroute_airports": 0,
-     "route_waypoints": 35
+     "route_waypoints": 35,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 2,
+     "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "dd2100d28ab4e31102e5b4e0d27e73627c4f04a8b5d03f2b274e974187f7d6ec",
-     "weather": "2f500a0bda72fd5077d771c0d00093750e8d85156119cd344e1bf1edc025268c",
+     "notams": "0477b247e6a23790a307eae443cce791a41208ac4b09055e59fd0c0add31787f",
+     "weather": "d29d9d2ad23aa1c4f7c7e937daa8f73fb779b429c71b4e5e20c602861656fc86",
      "alternates": "669ae9f72136678fa2a93a5b10e6a81213cbe404710d61c6eab6b35a8b96bc4c",
      "deferred_items": "8f0e645f575edaf25ff9c7c3276597160bdbec5176b6f034f61f8ac8e3623027",
      "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
      "fuel_enroute_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-     "route_waypoints": "11802e38c101e46d49ccd3bae838f162470d202370060592a7f63dd44ad70a50"
+     "route_waypoints": "11802e38c101e46d49ccd3bae838f162470d202370060592a7f63dd44ad70a50",
+     "flight_planning_etps": "0ac3590a4577b7def304d13a6493a64aa8527a1fac81723f2e3e81b72904ce24",
+     "intam_records": "7c6d7973a579d07c975eb76a7261cc8e54dcf2d946da53ba00d4a0c8830dec6b",
+     "notam_procedure_records": "b384c3e85b7489c0c360ece7bddd637a8e6f767f21019573cc26b300d7f9ac94",
+     "planning_publication": "0d8b95278d5f21275ced7d4edd27945aad14f87702e59f0bef82e02111821e3c"
+    }
+   }
+  },
+  {
+   "case_id": "SQ481-JNB-SIN-25AUG",
+   "filename": "SQ48125082026JNB.pdf",
+   "source_sha256": "471c5a67025f3d85fcb8b79f289843c5cd2c611a33c9c943bcdd238fa1b7bbd8",
+   "source_page_count": 64,
+   "flight_number": "SQ481",
+   "departure": "FAOR",
+   "destination": "WSSS",
+   "departure_iata": "JNB",
+   "destination_iata": "SIN",
+   "route_point_count": 51,
+   "route_hash": "e440f05519e0e51d2266ea8fce2df94db4f722f0eefa6a835c60228476ed94bc",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 55,
+     "weather": 29,
+     "alternates": 3,
+     "deferred_items": 1,
+     "edto_sectors": 2,
+     "edto_airports": 5,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 51,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 6,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "812fe176cc1216047d66dc4d80c506abc492689db2a4cfcb212bc6ffec8b8ace",
+     "weather": "ecc51f86ace69dee8a36a052d0ba8b45c7830b3af72dab1d3673c6f8ca1d4a9a",
+     "alternates": "7344469aead505f37fa42bd779c54aef783ae82037f5a867c7f497d5c4d4d1ed",
+     "deferred_items": "786b4c469b3010bebbae9a82637b0c41be8aa22dd5407ddf350002425f72efd0",
+     "edto_sectors": "cec458eb251252ca4a874b9172ac149ab36a28a5c66c87dfdffaed2548931195",
+     "edto_airports": "c933f80721e955593207ddbef00fd482435f6d8f08242425783776bfc498d7fd",
+     "fuel_enroute_airports": "854017e49a4ea71b72c54d81bf4ddd6d689e3190e49f021855bd3b80a9730732",
+     "route_waypoints": "268e5ce8017902599d3010fc5ca18f3c1ab1888684903802e684db5533e7a878",
+     "flight_planning_etps": "7c192e35853321c804e9c6cb4424030953ebfb1f2e1d29482db31be26d11b599",
+     "intam_records": "98d5cdbe2a575b01649c97b30f62d930c535dae9dc3185b4a746caa9953f1fb5",
+     "notam_procedure_records": "741a0b11c144045fdd1473a08192fc2ba1a945db82375d21de82f9dbc2fffb60",
+     "planning_publication": "377485273137c8f6a6dde829c103316ad0de69d71b8b08ebae8a4d550a83c4dd"
+    }
+   }
+  },
+  {
+   "case_id": "SQ38-SIN-LAX-29AUG",
+   "filename": "SQ38-29AUG2026-OFP-for-prod-proof.pdf",
+   "source_sha256": "af60b08ad75e2bd1258fd2e327816c6248017f082634a69d83dc130fbc596557",
+   "source_page_count": 108,
+   "flight_number": "SQ38",
+   "departure": "WSSS",
+   "destination": "KLAX",
+   "departure_iata": "SIN",
+   "destination_iata": "LAX",
+   "route_point_count": 98,
+   "route_hash": "90b4d3c146f3b53117e159090cf67bd31f740f891605f40b61bd624fdea30cc1",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 163,
+     "weather": 23,
+     "alternates": 4,
+     "deferred_items": 1,
+     "edto_sectors": 3,
+     "edto_airports": 3,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 98,
+     "flight_planning_etps": 1,
+     "intam_records": 22,
+     "notam_procedure_records": 8,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "2300542f50d64032e1506924b1554945368b57275345dd06ce75524d46fa46fe",
+     "weather": "10c909e364674b7dc3be41be272bbb3c3db1de2142c0a6aba05d05451673f1b6",
+     "alternates": "d6ad115323bfb4dae81d85c93c09fb544f94f6ce4bf2606114d76f87ee54e730",
+     "deferred_items": "800fbdc5c3b5ffbfe694d2da627e7a2659a3de11603deebf49216a123344e959",
+     "edto_sectors": "0b3c810d0e0aea93e36bb5e7d7e0e04d409097dd3a8aa7523ab961c27090f3fc",
+     "edto_airports": "8227378ded240bce38d3f42f36628bb5047f599b238762a8980f0d4807d39d16",
+     "fuel_enroute_airports": "2f27912341bb69bffb6a8c6b45ffc86d2601664f5f9765389bd6fd3fa9933809",
+     "route_waypoints": "672aa7f5504f864c054da7d8cc402f5dbe1268c921cf8fa5c9c5c0091f42559f",
+     "flight_planning_etps": "adc5a972ff6dc0553d719b12092392e7ee16a4892e74c299236cb3c0121e3975",
+     "intam_records": "5a093392d912a49bd5bd02ddc5c55dc04981626b7504053920d0b87911400d43",
+     "notam_procedure_records": "d3f4a2542c5569b487cef635bd7a485480c5bdda16e3c98a4f75391bdcc3c0a7",
+     "planning_publication": "98559ab99951784956c50c0b73fdc0614558a11e7ea1b99cae9bf0eaa90ac1c5"
+    }
+   }
+  },
+  {
+   "case_id": "SQ605-ICN-SIN-08SEP",
+   "filename": "SQ60508092026ICN.pdf",
+   "source_sha256": "b3e6b7917734e061570ece7701564e153264dd33562fcd347a0d1feb0bafd24e",
+   "source_page_count": 93,
+   "flight_number": "SQ605",
+   "departure": "RKSI",
+   "destination": "WSSS",
+   "departure_iata": "ICN",
+   "destination_iata": "SIN",
+   "route_point_count": 68,
+   "route_hash": "7e9461a340554cfccfe822fdf320fd2c85de9c49bba0c325566fa80d0c2a1bd6",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 42,
+     "weather": 13,
+     "alternates": 3,
+     "deferred_items": 4,
+     "edto_sectors": 0,
+     "edto_airports": 0,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 68,
+     "flight_planning_etps": 1,
+     "intam_records": 22,
+     "notam_procedure_records": 1,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "a8fe4739c267fc917d22984702d66972dd3e3ed60dd153fe6fd80f9eab40b46c",
+     "weather": "d5a9d1b1b574fa331ca47671b5e9b4ca2dbc4fc4e7e03fdca639063d2e39c514",
+     "alternates": "dfc2fa79712104a41aa8c4dabc4610bc25751b182f37a66eaedc092ca1c80289",
+     "deferred_items": "5ae75ea85c6e4a30f2d85ff45c51495cccfe756c7170d63027a8eb89bdaa1b6a",
+     "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "fuel_enroute_airports": "07ffbf75a9d301cae26fd47e4022abda4bd49fb2abfd8dd5ce2b25b32d79672f",
+     "route_waypoints": "4284f71140133a38db48747dfa032ba41abaf2effafddd219b02541346c9da6d",
+     "flight_planning_etps": "92d481b1153c04fa715ca1e95544726d8bb3a82935167be8ff34464066fb1724",
+     "intam_records": "f9f1946ea4b72827368ea999849b1a4de08c2341e43e1fab59470d6d5ddb1370",
+     "notam_procedure_records": "22bb7257cfe994c9b667ce5e06780216111abfa351afc9641315a17be2156b71",
+     "planning_publication": "357b9ae97c6f13a2e264340dc62ff488dd8a7a017a42c37ddc6a93c92c1e929f"
+    }
+   }
+  },
+  {
+   "case_id": "SQ606-SIN-ICN-06SEP",
+   "filename": "SQ60606092026SIN.pdf",
+   "source_sha256": "eb48aa102321295fffcd78561d673a30c078f6638e4bb4a2a0ee766461661ba7",
+   "source_page_count": 103,
+   "flight_number": "SQ606",
+   "departure": "WSSS",
+   "destination": "RKSI",
+   "departure_iata": "SIN",
+   "destination_iata": "ICN",
+   "route_point_count": 81,
+   "route_hash": "9586ee2e089888937b0e9d9306574f57cbab8b4f47abd5bf214f3954fb4e3e1f",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 28,
+     "weather": 8,
+     "alternates": 1,
+     "deferred_items": 5,
+     "edto_sectors": 0,
+     "edto_airports": 0,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 81,
+     "flight_planning_etps": 1,
+     "intam_records": 21,
+     "notam_procedure_records": 3,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "1dcdaa7eb5b7a78be95d97cb20404dbbb75f3c8e0d21b1462f47a6424d2ab8bc",
+     "weather": "c66dcaa0ddd841305823da5ea0d42c8309af0812a9ef2222460c06a4f9704d86",
+     "alternates": "6bb27d13deeda3ea68776e36bd35eecae89237755f90a95ae6d0af942ddc50da",
+     "deferred_items": "6c7027b115e14af753ee015c3ca00acbdbc8366fda263e2216af9d32f0c93587",
+     "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "fuel_enroute_airports": "81a1928d695e7e626a7770d370d3d84897887bd4a37dd13f16b3ed1c684a7a5d",
+     "route_waypoints": "81c2f0f1360566dffbc7ca8b4b11b9607db68e6ee4c50ba380253f755ad4a64c",
+     "flight_planning_etps": "140989dbb65f07e79e7a330026d2e29938051c3e621ff3316862b029cc094f5f",
+     "intam_records": "d07cefe73468f8b19e6966655bbb5b0687d969b610dfb99124d81580a4562c71",
+     "notam_procedure_records": "5a8579bca2905bccaf772a3e6285e41dbe8f9c3342a929bb8d41fb55420f5fc6",
+     "planning_publication": "706b91342b80204bacbcdda7a4ab6fe7972df432d74c3f1c6e096edc5ed6a40a"
+    }
+   }
+  },
+  {
+   "case_id": "SQ882-SIN-HKG-09SEP",
+   "filename": "lido-briefing_SQ_882_09Sep2026_SIN_HKG.pdf",
+   "source_sha256": "f8f4830798e23d419eda49f50e397cf18cabe9b67660393aacc3793fac145469",
+   "source_page_count": 71,
+   "flight_number": "SQ882",
+   "departure": "WSSS",
+   "destination": "VHHH",
+   "departure_iata": "SIN",
+   "destination_iata": "HKG",
+   "route_point_count": 44,
+   "route_hash": "258e2639bd9c5dcb56b308b576b752e367154ee6f3105d6d15bf6b2121050364",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 58,
+     "weather": 16,
+     "alternates": 4,
+     "deferred_items": 0,
+     "edto_sectors": 0,
+     "edto_airports": 0,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 44,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 0,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "0df281e5801e9f8fe88b03875e8f05aace51fd4e2c53df7e783a774251c13352",
+     "weather": "2ad9c17b52b623b41cb94124c2b97caf00a554d7d3a1e051851fe093340abead",
+     "alternates": "ce23f35b1f6d5d82f977a526ec999f588893a4dd91ab6da0a20992002e4451b9",
+     "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "fuel_enroute_airports": "e6bb64d15c6ae65de9fc2198f3226b43bd76182b4387bd5d2befe2954a8a534d",
+     "route_waypoints": "7cd82f7bbff7c30c1ac5fdd8f0e102a5bbec27218a0b38a9bc7d1d456800669a",
+     "flight_planning_etps": "2a380f44efc0f49e415c67aa4540e58ffa84eb6a3137282a22146e37050aebac",
+     "intam_records": "e6a63b1b48f48d7565655d972e1fa3b9a76ffab54977b5aaff36ad166a2750f5",
+     "notam_procedure_records": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "planning_publication": "2b9a943e57974cddc6127125994ba227dfa2eadc83308fb62d77c8849ae87b4b"
+    }
+   }
+  },
+  {
+   "case_id": "SQ882-SIN-HKG-10SEP",
+   "filename": "lido-briefing_SQ_882_10Sep2026_SIN_HKG.pdf",
+   "source_sha256": "c726965632255c08ac146160c6971f3b313a17d9c217c98e0ccd9044961447e6",
+   "source_page_count": 75,
+   "flight_number": "SQ882",
+   "departure": "WSSS",
+   "destination": "VHHH",
+   "departure_iata": "SIN",
+   "destination_iata": "HKG",
+   "route_point_count": 44,
+   "route_hash": "1ac2adc0dd663813343f798c16f9ce405bed09bfd7a65dd8aea71b5f62039787",
+   "extraction_expectations": {
+    "counts": {
+     "notams": 62,
+     "weather": 16,
+     "alternates": 4,
+     "deferred_items": 7,
+     "edto_sectors": 0,
+     "edto_airports": 0,
+     "fuel_enroute_airports": 1,
+     "route_waypoints": 44,
+     "flight_planning_etps": 1,
+     "intam_records": 23,
+     "notam_procedure_records": 2,
+     "planning_publication": 1
+    },
+    "identity_sha256": {
+     "notams": "3269ac58567a4a761d8af87da706e7866e08142ef6ece5f92b0496ac99aeda34",
+     "weather": "3a2137cfd6ebf4ddc2d5ee21911f6ce9db58b598c4ad73e8ed59ea23940fcfd9",
+     "alternates": "d86a50b8b15e8bdca86a6a50ea6f703b1b27e58221df26afea25692260828bf1",
+     "deferred_items": "8fafc9e8acd9d012dd38ca53f206e2167cbdc2e8100cdd89efd583081d8b2d86",
+     "edto_sectors": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "edto_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "fuel_enroute_airports": "662a8ee4588e72c5963e9af1f3434049af9a8336aeeed7b731614558b3abce48",
+     "route_waypoints": "06e4c4c32111aa2cf041e25489a9900ed8b706a885c13eb072b6022482160bed",
+     "flight_planning_etps": "afc5a853574185919b6a5dfa00777a40926940df3fd7e8257b9818c49d68d37d",
+     "intam_records": "8995d6e2777c43a98b1af352fb6b5b5fac018e0b1887284b4641f3f88c960abd",
+     "notam_procedure_records": "b9ec06296c4d4d74c912002aae5e763f68343e3672f198926958fce6a0a21f5c",
+     "planning_publication": "00c103c9f7e785be09c741f620603f045dbd203fe7356d1eb626a27cf1a87288"
     }
    }
   }

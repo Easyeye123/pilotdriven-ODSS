@@ -5,6 +5,11 @@ import re
 from typing import Any, Iterable
 
 from .constants import format_actm
+from .deferred_dispatch import (
+    deferred_item_type_for_display,
+    deferred_reference_for_display,
+    deferred_source_declaration_for_display,
+)
 
 
 _NAT_SEGMENT = re.compile(
@@ -20,7 +25,7 @@ def _clean(value: Any, fallback: str = "") -> str:
 
 def _source_page(point: dict[str, Any]) -> str:
     page = point.get("source_page")
-    return f"CFP p. {page}" if isinstance(page, int) and page > 0 else "Uploaded CFP"
+    return f"OFP p. {page}" if isinstance(page, int) and page > 0 else "Uploaded OFP"
 
 
 def actual_timing_anchor(flight: dict[str, Any]) -> datetime | None:
@@ -36,6 +41,62 @@ def actual_timing_anchor(flight: dict[str, Any]) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def destination_actm_minutes(flight: dict[str, Any]) -> int | None:
+    """Use only the filed destination's held ACTM, never block time."""
+    destination = _clean(flight.get("destination")).lstrip("-").upper()
+    candidates: list[int] = []
+    for point in flight.get("route_waypoints") or []:
+        if not destination or _clean(point.get("name")).lstrip("-").upper() != destination:
+            continue
+        value = point.get("actm_minutes")
+        if isinstance(value, bool) or not re.fullmatch(r"\d+", str(value)):
+            continue
+        candidates.append(int(value))
+    return max(candidates) if candidates else None
+
+
+def operational_reference_times(
+    flight: dict[str, Any],
+) -> tuple[datetime | None, datetime | None]:
+    """Keep the printed schedule intact while assessing the active timing.
+
+    An entered ATOT establishes departure; arrival needs the exact destination
+    ACTM. Missing actual timing evidence cannot silently revert to the schedule.
+    """
+    reference = flight.get("timing_reference") or {}
+    if flight.get("actual_takeoff_utc") or reference.get("actual_takeoff_utc"):
+        departure = actual_timing_anchor(flight)
+        minutes = destination_actm_minutes(flight)
+        return departure, (
+            departure + timedelta(minutes=minutes)
+            if departure is not None and minutes is not None else None
+        )
+
+    def scheduled(key: str) -> datetime | None:
+        try:
+            value = datetime.fromisoformat(str(flight.get(key) or "").replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    return scheduled("scheduled_departure_utc"), scheduled("scheduled_arrival_utc")
+
+
+def required_operational_reference_times(
+    flight: dict[str, Any],
+) -> tuple[datetime, datetime]:
+    departure, arrival = operational_reference_times(flight)
+    if departure is not None and arrival is None and (
+        flight.get("actual_takeoff_utc") or (flight.get("timing_reference") or {}).get("actual_takeoff_utc")
+    ):
+        raise ValueError("Flight time assessment requires exact destination timing: destination ACTM is missing or invalid. Arrival cannot be calculated from ATOT; scheduled arrival was not substituted.")
+    if departure is None or arrival is None:
+        raise ValueError("Flight time assessment requires a valid departure and exact destination timing reference")
+    return departure, arrival
 
 
 def actm_utc_clock(flight: dict[str, Any], actm_minutes: Any) -> str | None:
@@ -78,7 +139,7 @@ def _named_point(
 
 
 def build_route_gate_rows(flight: dict[str, Any]) -> list[dict[str, str]]:
-    """Return CFP-grounded route gates without inventing procedures.
+    """Return OFP-grounded route gates without inventing procedures.
 
     The uploaded route can establish a named track segment, FIR boundary and
     crossing time. It cannot establish a current contact instruction or
@@ -126,7 +187,7 @@ def build_route_gate_rows(flight: dict[str, Any]) -> list[dict[str, str]]:
                 "time": time_label,
                 "result": f"NAT {track.upper()} route segment",
                 "status": "review_required",
-                "evidence": evidence or "Uploaded CFP",
+                "evidence": evidence or "Uploaded OFP",
             }
         )
 
@@ -209,9 +270,9 @@ def deferred_item_report_rows(
     *,
     limit: int | None = None,
 ) -> list[dict[str, str]]:
-    """Return CFP-declared deferred items with an honest source status.
+    """Return OFP-declared deferred items with an honest source status.
 
-    The declaration itself comes from CFP Page 1.  A model must never infer a
+    The declaration itself comes from OFP Page 1.  A model must never infer a
     missing MEL/CDL condition, so the row stays review-required unless the
     analysis already carries a governed-source result.
     """
@@ -223,30 +284,30 @@ def deferred_item_report_rows(
             continue
         item_type = _clean(source_item.get("item_type"), "DEFERRED").upper()
         if item_type == "UNCLASSIFIED":
+            source_declaration = deferred_source_declaration_for_display(
+                source_item.get("source_declaration")
+            )
             rows.append(
                 {
-                    "label": _clean(
-                        source_item.get("source_declaration"),
-                        "UNCLASSIFIED DEFERRED DECLARATION",
-                    ),
+                    "label": source_declaration or "DEFERRED ITEM - REVIEW REQUIRED",
                     "description": _clean(
                         source_item.get("description"),
-                        "Following CFP text was not parsed.",
+                        "Following OFP text was not parsed.",
                     ),
                     "restriction": _clean(
                         source_item.get("company_remark"),
-                        "No further CFP text was parsed.",
+                        "No further OFP text was parsed.",
                     ),
                     "source_status": (
-                        "Unclassified CFP deferred declaration; acronym meaning is not inferred "
-                        "and it is not classified as MEL, CDL or CDDL."
+                        "OFP deferred declaration is unresolved; acronym meaning is not "
+                        "inferred and no MEL, CDL or CDDL classification is asserted."
                     ),
                 }
             )
             if limit is not None and len(rows) >= limit:
                 break
             continue
-        reference = _clean(source_item.get("reference"), "UNSPECIFIED").upper()
+        reference = deferred_reference_for_display(source_item.get("reference"))
         expected_engine = {
             "MEL": "mel",
             "CDL": "cdl",
@@ -257,6 +318,7 @@ def deferred_item_report_rows(
                 item
                 for item in finding_list
                 if item.get("engine") == expected_engine
+                and reference
                 and reference in _clean(item.get("title")).upper()
             ),
             None,
@@ -272,14 +334,21 @@ def deferred_item_report_rows(
             source_status = summary
         rows.append(
             {
-                "label": f"{item_type} {reference}",
+                "label": " ".join(
+                    value
+                    for value in (
+                        deferred_item_type_for_display(item_type),
+                        reference,
+                    )
+                    if value
+                ),
                 "description": _clean(
                     source_item.get("description"),
-                    "Description was not parsed from CFP Page 1.",
+                    "Description was not parsed from OFP Page 1.",
                 ),
                 "restriction": _clean(
                     source_item.get("company_remark"),
-                    "No company restriction was parsed from CFP Page 1.",
+                    "No company restriction was parsed from OFP Page 1.",
                 ),
                 "source_status": source_status,
             }

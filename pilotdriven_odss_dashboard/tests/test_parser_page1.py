@@ -4,6 +4,8 @@ from app.odss.parser import (
     _CAPTAIN_RE,
     _ZFW_BURN_RE,
     _parse_deferred_items,
+    _parse_intam_records,
+    _parse_notam_procedure_records,
     _waypoint_log_start,
     parse_lido,
 )
@@ -67,6 +69,13 @@ def test_waypoint_log_start_is_detected_by_content_not_offset() -> None:
     assert _waypoint_log_start(legacy) == 6
 
 
+def test_single_cruise_level_is_retained_without_a_step_change() -> None:
+    pages = _cfp_pages_with_log_from(5)
+    pages[0] += "\nSIN/400\n"
+    flight = parse_lido(pages, "single-level.pdf")
+    assert flight["planned_level_profile"] == "SIN/400"
+
+
 def test_waypoint_log_start_falls_back_to_legacy_offset_without_log() -> None:
     assert _waypoint_log_start([PROSE_PAGE] * 9) == 6
 
@@ -128,6 +137,30 @@ def test_parse_lido_carries_captain_and_zfw_fields() -> None:
     }
 
 
+def test_parse_lido_keeps_standard_cfp_etp_separate_from_edto() -> None:
+    pages = _cfp_pages_with_log_from(5)
+    pages[0] = pages[0].replace("SUMMARY EDTO CFP", "SUMMARY STANDARD CFP")
+    pages.insert(
+        4,
+        "FLIGHT PLANNING SUMMARY\n"
+        "ETPA SIN/MNL       DIST 721NM   EET 01.40      ETA.....\n",
+    )
+
+    flight = parse_lido(pages, "standard-etp.pdf")
+
+    assert flight["flight_planning_etps"] == [{
+        "label": "ETP A",
+        "from": "SIN",
+        "to": "MNL",
+        "distance_nm": 721,
+        "eet_token": "01.40",
+        "eet_minutes": 100,
+        "source_page": 5,
+    }]
+    assert flight["edto"]["sectors"] == []
+    assert flight["edto"]["etp_actm_minutes"] == []
+
+
 def test_parse_lido_carries_route_identifier_and_apd_from_page_one() -> None:
     flight = parse_lido(_cfp_pages_with_log_from(5), "overview-fields.pdf")
 
@@ -135,6 +168,24 @@ def test_parse_lido_carries_route_identifier_and_apd_from_page_one() -> None:
     assert flight["edto_rvsm"] == "EDTO/RVSM"
     assert flight["cost_index"] == 73
     assert flight["apd_percent"] == 1.8
+
+
+def test_parse_lido_preserves_intermediate_mnps_in_printed_flight_rules() -> None:
+    pages = _cfp_pages_with_log_from(5)
+    pages[0] = pages[0].replace("EDTO/RVSM", "EDTO/MNPS/RVSM")
+
+    flight = parse_lido(pages, "mnps-rules.pdf")
+
+    assert flight["edto_rvsm"] == "EDTO/MNPS/RVSM"
+
+
+def test_parse_lido_preserves_single_printed_rvsm_flight_rule() -> None:
+    pages = _cfp_pages_with_log_from(5)
+    pages[0] = pages[0].replace("EDTO/RVSM", "RVSM")
+
+    flight = parse_lido(pages, "non-edto-rvsm-rules.pdf")
+
+    assert flight["edto_rvsm"] == "RVSM"
 
 
 SQ910_DECLARATION_BLOCK = (
@@ -200,3 +251,89 @@ def test_prefixed_declaration_with_undashed_trailing_text_is_kept() -> None:
     ]
     assert items[0]["description"] == "RESERVOIR AIR BLEED VALVE"
     assert items[1]["description"] == "SECTION MEL AND CMS REV 18NOV 25"
+
+
+def test_intam_projection_holds_headers_headlines_and_physical_pages() -> None:
+    pages = [
+        "SUMMARY CFP",
+        (
+            "INTAM\n\n1.OPS A350-606 260321\n"
+            "SYSTEM RESETS (UPDATED 06APR2026)\n\nBODY TEXT\n"
+        ),
+        (
+            "2. SEC SSC 04/2026 010426\n"
+            "SSE MNL SECURITY STATUS\n\nSTATUS : AMBER\n"
+        ),
+    ]
+
+    records = _parse_intam_records(pages, (1, 3))
+
+    assert records == [
+        {
+            "priority": 1,
+            "category": "OPS",
+            "identity": "A350-606",
+            "date_token": "260321",
+            "header": "1.OPS A350-606 260321",
+            "headline": "SYSTEM RESETS (UPDATED 06APR2026)",
+            "body_text": "BODY TEXT",
+            "source_page": 2,
+        },
+        {
+            "priority": 2,
+            "category": "SEC",
+            "identity": "SSC 04/2026",
+            "date_token": "010426",
+            "header": "2. SEC SSC 04/2026 010426",
+            "headline": "SSE MNL SECURITY STATUS",
+            "body_text": "STATUS : AMBER",
+            "source_page": 3,
+        },
+    ]
+
+
+def test_notam_procedure_projection_holds_cpdcl_source_without_applicability() -> None:
+    pages = [
+        "SUMMARY CFP",
+        (
+            "NOTAM\n\nWIIF        JAKARTA FIR\n-----------------------\n"
+            "1A1891/26 VALID: 04-JUN-26 0000 - 02-SEP-26 2359\n"
+            "ADS-C/CPDLC OPERATIONAL LIMITED TRIAL WILL BE INITIATED AS "
+            "REQUESTED BY ATC.\nAFN LOGON PROCESS WILL BE INITIATED BY THE PILOT.\n"
+            "THE AFN LOGON ADDRESS FOR JAKARTA FIR IS WIIF.\n"
+        ),
+    ]
+
+    records = _parse_notam_procedure_records(pages, (1, 2))
+
+    assert records == [{
+        "notam_id": "1A1891/26",
+        "validity": "04-JUN-26 0000 - 02-SEP-26 2359",
+        "heading": "WIIF JAKARTA FIR",
+        "heading_kind": "fir",
+        "fir": "WIIF",
+        "segment": None,
+        "heading_page": 2,  # HEADING-CONTINUITY-432: the page the owning heading is printed on
+        "source_page": 2,
+        "text": (
+            "ADS-C/CPDLC OPERATIONAL LIMITED TRIAL WILL BE INITIATED AS "
+            "REQUESTED BY ATC. AFN LOGON PROCESS WILL BE INITIATED BY THE "
+            "PILOT. THE AFN LOGON ADDRESS FOR JAKARTA FIR IS WIIF."
+        ),
+        "applicability": "not_inferred",
+    }]
+
+
+def test_notam_procedure_projection_rejects_airport_cpdcl_record() -> None:
+    pages = [
+        "SUMMARY CFP",
+        (
+            "NOTAM\n\nWSSS /SIN SINGAPORE/CHANGI - DETAILED INFO\n"
+            "--------------------------------------------\n"
+            "++++++++++++++++ AIRPORT ++++++++++++++++\n"
+            "1A2382/26 VALID: 08-AUG-26 0000 - PERM\n"
+            "BOTH AIRCRAFT ARE ADS-C AND CPDLC EQUIPPED.\n"
+        ),
+    ]
+
+    assert _parse_notam_procedure_records(pages, (1, 2)) == []

@@ -162,7 +162,7 @@ def test_empty_edto_section_fails_closed_to_review_required() -> None:
         == "explicit_edto_assessment_missing"
     )
     assert briefing["edto"]["assessment"]["status"] == "review_required"
-    assert briefing["status"] == "REVIEW REQUIRED"
+    assert briefing["status"] == "UNRESOLVED ITEMS"
 
 
 def test_explicit_nil_conflicting_with_operational_data_requires_review() -> None:
@@ -181,3 +181,25 @@ def test_explicit_nil_conflicting_with_operational_data_requires_review() -> Non
         == "conflicting_edto_applicability_evidence"
     )
     assert briefing["edto"]["assessment"]["status"] == "review_required"
+
+
+def test_summary_non_edto_declaration_is_recognised_with_source_page():
+    pages = _lido_pages('SQ605', '')
+    pages[0] = pages[0].replace('SUMMARY EDTO CFP', 'SUMMARY NON EDTO CFP')
+    assessment = parse_lido(pages, 'non-edto-source.pdf')['edto']['assessment']
+    assert assessment['status'] == 'verified_not_applicable'
+    assert assessment['evidence'][0]['source_page'] == 1
+    assert assessment['evidence'][0]['reason_code'] == 'explicit_edto_not_applicable_declaration'
+
+
+def test_non_edto_summary_cannot_override_positive_operational_evidence():
+    pages = _lido_pages('SQ605', 'EDTO INFORMATION\nWIMM 0900-1200 23 ILS 200FT')
+    pages[0] = pages[0].replace('SUMMARY EDTO CFP', 'SUMMARY NON EDTO CFP')
+    assessment = parse_lido(pages, 'contradiction.pdf')['edto']['assessment']
+    assert assessment['status'] == 'review_required'
+    assert assessment['evidence'][-1]['reason_code'] == 'conflicting_edto_applicability_evidence'
+
+
+def test_non_edto_narrative_is_not_a_flight_classification():
+    pages = _lido_pages('SQ605', 'THE NON EDTO ROUTE OPTION WAS NOT SELECTED')
+    assert parse_lido(pages, 'narrative.pdf')['edto']['assessment']['status'] == 'review_required'

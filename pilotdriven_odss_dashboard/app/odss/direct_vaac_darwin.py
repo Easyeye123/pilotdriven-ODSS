@@ -33,11 +33,15 @@ import httpx
 
 from .direct_vaac import (
     advisory_cache_seconds,
+    advisory_aviation_colour_code,
     advisory_fields,
     advisory_flight_window,
     advisory_iso,
+    advisory_is_exercise,
+    advisory_next_receipt,
     advisory_phase,
     advisory_utc,
+    advisory_volcano_position,
 )
 from .snapshot_governance import govern_snapshot, mark_snapshot_reused
 
@@ -60,12 +64,16 @@ _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 # non-ADRM routings (ammc, nzkl) never match.
 _DARWIN_FILE = re.compile(r"\bfvau\d{2}\.adrm\.\.txt\b")
 _DARWIN_HEADER = re.compile(r"^FVAU\d{2}\s+ADRM\b", re.MULTILINE)
+_DARWIN_WMO_HEADER = re.compile(
+    r"(?m)^(?P<heading>FVAU\d{2})\s+"
+    r"(?P<office>ADRM)\s+(?P<ddhhmm>\d{6})\b"
+)
 _DTG = re.compile(r"\b(\d{4})(\d{2})(\d{2})/(\d{2})(\d{2})Z?\b")
 
 
 def _dtg_utc(value: str) -> datetime | None:
     """The advisory's own DTG field (yyyymmdd/hhmmZ) as an aware datetime."""
-    match = _DTG.search(str(value or ""))
+    match = _DTG.fullmatch(str(value or "").strip().upper())
     if not match:
         return None
     year, month, day, hour, minute = map(int, match.groups())
@@ -129,11 +137,29 @@ def parse_darwin_vaac_advisory(
     if not _DARWIN_HEADER.search(text):
         raise ValueError("Darwin VAAC bulletin did not carry an FVAU ADRM heading")
     fields = advisory_fields(text)
+    if advisory_is_exercise(text, fields):
+        raise ValueError("Darwin VAAC exercise advisory is not operational evidence")
     if fields.get("VAAC", "").strip().upper() != DARWIN_VAAC_NAME:
         raise ValueError("Darwin VAAC advisory identity could not be verified")
     issued_at = _dtg_utc(fields.get("DTG", ""))
     if issued_at is None:
         raise ValueError("Darwin VAAC advisory carried no readable DTG")
+    wmo_header = _DARWIN_WMO_HEADER.search(text)
+    if (
+        wmo_header is None
+        or wmo_header.group("ddhhmm") != issued_at.strftime("%d%H%M")
+    ):
+        raise ValueError("Darwin VAAC WMO issue time did not match its DTG")
+    mirror_slot = re.fullmatch(
+        r"(?P<heading>fvau\d{2})\.(?P<office>adrm)\.\.txt",
+        str(metadata.get("file") or "").strip().lower(),
+    )
+    if (
+        mirror_slot is None
+        or mirror_slot.group("heading") != wmo_header.group("heading").lower()
+        or mirror_slot.group("office") != wmo_header.group("office").lower()
+    ):
+        raise ValueError("Darwin VAAC WMO heading did not match its mirror slot")
     phases: list[dict[str, Any]] = []
     observed = fields.get("OBS VA CLD")
     if observed:
@@ -151,7 +177,10 @@ def parse_darwin_vaac_advisory(
         "issued_at_utc": advisory_iso(issued_at),
         "provider": PROVIDER,
         "vaac": fields.get("VAAC"),
+        "centre": fields.get("VAAC"),
         "volcano": fields.get("VOLCANO"),
+        "volcano_position": advisory_volcano_position(fields.get("PSN")),
+        "aviation_colour_code": advisory_aviation_colour_code(fields),
         "area": fields.get("AREA"),
         "advisory_number": fields.get("ADVISORY NR"),
         "information_source": fields.get("INFO SOURCE"),
@@ -205,6 +234,10 @@ def fetch_darwin_vaac_snapshot(
         rows = parse_darwin_gts_listing(
             _bounded_text(active_client.get(list_url))
         )
+        if not rows:
+            raise ValueError(
+                "No recognized fixed Darwin GTS mirror slot was listed"
+            )
         advisories: list[dict[str, Any]] = []
         listing_issue_times: list[str] = []
         for row in rows:
@@ -224,6 +257,7 @@ def fetch_darwin_vaac_snapshot(
             if issued is not None and window_start <= issued <= window_end:
                 advisories.append(advisory)
         listing_issue_times.sort()
+        next_advisory_due, next_advisory_notes = advisory_next_receipt(advisories)
         return _govern({
             "schema_version": "1.0",
             "status": "available" if not errors else "partial",
@@ -237,6 +271,8 @@ def fetch_darwin_vaac_snapshot(
             "listing_latest_utc": listing_issue_times[-1] if listing_issue_times else None,
             "advisory_count": len(advisories),
             "advisories": advisories,
+            "next_advisory_due": next_advisory_due,
+            "next_advisory_notes": next_advisory_notes,
             "errors": errors,
             "source_note": (
                 "Official Darwin VAAC VA ADVISORY evidence for its area only, "

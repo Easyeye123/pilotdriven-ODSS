@@ -30,6 +30,7 @@ from .direct_vaac import (
     advisory_fields,
     advisory_flight_window,
     advisory_iso,
+    advisory_is_exercise,
     advisory_phase,
     advisory_utc,
 )
@@ -63,16 +64,19 @@ def _rounded_five_minutes(value: datetime) -> datetime:
     return utc.replace(minute=utc.minute - utc.minute % 5, second=0, microsecond=0)
 
 
-def _query_url(now: datetime) -> str:
+def wifs_advisory_query_url(now: datetime, parameter_name: str = "VAA") -> str:
+    parameter = str(parameter_name).strip().upper()
+    if parameter not in {"VAA", "TCA"}:
+        raise ValueError("Unsupported WIFS advisory parameter")
     rounded = _rounded_five_minutes(now)
     query = urlencode({
         "datetime": f"{rounded.strftime('%Y-%m-%dT%H:%M:%SZ')}/PT36H",
-        "parameter-name": "VAA",
+        "parameter-name": parameter,
     })
     return f"{WIFS_API_ORIGIN}{WIFS_TAC_ADVISORY_PATH}?{query}"
 
 
-def _bounded_text(response: httpx.Response) -> str:
+def bounded_wifs_text(response: httpx.Response, advisory_marker: str = "VA ADVISORY") -> str:
     response.raise_for_status()
     raw = response.content
     if len(raw) > _MAX_RESPONSE_BYTES:
@@ -87,8 +91,9 @@ def _bounded_text(response: httpx.Response) -> str:
     text = raw.decode("utf-8", errors="replace")
     if not text.strip():
         raise ValueError("WIFS VAA response was empty")
-    if "VA ADVISORY" not in text:
-        raise ValueError("WIFS VAA response carried no TAC advisory records")
+    marker = str(advisory_marker).strip().upper()
+    if marker not in text.upper():
+        raise ValueError(f"WIFS response carried no {marker} TAC records")
     return text
 
 
@@ -105,34 +110,45 @@ def _issued_at(fields: dict[str, str]) -> datetime | None:
         return None
 
 
-def _tac_records(text: str) -> tuple[list[str], list[dict[str, str]]]:
+def wifs_tac_records(
+    text: str,
+    advisory_marker: str = "VA ADVISORY",
+) -> tuple[list[str], list[dict[str, str]]]:
     # WMO TAC collectives delimit messages with '='. Some test/relay exports
     # omit it; in that case retain one complete advisory rather than guessing
     # boundaries between field continuations.
     normalized = text.replace("\r\n", "\n")
-    advisory_markers = normalized.count("VA ADVISORY")
+    marker = str(advisory_marker).strip().upper()
+    product = "VAA" if marker == "VA ADVISORY" else "TCA" if marker == "TC ADVISORY" else "advisory"
+    advisory_markers = normalized.upper().count(marker)
     has_verified_delimiters = bool(re.search(r"(?m)^\s*=\s*$", normalized))
     if advisory_markers > 1 and not has_verified_delimiters:
         return [], [{
             "record": "collective",
-            "error": "Multiple VAA record boundaries could not be verified",
+            "error": f"Multiple {product} record boundaries could not be verified",
         }]
     chunks = re.split(r"(?m)^\s*=\s*$", normalized)
-    records = [chunk.strip("\x01\x03\n ") for chunk in chunks if "VA ADVISORY" in chunk]
+    records = [chunk.strip("\x01\x03\n ") for chunk in chunks if marker in chunk.upper()]
     errors: list[dict[str, str]] = []
     if len(records) > _MAX_ADVISORIES:
         errors.append({
             "record": "collective",
-            "error": f"WIFS VAA collective exceeded the {_MAX_ADVISORIES}-record safety limit",
+            "error": f"WIFS {product} collective exceeded the {_MAX_ADVISORIES}-record safety limit",
         })
     return records[:_MAX_ADVISORIES], errors
 
 
 def parse_wifs_vaa_collective(text: str) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     advisories: list[dict[str, Any]] = []
-    records, errors = _tac_records(text)
+    records, errors = wifs_tac_records(text)
     for index, record in enumerate(records, start=1):
         fields = advisory_fields(record)
+        if advisory_is_exercise(record, fields):
+            errors.append({
+                "record": str(index),
+                "error": "Exercise VAA is not operational evidence",
+            })
+            continue
         centre = str(fields.get("VAAC") or "").strip().upper()
         issued_at = _issued_at(fields)
         if centre not in WIFS_VAAC_CENTRES or issued_at is None:
@@ -196,7 +212,7 @@ def fetch_wifs_global_vaac_snapshot(
     api_key: str | None = None,
 ) -> dict[str, Any]:
     retrieved_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    source_url = _query_url(retrieved_at)
+    source_url = wifs_advisory_query_url(retrieved_at)
     window = advisory_flight_window(flight)
     key = str(api_key if api_key is not None else os.environ.get("ODSS_WIFS_API_KEY", "")).strip()
     if window is None:
@@ -238,7 +254,7 @@ def fetch_wifs_global_vaac_snapshot(
     window_start, window_end = window
     try:
         response = active_client.get(source_url, headers={"X-API-KEY": key})
-        advisories, errors = parse_wifs_vaa_collective(_bounded_text(response))
+        advisories, errors = parse_wifs_vaa_collective(bounded_wifs_text(response))
         selected = [
             advisory for advisory in advisories
             if (
@@ -322,8 +338,11 @@ __all__ = [
     "WIFS_API_ORIGIN",
     "WIFS_TAC_ADVISORY_PATH",
     "WIFS_VAAC_CENTRES",
+    "bounded_wifs_text",
     "fetch_wifs_global_vaac_snapshot",
     "live_wifs_global_vaac_snapshot",
     "parse_wifs_vaa_collective",
+    "wifs_advisory_query_url",
     "wifs_centre_snapshot",
+    "wifs_tac_records",
 ]
