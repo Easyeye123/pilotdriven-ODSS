@@ -20,6 +20,8 @@ from app.odss.briefing import (
 )
 from app.odss.pertinent_brief import CATEGORY_COLOURS
 from app.odss.report_facts import (
+    actm_utc_clock,
+    actm_utc_label,
     build_route_gate_rows,
     is_confirmed_profile_finding,
     profile_coverage_label,
@@ -248,7 +250,10 @@ def test_route_gates_are_derived_from_generic_cfp_route_and_fail_closed() -> Non
 
     assert rows[0]["gate"] == "NAT B"
     assert rows[0]["basis"] == "ALPHA - BRAVO"
-    assert "11 JUL 1230Z" in rows[0]["time"]
+    assert rows[0]["time"] == "ACTM 02.00 - ACTM 04.00"
+    assert all("Z" not in item["time"] for item in rows)
+    assert actm_utc_clock(flight, 180) is None
+    assert actm_utc_label(flight, 180) == "ACTM 03.00"
     assert any(item["gate"] == "TEST" for item in selected)
     assert selected[-1]["gate"] == "EBBR"
     assert all(
@@ -260,6 +265,31 @@ def test_route_gates_are_derived_from_generic_cfp_route_and_fail_closed() -> Non
         "review required" not in item["result"].lower()
         for item in selected
     )
+
+    flight["actual_takeoff_utc"] = "2026-07-11T10:45:00+00:00"
+    anchored_rows = build_route_gate_rows(flight)
+    assert "11 JUL 1245Z" in anchored_rows[0]["time"]
+    assert actm_utc_label(flight, 180) == "ACTM 03.00 / 11 JUL 1345Z"
+
+
+@pytest.mark.parametrize("level", [1, 2])
+def test_reports_keep_actm_only_until_an_actual_timing_anchor_exists(
+    tmp_path: Path,
+    level: int,
+) -> None:
+    flight = _flight()
+    path = tmp_path / f"level-{level}-actm-only.pdf"
+    render_pdf(flight, [], [], level, path)
+
+    document = fitz.open(path)
+    try:
+        text = "\n".join(page.get_text() for page in document)
+    finally:
+        document.close()
+
+    assert "ACTM from scheduled-departure anchor" not in text
+    assert "ACTM 02.00 / 11 JUL 1230Z" not in text
+    assert "ACTM 02.00" in text
 
 
 def test_profile_findings_join_by_terrain_event_not_list_position() -> None:

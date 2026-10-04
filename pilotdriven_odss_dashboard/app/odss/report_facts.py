@@ -23,8 +23,10 @@ def _source_page(point: dict[str, Any]) -> str:
     return f"CFP p. {page}" if isinstance(page, int) and page > 0 else "Uploaded CFP"
 
 
-def _departure_anchor(flight: dict[str, Any]) -> datetime | None:
-    value = flight.get("scheduled_departure_utc")
+def actual_timing_anchor(flight: dict[str, Any]) -> datetime | None:
+    """Return an actual/derived take-off anchor, never a schedule surrogate."""
+    reference = flight.get("timing_reference") or {}
+    value = flight.get("actual_takeoff_utc") or reference.get("actual_takeoff_utc")
     if not value:
         return None
     try:
@@ -36,16 +38,28 @@ def _departure_anchor(flight: dict[str, Any]) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def actm_utc_clock(flight: dict[str, Any], actm_minutes: Any) -> str | None:
+    """Return a UTC clock only when ATOT or waypoint ATA established time zero."""
+    try:
+        minutes = int(actm_minutes)
+    except (TypeError, ValueError):
+        return None
+    anchor = actual_timing_anchor(flight)
+    if anchor is None:
+        return None
+    utc = anchor + timedelta(minutes=minutes)
+    return f"{utc:%d %b %H%MZ}".upper()
+
+
 def actm_utc_label(flight: dict[str, Any], actm_minutes: Any) -> str:
     try:
         minutes = int(actm_minutes)
     except (TypeError, ValueError):
         return "Time review required"
-    anchor = _departure_anchor(flight)
-    if anchor is None:
-        return f"ACTM {format_actm(minutes)} / UTC anchor unavailable"
-    utc = anchor + timedelta(minutes=minutes)
-    return f"ACTM {format_actm(minutes)} / {utc:%d %b %H%MZ}".upper()
+    clock = actm_utc_clock(flight, minutes)
+    if clock is None:
+        return f"ACTM {format_actm(minutes)}"
+    return f"ACTM {format_actm(minutes)} / {clock}"
 
 
 def _named_point(
@@ -290,7 +304,9 @@ def profile_coverage_label(findings: Iterable[dict[str, Any]]) -> str:
 
 
 __all__ = [
+    "actm_utc_clock",
     "actm_utc_label",
+    "actual_timing_anchor",
     "build_route_gate_rows",
     "is_confirmed_profile_finding",
     "profile_coverage_label",
