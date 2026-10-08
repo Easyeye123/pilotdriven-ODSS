@@ -1154,6 +1154,25 @@ def _named_taxiway_closure_items(text: str, subject: str) -> tuple[str, str] | N
     return items[0][1], f"This notice states {len(further)} further closed taxiway item(s)"
 
 
+def taxiway_closure_stated_scopes(text: str) -> list[str]:
+    """The closed taxiway scopes a taxiway-closure card states, for the PDF consequence to state the same (ITEM 4).
+
+    Codex production QA of release 460 (F3-R460): Gatwick's SX67/25 "TAXIWAY TANGO CLOSED NORTH OF TAXIWAY JULIET" was
+    on the chart, the card and the PDF map, while the PDF's consequence panel held it unresolved - its taxi reader skips
+    a scope that follows the verb. Malé's SX5/26 was held the same way. This returns the card's own reading: every
+    named item where the card names them, else the card's one bounded subject. A subject the card could not bound
+    ("part of"), a fallback subject, or further items the card can only count, give nothing - the PDF keeps saying the
+    consequence is not established rather than understating it.
+    """
+    upper = " ".join(text.upper().split())
+    subject, source = _taxiway_subject(upper)
+    if _named_taxiway_closure_items(text, subject):
+        return [label for _, label in taxiway_closure_items(text)[0]]
+    if source == "fallback" or subject.startswith("part of ") or _further_closed_taxiway_items(text):
+        return []
+    return [subject]
+
+
 def _taxiway_subject(upper: str, *, closure: bool = True) -> tuple[str, str]:
     """A taxiway notice's subject, and which reader named it.
 

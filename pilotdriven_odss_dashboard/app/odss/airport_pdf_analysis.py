@@ -458,6 +458,11 @@ def analyse_airport_for_pdf(panel: dict[str, Any], *, role: str, planned_runway:
         elif kind == "taxiway_closure":
             taxiways = taxi_routing_scopes(raw)
             if not taxiways:
+                # ITEM 4 (F3-R460): the scope the card states, when the routing reader holds none (EGKK SX67/25,
+                # VRMM SX5/26). Nothing is stated here that the card does not state.
+                from .engines import taxiway_closure_stated_scopes
+                taxiways = taxiway_closure_stated_scopes(raw)
+            if not taxiways:
                 leave_unresolved(notice_id, raw, "effect")
                 continue
             # An entity-only record cannot establish the extent of a partial

@@ -176,7 +176,11 @@ def test_page_six_holds_a_primary_row_with_many_printed_conditions(tmp_path):
     assert "NOTAM SX33/26" not in page6, "the opposite-direction notice is not promoted to the primary call"
     # ATC-CLEARANCE-FAMILY (1 Oct 2026): the added CO188/02 row (LTAA p74) is one more line and one more deferred row.
     assert len(composed["procedure_lines"]) == 28
-    assert "+27 further rows on the dashboard" in page6 and "OPKR 2, OPLR 1" in page6
+    # ITEM 4 F3-R460 (9 Oct 2026): EGLL A2905/26 (TWY BRAVO (SOUTH) between ECHO and FOXTROT) now carries its stated
+    # PDF consequence instead of an unresolved entry, so the airport assessment shortens and page 6 keeps one more call
+    # row - Turkmenabat's AX1/23 - with one fewer deferred.
+    assert "NOTAM AX1/23, OFP p72" in page6
+    assert "+26 further rows on the dashboard" in page6 and "OPKR 2, OPLR 1" in page6
 
 
 def test_page_six_cuts_clauses_before_it_drops_a_valued_call_row(tmp_path):
