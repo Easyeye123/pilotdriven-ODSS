@@ -316,6 +316,40 @@ def _segment_items(segment: str) -> tuple[list[tuple[str, str]], bool]:
     return items, exact
 
 
+# ITEM 4, VRMM SX5/26 (9 Oct 2026). Malé's supplement states its closures as two sentences: "A PORTION OF TWY C CLOSED
+# TO ALL AIRCRAFT OPERATIONS FROM A POINT IMMEDIATELY SOUTH OF TWY D2 (EXCLUDING TWY D2) TO A DISTANCE OF
+# APPROXIMATELY 1,440M." and "TWYS D3, D4, F, AND G ARE ALSO CLOSED DURING THIS PERIOD." The first read as "part of
+# TWY C" with its stated side and length lost; the plural list was not read at all. Each statement is read whole by
+# these two forms first; any other statement is read as before.
+_SIDE_LENGTH_CLOSURE = re.compile(
+    rf"(?:\b(?:A\s+)?(?:PORTION|PART|SECTION)\s+OF\s+)?(?<![A-Z0-9-])(?P<kind>{_KIND})\s+(?P<ident>{_REF})\s+"
+    r"(?:IS\s+|WILL\s+BE\s+)?(?:CLSD|CLOSED)\s+"
+    r"(?:TO\s+ALL\s+(?:ACFT|AIRCRAFT)(?:\s+(?:OPERATIONS|OPS))?\s+)?(?:(?:FROM|FM)\s+A\s+POINT\s+(?:IMMEDIATELY\s+)?)?"
+    rf"(?P<side>NORTH|SOUTH|EAST|WEST)\s+OF\s+(?P<bound_kind>{_KIND})\s+(?P<bound>{_REF})\s+"
+    r"(?:TO|FOR)\s+A\s+(?:DISTANCE|LENGTH)\s+OF\s+(?:APPROX(?:IMATELY|\.)?\s+|ABOUT\s+)?"
+    r"(?P<length>\d{1,2},\d{3}|\d{2,5})\s*(?:M|METRES|METERS)\b"
+)
+_LISTED_PLURAL_CLOSURE = re.compile(
+    rf"(?<![A-Z0-9-])(?P<kind>TWYS|TAXIWAYS|TXLS|TAXILANES)\s+(?P<refs>{_REF}(?:\s*(?:,\s*AND|,|AND)\s*{_REF})+)\s+"
+    r"(?:(?:ARE|WILL\s+BE)\s+)?(?:ALSO\s+)?(?:CLSD|CLOSED)\b"
+)
+
+
+def _statement_closure_items(statement: str) -> list[tuple[str, str]] | None:
+    """The items a statement closes when it is one of the two whole forms above, else None."""
+    side = _SIDE_LENGTH_CLOSURE.search(statement)
+    if side:
+        surface = _surface(side["kind"])
+        length = f"{int(side['length'].replace(',', '')):,}"
+        return [("partial", f"{surface} {side['ident']} {side['side'].lower()} of {side['bound']} for about {length} m")]
+    listed = _LISTED_PLURAL_CLOSURE.search(statement)
+    if listed:
+        surface = "TXL" if listed["kind"] in {"TXLS", "TAXILANES"} else "TWY"
+        refs = re.split(r"\s*(?:,\s*AND|,|AND)\s*", listed["refs"].strip())
+        return [("surface", f"{surface} {ref}") for ref in refs if ref]
+    return None
+
+
 def taxiway_closure_items(text: str) -> tuple[list[tuple[str, str]], bool]:
     """Every closed taxiway item the notice lists, and whether all were read.
 
@@ -330,15 +364,20 @@ def taxiway_closure_items(text: str) -> tuple[list[tuple[str, str]], bool]:
     upper = re.split(r"\s*-?\s*\bRMK\b", upper, maxsplit=1)[0]
     upper = re.sub(r"\([^()]*\)", " ", upper)
     header = re.search(r"\b(?:CLSD|CLOSED)\b[^:.]*:", upper)
+    read: list[tuple[str, str]] = []
     if header and re.search(rf"\b{_KIND}\b", upper[:header.end()]):
         segments = re.split(rf"{_ITEM_MARKER}|\.\s+|;\s*", upper[header.end():])
     else:
         segments = []
         for statement in re.split(r"\.\s+|;\s*", upper):
+            whole = _statement_closure_items(statement)
+            if whole is not None:
+                read.extend(item for item in whole if item not in read)
+                continue
             closed = _CLOSED.search(statement)
             if closed:
                 segments.append(statement[:closed.start()])
-    items: list[tuple[str, str]] = []
+    items: list[tuple[str, str]] = list(read)
     exact = True
     for segment in segments:
         # A marker left at the front when a sentence end split the list ("... Q3. II: TXL Q3").

@@ -1126,6 +1126,34 @@ def _further_closed_taxiway_items(text: str) -> str:
     return f"This notice states {further} further closed taxiway item(s)"
 
 
+def _named_taxiway_closure_items(text: str, subject: str) -> tuple[str, str] | None:
+    """ITEM 4, VRMM SX5/26 (9 Oct 2026): what the card states when it would otherwise say "part of".
+
+    David, 7 Oct: "The NOTAMS for VRMM was not highlighted at all ... You check the wordings". The card read "PART OF
+    TWY C closed ... Its bounds could not be read completely" while the notice states the side and length and four
+    more closed taxiways. Only a subject this reader could not bound is replaced, and only when every listed item was
+    read: the first item's own scope becomes the subject and the further items are named when each is a whole
+    taxiway, otherwise counted as before.
+    """
+    if not subject.startswith("part of "):
+        return None
+    items, exact = taxiway_closure_items(text)
+    if not exact or not items or items[0][0] != "partial" or items[0][1].startswith("part of "):
+        return None
+    if items[0][1].split(" ")[:2] != subject[len("part of "):].split(" ")[:2]:
+        return None
+    further = items[1:]
+    if not further:
+        return items[0][1], ""
+    kinds = {label.split(" ", 1)[0] for _, label in further}
+    if all(form == "surface" for form, _ in further) and len(kinds) == 1:
+        refs = [label.split(" ", 1)[1] for _, label in further]
+        named = refs[0] if len(refs) == 1 else f"{', '.join(refs[:-1])} and {refs[-1]}"
+        verb = "is" if len(refs) == 1 else "are"
+        return items[0][1], f"{kinds.pop()} {named} {verb} also closed"
+    return items[0][1], f"This notice states {len(further)} further closed taxiway item(s)"
+
+
 def _taxiway_subject(upper: str, *, closure: bool = True) -> tuple[str, str]:
     """A taxiway notice's subject, and which reader named it.
 
@@ -1532,6 +1560,11 @@ def _notam_operational_summary(
             )
         return f"Lighting affecting {subject.upper()} is unavailable during the applicable {phase} window."
     if kind == "taxiway_closure":
+        named = _named_taxiway_closure_items(text, subject)
+        if named:
+            scope, further_named = named
+            tail = f" {further_named}; the full record is held with the airport's notices." if further_named else ""
+            return f"{scope.upper()} closed during the applicable {phase} window.{tail}"
         notes = []
         if subject.startswith("part of "):
             notes.append("Its bounds could not be read completely from the notice")

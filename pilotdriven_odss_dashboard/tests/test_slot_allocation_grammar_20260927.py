@@ -199,7 +199,9 @@ def test_no_other_genuine_source_holds_an_allocation_or_an_unread_one():
         pytest.skip("private corpus is not on this machine")
     held = {path.name: (genuine(path.name)["bobcat"], genuine(path.name)["slot_allocation_unread"]) for path in others}
     assert {name: value for name, value in held.items() if value != (None, None)} == {}
-    assert len(held) == 24
+    # 26 since 9 Oct 2026: David's genuine SQ437 MLE-SIN (8 Oct) and SQ438 SIN-MLE (7 Oct) OFPs joined the corpus
+    # (ITEM 4, VRMM); neither prints an allocation.
+    assert len(held) == 26
 
 
 # ---------------------------------------------------------------- the composition: read, unread, stale, absent
