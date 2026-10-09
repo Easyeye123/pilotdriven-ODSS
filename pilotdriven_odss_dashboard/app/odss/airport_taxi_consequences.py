@@ -33,6 +33,13 @@ _REF = (
     rf"|(?!{_NOT_A_NAME}(?![A-Z0-9]))[A-Z]{{1,2}})(?![A-Z0-9-])"
 )
 _SUBJECT = re.compile(rf"\b{_KIND}\s+({_REF})(?=\b)")
+
+
+def is_prose_word(value: str) -> bool:
+    """A plain word of three or more letters that is not a spelled taxiway letter: "GUIDANCE" in "TWY GUIDANCE SIGNS"."""
+    return value.isalpha() and len(value) >= 3 and re.fullmatch(_PHONETIC, value) is None
+
+
 _CLOSED = re.compile(r"\b(?:(?:WILL\s+BE|ARE|IS|TEMPO)\s+)?(?:CLSD|CLOSED)\b")
 _DIRECTION = r"(?:NB|SB|EB|WB|NORTHBOUND|SOUTHBOUND|EASTBOUND|WESTBOUND)"
 _RUNWAY_END = r"\d{2}[LCR]?"
@@ -215,7 +222,9 @@ _SCOPE_AFTER_PREDICATE = re.compile(
     r"\s+(?:BTN|BETWEEN|BTW|FM|FROM|AFTER|BEFORE|ABEAM|ADJ|EXC|EXCEPT|BEHIND|NORTH|SOUTH|EAST|WEST|"
     r"PORTION|PART|SECTION)(?![A-Z0-9])"
 )
-_STAND_LIST = rf"{_FACILITY_ID}(?:\s*(?:,|AND|TO)\s*{_FACILITY_ID})*"
+# WSSS SX83/24 "TXL R1 BEHIND ACFT STAND E5, TXL R2 BEHIND ...": a designation word is never a stand, so the next
+# designation after a comma ends the stand list instead of joining it.
+_STAND_LIST = rf"{_FACILITY_ID}(?:\s*(?:,|AND|TO)\s*(?!{_KIND}(?![A-Z0-9])){_FACILITY_ID})*"
 
 
 def _designation_scope(upper: str, end: int, surface: str, ident: str) -> tuple[str | None, int]:

@@ -42,6 +42,7 @@ from .pilot_briefing import (
 from .runway_closure_schedule import reconcile_runway_closure_findings
 from .airport_taxi_consequences import (
     bounded_taxiway_extents,
+    is_prose_word,
     taxiway_closure_items,
     taxiway_designation_scope,
 )
@@ -1215,19 +1216,35 @@ def _taxiway_subject(upper: str, *, closure: bool = True) -> tuple[str, str]:
         "WILL",
         "WITH",
     }
+    # 10 Oct 2026, genuine SQ437 WSSS SX168/26 "TEMPO CLOSURE OF TXL N4 BEHIND ACFT STAND 604 ...": the card read "PART
+    # OF TWY GUIDANCE closed" - only TWY was looked for, and "TWY GUIDANCE SIGNS WILL BE MASKED OUT" made a taxiway of a
+    # word. A taxilane is a designation too, and a plain word after TWY is never a name.
     for match in re.finditer(
-        r"\b(?:TWY|TAXIWAY)\s+(?P<identifier>[A-Z][A-Z0-9/-]*)\b",
+        r"\b(?P<kind>TWY|TAXIWAY|TXL|TAXILANE)\s+(?P<identifier>[A-Z][A-Z0-9/-]*)\b",
         upper,
     ):
         identifier = match.group("identifier")
-        if identifier in invalid_identifiers:
+        if identifier in invalid_identifiers or is_prose_word(identifier):
             continue
+        surface = "TXL" if match.group("kind") in {"TXL", "TAXILANE"} else "TWY"
         # A designation qualified by anything but its closure, a list
         # sibling or the end of its statement is a PARTIAL closure: its
         # own scope when this can read it, "part of" when it cannot, and
         # never the whole taxiway.
-        partial = taxiway_designation_scope(upper, match.end(), "TWY", identifier) if closure else None
-        return partial or f"TWY {identifier}", "designation"
+        partial = taxiway_designation_scope(upper, match.end(), surface, identifier) if closure else None
+        if closure and partial is None:
+            # WSSS SX83/24: a header list ("TEMPO CLOSURE OF TXL R1, R2, R3 ...") names what its details narrow ("TXL
+            # R1 BEHIND ACFT STAND E5"). A later mention of the same designation that states a scope this can read
+            # wins: a list header never widens a closure to the whole taxiway. A later mention whose qualifier is not
+            # read ("JET BLAST TOWARDS TWY W1" after "TWY W1 CLSD", EBBR SX38/26) says nothing about the closure.
+            for later in re.finditer(
+                rf"\b(?:{match.group('kind')})\s+{re.escape(identifier)}\b", upper[match.end():],
+            ):
+                stated = taxiway_designation_scope(upper, match.end() + later.end(), surface, identifier)
+                if stated and not stated.startswith("part of "):
+                    partial = stated
+                    break
+        return partial or f"{surface} {identifier}", "designation"
     phonetic = re.search(r"\b([A-Z]{2,})\s+TWY\b", upper)
     turnoffs = re.search(
         r"\bHIGH-SPEED\s+TURN-OFFS?\s+([A-Z]\d{1,2})\s+AND\s+([A-Z]\d{1,2})\b",

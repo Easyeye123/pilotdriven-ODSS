@@ -28,7 +28,9 @@ EXPECTED = {
         "source_sha256": "ffb63085badc026e1db590b289be80590d551a58b6a699a1c8d1c4f79ac9baef",
         "departure": "WSSS",
         "destination": "EBBR",
-        "route_hash": "90a055e3ec2fca7b83e7f10603d333b0104dae4f0175180dca85918049ff9f87",
+        # 10 Oct 2026: LIBDI, the waypoint before SQ304's "**ETP1 -1D" row, keeps its own position and MSA (020 at
+        # N14 15.1 E091 59.8) instead of the ETP's; same value as the reminted private-corpus manifest.
+        "route_hash": "2c465ca696f810745e689e1d8a36b80a0b5fe2b06c9f511177ba298088330e1e",
         "masses": {
             "planned_zfw_kg": 175500,
             "planned_takeoff_weight_kg": 262222,

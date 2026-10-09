@@ -58,7 +58,7 @@
    "departure_iata": "SIN",
    "destination_iata": "BRU",
    "route_point_count": 146,
-   "route_hash": "90a055e3ec2fca7b83e7f10603d333b0104dae4f0175180dca85918049ff9f87",
+   "route_hash": "2c465ca696f810745e689e1d8a36b80a0b5fe2b06c9f511177ba298088330e1e",
    "extraction_expectations": {
     "counts": {
      "notams": 68,
@@ -82,7 +82,7 @@
      "edto_sectors": "381804694bf9dcbdf1e6abad6d2bc091ca3b0c6b2bf68dd5a19004aa35598426",
      "edto_airports": "6a55be0b1e5ad04b15638b830907a50909e9869bfe4782fb0ceab3967176d079",
      "fuel_enroute_airports": "6a2dbed52390b4a496f37ff0d450a27a8cc4e67242406d55745d4b22ffb78fa0",
-     "route_waypoints": "f3e0800a81011b4f2ad9ba41141f0c8c33204b2088ad72d15382bb816e961740",
+     "route_waypoints": "a71ac5be773d87c5d5ef99181bdf098249d632ea0cdb8d93b7a9a4e079f26bac",
      "flight_planning_etps": "e5a4f69f2481b12d94f77f9ebba9a7b0f15834fafaddf01b497a42bc84664cbf",
      "intam_records": "72ee05763a4c2534c3cccb578dab3b145f56b352b9ba441320c47d818136221d",
      "notam_procedure_records": "a9f39fe26c8e76235bf65007172437072a074327ef377df7ade575d7ca6d44b5",
@@ -101,7 +101,7 @@
    "departure_iata": "SIN",
    "destination_iata": "FCO",
    "route_point_count": 150,
-   "route_hash": "f1ca5fcaf766e703ec69ef038a242fdc4b6273877cfd91da7a2e219ce2f477b0",
+   "route_hash": "dcd9a8d809481769220f8f9685f22344d7961de01fc0c893478b7472d71adb52",
    "extraction_expectations": {
     "counts": {
      "notams": 80,
@@ -125,7 +125,7 @@
      "edto_sectors": "1620ff3bdf564d303b6146e57e808317f9606f433dc6d4a39a764d31d9df9ae9",
      "edto_airports": "6dcd1d15fd65818a0559072cc78c0e2f759f518a517f2b50ea98ee548ea0c417",
      "fuel_enroute_airports": "f8b8a2b8de228247d9e0a919d13a6c3c716b5225d7c745a27e3d70daffdd4bde",
-     "route_waypoints": "44ff1d518a617c00dbda09f69f364654b544ff36bae4afa90bbdb09dd4a7a124",
+     "route_waypoints": "c2c3f993af7c3a8cf9011e87950694bfe4a5a6b14d1a726f9b6d00e0706a0d3f",
      "flight_planning_etps": "4cf0397bf273f76cba282861907348cb695a30748a9b02d778e655ca56ee0844",
      "intam_records": "d06bdb33f281385042f7b58ea777b88e73e10dde710048fe095a52c7eeb3b5a2",
      "notam_procedure_records": "80f41ed78f321b6f49aef081b980c306a1b9e6abe830cfc48e76c6a3bf4307c1",
@@ -144,7 +144,7 @@
    "departure_iata": "SIN",
    "destination_iata": "JFK",
    "route_point_count": 118,
-   "route_hash": "c397bf6f8b806b04d36002495c0a310088b8ab9e8d51054a289d9eb3ce31b2ce",
+   "route_hash": "372fcd21ae816374f42d10ab5d15e31bb1ca4d6e419deec4ab6c16336c91a43b",
    "extraction_expectations": {
     "counts": {
      "notams": 235,
@@ -168,7 +168,7 @@
      "edto_sectors": "d6dcda71bed7681e3155966f1f237b0db2414118b788e0d1a344630712730a88",
      "edto_airports": "d7d102f47dccb9fee84ebe75ef9203c5a6eb309ec57f01dfcdf5bed4534e9c26",
      "fuel_enroute_airports": "959b2668d13b6cab6a541661e4cfdbb7647f1fb50c3fafe27252c90a6da1e7a3",
-     "route_waypoints": "3e434a6893583b69393d8191a7ce3167c165cfdc68de04294516e50f13048648",
+     "route_waypoints": "f871cbe36e2e5fbaea56565033b0794ef175f75535bb308218fc3cc096e238a6",
      "flight_planning_etps": "357499099f6612be6f5fa6d02cdeaef37bd9358ce5277797b70cef0f3afff974",
      "intam_records": "426c82d5c0f74c341ffdb0882d23e79944e6e2d66f484b67048fdfbb891a916e",
      "notam_procedure_records": "e0bee3efe4bafb5aee860470d872c875e9b6fe725a737632e359dcd579ca4d3c",
@@ -230,7 +230,7 @@
    "departure_iata": "JFK",
    "destination_iata": "SIN",
    "route_point_count": 169,
-   "route_hash": "11cd05bd9bb8b5a10df9d8b173f4d2a9fe11151790f9ef284aea52fd17214106",
+   "route_hash": "71b3b876eb1aa434f0507befe4215b2bced2879c4cc8a755883c18cb94ce4f33",
    "extraction_expectations": {
     "counts": {
      "notams": 123,
@@ -254,7 +254,7 @@
      "edto_sectors": "c755447ef1968a168a17d7c178648a773786368f1e5027cbff21f950286b2aa9",
      "edto_airports": "2df0af0da646f48449b79acf08ed4b42f41c067cd55b265e65b5ff543955cb5a",
      "fuel_enroute_airports": "961983ce7148ce2adff27486879055aa725faa8b9f4af14068565fd6434014d1",
-     "route_waypoints": "bb36bac2a262d2258aee9c75f734304eec938abf74ce265ae3c17bde75622850",
+     "route_waypoints": "7dd9158662aee2444d30f41366cbf7a16050868f31d6ec9cecb66f0909533d57",
      "flight_planning_etps": "f27c5eb8e72c1f9af336566d068e3c4fcff94a1ef45364453bc27c89f240905b",
      "intam_records": "a033de7f3bb34e55ca2b64e8561136f8e8302906bad0579d1e49037ad0ade326",
      "notam_procedure_records": "5340460725e44cde10fa92f407f0cceb79047f72af1944625e2d54f3b6c75180",
@@ -316,7 +316,7 @@
    "departure_iata": "SIN",
    "destination_iata": "ADL",
    "route_point_count": 34,
-   "route_hash": "9f58eb827e99237e6c074f63bb8c988bbbde4368c2ec0e6186c2a1a85c44883f",
+   "route_hash": "4270e5a497173dc5d21f40ba49c5b7a1f94c702da1e8ba059072d2d776c0bfac",
    "extraction_expectations": {
     "counts": {
      "notams": 51,
@@ -340,7 +340,7 @@
      "edto_sectors": "9be0b9a6c6c63073d56b31c4e65d6ceb124545f75aae6a66f899a5da8cdf9acd",
      "edto_airports": "4975e31dff3fb7fd4c20921fd0e575fe1f7b836589101659c001c109c45246a4",
      "fuel_enroute_airports": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-     "route_waypoints": "6b3af45ed7054b046091db4a0b509acc2fb6955a7f46c3e04dc7ea66464cb8e5",
+     "route_waypoints": "d989e3c6fdc5edf8c674a078d085a9aafe18cfa1f52ec31816e73aadac7c1def",
      "flight_planning_etps": "7ad1ccd21fa42498db94d7cfe38d45190e180120141c7c7a6c17e6f93eb789b7",
      "intam_records": "1a3d6150908d3e99d9fa2f8fdc4565d14bb1579138d2643b036008516e5f8335",
      "notam_procedure_records": "634adc0c9693c2d2e610172a3dc3bfd913bf1867d46cac94a073789562b5556d",
@@ -402,7 +402,7 @@
    "departure_iata": "SIN",
    "destination_iata": "JNB",
    "route_point_count": 51,
-   "route_hash": "4ca54149b13be764e4887c8493235cf46adce29f7266285fdf196c3d49cb99c9",
+   "route_hash": "ac1da12245b68417f142a5e860ff82439f04fe5ff98ef9e623156a7e9d267c5b",
    "extraction_expectations": {
     "counts": {
      "notams": 56,
@@ -426,7 +426,7 @@
      "edto_sectors": "49cd18d157e20010575aad82eb62152a43a7bc681843f53d807656aafc21178a",
      "edto_airports": "4b202d934f0630f352b4b96b22d49baeb40ed0e64d2d7d57f71b3d25e2ac546a",
      "fuel_enroute_airports": "8f419d95a0a1473803efc10a64bb2d801fec351f32b6942c98bd234f44d3a488",
-     "route_waypoints": "6807557227188f1e2cc0c4bf26ccad0f1120f90029af56d180a684ff03f566d1",
+     "route_waypoints": "239b47e638356ac79b9b0f411dff31a1c4d765f6f7278699e85d4fb6c0e165b0",
      "flight_planning_etps": "54482314069d3c3fa59f08cf34d7d53b5aa587d85b0c5860c56928045366653d",
      "intam_records": "3beac5c403f08aaabb23cb4bbd5695f8c05d6901b46910961e0da225f9e364ee",
      "notam_procedure_records": "b11d06cb7caa09ff042bea2abad91271ad63d2d3af3f64fff5bf263e70ed2a02",
@@ -531,7 +531,7 @@
    "departure_iata": "SIN",
    "destination_iata": "CHC",
    "route_point_count": 55,
-   "route_hash": "14c9155e30c63a61fc51bb3193221bb7e5c9124b6f788e6dd6c7fe59c5a012ed",
+   "route_hash": "8d7263a6ceb855ea36fb9d6d85117b1435090f79f235136397e26e4c94e1add0",
    "extraction_expectations": {
     "counts": {
      "notams": 48,
@@ -555,7 +555,7 @@
      "edto_sectors": "8414413547ba147f5d7bc8ad9ad76ac2e27b85cf7a4fc3c4b0d2e322cc7eb427",
      "edto_airports": "1000b49a1589c17258eb451ac2227f57a13871102b8f1787a67e11b317963781",
      "fuel_enroute_airports": "8544adf8b3606cd44d97b2256f78dbc8d440a51d5780ce5980ffc474a2de5135",
-     "route_waypoints": "b07641bd9f028b895aadb37a695bfded1b88c15e3022abb82f68009f814f5251",
+     "route_waypoints": "0d84dc4c03797a13297fc4595b92262b9c8173be422e7ca9b97a6537207c6197",
      "flight_planning_etps": "034cb796ac91b3837c8f0190b5e283c2c2f56eab044d258631655bb20b0165af",
      "intam_records": "48c69703cac36d0684269fba1c22ef601233b2dc93aad1047d417d6e44e03580",
      "notam_procedure_records": "9437e3c72bc946d5920ab8cb93011db3cf603883fa177abd0c59e862b413c4b2",
@@ -660,7 +660,7 @@
    "departure_iata": "SIN",
    "destination_iata": "JFK",
    "route_point_count": 119,
-   "route_hash": "5c2fe501b3a4b36db3410fa1dfd68b0eb42e600e783359176829ec15f8a0c153",
+   "route_hash": "182945eb9eeaabd05de7f1af5fec55a475b8bdbcd15ae6b5970e121e8b7cc992",
    "extraction_expectations": {
     "counts": {
      "notams": 238,
@@ -684,7 +684,7 @@
      "edto_sectors": "a6eabfd011b18999053a584de3560a4045a3ae8969627fcf17796249161e4b61",
      "edto_airports": "8bf49ca686c624003fa84f0941819d6a8758b11bf13e609d16b19bab6f7ed63c",
      "fuel_enroute_airports": "b72892505004f3a1cacac315e66d62ba83218f008824880a2bea6fc58f76dd68",
-     "route_waypoints": "9a5015618cc1be93dc076cd8535512e563ecc6cf2fdc3e95e5ccc1f855b647a3",
+     "route_waypoints": "f1ea30011dbf4ecc5cb0e51ddf4d4f966702c62e56645c997b6344b534937112",
      "flight_planning_etps": "07818955ea1662d41e9c1f117cae81847f3ff4e441a8a5ce80d6e934c953e4a7",
      "intam_records": "3587e008c0aa57ae7264ae28788408903d78f79d12ebb2088b580fbc01b52c9f",
      "notam_procedure_records": "2e72d5a6cb24cb8caafab393b39a3f4087377f7f9c7302f663e350b75cbfad41",
@@ -703,7 +703,7 @@
    "departure_iata": "SIN",
    "destination_iata": "LGW",
    "route_point_count": 149,
-   "route_hash": "20bfaa1a28a8380d9a9e2bd638655b9696ec2f50e4343ff0726b50e966900726",
+   "route_hash": "b8dde8b40cbf7996e55c73c4e398dfc47fdbbba47b4860918f57da8077cb32bd",
    "extraction_expectations": {
     "counts": {
      "notams": 66,
@@ -727,7 +727,7 @@
      "edto_sectors": "1f0849d5c531418299185f59337467fafea4b7c9babde3228f342a06166b19cf",
      "edto_airports": "35e822be53fcb03ff8dd0fc1303339184218aa21e34f728ef2d941d76c6e0455",
      "fuel_enroute_airports": "c98081804bb027fb48564ef7087843ff2323384551b7a094af2a4726726a2007",
-     "route_waypoints": "a166f16ad9abc5717e241fcc901ffdbc4bb0b23effcb88e7ecc9867bb6f99d73",
+     "route_waypoints": "b3009585789d6d63ada8e7b6ef65ae640370361a734bbc64b9987dc8d78f6d14",
      "flight_planning_etps": "6dacd8ccccc4f8ba17489bfb49bd7126563dd40979f9560f0fcf77ee9374bd09",
      "intam_records": "ad53bc86d1c0da11b39e7defc5f034b1d4853ec3c1b835491e6d0af38ab367a9",
      "notam_procedure_records": "87e9169e50cf9f579dcef9e168b929f3a9b16744e63b998369b7fc6e44c493c7",
@@ -789,7 +789,7 @@
    "departure_iata": "SIN",
    "destination_iata": "SFO",
    "route_point_count": 53,
-   "route_hash": "23135639f84309f1701ae8b46316533674e5f3b299b2a53632679045310a5207",
+   "route_hash": "53fd6fff4b26cc34a010b9e3ad3b8fc241b1568599987e39f65cac91640c7d42",
    "extraction_expectations": {
     "counts": {
      "notams": 178,
@@ -813,7 +813,7 @@
      "edto_sectors": "f87001a3548ca118a90120ac0e5b3db37dfba6d5350b6be728483d87de5f540c",
      "edto_airports": "bf3826a9d44db40f43e063c70abaa49e229e3c169eef9533d178ac7e9ca8457a",
      "fuel_enroute_airports": "88a98bc60ab3fbf3374ca2e2658de75c9869732485129c68b46db5af1ecc0fe8",
-     "route_waypoints": "96fc23b81156d10c9238053abb0fa8994821cafd3a5dcfd6e30fae3a2f19ea25",
+     "route_waypoints": "e5d9c643a2938caf4f706d11973f13f0f9d152392f808ac73fcdce6230386113",
      "flight_planning_etps": "8d5ec37e52fef7de4cf22e165fbd677a636a782de7301e186e3c061d7c41f385",
      "intam_records": "501199b1f7ccb336ef833c06431d745463c3592c7cd1679e86596de60e694fab",
      "notam_procedure_records": "eed79f86a176401e72f9ec955356d28fa2b0082e29bece1034037727995ccbeb",
@@ -961,7 +961,7 @@
    "departure_iata": "JNB",
    "destination_iata": "SIN",
    "route_point_count": 51,
-   "route_hash": "e440f05519e0e51d2266ea8fce2df94db4f722f0eefa6a835c60228476ed94bc",
+   "route_hash": "d6f1376b92633d766b6b9b3a53bf052f68688fbc0497fefea667bf195aa3eb71",
    "extraction_expectations": {
     "counts": {
      "notams": 55,
@@ -985,7 +985,7 @@
      "edto_sectors": "cec458eb251252ca4a874b9172ac149ab36a28a5c66c87dfdffaed2548931195",
      "edto_airports": "c933f80721e955593207ddbef00fd482435f6d8f08242425783776bfc498d7fd",
      "fuel_enroute_airports": "854017e49a4ea71b72c54d81bf4ddd6d689e3190e49f021855bd3b80a9730732",
-     "route_waypoints": "268e5ce8017902599d3010fc5ca18f3c1ab1888684903802e684db5533e7a878",
+     "route_waypoints": "fd5cdebf16e1daa3f0507452782ff30e1512c8cb50e93e72ff5b04f45071a22b",
      "flight_planning_etps": "7c192e35853321c804e9c6cb4424030953ebfb1f2e1d29482db31be26d11b599",
      "intam_records": "98d5cdbe2a575b01649c97b30f62d930c535dae9dc3185b4a746caa9953f1fb5",
      "notam_procedure_records": "741a0b11c144045fdd1473a08192fc2ba1a945db82375d21de82f9dbc2fffb60",
@@ -1004,7 +1004,7 @@
    "departure_iata": "SIN",
    "destination_iata": "LAX",
    "route_point_count": 98,
-   "route_hash": "90b4d3c146f3b53117e159090cf67bd31f740f891605f40b61bd624fdea30cc1",
+   "route_hash": "aed972e2752db72f882b610a29212b12ea06e37a13149a9cec8fe9bab5396419",
    "extraction_expectations": {
     "counts": {
      "notams": 163,
@@ -1028,7 +1028,7 @@
      "edto_sectors": "0b3c810d0e0aea93e36bb5e7d7e0e04d409097dd3a8aa7523ab961c27090f3fc",
      "edto_airports": "8227378ded240bce38d3f42f36628bb5047f599b238762a8980f0d4807d39d16",
      "fuel_enroute_airports": "2f27912341bb69bffb6a8c6b45ffc86d2601664f5f9765389bd6fd3fa9933809",
-     "route_waypoints": "672aa7f5504f864c054da7d8cc402f5dbe1268c921cf8fa5c9c5c0091f42559f",
+     "route_waypoints": "46376a4670125808201e8c9d58739ff6111ac02e8b6f6b999426e02f231c0e9b",
      "flight_planning_etps": "adc5a972ff6dc0553d719b12092392e7ee16a4892e74c299236cb3c0121e3975",
      "intam_records": "5a093392d912a49bd5bd02ddc5c55dc04981626b7504053920d0b87911400d43",
      "notam_procedure_records": "d3f4a2542c5569b487cef635bd7a485480c5bdda16e3c98a4f75391bdcc3c0a7",

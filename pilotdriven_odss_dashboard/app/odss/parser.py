@@ -1244,6 +1244,12 @@ _WAYPOINT_LINE = re.compile(
     r"^(?P<name>\*\*ETP\S*|-[A-Z0-9]+|\d{1,2}[NS]\d{2,3}|[A-Z][A-Z0-9]{1,8}|TOC|TOD|ENTRY\d|EXIT\d)"
     r"(?:\s+\d{3}(?:\.\d+)?)?\s+(?P<actm>\d{2}\.\d{2})\b"
 )
+# 10 Oct 2026 (genuine SQ437 MLE-SIN, David: "Look at OBDAL and see 114?"): LIDO prints an equal-time point with its
+# scenario ("**ETP1 -1D   02.03 0.10 ..."). The row was not recognised, so the waypoint before it stayed open and took
+# the ETP's coordinate line - the ETP's position, and the first three digits of its leg distance as its MSA (OBDAL
+# 020 -> 007; SQ24's 62N20 111 -> 000). 28 such rows in 14 of the 30 originals. An ETP row closes the waypoint before it
+# and is not itself a route waypoint, as no ETP row ever was.
+_ETP_SCENARIO_LINE = re.compile(r"^\*\*ETP\S*\s+-\d[A-Z]\s+\d{2}\.\d{2}\b")
 _COORDINATE_LINE = re.compile(
     r"^(?P<lat_hem>[NS])(?P<lat_deg>\d{2})\s+(?P<lat_min>\d{2}\.\d+)\s+"
     r"(?P<lon_hem>[EW])(?P<lon_deg>\d{3})\s+(?P<lon_min>\d{2}\.\d+)\s+"
@@ -1347,6 +1353,11 @@ def _parse_waypoints(
     vws_line = re.compile(r"\s(?P<tas>\d{3})\s+(?P<vws>\d{3})\s+\d{2}\.\d\s")
     for page_number, text in enumerate(route_pages, start=start_page_number):
         for line in text.splitlines():
+            if _ETP_SCENARIO_LINE.match(line.strip()):
+                if pending:
+                    waypoints.append(pending)
+                pending = None
+                continue
             match = waypoint_line.match(line.strip())
             if match:
                 if pending:

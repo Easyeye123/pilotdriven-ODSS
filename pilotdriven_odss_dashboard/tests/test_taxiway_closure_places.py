@@ -145,16 +145,20 @@ def test_a_partial_closure_that_is_not_an_extent_keeps_its_scope(source, subject
     assert _notam_subject(source, "taxiway_closure") == subject
 
 
-@pytest.mark.parametrize("source", [WSSS_A1566, KLAX_A1974, WSSS_A2757])
-def test_a_taxilane_named_outside_an_extent_keeps_its_existing_generic_subject(source):
-    """Out of this repair's scope, stated so it is not mistaken for coverage.
+@pytest.mark.parametrize(("source", "subject"), [
+    (WSSS_A1566, "TXL P7 behind stand E20"),
+    (KLAX_A1974, "TXL C9 north of GATE 46B"),
+    (WSSS_A2757, "part of TXL N1 NB"),
+])
+def test_a_taxilane_named_outside_an_extent_states_its_own_scope(source, subject):
+    """A taxilane is a designation (10 Oct 2026; was the generic "taxiway operational area").
 
-    Reading taxilanes outside an extent picked the wrong sentence out of long
-    AIP supplements (WSSS SX83/24 names TXL R2 first in a decommissioning
-    clause), so these keep the generic subject they already had: vague, but
-    never a named whole surface. Extents named by a taxilane are read above.
+    Reading taxilanes outside an extent once picked the wrong sentence out of long AIP supplements (WSSS SX83/24 names
+    TXL R2 first in a decommissioning clause). The subject reader now takes the first designation, lets a later stated
+    scope of the same designation replace a bare list-header mention (SX83/24 reads "TXL R1 behind stand E5"), and never
+    takes a plain word for a name (SX168/26's "TWY GUIDANCE SIGNS"); a scope it cannot read stays "part of".
     """
-    assert _notam_subject(source, "taxiway_closure") == "taxiway operational area"
+    assert _notam_subject(source, "taxiway_closure") == subject
 
 
 @pytest.mark.parametrize(("source", "subject"), [

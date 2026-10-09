@@ -376,8 +376,11 @@ def test_t2_sq24_the_longest_corpus_taf_is_whole_on_page_one_or_explicitly_defer
 
 def test_t2_a_taf_no_page_one_layout_can_hold_is_deferred_by_whole_groups_never_cut(tmp_path_factory):
     """LABELLED SYNTHETIC OVERFLOW CONTROL: the SQ24 analysis with its KJFK TAF
-    extended to fourteen FM groups (~700 characters), which no page-1 grid or
-    type size can hold. The render still succeeds; page 1 prints the largest
+    extended to eleven FM groups (~540 characters), which no page-1 grid or
+    type size can hold. (Fourteen until 10 Oct 2026: SQ24's waypoints before its
+    ETP rows now carry their own positions, so its WEATHER page states the RPHI
+    thunderstorm level match and the reached volcanic-ash feed, and twelve or
+    more synthetic groups no longer fit beside them.) The render still succeeds; page 1 prints the largest
     whole-group prefix and the marker; the WEATHER page prints the whole
     record; the dashboard analysis is untouched (this is a render-time rule)."""
     import copy
@@ -386,7 +389,7 @@ def test_t2_a_taf_no_page_one_layout_can_hold_is_deferred_by_whole_groups_never_
     records = [row for row in payload["flight"]["weather"] if row.get("location") == "KJFK" and row.get("record_type") == "TAF"]
     assert records, "the SQ24 analysis holds the KJFK TAF record"
     long_taf = ("FT 212321 2200/2306 18012G18KT 6SM -TSRA BKN025 OVC050CB "
-                + " ".join(f"FM22{hour:02d}00 {180 + hour:03d}13G19KT P6SM VCSH BKN025 OVC040" for hour in range(1, 15)) + "=")
+                + " ".join(f"FM22{hour:02d}00 {180 + hour:03d}13G19KT P6SM VCSH BKN025 OVC040" for hour in range(1, 12)) + "=")
     for row in records:
         row["text"] = long_taf
     root = tmp_path_factory.mktemp("boss-round-20260923-sq24-overflow")
