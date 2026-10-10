@@ -182,7 +182,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # 10 Oct 2026 (v85, release-474 QA, F7 + F8): aircraft-size rules v4 (a limit is judged within its own clause, so
 # SX168/26's stand 603 Code C downgrade is compared), and the WEATHER page keeps a TAF too long for it as its largest
 # whole-group prefix with the stated count of trailing groups on the dashboard instead of failing the whole PDF.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-size-clause-taf-deferral-v85"
+# 10 Oct 2026 (v86, release-476 QA, F14): aircraft-size rules v5 - a qualifier in another clause is never skipped for naming
+# pilots, crews, markings or lights; only a feature's passive reversal and a WHEN inside an advisory are excused, so a v85
+# size conclusion can differ.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-size-qualifier-scope-v86"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

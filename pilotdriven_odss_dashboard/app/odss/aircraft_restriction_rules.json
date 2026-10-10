@@ -1,5 +1,5 @@
 {
-  "specVersion": "aircraft-restriction-applicability-2026-10-10-v4",
+  "specVersion": "aircraft-restriction-applicability-2026-10-10-v5",
   "codeLetterTable": {
     "ruleId": "ICAO_ANNEX14_V1_TABLE_1_1_CODE_LETTER_AMDT15_V1",
     "bands": [
@@ -418,7 +418,18 @@
     "negation": "\\b(?:NOT|NO|NEVER|NIL|WITHOUT|NEITHER|NOR)\\b",
     "negationLabel": "a negation that may qualify the limit",
     "clauseBoundary": "(?:[;\\n]|(?<!\\d)\\.(?!\\d)|\\s-\\s)",
-    "otherSubject": "\\b(?:MARKINGS?|MARKERS?|MKRS?|SIGNS?|SIGNAGE|LGTS?|LIGHTS?|LIGHTING|STRIPES?|BOARDS?|CONES?|BARRIERS?|BARRICADES?|FENC(?:E|ES|ING)|PILOTS?|CREWS?)\\b",
+    "excused": [
+      {
+        "markerId": "reversal",
+        "label": "a named aerodrome feature is the thing removed, cancelled or restored",
+        "pattern": "\\b(?:MARKINGS?|MARKERS?|MKRS?|SIGNS?|SIGNAGE|LGTS?|LIGHTS?|LIGHTING|STRIPES?|BOARDS?|CONES?|BARRIERS?|BARRICADES?|FENC(?:E|ES|ING))\\b(?:(?!\\b(?:AND|OR)\\b)[^,;]){0,80}?\\b(?:BE|IS|ARE|BEING|BEEN|WAS|WERE)\\s+(?:CANCELLED|CANCELED|CNL|CNLD|WITHDRAWN|REVOKED|RESCINDED|LIFTED|REMOVED|SUSPENDED|RESTORED)\\b"
+      },
+      {
+        "markerId": "conditional",
+        "label": "WHEN inside an advisory to pilots or crews",
+        "pattern": "\\b(?:PILOTS?|CREWS?)\\s+(?:(?:ARE|IS|SHALL|SHOULD|MUST)\\s+)?(?:TO\\s+)?(?:PAY\\s+(?:EXTRA\\s+)?(?:ATTN|ATTENTION)|EXERCISE\\s+(?:EXTRA\\s+)?CAUTION|(?:MAINTAIN|KEEP)\\s+(?:A\\s+)?(?:GOOD\\s+|SHARP\\s+)?LOOKOUT)\\b(?:(?!\\b(?:AND|OR)\\b)[^,;]){0,80}?\\bWHEN\\b"
+      }
+    ],
     "limitVocabulary": "\\b(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)|CODE|(?:WINGSPAN|WING\\s+SPAN)|LIMIT(?:S|ED|ATION|ATIONS)?|LTD|RESTRICT(?:ED|ION|IONS)?|RESTR|DOWNGRAD(?:E|ED|ING)|NOTAM|[AB]\\d{3}(?:-\\d{1,4})?|MD-?\\d{2})\\b"
   }
 }

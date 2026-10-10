@@ -84,8 +84,19 @@ def _clause_boundary() -> re.Pattern[str]:
 
 
 @lru_cache(maxsize=1)
-def _other_subject() -> re.Pattern[str]:
-    return re.compile(rules()["qualifierContext"]["otherSubject"])
+def _excused() -> tuple[tuple[str, re.Pattern[str]], ...]:
+    return tuple((rule["markerId"], re.compile(rule["pattern"])) for rule in rules()["qualifierContext"]["excused"])
+
+
+def _excused_spans(stretch: str) -> list[tuple[str, int, int]]:
+    """Qualifier matches spec v5 proves are about something else, where that stretch names no limit vocabulary."""
+    vocabulary = _limit_vocabulary()
+    return [
+        (marker_id, match.start(), match.end())
+        for marker_id, pattern in _excused()
+        for match in pattern.finditer(stretch)
+        if not vocabulary.search(match.group(0))
+    ]
 
 
 @lru_cache(maxsize=1)
@@ -268,10 +279,12 @@ def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, Any
     still concluded an exclusion. A condition, exception, exemption, applicability
     statement, permission or reversal counts wherever it stands; a bare negation
     counts where it can be about the limit - after the phrase in its own clause,
-    or in a clause that speaks of aircraft or limits. Spec v4: read clause by
-    clause, and a clause other than the limit's own that names its own subject
-    (markings, signs, lights, pilots...) and no limit vocabulary qualifies
-    nothing. One entry per qualifying stretch, in notice order.
+    or in a clause that speaks of aircraft or limits. Spec v4 reads clause by
+    clause; spec v5 (F14) never skips a clause and, in a clause other than the
+    limit's own, excuses only the qualifier matches ``qualifierContext.excused``
+    proves are about something else (a feature's passive reversal, a WHEN inside
+    an advisory), where that stretch names no limit vocabulary. One entry per
+    qualifying stretch, in notice order.
     """
     masked = f"{text[:index]}{' ' * length}{text[index + length:]}"
     limit_end = index + length
@@ -279,7 +292,6 @@ def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, Any
     negation = _negation()
     vocabulary = _limit_vocabulary()
     conditions: list[dict[str, Any]] = []
-    other_subject = _other_subject()
     for begin, finish in _clause_ranges(masked):
         own = begin <= index < finish
         stretches = [(begin, index), (limit_end, finish)] if own else [(begin, finish)]
@@ -287,11 +299,12 @@ def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, Any
             stretch = masked[start:end]
             if not stretch.strip():
                 continue
-            if not own and other_subject.search(stretch) and not vocabulary.search(stretch):
-                continue
+            excused = [] if own else _excused_spans(stretch)
             found: list[dict[str, Any]] = []
             for marker, pattern in _markers():
                 for match in pattern.finditer(stretch):
+                    if any(marker["id"] == marker_id and start <= match.start() < end for marker_id, start, end in excused):
+                        continue
                     found.append({"id": marker["id"], "label": marker["label"], "at": match.start()})
             negation_counts = (start == limit_end) if own else bool(vocabulary.search(stretch))
             if negation_counts:
