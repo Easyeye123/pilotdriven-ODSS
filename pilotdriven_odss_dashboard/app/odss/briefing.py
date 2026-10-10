@@ -4264,6 +4264,37 @@ _GROUND_CONSTRAINT_FAMILIES = frozenset({
 # How many confirmed aircraft exclusions may be added beyond the card's two
 # family-diverse lines. Bounded so the six-page layout cannot be overrun.
 _MATERIAL_AIRCRAFT_EXCLUSION_LINES = 2
+# A stated limit is quoted only when short: quotes of source words are bounded
+# to 12, well below the 18-word copy invariant of the publication gate.
+_STATED_LIMIT_WORDS = 12
+
+
+def _confirms_aircraft_exclusion(line: dict[str, Any]) -> bool:
+    check = line.get("aircraft_size_check")
+    return (
+        isinstance(check, dict)
+        and check.get("status") == "confirmed"
+        and check.get("restrictsThisAircraft") is True
+    )
+
+
+def _ground_line_text(line: dict[str, Any]) -> str:
+    """One ground line as page 2 prints it: its ID, its statement and any size comparison."""
+    return " - ".join(
+        part
+        for part in (
+            str(line.get("label") or "NOTICE").strip(),
+            " ".join(
+                text
+                for text in (
+                    str(line.get("text") or "").strip(),
+                    str((line.get("aircraft_size_check") or {}).get("sentence") or "").strip(),
+                )
+                if text
+            ),
+        )
+        if part
+    )
 
 
 def _material_aircraft_exclusion_lines(
@@ -4290,13 +4321,9 @@ def _material_aircraft_exclusion_lines(
     for item in panel.get("selected_notams") or []:
         if not isinstance(item, dict):
             continue
-        check = item.get("aircraft_size_check")
-        if not (
-            isinstance(check, dict)
-            and check.get("status") == "confirmed"
-            and check.get("restrictsThisAircraft") is True
-        ):
+        if not _confirms_aircraft_exclusion(item):
             continue
+        check = item["aircraft_size_check"]
         notam_id = str(item.get("notam_id") or "").upper()
         raw = str(item.get("item_e_text") or "").upper()
         if (
@@ -4309,11 +4336,25 @@ def _material_aircraft_exclusion_lines(
         ):
             continue
         held_ids.add(notam_id)
+        # When the limit names its own subject ("DOWNGRADE OF ACFT STAND 603 TO
+        # CODE C"), the line states it in the notice's own words, bounded like
+        # every other quote: the summary can describe another clause (genuine
+        # SX168/26's summary is the TXL N4 closure, while the Code C limit is on
+        # stand 603; Codex re-QA of 482, F19). A limit read without its subject
+        # ("LTD TO MAX ACFT TYPE CODE C") keeps the summary, which names the area.
+        restriction = check.get("restriction") or {}
+        stated = " ".join(str(restriction.get("evidence") or "").split())
         material.append({
             "kind": "notam",
             "label": item.get("notam_id"),
             "notam_id": item.get("notam_id"),
-            "text": str(item.get("compact_text") or item.get("summary") or "").strip(),
+            "text": (
+                f'Stated limit: "{stated}".'
+                if str(restriction.get("subject") or "").strip()
+                and stated
+                and len(stated.split()) <= _STATED_LIMIT_WORDS
+                else str(item.get("compact_text") or item.get("summary") or "").strip()
+            ),
             "source_page": item.get("source_page"),
             "aircraft_size_check": check,
             "pertinence_rank": int(item.get("pertinence_rank") or 99),
@@ -4344,6 +4385,7 @@ def _decision_finding_projection(
         "deferred_declaration": "sec_mel_cdl",
         "deferred_dispatch_gate": "sec_mel_cdl",
         "arrival_ground": "sec_airports",
+        "aircraft_exclusion": "sec_airports",
         "alternate_weather": "sec_hazard",
         "weather_coverage": "sec_hazard",
         "notam": "sec_airports",
@@ -4582,24 +4624,7 @@ def _decision_finding_projection(
         # A size limit is published with its comparison against the OFP's own
         # aircraft (boss 9 Sep: "downgraded to code E" alone left the pilot to
         # work out that an A350-941 is itself Code E).
-        ground_parts = [
-            " - ".join(
-                part
-                for part in (
-                    str(line.get("label") or "NOTICE").strip(),
-                    " ".join(
-                        text
-                        for text in (
-                            str(line.get("text") or "").strip(),
-                            str((line.get("aircraft_size_check") or {}).get("sentence") or "").strip(),
-                        )
-                        if text
-                    ),
-                )
-                if part
-            )
-            for line in ground_lines
-        ]
+        ground_parts = [_ground_line_text(line) for line in ground_lines]
         source_pages = {
             int(line["source_page"])
             for line in ground_lines
@@ -4642,8 +4667,90 @@ def _decision_finding_projection(
                     + ",".join(f"p{page}" for page in sorted(source_pages))
                     + " · Destination NOTAM package"
                 ),
-                "data": {"priority_score": 95},
+                "data": {
+                    "priority_score": 95,
+                    "notam_ids": [
+                        str(line.get("notam_id") or "").upper()
+                        for line in ground_lines
+                        if line.get("notam_id")
+                    ],
+                    "aircraft_exclusion": any(
+                        _confirms_aircraft_exclusion(line) for line in ground_lines
+                    ),
+                },
             })
+
+    # Codex re-QA of release 482 (F19), genuine SQ438 7 Oct, A350-941: the
+    # departure WSSS SX168/26 limit "DOWNGRADE OF ACFT STAND 603 TO CODE C"
+    # excludes the aircraft, the dashboard said so, and the PDF never did -
+    # only the destination had a ground card. A confirmed exclusion of this
+    # aircraft is carried for every airport the flight holds in another role
+    # (departure, destination alternate, EDTO, fuel en-route), in one bounded
+    # card. A destination's exclusions stay on its arrival card above.
+    exclusion_lines: list[tuple[str, dict[str, Any]]] = []
+    exclusion_airports: list[str] = []
+    for panel in airport_panels or []:
+        role_keys = set(panel.get("role_keys") or [])
+        if not role_keys or "destination" in role_keys:
+            continue
+        lines = _material_aircraft_exclusion_lines(panel, [])
+        if not lines:
+            continue
+        roles = [str(role).strip() for role in panel.get("roles") or [] if str(role).strip()]
+        where = " ".join(
+            part
+            for part in (
+                str(panel.get("icao") or "").strip().upper(),
+                roles[0] if roles else str(panel.get("role") or "").strip(),
+            )
+            if part
+        )
+        exclusion_airports.append(where)
+        exclusion_lines.extend((where, line) for line in lines)
+    if exclusion_lines:
+        shown = exclusion_lines[:_MATERIAL_AIRCRAFT_EXCLUSION_LINES]
+        several = len(exclusion_airports) > 1
+        parts = [
+            f"{where}: {_ground_line_text(line)}" if several else _ground_line_text(line)
+            for where, line in shown
+        ]
+        further = len(exclusion_lines) - len(shown)
+        if further:
+            parts.append(
+                f"{further} further aircraft-size exclusion"
+                + (" is" if further == 1 else "s are")
+                + " held on the dashboard Airports page."
+            )
+        pages = sorted({
+            int(line["source_page"])
+            for _, line in shown
+            if isinstance(line.get("source_page"), int)
+        })
+        material_rows.append({
+            "engine": "aircraft_exclusion",
+            "severity": "warning",
+            "title": (
+                "Aircraft-size exclusion"
+                + ("s" if several else "")
+                + " at "
+                + ", ".join(exclusion_airports)
+            ),
+            "summary": " | ".join(parts),
+            "source_reference": " · ".join(
+                part
+                for part in (
+                    "Uploaded OFP",
+                    ",".join(f"p{page}" for page in pages) or None,
+                    "NOTAM package",
+                )
+                if part
+            ),
+            "data": {
+                "priority_score": 95,
+                "notam_ids": [str(line.get("notam_id") or "").upper() for _, line in shown],
+                "aircraft_exclusion": True,
+            },
+        })
 
     alternate_icaos = {
         str(panel.get("icao") or "").upper()
@@ -4819,6 +4926,8 @@ def _decision_finding_projection(
             return "deferred"
         if engine == "arrival_ground":
             return "arrival-ground"
+        if engine == "aircraft_exclusion":
+            return "aircraft-exclusion"
         if engine == "route_airspace":
             return "route-airspace"
         if engine == "alternate_weather":
@@ -4877,7 +4986,44 @@ def _decision_finding_projection(
                 break
         if len(candidates) < limit:
             candidates.extend(item for item in ranked if item not in candidates)
-    candidates = sorted(candidates[:limit], key=_finding_sort_key)
+    candidates = candidates[:limit]
+    # A card carrying a confirmed exclusion of this aircraft is never crowded
+    # off the page (F19: SQ438's page 2 spent a slot on "Destination NOTAM
+    # SX5/26", which the VRMM arrival card already printed). It displaces
+    # first a notice card that another selected card already prints, and
+    # otherwise the lowest-ranked card without an exclusion; nothing is added
+    # beyond the page's cards.
+    for protected in ranked:
+        if (
+            not (protected.get("data") or {}).get("aircraft_exclusion")
+            or protected in candidates
+            or limit <= 0
+        ):
+            continue
+        if len(candidates) < limit:
+            candidates.append(protected)
+            continue
+        displaceable = [
+            item
+            for item in candidates
+            if not (item.get("data") or {}).get("aircraft_exclusion")
+        ]
+        if not displaceable:
+            break
+        printed = {
+            str(notam_id).upper()
+            for item in [*candidates, protected]
+            for notam_id in (item.get("data") or {}).get("notam_ids") or []
+        }
+        repeated = [
+            item
+            for item in displaceable
+            if str(item.get("engine") or "") == "notam"
+            and str((item.get("data") or {}).get("notam_id") or "").upper() in printed
+        ]
+        give_way = max(repeated or displaceable, key=_finding_sort_key)
+        candidates[candidates.index(give_way)] = protected
+    candidates = sorted(candidates, key=_finding_sort_key)
 
     selected: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()

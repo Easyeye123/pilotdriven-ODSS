@@ -190,7 +190,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # v86 size conclusion can differ.
 # 10 Oct 2026 (v88, release-480 QA, F17): aircraft-size rules v7 anchor both excused qualifiers at the start of their clause,
 # so a feature (or pilots/crews) inside another subject's phrase never excuses its reversal; a v87 size conclusion can differ.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-size-subject-anchor-v88"
+# 11 Oct 2026 (v89, release-482 QA, F18/F19): aircraft-size rules v8 read a reversal's noun ("REMOVAL OF THIS
+# RESTRICTION") as well as its verb; page 2 carries a confirmed exclusion at every airport the flight holds in another role
+# (departure, alternate, EDTO, fuel en-route), and a card with a confirmed exclusion is never crowded off the six cards.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-11-exclusion-roles-v89"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

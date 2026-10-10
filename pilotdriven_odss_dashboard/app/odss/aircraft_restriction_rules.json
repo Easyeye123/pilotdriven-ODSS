@@ -1,5 +1,5 @@
 {
-  "specVersion": "aircraft-restriction-applicability-2026-10-10-v7",
+  "specVersion": "aircraft-restriction-applicability-2026-10-11-v8",
   "codeLetterTable": {
     "ruleId": "ICAO_ANNEX14_V1_TABLE_1_1_CODE_LETTER_AMDT15_V1",
     "bands": [
@@ -315,7 +315,7 @@
       "id": "reversed",
       "where": "clause",
       "label": "the limit may be cancelled, lifted or suspended",
-      "pattern": "\\b(?:CANCELLED|CANCELED|CNL|CNLD|WITHDRAWN|REVOKED|RESCINDED|LIFTED|REMOVED|SUSPENDED|NO\\s+LONGER|RESTORED|RETURNED\\s+TO\\s+NORMAL)\\b"
+      "pattern": "\\b(?:CANCELLED|CANCELED|CNL|CNLD|WITHDRAWN|REVOKED|RESCINDED|LIFTED|REMOVED|SUSPENDED|NO\\s+LONGER|RESTORED|RETURN(?:S|ED)?\\s+TO\\s+NORMAL|CANCELL?ATIONS?|WITHDRAWALS?|REVOCATIONS?|RESCISSIONS?|LIFTING|REMOVALS?|SUSPENSIONS?|RESTORATIONS?)\\b"
     },
     {
       "id": "list_before",
@@ -406,7 +406,7 @@
     {
       "id": "reversal",
       "label": "cancellation, lifting or suspension stated in the notice",
-      "pattern": "\\b(?:CANCELLED|CANCELED|CNL|CNLD|WITHDRAWN|REVOKED|RESCINDED|LIFTED|REMOVED|SUSPENDED|NO\\s+LONGER|RESTORED|RETURNED\\s+TO\\s+NORMAL)\\b"
+      "pattern": "\\b(?:CANCELLED|CANCELED|CNL|CNLD|WITHDRAWN|REVOKED|RESCINDED|LIFTED|REMOVED|SUSPENDED|NO\\s+LONGER|RESTORED|RETURN(?:S|ED)?\\s+TO\\s+NORMAL|CANCELL?ATIONS?|WITHDRAWALS?|REVOCATIONS?|RESCISSIONS?|LIFTING|REMOVALS?|SUSPENSIONS?|RESTORATIONS?)\\b"
     },
     {
       "id": "propulsion",
