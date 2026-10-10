@@ -188,7 +188,9 @@ WAFC_CHARTS_PER_PAGE = 3
 # 10 Oct 2026 (v87, release-478 QA, F15/F16): aircraft-size rules v6 excuse one exact qualifier word only - a reversal that
 # is the passive verb of a named feature with only place words between them, and a WHEN directly after an advisory - so a
 # v86 size conclusion can differ.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-size-qualifier-binding-v87"
+# 10 Oct 2026 (v88, release-480 QA, F17): aircraft-size rules v7 anchor both excused qualifiers at the start of their clause,
+# so a feature (or pilots/crews) inside another subject's phrase never excuses its reversal; a v87 size conclusion can differ.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-size-subject-anchor-v88"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
