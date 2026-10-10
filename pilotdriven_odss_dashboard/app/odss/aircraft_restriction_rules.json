@@ -1,5 +1,5 @@
 {
-  "specVersion": "aircraft-restriction-applicability-2026-10-10-v5",
+  "specVersion": "aircraft-restriction-applicability-2026-10-10-v6",
   "codeLetterTable": {
     "ruleId": "ICAO_ANNEX14_V1_TABLE_1_1_CODE_LETTER_AMDT15_V1",
     "bands": [
@@ -421,13 +421,13 @@
     "excused": [
       {
         "markerId": "reversal",
-        "label": "a named aerodrome feature is the thing removed, cancelled or restored",
-        "pattern": "\\b(?:MARKINGS?|MARKERS?|MKRS?|SIGNS?|SIGNAGE|LGTS?|LIGHTS?|LIGHTING|STRIPES?|BOARDS?|CONES?|BARRIERS?|BARRICADES?|FENC(?:E|ES|ING))\\b(?:(?!\\b(?:AND|OR)\\b)[^,;]){0,80}?\\b(?:BE|IS|ARE|BEING|BEEN|WAS|WERE)\\s+(?:CANCELLED|CANCELED|CNL|CNLD|WITHDRAWN|REVOKED|RESCINDED|LIFTED|REMOVED|SUSPENDED|RESTORED)\\b"
+        "label": "a named aerodrome feature is the subject of the passive reversal",
+        "pattern": "\\b(?:MARKINGS?|MARKERS?|MKRS?|SIGNS?|SIGNAGE|LGTS?|LIGHTS?|LIGHTING|STRIPES?|BOARDS?|CONES?|BARRIERS?|BARRICADES?|FENC(?:E|ES|ING))(?:\\s+(?:THE|A|AN|OF|IN|ON|AT|TO|INTO|ONTO|FOR|FROM|WITHIN|WI|ALONG|ACROSS|BEHIND|BESIDE|NEAR|ADJACENT|LEADING|CLSD|CLOSED|SECTION|PART|PORTION|AREA|EDGE|CENTRE|CENTER|CL|TXL|TWY|TAXILANE|TAXIWAY|STAND|STANDS|APRON|APN|RWY|RUNWAY|GND|GROUND|TEMPO|TEMPORARY|EXISTING|[A-Z]{0,3}\\d{1,4}[A-Z]?)\\b){0,12}\\s+(?:(?:WILL|SHALL)\\s+BE|IS|ARE|BEING|BEEN|WAS|WERE|HAS\\s+BEEN|HAVE\\s+BEEN)\\s+((?:CANCELLED|CANCELED|CNL|CNLD|WITHDRAWN|REVOKED|RESCINDED|LIFTED|REMOVED|SUSPENDED|RESTORED))\\b"
       },
       {
         "markerId": "conditional",
-        "label": "WHEN inside an advisory to pilots or crews",
-        "pattern": "\\b(?:PILOTS?|CREWS?)\\s+(?:(?:ARE|IS|SHALL|SHOULD|MUST)\\s+)?(?:TO\\s+)?(?:PAY\\s+(?:EXTRA\\s+)?(?:ATTN|ATTENTION)|EXERCISE\\s+(?:EXTRA\\s+)?CAUTION|(?:MAINTAIN|KEEP)\\s+(?:A\\s+)?(?:GOOD\\s+|SHARP\\s+)?LOOKOUT)\\b(?:(?!\\b(?:AND|OR)\\b)[^,;]){0,80}?\\bWHEN\\b"
+        "label": "WHEN directly inside an advisory to pilots or crews",
+        "pattern": "\\b(?:PILOTS?|CREWS?)\\s+(?:(?:ARE|IS|SHALL|SHOULD|MUST)\\s+)?(?:TO\\s+)?(?:PAY\\s+(?:EXTRA\\s+)?(?:ATTN|ATTENTION)|EXERCISE\\s+(?:EXTRA\\s+)?CAUTION|(?:MAINTAIN|KEEP)\\s+(?:A\\s+)?(?:GOOD\\s+|SHARP\\s+)?LOOKOUT)(?:\\s+(?:TO|THE|ATC|GND|GROUND|TWR|TOWER|INSTRUCTIONS?|INSTR|CLEARANCES?|MARSHALLERS?|MARSHALLING|SIGNALS?|AT|ALL|TIMES)\\b){0,6}\\s+(WHEN)\\b"
       }
     ],
     "limitVocabulary": "\\b(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)|CODE|(?:WINGSPAN|WING\\s+SPAN)|LIMIT(?:S|ED|ATION|ATIONS)?|LTD|RESTRICT(?:ED|ION|IONS)?|RESTR|DOWNGRAD(?:E|ED|ING)|NOTAM|[AB]\\d{3}(?:-\\d{1,4})?|MD-?\\d{2})\\b"

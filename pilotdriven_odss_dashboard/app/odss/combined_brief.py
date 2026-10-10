@@ -185,7 +185,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # 10 Oct 2026 (v86, release-476 QA, F14): aircraft-size rules v5 - a qualifier in another clause is never skipped for naming
 # pilots, crews, markings or lights; only a feature's passive reversal and a WHEN inside an advisory are excused, so a v85
 # size conclusion can differ.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-size-qualifier-scope-v86"
+# 10 Oct 2026 (v87, release-478 QA, F15/F16): aircraft-size rules v6 excuse one exact qualifier word only - a reversal that
+# is the passive verb of a named feature with only place words between them, and a WHEN directly after an advisory - so a
+# v86 size conclusion can differ.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-size-qualifier-binding-v87"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

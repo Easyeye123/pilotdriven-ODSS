@@ -88,11 +88,15 @@ def _excused() -> tuple[tuple[str, re.Pattern[str]], ...]:
     return tuple((rule["markerId"], re.compile(rule["pattern"])) for rule in rules()["qualifierContext"]["excused"])
 
 
-def _excused_spans(stretch: str) -> list[tuple[str, int, int]]:
-    """Qualifier matches spec v5 proves are about something else, where that stretch names no limit vocabulary."""
+def _excused_occurrences(stretch: str) -> list[tuple[str, int]]:
+    """The exact qualifier words spec v6 proves are about something else (F15/F16).
+
+    Each excused pattern ends with ONE captured word; only the qualifier at that word is excused, and only where the
+    matched stretch names no limit vocabulary.
+    """
     vocabulary = _limit_vocabulary()
     return [
-        (marker_id, match.start(), match.end())
+        (marker_id, match.start(1))
         for marker_id, pattern in _excused()
         for match in pattern.finditer(stretch)
         if not vocabulary.search(match.group(0))
@@ -299,11 +303,11 @@ def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, Any
             stretch = masked[start:end]
             if not stretch.strip():
                 continue
-            excused = [] if own else _excused_spans(stretch)
+            excused = [] if own else _excused_occurrences(stretch)
             found: list[dict[str, Any]] = []
             for marker, pattern in _markers():
                 for match in pattern.finditer(stretch):
-                    if any(marker["id"] == marker_id and start <= match.start() < end for marker_id, start, end in excused):
+                    if any(marker["id"] == marker_id and match.start() == at for marker_id, at in excused):
                         continue
                     found.append({"id": marker["id"], "label": marker["label"], "at": match.start()})
             negation_counts = (start == limit_end) if own else bool(vocabulary.search(stretch))
