@@ -196,7 +196,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # 11 Oct 2026 (v90, release-484 QA, F20-F22): aircraft-size rules v9 read every form of a reversal ("THIS NOTICE CANCELS
 # THE ABOVE LIMIT"); page-2 exclusion cards count every eligible exclusion their two-line cap leaves out, on the arrival
 # card too; a duplicate card is the same notice at the same airport.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-11-exclusion-count-v90"
+# 11 Oct 2026 (v91, release-486 QA, F23): aircraft-size rules v10 read every reversal lemma in every inflection and standard
+# nominalisation (DISCONTINUANCE was missing) and add the reversal families CEASE, REPEAL, RETRACT, VOID, NULLIFY, ABOLISH,
+# EXPIRE, LAPSE, END (verb forms) and REVERSE (not the base form); a v90 size conclusion can differ.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-11-reversal-families-v91"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

@@ -1,6 +1,6 @@
 {
   "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures. v2 (22 Sep 2026, after Codex's independent review): adversarial vectors for partial readings (negation, reversal, letter lists and ranges, extra direction words) and for unresolved conditions and exceptions, in the limit's sentence or another one. A vector marked 'synthetic' is labelled fixture wording, not an operational notice. v3 (22 Sep 2026, Codex fix2 review): qualifiers AFTER the limit or in ANOTHER sentence - 'does not apply', 'exempt', 'not applicable', 'not affected', a lifting, a stated permission - withhold the conclusion and are quoted whole so a negator is never cut off the quote; unrelated negation stays a control. v4 (10 Oct 2026, Codex QA of releases 468-474, F7): WSSS SX168/26 on SQ437/SQ438 is one long AIP-supplement text with almost no sentence punctuation, so its stand 603 Code C downgrade shared a 'sentence' with 'GND MARKINGS ... WILL BE REMOVED', 'MARKERS WILL BE PROVIDED', 'EAST CARGO APRON' and a pilot instruction 'WHEN TAX', and was never compared. Vectors cover the genuine notice (Code C limit: A350 above, B737-8 equal, A380 above; Code E variant: B737-8 below, A350 equal), a cancellation and a lifting of the limit itself, negated applicability, negation about markings, subjectless and code-naming removal bullets, PROVIDED as a condition and as a passive verb, CARGO as a place and as an operator, and pilot instructions with and without aircraft wording. v5 (10 Oct 2026, Codex re-QA of release 476, F14): v4 skipped every other clause that named markings, markers, signs, lights or pilots and no limit wording, so 'PILOTS WITH PRIOR APPROVAL ARE EXEMPT', 'PILOTS MUST OBTAIN PPR', 'CREWS REQUIRE PRIOR PERMISSION', 'PILOTS ARE ADVISED THAT IT IS SUSPENDED', 'LIGHTS MUST BE ON WHEN USING THIS STAND' and 'PROVIDED MARKERS ARE IN PLACE' were dropped and the limit was concluded. v5 removes that clause skip; only a reversal word that is the passive verb of a named aerodrome feature ('GND MARKINGS ... WILL BE REMOVED') and a WHEN inside an advisory to pilots or crews ('PAY EXTRA ATTN ... WHEN', 'EXERCISE CAUTION WHEN'), each naming no aircraft or limit wording, are excused. Codex's independent cases are added verbatim, with two boundary cases (a feature sharing its predicate with the stand; an advisory carrying an exception). v6 (10 Oct 2026, Codex re-QA of release 478, F15/F16): v5's excuses were spans, not proofs. A feature's 80-character wildcard crossed into another subject ('GND MARKINGS REMAIN UNTIL STAND 603 IS RESTORED' excused RESTORED), and an advisory span excused every conditional inside it ('EXERCISE CAUTION IF USING THIS STAND WHEN LIGHTS ARE OFF' excused IF). v6 excuses one exact word only: the reversal must be the passive verb of the feature with only place words and designators between them, and the WHEN must follow the advisory directly or after ATC-instruction words. Codex's 28 pre-registered cases are added verbatim (exact duplicates of earlier vectors skipped). v7 (10 Oct 2026, Codex re-QA of release 480, F17): v6 proved the feature's link to its verb but not that the feature was the clause's subject - 'THE RESTRICTIONS INDICATED BY SIGNS AT STAND 603 ARE LIFTED' excused LIFTED from the inner 'SIGNS AT STAND 603 ARE LIFTED'. v7 anchors both excuses at the start of their clause, allowing before the feature (or the pilots/crews) only a closed set of pre-modifiers and list markers, so the whole clause up to the excused word is inside the match and the limit-vocabulary veto sees it. Codex's 32 pre-registered cases are added verbatim, with twelve further subject-boundary cases.",
-  "specVersion": "aircraft-restriction-applicability-2026-10-11-v9",
+  "specVersion": "aircraft-restriction-applicability-2026-10-11-v10",
   "vectors": [
     {
       "id": "original-complaint-sq882-vhhh-a350",
@@ -5206,6 +5206,1023 @@
         "restrictsThisAircraft": true,
         "reason": "aircraft_code_above_maximum",
         "formId": "limited_to_max_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "f23-codex-new486-cancel-base",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE OPERATOR MAY CANCEL IT AT 1200",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-withdraw-progressive",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE OPERATOR IS WITHDRAWING THIS RESTRICTION",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-revoke-noun",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - REVOCATIONS OF THE LIMIT ARE CONFIRMED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-rescind-base",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AUTHORITY WILL RESCIND IT",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-restore-progressive",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - RESTORING CODE E CAPACITY IS IN PROGRESS",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-reinstate-noun",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - REINSTATEMENT OF CODE E IS EFFECTIVE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-revert-noun",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - REVERSION TO CODE E IS EFFECTIVE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-discontinue-base",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - DISCONTINUE THIS LIMIT AT 1200",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-discontinue-noun",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - DISCONTINUATION OF THIS LIMIT IS EFFECTIVE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-discontinuance",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - DISCONTINUANCE OF THIS LIMIT IS EFFECTIVE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-discontinuances",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - DISCONTINUANCES OF THIS LIMIT TAKE EFFECT DAILY",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-terminate-progressive",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE OPERATOR IS TERMINATING THIS RESTRICTION",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-annul-noun",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - ANNULMENT OF THE LIMIT IS EFFECTIVE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-relax-noun",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - RELAXATION OF THE LIMIT IS EFFECTIVE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-resume-noun",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - RESUMPTION OF NORMAL OPERATIONS IS CONFIRMED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-return-progressive",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - RETURNING TO NORMAL IS IN PROGRESS",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-nested-advisory",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - PILOTS SHALL KEEP A LOOKOUT WHEN TAXIING - THE OPERATOR MAY REMOVE THIS LIMIT",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-feature-then-reversal",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - BLUE EDGE LIGHTS WILL BE RESTORED - THE OPERATOR WILL LIFT THIS LIMIT",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-discontinuance-own",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "DISCONTINUANCE OF THE DOWNGRADE OF ACFT STAND 603 TO CODE C IS EFFECTIVE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": null
+      }
+    },
+    {
+      "id": "f23-codex-new486-discontinuance-equal",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - DISCONTINUANCE OF THIS LIMIT IS EFFECTIVE",
+      "aircraftType": "B737-8",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "C",
+        "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1",
+        "comparisonRelation": "within_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-reversal-before",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "THE OPERATOR WITHDREW THIS RESTRICTION. ACFT STAND 603 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-reversal-newline",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C\nTHE AUTHORITY WILL\nCANCEL THIS LIMIT",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": null
+      }
+    },
+    {
+      "id": "f23-codex-new486-lowercase",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "acft stand 603 downgraded to code c; resumption of normal operations is confirmed",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-fullwidth",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - ＣＡＮＣＥＬＬＩＮＧ THIS LIMIT",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-unknown-type",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE OPERATOR WILL LIFT IT",
+      "aircraftType": "B77W",
+      "expect": {
+        "status": "unknown",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "aircraft_size_not_verified",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": null,
+        "aircraftRuleId": null,
+        "comparisonRelation": null,
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-codex-new486-control-terminal",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - TERMINAL APRON WORK IN PROGRESS",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "f23-codex-new486-control-uplifting",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - UPLIFTING WORK IS IN PROGRESS",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "f23-codex-new486-control-reverse",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - IDLE REVERSE THRUST REQUIRED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "f23-codex-new486-control-subject-bound-passive",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - (IV) BLUE EDGE MARKERS AT STAND 603 WILL BE REMOVED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "f23-codex-new486-control-advisory",
+      "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CREWS SHALL EXERCISE CAUTION WHEN TAXIING",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "f23-claude-cessation",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - CESSATION OF THIS LIMIT AT 1200",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-ceases",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE LIMIT CEASES AT 1200",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-repeals",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THIS NOTICE REPEALS THE DOWNGRADE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-retraction",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - RETRACTION OF THE ABOVE LIMIT IS CONFIRMED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-void",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE ABOVE LIMIT IS VOID",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-nullification",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - NULLIFICATION OF THE DOWNGRADE IS EFFECTIVE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-abolition",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - ABOLITION OF THIS LIMIT IS EFFECTIVE",
+      "aircraftType": "A380-841",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "F",
+        "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-expires",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE DOWNGRADE EXPIRES AT 1200",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-lapsed",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE DOWNGRADE LAPSED AT 0600",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-ends",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE DOWNGRADE ENDS AT 1200",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-reversal-noun",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - REVERSAL OF THE DOWNGRADE IS CONFIRMED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-restoral",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - RESTORAL OF CODE E STATUS IS CONFIRMED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-re-instatement",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - RE-INSTATEMENT OF THE STAND IS CONFIRMED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-annulation",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - ANNULATION OF THE LIMIT IS EFFECTIVE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-rescindment-equal",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - RESCINDMENT OF THE LIMIT IS CONFIRMED",
+      "aircraftType": "B737-8",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "C",
+        "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1",
+        "comparisonRelation": "within_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-rtn-to-nml",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - RTN TO NML OPS AT 1200",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ]
+      }
+    },
+    {
+      "id": "f23-claude-own-clause-cessation",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "THE CESSATION OF THE DOWNGRADE OF ACFT STAND 603 TO CODE C IS CONFIRMED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": null
+      }
+    },
+    {
+      "id": "f23-claude-control-base-end",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - TWY B END WIP",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "f23-claude-control-avoid-not-void",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - PILOTS TO AVOID TXL N4",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "f23-claude-control-weekends-not-ends",
+      "origin": "synthetic (F23 reversal families, added beyond Codex's cases)",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WIP ON WEEKENDS",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
         "semantics": "maximum_code",
         "limitLabel": "Code C",
         "aircraftCode": "E",

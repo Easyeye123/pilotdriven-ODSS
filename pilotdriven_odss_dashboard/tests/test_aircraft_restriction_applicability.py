@@ -19,8 +19,8 @@ from app.odss import aircraft_restriction_applicability as rule
 
 RULES_FILE = Path(rule.__file__).with_name("aircraft_restriction_rules.json")
 VECTORS_FILE = Path(__file__).parent / "fixtures" / "aircraft-restriction-vectors.json"
-SHARED_RULES_SHA256 = "eb8589775672572765996e104e2de4b90ec86486b5d3cb5547a2f24d2a736470"
-SHARED_VECTORS_SHA256 = "3883ce27ed59bb715d2654e4d0903627d42dc1da6fc3f110914165843a66e2f9"
+SHARED_RULES_SHA256 = "09d75c6f13ff071fc9cbcd0b97455444ed29559c9740740409a99d49b8f969cf"
+SHARED_VECTORS_SHA256 = "d2e3d8b1e7a6335a55f721bf406c5bd78332cb949891d654a2f4c075981b5719"
 
 VECTORS = json.loads(VECTORS_FILE.read_text(encoding="utf-8"))
 
