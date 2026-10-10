@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .extraction_rules import EXTRACTION_RULES
+from .fuel_rows import CONTINGENCY_LABEL
 
 import fitz
 
@@ -1815,7 +1816,8 @@ def _build_edto_assessment(
 # prefix is part of the printed label and anchors the match.
 _PAGE1_TIMED_ROWS: tuple[tuple[str, str], ...] = (
     ("burnoff", r"BURNOFF"),
-    ("stat_cont", r"STAT\s+CONT"),
+    # The contingency line: "STAT CONT" or "<n>% CONT" (app/odss/fuel_rows.py); its printed label is held on the row.
+    ("stat_cont", CONTINGENCY_LABEL),
     ("altn_fuel", r"ALTN\s+FUEL"),
     ("altn_hold", r"ALTN\s+HOLD"),
     ("dest_hold_top_up", r"TOP\s+UP\s+TO\s+60\s+MINS\s+DEST\s+HOLD\s+FUEL"),
@@ -1844,12 +1846,14 @@ def parse_page1_fuel_summary(page1: str) -> dict[str, Any] | None:
 
     rows: dict[str, dict[str, int] | None] = {}
     for name, label in _PAGE1_TIMED_ROWS:
-        match = re.search(rf"{label}\s+(\d{{1,2}}\.\d{{2}})\s+0*(\d+)", text)
+        match = re.search(rf"({label})\s+(\d{{1,2}}\.\d{{2}})\s+0*(\d+)", text)
         rows[name] = (
-            {"time_minutes": actm_minutes(match.group(1)), "fuel_kg": int(match.group(2))}
+            {"time_minutes": actm_minutes(match.group(2)), "fuel_kg": int(match.group(3))}
             if match
             else None
         )
+        if match and name == "stat_cont":
+            rows[name]["label"] = " ".join(match.group(1).split())
 
     taxi_match = re.search(r"TAXI\s+FUEL\s+0*(\d+)", text)
     masses = {
@@ -2094,7 +2098,7 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
 
     fuel = {
         "trip_fuel_kg": _int_group(page1, r"BURNOFF\s+\d{2}\.\d{2}\s+0*(\d+)"),
-        "contingency_fuel_kg": _int_group(page1, r"STAT CONT\s+\d{2}\.\d{2}\s+0*(\d+)"),
+        "contingency_fuel_kg": _int_group(page1, rf"{CONTINGENCY_LABEL}\s+\d{{2}}\.\d{{2}}\s+0*(\d+)"),
         "alternate_fuel_kg": _int_group(page1, r"ALTN FUEL\s+\d{2}\.\d{2}\s+0*(\d+)"),
         "alternate_holding_fuel_kg": _int_group(page1, r"ALTN HOLD\s+\d{2}\.\d{2}\s+0*(\d+)"),
         "taxi_fuel_kg": _int_group(page1, r"TAXI FUEL\s+0*(\d+)"),

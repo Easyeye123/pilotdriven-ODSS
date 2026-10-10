@@ -31,6 +31,7 @@ from .analysed_briefing_content import (cyclone_content, deferred_item_label,
 from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
 from .constants import format_actm
+from .fuel_rows import contingency_label
 from .page_one_weather import page_one_taf_field_continued, forecast_source_line, page_one_metar_field, page_one_taf_field
 from .enroute_contact import (compose_enroute_contact, crossing_sequence_limited, has_printed_values, is_call_line,
                               primary_procedure_line, printed_values)
@@ -1726,7 +1727,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
             # `RTOW - PTOW +8,581 KG`; the page-1 tile above states it signed.
             f"RTOW - PTOW: {signed_kg(perf.get('margin_kg'))} · MLGW {kg(inputs.get('maximum_landing_weight_kg'))}",
             f"MAX FUEL AVAILABLE {kg(inputs.get('maximum_fuel_available_kg'))}"]
-    fuel_lines = [f"{label} {amount(key)}" for key, label in (("burnoff", "BURNOFF"), ("stat_cont", "STAT CONT"), ("altn_fuel", "ALTN FUEL"), ("altn_hold", "ALTN HOLD"))]
+    fuel_lines = [f"{label} {amount(key)}" for key, label in (("burnoff", "BURNOFF"), ("stat_cont", contingency_label(fuel_rows)), ("altn_fuel", "ALTN FUEL"), ("altn_hold", "ALTN HOLD"))]
     for key, label in (("dest_hold_top_up", "DEST HOLD TOP-UP"), ("edto_top_up", "EDTO TOP-UP")):
         if (fuel_rows.get(key) or {}).get("fuel_kg"):
             fuel_lines.append(f"{label} {amount(key)}")

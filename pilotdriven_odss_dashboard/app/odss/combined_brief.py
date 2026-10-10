@@ -28,6 +28,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 from . import brief_theme as theme
 from .brief_theme import register_fonts
+from .fuel_rows import contingency_label
 from .briefing import (
     _compact_notam_family,
     _compact_notam_text,
@@ -176,7 +177,9 @@ WAFC_CHARTS_PER_PAGE = 3
 # taxilane's own scope (C south of D2, TXL N4 behind stand 604) and never a plain word after TWY; page 6's ladder adds the
 # packed VWS events step; extraction v8. A v82 pack's composition can differ, so it is rebuilt from its held analysis and
 # never served as stored.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-taxi-scope-navlog-v83"
+# 10 Oct 2026 (v84, release-472 QA, F13): the contingency row prints the label the OFP gives it ("3% CONT" or "STAT CONT")
+# on pages 1 and 3 and in the performance reconciliation; extraction v9.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-contingency-label-v84"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
@@ -1144,7 +1147,7 @@ def _fuel_panel_rows(fuel_summary: dict[str, Any]) -> list[tuple[str, str]]:
             positive_top_ups.append((label, timed(key)))
     return [
         ("GROUND", f"{ground:,} NM" if ground else "--"),
-        ("BURNOFF / STAT CONT", f"{timed('burnoff')} / {timed('stat_cont')}"),
+        (f"BURNOFF / {contingency_label(rows)}", f"{timed('burnoff')} / {timed('stat_cont')}"),
         ("ALTN FUEL / ALTN HOLD", f"{timed('altn_fuel')} / {timed('altn_hold')}"),
         (
             "TAXI",
@@ -1804,7 +1807,7 @@ def _draw_audit_rev3_v8_overview_summary_row(
     )
     fuel_rows = [
         ("BURNOFF", timed("burnoff")),
-        ("STAT CONT", timed("stat_cont")),
+        (contingency_label(rows_data), timed("stat_cont")),
         ("ALTN", timed("altn_fuel")),
         ("ALTN HOLD", timed("altn_hold")),
         ("TAXI", f"{fuel_summary.get('taxi_fuel_kg'):,}" if fuel_summary.get("taxi_fuel_kg") else "--"),
@@ -2292,7 +2295,7 @@ def _draw_operational_six_box_overview(
         ),
         ("FLT PLAN REQMT", timed_fuel("flt_plan_reqmt")),
         ("BURNOFF", timed_fuel("burnoff", fallback_fuel_kg=burnoff)),
-        ("STAT CONT", timed_fuel("stat_cont")),
+        (contingency_label(source_fuel_rows), timed_fuel("stat_cont")),
         ("ALTN FUEL", timed_fuel("altn_fuel")),
         ("ALTN HOLD", timed_fuel("altn_hold")),
         (

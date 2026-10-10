@@ -30,4 +30,7 @@ the two are bumped together whenever the parser's extraction changes.
 # blank, never the distance's first digits, and an asterisked MSA keeps its value; a log whose first row sits alone under
 # the column header starts on that page. Route waypoints, positions, MSAs and VWS events held under v7 can differ; a v7
 # analysis is an older extraction and Create updated briefing re-reads the OFP.
-EXTRACTION_RULES = "2026-10-10-navlog-etp-rows-v8"
+# v9 (10 Oct 2026, release-472 QA, F13): the page-1 contingency line is read when printed as a percentage of trip fuel
+# ("3% CONT", genuine SQ314 SIN-LGW 15 Aug) as well as "STAT CONT", and the row holds its printed label; a v8 analysis of
+# such a plan holds no contingency and reports its fuel arithmetic unverified.
+EXTRACTION_RULES = "2026-10-10-contingency-label-v9"

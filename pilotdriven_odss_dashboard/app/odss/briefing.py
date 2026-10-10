@@ -20,6 +20,7 @@ from . import brief_theme as theme
 from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
 from .enroute_contact import compose_enroute_contact
+from .fuel_rows import contingency_label
 from .deferred_dispatch import build_deferred_dispatch_gates
 from .engines import (
     _notam_operational_summary,
@@ -4934,7 +4935,7 @@ def _performance_reconciliation_projection(
     taxi_kg = fuel_summary.get("taxi_fuel_kg")
     requirement_names = (
         ("BURNOFF", "burnoff"),
-        ("STAT CONT", "stat_cont"),
+        (contingency_label(fuel_rows), "stat_cont"),
         ("ALTN FUEL", "altn_fuel"),
         ("ALTN HOLD", "altn_hold"),
     )

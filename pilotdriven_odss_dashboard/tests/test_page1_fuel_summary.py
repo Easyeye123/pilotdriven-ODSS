@@ -79,7 +79,8 @@ def test_reads_the_full_edto_summary_block():
     assert summary["cruise_wind_component_kt"] == 25
     assert summary["alternate"] == {"designator": "KUL", "icao": "WMKK"}
     assert summary["rows"]["burnoff"] == {"time_minutes": 17 * 60 + 57, "fuel_kg": 107027}
-    assert summary["rows"]["stat_cont"] == {"time_minutes": 8, "fuel_kg": 793}
+    # The contingency row holds the label the page prints (F13, release-472 QA): SQ23 prints STAT CONT.
+    assert summary["rows"]["stat_cont"] == {"time_minutes": 8, "fuel_kg": 793, "label": "STAT CONT"}
     assert summary["rows"]["altn_fuel"] == {"time_minutes": 55, "fuel_kg": 4680}
     assert summary["rows"]["altn_hold"] == {"time_minutes": 30, "fuel_kg": 2174}
     assert summary["rows"]["dest_hold_top_up"] == {"time_minutes": 0, "fuel_kg": 0}

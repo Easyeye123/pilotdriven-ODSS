@@ -464,14 +464,35 @@ def test_the_pdf_fuel_arithmetic_label_states_the_condition_not_the_status_code(
     assert not re.search(r"review[ _-]required", fuel_state_label("review_required"), re.I)
 
 
-def test_sq314_pdf_prints_the_fuel_arithmetic_condition_in_words(sq314):
-    """SQ314's page-1 fuel arithmetic does not verify against the OFP (the
-    28-flight audit of 410 found it; release 414's own gate-6 analysis holds
-    state review_required). Both pages say so without the code."""
+def test_sq314_pdf_prints_the_fuel_arithmetic_condition_in_words(sq314, tmp_path_factory):
+    """Both pages state the page-1 fuel arithmetic in words, never the code.
+
+    SQ314's arithmetic did not verify from release 410 (the 28-flight audit)
+    to 472, and this test pinned that. The cause was the reader, not the plan:
+    SQ314 prints its contingency as "3% CONT 00.23 002497", which the reader
+    learned only for F13 of Codex's release-472 QA (10 Oct 2026); the plan's
+    own sum is exact (83220 + 2497 + 3650 + 2375 + 600 = 92342). The genuine
+    flight now says "verified"; the unverified wording stays covered on a
+    LABELLED SYNTHETIC copy of the same analysis whose fuel state is set to
+    review_required."""
     state = (sq314["payload"]["flight"].get("fuel_summary") or {}).get("state")
-    assert state == "review_required", state
+    assert state == "verified", state
     page_one, perf = sq314["folded"][0], sq314["folded"][2]
-    assert normalized("Arithmetic not verified.") in page_one
-    assert normalized("Arithmetic: not verified") in perf
+    assert normalized("Arithmetic verified.") in page_one
+    assert normalized("Arithmetic: verified") in perf
     for page in sq314["folded"]:
+        assert "REVIEW REQUIRED" not in page
+
+    synthetic = copy.deepcopy(sq314["payload"])
+    synthetic["flight"]["fuel_summary"]["state"] = "review_required"
+    path = tmp_path_factory.mktemp("boss-round-20260923-sq314-synthetic-unverified") / "SQ314_SYNTHETIC_unverified.pdf"
+    render_combined_briefing(
+        synthetic["flight"], synthetic["findings"], synthetic.get("view", {}).get("warnings") or [], path,
+        source_pdf_path=str(CORPUS / SQ314), weather_charts=synthetic.get("weather_charts") or {},
+    )
+    with fitz.open(path) as document:
+        folded = [normalized(page.get_text()) for page in document]
+    assert normalized("Arithmetic not verified.") in folded[0]
+    assert normalized("Arithmetic: not verified") in folded[2]
+    for page in folded:
         assert "REVIEW REQUIRED" not in page
