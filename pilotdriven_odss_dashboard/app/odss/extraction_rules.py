@@ -24,4 +24,10 @@ the two are bumped together whenever the parser's extraction changes.
 # v7 (1 Oct 2026, ATC-CLEARANCE-FAMILY): a request / clarification / confirmation addressed to a unit and the refusal or
 # acceptance of an ATC clearance or ATC-qualified instruction are held (CO188/02 under LTAA ANKARA FIR, the NON-RNAV
 # radar-vector requests to DAEGU/INCHEON ACC); a stop printed without a following space ends a sentence outside an address.
-EXTRACTION_RULES = "2026-10-01-atc-clearance-family-v7"
+# v8 (10 Oct 2026, release-468/470 QA): a LIDO "**ETP<n> -1D" scenario row closes the waypoint before it and is never a
+# waypoint (the waypoint no longer takes the ETP's position or leg distance as its MSA); ARINC lat/long fix names (5350N,
+# 18E30) and fixes such as EXITI are route waypoints (only ENTRY<n>/EXIT<n> are computed points); a blank MSA column is
+# blank, never the distance's first digits, and an asterisked MSA keeps its value; a log whose first row sits alone under
+# the column header starts on that page. Route waypoints, positions, MSAs and VWS events held under v7 can differ; a v7
+# analysis is an older extraction and Create updated briefing re-reads the OFP.
+EXTRACTION_RULES = "2026-10-10-navlog-etp-rows-v8"

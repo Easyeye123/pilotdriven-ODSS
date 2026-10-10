@@ -59,10 +59,10 @@ def assert_manifest_metadata_only(payload):
     Sources and bodies stay outside this manifest. Every case may contain only
     short identities, counts and SHA-256 digests; review history is bounded prose.
     """
-    assert set(payload) == {"schema_version", "extraction_contract_version", "description", "extraction_baseline_policy", "cases"}
+    assert set(payload) == {"schema_version", "extraction_contract_version", "extraction_rules", "description", "extraction_baseline_policy", "cases"}
     assert payload["schema_version"] == 1
     assert payload["extraction_contract_version"] == 2
-    for field, limit in {"description": 256, "extraction_baseline_policy": 16_384}.items():
+    for field, limit in {"extraction_rules": 128, "description": 256, "extraction_baseline_policy": 16_384}.items():
         assert isinstance(payload[field], str) and 0 < len(payload[field]) <= limit, field
     # Raw, base64 and hex PDF header forms must not be hidden in prose/metadata.
     assert not re.search(r"%PDF-|JVBERi0|255044462d", json.dumps(payload), re.IGNORECASE)

@@ -172,7 +172,11 @@ WAFC_CHARTS_PER_PAGE = 3
 # still open at the end of the route, so its printed state can differ from v80.
 # 4 Oct 2026 (v82, ATC-ABSENCE-WORDING): an empty early-call list no longer says frequencies and lead times are not held;
 # the communications finding no longer says procedures are unavailable, so its printed wording can differ from v81.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-04-atc-absence-wording-v82"
+# 10 Oct 2026 (v83, ITEM4 + release-468/470 QA): airport cards and the PDF airport consequence state a closed taxiway's or
+# taxilane's own scope (C south of D2, TXL N4 behind stand 604) and never a plain word after TWY; page 6's ladder adds the
+# packed VWS events step; extraction v8. A v82 pack's composition can differ, so it is rebuilt from its held analysis and
+# never served as stored.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-taxi-scope-navlog-v83"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
