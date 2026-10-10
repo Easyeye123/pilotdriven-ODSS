@@ -4300,6 +4300,8 @@ def _ground_line_text(line: dict[str, Any]) -> str:
 def _material_aircraft_exclusion_lines(
     panel: dict[str, Any],
     held_lines: list[dict[str, Any]],
+    *,
+    limit: int | None = _MATERIAL_AIRCRAFT_EXCLUSION_LINES,
 ) -> list[dict[str, Any]]:
     """Confirmed aircraft exclusions the card's family cap would otherwise drop.
 
@@ -4360,7 +4362,29 @@ def _material_aircraft_exclusion_lines(
             "pertinence_rank": int(item.get("pertinence_rank") or 99),
         })
     material.sort(key=lambda line: (line["pertinence_rank"], str(line["notam_id"])))
-    return material[:_MATERIAL_AIRCRAFT_EXCLUSION_LINES]
+    # limit=None returns every eligible exclusion, so a card can count what its
+    # display cap leaves out (Codex re-QA of 484, F21).
+    return material if limit is None else material[:limit]
+
+
+def _further_exclusions_text(count: int) -> str:
+    """What a page-2 card says of the confirmed exclusions its two-line cap leaves out."""
+    return (
+        f"{count} further aircraft-size exclusion"
+        + (" is" if count == 1 else "s are")
+        + " held on the dashboard Airports page."
+    )
+
+
+def _notice_key(location: Any, notam_id: Any) -> str | None:
+    """A notice's identity on page 2: its airport and its number (F22).
+
+    NOTAM numbers are issued per authority, so the same number at another
+    airport is another notice. Without an airport there is no identity.
+    """
+    where = str(location or "").strip().upper()
+    number = str(notam_id or "").strip().upper()
+    return f"{where} {number}" if where and number else None
 
 
 def _decision_finding_projection(
@@ -4572,9 +4596,11 @@ def _decision_finding_projection(
             and str(line.get("signal_family") or "")
             in _GROUND_CONSTRAINT_FAMILIES
         ][:2]
-        ground_lines = ground_lines + _material_aircraft_exclusion_lines(
-            destination_panel, ground_lines,
+        promoted = _material_aircraft_exclusion_lines(
+            destination_panel, ground_lines, limit=None,
         )
+        ground_lines = ground_lines + promoted[:_MATERIAL_AIRCRAFT_EXCLUSION_LINES]
+        further_promoted = max(0, len(promoted) - _MATERIAL_AIRCRAFT_EXCLUSION_LINES)
         bay_cranes = [
             item
             for item in destination_panel.get("selected_notams") or []
@@ -4625,6 +4651,8 @@ def _decision_finding_projection(
         # aircraft (boss 9 Sep: "downgraded to code E" alone left the pilot to
         # work out that an A350-941 is itself Code E).
         ground_parts = [_ground_line_text(line) for line in ground_lines]
+        if further_promoted:
+            ground_parts.append(_further_exclusions_text(further_promoted))
         source_pages = {
             int(line["source_page"])
             for line in ground_lines
@@ -4669,10 +4697,10 @@ def _decision_finding_projection(
                 ),
                 "data": {
                     "priority_score": 95,
-                    "notam_ids": [
-                        str(line.get("notam_id") or "").upper()
+                    "notice_keys": [
+                        key
                         for line in ground_lines
-                        if line.get("notam_id")
+                        if (key := _notice_key(destination_panel.get("icao"), line.get("notam_id")))
                     ],
                     "aircraft_exclusion": any(
                         _confirms_aircraft_exclusion(line) for line in ground_lines
@@ -4687,13 +4715,13 @@ def _decision_finding_projection(
     # aircraft is carried for every airport the flight holds in another role
     # (departure, destination alternate, EDTO, fuel en-route), in one bounded
     # card. A destination's exclusions stay on its arrival card above.
-    exclusion_lines: list[tuple[str, dict[str, Any]]] = []
+    exclusion_lines: list[tuple[str, str, dict[str, Any]]] = []
     exclusion_airports: list[str] = []
     for panel in airport_panels or []:
         role_keys = set(panel.get("role_keys") or [])
         if not role_keys or "destination" in role_keys:
             continue
-        lines = _material_aircraft_exclusion_lines(panel, [])
+        lines = _material_aircraft_exclusion_lines(panel, [], limit=None)
         if not lines:
             continue
         roles = [str(role).strip() for role in panel.get("roles") or [] if str(role).strip()]
@@ -4706,24 +4734,22 @@ def _decision_finding_projection(
             if part
         )
         exclusion_airports.append(where)
-        exclusion_lines.extend((where, line) for line in lines)
+        icao = str(panel.get("icao") or "").strip().upper()
+        exclusion_lines.extend((icao, where, line) for line in lines)
     if exclusion_lines:
+        # Every eligible exclusion is counted before the two-line display cap.
         shown = exclusion_lines[:_MATERIAL_AIRCRAFT_EXCLUSION_LINES]
         several = len(exclusion_airports) > 1
         parts = [
             f"{where}: {_ground_line_text(line)}" if several else _ground_line_text(line)
-            for where, line in shown
+            for _, where, line in shown
         ]
         further = len(exclusion_lines) - len(shown)
         if further:
-            parts.append(
-                f"{further} further aircraft-size exclusion"
-                + (" is" if further == 1 else "s are")
-                + " held on the dashboard Airports page."
-            )
+            parts.append(_further_exclusions_text(further))
         pages = sorted({
             int(line["source_page"])
-            for _, line in shown
+            for _, _, line in shown
             if isinstance(line.get("source_page"), int)
         })
         material_rows.append({
@@ -4747,7 +4773,9 @@ def _decision_finding_projection(
             ),
             "data": {
                 "priority_score": 95,
-                "notam_ids": [str(line.get("notam_id") or "").upper() for _, line in shown],
+                "notice_keys": [
+                    key for icao, _, line in shown if (key := _notice_key(icao, line.get("notam_id")))
+                ],
                 "aircraft_exclusion": True,
             },
         })
@@ -5010,16 +5038,22 @@ def _decision_finding_projection(
         ]
         if not displaceable:
             break
+        # Already printed = the same notice at the same airport (F22: WSSS
+        # A101/26 is not VRMM A101/26); a finding naming no airport is never
+        # called a duplicate.
         printed = {
-            str(notam_id).upper()
+            key
             for item in [*candidates, protected]
-            for notam_id in (item.get("data") or {}).get("notam_ids") or []
+            for key in (item.get("data") or {}).get("notice_keys") or []
         }
         repeated = [
             item
             for item in displaceable
             if str(item.get("engine") or "") == "notam"
-            and str((item.get("data") or {}).get("notam_id") or "").upper() in printed
+            and _notice_key(
+                (item.get("data") or {}).get("location"),
+                (item.get("data") or {}).get("notam_id"),
+            ) in printed
         ]
         give_way = max(repeated or displaceable, key=_finding_sort_key)
         candidates[candidates.index(give_way)] = protected

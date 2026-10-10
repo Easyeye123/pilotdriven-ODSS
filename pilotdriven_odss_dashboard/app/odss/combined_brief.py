@@ -193,7 +193,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # 11 Oct 2026 (v89, release-482 QA, F18/F19): aircraft-size rules v8 read a reversal's noun ("REMOVAL OF THIS
 # RESTRICTION") as well as its verb; page 2 carries a confirmed exclusion at every airport the flight holds in another role
 # (departure, alternate, EDTO, fuel en-route), and a card with a confirmed exclusion is never crowded off the six cards.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-11-exclusion-roles-v89"
+# 11 Oct 2026 (v90, release-484 QA, F20-F22): aircraft-size rules v9 read every form of a reversal ("THIS NOTICE CANCELS
+# THE ABOVE LIMIT"); page-2 exclusion cards count every eligible exclusion their two-line cap leaves out, on the arrival
+# card too; a duplicate card is the same notice at the same airport.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-11-exclusion-count-v90"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

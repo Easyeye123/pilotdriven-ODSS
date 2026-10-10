@@ -168,8 +168,10 @@ def _six_buckets(*, duplicate: bool) -> list[dict]:
 
     return [
         finding("performance", "Performance check"),
+        # A genuine NOTAM finding names its airport (SQ438's SX5/26: location VRMM); since F22 a duplicate is the same
+        # notice at the same airport.
         finding("notam", "Destination NOTAM SX5/26" if duplicate else "Destination NOTAM A9/26",
-                role="destination", notam_id="SX5/26" if duplicate else "A9/26"),
+                role="destination", location="VRMM", notam_id="SX5/26" if duplicate else "A9/26"),
         finding("weather", "Weather item"),
         finding("mel", "Deferred item"),
         finding("route_airspace", "Route airspace"),
