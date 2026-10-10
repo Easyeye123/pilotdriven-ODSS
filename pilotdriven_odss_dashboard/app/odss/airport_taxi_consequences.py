@@ -156,7 +156,8 @@ _END_BOUNDARY = re.compile(
 _EXTENT_OPEN = re.compile(
     rf"\b(?:(?:PORTION|PART|SECTION)\s+OF\s+)?(?:(?:APN|APRON)\s+)?(?P<kind>{_KIND})\s+(?P<ident>{_REF})"
     rf"(?:\s+(?P<direction>{_DIRECTION}))?(?:\s*\((?P<side>[A-Z]+)\))?"
-    r"\s+(?:(?:IS\s+|WILL\s+BE\s+)?(?:CLSD|CLOSED)\s+)?(?:BTN|BETWEEN)\s+"
+    # Codex QA of release 468 (F6): WSSS A2508/26 prints "TWY Q BTW TXL Q3 AND TWY P7" - BTW as between.
+    r"\s+(?:(?:IS\s+|WILL\s+BE\s+)?(?:CLSD|CLOSED)\s+)?(?:BTN|BETWEEN|BTW)\s+"
 )
 
 
@@ -251,14 +252,15 @@ def _designation_scope(upper: str, end: int, surface: str, ident: str) -> tuple[
         if place is None:
             return f"part of {name}", consumed
         return f"{name} {compass['side'].lower()} of {taxi_place_label(place, surface)}", consumed
-    behind = re.match(rf"\s+BEHIND\s+(?:ACFT\s+)?(?P<stands>STANDS?)\s+(?P<ids>{_STAND_LIST})", after)
+    # Codex QA of release 468 (F6): WSSS A2757/26 "TXL N1 NB AFTER ACFT STAND 517L CLSD" bounds N1 by a stand as BEHIND does.
+    behind = re.match(rf"\s+(?P<relation>BEHIND|AFTER)\s+(?:ACFT\s+)?(?P<stands>STANDS?)\s+(?P<ids>{_STAND_LIST})", after)
     # The stand list is whole when what follows cannot be another stand: a
     # boundary, a word (CLSD, VALIDITY) or the next taxiway's kind.
     if behind and (_END_BOUNDARY.match(after[behind.end():])
                    or re.match(rf"\s+(?:{_KIND}|AND|[A-Z]{{4,}})(?![A-Z0-9])", after[behind.end():])):
         ids = re.sub(r"\s*,\s*", ", ", behind["ids"])
         ids = re.sub(r"\s+(AND|TO)\s+", lambda word: f" {word[1].lower()} ", ids)
-        return f"{name} behind {behind['stands'].lower()} {ids}", after_at + behind.end()
+        return f"{name} {behind['relation'].lower()} {behind['stands'].lower()} {ids}", after_at + behind.end()
     # An unread qualifier speaks for its own list item only.
     item_end = re.search(rf",|;|\.\s|{_ITEM_MARKER}", upper[position:])
     unread_end = position + item_end.start() if item_end else len(upper)
@@ -399,6 +401,11 @@ def taxiway_closure_items(text: str) -> tuple[list[tuple[str, str]], bool]:
         for item in found:
             if item not in items:
                 items.append(item)
+    # Codex QA of release 468 (F5): a later mention of a designation whose scope is already stated ("TXL N4 behind stand
+    # 604", then "THE CLSD SECTION OF TXL N4 ...") is the same closure, not a further item - WSSS SX168/26 was counted
+    # twice, so its card claimed further closures and its PDF consequence stayed unresolved.
+    stated = {" ".join(label.split(" ")[:2]) for _, label in items if not label.startswith("part of ")}
+    items = [item for item in items if not (item[1].startswith("part of ") and item[1][len("part of "):] in stated)]
     return items, exact
 
 
@@ -447,7 +454,7 @@ def _subject_extent(value: str) -> list[str]:
         refs = _refs(first + " " + body)
         if refs:
             return [_compact_refs(refs)]
-    bounds = re.fullmatch(r"(?:BTN|BETWEEN|FM|FROM)\s+(.+?)\s+(?:AND|TO)\s+(.+)", body)
+    bounds = re.fullmatch(r"(?:BTN|BETWEEN|BTW|FM|FROM)\s+(.+?)\s+(?:AND|TO)\s+(.+)", body)
     if bounds:
         left_text, right_text = bounds.groups()
         included = re.split(r",?\s+INCLUDING\s+", right_text, maxsplit=1)

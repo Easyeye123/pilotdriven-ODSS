@@ -29,8 +29,9 @@ EXPECTED = {
         "departure": "WSSS",
         "destination": "EBBR",
         # 10 Oct 2026: LIBDI, the waypoint before SQ304's "**ETP1 -1D" row, keeps its own position and MSA (020 at
-        # N14 15.1 E091 59.8) instead of the ETP's; same value as the reminted private-corpus manifest.
-        "route_hash": "2c465ca696f810745e689e1d8a36b80a0b5fe2b06c9f511177ba298088330e1e",
+        # N14 15.1 E091 59.8) instead of the ETP's; then (Codex QA of release 468) the first navlog row IBIXU is kept
+        # and EXITI keeps its MSA 069. Same value as the reminted private-corpus manifest.
+        "route_hash": "910ebe1bdbbec51fbbdc99afbf16a0fe8b4933818da07358141e3e5de1691bc2",
         "masses": {
             "planned_zfw_kg": 175500,
             "planned_takeoff_weight_kg": 262222,

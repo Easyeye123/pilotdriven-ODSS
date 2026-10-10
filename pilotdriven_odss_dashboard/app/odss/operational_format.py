@@ -1979,6 +1979,13 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         enroute_lines.append(" ".join(vws_events))
     enroute_lines.append(" ".join(terrain_lines) if terrain_lines else text(terrain.get("summary")))
     enroute_lines.append(terrain_summary)
+    # Codex QA of release 468: SQ023's restored 5350N VWS 005 event took the line that held its Karachi call row
+    # (SX33/26). The ladder's last content step before a FIR row is deferred prints the same VWS events packed - every
+    # event's ACTM span and maximum, without the repeated words - never fewer events.
+    packed = [re.fullmatch(r"ACTM (\S+), maximum (\d{3})\.", text(f.get("summary"))) for f in findings if f.get("engine") == "vws"]
+    enroute_lines_packed = list(enroute_lines)
+    if vws_events and all(packed):
+        enroute_lines_packed[1] = "VWS events (ACTM, maximum): " + "; ".join(f"{m.group(1)} {m.group(2)}" for m in packed) + "."
     # The WAFS/SIGWX and AIREP/PIREP corroboration states print in the WEATHER
     # COVERAGE conditions on this page; the card no longer repeats them.
     interpretation: list[str] = []
@@ -2184,8 +2191,9 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     # first; type size steps down only after that, and no condition is dropped.
     closing_cards = {
         "fir": fir_card,
-        "enroute": lambda gap, weight: Card("OFP VWS, CAT AND TERRAIN", enroute_lines + interpretation,
-                                            AMBER, "sec_terrain", width_weight=weight, paragraph_gap=gap),
+        "enroute": lambda gap, weight, packed=False: Card("OFP VWS, CAT AND TERRAIN",
+                                                          (enroute_lines_packed if packed else enroute_lines) + interpretation,
+                                                          AMBER, "sec_terrain", width_weight=weight, paragraph_gap=gap),
         "review": lambda gap, weight, mode="whole": Card(
             "SOURCE / CALCULATION REVIEW", checklist_lines(receipt["rows"], mode), CYAN,
             width_weight=weight, paragraph_gap=gap),
@@ -2224,13 +2232,14 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     # The source card's compact form (identity and generation time on one line,
     # the app pointer left out) is the last content given up before the next
     # FIR row is deferred.
-    ASSURANCE_STEPS = tuple((fir_step, mode, compact) for fir_step in range(len(FIR_STEPS))
-                            for mode, compact in ((CHECKLIST_MODES[0], False), (CHECKLIST_MODES[1], False),
-                                                  (CHECKLIST_MODES[2], False), (CHECKLIST_MODES[2], True)))
+    ASSURANCE_STEPS = tuple((fir_step, mode, compact, packed) for fir_step in range(len(FIR_STEPS))
+                            for mode, compact, packed in ((CHECKLIST_MODES[0], False, False), (CHECKLIST_MODES[1], False, False),
+                                                          (CHECKLIST_MODES[2], False, False), (CHECKLIST_MODES[2], True, False),
+                                                          (CHECKLIST_MODES[2], True, True)))
 
     def assurance_rows(body, leading, variant=0, step=0):
         *grid, gap = closing_grids[variant]
-        fir_step, mode, control_compact = ASSURANCE_STEPS[step]
+        fir_step, mode, control_compact, vws_packed = ASSURANCE_STEPS[step]
         rows = []
         for row in grid:
             built = []
@@ -2241,6 +2250,8 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                     built.append(closing_cards[key](gap, weight, mode))
                 elif key == "control":
                     built.append(closing_cards[key](gap, weight, control_compact))
+                elif key == "enroute":
+                    built.append(closing_cards[key](gap, weight, vws_packed))
                 else:
                     built.append(closing_cards[key](gap, weight))
             rows.append((None, built))

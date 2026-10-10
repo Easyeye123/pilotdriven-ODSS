@@ -130,6 +130,8 @@ WSSS_SX56 = ("SX0056/26 AIP SUPPLEMENT WSSS/SINGAPORE/CHANGI VALIDITY: 16APR26 0
     (RKSI_A1303, "TXL R17 between R23 and R24"),
     (EGLL_A2905, "TWY BRAVO (SOUTH) between ECHO and FOXTROT"),
     (LIRF_A3969, "TWY Y between ACFT STAND 837 and ACFT STAND 846"),
+    # Real: the source prints "BTW" for between (Codex QA of release 468, F6; was held "part of TWY Q").
+    (WSSS_A2508, "TWY Q between TXL Q3 and P7"),
 ])
 def test_an_extent_is_published_with_both_places_whole(source, subject):
     assert _notam_subject(source, "taxiway_closure") == subject
@@ -148,7 +150,7 @@ def test_a_partial_closure_that_is_not_an_extent_keeps_its_scope(source, subject
 @pytest.mark.parametrize(("source", "subject"), [
     (WSSS_A1566, "TXL P7 behind stand E20"),
     (KLAX_A1974, "TXL C9 north of GATE 46B"),
-    (WSSS_A2757, "part of TXL N1 NB"),
+    (WSSS_A2757, "TXL N1 NB after stand 517L"),
 ])
 def test_a_taxilane_named_outside_an_extent_states_its_own_scope(source, subject):
     """A taxilane is a designation (10 Oct 2026; was the generic "taxiway operational area").
@@ -162,8 +164,6 @@ def test_a_taxilane_named_outside_an_extent_states_its_own_scope(source, subject
 
 
 @pytest.mark.parametrize(("source", "subject"), [
-    # Real: the source prints "BTW", which is not a bound this reader knows.
-    (WSSS_A2508, "part of TWY Q"),
     # Labelled synthetic: an adjective with nothing after it is not an end point.
     ("TWY P BTN TWY C AND RAPID CLSD", "part of TWY P"),
     # Labelled synthetic: a facility cut at its number is not the facility.

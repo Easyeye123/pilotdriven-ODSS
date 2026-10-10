@@ -50,3 +50,21 @@ def test_a_later_unread_mention_never_narrows_a_whole_closure() -> None:
     # Genuine EBBR SX38/26 (SQ303): "TWY W1 CLSD. ... ENGINE TEST RUNS WITH THE JET BLAST TOWARDS TWY W1 CAN NO LONGER ..."
     text = "TWY W1 CLSD. TWY CROSSING AT TWY Y WILL REMAIN IN PLACE. ENGINE TEST RUNS WITH THE JET BLAST TOWARDS TWY W1 CAN NO LONGER BE CARRIED OUT."
     assert _notam_operational_summary(text, "taxiway_closure", "departure").startswith("TWY W1 closed")
+
+
+def test_f5_sx168_counts_its_one_closure_once_and_states_it_on_the_pdf() -> None:
+    # Codex QA of release 468 (F5): the card said "further closed taxiway items" and the PDF held SX168/26 unresolved,
+    # because a later "TXL N4" mention was counted again as "part of TXL N4".
+    source = CORPUS / "SQ43708102026MLE.pdf"
+    if not source.exists():
+        pytest.skip("private CFP corpus file SQ43708102026MLE.pdf is not available")
+    flight = parse_lido(extract_pages(source), source.name)
+    findings, warnings = analyse(flight)
+    view = build_briefing_view(flight, findings, warnings, include_dashboard_only_panels=True)
+    panel = next(p for p in view["airport_operational_panels"] if p.get("icao") == "WSSS")
+    row = next(r for r in panel["selected_notams"] if r.get("notam_id") == "SX168/26")
+    assert "further closed" not in row["summary"], row["summary"]
+    wsss = next(a for a in view["airport_pdf_analysis"] if a["icao"] == "WSSS")
+    assert "SX168/26" not in wsss["unresolved_ids"]
+    taxi = [line["text"] for line in wsss["lines"] if line.get("family") == "taxiway"]
+    assert any("TXL N4 behind stand 604 (SX168/26)" in text for text in taxi), taxi

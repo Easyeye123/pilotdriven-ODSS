@@ -168,3 +168,12 @@ def test_labelled_an_airway_list_inside_an_exception_or_negation_is_not_a_route_
         procedure = compose_enroute_contact(_flight(airways, text))["procedures"][0]
         assert [c for c in procedure["conditions"] if c["kind"] == "route"] == []
         assert procedure["applicability_state"] != "not_applicable"
+
+
+def test_genuine_sq23_page_six_keeps_every_vws_event_beside_its_calls(tmp_path_factory):
+    """Codex QA of release 468: SQ023's restored 5350N VWS 005 event (ACTM 02.26-02.39) took the line holding the Karachi
+    call row. The page now packs the VWS events at its last content step before a FIR row is deferred - both events,
+    each with its span and maximum, and the Karachi row stay on page 6."""
+    page = rendered("SQ23", tmp_path_factory)["page6"]
+    for printed in ("02.26-02.39", "07.45-07.52", "NOTAM SX33/26, OFP p110"):
+        assert normalized(printed) in page, printed

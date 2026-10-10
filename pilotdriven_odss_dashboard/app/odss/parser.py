@@ -1240,8 +1240,12 @@ def _parse_edto_sectors(edto_text: str) -> list[dict[str, Any]]:
     return sectors
 
 
+# Codex QA of release 468 (10 Oct 2026, F1): ARINC 424 latitude/longitude fix names are waypoints too - "5350N" (53N
+# 050W; letter last when the longitude is below 100) and "18E30" (18N 130E; letter in the middle when it is 100 or more).
+# Unread, each left the row before it (a FIR boundary or ENTRY point) open to take its coordinates: SQ34's -KZAK sat
+# 706 NM from its printed position and SQ023's 5350N VWS 005 event was missing.
 _WAYPOINT_LINE = re.compile(
-    r"^(?P<name>\*\*ETP\S*|-[A-Z0-9]+|\d{1,2}[NS]\d{2,3}|[A-Z][A-Z0-9]{1,8}|TOC|TOD|ENTRY\d|EXIT\d)"
+    r"^(?P<name>\*\*ETP\S*|-[A-Z0-9]+|\d{4}[NESW]|\d{1,2}[NESW]\d{2,3}|[A-Z][A-Z0-9]{1,8}|TOC|TOD|ENTRY\d|EXIT\d)"
     r"(?:\s+\d{3}(?:\.\d+)?)?\s+(?P<actm>\d{2}\.\d{2})\b"
 )
 # 10 Oct 2026 (genuine SQ437 MLE-SIN, David: "Look at OBDAL and see 114?"): LIDO prints an equal-time point with its
@@ -1250,11 +1254,16 @@ _WAYPOINT_LINE = re.compile(
 # 020 -> 007; SQ24's 62N20 111 -> 000). 28 such rows in 14 of the 30 originals. An ETP row closes the waypoint before it
 # and is not itself a route waypoint, as no ETP row ever was.
 _ETP_SCENARIO_LINE = re.compile(r"^\*\*ETP\S*\s+-\d[A-Z]\s+\d{2}\.\d{2}\b")
+# F4 (Codex QA of release 468): the MSA column holds exactly three digits (or three and an asterisk). A row that prints
+# none - each destination, ENTRY/EXIT and ETP point - goes straight to its four-digit distance, whose first three digits
+# were read as the MSA (SQ024's KJFK "0069" became MSA 006). No MSA is printed there, so none is read.
 _COORDINATE_LINE = re.compile(
     r"^(?P<lat_hem>[NS])(?P<lat_deg>\d{2})\s+(?P<lat_min>\d{2}\.\d+)\s+"
     r"(?P<lon_hem>[EW])(?P<lon_deg>\d{3})\s+(?P<lon_min>\d{2}\.\d+)\s+"
-    r"(?P<msa>\d{3})(?P<star>\*)?"
+    r"(?:(?P<msa>\d{3})(?:(?P<star>\*)|(?![0-9])))?"
 )
+_NAVLOG_HEADER = re.compile(r"^POSN\s+FREQ\s+ACTM\b")
+_COMPUTED_POINT = re.compile(r"(?:ENTRY|EXIT)\d+")
 # Sensitivity and command lines on CFP page 1. LIDO prints the ZFW line in two
 # shapes — "ZFW CHANGE / M1000KG BURN LESS 454 KG" and the dual-direction
 # "ZFW CHANGE P1000KG BURN ADD 96KG / M1000KG BURN LESS 96 KG" — both carry
@@ -1328,14 +1337,19 @@ def _waypoint_log_start(cfp_pages: list[str]) -> int:
     for index, text in enumerate(cfp_pages):
         pairs = 0
         armed = False
+        # F2 (Codex QA of release 468): the log's own column header marks its first page even when only one row fits
+        # under it (SQ365 SOSAK, SQ297/SQ304 IBIXU were dropped when the search waited for a page with two).
+        headed = False
         for line in text.splitlines():
             stripped = line.strip()
-            if _WAYPOINT_LINE.match(stripped):
+            if _NAVLOG_HEADER.match(stripped):
+                headed = True
+            elif _WAYPOINT_LINE.match(stripped):
                 armed = True
             elif armed and _COORDINATE_LINE.match(stripped):
                 pairs += 1
                 armed = False
-                if pairs >= 2:
+                if pairs >= 2 or headed:
                     return index
     return _LEGACY_WAYPOINT_LOG_OFFSET
 
@@ -1393,8 +1407,9 @@ def _parse_waypoints(
                         coordinate.group("lon_min"),
                     )
                     name = str(pending["name"])
-                    computed = name.startswith("-") or name.startswith(("ENTRY", "EXIT", "**ETP")) or name in {"TOC", "TOD"}
-                    if not computed:
+                    # F3 (Codex QA of release 468): only ENTRYn/EXITn are computed EDTO points; "EXITI" (SQ304) is a fix.
+                    computed = name.startswith(("-", "**ETP")) or _COMPUTED_POINT.fullmatch(name) is not None or name in {"TOC", "TOD"}
+                    if not computed and coordinate.group("msa") is not None:
                         pending["msa_hundreds_ft"] = int(coordinate.group("msa"))
                         pending["msa_asterisk"] = bool(coordinate.group("star"))
     if pending:
