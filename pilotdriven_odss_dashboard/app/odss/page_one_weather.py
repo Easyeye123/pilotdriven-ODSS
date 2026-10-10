@@ -193,6 +193,32 @@ def page_one_taf_field_continued(record: Any, drop_groups: int) -> str:
     return f"{' '.join([base, *kept]).strip()} {TAF_CONTINUATION}"
 
 
+def weather_page_taf_field(record: Any, defer_groups: int) -> str:
+    """The WEATHER-page TAF with its last ``defer_groups`` change groups left to the dashboard.
+
+    F8 of Codex's QA of releases 468-474 (10 Oct 2026): a TAF too long for the
+    WEATHER page beside its other content made the whole six-page PDF fail. The
+    page is the last of David's six (no source appendix is permitted), so once
+    every grid, readable type size and earlier deferral has been tried it keeps
+    the TAF's largest whole-group prefix and states how many trailing groups
+    the dashboard holds - the dashboard always prints the whole record. Never a
+    cut inside a group, never a silent one; the full field when nothing is
+    deferred or the record has no change group.
+    """
+    base, groups = page_one_taf_change_groups(record)
+    if not base and not groups:
+        return NOT_HELD
+    drop = max(0, min(int(defer_groups), len(groups)))
+    if drop == 0:
+        return page_one_taf_field(record)
+    kept = groups[: len(groups) - drop]
+    return f"{' '.join([base, *kept]).strip()} {weather_page_taf_deferral(drop)}"
+
+
+def weather_page_taf_deferral(count: int) -> str:
+    return f"(+{count} further change group(s) on the dashboard)"
+
+
 def forecast_source_line(source: dict[str, Any]) -> str:
     """One WEATHER-page line naming the assessment's published source.
 

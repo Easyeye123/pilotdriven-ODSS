@@ -334,6 +334,18 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
                 for line in lines_after_stated_deferral(lines, folded_pages[index], unit):
                     if normalized(line) not in folded_pages[index]:
                         violations.append({'code': code, 'message': f'Page {index + 1} omits a source-bound assessment: {line}'})
+            # F8 (10 Oct 2026): the WEATHER page holds each departure / destination TAF whole, or - only when
+            # the page cannot hold it - its largest whole-group prefix with the stated count of trailing groups
+            # left to the dashboard. A cut inside a group, or a deferral that is not stated, matches neither.
+            from .page_one_weather import page_one_taf_change_groups, weather_page_taf_field
+            for role in ("departure", "destination"):
+                station = view.get(role) or {}
+                record = (station.get("weather") or {}).get("taf")
+                if not page_one_taf_change_groups(record)[0] and not page_one_taf_change_groups(record)[1]:
+                    continue
+                forms = [weather_page_taf_field(record, drop) for drop in range(len(page_one_taf_change_groups(record)[1]) + 1)]
+                if not any(normalized(f"{station.get('icao')} TAF: {form}") in folded_pages[WEATHER_PAGE] for form in forms):
+                    violations.append({"code": "TERMINAL_TAF_PARITY", "message": f"The weather page holds {station.get('icao')}'s TAF neither whole nor as a whole-group prefix with its stated dashboard deferral."})
             from .analysed_briefing_map import build_publication_map, event_description, key_disposition
             for event in build_publication_map(flight or {}, view)["publication_events"]:
                 if normalized(event_description(event)) not in folded_pages[WEATHER_PAGE]:

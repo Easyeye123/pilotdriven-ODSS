@@ -179,7 +179,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # never served as stored.
 # 10 Oct 2026 (v84, release-472 QA, F13): the contingency row prints the label the OFP gives it ("3% CONT" or "STAT CONT")
 # on pages 1 and 3 and in the performance reconciliation; extraction v9.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-contingency-label-v84"
+# 10 Oct 2026 (v85, release-474 QA, F7 + F8): aircraft-size rules v4 (a limit is judged within its own clause, so
+# SX168/26's stand 603 Code C downgrade is compared), and the WEATHER page keeps a TAF too long for it as its largest
+# whole-group prefix with the stated count of trailing groups on the dashboard instead of failing the whole PDF.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-10-size-clause-taf-deferral-v85"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

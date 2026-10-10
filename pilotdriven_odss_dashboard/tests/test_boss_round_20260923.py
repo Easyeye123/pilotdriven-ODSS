@@ -379,8 +379,9 @@ def test_t2_a_taf_no_page_one_layout_can_hold_is_deferred_by_whole_groups_never_
     extended to eleven FM groups (~540 characters), which no page-1 grid or
     type size can hold. (Fourteen until 10 Oct 2026: SQ24's waypoints before its
     ETP rows now carry their own positions, so its WEATHER page states the RPHI
-    thunderstorm level match and the reached volcanic-ash feed, and twelve or
-    more synthetic groups no longer fit beside them.) The render still succeeds; page 1 prints the largest
+    thunderstorm level match and the reached volcanic-ash feed; twelve or more
+    synthetic groups are held by the WEATHER page's stated dashboard deferral since
+    F8, tests/test_weather_page_taf_capacity_20261010.py.) The render still succeeds; page 1 prints the largest
     whole-group prefix and the marker; the WEATHER page prints the whole
     record; the dashboard analysis is untouched (this is a render-time rule)."""
     import copy

@@ -79,6 +79,16 @@ def _limit_vocabulary() -> re.Pattern[str]:
 
 
 @lru_cache(maxsize=1)
+def _clause_boundary() -> re.Pattern[str]:
+    return re.compile(rules()["qualifierContext"]["clauseBoundary"])
+
+
+@lru_cache(maxsize=1)
+def _other_subject() -> re.Pattern[str]:
+    return re.compile(rules()["qualifierContext"]["otherSubject"])
+
+
+@lru_cache(maxsize=1)
 def _rule_by_alias() -> dict[str, dict[str, Any]]:
     return {alias: rule for rule in rules()["aircraft"] for alias in rule["aliases"]}
 
@@ -194,9 +204,13 @@ def _unread_reason(text: str, index: int, length: int) -> dict[str, str] | None:
     fires means the phrase is only part of the clause, and it is not compared.
     """
     start, end = _sentence_bounds(text, index, length)
+    clause_start, clause_end = next(
+        ((begin, finish) for begin, finish in _clause_ranges(text) if begin <= index < finish), (start, end)
+    )
     views = {
         "sentence_before": text[start:index],
         "sentence": text[start:end],
+        "clause": text[clause_start:clause_end],
         "before": text[start:index],
         "after": text[index + length:end],
     }
@@ -206,13 +220,16 @@ def _unread_reason(text: str, index: int, length: int) -> dict[str, str] | None:
     return None
 
 
-def _sentence_ranges(text: str) -> list[tuple[int, int]]:
-    """Every sentence of the notice as [start, end) ranges."""
+def _clause_ranges(text: str) -> list[tuple[int, int]]:
+    """Every clause of the notice as [start, end) ranges: a sentence, split again at each LIDO list item (" - ").
+
+    Spec v4 (F7, WSSS SX168/26).
+    """
     ranges: list[tuple[int, int]] = []
     start = 0
-    for boundary in _SENTENCE_BOUNDARY.finditer(text):
+    for boundary in _clause_boundary().finditer(text):
         ranges.append((start, boundary.start()))
-        start = boundary.start() + 1
+        start = boundary.end()
     ranges.append((start, len(text)))
     return [(begin, finish) for begin, finish in ranges if text[begin:finish].strip()]
 
@@ -250,9 +267,11 @@ def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, Any
     ACFT.", "... A350 ACFT ARE EXEMPT." and "... CODE C NOT APPLICABLE TO A350 ACFT"
     still concluded an exclusion. A condition, exception, exemption, applicability
     statement, permission or reversal counts wherever it stands; a bare negation
-    counts where it can be about the limit - after the phrase in its own sentence,
-    or in a sentence that speaks of aircraft or limits. One entry per qualifying
-    stretch, in notice order.
+    counts where it can be about the limit - after the phrase in its own clause,
+    or in a clause that speaks of aircraft or limits. Spec v4: read clause by
+    clause, and a clause other than the limit's own that names its own subject
+    (markings, signs, lights, pilots...) and no limit vocabulary qualifies
+    nothing. One entry per qualifying stretch, in notice order.
     """
     masked = f"{text[:index]}{' ' * length}{text[index + length:]}"
     limit_end = index + length
@@ -260,12 +279,15 @@ def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, Any
     negation = _negation()
     vocabulary = _limit_vocabulary()
     conditions: list[dict[str, Any]] = []
-    for begin, finish in _sentence_ranges(masked):
+    other_subject = _other_subject()
+    for begin, finish in _clause_ranges(masked):
         own = begin <= index < finish
         stretches = [(begin, index), (limit_end, finish)] if own else [(begin, finish)]
         for start, end in stretches:
             stretch = masked[start:end]
             if not stretch.strip():
+                continue
+            if not own and other_subject.search(stretch) and not vocabulary.search(stretch):
                 continue
             found: list[dict[str, Any]] = []
             for marker, pattern in _markers():

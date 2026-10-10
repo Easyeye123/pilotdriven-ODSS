@@ -1,5 +1,5 @@
 {
-  "specVersion": "aircraft-restriction-applicability-2026-09-22-v3",
+  "specVersion": "aircraft-restriction-applicability-2026-10-10-v4",
   "codeLetterTable": {
     "ruleId": "ICAO_ANNEX14_V1_TABLE_1_1_CODE_LETTER_AMDT15_V1",
     "bands": [
@@ -313,7 +313,7 @@
     },
     {
       "id": "reversed",
-      "where": "sentence",
+      "where": "clause",
       "label": "the limit may be cancelled, lifted or suspended",
       "pattern": "\\b(?:CANCELLED|CANCELED|CNL|CNLD|WITHDRAWN|REVOKED|RESCINDED|LIFTED|REMOVED|SUSPENDED|NO\\s+LONGER|RESTORED|RETURNED\\s+TO\\s+NORMAL)\\b"
     },
@@ -366,12 +366,12 @@
     {
       "id": "permission",
       "label": "prior permission or notification",
-      "pattern": "\\bPPR\\b|\\bPRIOR\\s+(?:PERMISSION|NOTIFICATION|APPROVAL|NOTICE)\\b|\\bSUBJ(?:ECT)?\\s+TO\\b|\\bPROVIDED\\b"
+      "pattern": "\\bPPR\\b|\\bPRIOR\\s+(?:PERMISSION|NOTIFICATION|APPROVAL|NOTICE)\\b|\\bSUBJ(?:ECT)?\\s+TO\\b|(?<!\\bBE\\s)(?<!\\bBEEN\\s)(?<!\\bIS\\s)(?<!\\bARE\\s)(?<!\\bWAS\\s)(?<!\\bWERE\\s)\\bPROVIDED\\b"
     },
     {
       "id": "operator",
       "label": "operator or schedule condition",
-      "pattern": "\\bNON[- ]?SKED\\b|\\bSKED\\b|\\bGEN(?:ERAL)?\\s+AVIATION\\b|\\bCARGO\\b|\\bMIL(?:ITARY)?\\b"
+      "pattern": "\\bNON[- ]?SKED\\b|\\bSKED\\b|\\bGEN(?:ERAL)?\\s+AVIATION\\b|\\bCARGO\\b(?!\\s+(?:APRON|APN|TERMINALS?|AREA|COMPLEX|BUILDING|SHED|ZONE|STANDS?)\\b)|\\bMIL(?:ITARY)?\\b"
     },
     {
       "id": "other_dimension",
@@ -417,6 +417,8 @@
   "qualifierContext": {
     "negation": "\\b(?:NOT|NO|NEVER|NIL|WITHOUT|NEITHER|NOR)\\b",
     "negationLabel": "a negation that may qualify the limit",
+    "clauseBoundary": "(?:[;\\n]|(?<!\\d)\\.(?!\\d)|\\s-\\s)",
+    "otherSubject": "\\b(?:MARKINGS?|MARKERS?|MKRS?|SIGNS?|SIGNAGE|LGTS?|LIGHTS?|LIGHTING|STRIPES?|BOARDS?|CONES?|BARRIERS?|BARRICADES?|FENC(?:E|ES|ING)|PILOTS?|CREWS?)\\b",
     "limitVocabulary": "\\b(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)|CODE|(?:WINGSPAN|WING\\s+SPAN)|LIMIT(?:S|ED|ATION|ATIONS)?|LTD|RESTRICT(?:ED|ION|IONS)?|RESTR|DOWNGRAD(?:E|ED|ING)|NOTAM|[AB]\\d{3}(?:-\\d{1,4})?|MD-?\\d{2})\\b"
   }
 }

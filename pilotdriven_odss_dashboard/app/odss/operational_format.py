@@ -32,7 +32,7 @@ from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
 from .constants import format_actm
 from .fuel_rows import contingency_label
-from .page_one_weather import page_one_taf_field_continued, forecast_source_line, page_one_metar_field, page_one_taf_field
+from .page_one_weather import page_one_taf_field_continued, forecast_source_line, page_one_metar_field, page_one_taf_field, weather_page_taf_field
 from .enroute_contact import (compose_enroute_contact, crossing_sequence_limited, has_printed_values, is_call_line,
                               primary_procedure_line, printed_values)
 from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
@@ -1832,12 +1832,15 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         assurance="AIRPORT / ALTERNATE APPLICABILITY | FLIGHT-TIME CONSEQUENCES ONLY")
 
     # ---------------------------------------------------------------- page 5
-    terminal = []
+    from .page_one_weather import page_one_taf_change_groups
+    terminal: list[str] = []
+    terminal_tafs: list[tuple[int, str, Any]] = []
     for role in ("departure", "destination"):
         station_view = view.get(role) or {}
         terminal.append(f"{text(station_view.get('icao'))} METAR: {text((station_view.get('weather') or {}).get('metar'))}")
         # 23 Sep 2026: the whole TAF here as well, so a page-1 column that had
         # to defer its last change groups points at a page that holds them.
+        terminal_tafs.append((len(terminal), text(station_view.get("icao")), (station_view.get("weather") or {}).get("taf")))
         terminal.append(f"{text(station_view.get('icao'))} TAF: {text((station_view.get('weather') or {}).get('taf'))}")
         forecast = ((view.get("overview") or {}).get(role) or {}).get("forecast_at_reference") or {}
         conditions = forecast.get("applicable_conditions")
@@ -1896,6 +1899,31 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         {"edto": 3, "sigmet": 3, "clocks": 3, "ash": "omit"},
         {"edto": 2, "sigmet": 2, "clocks": 1, "ash": "omit"},
     )
+    # F8 of Codex's QA of releases 468-474 (10 Oct 2026): a TAF longer than the
+    # page can hold beside its other content (a labelled synthetic KJFK TAF of
+    # 12+ FM groups on SQ24) failed every rung above and the whole PDF aborted.
+    # The six-page format admits no continuation page, so - only after every rung
+    # above, at every grid and readable size - the page keeps each TAF's
+    # largest whole-group prefix and defers its trailing groups to the dashboard,
+    # which always prints the whole record, one group at a time from whichever
+    # TAF prints more groups, and says so on the line (weather_page_taf_field).
+    taf_group_counts = [len(page_one_taf_change_groups(record)[1]) for _, _, record in terminal_tafs]
+    taf_deferrals: list[tuple[int, ...]] = []
+    deferral = [0] * len(terminal_tafs)
+    for _ in range(sum(taf_group_counts)):
+        printed = [count - dropped for count, dropped in zip(taf_group_counts, deferral)]
+        widest = max(range(len(printed)), key=lambda index: (printed[index], index))
+        deferral[widest] += 1
+        taf_deferrals.append(tuple(deferral))
+    WEATHER_DEFER_LADDER = (*WEATHER_DEFER_LADDER, *({**WEATHER_DEFER_LADDER[-1], "taf": drops} for drops in taf_deferrals))
+
+    def terminal_lines(drops: tuple[int, ...] | None) -> list[str]:
+        if not drops:
+            return terminal
+        lines = list(terminal)
+        for (at, icao, record), drop in zip(terminal_tafs, drops):
+            lines[at] = f"{icao} TAF: {weather_page_taf_field(record, drop)}"
+        return lines
     full_sigmet = sigmet_lines(flight, view)
     full_edto = edto_window_lines(flight, view)
 
@@ -1907,8 +1935,9 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     def weather_cards(step: int) -> dict:
         keep = WEATHER_DEFER_LADDER[step]
         key_lines = list(hazard_lines)
+        printed_terminal = terminal_lines(keep.get("taf"))
         return {
-            "terminal": lambda gap, weight: Card("TERMINAL WEATHER", terminal, CYAN, tag="CFP WX",
+            "terminal": lambda gap, weight: Card("TERMINAL WEATHER", printed_terminal, CYAN, tag="CFP WX",
                                                  width_weight=weight, paragraph_gap=gap),
             "sigmet": lambda gap, weight: Card("SIGMET", deferred(full_sigmet, keep["sigmet"], "SIGMET row(s)"), AMBER,
                                                width_weight=weight, paragraph_gap=gap),

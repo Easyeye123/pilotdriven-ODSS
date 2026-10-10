@@ -1,6 +1,6 @@
 {
-  "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures. v2 (22 Sep 2026, after Codex's independent review): adversarial vectors for partial readings (negation, reversal, letter lists and ranges, extra direction words) and for unresolved conditions and exceptions, in the limit's sentence or another one. A vector marked 'synthetic' is labelled fixture wording, not an operational notice. v3 (22 Sep 2026, Codex fix2 review): qualifiers AFTER the limit or in ANOTHER sentence - 'does not apply', 'exempt', 'not applicable', 'not affected', a lifting, a stated permission - withhold the conclusion and are quoted whole so a negator is never cut off the quote; unrelated negation stays a control.",
-  "specVersion": "aircraft-restriction-applicability-2026-09-22-v3",
+  "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures. v2 (22 Sep 2026, after Codex's independent review): adversarial vectors for partial readings (negation, reversal, letter lists and ranges, extra direction words) and for unresolved conditions and exceptions, in the limit's sentence or another one. A vector marked 'synthetic' is labelled fixture wording, not an operational notice. v3 (22 Sep 2026, Codex fix2 review): qualifiers AFTER the limit or in ANOTHER sentence - 'does not apply', 'exempt', 'not applicable', 'not affected', a lifting, a stated permission - withhold the conclusion and are quoted whole so a negator is never cut off the quote; unrelated negation stays a control. v4 (10 Oct 2026, Codex QA of releases 468-474, F7): WSSS SX168/26 on SQ437/SQ438 is one long AIP-supplement text with almost no sentence punctuation, so its stand 603 Code C downgrade shared a 'sentence' with 'GND MARKINGS ... WILL BE REMOVED', 'MARKERS WILL BE PROVIDED', 'EAST CARGO APRON' and a pilot instruction 'WHEN TAX', and was never compared. Vectors cover the genuine notice (Code C limit: A350 above, B737-8 equal, A380 above; Code E variant: B737-8 below, A350 equal), a cancellation and a lifting of the limit itself, negated applicability, negation about markings, subjectless and code-naming removal bullets, PROVIDED as a condition and as a passive verb, CARGO as a place and as an operator, and pilot instructions with and without aircraft wording.",
+  "specVersion": "aircraft-restriction-applicability-2026-10-10-v4",
   "vectors": [
     {
       "id": "original-complaint-sq882-vhhh-a350",
@@ -1081,6 +1081,356 @@
         "aircraftCode": "F",
         "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
         "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "sx168-stand-603-code-c-a350-marking-removal-is-not-a-reversal",
+      "origin": "real: WSSS SX168/26 on SQ437 08OCT26 and SQ438 07OCT26, 9V-SHA A350-941 (Codex QA of release 468 F7, still open on 472/474)",
+      "noticeText": "SX0168/26 AIP SUPPLMEMENT WSSS/SINGAPORE/PAYA LEBAR TEMPO CLOSURE OF TXL N4 BEHIND ACFT STAND 604 AND DOWNGRADE OF ACFT STAND 603 TO CODE C VALIDITY: 01OCT26 - 26NOV26 THIS AIRAC AIP SUPPLEMENT IS TO INFORM AIRLINE OPERATORS AND PILOTS THAT DUE TO EXTENDED WORK ACTIVITIES AT EAST CARGO APRON IN SINGAPORE CHANGI AIRPORT TAXILANE N4 BEHIND AIRCRAFT STAND 604 WILL BE TEMPORARILY CLOSED AND ADJACENT AIRCRAFT STAND 603 WILL BE DOWNGRADED TO CODE C FOR THE PERIODS TABULATED BELOW: TAXILANE: CLOSURE OF TAXILANE N4 BEHIND STAND 604 AIRCRAFT STAND: AIRCRAFT STAND 603 DOWNGRADING TO CODE C PERIOD: FROM 01 OCTOBER 2026, 1101 UTC TO 26 NOVEMBER 2026, 1100 UTC DETAILS ON THE CLOSURE OF TXL N4 BEHIND ACFT STAND 604 - GND MARKINGS LEADING INTO THE CLSD SECTION OF TXL N4 WILL BE REMOVED, TWY GUIDANCE SIGNS WILL BE MASKED OUT. - CL LGT AND EDGE LGT LEADING INTO AND WI THE CLSD AREA WILL BE MASKED OUT OR ISOL. - TEMPO GND MARKINGS SUCH AS: I) TXL SIDE STRIPE MARKINGS (DOUBLE YELLOW LINE) AND BLUE REFLECTIVE TXL EDGE MARKERS WILL BE PROVIDED TO DEMARCATE THE EDGE OF USABLE TXL. II) TXL CLSD MARKERS (YELLOW CROSSES) WILL BE PROVIDED TO DEMARCATE THE CLSD PART OF TXL N4 BEHIND ACFT STAND 604. - UNSERVICEABILITY LGT AND MARKERS (MKR BOARDS) WILL BE PLACED ACROSS THE BREADTH OF THE CLSD TXL. -  DUE TO THE TEMPO CLOSURE, CHANGES IN ACFT PUSHBACK PROC WILL BE IMPLEMENTED AT E CARGO APN. PILOTS ARE TO PAY EXTRA ATTN TO ATC INSTRUCTIONS WHEN TAX IN THE VCY OF THE WORK AREA.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgrade_of_subject_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "sentence": "A350-941 is Code E (64.75 m wingspan): above this limit (Code C), so the notice excludes this aircraft from the stated area."
+      }
+    },
+    {
+      "id": "sx168-stand-603-code-c-equal-737-8",
+      "origin": "real notice SX168/26; labelled aircraft B737-8 (Code C, equal to the limit)",
+      "noticeText": "SX0168/26 AIP SUPPLMEMENT WSSS/SINGAPORE/PAYA LEBAR TEMPO CLOSURE OF TXL N4 BEHIND ACFT STAND 604 AND DOWNGRADE OF ACFT STAND 603 TO CODE C VALIDITY: 01OCT26 - 26NOV26 THIS AIRAC AIP SUPPLEMENT IS TO INFORM AIRLINE OPERATORS AND PILOTS THAT DUE TO EXTENDED WORK ACTIVITIES AT EAST CARGO APRON IN SINGAPORE CHANGI AIRPORT TAXILANE N4 BEHIND AIRCRAFT STAND 604 WILL BE TEMPORARILY CLOSED AND ADJACENT AIRCRAFT STAND 603 WILL BE DOWNGRADED TO CODE C FOR THE PERIODS TABULATED BELOW: TAXILANE: CLOSURE OF TAXILANE N4 BEHIND STAND 604 AIRCRAFT STAND: AIRCRAFT STAND 603 DOWNGRADING TO CODE C PERIOD: FROM 01 OCTOBER 2026, 1101 UTC TO 26 NOVEMBER 2026, 1100 UTC DETAILS ON THE CLOSURE OF TXL N4 BEHIND ACFT STAND 604 - GND MARKINGS LEADING INTO THE CLSD SECTION OF TXL N4 WILL BE REMOVED, TWY GUIDANCE SIGNS WILL BE MASKED OUT. - CL LGT AND EDGE LGT LEADING INTO AND WI THE CLSD AREA WILL BE MASKED OUT OR ISOL. - TEMPO GND MARKINGS SUCH AS: I) TXL SIDE STRIPE MARKINGS (DOUBLE YELLOW LINE) AND BLUE REFLECTIVE TXL EDGE MARKERS WILL BE PROVIDED TO DEMARCATE THE EDGE OF USABLE TXL. II) TXL CLSD MARKERS (YELLOW CROSSES) WILL BE PROVIDED TO DEMARCATE THE CLSD PART OF TXL N4 BEHIND ACFT STAND 604. - UNSERVICEABILITY LGT AND MARKERS (MKR BOARDS) WILL BE PLACED ACROSS THE BREADTH OF THE CLSD TXL. -  DUE TO THE TEMPO CLOSURE, CHANGES IN ACFT PUSHBACK PROC WILL BE IMPLEMENTED AT E CARGO APN. PILOTS ARE TO PAY EXTRA ATTN TO ATC INSTRUCTIONS WHEN TAX IN THE VCY OF THE WORK AREA.",
+      "aircraftType": "B737-8",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "within_limit",
+        "restrictsThisAircraft": false,
+        "reason": "aircraft_code_equals_maximum",
+        "formId": "downgrade_of_subject_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "C",
+        "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1",
+        "comparisonRelation": "within_limit",
+        "sentence": "B737-8 is Code C (35.92 m wingspan): within this limit (Code C). Size check only, not a clearance; other restrictions still apply."
+      }
+    },
+    {
+      "id": "sx168-stand-603-code-c-a380-above",
+      "origin": "real notice SX168/26; labelled aircraft A380-841 (Code F)",
+      "noticeText": "SX0168/26 AIP SUPPLMEMENT WSSS/SINGAPORE/PAYA LEBAR TEMPO CLOSURE OF TXL N4 BEHIND ACFT STAND 604 AND DOWNGRADE OF ACFT STAND 603 TO CODE C VALIDITY: 01OCT26 - 26NOV26 THIS AIRAC AIP SUPPLEMENT IS TO INFORM AIRLINE OPERATORS AND PILOTS THAT DUE TO EXTENDED WORK ACTIVITIES AT EAST CARGO APRON IN SINGAPORE CHANGI AIRPORT TAXILANE N4 BEHIND AIRCRAFT STAND 604 WILL BE TEMPORARILY CLOSED AND ADJACENT AIRCRAFT STAND 603 WILL BE DOWNGRADED TO CODE C FOR THE PERIODS TABULATED BELOW: TAXILANE: CLOSURE OF TAXILANE N4 BEHIND STAND 604 AIRCRAFT STAND: AIRCRAFT STAND 603 DOWNGRADING TO CODE C PERIOD: FROM 01 OCTOBER 2026, 1101 UTC TO 26 NOVEMBER 2026, 1100 UTC DETAILS ON THE CLOSURE OF TXL N4 BEHIND ACFT STAND 604 - GND MARKINGS LEADING INTO THE CLSD SECTION OF TXL N4 WILL BE REMOVED, TWY GUIDANCE SIGNS WILL BE MASKED OUT. - CL LGT AND EDGE LGT LEADING INTO AND WI THE CLSD AREA WILL BE MASKED OUT OR ISOL. - TEMPO GND MARKINGS SUCH AS: I) TXL SIDE STRIPE MARKINGS (DOUBLE YELLOW LINE) AND BLUE REFLECTIVE TXL EDGE MARKERS WILL BE PROVIDED TO DEMARCATE THE EDGE OF USABLE TXL. II) TXL CLSD MARKERS (YELLOW CROSSES) WILL BE PROVIDED TO DEMARCATE THE CLSD PART OF TXL N4 BEHIND ACFT STAND 604. - UNSERVICEABILITY LGT AND MARKERS (MKR BOARDS) WILL BE PLACED ACROSS THE BREADTH OF THE CLSD TXL. -  DUE TO THE TEMPO CLOSURE, CHANGES IN ACFT PUSHBACK PROC WILL BE IMPLEMENTED AT E CARGO APN. PILOTS ARE TO PAY EXTRA ATTN TO ATC INSTRUCTIONS WHEN TAX IN THE VCY OF THE WORK AREA.",
+      "aircraftType": "A380-841",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgrade_of_subject_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "F",
+        "aircraftRuleId": "AIRBUS_A380_800_ICAO_CODE_F_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "stand-code-e-with-marking-bullets-737-8-below",
+      "origin": "synthetic, SX168 bullet shape with a Code E limit: B737-8 is below the limit",
+      "noticeText": "DOWNGRADE OF ACFT STAND 603 TO CODE E DUE WIP - GND MARKINGS LEADING INTO THE CLSD SECTION OF TXL N4 WILL BE REMOVED, TWY GUIDANCE SIGNS WILL BE MASKED OUT. - TXL EDGE MARKERS WILL BE PROVIDED TO DEMARCATE THE EDGE OF USABLE TXL.",
+      "aircraftType": "B737-8",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "within_limit",
+        "restrictsThisAircraft": false,
+        "reason": "aircraft_code_below_maximum",
+        "formId": "downgrade_of_subject_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": "C",
+        "aircraftRuleId": "BOEING_737_8_ICAO_CODE_C_V1",
+        "comparisonRelation": "within_limit"
+      }
+    },
+    {
+      "id": "stand-code-e-with-marking-bullets-a350-equal",
+      "origin": "synthetic, SX168 bullet shape with a Code E limit: A350-941 equals the limit",
+      "noticeText": "DOWNGRADE OF ACFT STAND 603 TO CODE E DUE WIP - GND MARKINGS LEADING INTO THE CLSD SECTION OF TXL N4 WILL BE REMOVED, TWY GUIDANCE SIGNS WILL BE MASKED OUT. - TXL EDGE MARKERS WILL BE PROVIDED TO DEMARCATE THE EDGE OF USABLE TXL.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "within_limit",
+        "restrictsThisAircraft": false,
+        "reason": "aircraft_code_equals_maximum",
+        "formId": "downgrade_of_subject_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code E",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "within_limit"
+      }
+    },
+    {
+      "id": "cancellation-in-the-limit-clause-is-a-reversal",
+      "origin": "synthetic: the downgrade itself is cancelled in its own clause",
+      "noticeText": "DOWNGRADE OF ACFT STAND 603 TO CODE C CANCELLED - GND MARKINGS WILL BE REMOVED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "size_limit_wording_not_fully_read",
+        "formId": null,
+        "semantics": null,
+        "limitLabel": null,
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "unreadGuard": "reversed"
+      }
+    },
+    {
+      "id": "lifting-of-the-limit-in-a-bullet-stays-unresolved",
+      "origin": "synthetic: a bullet lifts the downgrade it names",
+      "noticeText": "AIRCRAFT STAND 603 DOWNGRADED TO CODE C - DOWNGRADE OF STAND 603 LIFTED FM 25 OCT 0600",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ],
+        "conditionTexts": [
+          "DOWNGRADE OF STAND 603 LIFTED FM 25 OCT 0600"
+        ]
+      }
+    },
+    {
+      "id": "negated-applicability-in-a-bullet-stays-unresolved",
+      "origin": "synthetic: a bullet says the downgrade does not apply to A350",
+      "noticeText": "AIRCRAFT STAND 603 DOWNGRADED TO CODE C - THIS DOWNGRADE DOES NOT APPLY TO A350 ACFT",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "negation"
+        ],
+        "conditionTexts": [
+          "THIS DOWNGRADE DOES NOT APPLY TO A350 ACFT"
+        ]
+      }
+    },
+    {
+      "id": "negation-about-markings-is-a-control",
+      "origin": "control, synthetic: a negation about markings in its own bullet qualifies nothing",
+      "noticeText": "AIRCRAFT STAND 603 DOWNGRADED TO CODE C - STAND LEAD-IN LINE MARKINGS NOT AVBL",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "subjectless-removal-bullet-stays-unresolved",
+      "origin": "ambiguous, synthetic: a bullet says only REMOVED, with no subject of its own",
+      "noticeText": "AIRCRAFT STAND 603 DOWNGRADED TO CODE C - REMOVED 1200-1400 DAILY",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ],
+        "conditionTexts": [
+          "REMOVED 1200-1400 DAILY"
+        ]
+      }
+    },
+    {
+      "id": "marking-removal-that-names-aircraft-codes-stays-unresolved",
+      "origin": "ambiguous, synthetic: the markings bullet also names aircraft codes",
+      "noticeText": "AIRCRAFT STAND 603 DOWNGRADED TO CODE C - GND MARKINGS FOR CODE E ACFT WILL BE REMOVED",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "reversal"
+        ],
+        "conditionTexts": [
+          "GND MARKINGS FOR CODE E ACFT WILL BE REMOVED"
+        ]
+      }
+    },
+    {
+      "id": "provided-that-is-a-condition",
+      "origin": "synthetic: PROVIDED introducing a condition on the limit",
+      "noticeText": "AIRCRAFT STAND 603 DOWNGRADED TO CODE C PROVIDED SAFETY OFFICER IS IN ATTENDANCE",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "permission"
+        ],
+        "conditionTexts": [
+          "PROVIDED SAFETY OFFICER IS IN ATTENDANCE"
+        ]
+      }
+    },
+    {
+      "id": "will-be-provided-is-not-a-condition",
+      "origin": "control, synthetic: markers WILL BE PROVIDED, in a sentence that names an aircraft stand",
+      "noticeText": "AIRCRAFT STAND 603 DOWNGRADED TO CODE C. YELLOW CROSSES WILL BE PROVIDED BEHIND ACFT STAND 604.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "cargo-apron-is-a-place-not-an-operator",
+      "origin": "control, synthetic: EAST CARGO APRON names where the stand is",
+      "noticeText": "ACFT STAND 603 AT EAST CARGO APRON DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "cargo-flights-is-an-operator-condition",
+      "origin": "synthetic: the limit is stated for cargo flights",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C FOR CARGO FLIGHTS",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "operator"
+        ],
+        "conditionTexts": [
+          "FOR CARGO FLIGHTS"
+        ]
+      }
+    },
+    {
+      "id": "pilot-instruction-with-when-is-a-control",
+      "origin": "control, synthetic (SX168's closing sentence): a pilot instruction qualifies nothing",
+      "noticeText": "AIRCRAFT STAND 603 DOWNGRADED TO CODE C. PILOTS ARE TO PAY EXTRA ATTN TO ATC INSTRUCTIONS WHEN TAXIING IN THE VCY OF THE WORK AREA.",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "confirmed",
+        "outcome": "exceeds_limit",
+        "restrictsThisAircraft": true,
+        "reason": "aircraft_code_above_maximum",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit"
+      }
+    },
+    {
+      "id": "pilot-instruction-naming-the-aircraft-stays-unresolved",
+      "origin": "ambiguous, synthetic: the pilot instruction names Code E aircraft",
+      "noticeText": "AIRCRAFT STAND 603 DOWNGRADED TO CODE C. PILOTS OF CODE E ACFT ARE TO OBTAIN PPR",
+      "aircraftType": "A350-941",
+      "expect": {
+        "status": "review_required",
+        "outcome": null,
+        "restrictsThisAircraft": null,
+        "reason": "unresolved_condition_in_notice",
+        "formId": "downgraded_to_code",
+        "semantics": "maximum_code",
+        "limitLabel": "Code C",
+        "aircraftCode": "E",
+        "aircraftRuleId": "AIRBUS_A350_900_ICAO_CODE_E_V1",
+        "comparisonRelation": "exceeds_limit",
+        "otherConditionIds": [
+          "permission"
+        ],
+        "conditionTexts": [
+          "PILOTS OF CODE E ACFT ARE TO OBTAIN PPR"
+        ]
       }
     }
   ],
