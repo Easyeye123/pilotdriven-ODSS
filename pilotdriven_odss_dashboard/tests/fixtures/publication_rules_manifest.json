@@ -1,7 +1,7 @@
 {
-  "publication_rules": "2026-10-11-size-scope-v95",
+  "publication_rules": "2026-10-11-scope-completeness-v96",
   "enroute_contact_rule": "enroute-contact-v16",
   "extraction_rules": "2026-10-10-contingency-label-v9",
   "publication_format": "six-page-reference-briefing-2026-09-19",
-  "minted": "2026-10-11 F28 local repair: size spec v14 binds bounded area evidence to each parsed limit independently of numeric applicability. Page-two exclusions quote that area, or explicitly withhold unresolved or over-length scope, without borrowing another clause's summary. Repeated equal limits preserve all supported areas and fail closed when any area is unbound. Publication v95 refreshes saved-pack views from held source. Numeric forms, F26/F27 proofs, extraction v9, enroute-contact v16, six-page format and F8 policy are unchanged. Evidence: output/pd-f28-codex-20261011/. Local verification does not grant independent acceptance, deployment or F7 acceptance. Both runtimes share byte-identical governed data; re-mint on rule-token changes."
+  "minted": "2026-10-11 F29 local repair: size spec v15 requires positive proof that a limit continuation is complete before stating its area. Unbound trailing extents are explicitly unresolved. Complete leading areas, benign closed causal/time fields and independently headed records retain source evidence. Publication v96 refreshes saved-pack views from held inputs. Numeric forms, F26/F27 qualifiers, extraction v9, enroute-contact v16, quote bounds, six-page format and F8 policy are unchanged. Evidence: output/pd-f29-codex-20261011/. Local verification does not grant independent acceptance, deployment or F7 acceptance. Both runtimes share byte-identical governed data; re-mint on rule-token changes."
 }
