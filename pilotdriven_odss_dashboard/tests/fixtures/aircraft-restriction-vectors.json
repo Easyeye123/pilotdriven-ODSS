@@ -1,6 +1,6 @@
 {
   "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures. v2 (22 Sep 2026, after Codex's independent review): adversarial vectors for partial readings (negation, reversal, letter lists and ranges, extra direction words) and for unresolved conditions and exceptions, in the limit's sentence or another one. A vector marked 'synthetic' is labelled fixture wording, not an operational notice. v3 (22 Sep 2026, Codex fix2 review): qualifiers AFTER the limit or in ANOTHER sentence - 'does not apply', 'exempt', 'not applicable', 'not affected', a lifting, a stated permission - withhold the conclusion and are quoted whole so a negator is never cut off the quote; unrelated negation stays a control. v4 (10 Oct 2026, Codex QA of releases 468-474, F7): WSSS SX168/26 on SQ437/SQ438 is one long AIP-supplement text with almost no sentence punctuation, so its stand 603 Code C downgrade shared a 'sentence' with 'GND MARKINGS ... WILL BE REMOVED', 'MARKERS WILL BE PROVIDED', 'EAST CARGO APRON' and a pilot instruction 'WHEN TAX', and was never compared. Vectors cover the genuine notice (Code C limit: A350 above, B737-8 equal, A380 above; Code E variant: B737-8 below, A350 equal), a cancellation and a lifting of the limit itself, negated applicability, negation about markings, subjectless and code-naming removal bullets, PROVIDED as a condition and as a passive verb, CARGO as a place and as an operator, and pilot instructions with and without aircraft wording. v5 (10 Oct 2026, Codex re-QA of release 476, F14): v4 skipped every other clause that named markings, markers, signs, lights or pilots and no limit wording, so 'PILOTS WITH PRIOR APPROVAL ARE EXEMPT', 'PILOTS MUST OBTAIN PPR', 'CREWS REQUIRE PRIOR PERMISSION', 'PILOTS ARE ADVISED THAT IT IS SUSPENDED', 'LIGHTS MUST BE ON WHEN USING THIS STAND' and 'PROVIDED MARKERS ARE IN PLACE' were dropped and the limit was concluded. v5 removes that clause skip; only a reversal word that is the passive verb of a named aerodrome feature ('GND MARKINGS ... WILL BE REMOVED') and a WHEN inside an advisory to pilots or crews ('PAY EXTRA ATTN ... WHEN', 'EXERCISE CAUTION WHEN'), each naming no aircraft or limit wording, are excused. Codex's independent cases are added verbatim, with two boundary cases (a feature sharing its predicate with the stand; an advisory carrying an exception). v6 (10 Oct 2026, Codex re-QA of release 478, F15/F16): v5's excuses were spans, not proofs. A feature's 80-character wildcard crossed into another subject ('GND MARKINGS REMAIN UNTIL STAND 603 IS RESTORED' excused RESTORED), and an advisory span excused every conditional inside it ('EXERCISE CAUTION IF USING THIS STAND WHEN LIGHTS ARE OFF' excused IF). v6 excuses one exact word only: the reversal must be the passive verb of the feature with only place words and designators between them, and the WHEN must follow the advisory directly or after ATC-instruction words. Codex's 28 pre-registered cases are added verbatim (exact duplicates of earlier vectors skipped). v7 (10 Oct 2026, Codex re-QA of release 480, F17): v6 proved the feature's link to its verb but not that the feature was the clause's subject - 'THE RESTRICTIONS INDICATED BY SIGNS AT STAND 603 ARE LIFTED' excused LIFTED from the inner 'SIGNS AT STAND 603 ARE LIFTED'. v7 anchors both excuses at the start of their clause, allowing before the feature (or the pilots/crews) only a closed set of pre-modifiers and list markers, so the whole clause up to the excused word is inside the match and the limit-vocabulary veto sees it. Codex's 32 pre-registered cases are added verbatim, with twelve further subject-boundary cases.",
-  "specVersion": "aircraft-restriction-applicability-2026-10-11-v12",
+  "specVersion": "aircraft-restriction-applicability-2026-10-11-v13",
   "vectors": [
     {
       "id": "original-complaint-sq882-vhhh-a350",
@@ -8542,6 +8542,1199 @@
       "rationale": "A singular/plural restriction reference cannot change review into a firm exclusion; synthetic QA only.",
       "expectedRestrictsThisAircraft": null,
       "label": "SYNTHETIC QA ONLY"
+    }
+  ],
+  "usageProofCases": [
+    {
+      "id": "independent-v12-requirements-before",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C REQUIREMENTS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-constraints-before",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AIRCRAFT SIZE CONSTRAINTS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-prohibitions-before",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C PROHIBITIONS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-conditions-before",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C CONDITIONS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-measures-before",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AIRCRAFT SIZE MEASURES AT TWY N4 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-provisions-before",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C PROVISIONS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-restrictions-control",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C RESTRICTIONS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-requirements-ends",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C REQUIREMENT AT STAND 603 ENDS AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-requirements-then-thrust",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C REQUIREMENTS AT STAND 603 END AT 1200 AND IDLE REVERSE THRUST REQUIRED",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-requirements-newline",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C REQUIREMENTS AT STAND 603\nEND AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-requirements-after-decimal",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C REQUIREMENTS IN SECTION 2.5 AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-trailing-it",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF IT AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-trailing-this",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THIS AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-trailing-those",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THOSE AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-trailing-above",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THE ABOVE AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-trailing-same",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THE SAME AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-trailing-reference-control",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THIS RESTRICTION AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-sense-later-reversal",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - REVERSE SENSE INDICATIONS REPORTED. THE OPERATOR WILL REVERSE THE DOWNGRADE AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-place-later-reversal",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WIP AT RWY 27L END. THE OPERATOR WILL END THE DOWNGRADE AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-advisory-followup",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - PILOTS SHALL EXERCISE CAUTION WHEN TAXIING - THE CODE C REQUIREMENTS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-feature-followup",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - GND MARKINGS WILL BE REMOVED - THE CODE C REQUIREMENTS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-after-numeric-stop",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WIP AT RWY 27L END NEAR STAND 604. THE CODE C REQUIREMENTS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-two-ends",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WORK AT RWY 27L END. THE CODE C CONDITIONS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-equal-requirements",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C REQUIREMENTS AT STAND 603 END AT 1200",
+      "aircraftType": "B737-8",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-a380-requirements",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C REQUIREMENTS AT STAND 603 END AT 1200",
+      "aircraftType": "A380-841",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-wingspan-subject",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TWY N4 CLSD TO ACFT WINGSPAN MORE THAN 36M - THE WINGSPAN REQUIREMENTS AT TWY N4 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-own-requirements",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C AND THE CODE C REQUIREMENTS AT STAND 603 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "A restriction-ending or unresolved subject/reference must withhold a firm size result.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "independent-v12-control-physical-end",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WORK AT RWY 27L END NEAR STAND 604",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-equipment-sense",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - ILS REVERSE SENSE INDICATIONS REPORTED",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-thrust-setting",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-thrust-command",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - SELECT MAXIMUM REVERSE",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-direction",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - TOWING IN THE REVERSE DIRECTION",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "adjudication": "Existing towing condition; independent QA explicitly adjudicated this raw control, which remains unchanged in the copied runner."
+    },
+    {
+      "id": "independent-v12-control-paragraph-stop",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WORK AT RWY 27L END NEAR STAND 604. CODE C REQUIREMENTS REMAIN IN FORCE",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-semicolon-stop",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WORK AT RWY 27L END; CODE C REQUIREMENTS REMAIN IN FORCE",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-decimal-place",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WORK 2.5M FROM THE END OF TWY N4",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-physical-plus-setting",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WORK AT RWY 27L END AND IDLE REVERSE THRUST REQUIRED",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-feature",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - GND MARKINGS WILL BE REMOVED",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-advisory",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - PILOTS SHALL EXERCISE CAUTION WHEN TAXIING",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-approach-end",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - APCH END RWY 27L LIGHTS U/S",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "independent-v12-control-landing-end",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - LDG END RWY 27L LIGHTS U/S",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "rationale": "Unrelated physical place or genuine equipment/thrust wording retains the plain limit.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "subject-obligations-the-code-c",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C OBLIGATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-obligations-the-aircraft-size",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AIRCRAFT SIZE OBLIGATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-obligations-the",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE OBLIGATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-stipulations-the-code-c",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C STIPULATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-stipulations-the-aircraft-size",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AIRCRAFT SIZE STIPULATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-stipulations-the",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE STIPULATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-policies-the-code-c",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C POLICIES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-policies-the-aircraft-size",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AIRCRAFT SIZE POLICIES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-policies-the",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE POLICIES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-rules-the-code-c",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C RULES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-rules-the-aircraft-size",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AIRCRAFT SIZE RULES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-rules-the",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE RULES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-mandates-the-code-c",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C MANDATES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-mandates-the-aircraft-size",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AIRCRAFT SIZE MANDATES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-mandates-the",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE MANDATES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-arrangements-the-code-c",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C ARRANGEMENTS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-arrangements-the-aircraft-size",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AIRCRAFT SIZE ARRANGEMENTS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-arrangements-the",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE ARRANGEMENTS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-directives-the-code-c",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C DIRECTIVES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-directives-the-aircraft-size",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AIRCRAFT SIZE DIRECTIVES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-directives-the",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE DIRECTIVES AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-bans-the-code-c",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C BANS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-bans-the-aircraft-size",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE AIRCRAFT SIZE BANS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "subject-bans-the",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE BANS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "own-obligations",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C AND THE CODE C OBLIGATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "thrust-after-obligations",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C OBLIGATIONS AT STAND 604 END AT 1430 AND FULL REVERSE THRUST REQUIRED",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "own-stipulations",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C AND THE CODE C STIPULATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "thrust-after-stipulations",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C STIPULATIONS AT STAND 604 END AT 1430 AND FULL REVERSE THRUST REQUIRED",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-0",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THEM AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-0",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED OF THEM AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-1",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THESE AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-1",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED OF THESE AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-2",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THE FOREGOING AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-2",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED OF THE FOREGOING AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-3",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THAT MATTER AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-3",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED OF THAT MATTER AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-4",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THE AFOREMENTIONED AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-4",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED OF THE AFOREMENTIONED AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-5",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED FOR THE PREVIOUS ARRANGEMENT AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-5",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED FOR THE PREVIOUS ARRANGEMENT AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-6",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED WITH RESPECT TO IT AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-6",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED WITH RESPECT TO IT AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-7",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED CONCERNING THAT AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-7",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED CONCERNING THAT AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-8",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED ABOUT THE SAME AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-8",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED ABOUT THE SAME AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-9",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THE CONDITIONS DESCRIBED EARLIER AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-9",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED OF THE CONDITIONS DESCRIBED EARLIER AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "object-10",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY IT AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "explicit-object-10",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE THRUST IS REQUIRED OF TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY TEMPORARILY IT AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "scope-50",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WORK AT RWY 09 END. THE CODE C OBLIGATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "scope-51",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - ILS REVERSE SENSE INDICATIONS REPORTED. FULL REVERSE IS REQUIRED OF THEM",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "scope-52",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C OBLIGATIONS AT STAND 604\nEND AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "scope-53",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C OBLIGATIONS IN SECTION 5.25 AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "scope-54",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY TEMPORARY OBLIGATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "scope-55",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C OBLIGATIONS AT STAND 604 END",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "scope-56",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C OBLIGATIONS AT STAND 604 END WIP",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "scope-57",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C OBLIGATIONS AT STAND 604 END LIGHTS U/S",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-0",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WIP AT RWY 09 END",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-1",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WORK NEAR THE END OF RWY 09",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-2",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - RWY 09 END LIGHTS U/S",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-3",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - STAND 604 END MARKINGS WIP",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-4",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THR 09 END LIGHTS U/S",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-5",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - TWY N4 NEAR RWY 09 END WIP",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-6",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - CRANE 3500FT FROM DEPARTURE END OF RWY 09",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-7",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - TWY Q BTN APCH END RWY 09 AND TWY R CLSD",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-8",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WORK 2.75M FROM THE END OF TWY N4",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-9",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - REVERSE THRUST REQUIRED",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-10",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-11",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - MAXIMUM REVERSE NOT REQUIRED",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-12",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - SELECT IDLE REVERSE",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-13",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - ILS FALSE CAPTURE OR REVERSE SENSE INDICATIONS REPORTED",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "physical-control-14",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WORK AT RWY 09 END AND IDLE REVERSE THRUST REQUIRED",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "own-control-0",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C AT RWY 09 END",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "own-control-1",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C NEAR THE END OF RWY 09",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "own-control-2",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C, FULL REVERSE THRUST REQUIRED",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "equal-subject",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE CODE C OBLIGATIONS AT STAND 604 END AT 1430",
+      "aircraftType": "B737-8",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "larger-object",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THEM",
+      "aircraftType": "A380-841",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    },
+    {
+      "id": "span-subject",
+      "noticeText": "TWY N4 CLSD TO ACFT WINGSPAN MORE THAN 36M - THE WINGSPAN OBLIGATIONS AT TWY N4 END AT 1430",
+      "aircraftType": "A350-941",
+      "label": "SYNTHETIC QA ONLY",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
     }
   ]
 }

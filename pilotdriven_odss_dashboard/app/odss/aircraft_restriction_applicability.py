@@ -89,35 +89,57 @@ def _excused() -> tuple[tuple[str, re.Pattern[str]], ...]:
 
 
 @lru_cache(maxsize=1)
-def _not_reversal() -> tuple[dict[str, Any], tuple[re.Pattern[str], ...], re.Pattern[str], re.Pattern[str]]:
+def _not_reversal() -> tuple[dict[str, Any], tuple[dict[str, Any], ...], re.Pattern[str], re.Pattern[str]]:
     context = rules()["qualifierContext"]["notReversal"]
-    return (context, tuple(re.compile(usage["pattern"]) for usage in context["usages"]),
+    usages = tuple({"pattern": re.compile(usage["pattern"]),
+                    "proof": context["proofs"][usage["proof"]],
+                    "before": re.compile(context["proofs"][usage["proof"]]["before"]),
+                    "after": re.compile(context["proofs"][usage["proof"]]["after"])}
+                   for usage in context["usages"])
+    return (context, usages,
             re.compile(context["precedingReference"]), re.compile(context["subjectVocabulary"]))
 
 
-def _blank_non_reversal_usages(text: str) -> str:
-    """Spec v12 (F25): prove the usage on an unmasked clause.
+def _blank_non_reversal_usages(text: str, limit_index: int = -1, limit_length: int = 0) -> str:
+    """Spec v13 (F26/F27): prove the owner and continuation on original text.
 
-    A preceding limit subject/reference or a limit in its remaining scope vetoes the exemption, however many
-    modifiers intervene. Positive
+    A leading parsed limit may precede an independent locative/setting only
+    with a closed movement-area subject and an explicit join. All vetoes keep
+    reading original text. Unknown subjects or objects cannot be swallowed.
+    Positive
     place/setting patterns alone are eligible; bare FULL REVERSE and imperative END STAND are not proof. Blank only
     the exact eligible word, preserving offsets and every other qualifier, including later reversals. This
     intentionally stays cautious when a mixed clause's scope is unclear.
     """
     vocabulary = _limit_vocabulary()
-    _, patterns, preceding_reference, subject_vocabulary = _not_reversal()
+    context, usages, preceding_reference, subject_vocabulary = _not_reversal()
+    limit_subject = re.compile(context["ownLimitSubject"])
+    limit_join = re.compile(context["ownLimitJoin"])
     blanked = text
     for begin, finish in _clause_ranges(text, rules()["qualifierContext"]["notReversal"]["scopeBoundary"]):
         clause = text[begin:finish]
         if subject_vocabulary.search(clause):
             continue
-        for pattern in patterns:
-            for match in pattern.finditer(clause):
+        for usage in usages:
+            for match in usage["pattern"].finditer(clause):
                 if preceding_reference.search(clause[:match.start()]):
                     continue
                 # Include the usage: a designator must not swallow CODE, etc.
                 if vocabulary.search(clause[match.start():]):
                     continue
+                if not usage["after"].search(clause[match.end():]):
+                    continue
+                before = clause[:match.start()]
+                if not usage["before"].search(before):
+                    limit_at = limit_index - begin
+                    limit_end = limit_at + limit_length
+                    if (not usage["proof"].get("allowOwnLimit") or limit_at < 0 or limit_end > match.start()
+                            or not limit_subject.search(clause[:limit_at])):
+                        continue
+                    before = clause[limit_end:match.start()]
+                    join = limit_join.search(before)
+                    if not join or not usage["before"].search(before[join.end():]):
+                        continue
                 at = begin + match.start(2)
                 end = begin + match.end(2)
                 blanked = f"{blanked[:at]}{' ' * (end - at)}{blanked[end:]}"
@@ -269,7 +291,7 @@ def _unread_reason(text: str, index: int, length: int) -> dict[str, str] | None:
 
     views = views_of(text)
     # Resolve usage before a limit or a view can hide its object (F25).
-    reversal_views = views_of(_blank_non_reversal_usages(text))
+    reversal_views = views_of(_blank_non_reversal_usages(text, index, length))
     guard_id = _not_reversal()[0]["guardId"]
     for guard, pattern in _guards():
         where = guard["where"]
@@ -336,7 +358,7 @@ def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, Any
     qualifying stretch, in notice order.
     """
     masked = f"{text[:index]}{' ' * length}{text[index + length:]}"
-    reversal_text = _blank_non_reversal_usages(text)
+    reversal_text = _blank_non_reversal_usages(text, index, length)
     limit_end = index + length
     context = rules()["qualifierContext"]
     negation = _negation()

@@ -1,5 +1,5 @@
 {
-  "specVersion": "aircraft-restriction-applicability-2026-10-11-v12",
+  "specVersion": "aircraft-restriction-applicability-2026-10-11-v13",
   "codeLetterTable": {
     "ruleId": "ICAO_ANNEX14_V1_TABLE_1_1_CODE_LETTER_AMDT15_V1",
     "bands": [
@@ -436,54 +436,103 @@
       "scopeBoundary": "(?:[;\\n]|(?<!\\d)\\.|\\.(?!\\d)|\\s-\\s)",
       "subjectVocabulary": "\\b(?:LIMIT(?:S|ATIONS?)?|RESTRICTIONS?|RESTR|DOWNGRAD(?:E|ES|ING)|NOTAMS?)\\b",
       "precedingReference": "\\b(?:THIS|THAT|THESE|THOSE|IT|THEY)\\b",
+      "ownLimitSubject": "^\\s*(?:(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)\\s+)?\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?)?\\s*$",
+      "ownLimitJoin": "^\\s*(?:,\\s*|(?=(?:AT|NEAR|FROM|FM|BEYOND)\\s+))",
+      "proofs": {
+        "place": {
+          "before": "^\\s*(?:(?:WIP|WORK)(?:\\s+\\d+(?:\\.\\d+)?\\s*(?:M|FT|FEET))?\\s+(?:AT|NEAR|FROM|FM|BEYOND)\\s+(?:THE\\s+)?|\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s+(?:AT|NEAR|FROM|FM|BEYOND)\\s+(?:THE\\s+)?|(?:AT|NEAR|FROM|FM|BEYOND)\\s+(?:THE\\s+)?|(?:[A-Z]{3,4}\\s+)?\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s+)?$",
+          "after": "^\\s*(?:(?:(?:ID|IDENTIFIER)\\s+)?(?:LGTS?|LIGHTS?|MARKINGS?|SAFETY\\s+AREAS?)\\s*)?(?:(?:WIP|U/S|CLSD|CLOSED)\\s*)?(?:(?:AT|NEAR|FROM|FM|BEYOND)\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s*)?(?:AND\\s+(?:(?:IDLE|MAX|MAXIMUM|FULL)\\s+REVERSE(?:\\s+(?:THRUST|THR|IDLE|PWR|POWER))?|REVERSE\\s+(?:THRUST|THR|IDLE|PWR|POWER))\\s+(?:ONLY|(?:(?:IS|ARE)\\s+)?(?:NOT\\s+)?(?:REQUIRED|PROHIBITED|RECOMMENDED))(?:\\s+(?:AT\\s+\\d{4}Z?|ON\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?))*)?\\s*$",
+          "allowOwnLimit": true
+        },
+        "movement": {
+          "before": "(?:^\\s*$|\\b(?:FROM|FM|OF|BTN|BETWEEN|AND)\\s+$)",
+          "after": "^\\s+(?:OF\\s+(?:THE\\s+)?)?\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)\\b"
+        },
+        "endOf": {
+          "before": "\\b(?:AT|NEAR|FROM|FM|BEYOND)\\s+(?:THE\\s+)?(?:(?:NORTHERN|SOUTHERN|EASTERN|WESTERN)\\s+)?$",
+          "after": "(?:^\\s*(?:(?:(?:ID|IDENTIFIER)\\s+)?(?:LGTS?|LIGHTS?|MARKINGS?|SAFETY\\s+AREAS?)\\s*)?(?:(?:WIP|U/S|CLSD|CLOSED)\\s*)?(?:(?:AT|NEAR|FROM|FM|BEYOND)\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s*)?(?:AND\\s+(?:(?:IDLE|MAX|MAXIMUM|FULL)\\s+REVERSE(?:\\s+(?:THRUST|THR|IDLE|PWR|POWER))?|REVERSE\\s+(?:THRUST|THR|IDLE|PWR|POWER))\\s+(?:ONLY|(?:(?:IS|ARE)\\s+)?(?:NOT\\s+)?(?:REQUIRED|PROHIBITED|RECOMMENDED))(?:\\s+(?:AT\\s+\\d{4}Z?|ON\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?))*)?\\s*$|^\\s+AND\\s+VACATE\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s+VIA\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s*$)"
+        },
+        "locatedEnd": {
+          "before": "^\\s*(?:(?:WIP|WORK)(?:\\s+\\d+(?:\\.\\d+)?\\s*(?:M|FT|FEET))?\\s+)?$",
+          "after": "^\\s*(?:(?:(?:ID|IDENTIFIER)\\s+)?(?:LGTS?|LIGHTS?|MARKINGS?|SAFETY\\s+AREAS?)\\s*)?(?:(?:WIP|U/S|CLSD|CLOSED)\\s*)?(?:(?:AT|NEAR|FROM|FM|BEYOND)\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s*)?(?:AND\\s+(?:(?:IDLE|MAX|MAXIMUM|FULL)\\s+REVERSE(?:\\s+(?:THRUST|THR|IDLE|PWR|POWER))?|REVERSE\\s+(?:THRUST|THR|IDLE|PWR|POWER))\\s+(?:ONLY|(?:(?:IS|ARE)\\s+)?(?:NOT\\s+)?(?:REQUIRED|PROHIBITED|RECOMMENDED))(?:\\s+(?:AT\\s+\\d{4}Z?|ON\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?))*)?\\s*$",
+          "allowOwnLimit": true
+        },
+        "safetyArea": {
+          "before": "^\\s*(?:(?:WIP|WORK)(?:\\s+\\d+(?:\\.\\d+)?\\s*(?:M|FT|FEET))?\\s+(?:AT|NEAR|FROM|FM|BEYOND)\\s+(?:THE\\s+)?|\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s+(?:AT|NEAR|FROM|FM|BEYOND)\\s+(?:THE\\s+)?|(?:AT|NEAR|FROM|FM|BEYOND)\\s+(?:THE\\s+)?|(?:[A-Z]{3,4}\\s+)?\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s+)?$",
+          "after": "^\\s*(?:(?:(?:ID|IDENTIFIER)\\s+)?(?:LGTS?|LIGHTS?|MARKINGS?|SAFETY\\s+AREAS?)\\s*)?(?:(?:WIP|U/S|CLSD|CLOSED)\\s*)?(?:(?:AT|NEAR|FROM|FM|BEYOND)\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s*)?(?:AND\\s+(?:(?:IDLE|MAX|MAXIMUM|FULL)\\s+REVERSE(?:\\s+(?:THRUST|THR|IDLE|PWR|POWER))?|REVERSE\\s+(?:THRUST|THR|IDLE|PWR|POWER))\\s+(?:ONLY|(?:(?:IS|ARE)\\s+)?(?:NOT\\s+)?(?:REQUIRED|PROHIBITED|RECOMMENDED))(?:\\s+(?:AT\\s+\\d{4}Z?|ON\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?))*)?\\s*$"
+        },
+        "engine": {
+          "before": "^\\s*(?:(?:WIP|WORK)\\s+(?:AT|NEAR|FROM|FM|BEYOND)\\s+(?:THE\\s+)?\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\s+END\\s+AND\\s+)?(?:(?:IDLE|MAX|MAXIMUM|FULL)\\s+)?$",
+          "after": "^\\s*(?:(?:ONLY|(?:(?:IS|ARE)\\s+)?(?:NOT\\s+)?(?:REQUIRED|PROHIBITED|RECOMMENDED)))?(?:\\s+(?:AT\\s+\\d{4}Z?|ON\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?))*\\s*$",
+          "allowOwnLimit": true
+        },
+        "sense": {
+          "before": "(?:^\\s*(?:ILS\\s+)?(?:FALSE\\s+CAPTURE\\s+OR\\s+)?$|\\bLEAD\\s+TO\\s+(?:FALSE\\s+CAPTURE\\s+OR\\s+)?$)",
+          "after": "^\\s*(?:REPORTED|POSSIBLE)?\\s*$"
+        },
+        "direction": {
+          "before": "^\\s*(?:(?:MOVEMENT|TOWING|TAXIING)\\s+)?$",
+          "after": "^\\s*$"
+        }
+      },
       "usages": [
         {
           "id": "place_end",
+          "proof": "place",
           "label": "the end of a named runway, taxiway, stand or threshold",
           "pattern": "(\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)\\s+(?:(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?\\s+)?)(END)\\b"
         },
         {
           "id": "movement_end",
+          "proof": "movement",
           "label": "the approach, departure or landing end of a runway",
           "pattern": "(\\b(?:APCH|APPROACH|DEP|DEPARTURE|LDG|LANDING|TKOF|TAKE-?OFF)\\s+)(END)\\b"
         },
         {
           "id": "end_place",
+          "proof": "endOf",
           "label": "the end of a named runway, taxiway, stand or threshold",
           "pattern": "()\\b(END)\\s+OF\\s+(?:THE\\s+)?\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\b"
         },
         {
           "id": "located_end_place",
+          "proof": "locatedEnd",
           "label": "a location at or near the end of a named movement area",
           "pattern": "(\\b(?:AT|NEAR|FROM|FM|BEYOND|BTN|BETWEEN)\\s+(?:THE\\s+)?)(END)\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\b"
         },
         {
           "id": "end_safety_area",
+          "proof": "safetyArea",
           "label": "a runway end safety area",
           "pattern": "()\\b(END)\\s+SAFETY\\s+AREAS?\\b"
         },
         {
           "id": "reverse_setting",
+          "proof": "engine",
           "label": "reverse thrust, power or idle",
           "pattern": "()\\b(REVERSE)\\s+(?:THRUST|THR|IDLE|PWR|POWER)\\b"
         },
         {
           "id": "reverse_sense",
+          "proof": "sense",
           "label": "reverse sense equipment indications",
           "pattern": "()\\b(REVERSE)\\s+SENSE\\s+INDICATIONS?\\b"
         },
         {
           "id": "reverse_direction",
+          "proof": "direction",
           "label": "movement in a reverse direction",
           "pattern": "(\\bIN\\s+(?:THE\\s+)?)(REVERSE)\\s+DIRECTION\\b"
         },
         {
           "id": "thrust_setting_reverse",
+          "proof": "engine",
           "label": "an idle, maximum or full reverse setting with a setting predicate",
           "pattern": "(\\b(?:IDLE|MAX|MAXIMUM|FULL)\\s+)(REVERSE)\\s+(?:ONLY|(?:(?:IS|ARE)\\s+)?(?:NOT\\s+)?(?:REQUIRED|PROHIBITED|RECOMMENDED))\\b"
         },
         {
           "id": "select_reverse",
+          "proof": "engine",
           "label": "a complete instruction to use or select a reverse setting",
           "pattern": "(\\b(?:USE|SELECT)\\s+(?:IDLE|MAX|MAXIMUM|FULL)\\s+)(REVERSE)\\s*$"
         }

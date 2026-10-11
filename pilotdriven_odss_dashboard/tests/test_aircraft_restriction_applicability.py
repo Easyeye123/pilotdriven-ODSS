@@ -19,8 +19,8 @@ from app.odss import aircraft_restriction_applicability as rule
 
 RULES_FILE = Path(rule.__file__).with_name("aircraft_restriction_rules.json")
 VECTORS_FILE = Path(__file__).parent / "fixtures" / "aircraft-restriction-vectors.json"
-SHARED_RULES_SHA256 = "67dcfbbf7a87bb04c300d6a7375c7edb369ef363e869fc340a9239f237e3f33b"
-SHARED_VECTORS_SHA256 = "30aa13d09e17ce0f1c9a6fffafa6d07f0f385599d7169ac5259bc81a22770343"
+SHARED_RULES_SHA256 = "7e57b7d6a23c553f62ab13be2a31c5a66fe6d7a3f85925bf5c78b86c5c1945bc"
+SHARED_VECTORS_SHA256 = "7b4771f3cb82541e2afcb6bd66c523ad1edf30463c2a8c4d3fb5ab47e1e966bf"
 
 VECTORS = json.loads(VECTORS_FILE.read_text(encoding="utf-8"))
 
@@ -66,9 +66,9 @@ def test_types_outside_the_catalogue_stay_unknown(aircraft_type: str) -> None:
     assert held["code"] is None
 
 
-@pytest.mark.parametrize("vector", VECTORS["usageScopeCases"], ids=lambda vector: vector["id"])
+@pytest.mark.parametrize("vector", VECTORS["usageScopeCases"] + VECTORS["usageProofCases"], ids=lambda vector: vector["id"])
 def test_usage_scope_contract(vector: dict) -> None:
-    """F25: preregistered public outcomes, independent of the catching guard."""
+    """F25-F27: preregistered public outcomes, independent of the catching guard."""
     result = rule.assess_aircraft_restriction_applicability(vector["noticeText"], vector["aircraftType"])
     assert result is not None
     assert result["status"] == vector["expectedStatus"]
