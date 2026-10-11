@@ -420,7 +420,7 @@ def _restriction_scope(text: str, match: re.Match[str], subject: str | None) -> 
     """Bind the limit to its stated source subject; never substitute a summary."""
     unresolved = {"status": "unresolved", "subjects": []}
     patterns = _scope_patterns()
-    begin, end = next((start, finish) for start, finish in _clause_ranges(text)
+    begin, end = next((start, finish) for start, finish in _clause_ranges(text, rules()["restrictionScope"]["boundary"])
                       if start <= match.start() < finish)
     before = text[begin:match.start()]
     boundaries = list(patterns["prefixBoundary"].finditer(before))
@@ -442,9 +442,8 @@ def _restriction_scope(text: str, match: re.Match[str], subject: str | None) -> 
     else:
         # A named parent area does not establish its complete scope. Account
         # for the whole continuation before a positively independent record.
-        next_record = patterns["independentRecord"].search(after)
-        complete = (patterns["beforeRecord"].search(after[:next_record.start()]) if next_record
-                    else patterns["continuation"].search(after))
+        complete = (patterns["continuation"].search(after)
+                    or patterns["recordStart"].search(text[end:]) and patterns["beforeRecord"].search(after))
         if not complete:
             return unresolved
     if not candidates or any(_scope_key(value) != _scope_key(candidates[0]) for value in candidates):
@@ -506,6 +505,17 @@ def read_aircraft_size_restrictions(value: Any) -> list[dict[str, Any]]:
                 continue
             found.append({**_reading_from(form, match, text), "end": end})
     found.sort(key=lambda entry: entry["index"])
+    # Every other clause/record needs positive independence proof. A heading
+    # cannot discard a later back-reference or unknown spatial continuation.
+    # This only withholds scope; numeric and qualifier decisions are unchanged.
+    complete_context = all(
+        any(begin <= reading["index"] < end for reading in found)
+        or _scope_patterns()["independentClause"].search(text[begin:end])
+        for begin, end in _clause_ranges(text, rules()["restrictionScope"]["boundary"])
+    )
+    if not complete_context:
+        for reading in found:
+            reading["scope"] = {"status": "unresolved", "subjects": []}
     distinct: list[dict[str, Any]] = []
     for entry in found:
         reading = {key: item for key, item in entry.items() if key != "end"}

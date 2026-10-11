@@ -1,6 +1,6 @@
 {
   "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures. v2 (22 Sep 2026, after Codex's independent review): adversarial vectors for partial readings (negation, reversal, letter lists and ranges, extra direction words) and for unresolved conditions and exceptions, in the limit's sentence or another one. A vector marked 'synthetic' is labelled fixture wording, not an operational notice. v3 (22 Sep 2026, Codex fix2 review): qualifiers AFTER the limit or in ANOTHER sentence - 'does not apply', 'exempt', 'not applicable', 'not affected', a lifting, a stated permission - withhold the conclusion and are quoted whole so a negator is never cut off the quote; unrelated negation stays a control. v4 (10 Oct 2026, Codex QA of releases 468-474, F7): WSSS SX168/26 on SQ437/SQ438 is one long AIP-supplement text with almost no sentence punctuation, so its stand 603 Code C downgrade shared a 'sentence' with 'GND MARKINGS ... WILL BE REMOVED', 'MARKERS WILL BE PROVIDED', 'EAST CARGO APRON' and a pilot instruction 'WHEN TAX', and was never compared. Vectors cover the genuine notice (Code C limit: A350 above, B737-8 equal, A380 above; Code E variant: B737-8 below, A350 equal), a cancellation and a lifting of the limit itself, negated applicability, negation about markings, subjectless and code-naming removal bullets, PROVIDED as a condition and as a passive verb, CARGO as a place and as an operator, and pilot instructions with and without aircraft wording. v5 (10 Oct 2026, Codex re-QA of release 476, F14): v4 skipped every other clause that named markings, markers, signs, lights or pilots and no limit wording, so 'PILOTS WITH PRIOR APPROVAL ARE EXEMPT', 'PILOTS MUST OBTAIN PPR', 'CREWS REQUIRE PRIOR PERMISSION', 'PILOTS ARE ADVISED THAT IT IS SUSPENDED', 'LIGHTS MUST BE ON WHEN USING THIS STAND' and 'PROVIDED MARKERS ARE IN PLACE' were dropped and the limit was concluded. v5 removes that clause skip; only a reversal word that is the passive verb of a named aerodrome feature ('GND MARKINGS ... WILL BE REMOVED') and a WHEN inside an advisory to pilots or crews ('PAY EXTRA ATTN ... WHEN', 'EXERCISE CAUTION WHEN'), each naming no aircraft or limit wording, are excused. Codex's independent cases are added verbatim, with two boundary cases (a feature sharing its predicate with the stand; an advisory carrying an exception). v6 (10 Oct 2026, Codex re-QA of release 478, F15/F16): v5's excuses were spans, not proofs. A feature's 80-character wildcard crossed into another subject ('GND MARKINGS REMAIN UNTIL STAND 603 IS RESTORED' excused RESTORED), and an advisory span excused every conditional inside it ('EXERCISE CAUTION IF USING THIS STAND WHEN LIGHTS ARE OFF' excused IF). v6 excuses one exact word only: the reversal must be the passive verb of the feature with only place words and designators between them, and the WHEN must follow the advisory directly or after ATC-instruction words. Codex's 28 pre-registered cases are added verbatim (exact duplicates of earlier vectors skipped). v7 (10 Oct 2026, Codex re-QA of release 480, F17): v6 proved the feature's link to its verb but not that the feature was the clause's subject - 'THE RESTRICTIONS INDICATED BY SIGNS AT STAND 603 ARE LIFTED' excused LIFTED from the inner 'SIGNS AT STAND 603 ARE LIFTED'. v7 anchors both excuses at the start of their clause, allowing before the feature (or the pilots/crews) only a closed set of pre-modifiers and list markers, so the whole clause up to the excused word is inside the match and the limit-vocabulary veto sees it. Codex's 32 pre-registered cases are added verbatim, with twelve further subject-boundary cases.",
-  "specVersion": "aircraft-restriction-applicability-2026-10-11-v15",
+  "specVersion": "aircraft-restriction-applicability-2026-10-11-v16",
   "vectors": [
     {
       "id": "original-complaint-sq882-vhhh-a350",
@@ -5693,7 +5693,7 @@
     {
       "id": "f23-codex-new486-fullwidth",
       "origin": "Codex re-QA of 486, F23 and reversal-word cases (independent synthetic, pre-registered)",
-      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - \uff23\uff21\uff2e\uff23\uff25\uff2c\uff2c\uff29\uff2e\uff27 THIS LIMIT",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - ＣＡＮＣＥＬＬＩＮＧ THIS LIMIT",
       "aircraftType": "A350-941",
       "expect": {
         "status": "review_required",
@@ -6885,7 +6885,7 @@
     {
       "id": "f24-codex-new488-nfkc-discontinuance",
       "origin": "Codex re-QA of 488, F24 and reversal-word cases (independent synthetic, pre-registered)",
-      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - \uff24\uff29\uff33\uff23\uff2f\uff2e\uff34\uff29\uff2e\uff35\uff21\uff2e\uff23\uff25 OF THIS LIMIT IS EFFECTIVE",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - ＤＩＳＣＯＮＴＩＮＵＡＮＣＥ OF THIS LIMIT IS EFFECTIVE",
       "aircraftType": "A350-941",
       "expect": {
         "status": "review_required",
@@ -8175,7 +8175,7 @@
     },
     {
       "id": "f25-boundary-unicode-wrapped-reference",
-      "noticeText": "acft stand 603 downgraded to code c - full\u00a0reverse\n of the previously published downgrade",
+      "noticeText": "acft stand 603 downgraded to code c - full reverse\n of the previously published downgrade",
       "aircraftType": "A350-941",
       "expectedStatus": "review_required",
       "label": "SYNTHETIC QA ONLY",
@@ -9789,7 +9789,7 @@
     {
       "id": "lowercase-and-unicode",
       "label": "SYNTHETIC QA ONLY",
-      "noticeText": "txl q8 clsd. aircraft\u00a0stand\u00a0712 downgraded to code c",
+      "noticeText": "txl q8 clsd. aircraft stand 712 downgraded to code c",
       "aircraftType": "A350-941",
       "expectedStatus": "confirmed",
       "expectedOutcome": "exceeds_limit",
@@ -10793,7 +10793,7 @@
     {
       "id": "f29-independent-ctrl-unicode",
       "label": "INDEPENDENT SYNTHETIC QA ONLY",
-      "noticeText": "TXL N4 CLSD. aircraft\u00a0stand\u00a0811 downgraded to code c",
+      "noticeText": "TXL N4 CLSD. aircraft stand 811 downgraded to code c",
       "aircraftType": "A350-941",
       "expectedStatus": "confirmed",
       "expectedSubjects": [
@@ -11005,7 +11005,7 @@
     {
       "id": "f29-author-unicode-comma",
       "label": "SYNTHETIC QA ONLY",
-      "noticeText": "TWY J5 DOWNGRADED TO CODE C \uff0c SOUTH OF TWY J9",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C ， SOUTH OF TWY J9",
       "aircraftType": "A350-941",
       "expectedStatus": "confirmed",
       "expectedScope": {
@@ -11484,6 +11484,1562 @@
       },
       "expectedOutcome": "exceeds_limit",
       "expectedRestrictsThisAircraft": true
+    }
+  ],
+  "scopeContextCases": [
+    {
+      "id": "f30-independent-later-affected-section",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. THE AFFECTED SECTION IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-later-affected-length",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C; AFFECTED LENGTH: FROM TWY R5 TO TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "FROM TWY R5 TO TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-later-list-portion",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C - THE DOWNGRADED PORTION IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-later-code-section",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. THE CODE C SECTION IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-later-only-portion",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. ONLY THE PORTION BTN TWY R5 AND TWY R9 IS SIZE LIMITED",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-later-limit-covers",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. THIS LIMIT COVERS ONLY THE SECTION BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-later-area-reference",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. AREA OF THIS LIMIT: BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-cause-then-reference",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C DUE WIP. THE AFFECTED SECTION IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-record-then-reference",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C TAXILANE: CLOSURE OF TWY R9. THE DOWNGRADED PORTION OF TWY R4 IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-record-inline-reference",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C TAXILANE: CLOSURE OF TWY R9 THE DOWNGRADED PORTION OF TWY R4 IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-preposed-reference",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. THE AFFECTED SECTION IS BTN TWY R5 AND TWY R9. TWY R4 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-preposed-list",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. THE CODE C AREA IS BTN TWY R5 AND TWY R9 - TWY R4 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-repeated-limit-reference",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. STAND 911 DOWNGRADED TO CODE C. THE DOWNGRADED PORTION OF TWY R4 IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-span-later-reference",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 CLSD TO ACFT WINGSPAN MORE THAN 36M. THE AFFECTED SECTION IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "in_restricted_class",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-explicit-later-reference",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. DOWNGRADE OF TWY R4 TO CODE C. THE AFFECTED SECTION IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-applies-safe",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. THIS LIMIT APPLIES ONLY TO THE SECTION BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "f30-independent-later-equal",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. THE AFFECTED SECTION IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "B737-8",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "within_limit",
+      "expectedRestrictsThisAircraft": false
+    },
+    {
+      "id": "f30-independent-later-larger",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. THE AFFECTED SECTION IS BTN TWY R5 AND TWY R9",
+      "aircraftType": "A380-841",
+      "expectedStatus": "confirmed",
+      "requiredExtent": "BTN TWY R5 AND TWY R9",
+      "expectedSubjects": null,
+      "oracle": "Explicit narrowing must remain with its limit across punctuation or record headings. Complete scope, unresolved scope or a non-firm result is acceptable; a firm parent area alone is not.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-tail-central",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C CENTRAL 250M ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-tail-chainage",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C BETWEEN CHAINAGE 150 AND 400",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-tail-polygon",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C WITHIN THE HATCHED PORTION",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-tail-parentheses",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C (FROM TWY R5 TO TWY R9)",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-tail-duration-extent",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C DUE TO MAINTENANCE WORK ALONG THE WESTERN EDGE",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-tail-validity-extent",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C VALIDITY: 17NOV26 CENTRAL 250M ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-tail-unheaded",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C FOR THE PERIODS TABULATED BELOW: SECTION BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-tail-before-record",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C CENTRAL 250M ONLY TAXILANE: CLOSURE OF TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-tail-valid-then-unknown",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C DUE WIP AND ALONG THE WESTERN EDGE",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-tail-bounds-after-area",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C AT TWY R4 BTN TWY R5 AND TWY R9 DUE WIP",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-plain",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-leading",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 BTN TWY R5 AND TWY R9 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4 BTN TWY R5 AND TWY R9"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-following",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. DOWNGRADED TO CODE C ON TWY R4 BTN TWY R5 AND TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4 BTN TWY R5 AND TWY R9"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-causal",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C DUE TO REPAIR WORK",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-validity",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C VALIDITY: 17NOV26",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-period",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C PERIOD: FROM 17 NOVEMBER 2026, 0300 UTC TO 18 NOVEMBER 2026, 0400 UTC",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-independent",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C TAXILANE: CLOSURE OF TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-independent-table",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C FOR THE PERIODS TABULATED BELOW: TAXILANE: CLOSURE OF TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-other-sentence",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. TWY R9 CLSD",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-other-cause",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. WORK IN PROGRESS ON TWY R9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-two-areas",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C. STAND 911 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4",
+        "STAND 911"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-long-area",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. DOWNGRADE OF ACFT STAND 911 AT THE NORTH CARGO APRON TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "ACFT STAND 911 AT THE NORTH CARGO APRON"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-unbound",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "requiredExtent": null,
+      "expectedSubjects": null,
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f30-independent-ctrl-qualifier",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C PPR",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "f30-independent-ctrl-unknown-aircraft",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY R4 DOWNGRADED TO CODE C",
+      "aircraftType": "UNVERIFIED-QA",
+      "expectedStatus": "unknown",
+      "requiredExtent": null,
+      "expectedSubjects": [
+        "TWY R4"
+      ],
+      "oracle": "Closed known area or explicit unresolved according to the source; do not infer current airport conditions.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "f30-author-section-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-section-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-section-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-distance-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. THE AFFECTED LENGTH IS THE CENTRAL 180M",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-distance-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; THE AFFECTED LENGTH IS THE CENTRAL 180M",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-distance-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - THE AFFECTED LENGTH IS THE CENTRAL 180M",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-plain-distance-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. CENTRAL 180M ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-plain-distance-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; CENTRAL 180M ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-plain-distance-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - CENTRAL 180M ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-chainage-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. BETWEEN CHAINAGE 25 AND 140",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-chainage-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; BETWEEN CHAINAGE 25 AND 140",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-chainage-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - BETWEEN CHAINAGE 25 AND 140",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-side-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. ALONG THE NORTHERN EDGE ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-side-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; ALONG THE NORTHERN EDGE ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-side-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - ALONG THE NORTHERN EDGE ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-pronoun-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. IT COVERS THE PART BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-pronoun-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; IT COVERS THE PART BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-pronoun-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - IT COVERS THE PART BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-same-area-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. THE SAME AREA EXTENDS FROM TWY K2 TO TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-same-area-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; THE SAME AREA EXTENDS FROM TWY K2 TO TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-same-area-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - THE SAME AREA EXTENDS FROM TWY K2 TO TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-extent-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. EXTENT: BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-extent-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; EXTENT: BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-extent-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - EXTENT: BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-restriction-area-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. THE RESTRICTION AREA IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-restriction-area-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; THE RESTRICTION AREA IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-restriction-area-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - THE RESTRICTION AREA IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-named-area-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. TWY K6 LIMITED SECTION: BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-named-area-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; TWY K6 LIMITED SECTION: BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-named-area-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - TWY K6 LIMITED SECTION: BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-unknown-wording-sentence",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. SPATIAL DETAIL REQUIRES SOURCE REVIEW",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-unknown-wording-semicolon",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C; SPATIAL DETAIL REQUIRES SOURCE REVIEW",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-unknown-wording-list",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C - SPATIAL DETAIL REQUIRES SOURCE REVIEW",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-preposed-section",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8. TWY K6 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-preposed-length",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "THE AFFECTED LENGTH IS 180M. TWY K6 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-preposed-extent",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "EXTENT: BTN TWY K2 AND TWY K8. TWY K6 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-after-record",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C TAXILANE: CLOSURE OF TWY K9. THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-inline-record",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C TAXILANE: CLOSURE OF TWY K9 THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-record-then-new-record",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C TAXILANE: CLOSURE OF TWY K9. STAND 925 DOWNGRADED TO CODE C. THE AFFECTED LENGTH IS 180M",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-prior-complete-limit",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "STAND 925 DOWNGRADED TO CODE C. THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8. TWY K6 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-complete-own-extent",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 BTN TWY K2 AND TWY K8 DOWNGRADED TO CODE C. THE AFFECTED LENGTH IS 180M",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-unrelated-then-backref",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. TWY K9 CLSD. THE DOWNGRADED PORTION OF TWY K6 IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-before-unrelated-then-limit",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "THE CODE C AREA IS BTN TWY K2 AND TWY K8. TWY K9 CLSD. TWY K6 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-feature-then-backref",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. GND MARKINGS WILL BE REMOVED. THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-feature-inline-backref",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. GND MARKINGS WILL BE REMOVED AND THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-following-owner",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "DOWNGRADED TO CODE C ON STAND 925. THE AFFECTED PORTION IS THE EASTERN HALF",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-explicit-owner",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "DOWNGRADE OF STAND 925 TO CODE C. THE AFFECTED PORTION IS THE EASTERN HALF",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-wingspan",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 CLSD TO ACFT WINGSPAN MORE THAN 36M. THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "in_restricted_class",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-decimal-boundary",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. THE AFFECTED LENGTH IS 180.5M",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-newlines",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C.\nTHE AFFECTED SECTION\nIS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-repeat-alias",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. TAXIWAY K6 DOWNGRADED TO CODE C. THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-unrelated-unknown-area",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. AREA OF WORK TO BE CONFIRMED IN SOURCE",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-equal-aircraft",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "B737-8",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "within_limit",
+      "expectedRestrictsThisAircraft": false,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-larger-aircraft",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A380-841",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-unknown-aircraft",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "UNVERIFIED-QA",
+      "expectedStatus": "unknown",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-permission",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C PPR. THE AFFECTED SECTION IS BTN TWY K2 AND TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-plain",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-closure",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. TWY K9 CLSD",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-work",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. WORK IN PROGRESS ON TWY K9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-closure-leading",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K9 CLSD. TWY K6 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-own-extent",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 BTN TWY K2 AND TWY K8 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6 BTN TWY K2 AND TWY K8"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-two-limits",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. STAND 925 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6",
+          "STAND 925"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-record",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C TAXILANE: CLOSURE OF TWY K9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-details",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C DETAILS ON THE CLOSURE OF TWY K9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-temporal",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. PERIOD: FROM 03 NOVEMBER 2026, 1100 UTC TO 04 NOVEMBER 2026, 1200 UTC",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-causal",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. DUE TO REPAIR WORK",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-feature",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. GND MARKINGS WILL BE REMOVED",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-following",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "DOWNGRADED TO CODE C AT STAND 925. TWY K9 CLSD",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STAND 925"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-multiple-records",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C TAXILANE: CLOSURE OF TWY K9. DETAILS ON THE CLOSURE OF TWY K8",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-author-control-closure-extent",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY K6 DOWNGRADED TO CODE C. TWY K9 BTN TWY K2 AND TWY K8 CLSD",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY K6"
+        ]
+      },
+      "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
     }
   ]
 }

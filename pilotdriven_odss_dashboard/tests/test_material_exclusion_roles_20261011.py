@@ -313,7 +313,8 @@ def test_size_exclusion_keeps_its_own_complete_scope(case: dict, role: str, held
             assert subject in summary
 
 
-CONTINUATION_CASES = json.loads((ROOT / "tests/fixtures/aircraft-restriction-vectors.json").read_text())["scopeContinuationCases"]
+SCOPE_FIXTURE = json.loads((ROOT / "tests/fixtures/aircraft-restriction-vectors.json").read_text())
+CONTINUATION_CASES = SCOPE_FIXTURE["scopeContinuationCases"] + SCOPE_FIXTURE["scopeContextCases"]
 
 
 @pytest.mark.parametrize("case", CONTINUATION_CASES, ids=lambda case: case["id"])

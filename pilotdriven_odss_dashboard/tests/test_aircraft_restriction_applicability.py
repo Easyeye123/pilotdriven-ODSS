@@ -19,8 +19,8 @@ from app.odss import aircraft_restriction_applicability as rule
 
 RULES_FILE = Path(rule.__file__).with_name("aircraft_restriction_rules.json")
 VECTORS_FILE = Path(__file__).parent / "fixtures" / "aircraft-restriction-vectors.json"
-SHARED_RULES_SHA256 = "22361878e1eb011f835beaa16f761617b0c035f78db80aef32392a8d939f15b6"
-SHARED_VECTORS_SHA256 = "cee7bdb3d7e7b9e0d399efd5873a1467d4e6d286e5a19ef83d6fd8500cf4ad76"
+SHARED_RULES_SHA256 = "82433e6cb8ac1eaf5747d367dd88f6a97c4c1abdb675df0ae244d4f3bc9e5e88"
+SHARED_VECTORS_SHA256 = "770f23590137dbefdb578790b8f0d97134b9462b928e70f4c156ff9987525b21"
 
 VECTORS = json.loads(VECTORS_FILE.read_text(encoding="utf-8"))
 
@@ -79,7 +79,7 @@ def test_usage_scope_contract(vector: dict) -> None:
         assert result["restriction"]["scope"] == vector["expectedScope"]
 
 
-@pytest.mark.parametrize("vector", VECTORS["scopeContinuationCases"], ids=lambda vector: vector["id"])
+@pytest.mark.parametrize("vector", VECTORS["scopeContinuationCases"] + VECTORS["scopeContextCases"], ids=lambda vector: vector["id"])
 def test_scope_continuation_contract(vector: dict) -> None:
     """F29: state the complete registered extent, or explicitly leave it unresolved."""
     result = rule.assess_aircraft_restriction_applicability(vector["noticeText"], vector["aircraftType"])
