@@ -199,7 +199,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # 11 Oct 2026 (v91, release-486 QA, F23): aircraft-size rules v10 read every reversal lemma in every inflection and standard
 # nominalisation (DISCONTINUANCE was missing) and add the reversal families CEASE, REPEAL, RETRACT, VOID, NULLIFY, ABOLISH,
 # EXPIRE, LAPSE, END (verb forms) and REVERSE (not the base form); a v90 size conclusion can differ.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-11-reversal-families-v91"
+# 11 Oct 2026 (v92, release-488 QA, F24): aircraft-size rules v11 read END and REVERSE in every form as reversals and tell
+# a place or thrust usage apart only where its own words prove it (RWY 02L END, END OF RWY, IDLE REVERSE THRUST); a v91
+# size conclusion can differ.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-11-end-reverse-usage-v92"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

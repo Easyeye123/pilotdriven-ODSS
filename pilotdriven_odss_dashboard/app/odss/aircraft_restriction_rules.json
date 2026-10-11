@@ -1,5 +1,5 @@
 {
-  "specVersion": "aircraft-restriction-applicability-2026-10-11-v10",
+  "specVersion": "aircraft-restriction-applicability-2026-10-11-v11",
   "codeLetterTable": {
     "ruleId": "ICAO_ANNEX14_V1_TABLE_1_1_CODE_LETTER_AMDT15_V1",
     "bands": [
@@ -315,7 +315,7 @@
       "id": "reversed",
       "where": "clause",
       "label": "the limit may be cancelled, lifted or suspended",
-      "pattern": "\\b(?:CNL|CNLD|NO\\s+LONGER|CANCEL(?:S|L?ED|L?ING|L?ATIONS?)?|WITHDR(?:AW|AWS|AWN|AWING|AWALS?|EW)|REVOK(?:E|ES|ED|ING)|REVOCATIONS?|RESCIND(?:S|ED|ING|MENTS?)?|RESCISSIONS?|LIFT(?:S|ED|ING)?|REMOV(?:E|ES|ED|ING|ALS?)|SUSPEND(?:S|ED|ING)?|SUSPENSIONS?|RESTOR(?:E|ES|ED|ING|ALS?|ATIONS?)|RE-?INSTAT(?:E|ES|ED|ING|EMENTS?|IONS?)|REVERT(?:S|ED|ING)?|REVERSIONS?|REVERS(?:ES|ED|ING|ALS?)|DISCONTINU(?:E|ES|ED|ING|ATIONS?|ANCES?)|TERMINAT(?:E|ES|ED|ING|IONS?)|ANNUL(?:S|LED|LING|MENTS?|ATIONS?)?|RELAX(?:ES|ED|ING|ATIONS?)?|RESUM(?:E|ES|ED|ING)|RESUMPTIONS?|CEAS(?:E|ES|ED|ING)|CESSATIONS?|REPEAL(?:S|ED|ING)?|RETRACT(?:S|ED|ING|IONS?)?|VOID(?:S|ED|ING)?|NULLIF(?:Y|IES|IED|YING|ICATIONS?)|ABOLISH(?:ES|ED|ING|MENTS?)?|ABOLITIONS?|EXPIR(?:E|ES|ED|ING|Y|IES|ATIONS?)|LAPS(?:E|ES|ED|ING)|END(?:S|ED)|R(?:ETURN(?:S|ED|ING)?|TN)\\s+TO\\s+(?:NORMAL|NML))\\b"
+      "pattern": "\\b(?:CNL|CNLD|NO\\s+LONGER|CANCEL(?:S|L?ED|L?ING|L?ATIONS?)?|WITHDR(?:AW|AWS|AWN|AWING|AWALS?|EW)|REVOK(?:E|ES|ED|ING)|REVOCATIONS?|RESCIND(?:S|ED|ING|MENTS?)?|RESCISSIONS?|LIFT(?:S|ED|ING)?|REMOV(?:E|ES|ED|ING|ALS?)|SUSPEND(?:S|ED|ING)?|SUSPENSIONS?|RESTOR(?:E|ES|ED|ING|ALS?|ATIONS?)|RE-?INSTAT(?:E|ES|ED|ING|EMENTS?|IONS?)|REVERT(?:S|ED|ING)?|REVERSIONS?|REVERS(?:E|ES|ED|ING|ALS?)|DISCONTINU(?:E|ES|ED|ING|ATIONS?|ANCES?)|TERMINAT(?:E|ES|ED|ING|IONS?)|ANNUL(?:S|LED|LING|MENTS?|ATIONS?)?|RELAX(?:ES|ED|ING|ATIONS?)?|RESUM(?:E|ES|ED|ING)|RESUMPTIONS?|CEAS(?:E|ES|ED|ING)|CESSATIONS?|REPEAL(?:S|ED|ING)?|RETRACT(?:S|ED|ING|IONS?)?|VOID(?:S|ED|ING)?|NULLIF(?:Y|IES|IED|YING|ICATIONS?)|ABOLISH(?:ES|ED|ING|MENTS?)?|ABOLITIONS?|EXPIR(?:E|ES|ED|ING|Y|IES|ATIONS?)|LAPS(?:E|ES|ED|ING)|END(?:S|ED|ING)?|R(?:ETURN(?:S|ED|ING)?|TN)\\s+TO\\s+(?:NORMAL|NML))\\b"
     },
     {
       "id": "list_before",
@@ -406,7 +406,7 @@
     {
       "id": "reversal",
       "label": "cancellation, lifting or suspension stated in the notice",
-      "pattern": "\\b(?:CNL|CNLD|NO\\s+LONGER|CANCEL(?:S|L?ED|L?ING|L?ATIONS?)?|WITHDR(?:AW|AWS|AWN|AWING|AWALS?|EW)|REVOK(?:E|ES|ED|ING)|REVOCATIONS?|RESCIND(?:S|ED|ING|MENTS?)?|RESCISSIONS?|LIFT(?:S|ED|ING)?|REMOV(?:E|ES|ED|ING|ALS?)|SUSPEND(?:S|ED|ING)?|SUSPENSIONS?|RESTOR(?:E|ES|ED|ING|ALS?|ATIONS?)|RE-?INSTAT(?:E|ES|ED|ING|EMENTS?|IONS?)|REVERT(?:S|ED|ING)?|REVERSIONS?|REVERS(?:ES|ED|ING|ALS?)|DISCONTINU(?:E|ES|ED|ING|ATIONS?|ANCES?)|TERMINAT(?:E|ES|ED|ING|IONS?)|ANNUL(?:S|LED|LING|MENTS?|ATIONS?)?|RELAX(?:ES|ED|ING|ATIONS?)?|RESUM(?:E|ES|ED|ING)|RESUMPTIONS?|CEAS(?:E|ES|ED|ING)|CESSATIONS?|REPEAL(?:S|ED|ING)?|RETRACT(?:S|ED|ING|IONS?)?|VOID(?:S|ED|ING)?|NULLIF(?:Y|IES|IED|YING|ICATIONS?)|ABOLISH(?:ES|ED|ING|MENTS?)?|ABOLITIONS?|EXPIR(?:E|ES|ED|ING|Y|IES|ATIONS?)|LAPS(?:E|ES|ED|ING)|END(?:S|ED)|R(?:ETURN(?:S|ED|ING)?|TN)\\s+TO\\s+(?:NORMAL|NML))\\b"
+      "pattern": "\\b(?:CNL|CNLD|NO\\s+LONGER|CANCEL(?:S|L?ED|L?ING|L?ATIONS?)?|WITHDR(?:AW|AWS|AWN|AWING|AWALS?|EW)|REVOK(?:E|ES|ED|ING)|REVOCATIONS?|RESCIND(?:S|ED|ING|MENTS?)?|RESCISSIONS?|LIFT(?:S|ED|ING)?|REMOV(?:E|ES|ED|ING|ALS?)|SUSPEND(?:S|ED|ING)?|SUSPENSIONS?|RESTOR(?:E|ES|ED|ING|ALS?|ATIONS?)|RE-?INSTAT(?:E|ES|ED|ING|EMENTS?|IONS?)|REVERT(?:S|ED|ING)?|REVERSIONS?|REVERS(?:E|ES|ED|ING|ALS?)|DISCONTINU(?:E|ES|ED|ING|ATIONS?|ANCES?)|TERMINAT(?:E|ES|ED|ING|IONS?)|ANNUL(?:S|LED|LING|MENTS?|ATIONS?)?|RELAX(?:ES|ED|ING|ATIONS?)?|RESUM(?:E|ES|ED|ING)|RESUMPTIONS?|CEAS(?:E|ES|ED|ING)|CESSATIONS?|REPEAL(?:S|ED|ING)?|RETRACT(?:S|ED|ING|IONS?)?|VOID(?:S|ED|ING)?|NULLIF(?:Y|IES|IED|YING|ICATIONS?)|ABOLISH(?:ES|ED|ING|MENTS?)?|ABOLITIONS?|EXPIR(?:E|ES|ED|ING|Y|IES|ATIONS?)|LAPS(?:E|ES|ED|ING)|END(?:S|ED|ING)?|R(?:ETURN(?:S|ED|ING)?|TN)\\s+TO\\s+(?:NORMAL|NML))\\b"
     },
     {
       "id": "propulsion",
@@ -430,6 +430,43 @@
         "pattern": "^\\s*(?:(?:\\(?(?:[IVX]{1,4}|[A-H]|\\d{1,2})\\)|\\d{1,2}\\.)\\s+)?(?:(?:ALL|THE)\\s+)?\\b(?:PILOTS?|CREWS?)\\s+(?:(?:ARE|IS|SHALL|SHOULD|MUST)\\s+)?(?:TO\\s+)?(?:PAY\\s+(?:EXTRA\\s+)?(?:ATTN|ATTENTION)|EXERCISE\\s+(?:EXTRA\\s+)?CAUTION|(?:MAINTAIN|KEEP)\\s+(?:A\\s+)?(?:GOOD\\s+|SHARP\\s+)?LOOKOUT)(?:\\s+(?:TO|THE|ATC|GND|GROUND|TWR|TOWER|INSTRUCTIONS?|INSTR|CLEARANCES?|MARSHALLERS?|MARSHALLING|SIGNALS?|AT|ALL|TIMES)\\b){0,6}\\s+(WHEN)\\b"
       }
     ],
+    "notReversal": {
+      "guardId": "reversed",
+      "markerId": "reversal",
+      "vetoWords": 3,
+      "usages": [
+        {
+          "id": "place_end",
+          "label": "the end of a named runway, taxiway, stand or threshold",
+          "pattern": "(\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)\\s+(?:(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?\\s+)?)(END)\\b"
+        },
+        {
+          "id": "movement_end",
+          "label": "the approach, departure or landing end of a runway",
+          "pattern": "(\\b(?:APCH|APPROACH|DEP|DEPARTURE|LDG|LANDING|TKOF|TAKE-?OFF)\\s+)(END)\\b"
+        },
+        {
+          "id": "end_place",
+          "label": "the end of a named runway, taxiway, stand or threshold",
+          "pattern": "()\\b(END)\\s+(?:OF\\s+(?:THE\\s+)?)?\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\b"
+        },
+        {
+          "id": "end_safety_area",
+          "label": "a runway end safety area",
+          "pattern": "()\\b(END)\\s+SAFETY\\s+AREAS?\\b"
+        },
+        {
+          "id": "reverse_setting",
+          "label": "reverse thrust, power or idle, or a reverse sense or direction",
+          "pattern": "()\\b(REVERSE)\\s+(?:THRUST|THR|IDLE|PWR|POWER|SENSE|DIRECTION)\\b"
+        },
+        {
+          "id": "thrust_setting_reverse",
+          "label": "an idle, maximum or full reverse setting",
+          "pattern": "(\\b(?:IDLE|MAX|MAXIMUM|FULL)\\s+)(REVERSE)\\b"
+        }
+      ]
+    },
     "limitVocabulary": "\\b(?:(?:ACFT|AIRCRAFT|AEROPLANES?|AIRPLANES?)|CODE|(?:WINGSPAN|WING\\s+SPAN)|LIMIT(?:S|ED|ATION|ATIONS)?|LTD|RESTRICT(?:ED|ION|IONS)?|RESTR|DOWNGRAD(?:E|ED|ING)|NOTAM|[AB]\\d{3}(?:-\\d{1,4})?|MD-?\\d{2})\\b"
   }
 }

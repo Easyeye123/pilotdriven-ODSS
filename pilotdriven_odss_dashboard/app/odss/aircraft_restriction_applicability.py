@@ -88,6 +88,36 @@ def _excused() -> tuple[tuple[str, re.Pattern[str]], ...]:
     return tuple((rule["markerId"], re.compile(rule["pattern"])) for rule in rules()["qualifierContext"]["excused"])
 
 
+@lru_cache(maxsize=1)
+def _not_reversal() -> tuple[dict[str, Any], tuple[re.Pattern[str], ...], re.Pattern[str]]:
+    context = rules()["qualifierContext"]["notReversal"]
+    window = re.compile(r"(?:\s*\S+){0,%d}" % int(context["vetoWords"]))
+    return context, tuple(re.compile(usage["pattern"]) for usage in context["usages"]), window
+
+
+def _blank_non_reversal_usages(view: str, veto_view: str | None = None) -> str:
+    """Spec v11 (F24): END and REVERSE are reversal words in every form.
+
+    A usage ``qualifierContext.notReversal`` proves is a place ("RWY 02L END", "END OF RWY 20C") or a thrust setting
+    ("IDLE REVERSE THRUST") is blanked - that word only, and only where no limit vocabulary stands within the next
+    ``vetoWords`` words after the usage in ``veto_view``, the same text with the limit phrase blanked ("STAND 603 END OF
+    RESTRICTION" stays a reversal).
+    """
+    veto = view if veto_view is None else veto_view
+    vocabulary = _limit_vocabulary()
+    _, patterns, window = _not_reversal()
+    blanked = view
+    for pattern in patterns:
+        for match in pattern.finditer(view):
+            at = match.start() + len(match.group(1))
+            end = at + len(match.group(2))
+            following = window.match(veto[match.end():]).group(0)
+            if vocabulary.search(following):
+                continue
+            blanked = f"{blanked[:at]}{' ' * (end - at)}{blanked[end:]}"
+    return blanked
+
+
 def _excused_occurrences(stretch: str) -> list[tuple[str, int]]:
     """The exact qualifier words spec v6 proves are about something else (F15/F16).
 
@@ -222,15 +252,23 @@ def _unread_reason(text: str, index: int, length: int) -> dict[str, str] | None:
     clause_start, clause_end = next(
         ((begin, finish) for begin, finish in _clause_ranges(text) if begin <= index < finish), (start, end)
     )
-    views = {
-        "sentence_before": text[start:index],
-        "sentence": text[start:end],
-        "clause": text[clause_start:clause_end],
-        "before": text[start:index],
-        "after": text[index + length:end],
-    }
+    def views_of(source: str) -> dict[str, str]:
+        return {
+            "sentence_before": source[start:index],
+            "sentence": source[start:end],
+            "clause": source[clause_start:clause_end],
+            "before": source[start:index],
+            "after": source[index + length:end],
+        }
+
+    views = views_of(text)
+    # v11 (F24): the reversal guard reads the clause with proven place/thrust words blanked, the veto with the limit blanked.
+    veto_views = views_of(f"{text[:index]}{' ' * length}{text[index + length:]}")
+    guard_id = _not_reversal()[0]["guardId"]
     for guard, pattern in _guards():
-        if pattern.search(views[guard["where"]]):
+        where = guard["where"]
+        view = _blank_non_reversal_usages(views[where], veto_views[where]) if guard["id"] == guard_id else views[where]
+        if pattern.search(view):
             return {"id": guard["id"], "label": guard["label"]}
     return None
 
@@ -304,9 +342,12 @@ def _notice_conditions(text: str, index: int, length: int) -> list[dict[str, Any
             if not stretch.strip():
                 continue
             excused = [] if own else _excused_occurrences(stretch)
+            reversal_stretch = _blank_non_reversal_usages(stretch)
+            reversal_marker = _not_reversal()[0]["markerId"]
             found: list[dict[str, Any]] = []
             for marker, pattern in _markers():
-                for match in pattern.finditer(stretch):
+                read = reversal_stretch if marker["id"] == reversal_marker else stretch
+                for match in pattern.finditer(read):
                     if any(marker["id"] == marker_id and match.start() == at for marker_id, at in excused):
                         continue
                     found.append({"id": marker["id"], "label": marker["label"], "at": match.start()})
