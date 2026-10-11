@@ -106,7 +106,7 @@ def _blank_non_reversal_usages(text: str) -> str:
     vocabulary = _limit_vocabulary()
     _, patterns, preceding_reference = _not_reversal()
     blanked = text
-    for begin, finish in _clause_ranges(text):
+    for begin, finish in _clause_ranges(text, rules()["qualifierContext"]["notReversal"]["scopeBoundary"]):
         clause = text[begin:finish]
         for pattern in patterns:
             for match in pattern.finditer(clause):
@@ -276,16 +276,17 @@ def _unread_reason(text: str, index: int, length: int) -> dict[str, str] | None:
     return None
 
 
-def _clause_ranges(text: str) -> list[tuple[int, int]]:
+def _clause_ranges(text: str, boundary: str | None = None) -> list[tuple[int, int]]:
     """Every clause of the notice as [start, end) ranges: a sentence, split again at each LIDO list item (" - ").
 
     Spec v4 (F7, WSSS SX168/26).
     """
     ranges: list[tuple[int, int]] = []
     start = 0
-    for boundary in _clause_boundary().finditer(text):
-        ranges.append((start, boundary.start()))
-        start = boundary.end()
+    pattern = re.compile(boundary) if boundary is not None else _clause_boundary()
+    for match in pattern.finditer(text):
+        ranges.append((start, match.start()))
+        start = match.end()
     ranges.append((start, len(text)))
     return [(begin, finish) for begin, finish in ranges if text[begin:finish].strip()]
 

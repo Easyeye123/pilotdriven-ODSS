@@ -8432,6 +8432,36 @@
       "rationale": "A preceding restriction subject or reference leaves the meaning of END/REVERSE unresolved; a place name or setting predicate does not cancel it.",
       "expectedOutcome": null,
       "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "f25-scope-stop-genuine-h8-stop",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - CARRY OUT 180-DEG TURN AT THE END OF RWY 27L AND VACATE RWY VIA TWY H8. IX) CODE D/E/F TRAFFIC HOLDS",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "label": "SYNTHETIC QA ONLY",
+      "rationale": "Usage scope ends at a sentence stop after a designator or number, while decimal points do not end scope. H8 turn wording is a held SX116/26 fragment; the following sentence is a synthetic isolation control.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f25-scope-stop-numeric-stop",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - WIP AT RWY 27L END NEAR STAND 712. CODE C LIMIT REMAINS IN FORCE",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "label": "SYNTHETIC QA ONLY",
+      "rationale": "Usage scope ends at a sentence stop after a designator or number, while decimal points do not end scope. H8 turn wording is a held SX116/26 fragment; the following sentence is a synthetic isolation control.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f25-scope-stop-decimal-no-stop",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - THE END OF RWY 27L SECTION 12.5 TEMPORARY NIGHT OPERATING RESTRICTION AT 1230",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "label": "SYNTHETIC QA ONLY",
+      "rationale": "Usage scope ends at a sentence stop after a designator or number, while decimal points do not end scope. H8 turn wording is a held SX116/26 fragment; the following sentence is a synthetic isolation control.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
     }
   ]
 }
