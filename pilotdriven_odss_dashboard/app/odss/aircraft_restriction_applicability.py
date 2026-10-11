@@ -89,9 +89,10 @@ def _excused() -> tuple[tuple[str, re.Pattern[str]], ...]:
 
 
 @lru_cache(maxsize=1)
-def _not_reversal() -> tuple[dict[str, Any], tuple[re.Pattern[str], ...], re.Pattern[str]]:
+def _not_reversal() -> tuple[dict[str, Any], tuple[re.Pattern[str], ...], re.Pattern[str], re.Pattern[str]]:
     context = rules()["qualifierContext"]["notReversal"]
-    return context, tuple(re.compile(usage["pattern"]) for usage in context["usages"]), re.compile(context["precedingReference"])
+    return (context, tuple(re.compile(usage["pattern"]) for usage in context["usages"]),
+            re.compile(context["precedingReference"]), re.compile(context["subjectVocabulary"]))
 
 
 def _blank_non_reversal_usages(text: str) -> str:
@@ -104,10 +105,12 @@ def _blank_non_reversal_usages(text: str) -> str:
     intentionally stays cautious when a mixed clause's scope is unclear.
     """
     vocabulary = _limit_vocabulary()
-    _, patterns, preceding_reference = _not_reversal()
+    _, patterns, preceding_reference, subject_vocabulary = _not_reversal()
     blanked = text
     for begin, finish in _clause_ranges(text, rules()["qualifierContext"]["notReversal"]["scopeBoundary"]):
         clause = text[begin:finish]
+        if subject_vocabulary.search(clause):
+            continue
         for pattern in patterns:
             for match in pattern.finditer(clause):
                 if preceding_reference.search(clause[:match.start()]):

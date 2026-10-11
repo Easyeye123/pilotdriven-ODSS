@@ -434,7 +434,8 @@
       "guardId": "reversed",
       "markerId": "reversal",
       "scopeBoundary": "(?:[;\\n]|(?<!\\d)\\.|\\.(?!\\d)|\\s-\\s)",
-      "precedingReference": "\\b(?:LIMIT(?:S|ATIONS?)?|RESTRICTIONS?|RESTR|DOWNGRAD(?:E|ES|ING)|NOTAMS?|THIS|THAT|THESE|THOSE|IT|THEY)\\b",
+      "subjectVocabulary": "\\b(?:LIMIT(?:S|ATIONS?)?|RESTRICTIONS?|RESTR|DOWNGRAD(?:E|ES|ING)|NOTAMS?)\\b",
+      "precedingReference": "\\b(?:THIS|THAT|THESE|THOSE|IT|THEY)\\b",
       "usages": [
         {
           "id": "place_end",

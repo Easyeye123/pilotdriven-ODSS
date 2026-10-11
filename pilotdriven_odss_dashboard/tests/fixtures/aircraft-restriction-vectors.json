@@ -8462,6 +8462,86 @@
       "rationale": "Usage scope ends at a sentence stop after a designator or number, while decimal points do not end scope. H8 turn wording is a held SX116/26 fragment; the following sentence is a synthetic isolation control.",
       "expectedOutcome": null,
       "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "f25-plural-end-downgrade",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - END OF STAND 603 TEMPORARY NIGHT DOWNGRADE AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "rationale": "A singular/plural restriction reference cannot change review into a firm exclusion; synthetic QA only.",
+      "expectedRestrictsThisAircraft": null,
+      "label": "SYNTHETIC QA ONLY"
+    },
+    {
+      "id": "f25-plural-end-downgrades",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - END OF STAND 603 TEMPORARY NIGHT DOWNGRADES AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "rationale": "A singular/plural restriction reference cannot change review into a firm exclusion; synthetic QA only.",
+      "expectedRestrictsThisAircraft": null,
+      "label": "SYNTHETIC QA ONLY"
+    },
+    {
+      "id": "f25-plural-end-notam",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - END OF STAND 603 TEMPORARY NIGHT NOTAM AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "rationale": "A singular/plural restriction reference cannot change review into a firm exclusion; synthetic QA only.",
+      "expectedRestrictsThisAircraft": null,
+      "label": "SYNTHETIC QA ONLY"
+    },
+    {
+      "id": "f25-plural-end-notams",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - END OF STAND 603 TEMPORARY NIGHT NOTAMS AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "rationale": "A singular/plural restriction reference cannot change review into a firm exclusion; synthetic QA only.",
+      "expectedRestrictsThisAircraft": null,
+      "label": "SYNTHETIC QA ONLY"
+    },
+    {
+      "id": "f25-plural-reverse-downgrade",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THE PREVIOUSLY PUBLISHED DOWNGRADE AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "rationale": "A singular/plural restriction reference cannot change review into a firm exclusion; synthetic QA only.",
+      "expectedRestrictsThisAircraft": null,
+      "label": "SYNTHETIC QA ONLY"
+    },
+    {
+      "id": "f25-plural-reverse-downgrades",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THE PREVIOUSLY PUBLISHED DOWNGRADES AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "rationale": "A singular/plural restriction reference cannot change review into a firm exclusion; synthetic QA only.",
+      "expectedRestrictsThisAircraft": null,
+      "label": "SYNTHETIC QA ONLY"
+    },
+    {
+      "id": "f25-plural-reverse-notam",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THE PREVIOUSLY PUBLISHED NOTAM AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "rationale": "A singular/plural restriction reference cannot change review into a firm exclusion; synthetic QA only.",
+      "expectedRestrictsThisAircraft": null,
+      "label": "SYNTHETIC QA ONLY"
+    },
+    {
+      "id": "f25-plural-reverse-notams",
+      "noticeText": "ACFT STAND 603 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THE PREVIOUSLY PUBLISHED NOTAMS AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "rationale": "A singular/plural restriction reference cannot change review into a firm exclusion; synthetic QA only.",
+      "expectedRestrictsThisAircraft": null,
+      "label": "SYNTHETIC QA ONLY"
     }
   ]
 }
