@@ -311,3 +311,38 @@ def test_size_exclusion_keeps_its_own_complete_scope(case: dict, role: str, held
         assert "unresolved" not in summary
         for subject in case["expectedScope"]["subjects"]:
             assert subject in summary
+
+
+CONTINUATION_CASES = json.loads((ROOT / "tests/fixtures/aircraft-restriction-vectors.json").read_text())["scopeContinuationCases"]
+
+
+@pytest.mark.parametrize("case", CONTINUATION_CASES, ids=lambda case: case["id"])
+@pytest.mark.parametrize(("role", "held"), [("departure", False), ("destination", False), ("destination", True)])
+def test_size_exclusion_never_widens_an_unbound_continuation(case: dict, role: str, held: bool) -> None:
+    """F29: the presentation oracle comes from pre-registered source extents."""
+    closure = "TXL Q8 closed during the applicable arrival window."
+    notice = _notice("A903/26", case["noticeText"], closure, case["aircraftType"], role)
+    panel = _panel("WSSS", [role], [role], notice, summary_ids=("A903/26",) if held else ())
+    cards = _project([panel])
+    summary = " ".join(card["summary"] for card in cards)
+    if held:
+        assert closure in summary
+    if case["expectedRestrictsThisAircraft"] is not True:
+        assert "Size-limit area" not in summary and "Full size-limit area" not in summary
+        assert not any(card["engine"] == "aircraft_exclusion" for card in cards)
+        return
+    assert notice["aircraft_size_check"]["sentence"] in summary
+    if not held:
+        assert closure not in summary
+    if case.get("requiredExtent"):
+        assert (case["requiredExtent"] in summary
+                or "Size-limit area unresolved; read this NOTAM." in summary
+                or "Full size-limit area is not shown here; read this NOTAM." in summary)
+    else:
+        subjects = case.get("expectedScope", {}).get("subjects", case.get("expectedSubjects")) or []
+        if not subjects:
+            assert "Size-limit area unresolved; read this NOTAM." in summary
+        elif sum(len(subject.split()) for subject in subjects) > 12:
+            assert "Full size-limit area is not shown here; read this NOTAM." in summary
+        else:
+            assert all(subject in summary for subject in subjects)

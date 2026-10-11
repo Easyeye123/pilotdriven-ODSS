@@ -437,10 +437,16 @@ def _restriction_scope(text: str, match: re.Match[str], subject: str | None) -> 
             candidates.append(preceding.group(1))
     after = text[match.end():end]
     following = patterns["after"].search(after)
-    if not following and patterns["afterLead"].search(after):
-        return unresolved
     if following:
         candidates.append(following.group(1))
+    else:
+        # A named parent area does not establish its complete scope. Account
+        # for the whole continuation before a positively independent record.
+        next_record = patterns["independentRecord"].search(after)
+        complete = (patterns["beforeRecord"].search(after[:next_record.start()]) if next_record
+                    else patterns["continuation"].search(after))
+        if not complete:
+            return unresolved
     if not candidates or any(_scope_key(value) != _scope_key(candidates[0]) for value in candidates):
         return unresolved
     return {"status": "stated", "subjects": [candidates[0]]}

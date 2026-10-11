@@ -1,6 +1,6 @@
 {
   "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures. v2 (22 Sep 2026, after Codex's independent review): adversarial vectors for partial readings (negation, reversal, letter lists and ranges, extra direction words) and for unresolved conditions and exceptions, in the limit's sentence or another one. A vector marked 'synthetic' is labelled fixture wording, not an operational notice. v3 (22 Sep 2026, Codex fix2 review): qualifiers AFTER the limit or in ANOTHER sentence - 'does not apply', 'exempt', 'not applicable', 'not affected', a lifting, a stated permission - withhold the conclusion and are quoted whole so a negator is never cut off the quote; unrelated negation stays a control. v4 (10 Oct 2026, Codex QA of releases 468-474, F7): WSSS SX168/26 on SQ437/SQ438 is one long AIP-supplement text with almost no sentence punctuation, so its stand 603 Code C downgrade shared a 'sentence' with 'GND MARKINGS ... WILL BE REMOVED', 'MARKERS WILL BE PROVIDED', 'EAST CARGO APRON' and a pilot instruction 'WHEN TAX', and was never compared. Vectors cover the genuine notice (Code C limit: A350 above, B737-8 equal, A380 above; Code E variant: B737-8 below, A350 equal), a cancellation and a lifting of the limit itself, negated applicability, negation about markings, subjectless and code-naming removal bullets, PROVIDED as a condition and as a passive verb, CARGO as a place and as an operator, and pilot instructions with and without aircraft wording. v5 (10 Oct 2026, Codex re-QA of release 476, F14): v4 skipped every other clause that named markings, markers, signs, lights or pilots and no limit wording, so 'PILOTS WITH PRIOR APPROVAL ARE EXEMPT', 'PILOTS MUST OBTAIN PPR', 'CREWS REQUIRE PRIOR PERMISSION', 'PILOTS ARE ADVISED THAT IT IS SUSPENDED', 'LIGHTS MUST BE ON WHEN USING THIS STAND' and 'PROVIDED MARKERS ARE IN PLACE' were dropped and the limit was concluded. v5 removes that clause skip; only a reversal word that is the passive verb of a named aerodrome feature ('GND MARKINGS ... WILL BE REMOVED') and a WHEN inside an advisory to pilots or crews ('PAY EXTRA ATTN ... WHEN', 'EXERCISE CAUTION WHEN'), each naming no aircraft or limit wording, are excused. Codex's independent cases are added verbatim, with two boundary cases (a feature sharing its predicate with the stand; an advisory carrying an exception). v6 (10 Oct 2026, Codex re-QA of release 478, F15/F16): v5's excuses were spans, not proofs. A feature's 80-character wildcard crossed into another subject ('GND MARKINGS REMAIN UNTIL STAND 603 IS RESTORED' excused RESTORED), and an advisory span excused every conditional inside it ('EXERCISE CAUTION IF USING THIS STAND WHEN LIGHTS ARE OFF' excused IF). v6 excuses one exact word only: the reversal must be the passive verb of the feature with only place words and designators between them, and the WHEN must follow the advisory directly or after ATC-instruction words. Codex's 28 pre-registered cases are added verbatim (exact duplicates of earlier vectors skipped). v7 (10 Oct 2026, Codex re-QA of release 480, F17): v6 proved the feature's link to its verb but not that the feature was the clause's subject - 'THE RESTRICTIONS INDICATED BY SIGNS AT STAND 603 ARE LIFTED' excused LIFTED from the inner 'SIGNS AT STAND 603 ARE LIFTED'. v7 anchors both excuses at the start of their clause, allowing before the feature (or the pilots/crews) only a closed set of pre-modifiers and list markers, so the whole clause up to the excused word is inside the match and the limit-vocabulary veto sees it. Codex's 32 pre-registered cases are added verbatim, with twelve further subject-boundary cases.",
-  "specVersion": "aircraft-restriction-applicability-2026-10-11-v14",
+  "specVersion": "aircraft-restriction-applicability-2026-10-11-v15",
   "vectors": [
     {
       "id": "original-complaint-sq882-vhhh-a350",
@@ -10357,6 +10357,1133 @@
         "subjects": []
       },
       "expectedDisplay": "unresolved"
+    }
+  ],
+  "scopeContinuationCases": [
+    {
+      "id": "f29-independent-post-btn",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C BTN TWY Q3 AND TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BTN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-between",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 LTD TO MAX ACFT TYPE CODE C BETWEEN TWY Q3 AND TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BETWEEN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-from",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C FROM TWY Q3 TO TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "FROM TWY Q3 TO TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-behind",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C BEHIND STAND 811",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BEHIND STAND 811",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-north",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C NORTH OF TWY Q3",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "NORTH OF TWY Q3",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-adjacent",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 811 DOWNGRADED TO CODE C ADJACENT TO TWY Q2",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "ADJACENT TO TWY Q2",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-explicit-post-btn",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. DOWNGRADE OF TWY Q2 TO CODE C BTN TWY Q3 AND TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BTN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-span-post-btn",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 CLSD TO ACFT WINGSPAN MORE THAN 36M BTN TWY Q3 AND TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BTN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "in_restricted_class",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-maximum-span-post",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 MAX WINGSPAN 36M BETWEEN TWY Q3 AND TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BETWEEN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-section",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C FOR THE SECTION BTN TWY Q3 AND TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BTN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-comma",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C, BTN TWY Q3 AND TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BTN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-linewrap",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C\nBTN TWY Q3 AND TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BTN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-repeat",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 812 DOWNGRADED TO CODE C. TWY Q2 DOWNGRADED TO CODE C BTN TWY Q3 AND TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BTN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-matching-leading",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 BTN TWY Q3 AND TWY Q7 DOWNGRADED TO CODE C BETWEEN TWY Q3 AND TWY Q7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BTN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-unparsed-in",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C IN THE AREA BEHIND STAND 811",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BEHIND STAND 811",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-unparsed-on",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C ON THE SECTION BEHIND STAND 811",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BEHIND STAND 811",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-post-btn-equal",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C BTN TWY Q3 AND TWY Q7",
+      "aircraftType": "B737-8",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BTN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "within_limit",
+      "expectedRestrictsThisAircraft": false
+    },
+    {
+      "id": "f29-independent-post-btn-a380",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 DOWNGRADED TO CODE C BTN TWY Q3 AND TWY Q7",
+      "aircraftType": "A380-841",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": "BTN TWY Q3 AND TWY Q7",
+      "scopeOracle": "Complete stated source area, or explicit unresolved if grammar cannot bind it. A bare parent area must never replace a bounded portion.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-leading-extent",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 BTN TWY Q3 AND TWY Q7 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "TWY Q2 BTN TWY Q3 AND TWY Q7"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-leading-list",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STANDS 811, 812 AND 813 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "STANDS 811, 812 AND 813"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-leading-runway",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. RWY 02L/20R LTD TO MAX ACFT TYPE CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "RWY 02L/20R"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-following-simple",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. DOWNGRADED TO CODE C ON STAND 811",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "STAND 811"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-following-list",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. DOWNGRADED TO CODE C AT STANDS 811 AND 812",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "STANDS 811 AND 812"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-repeat-distinct",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 811 DOWNGRADED TO CODE C; STAND 812 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "STAND 811",
+        "STAND 812"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-repeat-alias",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. ACFT STAND 811 DOWNGRADED TO CODE C. AIRCRAFT STAND 811 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "ACFT STAND 811"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-missing",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-borrow-closure",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. TWY Q2 CLSD AND DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-borrow-prior",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 811 WIP. DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-reference",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. THAT STAND DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-disagree",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 811 DOWNGRADED TO CODE C ON STAND 812",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-at-unknown-tail",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 811 DOWNGRADED TO CODE C AT STAND 812 ADJACENT TO TWY Q2",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": null,
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-causal-tail",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 811 DOWNGRADED TO CODE C DUE WIP",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "STAND 811"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-overlength",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STANDS 801 AND 802 AND 803 AND 804 AND 805 AND 806 AND 807 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "STANDS 801 AND 802 AND 803 AND 804 AND 805 AND 806 AND 807"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-multiarea-cap",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 811 AT THE NORTH CARGO APRON DOWNGRADED TO CODE C. STAND 812 AT THE SOUTH CARGO APRON DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "STAND 811 AT THE NORTH CARGO APRON",
+        "STAND 812 AT THE SOUTH CARGO APRON"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-unicode",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. aircraft\u00a0stand\u00a0811 downgraded to code c",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedSubjects": [
+        "AIRCRAFT STAND 811"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-independent-ctrl-qualified",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 811 DOWNGRADED TO CODE C PPR",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedSubjects": [
+        "STAND 811"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "f29-independent-ctrl-f26",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 811 DOWNGRADED TO CODE C - THE CODE C CONDITIONS AT STAND 811 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedSubjects": [
+        "STAND 811"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "f29-independent-ctrl-f27",
+      "label": "INDEPENDENT SYNTHETIC QA ONLY",
+      "noticeText": "TXL N4 CLSD. STAND 811 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF IT",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedSubjects": [
+        "STAND 811"
+      ],
+      "requiredExtent": null,
+      "scopeOracle": "Exact stated subjects; None means scope must be explicitly unresolved.",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "f29-author-east-distance",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C EAST 450FT",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-edge-strip",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C ALONG THE EAST EDGE",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-beyond-crossing",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C BEYOND THE CROSSING",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-within-polygon",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C WITHIN THE MARKED POLYGON",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-chainage",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C CH 0200 TO 0750",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-kilometres",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C KM 0.2 TO KM 0.7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-partial-only",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C PARTIAL SECTION ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-at-intersection",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C AT THE INTERSECTION WITH TWY J7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-on-segment",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C ON SEGMENT ALPHA",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-which-is",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C WHICH IS BEHIND STAND 919",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-brackets",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C (SOUTH OF TWY J9)",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-slash",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C / SOUTH OF TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-unicode-comma",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C \uff0c SOUTH OF TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-colon",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C SECTION: EAST OF TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-unknown-prefix",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C ZONE ALPHA ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-dimensional",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C EASTERN 120M",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-operator-notation",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C SEGMENT X17 ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-cause-then-extent",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C DUE WIP BETWEEN TWY J7 AND TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-cause-then-unknown",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C DUE WIP ZONE ALPHA ONLY",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-cause-comma",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C DUE TO CONST WORK, BEHIND STAND 919",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-ppr-extent",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C PPR BEYOND TWY J7",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "f29-author-validity-extent",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C VALIDITY: 01OCT26 EAST OF TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-table-leading-extent",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C BEHIND STAND 919 FOR THE PERIODS TABULATED BELOW: TAXILANE: CLOSURE OF TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-table-without-record",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C FOR THE PERIODS TABULATED BELOW: BETWEEN TWY J7 AND TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-empty",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-cause-wip",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C DUE WIP",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-cause-to-wip",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C DUE TO WIP",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-cause-construction",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C DUE TO CONSTRUCTION WORK",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-cause-const",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C DUE TO CONST WORK",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-cause-repair",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C DUE TO REPAIR WORK",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-cause-maintenance",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C DUE TO MAINTENANCE WORK",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-ppr",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C PPR",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null
+    },
+    {
+      "id": "f29-author-validity",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C VALIDITY: 02NOV26",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-leading-extent",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 BTN TWY J7 AND TWY J9 DOWNGRADED TO CODE C DUE WIP",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5 BTN TWY J7 AND TWY J9"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-scope-after",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "DOWNGRADED TO CODE C ON STAND 919",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STAND 919"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-scope-after-extent",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "DOWNGRADED TO CODE C ON STAND 919 BEHIND TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-simple-new-sentence",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C. TWY J9 CLSD",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-scope-period-unknown",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C PERIOD: FROM 02 NOVEMBER 2026, 1101 UTC TO 27 NOVEMBER 2026, 1100 UTC ALONG THE EAST EDGE",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-duplicate-unknown",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C. STAND 919 DOWNGRADED TO CODE C ALONG THE EAST EDGE",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-equal-metadata",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C EAST 450FT",
+      "aircraftType": "B737-8",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "within_limit",
+      "expectedRestrictsThisAircraft": false
+    },
+    {
+      "id": "f29-author-larger-metadata",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C EAST 450FT",
+      "aircraftType": "A380-841",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-table-independent",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C FOR THE PERIODS TABULATED BELOW: TAXILANE: CLOSURE OF TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-period-independent",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C PERIOD: FROM 02 NOVEMBER 2026, 1101 UTC TO 27 NOVEMBER 2026, 1100 UTC DETAILS ON THE CLOSURE OF TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J5"
+        ]
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-period-preceding-unknown",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C EAST 450FT PERIOD: FROM 02 NOVEMBER 2026, 1101 UTC TO 27 NOVEMBER 2026, 1100 UTC DETAILS ON THE CLOSURE OF TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-time-with-new-extent",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C PERIOD: FROM 02 NOVEMBER 2026, 1101 UTC TO 27 NOVEMBER 2026, 1100 UTC NORTH OF TWY J9",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-unrecognized-cause",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J5 DOWNGRADED TO CODE C DUE TO OBSTACLE BEHIND STAND 919",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
+    },
+    {
+      "id": "f29-author-following-area-cause",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "DOWNGRADED TO CODE C ON STAND 919 DUE WIP",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true
     }
   ]
 }

@@ -19,8 +19,8 @@ from app.odss import aircraft_restriction_applicability as rule
 
 RULES_FILE = Path(rule.__file__).with_name("aircraft_restriction_rules.json")
 VECTORS_FILE = Path(__file__).parent / "fixtures" / "aircraft-restriction-vectors.json"
-SHARED_RULES_SHA256 = "e7301dce3d477e202e84082aec6bc538f7792ed7f8731908a5eac004c36e5529"
-SHARED_VECTORS_SHA256 = "388376adbd42ee54ad917ad3dff5a8a5d86b68e0f78869b5f8186fffaf1665c7"
+SHARED_RULES_SHA256 = "22361878e1eb011f835beaa16f761617b0c035f78db80aef32392a8d939f15b6"
+SHARED_VECTORS_SHA256 = "cee7bdb3d7e7b9e0d399efd5873a1467d4e6d286e5a19ef83d6fd8500cf4ad76"
 
 VECTORS = json.loads(VECTORS_FILE.read_text(encoding="utf-8"))
 
@@ -77,6 +77,25 @@ def test_usage_scope_contract(vector: dict) -> None:
     assert result["operationalPermission"] is False
     if "expectedScope" in vector:
         assert result["restriction"]["scope"] == vector["expectedScope"]
+
+
+@pytest.mark.parametrize("vector", VECTORS["scopeContinuationCases"], ids=lambda vector: vector["id"])
+def test_scope_continuation_contract(vector: dict) -> None:
+    """F29: state the complete registered extent, or explicitly leave it unresolved."""
+    result = rule.assess_aircraft_restriction_applicability(vector["noticeText"], vector["aircraftType"])
+    assert result is not None
+    assert result["status"] == vector["expectedStatus"]
+    assert result["outcome"] == vector["expectedOutcome"]
+    assert result["restrictsThisAircraft"] is vector["expectedRestrictsThisAircraft"]
+    assert result["operationalPermission"] is False
+    scope = result["restriction"]["scope"]
+    if vector.get("requiredExtent") and scope["status"] == "stated":
+        assert vector["requiredExtent"] in " ".join(scope["subjects"]), "do not widen a segment to its parent area"
+    else:
+        assert scope == vector.get("expectedScope", {
+            "status": "stated" if vector.get("expectedSubjects") else "unresolved",
+            "subjects": vector.get("expectedSubjects") or [],
+        })
 
 
 @pytest.mark.parametrize("vector", VECTORS["vectors"], ids=lambda vector: vector["id"])
