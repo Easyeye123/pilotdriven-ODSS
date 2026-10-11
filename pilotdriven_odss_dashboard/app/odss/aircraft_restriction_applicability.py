@@ -422,13 +422,10 @@ def _restriction_scope(text: str, match: re.Match[str], subject: str | None) -> 
     patterns = _scope_patterns()
     begin, end = next((start, finish) for start, finish in _clause_ranges(text, rules()["restrictionScope"]["boundary"])
                       if start <= match.start() < finish)
-    before = text[begin:match.start()]
-    boundaries = list(patterns["prefixBoundary"].finditer(before))
-    if boundaries:
-        before = before[boundaries[-1].end():]
+    before = patterns["prefix"].sub("", text[begin:match.start()])
     candidates = []
     if subject:
-        if not patterns["subject"].search(subject.strip()):
+        if before.strip() or not patterns["subject"].search(subject.strip()):
             return unresolved
         candidates.append(subject.strip())
     else:

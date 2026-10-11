@@ -13040,6 +13040,208 @@
         ]
       },
       "oracle": "Only complete positively bound scope may be stated. Unknown related or unclassified context cannot certify a parent area."
+    },
+    {
+      "id": "f30-prefix-section-explicit",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "THE AFFECTED SECTION IS BTN TWY R5 AND TWY R9: DOWNGRADE OF TWY R4 TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-section-preceding",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "THE AFFECTED SECTION IS BTN TWY R5 AND TWY R9: TWY R4 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-length-explicit",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "THE AFFECTED LENGTH IS 150M: DOWNGRADE OF TWY R4 TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-length-preceding",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "THE AFFECTED LENGTH IS 150M: TWY R4 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-unknown-explicit",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "SCOPE DETAIL REQUIRES REVIEW: DOWNGRADE OF TWY R4 TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-unknown-preceding",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "SCOPE DETAIL REQUIRES REVIEW: TWY R4 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-other-size",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY R4 DOWNGRADED TO CODE C. THE AFFECTED SECTION IS BTN TWY R5 AND TWY R9: DOWNGRADE OF STAND 911 TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-embedded-label",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "THE AFFECTED LENGTH IS 150M AIRCRAFT STAND: AIRCRAFT STAND 911 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-before-closure",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "THE AFFECTED LENGTH IS 150M. TWY R9 CLSD AND ADJACENT TWY R4 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-inline-before-closure",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "THE AFFECTED LENGTH IS 150M TWY R9 CLSD AND ADJACENT TWY R4 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-double-label",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "SCOPE: BTN TWY R5 AND TWY R9. AIRCRAFT STAND: AIRCRAFT STAND 911 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-control-label",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "AIRCRAFT STAND: AIRCRAFT STAND 911 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "AIRCRAFT STAND 911"
+        ]
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-control-closure",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TWY R9 CLSD AND ADJACENT TWY R4 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY R4"
+        ]
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
+    },
+    {
+      "id": "f30-prefix-control-explicit-closure",
+      "label": "SYNTHETIC AUTHOR TEST ONLY",
+      "noticeText": "TEMPO CLOSURE OF TXL P8 BEHIND ACFT STAND 912 AND DOWNGRADE OF ACFT STAND 911 TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STAND 911"
+        ]
+      },
+      "oracle": "A discarded prefix needs complete positive proof. Labels or another size assertion cannot conceal a spatial narrowing."
     }
   ]
 }
