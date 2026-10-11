@@ -19,8 +19,8 @@ from app.odss import aircraft_restriction_applicability as rule
 
 RULES_FILE = Path(rule.__file__).with_name("aircraft_restriction_rules.json")
 VECTORS_FILE = Path(__file__).parent / "fixtures" / "aircraft-restriction-vectors.json"
-SHARED_RULES_SHA256 = "a876da3f6491c4313bf88261a3778b6b42ebe241342490e6c190b60cb9141786"
-SHARED_VECTORS_SHA256 = "b3f302ef5eb921778c7208e9093730b24b5854eea82fa2e6266ab53f52a326d1"
+SHARED_RULES_SHA256 = "e28ee28342f6f49a760881dda69460c416ea30d049a3d3d92cb10f5ec6d92926"
+SHARED_VECTORS_SHA256 = "d8a66dcfc6cbd6ce921b3f5b978987f375d28b7a02b2eb321dc1cab094708628"
 
 VECTORS = json.loads(VECTORS_FILE.read_text(encoding="utf-8"))
 
@@ -64,6 +64,17 @@ def test_types_outside_the_catalogue_stay_unknown(aircraft_type: str) -> None:
     held = rule.assess_aircraft_aerodrome_code(aircraft_type)
     assert held["status"] == "unknown"
     assert held["code"] is None
+
+
+@pytest.mark.parametrize("vector", VECTORS["usageScopeCases"], ids=lambda vector: vector["id"])
+def test_usage_scope_contract(vector: dict) -> None:
+    """F25: preregistered public outcomes, independent of the catching guard."""
+    result = rule.assess_aircraft_restriction_applicability(vector["noticeText"], vector["aircraftType"])
+    assert result is not None
+    assert result["status"] == vector["expectedStatus"]
+    assert result["outcome"] == vector["expectedOutcome"]
+    assert result["restrictsThisAircraft"] is vector["expectedRestrictsThisAircraft"]
+    assert result["operationalPermission"] is False
 
 
 @pytest.mark.parametrize("vector", VECTORS["vectors"], ids=lambda vector: vector["id"])

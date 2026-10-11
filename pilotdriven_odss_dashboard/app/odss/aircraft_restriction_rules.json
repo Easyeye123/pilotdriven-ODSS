@@ -1,5 +1,5 @@
 {
-  "specVersion": "aircraft-restriction-applicability-2026-10-11-v11",
+  "specVersion": "aircraft-restriction-applicability-2026-10-11-v12",
   "codeLetterTable": {
     "ruleId": "ICAO_ANNEX14_V1_TABLE_1_1_CODE_LETTER_AMDT15_V1",
     "bands": [
@@ -433,7 +433,7 @@
     "notReversal": {
       "guardId": "reversed",
       "markerId": "reversal",
-      "vetoWords": 3,
+      "precedingReference": "\\b(?:LIMIT(?:S|ATIONS?)?|RESTRICTIONS?|RESTR|DOWNGRAD(?:E|ES|ING)|NOTAMS?|THIS|THAT|THESE|THOSE|IT|THEY)\\b",
       "usages": [
         {
           "id": "place_end",
@@ -448,7 +448,12 @@
         {
           "id": "end_place",
           "label": "the end of a named runway, taxiway, stand or threshold",
-          "pattern": "()\\b(END)\\s+(?:OF\\s+(?:THE\\s+)?)?\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\b"
+          "pattern": "()\\b(END)\\s+OF\\s+(?:THE\\s+)?\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\b"
+        },
+        {
+          "id": "located_end_place",
+          "label": "a location at or near the end of a named movement area",
+          "pattern": "(\\b(?:AT|NEAR|FROM|FM|BEYOND|BTN|BETWEEN)\\s+(?:THE\\s+)?)(END)\\s+\\b(?:RWY|RUNWAY|TWY|TAXIWAY|TXL|TAXILANE|THR|THRESHOLD|STAND|APRON|APN)(?:\\s+(?:[A-Z]{1,3}\\d{0,4}[A-Z]?|\\d{1,4}[A-Z]?)(?:/\\d{1,2}[LCR]?)?)?\\b"
         },
         {
           "id": "end_safety_area",
@@ -457,13 +462,28 @@
         },
         {
           "id": "reverse_setting",
-          "label": "reverse thrust, power or idle, or a reverse sense or direction",
-          "pattern": "()\\b(REVERSE)\\s+(?:THRUST|THR|IDLE|PWR|POWER|SENSE|DIRECTION)\\b"
+          "label": "reverse thrust, power or idle",
+          "pattern": "()\\b(REVERSE)\\s+(?:THRUST|THR|IDLE|PWR|POWER)\\b"
+        },
+        {
+          "id": "reverse_sense",
+          "label": "reverse sense equipment indications",
+          "pattern": "()\\b(REVERSE)\\s+SENSE\\s+INDICATIONS?\\b"
+        },
+        {
+          "id": "reverse_direction",
+          "label": "movement in a reverse direction",
+          "pattern": "(\\bIN\\s+(?:THE\\s+)?)(REVERSE)\\s+DIRECTION\\b"
         },
         {
           "id": "thrust_setting_reverse",
-          "label": "an idle, maximum or full reverse setting",
-          "pattern": "(\\b(?:IDLE|MAX|MAXIMUM|FULL)\\s+)(REVERSE)\\b"
+          "label": "an idle, maximum or full reverse setting with a setting predicate",
+          "pattern": "(\\b(?:IDLE|MAX|MAXIMUM|FULL)\\s+)(REVERSE)\\s+(?:ONLY|(?:(?:IS|ARE)\\s+)?(?:NOT\\s+)?(?:REQUIRED|PROHIBITED|RECOMMENDED))\\b"
+        },
+        {
+          "id": "select_reverse",
+          "label": "a complete instruction to use or select a reverse setting",
+          "pattern": "(\\b(?:USE|SELECT)\\s+(?:IDLE|MAX|MAXIMUM|FULL)\\s+)(REVERSE)\\s*$"
         }
       ]
     },
