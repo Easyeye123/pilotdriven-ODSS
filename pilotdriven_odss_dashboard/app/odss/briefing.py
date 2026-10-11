@@ -4278,8 +4278,35 @@ def _confirms_aircraft_exclusion(line: dict[str, Any]) -> bool:
     )
 
 
+def _aircraft_limit_scope_text(check: dict[str, Any]) -> str:
+    """F28: quote this size limit's source scope, or explicitly withhold it.
+
+    No summary fallback and no clipped subject: either would let another
+    clause or a partial area silently stand in for the actual size scope.
+    """
+    restriction = check.get("restriction") or {}
+    scope = restriction.get("scope") or {}
+    subjects = scope.get("subjects") or []
+    if scope.get("status") != "stated" or not subjects:
+        return "Size-limit area unresolved; read this NOTAM."
+    if sum(len(subject.split()) for subject in subjects) > _STATED_LIMIT_WORDS:
+        return "Full size-limit area is not shown here; read this NOTAM."
+    stated = " ".join(str(restriction.get("evidence") or "").split())
+    if len(subjects) == 1 and subjects[0] in stated and len(stated.split()) <= _STATED_LIMIT_WORDS:
+        return f'Stated limit: "{stated}".'
+    label = "Size-limit area" if len(subjects) == 1 else "Size-limit areas"
+    return label + ": " + "; ".join(f'"{subject}"' for subject in subjects) + "."
+
+
 def _ground_line_text(line: dict[str, Any]) -> str:
     """One ground line as page 2 prints it: its ID, its statement and any size comparison."""
+    statement = str(line.get("text") or "").strip()
+    if _confirms_aircraft_exclusion(line):
+        scope_text = _aircraft_limit_scope_text(line["aircraft_size_check"])
+        if scope_text != statement:
+            # An already selected closure must survive alongside the separately
+            # labelled size scope. Promoted material lines already carry it.
+            statement = " ".join(part for part in (statement, scope_text) if part)
     return " - ".join(
         part
         for part in (
@@ -4287,7 +4314,7 @@ def _ground_line_text(line: dict[str, Any]) -> str:
             " ".join(
                 text
                 for text in (
-                    str(line.get("text") or "").strip(),
+                    statement,
                     str((line.get("aircraft_size_check") or {}).get("sentence") or "").strip(),
                 )
                 if text
@@ -4338,25 +4365,11 @@ def _material_aircraft_exclusion_lines(
         ):
             continue
         held_ids.add(notam_id)
-        # When the limit names its own subject ("DOWNGRADE OF ACFT STAND 603 TO
-        # CODE C"), the line states it in the notice's own words, bounded like
-        # every other quote: the summary can describe another clause (genuine
-        # SX168/26's summary is the TXL N4 closure, while the Code C limit is on
-        # stand 603; Codex re-QA of 482, F19). A limit read without its subject
-        # ("LTD TO MAX ACFT TYPE CODE C") keeps the summary, which names the area.
-        restriction = check.get("restriction") or {}
-        stated = " ".join(str(restriction.get("evidence") or "").split())
         material.append({
             "kind": "notam",
             "label": item.get("notam_id"),
             "notam_id": item.get("notam_id"),
-            "text": (
-                f'Stated limit: "{stated}".'
-                if str(restriction.get("subject") or "").strip()
-                and stated
-                and len(stated.split()) <= _STATED_LIMIT_WORDS
-                else str(item.get("compact_text") or item.get("summary") or "").strip()
-            ),
+            "text": _aircraft_limit_scope_text(check),
             "source_page": item.get("source_page"),
             "aircraft_size_check": check,
             "pertinence_rank": int(item.get("pertinence_rank") or 99),

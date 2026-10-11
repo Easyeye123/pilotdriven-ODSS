@@ -115,8 +115,8 @@ def test_departure_and_destination_exclusions_each_keep_their_own_card() -> None
     (departure,) = _cards(panels, "aircraft_exclusion")
     (arrival,) = _cards(panels, "arrival_ground")
     assert "SX168/26" in departure["summary"] and "A3671/26" not in departure["summary"]
-    # A limit read without its subject keeps the summary, which names the area.
-    assert "A3671/26 - TWY L20 limited to max aircraft type code C. A350-941 is Code E" in arrival["summary"]
+    # F28: the area comes from this limit's own source, never the summary.
+    assert 'A3671/26 - Size-limit area: "TWY L20". A350-941 is Code E' in arrival["summary"]
     assert "SX168/26" not in arrival["summary"]
 
 
@@ -267,7 +267,7 @@ def test_genuine_sq438_with_a_code_c_aircraft_keeps_its_previous_cards(tmp_path:
 
 @pytest.mark.parametrize(("name", "notam_id", "stated", "airport"), [
     ("SQ43708102026MLE.pdf", "SX168/26", STATED, "WSSS"),
-    ("lido-briefing_SQ_326_16Aug2026_SIN_FRA.pdf", "A3671/26", "TWY L20", "EDDF"),
+    ("lido-briefing_SQ_326_16Aug2026_SIN_FRA.pdf", "A3671/26", 'Size-limit area: "TWY L20".', "EDDF"),
 ])
 def test_genuine_destination_exclusions_stay_on_the_arrival_card(tmp_path: Path, name, notam_id, stated, airport) -> None:
     pages, view = _render(tmp_path, name)
@@ -277,3 +277,37 @@ def test_genuine_destination_exclusions_stay_on_the_arrival_card(tmp_path: Path,
     assert f"{airport} arrival ground constraints" in page2
     assert f"{notam_id} - {stated}" in page2 and check["sentence"] in page2
     assert "Aircraft-size exclusion" not in page2
+
+
+# F28: varied raw inputs exercise both promoted lines and an arrival closure
+# already selected before size exclusions are added. Scope cannot replace that
+# closure, come from its summary, or silently lose part of a long area list.
+AREA_SCOPE_CASES = json.loads((ROOT / "tests/fixtures/aircraft-restriction-vectors.json").read_text())["areaScopeCases"]
+
+
+@pytest.mark.parametrize("case", AREA_SCOPE_CASES, ids=lambda case: case["id"])
+@pytest.mark.parametrize(("role", "held"), [("departure", False), ("destination", False), ("destination", True)])
+def test_size_exclusion_keeps_its_own_complete_scope(case: dict, role: str, held: bool) -> None:
+    closure = "TXL Q8 closed during the applicable arrival window."
+    notice = _notice("A902/26", case["noticeText"], closure, case["aircraftType"], role)
+    panel = _panel("WSSS", [role], [role], notice, summary_ids=("A902/26",) if held else ())
+    cards = _project([panel])
+    summary = " ".join(card["summary"] for card in cards)
+    if held:
+        assert closure in summary, "an already selected closure must survive"
+    if case["expectedDisplay"] == "no_exclusion":
+        assert "Size-limit area" not in summary and "Full size-limit area" not in summary
+        assert not any(card["engine"] == "aircraft_exclusion" for card in cards)
+        return
+    assert notice["aircraft_size_check"]["sentence"] in summary
+    if not held:
+        assert closure not in summary, "another clause cannot stand in for the size limit's area"
+    if case["expectedDisplay"] == "unresolved":
+        assert "Size-limit area unresolved; read this NOTAM." in summary
+    elif case["expectedDisplay"] == "over_length":
+        assert "Full size-limit area is not shown here; read this NOTAM." in summary
+        assert 'Size-limit area: "' not in summary and 'Size-limit areas: "' not in summary
+    else:
+        assert "unresolved" not in summary
+        for subject in case["expectedScope"]["subjects"]:
+            assert subject in summary

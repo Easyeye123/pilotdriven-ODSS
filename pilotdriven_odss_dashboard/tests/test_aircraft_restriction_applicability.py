@@ -19,8 +19,8 @@ from app.odss import aircraft_restriction_applicability as rule
 
 RULES_FILE = Path(rule.__file__).with_name("aircraft_restriction_rules.json")
 VECTORS_FILE = Path(__file__).parent / "fixtures" / "aircraft-restriction-vectors.json"
-SHARED_RULES_SHA256 = "7e57b7d6a23c553f62ab13be2a31c5a66fe6d7a3f85925bf5c78b86c5c1945bc"
-SHARED_VECTORS_SHA256 = "7b4771f3cb82541e2afcb6bd66c523ad1edf30463c2a8c4d3fb5ab47e1e966bf"
+SHARED_RULES_SHA256 = "e7301dce3d477e202e84082aec6bc538f7792ed7f8731908a5eac004c36e5529"
+SHARED_VECTORS_SHA256 = "388376adbd42ee54ad917ad3dff5a8a5d86b68e0f78869b5f8186fffaf1665c7"
 
 VECTORS = json.loads(VECTORS_FILE.read_text(encoding="utf-8"))
 
@@ -66,15 +66,17 @@ def test_types_outside_the_catalogue_stay_unknown(aircraft_type: str) -> None:
     assert held["code"] is None
 
 
-@pytest.mark.parametrize("vector", VECTORS["usageScopeCases"] + VECTORS["usageProofCases"], ids=lambda vector: vector["id"])
+@pytest.mark.parametrize("vector", VECTORS["usageScopeCases"] + VECTORS["usageProofCases"] + VECTORS["areaScopeCases"], ids=lambda vector: vector["id"])
 def test_usage_scope_contract(vector: dict) -> None:
-    """F25-F27: preregistered public outcomes, independent of the catching guard."""
+    """F25-F28: public outcomes and source scope, independent of the catching guard."""
     result = rule.assess_aircraft_restriction_applicability(vector["noticeText"], vector["aircraftType"])
     assert result is not None
     assert result["status"] == vector["expectedStatus"]
     assert result["outcome"] == vector["expectedOutcome"]
     assert result["restrictsThisAircraft"] is vector["expectedRestrictsThisAircraft"]
     assert result["operationalPermission"] is False
+    if "expectedScope" in vector:
+        assert result["restriction"]["scope"] == vector["expectedScope"]
 
 
 @pytest.mark.parametrize("vector", VECTORS["vectors"], ids=lambda vector: vector["id"])
@@ -332,7 +334,7 @@ def test_a_confirmed_exclusion_survives_the_one_notice_per_family_cap() -> None:
     limit = _notice("A3671/26", "TWY L20 LTD TO MAX ACFT TYPE CODE C.", "TWY L20 limited to max aircraft type code C.", "A380-841")
     card = _ground_card(_panel(closure, limit, summary_ids=("A3047/26",)))
     assert "A3047/26 - TWY W closed" in card, "the existing line is not displaced"
-    assert "A3671/26 - TWY L20 limited to max aircraft type code C." in card
+    assert 'A3671/26 - Size-limit area: "TWY L20".' in card
     assert "A380-841 is Code F (79.75 m wingspan): above this limit (Code C)" in card
 
 

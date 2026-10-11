@@ -407,6 +407,45 @@ def _class_direction(word: str | None) -> str:
     return "and_above" if word in {"ABV", "ABOVE", "HIGHER", "LARGER"} else "and_below"
 
 
+@lru_cache(maxsize=1)
+def _scope_patterns() -> dict[str, re.Pattern[str]]:
+    return {name: re.compile(pattern) for name, pattern in rules()["restrictionScope"].items()}
+
+
+def _scope_key(subject: str) -> str:
+    return _scope_patterns()["aircraftPrefix"].sub("", subject)
+
+
+def _restriction_scope(text: str, match: re.Match[str], subject: str | None) -> dict[str, Any]:
+    """Bind the limit to its stated source subject; never substitute a summary."""
+    unresolved = {"status": "unresolved", "subjects": []}
+    patterns = _scope_patterns()
+    begin, end = next((start, finish) for start, finish in _clause_ranges(text)
+                      if start <= match.start() < finish)
+    before = text[begin:match.start()]
+    boundaries = list(patterns["prefixBoundary"].finditer(before))
+    if boundaries:
+        before = before[boundaries[-1].end():]
+    candidates = []
+    if subject:
+        if not patterns["subject"].search(subject.strip()):
+            return unresolved
+        candidates.append(subject.strip())
+    else:
+        preceding = patterns["before"].search(before)
+        if preceding:
+            candidates.append(preceding.group(1))
+    after = text[match.end():end]
+    following = patterns["after"].search(after)
+    if not following and patterns["afterLead"].search(after):
+        return unresolved
+    if following:
+        candidates.append(following.group(1))
+    if not candidates or any(_scope_key(value) != _scope_key(candidates[0]) for value in candidates):
+        return unresolved
+    return {"status": "stated", "subjects": [candidates[0]]}
+
+
 def _reading_from(form: dict[str, Any], match: re.Match[str], text: str) -> dict[str, Any]:
     def group(name: str) -> str | None:
         position = form["groups"].get(name)
@@ -426,6 +465,7 @@ def _reading_from(form: dict[str, Any], match: re.Match[str], text: str) -> dict
     subject = group("subject")
     if subject:
         reading["subject"] = subject.strip()
+    reading["scope"] = _restriction_scope(text, match, subject)
     if form["kind"] == "aerodrome_code":
         reading["code"] = group("code")
         if form["semantics"] == "prohibited_code_class":
@@ -467,6 +507,12 @@ def read_aircraft_size_restrictions(value: Any) -> list[dict[str, Any]]:
         if held is None:
             distinct.append(reading)
             continue
+        if held["scope"]["status"] != "stated" or reading["scope"]["status"] != "stated":
+            held["scope"] = {"status": "unresolved", "subjects": []}
+        else:
+            for subject in reading["scope"]["subjects"]:
+                if all(_scope_key(value) != _scope_key(subject) for value in held["scope"]["subjects"]):
+                    held["scope"]["subjects"].append(subject)
         for condition in reading["otherConditions"]:
             if all(row["id"] != condition["id"] for row in held["otherConditions"]):
                 held["otherConditions"].append(condition)

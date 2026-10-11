@@ -1,6 +1,6 @@
 {
   "about": "Hand-written conformance vectors for the aircraft-size restriction comparison. Shared byte-for-byte between the app (tests/aircraft-restriction-applicability.test.mjs) and ODSS (tests/test_aircraft_restriction_applicability.py). Expectations were written by reading each notice and the ICAO table, NOT minted from either implementation. Notice texts marked 'real' are public NOTAM item E wording held in the governed OFP corpus; the rest are labelled fixtures. v2 (22 Sep 2026, after Codex's independent review): adversarial vectors for partial readings (negation, reversal, letter lists and ranges, extra direction words) and for unresolved conditions and exceptions, in the limit's sentence or another one. A vector marked 'synthetic' is labelled fixture wording, not an operational notice. v3 (22 Sep 2026, Codex fix2 review): qualifiers AFTER the limit or in ANOTHER sentence - 'does not apply', 'exempt', 'not applicable', 'not affected', a lifting, a stated permission - withhold the conclusion and are quoted whole so a negator is never cut off the quote; unrelated negation stays a control. v4 (10 Oct 2026, Codex QA of releases 468-474, F7): WSSS SX168/26 on SQ437/SQ438 is one long AIP-supplement text with almost no sentence punctuation, so its stand 603 Code C downgrade shared a 'sentence' with 'GND MARKINGS ... WILL BE REMOVED', 'MARKERS WILL BE PROVIDED', 'EAST CARGO APRON' and a pilot instruction 'WHEN TAX', and was never compared. Vectors cover the genuine notice (Code C limit: A350 above, B737-8 equal, A380 above; Code E variant: B737-8 below, A350 equal), a cancellation and a lifting of the limit itself, negated applicability, negation about markings, subjectless and code-naming removal bullets, PROVIDED as a condition and as a passive verb, CARGO as a place and as an operator, and pilot instructions with and without aircraft wording. v5 (10 Oct 2026, Codex re-QA of release 476, F14): v4 skipped every other clause that named markings, markers, signs, lights or pilots and no limit wording, so 'PILOTS WITH PRIOR APPROVAL ARE EXEMPT', 'PILOTS MUST OBTAIN PPR', 'CREWS REQUIRE PRIOR PERMISSION', 'PILOTS ARE ADVISED THAT IT IS SUSPENDED', 'LIGHTS MUST BE ON WHEN USING THIS STAND' and 'PROVIDED MARKERS ARE IN PLACE' were dropped and the limit was concluded. v5 removes that clause skip; only a reversal word that is the passive verb of a named aerodrome feature ('GND MARKINGS ... WILL BE REMOVED') and a WHEN inside an advisory to pilots or crews ('PAY EXTRA ATTN ... WHEN', 'EXERCISE CAUTION WHEN'), each naming no aircraft or limit wording, are excused. Codex's independent cases are added verbatim, with two boundary cases (a feature sharing its predicate with the stand; an advisory carrying an exception). v6 (10 Oct 2026, Codex re-QA of release 478, F15/F16): v5's excuses were spans, not proofs. A feature's 80-character wildcard crossed into another subject ('GND MARKINGS REMAIN UNTIL STAND 603 IS RESTORED' excused RESTORED), and an advisory span excused every conditional inside it ('EXERCISE CAUTION IF USING THIS STAND WHEN LIGHTS ARE OFF' excused IF). v6 excuses one exact word only: the reversal must be the passive verb of the feature with only place words and designators between them, and the WHEN must follow the advisory directly or after ATC-instruction words. Codex's 28 pre-registered cases are added verbatim (exact duplicates of earlier vectors skipped). v7 (10 Oct 2026, Codex re-QA of release 480, F17): v6 proved the feature's link to its verb but not that the feature was the clause's subject - 'THE RESTRICTIONS INDICATED BY SIGNS AT STAND 603 ARE LIFTED' excused LIFTED from the inner 'SIGNS AT STAND 603 ARE LIFTED'. v7 anchors both excuses at the start of their clause, allowing before the feature (or the pilots/crews) only a closed set of pre-modifiers and list markers, so the whole clause up to the excused word is inside the match and the limit-vocabulary veto sees it. Codex's 32 pre-registered cases are added verbatim, with twelve further subject-boundary cases.",
-  "specVersion": "aircraft-restriction-applicability-2026-10-11-v13",
+  "specVersion": "aircraft-restriction-applicability-2026-10-11-v14",
   "vectors": [
     {
       "id": "original-complaint-sq882-vhhh-a350",
@@ -9735,6 +9735,628 @@
       "expectedOutcome": null,
       "expectedRestrictsThisAircraft": null,
       "rationale": "Positive ownership and complete continuation must be proved; unknown subjects or objects cannot be exempted by a nearby usage phrase."
+    }
+  ],
+  "areaScopeCases": [
+    {
+      "id": "preceding-new-stand",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TXL Q8 CLSD. ACFT STAND 712 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "maximum-new-taxiway",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TXL Q8 CLSD. TWY J9 LTD TO MAX ACFT TYPE CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J9"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "long-explicit-subject",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TXL Q8 CLSD. DOWNGRADE OF ACFT STAND 712 AT THE NORTH CARGO APRON TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STAND 712 AT THE NORTH CARGO APRON"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "lowercase-and-unicode",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "txl q8 clsd. aircraft\u00a0stand\u00a0712 downgraded to code c",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "AIRCRAFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "runway-pair",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "RWY 04/22 LTD TO MAX ACFT TYPE CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "RWY 04/22"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "taxiway-hyphen",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY INN-7 RESTRICTED TO MAX ACFT TYPE CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY INN-7"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "stand-list",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STANDS 712 AND 713 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STANDS 712 AND 713"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "bounded-taxiway",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J BTN TWY J3 AND TWY J8 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J BTN TWY J3 AND TWY J8"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "copula",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STAND 712 IS DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "will-be",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "AIRCRAFT STAND 712 WILL BE DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "AIRCRAFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "label-colon",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "AIRCRAFT STAND: AIRCRAFT STAND 712 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "AIRCRAFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "independent-closure-clause",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TXL Q8 WILL BE TEMPORARILY CLOSED AND ADJACENT AIRCRAFT STAND 712 WILL BE DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "AIRCRAFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "two-distinct-areas",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STAND 712 DOWNGRADED TO CODE C. STAND 713 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STAND 712",
+          "STAND 713"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "same-area-alias",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "DOWNGRADE OF ACFT STAND 712 TO CODE C. AIRCRAFT STAND 712 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "one-unbound-repeat",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STAND 712 DOWNGRADED TO CODE C. DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
+    },
+    {
+      "id": "bare-limit-after-closure",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TXL Q8 CLSD. DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
+    },
+    {
+      "id": "unresolved-reference",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TXL Q8 CLSD. THIS AREA DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
+    },
+    {
+      "id": "unknown-owner",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "THE REQUIREMENTS AT STAND 712 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
+    },
+    {
+      "id": "different-sentence",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STAND 712 REPAIRS IN PROGRESS. DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
+    },
+    {
+      "id": "after-limit",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TXL Q8 CLSD. DOWNGRADED TO CODE C AT STAND 712",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "conflicting-before-after",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STAND 712 DOWNGRADED TO CODE C AT STAND 713",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
+    },
+    {
+      "id": "matching-before-after",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STAND 712 DOWNGRADED TO CODE C AT STAND 712",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "after-limit-unsupported-tail",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "DOWNGRADED TO CODE C AT STAND 712 BEHIND THE OLD BUILDING",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
+    },
+    {
+      "id": "unknown-explicit-subject",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "DOWNGRADE OF THE FACILITY TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
+    },
+    {
+      "id": "unbounded-designator",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STAND UNKNOWN DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
+    },
+    {
+      "id": "semicolon-boundary",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TXL Q8 CLSD; STAND 712 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "list-boundary",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TXL Q8 CLSD - STAND 712 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "range-complete",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STANDS 712 TO 718 DOWNGRADED TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STANDS 712 TO 718"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "list-too-long-for-card",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "DOWNGRADE OF ACFT STANDS 11 AND 12 AND 13 AND 14 AND 15 AND 16 TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STANDS 11 AND 12 AND 13 AND 14 AND 15 AND 16"
+        ]
+      },
+      "expectedDisplay": "over_length"
+    },
+    {
+      "id": "two-area-text-over-cap",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "DOWNGRADE OF ACFT STAND 712 AT THE NORTH CARGO APRON TO CODE C. DOWNGRADE OF ACFT STAND 713 AT THE SOUTH CARGO APRON TO CODE C",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STAND 712 AT THE NORTH CARGO APRON",
+          "ACFT STAND 713 AT THE SOUTH CARGO APRON"
+        ]
+      },
+      "expectedDisplay": "over_length"
+    },
+    {
+      "id": "wingspan",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "TWY J BTN TWY J3 AND TWY J8 CLSD TO ACFT WINGSPAN MORE THAN 36M",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "in_restricted_class",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J BTN TWY J3 AND TWY J8"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "schedule-prefix",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "THU FRI 0730-1330 TWY J BTN TWY J3 AND TWY J8 CLSD TO ACFT WINGSPAN MORE THAN 36M",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "in_restricted_class",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "TWY J BTN TWY J3 AND TWY J8"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "max-span",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STAND 712 MAX WINGSPAN 36M",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "STAND 712"
+        ]
+      },
+      "expectedDisplay": "scope"
+    },
+    {
+      "id": "equal-control",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 712 DOWNGRADED TO CODE C",
+      "aircraftType": "B737-8",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "within_limit",
+      "expectedRestrictsThisAircraft": false,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "no_exclusion"
+    },
+    {
+      "id": "unknown-aircraft-control",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 712 DOWNGRADED TO CODE C",
+      "aircraftType": "B777-312ER",
+      "expectedStatus": "unknown",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "no_exclusion"
+    },
+    {
+      "id": "condition-control",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 712 DOWNGRADED TO CODE C PPR",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "no_exclusion"
+    },
+    {
+      "id": "f26-control",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 712 DOWNGRADED TO CODE C - THE CODE C REQUIREMENTS AT STAND 712 END AT 1200",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "no_exclusion"
+    },
+    {
+      "id": "f27-control",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "ACFT STAND 712 DOWNGRADED TO CODE C - FULL REVERSE IS REQUIRED OF THEM",
+      "aircraftType": "A350-941",
+      "expectedStatus": "review_required",
+      "expectedOutcome": null,
+      "expectedRestrictsThisAircraft": null,
+      "expectedScope": {
+        "status": "stated",
+        "subjects": [
+          "ACFT STAND 712"
+        ]
+      },
+      "expectedDisplay": "no_exclusion"
+    },
+    {
+      "id": "preceding-unsupported-scope-tail",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "STAND 712 DOWNGRADED TO CODE C AT STAND 713 BEHIND THE OLD BUILDING",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
+    },
+    {
+      "id": "explicit-unsupported-scope-tail",
+      "label": "SYNTHETIC QA ONLY",
+      "noticeText": "DOWNGRADE OF STAND 712 TO CODE C AT STAND 713 BEHIND THE OLD BUILDING",
+      "aircraftType": "A350-941",
+      "expectedStatus": "confirmed",
+      "expectedOutcome": "exceeds_limit",
+      "expectedRestrictsThisAircraft": true,
+      "expectedScope": {
+        "status": "unresolved",
+        "subjects": []
+      },
+      "expectedDisplay": "unresolved"
     }
   ]
 }
