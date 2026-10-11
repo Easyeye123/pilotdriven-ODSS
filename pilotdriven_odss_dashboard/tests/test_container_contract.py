@@ -1,11 +1,16 @@
 from pathlib import Path
+import json
 
 
 DOCKERFILE = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
 
 
 def test_runtime_uses_supported_lts_python_and_playwright_contract() -> None:
-    assert DOCKERFILE.startswith("FROM ubuntu:24.04 AS dependencies\n")
+    lock = json.loads((Path(__file__).resolve().parents[1] / "ocr/component.lock.json").read_text())
+    assert f"FROM {lock['baseImage']} AS ocr-build\n" in DOCKERFILE
+    assert f"FROM {lock['baseImage']} AS dependencies\n" in DOCKERFILE
+    assert "COPY --from=ocr-build /ocr-out/pilotdriven-tesseract.deb" in DOCKERFILE
+    assert "python3 /usr/share/pilotdriven-tesseract/verify_component.py" in DOCKERFILE
     assert "python3 -m venv /opt/venv" in DOCKERFILE
     assert "PATH=/opt/venv/bin:$PATH" in DOCKERFILE
     assert (

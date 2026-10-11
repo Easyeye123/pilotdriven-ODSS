@@ -1,4 +1,6 @@
 version: 0.2
+env:
+  shell: bash
 
 phases:
   pre_build:
@@ -19,6 +21,9 @@ phases:
     commands:
       - docker build --pull --platform linux/amd64 -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
       - docker run --rm --platform linux/amd64 --entrypoint python "$ECR_REPOSITORY_URI:$IMAGE_TAG" tests/check_webgl_runtime.py
+      - docker run --rm --platform linux/amd64 --network none --entrypoint python "$ECR_REPOSITORY_URI:$IMAGE_TAG" tests/check_ocr_runtime.py
+      - python3 ocr/scan_image.py "$ECR_REPOSITORY_URI:$IMAGE_TAG"
   post_build:
     commands:
+      - test "$CODEBUILD_BUILD_SUCCEEDING" = 1
       - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"

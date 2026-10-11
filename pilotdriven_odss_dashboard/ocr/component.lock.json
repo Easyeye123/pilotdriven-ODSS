@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "package": "pilotdriven-tesseract",
+  "packageVersion": "5.5.3+git552771236b0d-1",
+  "upstreamVersion": "5.5.3",
+  "binaryVersion": "5.5.3+git552771236b0d",
+  "sourceCommit": "552771236b0d80cbdb0c7dd856120fa21a4672e5",
+  "baseImage": "ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55",
+  "source": {
+    "url": "https://api.github.com/repos/tesseract-ocr/tesseract/tarball/552771236b0d80cbdb0c7dd856120fa21a4672e5",
+    "sha256": "31757bfe59cb9d04dcea5c9c8b378ca05ac68101613b993a5dfd7a6b929233d4"
+  },
+  "googletest": {
+    "url": "https://api.github.com/repos/google/googletest/tarball/7d76a231b0e29caf86e68d1df858308cd53b2a66",
+    "sha256": "ec42c094dd7a79cf55dde1de180006de2bbf5e0ddd3579d9b950b2b202aab1ff"
+  },
+  "buildPackages": {
+    "build-essential": "12.10ubuntu1",
+    "g++": "4:13.2.0-7ubuntu1",
+    "g++-13": "13.3.0-6ubuntu2~24.04.1",
+    "gcc-13": "13.3.0-6ubuntu2~24.04.1",
+    "libstdc++-13-dev": "13.3.0-6ubuntu2~24.04.1",
+    "libc6-dev": "2.39-0ubuntu8.9",
+    "cmake": "3.28.3-1build7",
+    "ninja-build": "1.11.1-2",
+    "pkg-config": "1.8.1-2build1",
+    "libleptonica-dev": "1.82.0-3build4",
+    "libicu-dev": "74.2-1ubuntu3.1",
+    "libarchive-dev": "3.7.2-2ubuntu0.9",
+    "libcurl4-openssl-dev": "8.5.0-2ubuntu10.15"
+  },
+  "englishModel": {
+    "package": "tesseract-ocr-eng",
+    "version": "1:4.1.0-2",
+    "path": "/usr/share/tesseract-ocr/5/tessdata/eng.traineddata",
+    "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"
+  },
+  "regressions": {
+    "normproto_test": 3,
+    "fullyconnected_test": 2,
+    "genericvector_test": 3,
+    "unicharset_load_test": 3,
+    "intproto_test": 4,
+    "lstm_layer_test": 4,
+    "recoder_test": 3,
+    "plumbing_test": 4
+  },
+  "fixes": {
+    "CVE-2026-88047": "https://github.com/tesseract-ocr/tesseract/commit/1bda5079b1c8a7e25f523486837426903d29ce84",
+    "CVE-2026-88048": "https://github.com/tesseract-ocr/tesseract/commit/103dc134eb36411ddc6833ec20aa2c76795bd0ff",
+    "CVE-2026-88051": "https://github.com/tesseract-ocr/tesseract/commit/56e09ca12e751623fe796ce1554ce704bffd2ef0",
+    "CVE-2026-88052": "https://github.com/tesseract-ocr/tesseract/commit/2d04d640db2e8c7e3bab2369d599343b5a8b8443",
+    "CVE-2026-88053": "https://github.com/tesseract-ocr/tesseract/commit/8b0574680f3b22f246ade6a4c8e3029104255c63",
+    "CVE-2026-88049": "https://github.com/tesseract-ocr/tesseract/commit/b494ac18925f9d9aff9ef5815475de9943ab19bf",
+    "CVE-2026-88050": "https://github.com/tesseract-ocr/tesseract/commit/c94a5532ee04db5a4919542832fd94caee5ea58f",
+    "CVE-2026-88054": "https://github.com/tesseract-ocr/tesseract/commit/552771236b0d80cbdb0c7dd856120fa21a4672e5"
+  },
+  "sourceFiles": {
+    "VERSION": "810e1ba0954d37c06abf3d4f9a61d1a953abf6569f612671d5a48f234e1e6264",
+    "src/ccmain/tessedit.cpp": "2cdbd83684dfc0f27d69268e35d2dd2e6b6ada78936eb545351f19b05d042f43",
+    "src/ccutil/genericvector.h": "f3841a151a3bac841a4036cb2623582aeebb0d1d54574beaa3cd356913c37113",
+    "src/ccutil/unicharcompress.cpp": "fb134c8e2bfb9387aec0a12e78e05a2d64094db0f06395325b23234d58e51d9a",
+    "src/ccutil/unicharcompress.h": "19849a2db24b0360a0f0af46956eea8c1f35f2967bf1455e09ecf86d5c85a6b7",
+    "src/ccutil/unicharset.cpp": "59741460af16260bc9e3251869328723b652e31ac2796824af95bcfca77d6b1f",
+    "src/classify/adaptive.cpp": "66aaea979500bf2f6bf9db1cf23fc525885a5ef4768f0f01a9a13b442a847065",
+    "src/classify/adaptive.h": "e754568450ae0b821e5fe795679b08cf1588f14b6e1ef6e64fcdb34a5764d880",
+    "src/classify/adaptmatch.cpp": "0c448e9f41ca40b726fa15231737e2e6faae7fb56bca2a940d77c8de4e7eb2e4",
+    "src/classify/classify.h": "6039957d78f01b3bb213e3481992e1cbf87ea08da0b48938b678cc1348334872",
+    "src/classify/intproto.cpp": "e2b6ddba737c05259b4158617324fae559cdfc51a4efab560270e0a2fd640626",
+    "src/classify/intproto.h": "bd946e43bf4142b914acd2c7f81eab0d2acc930a74b27e2e6f44073225bba72a",
+    "src/classify/normmatch.cpp": "21ef9caeacc2517e3bad59512eff0220ffb7e1948277495760fd07394d357f39",
+    "src/lstm/fullyconnected.cpp": "d96e4d431787c7d4118f142facd4979952f02fdafa4b3cd3c939590d85bd9597",
+    "src/lstm/lstm.cpp": "5a4ef05d95b2c3cf4efad0f518dfe32c04140490c85a755649f1839134546e91",
+    "src/lstm/networkio.cpp": "d4f455926656d63284d24e42933b2f5f26add216404b4e1f2002e02967292a71",
+    "src/lstm/plumbing.cpp": "5af5550e0b6f6901a93dabe214156dc60893b8ad8f5fab7059738fa89c688e2a",
+    "src/lstm/weightmatrix.h": "3214d9e2359eb1a6f438312bcbb0306c68668a3676fc92fe94c1d283c3e82023",
+    "src/wordrec/tface.cpp": "05f7cfc7ab89412ef888bf00a1b8d9b8c58a6ed86e016ccbb54ca0970b101d17",
+    "src/wordrec/wordrec.h": "923d3524498fd7acb5ef9ce1c36c5d4b46d7119975a641d0368a8d600cb82e68",
+    "unittest/fullyconnected_test.cc": "e227324177c1c11ec854d9cf243216e3bc2e4190ab4423bc2ba40c53dba328d6",
+    "unittest/genericvector_test.cc": "8f956b5b9600339c61783df33c7dc568d3c4748e1087117a1073d740f202bf04",
+    "unittest/intproto_test.cc": "ab57c1fbb220ee1d883eb57a93f67d5766062fa06b4075b479ed7cc3e5a94e05",
+    "unittest/lstm_layer_test.cc": "9209f5a77213f589f42bb0ad862dabd91fd4152b46ce021c953a906dc960561c",
+    "unittest/normproto_test.cc": "67433de9281a0fd9394ea87d2a77049764ece86ec4ba64bbf3a32b3ac7f6b19c",
+    "unittest/plumbing_test.cc": "2c5d4560a6af3c6950f3b28f37a964bf420193e19cab4719a44146269092c41c",
+    "unittest/recoder_test.cc": "7e6f50ab63a83acd501d861c721c07f95cf5b7797f6de6b13b49d60660670596",
+    "unittest/unicharset_load_test.cc": "404e53e067ddf0017196ea2f52c1b61b37be6b4d15048f2225f9d497d257633a"
+  },
+  "cpe": "cpe:2.3:a:tesseract-ocr:tesseract_ocr:5.5.3:*:*:*:*:*:*:*"
+}
