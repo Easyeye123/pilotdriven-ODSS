@@ -238,5 +238,5 @@ def test_genuine_baku_lower_heading_names_its_fir():
 
 
 def test_the_tokens_move_together():
-    assert EXTRACTION_RULES == "2026-10-10-contingency-label-v9"
+    assert EXTRACTION_RULES == "2026-10-12-weather-ocr-recovery-v10"
     assert ENROUTE_CONTACT_RULE == "enroute-contact-v16"

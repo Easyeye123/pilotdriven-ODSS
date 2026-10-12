@@ -33,4 +33,8 @@ the two are bumped together whenever the parser's extraction changes.
 # v9 (10 Oct 2026, release-472 QA, F13): the page-1 contingency line is read when printed as a percentage of trip fuel
 # ("3% CONT", genuine SQ314 SIN-LGW 15 Aug) as well as "STAT CONT", and the row holds its printed label; a v8 analysis of
 # such a plan holds no contingency and reports its fuel arithmetic unverified.
-EXTRACTION_RULES = "2026-10-10-contingency-label-v9"
+# v10 (12 Oct 2026, F30-OCR-1): one bounded image-rescaling retry can recover a
+# printed weather-chart identity missing from the first OCR pass. Held v9
+# analyses keep their original chart classifications until the source is
+# re-read into a separate analysis. Corpus case records and digests are unchanged.
+EXTRACTION_RULES = "2026-10-12-weather-ocr-recovery-v10"

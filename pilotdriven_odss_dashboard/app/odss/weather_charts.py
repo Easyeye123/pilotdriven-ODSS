@@ -34,6 +34,7 @@ from concurrent.futures import (
 )
 from datetime import datetime, timezone
 from hashlib import sha256
+from io import BytesIO
 import math
 import os
 import re
@@ -56,6 +57,8 @@ _MIN_RENDERED_PAGE_SPAN = 0.55
 _MAX_CLASSIFIED_CHARTS = 40
 _TOOL_NAME = "record_chart_classification"
 _OCR_ENGINE = "tesseract"
+_OCR_RETRY_MAX_PIXELS = 16_000_000
+_OCR_RETRY_MAX_INPUT_BYTES = 16 * 1024 * 1024
 _OCR_ROUTE = re.compile(
     r"\((?P<context>[A-Z]{3,5})\)\s*"
     r"(?P<flight>[A-Z]{2,3}\s*\d{2,4})\s*:\s*"
@@ -251,40 +254,89 @@ def parse_chart_ocr_identity(text: str) -> dict[str, Any] | None:
     }
 
 
+def _rescale_ocr_image(image: bytes) -> tuple[bytes | None, str]:
+    """Enlarge the whole raster once; never crop or alter printed content.
+
+    Check the decoded dimensions before loading pixels. The cap applies to
+    the enlarged raster, bounding memory and preprocessing work per worker.
+    The original image remains the held evidence, with its original hash.
+    """
+    from PIL import Image
+
+    if len(image) > _OCR_RETRY_MAX_INPUT_BYTES:
+        return None, "not-run:byte-limit"
+    try:
+        with Image.open(BytesIO(image)) as source:
+            size = (source.width * 2, source.height * 2)
+            if size[0] * size[1] > _OCR_RETRY_MAX_PIXELS:
+                return None, "not-run:pixel-limit"
+            with source.convert("RGB") as rgb, rgb.resize(size, Image.Resampling.LANCZOS) as scaled:
+                buffer = BytesIO()
+                scaled.save(buffer, format="PNG")
+                return buffer.getvalue(), "2x-lanczos"
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        return None, f"error:{type(exc).__name__}"
+
+
 def _ocr_chart_image(
     image: bytes,
     deadline: float | None = None,
 ) -> dict[str, Any]:
     if not _ocr_enabled():
         return {"ocr_status": "unavailable"}
-    timeout = _ocr_timeout_seconds()
+    # Both OCR attempts and preprocessing share the original per-image and
+    # global deadlines. A retry never receives a second full timeout budget.
+    end = time.monotonic() + _ocr_timeout_seconds()
     if deadline is not None:
-        remaining = deadline - time.monotonic()
+        end = min(end, deadline)
+    if end <= time.monotonic():
+        return {"ocr_status": "budget-exhausted"}
+    attempts: list[dict[str, Any]] = []
+    result: dict[str, Any] = {"ocr_attempts": attempts}
+    working_image, preprocessing = image, "original"
+    for attempt in range(2):
+        remaining = end - time.monotonic()
         if remaining <= 0:
-            return {"ocr_status": "budget-exhausted"}
-        timeout = min(timeout, max(0.1, remaining))
-    try:
-        completed = subprocess.run(
-            [_OCR_ENGINE, "stdin", "stdout", "-l", "eng", "--psm", "11"],
-            input=image,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout,
-            check=False,
-            env={**os.environ, "OMP_THREAD_LIMIT": "1"},
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return {"ocr_status": f"error:{type(exc).__name__}"}
-    if completed.returncode != 0:
-        return {"ocr_status": f"error:exit_{completed.returncode}"}
-    text = completed.stdout.decode("utf-8", errors="replace")
-    identity = parse_chart_ocr_identity(text)
-    result: dict[str, Any] = {
-        "ocr_status": "parsed" if identity else "unclassified",
-        "ocr_text_sha256": sha256(text.encode("utf-8")).hexdigest(),
-    }
-    if identity:
-        result["route_context"] = identity
+            result["ocr_status"] = "budget-exhausted"
+            break
+        record = {"preprocessing": preprocessing, "image_sha256": sha256(working_image).hexdigest()}
+        attempts.append(record)
+        try:
+            completed = subprocess.run(
+                [_OCR_ENGINE, "stdin", "stdout", "-l", "eng", "--psm", "11"],
+                input=working_image,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=remaining,
+                check=False,
+                env={**os.environ, "OMP_THREAD_LIMIT": "1"},
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            record["ocr_status"] = result["ocr_status"] = f"error:{type(exc).__name__}"
+            break
+        if completed.returncode != 0:
+            record["ocr_status"] = result["ocr_status"] = f"error:exit_{completed.returncode}"
+            break
+        text = completed.stdout.decode("utf-8", errors="replace")
+        identity = parse_chart_ocr_identity(text)
+        record["ocr_status"] = result["ocr_status"] = "parsed" if identity else "unclassified"
+        record["ocr_text_sha256"] = result["ocr_text_sha256"] = sha256(text.encode("utf-8")).hexdigest()
+        if identity:
+            result["route_context"] = identity
+            break
+        # Retry only a recognisable fixed-time chart with incomplete identity.
+        # Parse each transcript independently; never merge missing fields or
+        # infer a route arrow from airport order, filename or page position.
+        if attempt or not (_has_fixed_time_chart_title(text) and _OCR_LEVELS.search(text) and _OCR_VALID.search(text)):
+            break
+        if end <= time.monotonic():
+            result["ocr_status"] = "budget-exhausted"
+            break
+        scaled, preprocessing = _rescale_ocr_image(image)
+        result["ocr_retry_status"] = preprocessing
+        if scaled is None:
+            break
+        working_image = scaled
     return result
 
 

@@ -20,6 +20,7 @@ import pymupdf
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ["ODSS_WEATHER_CHART_AI"] = "off"
 os.environ["ODSS_WEATHER_CHART_OCR"] = "on"
+from app.odss import weather_charts
 from app.odss.weather_charts import _ocr_chart_image, parse_chart_ocr_identity
 
 
@@ -31,6 +32,28 @@ def page_image(text: str, dpi: int = 180) -> tuple[bytes, bytes]:
         page = document.new_page(width=800, height=500)
         page.insert_text((40, 65), text, fontsize=24, fontname="helv")
         return document.tobytes(), page.get_pixmap(dpi=dpi).tobytes("png")
+
+
+def recorded_ocr(image: bytes) -> dict:
+    """Capture actual native outputs without substituting recognition results."""
+    native_run = weather_charts.subprocess.run
+    calls = []
+
+    def capture(command, **kwargs):
+        started = time.monotonic()
+        completed = native_run(command, **kwargs)
+        calls.append({"command": command, "imageSha256": hashlib.sha256(kwargs["input"]).hexdigest(),
+                      "timeoutSeconds": kwargs["timeout"], "elapsedSeconds": time.monotonic() - started,
+                      "exitCode": completed.returncode, "stdout": completed.stdout.decode("utf-8", errors="replace"),
+                      "stderr": completed.stderr.decode("utf-8", errors="replace")})
+        return completed
+
+    weather_charts.subprocess.run = capture
+    try:
+        result = _ocr_chart_image(image)
+    finally:
+        weather_charts.subprocess.run = native_run
+    return {**result, "native_calls": calls}
 
 
 def main() -> None:
@@ -55,7 +78,7 @@ def main() -> None:
         scan_png = scanned[0].get_pixmap(dpi=150).tobytes("png")
     results = []
     for name, image in (("printed-png", png), ("scanned-pdf", scan_png)):
-        actual = _ocr_chart_image(image)
+        actual = recorded_ocr(image)
         if actual.get("ocr_status") != "parsed" or actual.get("route_context") != expected:
             raise RuntimeError(f"Real OCR changed printed identity: {name}: {actual}")
         results.append({"case": name, "imageSha256": hashlib.sha256(image).hexdigest(), **actual})
@@ -64,10 +87,41 @@ def main() -> None:
         ("blank-image", page_image("")[1], "unclassified"),
         ("malformed-image", b"not an image", "error:exit_1"),
     ):
-        actual = _ocr_chart_image(image)
+        actual = recorded_ocr(image)
         if actual.get("ocr_status") != status or "route_context" in actual:
             raise RuntimeError(f"OCR did not fail safely: {name}: {actual}")
         results.append({"case": name, **actual})
+    # Synthetic identity text is rasterised into an image-only PDF, then read
+    # back at varied resolutions. Route direction is always printed evidence.
+    varied = [
+        ("sin-lhr-72dpi", PRINTED.replace("SQ214: PER -> SIN", "SQ481: SIN -> LHR"), 72, True),
+        ("hkg-sin-96dpi", PRINTED.replace("SQ214: PER -> SIN", "ABC123: HKG -> SIN"), 96, True),
+        ("sin-mel-144dpi", PRINTED.replace("SQ214: PER -> SIN", "AB321: SIN => MEL"), 144, True),
+        ("mel-syd-200dpi", PRINTED.replace("SQ214: PER -> SIN", "QF702: MEL -> SYD"), 200, True),
+        ("han-sin-300dpi", PRINTED.replace("SQ214: PER -> SIN", "XY908: HAN -> SIN"), 300, True),
+        ("no-arrow-72dpi", PRINTED.replace("->", ""), 72, False),
+        ("no-arrow-144dpi", PRINTED.replace("->", ""), 144, False),
+        ("reverse-arrow-96dpi", PRINTED.replace("->", "<-"), 96, False),
+        ("reverse-arrow-180dpi", PRINTED.replace("->", "<-"), 180, False),
+    ]
+    for name, printed, dpi, accepted in varied:
+        _, raster = page_image(printed, dpi)
+        with pymupdf.open() as document:
+            page = document.new_page(width=800, height=500)
+            page.insert_image(page.rect, stream=raster)
+            scanned_bytes = document.tobytes()
+        with pymupdf.open(stream=scanned_bytes, filetype="pdf") as document:
+            if document[0].get_text().strip():
+                raise RuntimeError("Varied scanned control has a text layer")
+            image = document[0].get_pixmap(dpi=dpi).tobytes("png")
+        actual = recorded_ocr(image)
+        expected_identity = parse_chart_ocr_identity(printed) if accepted else None
+        row = {"case": name, "dpi": dpi, "scannedPdfSha256": hashlib.sha256(scanned_bytes).hexdigest(),
+               "imageSha256": hashlib.sha256(image).hexdigest(), "expectedIdentity": expected_identity, **actual}
+        print("OCR_RUNTIME_CASE " + json.dumps(row), flush=True)
+        if actual.get("ocr_status") != ("parsed" if accepted else "unclassified") or actual.get("route_context") != expected_identity:
+            raise RuntimeError(f"Varied scanned identity failed: {name}")
+        results.append(row)
     expired = _ocr_chart_image(png, deadline=time.monotonic() - 1)
     if expired != {"ocr_status": "budget-exhausted"}:
         raise RuntimeError(f"OCR deadline was not enforced: {expired}")

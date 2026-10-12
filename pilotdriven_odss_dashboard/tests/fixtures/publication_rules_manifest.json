@@ -1,7 +1,7 @@
 {
   "publication_rules": "2026-10-11-cross-clause-scope-v97",
   "enroute_contact_rule": "enroute-contact-v16",
-  "extraction_rules": "2026-10-10-contingency-label-v9",
+  "extraction_rules": "2026-10-12-weather-ocr-recovery-v10",
   "publication_format": "six-page-reference-briefing-2026-09-19",
   "minted": "2026-10-11 F29 local repair: size spec v15 requires positive proof that a limit continuation is complete before stating its area. Unbound trailing extents are explicitly unresolved. Complete leading areas, benign closed causal/time fields and independently headed records retain source evidence. Publication v96 refreshes saved-pack views from held inputs. Numeric forms, F26/F27 qualifiers, extraction v9, enroute-contact v16, quote bounds, six-page format and F8 policy are unchanged. Evidence: output/pd-f29-codex-20261011/. Local verification does not grant independent acceptance, deployment or F7 acceptance. Both runtimes share byte-identical governed data; re-mint on rule-token changes."
 }

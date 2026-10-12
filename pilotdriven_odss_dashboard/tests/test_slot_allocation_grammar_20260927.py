@@ -297,6 +297,6 @@ def test_page_six_prints_an_unread_allocation_as_printed_not_absent(tmp_path_fac
 
 
 def test_the_tokens_move_together():
-    assert EXTRACTION_RULES == "2026-10-10-contingency-label-v9"
+    assert EXTRACTION_RULES == "2026-10-12-weather-ocr-recovery-v10"
     assert ENROUTE_CONTACT_RULE == "enroute-contact-v16"
     assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-10-11-cross-clause-scope-v97"
