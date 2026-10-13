@@ -1,0 +1,330 @@
+{
+ "aerodromes": {
+  "EBBR": {
+   "latitude": 50.901667,
+   "longitude": 4.485,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_304_12Jul2026_SIN_BRU.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 14,
+     "printed": "EBBR N50 54.1 E004 29.1",
+     "sha256": "ffb63085badc026e1db590b289be80590d551a58b6a699a1c8d1c4f79ac9baef"
+    }
+   ]
+  },
+  "EDDF": {
+   "latitude": 50.033333,
+   "longitude": 8.57,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_326_16Aug2026_SIN_FRA.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 13,
+     "printed": "EDDF N50 02.0 E008 34.2",
+     "sha256": "d7b35300044ca86fe2045cff0a21bc5dffcdeaf5c522b786f2b2dc741ac68ef6"
+    }
+   ]
+  },
+  "EGKK": {
+   "latitude": 51.148333,
+   "longitude": -0.19,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_314_15Aug2026_SIN_LGW.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 13,
+     "printed": "EGKK N51 08.9 W000 11.4",
+     "sha256": "11e92fadc1c7874a2f950d3c48cbc6281974ce91d48222329608538545754efa"
+    }
+   ]
+  },
+  "EGLL": {
+   "latitude": 51.478333,
+   "longitude": -0.461667,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_322_16Aug2026_SIN_LHR.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 15,
+     "printed": "EGLL N51 28.7 W000 27.7",
+     "sha256": "f2a722c0f8cfc743cdbdde38270853b40783e12c27c5b3328d3e9e550beaa56f"
+    }
+   ]
+  },
+  "EKCH": {
+   "latitude": 55.618333,
+   "longitude": 12.656667,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 12,
+     "printed": "EKCH N55 37.1 E012 39.4",
+     "sha256": "2162330ae3b544b6af770cdc14ebd3fa657db69d1d7fc302adf00fd77d76adf1"
+    }
+   ]
+  },
+  "FAOR": {
+   "latitude": -26.133333,
+   "longitude": 28.241667,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_482_14Aug2026_SIN_JNB.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 8,
+     "printed": "FAOR S26 08.0 E028 14.5",
+     "sha256": "9e3febf050fca3d20128a0dc240775f218f74342c61e3189a53bf126e130651a"
+    }
+   ]
+  },
+  "KJFK": {
+   "latitude": 40.64,
+   "longitude": -73.778333,
+   "sources": [
+    {
+     "file": "SQ02422072026SIN.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 13,
+     "printed": "KJFK N40 38.4 W073 46.7",
+     "sha256": "3ab4209fb201479cd30719376141dd23181562c523037b8315ca2466bffc7527"
+    },
+    {
+     "file": "lido-briefing_SQ_24_15Aug2026_SIN_JFK.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 13,
+     "printed": "KJFK N40 38.4 W073 46.7",
+     "sha256": "ef773ec3cc808f2269522ae608750e4bd1cdab33a17603842c3fd7837815e240"
+    }
+   ]
+  },
+  "KLAX": {
+   "latitude": 33.941667,
+   "longitude": -118.408333,
+   "sources": [
+    {
+     "file": "SQ38-29AUG2026-OFP-for-prod-proof.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 11,
+     "printed": "KLAX N33 56.5 W118 24.5",
+     "sha256": "af60b08ad75e2bd1258fd2e327816c6248017f082634a69d83dc130fbc596557"
+    }
+   ]
+  },
+  "KSFO": {
+   "latitude": 37.618333,
+   "longitude": -122.375,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_34_15Aug2026_SIN_SFO.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 9,
+     "printed": "KSFO N37 37.1 W122 22.5",
+     "sha256": "2e0f83ff5280ecb063da7d68133b970791109c4647e25de11efe66f0e85fc3b2"
+    }
+   ]
+  },
+  "LIRF": {
+   "latitude": 41.8,
+   "longitude": 12.238333,
+   "sources": [
+    {
+     "file": "SQ36604082026SIN.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 15,
+     "printed": "LIRF N41 48.0 E012 14.3",
+     "sha256": "a5090c7d2473e0cef81ec320c846f6d44885ed6ed0ff54ec320a898ae913edc3"
+    }
+   ]
+  },
+  "NZCH": {
+   "latitude": -43.49,
+   "longitude": 172.535,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_297_16Aug2026_SIN_CHC.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 10,
+     "printed": "NZCH S43 29.4 E172 32.1",
+     "sha256": "8d5ce8c599674631acf83617e3772d09f6ef9a76304a2d796bab832ace7917ee"
+    }
+   ]
+  },
+  "RKSI": {
+   "latitude": 37.463333,
+   "longitude": 126.44,
+   "sources": [
+    {
+     "file": "SQ60606092026SIN.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 17,
+     "printed": "RKSI N37 27.8 E126 26.4",
+     "sha256": "eb48aa102321295fffcd78561d673a30c078f6638e4bb4a2a0ee766461661ba7"
+    }
+   ]
+  },
+  "RPLL": {
+   "latitude": 14.51,
+   "longitude": 121.013333,
+   "sources": [
+    {
+     "file": "SQ91021082026SIN.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 8,
+     "printed": "RPLL N14 30.6 E121 00.8",
+     "sha256": "2f180e9502b49753ab70f71c12ebd9eedee0d7574849bb1ddabfd69534f2faeb"
+    },
+    {
+     "file": "lido-briefing_SQ_910_15Aug2026_SIN_MNL.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 8,
+     "printed": "RPLL N14 30.6 E121 00.8",
+     "sha256": "1d5f0a16c61e166b5f7f14b713337445e8ee4ecdf73d8896ea99887698d07817"
+    }
+   ]
+  },
+  "VHHH": {
+   "latitude": 22.308333,
+   "longitude": 113.915,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_882_09Sep2026_SIN_HKG.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 10,
+     "printed": "VHHH N22 18.5 E113 54.9",
+     "sha256": "f8f4830798e23d419eda49f50e397cf18cabe9b67660393aacc3793fac145469"
+    },
+    {
+     "file": "lido-briefing_SQ_882_10Sep2026_SIN_HKG.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 13,
+     "printed": "VHHH N22 18.5 E113 54.9",
+     "sha256": "c726965632255c08ac146160c6971f3b313a17d9c217c98e0ccd9044961447e6"
+    }
+   ]
+  },
+  "VRMM": {
+   "latitude": 4.191667,
+   "longitude": 73.53,
+   "sources": [
+    {
+     "file": "SQ43807102026SIN.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 13,
+     "printed": "VRMM N04 11.5 E073 31.8",
+     "sha256": "0f3827b6323fc7a331f769d3bff6871f24142dc2e8472433c26e3a05ae39b1f7"
+    }
+   ]
+  },
+  "VVNB": {
+   "latitude": 21.221667,
+   "longitude": 105.805,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_194_16Aug2026_SIN_HAN.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 8,
+     "printed": "VVNB N21 13.3 E105 48.3",
+     "sha256": "83873638b9b09ccbae228cafb9493c52aa6cc46b9631e4ad75d321d7d0f9dd75"
+    }
+   ]
+  },
+  "WSSS": {
+   "latitude": 1.36,
+   "longitude": 103.99,
+   "sources": [
+    {
+     "file": "SQ02325072026JFK.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 15,
+     "printed": "WSSS N01 21.6 E103 59.4",
+     "sha256": "45c781ab4a8644f92e4cde7c13da8d7ec13cd4b4cc9b0bb827011b9dbabfc016"
+    },
+    {
+     "file": "SQ21419082026PER.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 8,
+     "printed": "WSSS N01 21.6 E103 59.4",
+     "sha256": "caa1f04e7d29aaeb34834695b8c50785c87174f152b9af9c03efd7425a08b428"
+    },
+    {
+     "file": "SQ30316072026BRU 81.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 14,
+     "printed": "WSSS N01 21.6 E103 59.4",
+     "sha256": "887d96b5a01ab42e841ca9a61ff4547f6e16facbf24695fb62d63b282c2a4177"
+    },
+    {
+     "file": "SQ36507082026FCO.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 14,
+     "printed": "WSSS N01 21.6 E103 59.4",
+     "sha256": "1be9a94eb5e5dffb25bd02aec61fc3a1adf9b13953bec27ee43345fdf5a02d4b"
+    },
+    {
+     "file": "SQ43708102026MLE.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 12,
+     "printed": "WSSS N01 21.6 E103 59.4",
+     "sha256": "3777737fe8c49c770165d5df518888b9ebfd8a27d8ea23249394236187144d92"
+    },
+    {
+     "file": "SQ48125082026JNB.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 8,
+     "printed": "WSSS N01 21.6 E103 59.4",
+     "sha256": "471c5a67025f3d85fcb8b79f289843c5cd2c611a33c9c943bcdd238fa1b7bbd8"
+    },
+    {
+     "file": "SQ60508092026ICN.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 15,
+     "printed": "WSSS N01 21.6 E103 59.4",
+     "sha256": "b3e6b7917734e061570ece7701564e153264dd33562fcd347a0d1feb0bafd24e"
+    },
+    {
+     "file": "lido-briefing_SQ_214_16Aug2026_PER_SIN.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 7,
+     "printed": "WSSS N01 21.6 E103 59.4",
+     "sha256": "eb7c9105c78adc5fcaa90c05153cd0a691c2095fad9213ce7ccbea345db0a38e"
+    }
+   ]
+  },
+  "YPAD": {
+   "latitude": -34.945,
+   "longitude": 138.53,
+   "sources": [
+    {
+     "file": "lido-briefing_SQ_279_15Aug2026_SIN_ADL.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 7,
+     "printed": "YPAD S34 56.7 E138 31.8",
+     "sha256": "847e326efe91977b41062420ed8491e4f57c813fa2bfaf0b1aa4f08674e4b2f1"
+    }
+   ]
+  },
+  "YPPH": {
+   "latitude": -31.94,
+   "longitude": 115.966667,
+   "sources": [
+    {
+     "file": "SQ22318082026SIN.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 7,
+     "printed": "YPPH S31 56.4 E115 58.0",
+     "sha256": "b2264187b4fc6066e675f868f332e17b08fed5f615c322e9ea2fae53f0917f7e"
+    },
+    {
+     "file": "lido-briefing_SQ_223_16Aug2026_SIN_PER.pdf",
+     "kind": "lido_ofp_destination_aerodrome_record",
+     "page": 8,
+     "printed": "YPPH S31 56.4 E115 58.0",
+     "sha256": "9d5064c33d099632bf548718685066580fe7f2567f1bd477b85d35d5c05c8fdd"
+    }
+   ]
+  }
+ },
+ "description": "Governed aerodrome reference points for route maps. Each value is the operator's LIDO aerodrome record as printed on the destination row of a held OFP (0.1-minute resolution), pinned to its source file, SHA-256, page and printed text. Built by scripts/build_aerodrome_reference_points.py; tests cross-check every value against the State AIP aerodrome reference point.",
+ "schema_version": 1
+}

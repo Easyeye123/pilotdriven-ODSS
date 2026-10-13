@@ -14,7 +14,8 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from .analysed_briefing_content import cyclone_content, flight_window, level_profile_label
 from .briefing import (_SIGMET_TIME_DISPOSITION, _screening_geometry, _sigmet_time_state,
-                       _sigmet_utc, _projected_land_segments, project_route_map)
+                       _sigmet_utc, _projected_land_segments, project_route_map,
+                       route_end_label_indices)
 from .vaa import _flight_anchor, _planned_levels, _unwrap, _utc
 from .sigmet_geometry import source_layer, source_polygon
 
@@ -469,11 +470,17 @@ def draw_publication_map(canvas, route, x, y, width, height, *, show_key=True):
             occupied.append(box)
             return True
         return False
-    for point in [points[0], points[-1]]:
-        px, py = x + point["x"], bottom + point["y"]
+    # Aerodromes at their governed reference points (item 11). A route end
+    # whose aerodrome is not drawn is named as the fix it is, so the map still
+    # shows where the held route starts or ends.
+    ends = [(x + aerodrome["x"], bottom + aerodrome["y"], aerodrome["display_name"])
+            for aerodrome in projection.get("aerodromes") or []]
+    ends += [(x + points[index]["x"], bottom + points[index]["y"], points[index]["display_name"])
+             for index in sorted(route_end_label_indices(route))]
+    for px, py, name in ends:
         canvas.setFillColor(colors.white)
         canvas.circle(px, py, 3, fill=1, stroke=0)
-        if not label(px, py, point["display_name"], colors.white):
+        if not label(px, py, name, colors.white):
             raise ValueError("Route endpoint has no readable label")
     for event in route.get("publication_events") or []:
         px, py = xy(event["position"])

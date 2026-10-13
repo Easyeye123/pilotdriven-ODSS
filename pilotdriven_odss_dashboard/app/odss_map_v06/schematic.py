@@ -133,14 +133,23 @@ def _render_svg(contract: MapContract, *, width: int, height: int) -> str:
             'stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'
         )
     selected = set(contract.priority_labels)
-    for feature, (x, y) in zip(markers, projected):
+    # One label per name, on its highest-priority marker: a destination's
+    # printed navlog row shares the aerodrome's code with the aerodrome marker.
+    label_owner: dict[str, int] = {}
+    for index, feature in enumerate(markers):
+        props = feature.get("properties", {})
+        name = str(props.get("name") or "")
+        best = label_owner.get(name)
+        if best is None or int(props.get("priority") or 0) > int(markers[best].get("properties", {}).get("priority") or 0):
+            label_owner[name] = index
+    for index, (feature, (x, y)) in enumerate(zip(markers, projected)):
         props = feature.get("properties", {})
         name = str(props.get("name") or "")
         parts.append(
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" '
             'fill="#4db8ff" stroke="#07111f" stroke-width="2"/>'
         )
-        if name in selected:
+        if name in selected and label_owner.get(name) == index:
             parts.append(
                 f'<text x="{x + 7:.1f}" y="{y - 7:.1f}" '
                 'fill="#e8f2ff" font-family="Arial" font-size="13">'

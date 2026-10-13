@@ -3821,15 +3821,16 @@ def draw_overview_page(
 
     map_x = cx0 + text_w + 14
     map_h = row1_h - 72
-    from .briefing import draw_route_map_pdf  # local import; briefing pulls widely
+    from .briefing import draw_route_map_pdf, route_end_label_indices  # local import; briefing pulls widely
 
     canvas.setFillColor(_page_colour(canvas, "panel", PANEL))
     canvas.roundRect(map_x, row1_top - 24 - map_h, map_w, map_h, 4, stroke=0, fill=1)
     route_map = dict(briefing.get("route_map") or {})
     map_points = list(route_map.get("points") or [])
-    compact_label_indices: set[int] = (
-        {0, len(map_points) - 1} if map_points else set()
-    )
+    # The aerodromes carry the route-end labels at their reference points; a
+    # route end is labelled with its own fix name only where its aerodrome is
+    # not drawn (item 11).
+    compact_label_indices: set[int] = route_end_label_indices(route_map)
     first_edto_index = next(
         (
             index

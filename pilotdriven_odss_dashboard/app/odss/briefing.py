@@ -44,7 +44,7 @@ from .notam_restriction_line import (
     unpublishable,
 )
 from .enrichment import ofp_volcano_records
-from .route_anchors import resolve_route_endpoints, unplaced_endpoint_statements
+from .route_anchors import drawn_aerodromes, resolve_route_endpoints, unplaced_endpoint_statements
 from .volcanic_check import volcanic_ash_check
 from .pilot_briefing import (
     normalize_notam_references,
@@ -1488,6 +1488,25 @@ def _evenly_spaced_indices(indices: list[int], limit: int) -> set[int]:
     }
 
 
+def route_end_label_indices(route_map: dict[str, Any]) -> set[int]:
+    """Route ends that need their own label: only where no aerodrome is drawn.
+
+    A drawn aerodrome carries the end's label at its reference point; the
+    first and last route rows are fixes and keep their own names, so labelling
+    them as well would put two names at one end.
+    """
+    points = route_map.get("points") or []
+    endpoints = route_map.get("endpoints") or {}
+    if not points:
+        return set()
+    ends = set()
+    if (endpoints.get("departure") or {}).get("status") != "reference_point":
+        ends.add(0)
+    if (endpoints.get("destination") or {}).get("status") != "reference_point":
+        ends.add(len(points) - 1)
+    return ends
+
+
 def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
     raw_points: list[dict[str, Any]] = []
     for waypoint in flight.get("route_waypoints", []):
@@ -1517,7 +1536,12 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
             "note": "No usable route coordinates were parsed.",
         }
 
-    priority_indices: set[int] = {0, len(points) - 1}
+    # Aerodromes are drawn at their governed reference points, never on a route
+    # row (item 11, QA496-03). A route end is labelled with its own name only
+    # where its aerodrome is not drawn, so the map still shows where it starts.
+    endpoints = resolve_route_endpoints(flight)
+    aerodromes = drawn_aerodromes(endpoints)
+    priority_indices: set[int] = route_end_label_indices({"points": points, "endpoints": endpoints})
     fir_indices: list[int] = []
     bobcat_name = str((flight.get("bobcat") or {}).get("waypoint") or "").upper()
     terrain_maxima = {
@@ -1540,20 +1564,9 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
         _evenly_spaced_indices(list(range(1, max(1, len(points) - 1))), 4)
     )
 
-    # Aerodrome identity only where the OFP places the aerodrome (item 11): a
-    # first or last row that cannot stand for it keeps its own name.
-    endpoints = resolve_route_endpoints(flight)
-    departure_index = endpoints["departure"]["point_index"]
-    destination_index = endpoints["destination"]["point_index"]
-    for index, point in enumerate(points):
+    for point in points:
         role = "route"
-        if index == departure_index:
-            role = "departure"
-            point["display_name"] = endpoints["departure"]["icao"]
-        elif index == destination_index:
-            role = "destination"
-            point["display_name"] = endpoints["destination"]["icao"]
-        elif point.get("fir_boundary"):
+        if point.get("fir_boundary"):
             role = "fir"
         elif str(point.get("name") or "").upper().lstrip("-") == bobcat_name and bobcat_name:
             role = "bobcat"
@@ -1582,6 +1595,7 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
         "available": len(points) >= 2,
         "points": points,
         "endpoints": endpoints,
+        "aerodromes": aerodromes,
         "label_indices": sorted(priority_indices),
         "hazard_features": hazard_features,
         "sigmet_status": (flight.get("sigmet_review") or {}).get("status"),
@@ -1618,8 +1632,23 @@ def project_route_map(
     longitude_factor = max(0.25, cos(radians(mid_latitude)))
     x_values = [float(point["plot_longitude"]) * longitude_factor for point in points]
     y_values = [float(point["latitude"]) for point in points]
-    min_x, max_x = min(x_values), max(x_values)
-    min_y, max_y = min(y_values), max(y_values)
+    # Aerodromes are drawn at their governed reference points (item 11), in
+    # the route's frame: each is unwrapped beside its own route end, and the
+    # frame is widened to hold it.
+    aerodromes = []
+    for aerodrome in route_map.get("aerodromes") or []:
+        end = points[0] if aerodrome.get("role") == "departure" else points[-1]
+        longitude = float(aerodrome["longitude"])
+        reference = float(end["plot_longitude"])
+        while longitude - reference > 180:
+            longitude -= 360
+        while longitude - reference < -180:
+            longitude += 360
+        aerodromes.append((aerodrome, longitude * longitude_factor, float(aerodrome["latitude"])))
+    min_x = min([*x_values, *(item[1] for item in aerodromes)])
+    max_x = max([*x_values, *(item[1] for item in aerodromes)])
+    min_y = min([*y_values, *(item[2] for item in aerodromes)])
+    max_y = max([*y_values, *(item[2] for item in aerodromes)])
     span_x = max(max_x - min_x, 0.1)
     span_y = max(max_y - min_y, 0.1)
     scale = min((width - 2 * padding) / span_x, (height - 2 * padding) / span_y)
@@ -1648,6 +1677,15 @@ def project_route_map(
         copied = dict(point)
         copied.update({"x": x, "y": y, "label": index in set(route_map.get("label_indices") or [])})
         projected.append(copied)
+    projected_aerodromes = []
+    for aerodrome, x_value, y_value in aerodromes:
+        copied = dict(aerodrome)
+        copied.update({
+            "x": offset_x + (x_value - min_x) * scale,
+            "y": offset_y + (y_value - min_y) * scale,
+            "label": True,
+        })
+        projected_aerodromes.append(copied)
 
     grid = []
     for step in range(1, 5):
@@ -1656,7 +1694,7 @@ def project_route_map(
             "x": padding + fraction * (width - 2 * padding),
             "y": padding + fraction * (height - 2 * padding),
         })
-    return {"points": projected, "grid": grid, "frame": frame}
+    return {"points": projected, "grid": grid, "frame": frame, "aerodromes": projected_aerodromes}
 
 
 def _project_land_ring(
@@ -1823,6 +1861,22 @@ def render_route_svg(route_map: dict[str, Any], width: int = 1200, height: int =
                 'fill="#e8f2ff" font-family="Arial, sans-serif" font-size="16" '
                 f'font-weight="600">{label}</text>'
             )
+    # Aerodromes at their governed reference points (item 11), drawn and
+    # labelled on top of the route.
+    for aerodrome in projection.get("aerodromes") or []:
+        cx, cy = aerodrome["x"], height - aerodrome["y"]
+        colour = role_colour.get(aerodrome.get("role"), "#dceeff")
+        parts.append(
+            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="7" fill="{colour}" '
+            'stroke="#07111f" stroke-width="2"/>'
+        )
+        anchor = "start" if cx < width * 0.76 else "end"
+        dx = 9 if anchor == "start" else -9
+        parts.append(
+            f'<text x="{cx + dx:.1f}" y="{cy - 12:.1f}" text-anchor="{anchor}" '
+            'fill="#e8f2ff" font-family="Arial, sans-serif" font-size="16" '
+            f'font-weight="600">{escape(str(aerodrome.get("display_name") or ""))}</text>'
+        )
     # A note that states an aerodrome the map could not draw (item 11) is
     # longer than one line; wrap it instead of running off the canvas.
     note_lines: list[str] = []
@@ -1971,6 +2025,12 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
         canvas.setFillColor(role_colour.get(point.get("role"), colors.HexColor("#DCEEFF")))
         radius = 3.2 if point.get("role") in {"departure", "destination"} else 1.9
         canvas.circle(px, py, radius, fill=1, stroke=0)
+    # Aerodromes at their governed reference points (item 11); they take the
+    # first choice of label place.
+    aerodromes = projection.get("aerodromes") or []
+    for aerodrome in aerodromes:
+        canvas.setFillColor(role_colour.get(aerodrome.get("role"), colors.HexColor("#DCEEFF")))
+        canvas.circle(x + aerodrome["x"], y + aerodrome["y"], 3.2, fill=1, stroke=0)
 
     role_priority = {
         "departure": 0,
@@ -1982,7 +2042,8 @@ def draw_route_map_pdf(canvas, route_map: dict[str, Any], x: float, y: float, wi
         "route": 5,
     }
     labelled = sorted(
-        [
+        [(-1 - index, aerodrome) for index, aerodrome in enumerate(aerodromes)]
+        + [
             (index, point)
             for index, point in enumerate(points)
             if point.get("label")

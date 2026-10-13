@@ -980,13 +980,18 @@ def test_route_map_limits_routine_labels_on_dense_long_haul_routes() -> None:
     route_map = build_route_map(flight)
 
     assert route_map["available"] is True
-    assert 0 in route_map["label_indices"]
-    assert 29 in route_map["label_indices"]
+    # Item 11 (QA496-03): WSSS and EBBR are drawn at their governed reference
+    # points and carry the end labels; the route's end rows keep their own
+    # names and need no second label.
+    assert [item["icao"] for item in route_map["aerodromes"]] == ["WSSS", "EBBR"]
+    assert 0 not in route_map["label_indices"]
+    assert 29 not in route_map["label_indices"]
     assert len(route_map["label_indices"]) <= 12
 
     svg = render_route_svg(route_map)
     assert 'fill="#153044"' in svg
     assert "Filed route from OFP coordinates" in svg
+    assert ">WSSS<" in svg and ">EBBR<" in svg
 
 
 def test_level1_notams_preserve_critical_roles_schedule_and_omission_count() -> None:

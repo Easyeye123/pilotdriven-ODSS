@@ -172,10 +172,21 @@ def _static_overlay(
     """Create a compact overlay that remains below AWS's size limit."""
     route_features = contract.route_geojson.get("features", [])
     selected = set(contract.priority_labels)
+    # One marker per label name, the highest-priority one: a destination's
+    # printed navlog row shares the aerodrome's code with the aerodrome marker.
+    by_name: dict[str, dict[str, Any]] = {}
+    for feature in contract.markers_geojson.get("features", []):
+        properties = feature.get("properties", {})
+        name = properties.get("name")
+        if name not in selected:
+            continue
+        current = by_name.get(name)
+        if current is None or int(properties.get("priority") or 0) > int(current.get("properties", {}).get("priority") or 0):
+            by_name[name] = feature
     markers = [
         feature
         for feature in contract.markers_geojson.get("features", [])
-        if feature.get("properties", {}).get("name") in selected
+        if by_name.get(feature.get("properties", {}).get("name")) is feature
     ][:marker_limit]
 
     features = []
