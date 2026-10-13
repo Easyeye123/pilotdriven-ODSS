@@ -44,6 +44,7 @@ from .notam_restriction_line import (
     unpublishable,
 )
 from .enrichment import ofp_volcano_records
+from .route_anchors import resolve_route_endpoints, unplaced_endpoint_statements
 from .volcanic_check import volcanic_ash_check
 from .pilot_briefing import (
     normalize_notam_references,
@@ -1539,14 +1540,19 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
         _evenly_spaced_indices(list(range(1, max(1, len(points) - 1))), 4)
     )
 
+    # Aerodrome identity only where the OFP places the aerodrome (item 11): a
+    # first or last row that cannot stand for it keeps its own name.
+    endpoints = resolve_route_endpoints(flight)
+    departure_index = endpoints["departure"]["point_index"]
+    destination_index = endpoints["destination"]["point_index"]
     for index, point in enumerate(points):
         role = "route"
-        if index == 0:
+        if index == departure_index:
             role = "departure"
-            point["display_name"] = flight.get("departure") or point["display_name"]
-        elif index == len(points) - 1:
+            point["display_name"] = endpoints["departure"]["icao"]
+        elif index == destination_index:
             role = "destination"
-            point["display_name"] = flight.get("destination") or point["display_name"]
+            point["display_name"] = endpoints["destination"]["icao"]
         elif point.get("fir_boundary"):
             role = "fir"
         elif str(point.get("name") or "").upper().lstrip("-") == bobcat_name and bobcat_name:
@@ -1570,10 +1576,12 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
     # web map contract only; the report's fixed page-1 layout keeps its
     # matched-only hazard list, so the pixel-pinned corpus renders stay put.
     hazard_features = sigmet_features + vaa_features + tc_features
+    unplaced = unplaced_endpoint_statements(endpoints)
 
     return {
         "available": len(points) >= 2,
         "points": points,
+        "endpoints": endpoints,
         "label_indices": sorted(priority_indices),
         "hazard_features": hazard_features,
         "sigmet_status": (flight.get("sigmet_review") or {}).get("status"),
@@ -1591,6 +1599,7 @@ def build_route_map(flight: dict[str, Any]) -> dict[str, Any]:
                 else ""
             )
             + "."
+            + "".join(f" {statement}" for statement in unplaced)
         ),
     }
 
@@ -1814,10 +1823,19 @@ def render_route_svg(route_map: dict[str, Any], width: int = 1200, height: int =
                 'fill="#e8f2ff" font-family="Arial, sans-serif" font-size="16" '
                 f'font-weight="600">{label}</text>'
             )
-    parts.append(
-        f'<text x="20" y="{height - 16}" fill="#8396ab" font-family="Arial, sans-serif" '
-        f'font-size="13">{escape(route_map.get("note") or "")}</text>'
-    )
+    # A note that states an aerodrome the map could not draw (item 11) is
+    # longer than one line; wrap it instead of running off the canvas.
+    note_lines: list[str] = []
+    for word in str(route_map.get("note") or "").split():
+        if note_lines and len(note_lines[-1]) + 1 + len(word) <= 150:
+            note_lines[-1] += f" {word}"
+        else:
+            note_lines.append(word)
+    for index, line in enumerate(reversed(note_lines or [""])):
+        parts.append(
+            f'<text x="20" y="{height - 16 - index * 16}" fill="#8396ab" font-family="Arial, sans-serif" '
+            f'font-size="13">{escape(line)}</text>'
+        )
     parts.append("</svg>")
     return "".join(parts)
 

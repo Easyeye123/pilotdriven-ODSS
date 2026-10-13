@@ -78,7 +78,25 @@ def _render_svg(contract: MapContract, *, width: int, height: int) -> str:
         project(feature["geometry"]["coordinates"])
         for feature in markers
     ]
-    polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y in projected)
+    # The route line is the canonical route geometry, one polyline per side of
+    # the antimeridian. Threading it through the markers carried it on from the
+    # destination to every EDTO ETP (item 11: SQ214 PER-SIN ended south of Java,
+    # not at WSSS) and across the whole chart at the dateline.
+    route_lines = []
+    for route in contract.route_geojson.get("features", []):
+        geometry = route.get("geometry") or {}
+        segments = (
+            [geometry.get("coordinates") or []]
+            if geometry.get("type") == "LineString"
+            else geometry.get("coordinates") or []
+            if geometry.get("type") == "MultiLineString"
+            else []
+        )
+        for segment in segments:
+            if len(segment) >= 2:
+                route_lines.append(" ".join(
+                    f"{x:.1f},{y:.1f}" for x, y in (project(coordinate[:2]) for coordinate in segment)
+                ))
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" rx="12" fill="#07111f"/>',
@@ -109,10 +127,11 @@ def _render_svg(contract: MapContract, *, width: int, height: int) -> str:
             style = ('fill="none" stroke-dasharray="5 4"' if props.get("volcano_ring")
                      else 'fill="#ff6b6b" fill-opacity="0.30"')
             parts.append(f'<polygon points="{points}" {style} stroke="#ffb84d" stroke-width="2"/>')
-    parts.append(
-        f'<polyline points="{polyline}" fill="none" stroke="#dceeff" '
-        'stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'
-    )
+    for polyline in route_lines:
+        parts.append(
+            f'<polyline points="{polyline}" fill="none" stroke="#dceeff" '
+            'stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'
+        )
     selected = set(contract.priority_labels)
     for feature, (x, y) in zip(markers, projected):
         props = feature.get("properties", {})

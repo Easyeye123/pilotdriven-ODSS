@@ -1,0 +1,24 @@
+{
+  "description": "Aerodrome reference points (ARP) for every departure and destination in the 30-OFP private corpus. Published AIP AD 2.2 values, rounded to 1e-5 degree. Independent of the OFP parser; tests/test_route_map_anchors_20261013.py cross-checks each value against the coordinate the OFP itself prints on the destination row (agreement within 1 NM).",
+  "points": {
+    "EBBR": [50.90139, 4.48444],
+    "EDDF": [50.03333, 8.57056],
+    "EGKK": [51.14806, -0.19028],
+    "EGLL": [51.4775, -0.46139],
+    "EKCH": [55.61806, 12.65611],
+    "FAOR": [-26.13917, 28.24611],
+    "KJFK": [40.63975, -73.77893],
+    "KLAX": [33.9425, -118.40806],
+    "KSFO": [37.61889, -122.375],
+    "LIRF": [41.80028, 12.23889],
+    "NZCH": [-43.48944, 172.53222],
+    "RKSI": [37.46917, 126.45056],
+    "RPLL": [14.50861, 121.01944],
+    "VHHH": [22.30889, 113.91472],
+    "VRMM": [4.19183, 73.52914],
+    "VVNB": [21.22139, 105.80722],
+    "WSSS": [1.35917, 103.98944],
+    "YPAD": [-34.945, 138.53056],
+    "YPPH": [-31.94028, 115.96694]
+  }
+}

@@ -6,6 +6,7 @@ from typing import Any
 
 from ..odss.constants import edto_sectors
 from ..odss.enrichment import ofp_volcano_records
+from ..odss.route_anchors import resolve_route_endpoints, unplaced_endpoint_statements
 from .config import MapSettings
 from .contract import MapBounds, MapContract
 from .labels import choose_priority_labels, role_priority
@@ -54,7 +55,14 @@ def build_map_contract(
     if len(points) < 2:
         raise ValueError("At least two coordinate-bearing route points are required")
 
+    # Aerodrome identity comes from OFP evidence, never from list position or a
+    # shared name (item 11: "WSSS" drawn at the Bali VOR once leading rows were
+    # lost). A row that cannot stand for its aerodrome keeps its own name.
+    endpoints = resolve_route_endpoints(flight)
+    departure_index = endpoints["departure"]["point_index"]
+    destination_index = endpoints["destination"]["point_index"]
     significance = _significance_index(flight, findings, points)
+    airport_roles = _airport_roles(flight, findings, departure_index, destination_index)
     route_geometry = _route_geometry(points)
     route_feature = {
         "type": "Feature",
@@ -75,15 +83,15 @@ def build_map_contract(
     marker_features: list[dict[str, Any]] = []
     for index, point in enumerate(points):
         normalized_name = _normalized_name(point)
-        roles = significance.get(normalized_name, set())
+        roles = set(significance.get(normalized_name, set())) | airport_roles.get(index, set())
         role = _highest_role(roles) if roles else "route"
         priority = max(
             [role_priority(candidate) for candidate in roles] or [role_priority(role)]
         )
-        if index == 0:
+        if index == departure_index:
             role = "departure"
             priority = role_priority(role)
-        elif index == len(points) - 1:
+        elif index == destination_index:
             role = "destination"
             priority = role_priority(role)
 
@@ -100,10 +108,10 @@ def build_map_contract(
                 },
                 "properties": {
                     "name": (
-                        str(flight.get("departure") or normalized_name)
-                        if index == 0
-                        else str(flight.get("destination") or normalized_name)
-                        if index == len(points) - 1
+                        str(endpoints["departure"]["icao"])
+                        if index == departure_index
+                        else str(endpoints["destination"]["icao"])
+                        if index == destination_index
                         else normalized_name
                     ),
                     "source_name": point.get("name"),
@@ -297,7 +305,7 @@ def build_map_contract(
         }
         for point in points
     ]
-    warnings = []
+    warnings = unplaced_endpoint_statements(endpoints)
     if settings.provider != "aws-location":
         warnings.append("Primary realistic basemap provider is disabled.")
     if settings.provider == "aws-location" and not settings.aws_location_api_key:
@@ -334,6 +342,21 @@ def build_map_contract(
             "actual_takeoff_utc": flight.get("actual_takeoff_utc"),
             "edto_sector_count": len(edto_sectors(flight.get("edto"))),
             "edto_etp_marker_count": edto_etp_marker_count,
+            "route_endpoints": {
+                role: {
+                    "icao": end["icao"],
+                    "status": end["status"],
+                    "marker_id": (
+                        f"wp-{end['point_index']:04d}"
+                        if end["point_index"] is not None
+                        else None
+                    ),
+                    "fix": end["fix"],
+                    "reason": end["reason"],
+                    "offset_bound_nm": end["offset_bound_nm"],
+                }
+                for role, end in endpoints.items()
+            },
         },
     )
 
@@ -407,11 +430,11 @@ def _significance_index(
     findings: list[dict[str, Any]],
     points: list[dict[str, Any]],
 ) -> dict[str, set[str]]:
+    # Airport roles (departure, destination, NOTAM airport) are attached per
+    # marker by ``_airport_roles``. Keyed by name here they leaked to every row
+    # sharing the name: SQ23's second -KZBW boundary, 52 NM from JFK, was drawn
+    # as the departure and as a NOTAM airport.
     index: dict[str, set[str]] = defaultdict(set)
-
-    if points:
-        index[_normalized_name(points[0])].add("departure")
-        index[_normalized_name(points[-1])].add("destination")
 
     for point in points:
         name = _normalized_name(point)
@@ -464,16 +487,38 @@ def _significance_index(
                 marker = _extract_after(title, "before ")
                 if marker:
                     index[marker].add("early_contact")
-        if engine == "notam" and data.get("location"):
-            location = str(data["location"]).upper()
-            if points and location == str(flight.get("departure") or "").upper():
-                index[_normalized_name(points[0])].add("notam_airport")
-            elif points and location == str(flight.get("destination") or "").upper():
-                index[_normalized_name(points[-1])].add("notam_airport")
-            else:
-                index[location].add("notam_airport")
-
     return index
+
+
+def _airport_roles(
+    flight: dict[str, Any],
+    findings: list[dict[str, Any]],
+    departure_index: int | None,
+    destination_index: int | None,
+) -> dict[int, set[str]]:
+    """Airport roles by marker index, only on markers that stand for an aerodrome.
+
+    A NOTAM location that is not this flight's placed departure or destination
+    (a FIR such as KZBW, an en-route airport) names no drawn route row: route
+    rows are fixes, so it never makes one an airport.
+    """
+    roles: dict[int, set[str]] = defaultdict(set)
+    departure = str(flight.get("departure") or "").upper()
+    destination = str(flight.get("destination") or "").upper()
+    if departure_index is not None:
+        roles[departure_index].add("departure")
+    if destination_index is not None:
+        roles[destination_index].add("destination")
+    for finding in findings:
+        data = finding.get("data") or {}
+        if str(finding.get("engine") or "") != "notam" or not data.get("location"):
+            continue
+        location = str(data["location"]).upper()
+        if departure_index is not None and location == departure:
+            roles[departure_index].add("notam_airport")
+        elif destination_index is not None and location == destination:
+            roles[destination_index].add("notam_airport")
+    return roles
 
 
 def _extract_after(text: str, token: str) -> str | None:
