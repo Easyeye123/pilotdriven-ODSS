@@ -76,9 +76,11 @@ from .odss.governed_deferred_extract import (
 from .odss.combined_brief import (
     COMBINED_BRIEFING_FORMAT_HEADER,
     COMBINED_BRIEFING_PUBLICATION_FORMAT,
+    briefing_link_origin,
     combined_briefing_cache_token,
     combined_briefing_filename,
     render_combined_briefing,
+    validated_public_origin,
 )
 from .odss.reporting import render_pdf
 from .odss.surface_overlays import (
@@ -2973,7 +2975,16 @@ def get_service_combined_report(request: Request, analysis_id: str):
         sha256(analysis_snapshot).hexdigest(),
         flight["id"],
     )
-    cache_path = REPORT_DIR / f"flight_{flight['id']}_combined_{token}.pdf"
+    # The origin the PDF was requested from, as the app server forwards it
+    # behind the service token - and only ever one of this deployment's own
+    # (checked again here). Its governed links return the pilot there; apex
+    # and www PDFs are cached apart.
+    public_origin = validated_public_origin(
+        request.headers.get("x-pilotdriven-public-origin")
+    )
+    link_origin = briefing_link_origin(public_origin)
+    origin_key = sha256(link_origin.encode("utf-8")).hexdigest()[:8]
+    cache_path = REPORT_DIR / f"flight_{flight['id']}_combined_{token}_{origin_key}.pdf"
     with _combined_report_lock(flight["id"]):
         if not cache_path.exists():
             staging = REPORT_DIR / (
@@ -2996,6 +3007,7 @@ def get_service_combined_report(request: Request, analysis_id: str):
                             )
                             else None
                         ),
+                        public_origin=link_origin,
                     )
                 except ValueError as exc:
                     # F5 of the release-420 independent QA (24 Sep 2026): a

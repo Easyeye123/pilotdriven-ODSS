@@ -2419,7 +2419,9 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     ]
     assert len(source_links) == 1
     origin, _, fragment = source_links[0].partition("/#/")
-    assert origin == "https://www.pilotdriven.com"
+    # No requesting origin: the canonical apex (14 Oct 2026; www until then -
+    # see tests/test_pdf_link_origin_20261014.py).
+    assert origin == "https://pilotdriven.com"
     route, _, query = fragment.partition("?")
     assert route == "governed-deferred-reference"
     assert parse_qs(query) == {

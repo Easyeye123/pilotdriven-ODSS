@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -928,6 +929,65 @@ def _unique_text(values: list[Any]) -> list[str]:
     return result
 
 
+# The deployment's public origins. The app is served at the canonical apex
+# (the stack's CustomDomainName) and at its www with no redirect, and a
+# device-saved flight pack belongs to one origin, so a printed governed link
+# must return the pilot to the origin the PDF was requested from (14 Oct 2026:
+# every link went to www, and an apex pilot's Back landed without device
+# flights). The app server forwards that origin only when it is one of these
+# (app public-origin.mjs); ODSS checks it again here. Anything else falls back
+# to the canonical apex - never www, never an arbitrary host.
+CANONICAL_PUBLIC_ORIGIN = "https://pilotdriven.com"
+_BUILT_IN_PUBLIC_ORIGINS = (CANONICAL_PUBLIC_ORIGIN, "https://www.pilotdriven.com")
+_HTTPS_ORIGIN = re.compile(r"https://[A-Za-z0-9.-]+(?::\d{1,5})?")
+_RENDER_PUBLIC_ORIGIN: ContextVar[str | None] = ContextVar("pd_render_public_origin", default=None)
+
+
+def _normalized_public_origin(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if text.endswith("/"):
+        text = text[:-1]
+    if not _HTTPS_ORIGIN.fullmatch(text):
+        return None
+    host, _, port = text[len("https://"):].partition(":")
+    host = host.lower()
+    if not host or host.startswith(".") or host.endswith(".") or ".." in host:
+        return None
+    return f"https://{host}" + (f":{port}" if port and port != "443" else "")
+
+
+def public_origin_allowlist() -> set[str]:
+    """The canonical apex and its www, plus PILOTDRIVEN_PUBLIC_ORIGIN and every
+    valid PILOTDRIVEN_PUBLIC_ORIGINS entry (comma separated)."""
+    configured = [
+        os.environ.get("PILOTDRIVEN_PUBLIC_ORIGIN") or "",
+        *(os.environ.get("PILOTDRIVEN_PUBLIC_ORIGINS") or "").split(","),
+    ]
+    return {
+        origin
+        for origin in map(_normalized_public_origin, (*_BUILT_IN_PUBLIC_ORIGINS, *configured))
+        if origin
+    }
+
+
+def validated_public_origin(value: Any) -> str | None:
+    """``value`` as a bare https origin when it is one of this deployment's own."""
+    origin = _normalized_public_origin(value)
+    return origin if origin and origin in public_origin_allowlist() else None
+
+
+def briefing_link_origin(requested: Any = None) -> str:
+    """The origin a briefing's governed links use: the requesting origin when
+    it is this deployment's own, else the configured PILOTDRIVEN_PUBLIC_ORIGIN,
+    else the canonical apex."""
+    return (
+        validated_public_origin(requested)
+        or validated_public_origin(_RENDER_PUBLIC_ORIGIN.get())
+        or validated_public_origin(os.environ.get("PILOTDRIVEN_PUBLIC_ORIGIN"))
+        or CANONICAL_PUBLIC_ORIGIN
+    )
+
+
 def governed_deferred_source_target(
     flight: dict[str, Any],
     item: dict[str, Any],
@@ -947,12 +1007,8 @@ def governed_deferred_source_target(
         r"[A-Z0-9][A-Z0-9._/-]{0,79}", reference
     ):
         return None
-    origin = str(
-        public_origin
-        or os.environ.get("PILOTDRIVEN_PUBLIC_ORIGIN")
-        or "https://www.pilotdriven.com"
-    ).strip().rstrip("/")
-    if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::\d{1,5})?", origin):
+    origin = briefing_link_origin(public_origin)
+    if not _HTTPS_ORIGIN.fullmatch(origin):
         return None
     values = {
         "type": item_type,
@@ -14091,21 +14147,32 @@ def render_combined_briefing(
     weather_charts: dict[str, Any] | None = None,
     company_briefing_references: dict[str, Any] | None = None,
     include_audit_appendix: bool = False,
+    public_origin: str | None = None,
 ) -> None:
-    """Publish the analysed brief; audit output is an explicit internal option."""
-    if include_audit_appendix:
-        return _render_reference_briefing(
-            flight, findings, warnings, path, source_pdf_path=source_pdf_path,
+    """Publish the analysed brief; audit output is an explicit internal option.
+
+    ``public_origin`` is the origin the PDF was requested from. Every governed
+    link the render prints uses it when it is this deployment's own
+    (briefing_link_origin), on every layout, without threading it through
+    each page builder.
+    """
+    token = _RENDER_PUBLIC_ORIGIN.set(validated_public_origin(public_origin))
+    try:
+        if include_audit_appendix:
+            return _render_reference_briefing(
+                flight, findings, warnings, path, source_pdf_path=source_pdf_path,
+                weather_charts=weather_charts,
+                company_briefing_references=company_briefing_references,
+                include_audit_appendix=True,
+            )
+        from .operational_format import render_analysed_briefing
+        return render_analysed_briefing(
+            source_verified_flight(flight, source_pdf_path), findings, warnings, path,
             weather_charts=weather_charts,
             company_briefing_references=company_briefing_references,
-            include_audit_appendix=True,
         )
-    from .operational_format import render_analysed_briefing
-    return render_analysed_briefing(
-        source_verified_flight(flight, source_pdf_path), findings, warnings, path,
-        weather_charts=weather_charts,
-        company_briefing_references=company_briefing_references,
-    )
+    finally:
+        _RENDER_PUBLIC_ORIGIN.reset(token)
 
 
 # Everything publication reads that comes from a re-read of OFP page 1 alone.

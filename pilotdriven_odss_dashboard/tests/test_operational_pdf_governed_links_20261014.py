@@ -42,6 +42,8 @@ def _no_live_sources(monkeypatch):
                  "ODSS_TC_TRACK_SOURCE", "ODSS_TC_SIGMET_SOURCE", "ODSS_ADWX_SOURCE",
                  "ODSS_WEATHER_CHART_AI"):
         monkeypatch.setenv(name, "disabled")
+    monkeypatch.delenv("PILOTDRIVEN_PUBLIC_ORIGIN", raising=False)
+    monkeypatch.delenv("PILOTDRIVEN_PUBLIC_ORIGINS", raising=False)
 
 
 def _analyse(tmp_path: Path, name: str) -> dict:
@@ -54,13 +56,14 @@ def _analyse(tmp_path: Path, name: str) -> dict:
     return payload
 
 
-def _render(tmp_path: Path, payload: dict, references=None, name: str = "briefing.pdf") -> Path:
+def _render(tmp_path: Path, payload: dict, references=None, name: str = "briefing.pdf", public_origin=None) -> Path:
     target = tmp_path / name
     render_combined_briefing(
         payload["flight"], payload["findings"], payload.get("view", {}).get("warnings") or [],
         target, source_pdf_path=payload["source"],
         weather_charts=payload.get("weather_charts") or {},
         company_briefing_references=references,
+        public_origin=public_origin,
     )
     return target
 
@@ -77,7 +80,8 @@ def _governed_links(pdf: Path) -> list[dict]:
                 fragment, _, query = urlsplit(uri).fragment.partition("?")
                 assert fragment == f"/{ROUTE}", f"unexpected external link {uri}"
                 params = {key: values[0] for key, values in parse_qs(query).items()}
-                rows.append({**params, "uri": uri, "pdf_page": page.number + 1,
+                parts = urlsplit(uri)
+                rows.append({**params, "uri": uri, "origin": f"{parts.scheme}://{parts.netloc}", "pdf_page": page.number + 1,
                              "text": " ".join(page.get_textbox(link["from"]).split())})
     return rows
 
@@ -116,7 +120,9 @@ def test_the_downloaded_six_page_pdf_links_every_cited_governed_item(tmp_path, n
     linked = {(row["type"], row["reference"]) for row in links}
     assert set(cited) == linked, f"{name}: cited {cited}, linked {sorted(linked)}"
     for row in links:
-        # Linked from the TECHNICAL STATUS card, as visible link text.
+        # Linked from the TECHNICAL STATUS card, as visible link text, on the
+        # canonical apex when no requesting origin is stated.
+        assert row["origin"] == "https://pilotdriven.com", row
         assert row["pdf_page"] == 3, row
         assert f"{row['type']} {row['reference']}" in row["text"], row
         assert row["flightNumber"] == payload["flight"]["flight_number"]
@@ -246,9 +252,13 @@ def test_every_held_ofp_pdf_link_opens_its_approved_page_or_says_it_is_not_avail
             stored = (publication if publication["status"] == "unavailable"
                       else normalize_governed_deferred_reference_payload(
                           payload["flight"].get("deferred_items") or [], publication, flight=payload["flight"]))
-        links = _governed_links(_render(tmp_path, payload, stored, name=f"b{index}.pdf"))
+        # The origin each PDF was requested from (apex and www alternate):
+        # every printed link returns the pilot there (14 Oct 2026).
+        requested = ("https://pilotdriven.com", "https://www.pilotdriven.com")[index % 2]
+        links = _governed_links(_render(tmp_path, payload, stored, name=f"b{index}.pdf", public_origin=requested))
         cited = set(_cited(payload["flight"]))
         assert {(row["type"], row["reference"]) for row in links} == cited, name
+        assert {row["origin"] for row in links} <= {requested}, name
         pending += [{"file": name, "uri": row["uri"], "text": row["text"]} for row in links]
     resolved = _bridge(tmp_path, "resolve", pending)
     assert len(resolved) >= 40
