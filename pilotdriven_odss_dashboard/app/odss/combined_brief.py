@@ -205,7 +205,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # size conclusion can differ.
 # 13 Oct 2026 (v98, PD item #11): route-map aerodromes are placed only where the OFP puts them (one shared resolver,
 # app/odss/route_anchors.py); an aerodrome that cannot be placed is named with the reason instead of drawn on another row.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-13-route-anchors-v98"
+# 14 Oct 2026 (v99, Codex QA of release 496, QA496-01..04): the six-page briefing links every cited MEL/CDL/CDDL item on
+# the origin it was requested from; route-map aerodromes are drawn only at an identity-proven reference point (governed LIDO
+# table, else the published OSM aerodrome with the exact ICAO tag), never on a route row.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-14-governed-links-aerodromes-v99"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
