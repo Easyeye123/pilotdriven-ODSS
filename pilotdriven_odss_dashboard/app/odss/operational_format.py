@@ -227,6 +227,16 @@ class Card:
     tag: str | None = None
 
 
+@dataclass(frozen=True)
+class LinkLine:
+    """A card line that is also an external link (the durable governed-source
+    landing): drawn as visible text with a URI annotation over every wrapped
+    line, so the link is where the words are."""
+
+    text: str
+    uri: str
+
+
 @dataclass
 class CardBox:
     card: Card
@@ -328,7 +338,13 @@ def card_rows(card: Card, width: float, body: float, leading: float) -> list[tup
         para(source, size=LABEL, colour=card.accent, gap=3.0, align="right")
         return rows
     for index, paragraph in enumerate(card.paragraphs):
-        para(paragraph, colour=WHITE, gap=card.paragraph_gap if index else 0.0)
+        gap = card.paragraph_gap if index else 0.0
+        if isinstance(paragraph, LinkLine):
+            for line_index, line in enumerate(wrap(paragraph.text, inner, font="Helvetica-Bold", size=body)):
+                rows.append(((gap if line_index == 0 else 0.0),
+                             [(line, "Helvetica-Bold", body, CYAN, "link", paragraph.uri)]))
+            continue
+        para(paragraph, colour=WHITE, gap=gap)
     return rows
 
 
@@ -868,7 +884,18 @@ def draw_page(canvas, flight, view, page: Page, number: int, count: int) -> None
                 raise ValueError(f"Card body exceeds measured capacity: {card.title}")
             pill_x = inner_left
             cursor_x = inner_left
-            for value, font, size, colour, align in items:
+            for value, font, size, colour, align, *link in items:
+                if align == "link":
+                    canvas.setFont(font, size)
+                    canvas.setFillColor(colour)
+                    canvas.drawString(inner_left, baseline, value)
+                    canvas.linkURL(
+                        link[0],
+                        (inner_left - 1, baseline - 2.5,
+                         inner_left + stringWidth(value, font, size) + 1, baseline + size),
+                        relative=0, thickness=0,
+                    )
+                    continue
                 if align == "pill":
                     pill_x = inner_left + draw_severity_pill(canvas, inner_left, baseline,
                                                              value, card.accent) + 8
@@ -1501,6 +1528,40 @@ def deferred_gate_value(row: dict[str, Any]) -> str:
     return kinds or "HELD"
 
 
+def deferred_status_lines(flight, rows) -> list[Any]:
+    """TECHNICAL STATUS: each analysed declaration, then a link per cited item.
+
+    QA496-01 (Codex, production release 496, 13 Oct 2026): the six-page
+    publication pilots download printed "MEL 25-20-50A" as text only - every
+    governed-source link lived in the older reference layout. Every MEL, CDL
+    and CDDL item the OFP cites with an item number now carries the durable
+    signed-in landing link (combined_brief.governed_deferred_source_target).
+    The link names the item, never a page or a document: at the tap the
+    landing applies the app's one rule to the current approved library and
+    opens the page the dashboard offers, or says plainly that the library
+    holds no such item - with a way back. A PDF cannot go stale on a page.
+    """
+    from .combined_brief import governed_deferred_source_target
+
+    items = [item for item in (flight.get("deferred_items") or []) if isinstance(item, dict)]
+    lines: list[Any] = []
+    for row in rows:
+        lines.append(row["text"])
+        linked: set[tuple[str, str]] = set()
+        for index in row.get("source_item_indices") or []:
+            if not isinstance(index, int) or not 0 <= index < len(items):
+                continue
+            item = items[index]
+            uri = governed_deferred_source_target(flight, item)
+            key = (str(item.get("item_type") or "").strip().upper(),
+                   str(item.get("reference") or "").strip().upper())
+            if not uri or key in linked:
+                continue
+            linked.add(key)
+            lines.append(LinkLine(f"OPEN APPROVED {key[0]} {key[1]} >", uri))
+    return lines
+
+
 def severity_pill(value: Any) -> tuple[str, Any]:
     return SEVERITY_PILLS.get(str(value or "information").lower(), ("INFO", CYAN))
 
@@ -1533,7 +1594,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
 
     vws_summary = f"{int(vws.get('event_count') or 0)} event(s) at the analysed {text(vws.get('threshold'))} threshold. Maximum {text(vws.get('maximum_display'))} at {text(vws.get('maximum_waypoint'))}, ACTM {text(vws.get('maximum_actm_display'))}."
     terrain_summary = f"{len(terrain.get('events') or [])} high-MSA event(s); controlled-profile status is in the closing record."
-    deferred = [row["text"] for row in view["deferred_pdf_analysis"]]
+    deferred = deferred_status_lines(flight, view["deferred_pdf_analysis"])
 
     # ---------------------------------------------------------------- page 1
     def station(role: str, accent, extra: list[tuple[str, list[str]]], taf_drop: int = 0) -> Card:
@@ -1619,7 +1680,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                   (signed_amount if tanker_only_excess(fuel) else amount)("excess_fuel")),
                  ("BURNOFF", amount("burnoff")),
                  ("TAXI", kg(fuel.get("taxi_fuel_kg")))]),
-        Card("TECH STATUS", [f"{len(deferred)} consequence(s) on PERF / FUEL / TECH."],
+        Card("TECH STATUS", [f"{len(view['deferred_pdf_analysis'])} consequence(s) on PERF / FUEL / TECH."],
              AMBER, "sec_performance", tag="CFP P1", kind="tile",
              payload=[(deferred_item_label(row.get("title")), deferred_gate_value(row))
                       for row in view.get("deferred_dispatch_gates") or []][:5]
