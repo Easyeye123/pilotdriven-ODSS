@@ -96,6 +96,8 @@ from .odss_map_v06.api import (
     map_contract_from_analysis,
 )
 from .odss_map_v06.config import MapSettings
+from .odss_map_v06.geojson import build_map_contract
+from .odss.briefing import build_route_map, render_route_svg
 from .odss_map_v06.report_worker import (
     ReportRefreshClaimConflict,
     publish_staged_artifacts,
@@ -1470,6 +1472,42 @@ def _surface_overlay_summary(overlays: list[dict]) -> list[dict]:
     ]
 
 
+def _refresh_route_aerodromes(analysis: dict) -> bool:
+    """Redraw the route's aerodromes from the flight's current identity sources.
+
+    Item 11 (QA496-03): an aerodrome outside the governed LIDO table is drawn at
+    the OpenStreetMap aerodrome the app publishes for this analysis, matched on
+    its exact ICAO tag. That overlay arrives after the analysis, so the stored
+    map contract and report route map are rebuilt from the same flight when it
+    does. The route itself is never changed: a rebuilt contract whose route hash
+    differs is discarded. Returns whether the drawn aerodromes changed.
+    """
+    flight = analysis.get("flight") or {}
+    stored = analysis.get("map_contract")
+    try:
+        contract = build_map_contract(flight, analysis.get("findings") or [], map_settings).public_dict()
+    except ValueError:
+        return False
+    if stored and stored.get("route_hash") != contract.get("route_hash"):
+        return False
+
+    def aerodromes(value: dict | None) -> list:
+        return [
+            (feature.get("id"), feature.get("geometry"), (feature.get("properties") or {}).get("aerodrome_reference"))
+            for feature in ((value or {}).get("markers_geojson") or {}).get("features") or []
+            if str(feature.get("id") or "").startswith("aerodrome-")
+        ]
+
+    changed = aerodromes(stored) != aerodromes(contract)
+    analysis["map_contract"] = contract
+    briefing = (analysis.get("view") or {}).get("briefing")
+    if isinstance(briefing, dict) and "route_map" in briefing:
+        route_map = build_route_map(flight)
+        briefing["route_map"] = route_map
+        briefing["route_svg"] = render_route_svg(route_map)
+    return changed
+
+
 def _publish_surface_overlay_reports(
     flight,
     analysis: dict,
@@ -1505,6 +1543,11 @@ def _publish_surface_overlay_reports(
             airport_surface_index
         )
     route_map_path, route_map_label = _surface_report_route_map(updated)
+    if _refresh_route_aerodromes(updated):
+        # The realistic snapshot was rendered from the contract before these
+        # aerodromes were placed; the reports draw the refreshed route map
+        # until a new snapshot is rendered.
+        route_map_path, route_map_label = None, None
     warnings = (updated.get("view") or {}).get("warnings") or []
     findings = updated.get("findings") or []
 

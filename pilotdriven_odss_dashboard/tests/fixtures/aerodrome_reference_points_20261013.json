@@ -1,85 +1,17 @@
 {
-  "description": "Test truth, independent of the product table and the parser: aerodrome reference points (ARP) for every departure and destination in the 30-OFP private corpus, rounded to 1e-5 degree. WSSS and KJFK are the official values Codex read on 13 Oct 2026 (CAAS eAIP AD 2.2 WSSS 012133.16N 1035921.57E; FAA AIP KJFK 40-38-23.741N 073-46-43.292W). The other 17 are AIP AD 2.2 values as recalled, not re-read; each agrees with the coordinate its OFP prints on the destination row within 0.61 NM.",
+  "description": "Official aerodrome reference points (ARP) only, as read from the State AIPs and cited by Codex QA on 13 Oct 2026: CAAS eAIP AD 2.2 WSSS 012133.16N 1035921.57E (https://aim-sg.caas.gov.sg/aim-content/uploads/aip/17-SEP-2026/AIP/2026-09-03-000000/html/eAIP/SG-AD-2-WSSS-en-GB.html); FAA AIP KJFK 40-38-23.741N 073-46-43.292W (https://www.faa.gov/air_traffic/publications/atpubs/aip_html/part3_ad_2.0_new_york.html). No recalled value is held here: the other 17 corpus aerodromes are checked against the coordinate their own OFP prints and against the OpenStreetMap aerodrome PD published (tests/fixtures/osm_aerodromes_published_20261014.json).",
   "points": {
-    "EBBR": [
-      50.90139,
-      4.48444
-    ],
-    "EDDF": [
-      50.03333,
-      8.57056
-    ],
-    "EGKK": [
-      51.14806,
-      -0.19028
-    ],
-    "EGLL": [
-      51.4775,
-      -0.46139
-    ],
-    "EKCH": [
-      55.61806,
-      12.65611
-    ],
-    "FAOR": [
-      -26.13917,
-      28.24611
-    ],
     "KJFK": [
       40.63993,
       -73.77869
     ],
-    "KLAX": [
-      33.9425,
-      -118.40806
-    ],
-    "KSFO": [
-      37.61889,
-      -122.375
-    ],
-    "LIRF": [
-      41.80028,
-      12.23889
-    ],
-    "NZCH": [
-      -43.48944,
-      172.53222
-    ],
-    "RKSI": [
-      37.46917,
-      126.45056
-    ],
-    "RPLL": [
-      14.50861,
-      121.01944
-    ],
-    "VHHH": [
-      22.30889,
-      113.91472
-    ],
-    "VRMM": [
-      4.19183,
-      73.52914
-    ],
-    "VVNB": [
-      21.22139,
-      105.80722
-    ],
     "WSSS": [
       1.35921,
       103.98933
-    ],
-    "YPAD": [
-      -34.945,
-      138.53056
-    ],
-    "YPPH": [
-      -31.94028,
-      115.96694
     ]
   },
   "official": [
-    "WSSS",
-    "KJFK"
+    "KJFK",
+    "WSSS"
   ]
 }

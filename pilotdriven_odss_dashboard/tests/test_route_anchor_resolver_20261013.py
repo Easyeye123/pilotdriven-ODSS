@@ -21,10 +21,19 @@ from app.odss.route_anchors import (
     resolve_route_endpoints,
     unplaced_endpoint_statements,
 )
-from tests.test_route_map_anchors_20261013 import ARP, CORPUS, _corpus_files, _nm, _parsed
+from tests.test_route_map_anchors_20261013 import (
+    CORPUS,
+    OFFICIAL,
+    OSM_CENTRES,
+    OSM_OUTLINES,
+    _corpus_files,
+    _nm,
+    _osm_overlay,
+    _parsed,
+    _printed_records,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
-OFFICIAL = set(json.loads((ROOT / "tests" / "fixtures" / "aerodrome_reference_points_20261013.json").read_text())["official"])
 
 
 def _toy_flight(**overrides) -> dict:
@@ -38,14 +47,19 @@ def _toy_flight(**overrides) -> dict:
     return flight
 
 
-def test_every_governed_reference_point_agrees_with_the_aip() -> None:
-    """Product table (LIDO aerodrome records) against independent AIP truth: within 1 NM, and within 0.1 NM of the
-    official CAAS/FAA values Codex read for WSSS and KJFK."""
+def test_every_governed_reference_point_agrees_with_its_independent_sources() -> None:
+    """Product table (LIDO aerodrome records) against sources independent of it: the record each OFP prints, re-read
+    from the PDF text (0.05 NM); the official CAAS/FAA point for WSSS and KJFK (0.1 NM); PD's published OpenStreetMap
+    aerodrome where held (1.5 NM; measured at most 1.11 NM)."""
     table = aerodrome_reference_points()
-    assert set(table) == set(ARP)
+    assert set(table) == set(_printed_records())
     for code, entry in table.items():
-        distance = _nm(ARP[code], (entry["latitude"], entry["longitude"]))
-        assert distance <= (0.1 if code in OFFICIAL else 1.0), (code, distance)
+        position = (entry["latitude"], entry["longitude"])
+        assert _nm(_printed_records()[code], position) <= 0.05, code
+        if code in OFFICIAL:
+            assert _nm(OFFICIAL[code], position) <= 0.1, code
+        if code in OSM_CENTRES:
+            assert _nm(OSM_CENTRES[code], position) <= 1.5, code
         for source in entry["sources"]:
             assert source["kind"] == "lido_ofp_destination_aerodrome_record"
             assert source["printed"].startswith(code + " ")
@@ -101,8 +115,8 @@ def test_an_unheld_code_is_not_drawn_and_the_reason_is_stated() -> None:
     assert endpoints["destination"]["status"] == "not_placed"
     assert endpoints["destination"]["latitude"] is None
     assert unplaced_endpoint_statements(endpoints) == [
-        "Destination aerodrome YBBN not drawn: no governed aerodrome reference point is held for YBBN. "
-        "The route is drawn to YPPH."
+        "Destination aerodrome YBBN not drawn: no governed aerodrome reference point is held for YBBN, and no "
+        "OpenStreetMap aerodrome matched on its ICAO tag was published for this analysis. The route is drawn to YPPH."
     ]
     endpoints = resolve_route_endpoints(_toy_flight(departure=""))
     assert endpoints["departure"]["reason"] == "the OFP departure is not held"
@@ -138,3 +152,51 @@ def test_genuine_corpus_resolves_both_aerodromes_without_reading_a_route_row() -
             assert (reference[role]["latitude"], reference[role]["longitude"]) == (
                 reversed_rows[role]["latitude"], reversed_rows[role]["longitude"]
             ), path.name
+
+
+def test_osm_source_is_the_centre_of_the_published_exact_icao_outline_with_provenance() -> None:
+    """The second source: the bounding-box centre of the outline the app published for this analysis, matched on the
+    exact ICAO code - the same point the app's own OpenStreetMap lookup reports as the aerodrome centre."""
+    endpoints = resolve_route_endpoints(_toy_flight(destination="WMKK", surface_overlays=[_osm_overlay("WMKK", "destination")]))
+    end = endpoints["destination"]
+    assert end["status"] == "reference_point"
+    osm = json.loads((ROOT / "tests" / "fixtures" / "osm_aerodromes_published_20261014.json").read_text())["centres"]["WMKK"]["osm"]
+    assert _nm((osm["latitude"], osm["longitude"]), (end["latitude"], end["longitude"])) <= 0.001
+    assert end["reference"] == {
+        "kind": "osm_aerodrome_published_outline",
+        "icao": "WMKK",
+        "name": OSM_OUTLINES["WMKK"]["name"],
+        "method": "bounding-box centre of the OpenStreetMap aerodrome outline the app published for this analysis, "
+                  "matched on its exact ICAO tag",
+        "provider": "openstreetmap",
+        "fetchedAt": OSM_OUTLINES["WMKK"]["fetchedAt"],
+        "sourceUpdatedAt": OSM_OUTLINES["WMKK"]["sourceUpdatedAt"],
+        "attribution": "© OpenStreetMap contributors",
+        "licenceUrl": "https://www.openstreetmap.org/copyright",
+    }
+
+
+@pytest.mark.parametrize(
+    "overlay",
+    [
+        {"icao": "WMKP", "aerodromeBoundary": {"outer": [[[101.6, 2.7], [101.8, 2.7], [101.8, 2.8], [101.6, 2.7]]], "inner": []}},
+        {"icao": "wmkk ", "aerodromeBoundary": None},
+        {"icao": "WMKK", "aerodromeBoundary": {"outer": [], "inner": []}},
+        {"icao": "WMKK", "aerodromeBoundary": {"outer": [[["x", 2.7]]], "inner": []}},
+    ],
+)
+def test_osm_source_needs_the_exact_code_and_a_usable_outline(overlay) -> None:
+    endpoints = resolve_route_endpoints(_toy_flight(destination="WMKK", surface_overlays=[overlay]))
+    assert endpoints["destination"]["status"] == "not_placed"
+    assert "no OpenStreetMap aerodrome matched on its ICAO tag" in endpoints["destination"]["reason"]
+
+
+def test_osm_outline_centre_is_safe_across_the_antimeridian() -> None:
+    ring = [[179.9, -16.6], [-179.9, -16.6], [-179.9, -16.5], [179.9, -16.5], [179.9, -16.6]]
+    endpoints = resolve_route_endpoints(_toy_flight(
+        destination="NFTV", surface_overlays=[{"icao": "NFTV", "aerodromeBoundary": {"outer": [ring], "inner": []}}],
+    ))
+    end = endpoints["destination"]
+    assert end["status"] == "reference_point"
+    assert end["latitude"] == pytest.approx(-16.55)
+    assert abs(abs(end["longitude"]) - 180.0) < 1e-9
