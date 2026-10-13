@@ -70,12 +70,29 @@ def _run(name: str, source: Path, root: Path, flight_id: int) -> dict:
     # Every coordinate-bearing route waypoint remains a marker. EDTO ETPs are
     # deliberate standalone markers because they can fall between waypoints;
     # the contract records their exact count so the golden check stays strict
-    # without treating those governed additions as duplicates.
+    # without treating those governed additions as duplicates. Aerodromes are
+    # their own markers at governed reference points (item 11, QA496-03),
+    # counted the same way; both golden flights draw both aerodromes.
     expected_marker_count = (
         len(flight["route_waypoints"])
         + int(contract.get("metadata", {}).get("edto_etp_marker_count", 0))
+        + int(contract.get("metadata", {}).get("aerodrome_marker_count", 0))
     )
     assert len(contract["markers_geojson"]["features"]) == expected_marker_count
+    aerodrome_markers = {
+        feature["properties"]["role"]: feature["properties"]["name"]
+        for feature in contract["markers_geojson"]["features"]
+        if str(feature["id"]).startswith("aerodrome-")
+    }
+    assert aerodrome_markers == {
+        "departure": expected["departure"],
+        "destination": expected["destination"],
+    }
+    assert not any(
+        {"departure", "destination"} & {feature["properties"]["role"], *feature["properties"]["roles"]}
+        for feature in contract["markers_geojson"]["features"]
+        if str(feature["id"]).startswith("wp-")
+    )
     assert Path(result["level1_report"]).read_bytes().startswith(b"%PDF")
     assert Path(result["level2_report"]).read_bytes().startswith(b"%PDF")
 

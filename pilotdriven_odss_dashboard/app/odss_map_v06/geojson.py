@@ -367,6 +367,7 @@ def build_map_contract(
             "actual_takeoff_utc": flight.get("actual_takeoff_utc"),
             "edto_sector_count": len(edto_sectors(flight.get("edto"))),
             "edto_etp_marker_count": edto_etp_marker_count,
+            "aerodrome_marker_count": len(aerodromes),
             "route_endpoints": {
                 role: {
                     "icao": end["icao"],
