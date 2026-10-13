@@ -5,8 +5,8 @@
   "scope": "Deterministic-renderer canary for the lossless audit composition (include_audit_appendix=True) on a SHA-pinned historical analysis. This is NOT the pilot-facing download; David's six-page Flight Briefing format is guarded by tests/boss_reference_format_manifest.json and scripts/check_reference_conformance.py.",
   "case_id": "SQ214-PER-SIN-19AUG-REV3",
   "reference_asset": {
-    "filename": "SQ214_REV3_reference_v19_R2_REMINDER_WORDING.pdf",
-    "sha256": "b4d5705c4701cb3cacf079fe63ebdc6002c5aeb67a8f1293b3c3c0da3daacb96"
+    "filename": "SQ214_REV3_reference_v20_QA496_AERODROME_MARKER.pdf",
+    "sha256": "bd91b854c1c4d7d12af946646486cf8aaaa1ff377ff5520eef27a903078b5ab8"
   },
   "renderer": {
     "library": "PyMuPDF",
@@ -24,7 +24,7 @@
       "height_points": 595.275574,
       "width_pixels": 842,
       "height_pixels": 596,
-      "reference_raster_sha256": "ae84069970d452dcb62aa94d76969dc819e6b67d458b06496c4b52fdc00ac883"
+      "reference_raster_sha256": "aa2fbc16b621015e1ac7dfb036670d767f04ad78c0781904872f75d56892c9d7"
     },
     {
       "page_number": 2,
@@ -409,8 +409,8 @@
     "max_channel_delta": 0
   },
   "provenance": {
-    "minted_on": "2026-09-23",
-    "approval_basis": "R2 reminder-wording repair (David, 22 Sep 2026 13:38-13:40, 'CUT OUT ALL the damn reminder words'; FIX-LIST item 2), requested through the independent Codex engineering review of 23 Sep 2026 that reopened R2 (output/pd-r2-wording-review-408-20260923/REVIEW.md) and asked for text deltas to go through this explicit reference mechanism, as independent reviewer in the Claude/Codex repair-review loop; no person is named or implied as approver. Explicit v18 failure on pages 2 and 45 only (candidate ODSS 6881875 with app dc66d11; 9,225 changed pixels); independent all-page comparison verifies 47 unchanged pages and that pages 2 and 45 differ only in the terrain summary ('...validated profile matches - manual review required for 1 unmatched terrain window' -> '...validated profile matches; 1 unmatched terrain window') and the VWS line ('VWS review: 1 planned >004 trigger window; maximum 005 at IPKON (ACTM 03.25, OFP p8) - review required.' -> 'VWS: 1 planned >004 trigger window; maximum 005 at IPKON (ACTM 03.25, OFP p8).'), with the page-45 metric strip reflowed. The stored historical finding 'No exact profile confirmed because the controlled profile index is unavailable - manual review required.' is part of the pinned v16 analysis JSON and replays unchanged. A second render of the same commit matches v19 at 0 changed pixels. Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r12-reminder-wording/rev3-v19/.",
-    "combined_briefing_schema_version": "2026-09-23-page-one-scoped-restrictions-v65"
+    "minted_on": "2026-10-13",
+    "approval_basis": "QA496-03 aerodrome-identity repair (route-map aerodromes drawn only at an identity-proven reference point, never on a route row), requested through the independent Codex engineering review of release 496 (output/pd-item11-12-codex-qa-20261013/REPORT.md) in the Claude/Codex repair-review loop that Jabe asked to run until Codex clears it; Codex's re-QA of the resulting release reviews this re-pin; no person is named or implied as approver. Explicit v19 failure on page 1 only (candidate ODSS 7831969 with app 563dafb; 139 changed pixels in a 28 x 14 px box at x 601-629, y 277-291); independent all-page comparison verifies 47 unchanged pages and that page 1 differs only in the YPPH departure marker, which moves from the first route fix to the governed aerodrome reference point (output/pd-qa496-release-20261014/rev3-v20/page1-v19-vs-candidate.png). A second, independent render of the same commits is checked against v20 at 0 changed pixels. Evidence: output/pd-qa496-release-20261014/rev3-v20/.",
+    "combined_briefing_schema_version": "2026-10-14-governed-links-aerodromes-v99"
   }
 }

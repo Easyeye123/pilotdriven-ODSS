@@ -217,14 +217,14 @@ def test_pinned_manifest_contains_only_the_private_asset_contract() -> None:
 
     # 48 page entries of geometry + checksums only; no proprietary PDF bytes.
     assert PINNED_MANIFEST.stat().st_size < 16_000
-    # v19, minted 23 Sep 2026 for the R2 reminder-wording delta (pages 2 and
-    # 45 only); the identity moves with every deliberate re-pin.
+    # v20, minted 13 Oct 2026 for the QA496-03 aerodrome-marker delta (page 1
+    # only); the identity moves with every deliberate re-pin.
     assert payload["reference_asset"] == {
-        "filename": "SQ214_REV3_reference_v19_R2_REMINDER_WORDING.pdf",
-        "sha256": "b4d5705c4701cb3cacf079fe63ebdc6002c5aeb67a8f1293b3c3c0da3daacb96",
+        "filename": "SQ214_REV3_reference_v20_QA496_AERODROME_MARKER.pdf",
+        "sha256": "bd91b854c1c4d7d12af946646486cf8aaaa1ff377ff5520eef27a903078b5ab8",
     }
     assert len(payload["pages"]) == 48
-    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-09-23-page-one-scoped-restrictions-v65"
+    assert payload["provenance"]["combined_briefing_schema_version"] == "2026-10-14-governed-links-aerodromes-v99"
     assert "independent all-page comparison verifies 47 unchanged pages" in payload["provenance"]["approval_basis"]
     # The reviewer is recorded as who it was. No person is named as approver.
     assert "Codex engineering review" in payload["provenance"]["approval_basis"]
