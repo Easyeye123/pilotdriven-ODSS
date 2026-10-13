@@ -202,7 +202,9 @@ WAFC_CHARTS_PER_PAGE = 3
 # 11 Oct 2026 (v92, release-488 QA, F24): aircraft-size rules v11 read END and REVERSE in every form as reversals and tell
 # a place or thrust usage apart only where its own words prove it (RWY 02L END, END OF RWY, IDLE REVERSE THRUST); a v91
 # size conclusion can differ.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-11-cross-clause-scope-v97"
+# 13 Oct 2026 (v98, PD item #11): route-map aerodromes are placed only where the OFP puts them (one shared resolver,
+# app/odss/route_anchors.py); an aerodrome that cannot be placed is named with the reason instead of drawn on another row.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-13-route-anchors-v98"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
