@@ -517,6 +517,117 @@
     "review": true
    },
    "note": "Known conservative over-reach: the reader cannot tell altitudes from hours when written HHMM TO HHMM."
+  },
+  {
+   "id": "QA502_BODY_DAYLIGHT",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_sr_ss)",
+   "lines": [
+    "TWY T CLSD DAILY SR-SS."
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA502_BODY_EXCEPTION_WITH_FIELD",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_exception_sunday)",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY J CLSD EXC SUN."
+   ],
+   "expect": {
+    "field": "DLY 0800-1000",
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA502_BODY_FROM_UNTIL",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_from_until)",
+   "lines": [
+    "TWY Y CLSD FROM 1745 UNTIL 1945."
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA502_RESTATED_DAYS",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "lines": [
+    "MON-FRI 0800-1000",
+    "TWY Z9 CLSD. ACT MON-FRI ONLY."
+   ],
+   "expect": {
+    "field": "MON-FRI 0800-1000",
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA502_CONTROL_EXC_PPR",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026) benign control",
+   "lines": [
+    "RWY 09/27 CLSD EXC 30MIN PPR."
+   ],
+   "expect": {
+    "field": null,
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA502_CONTROL_DAY_AND_NIGHT_MARKED",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026) benign control",
+   "lines": [
+    "TWY Z9 CLSD. ICAO DAY AND NIGHT MARKED, OBST LIGHTED AT NIGHT."
+   ],
+   "expect": {
+    "field": null,
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA502_CONTROL_NUMBERS",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026) benign control",
+   "lines": [
+    "TWY Z9 CLSD. TEL 202-267-8276, FREQ 121.605, ELEV 2000FT, FL195-FL260, RWY 09L/27R, TWY A1. REF AIP SUP 22/26 DATED 20 MAR 2025.",
+    "GLARE FM SUN REFLECTIONS."
+   ],
+   "expect": {
+    "field": null,
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA502_DATED_PERIOD_EQUAL",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "lines": [
+    "TWY Z9 CLSD. VALIDITY: 01AUG26 0000UTC - 31AUG26 2359UTC."
+   ],
+   "expect": {
+    "field": null,
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA502_DATED_PERIOD_NARROWER",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "lines": [
+    "TWY Z9 CLSD FROM 20 AUG 2026 TO 25 AUG 2026."
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   }
  ],
  "decisionCases": [
@@ -2225,6 +2336,662 @@
     "minutesDelta": null
    },
    "note": "an absent end is never read as a validity, so nothing can exclude it"
+  },
+  {
+   "id": "QA502_BODY_SR_SS",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_sr_ss)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY T CLSD DAILY SR-SS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "502 published it active for the whole validity"
+  },
+  {
+   "id": "QA502_BODY_HJ",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_HJ)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD DLY HJ."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_HN",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_HN)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD DAILY HN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_EXCEPTION_SUNDAY",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_exception_sunday)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY J CLSD EXC SUN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "16 Aug 2026 is a Sunday; 502 published it active"
+  },
+  {
+   "id": "QA502_BODY_EXCEPTION_DATE",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_exception_date)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY Y CLSD. EXCEPT AUG 16."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_DAYLIGHT_CONFLICT",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_daylight_conflict)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY T CLSD DAILY HN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_D_LABEL_DAYLIGHT",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case D_daylight)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "D) DAILY SR-SS",
+    "TWY T CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_FROM_UNTIL",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_from_until)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD FROM 1745 UNTIL 1945."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_FM_TIL",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_FM_TIL)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD FM 1745 TIL 1945."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_LEAP_AFTER_HORIZON",
+   "label": "SYNTHETIC (Codex re-QA of release 502, output/pd-502-codex-reqa-20261015, case body_leap_after_horizon)",
+   "validity": "01-JAN-26 0000 - 31-DEC-28 2359",
+   "lines": [
+    "FEB 28 0800-1000",
+    "TWY T CLSD FEB 28-29 0800-1000."
+   ],
+   "window": {
+    "startsAt": "2028-02-29T07:00:00.000Z",
+    "endsAt": "2028-02-29T11:00:00.000Z"
+   },
+   "referenceAt": "2028-02-29T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "502 compared only the first 400 days after B (no leap day) and said outside_window/ended/1380"
+  },
+  {
+   "id": "QA502_BODY_BTN_AND",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD BTN 1745 AND 1945."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_BEFORE",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD BEFORE 0800."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_AFTER",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD AFTER 1945."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_SLASH_RANGE",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD 1745/1945."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_COLON_RANGE",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD 17:45-19:45."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_HOLIDAYS",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD ON PUBLIC HOLIDAYS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_NIGHT",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD AT NIGHT."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_WEEKDAY",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD SUN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_MONTH_DAY",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Y CLSD 17 AUG."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_BODY_EXC_HOL_WITH_FIELD",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY Y CLSD EXC HOL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_RESTATED_DAYS",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "MON-FRI 0800-1000",
+    "TWY Z9 CLSD. ACT MON-FRI ONLY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 1380,
+    "referenceInterval": {
+     "startsAt": "2026-08-17T08:00:00.000Z",
+     "endsAt": "2026-08-17T10:00:00.000Z"
+    }
+   },
+   "note": "days restated without hours, equal to the field's"
+  },
+  {
+   "id": "QA502_RESTATED_OTHER_DAYS",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "MON-FRI 0800-1000",
+    "TWY Z9 CLSD. ACT SAT SUN ONLY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_DATED_PERIOD_EQUAL",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD. VALIDITY: 01AUG26 0000UTC - 31AUG26 2359UTC."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "a dated period containing the whole validity adds no restriction"
+  },
+  {
+   "id": "QA502_DATED_PERIOD_WIDER",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD. PERIOD: 01 JUL 2026 TO 30 SEP 2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA502_DATED_PERIOD_NARROWER",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD FROM 20 AUG 2026 TO 25 AUG 2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_EFFECTIVE_DATE_INSIDE_VALIDITY",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD WEF 20 AUG 2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_EFFECTIVE_DATE_AFTER_VALIDITY",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD. WILL BE INCORPORATED IN AIP AMDT 04/26 WEF 01 OCT 2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA502_CONTROL_EXC_PPR",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "RWY 09/27 CLSD EXC 30MIN PPR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA502_CONTROL_NIGHT_MARKING",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD. ICAO DAY AND NIGHT MARKED, OBST LIGHTED AT NIGHT."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA502_CONTROL_NUMBERS",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD. TEL 202-267-8276, FREQ 121.605, ELEV 2000FT, FL195-FL260, RWY 09L/27R, TWY A1. REF AIP SUP 22/26 DATED 20 MAR 2025.",
+    "GLARE FM SUN REFLECTIONS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA502_CONTROL_OUTSIDE_VALIDITY_FIRST",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026) control",
+   "validity": "01-JUL-26 0000 - 31-JUL-26 2359",
+   "lines": [
+    "TWY T CLSD DAILY SR-SS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "ended_before_reference",
+    "minutesDelta": 22141
+   },
+   "note": "a readable validity outside the window still excludes before any review"
+  },
+  {
+   "id": "QA502_LEAP_STRUCTURAL_EQUAL_OPEN",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-JAN-26 0000 - UFN",
+   "lines": [
+    "FEB 28 0800-1000",
+    "TWY T CLSD FEB 28 0800-1000."
+   ],
+   "window": {
+    "startsAt": "2028-02-28T07:00:00.000Z",
+    "endsAt": "2028-02-28T11:00:00.000Z"
+   },
+   "referenceAt": "2028-02-28T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "the same canonical rule set: equal for any validity, open-ended included"
+  },
+  {
+   "id": "QA502_LEAP_CONFLICT_OPEN",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-JAN-26 0000 - UFN",
+   "lines": [
+    "FEB 28 0800-1000",
+    "TWY T CLSD FEB 28-29 0800-1000."
+   ],
+   "window": {
+    "startsAt": "2028-02-29T07:00:00.000Z",
+    "endsAt": "2028-02-29T11:00:00.000Z"
+   },
+   "referenceAt": "2028-02-29T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA502_EQUAL_OTHER_FORM_BOUNDED",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY Z9 CLSD MON-SUN 0800-1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "not the same rule set, but the same occurrences over the whole bounded validity"
+  },
+  {
+   "id": "QA502_EQUAL_OTHER_FORM_OPEN",
+   "label": "SYNTHETIC (QA502 repair, 15 Oct 2026)",
+   "validity": "01-JAN-26 0000 - UFN",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY Z9 CLSD MON-SUN 0800-1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "open-ended and not the same rule set: no proof, so a review"
   },
   {
    "id": "GENUINE_SQ02325072026JFK_LIRF_1A2314_26",

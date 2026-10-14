@@ -23,6 +23,15 @@ silenced free text stating other hours; FEB 30 was "outside the window". The fie
 is now the whole leading run of schedule lines and is accepted only when the grammar
 reads all of it; schedule language left in the free text must agree with it (or,
 with no field, is a review); and every date is checked against the calendar.
+
+QA502 (Codex's re-QA of release 502, 15 Oct 2026): the body was still read through
+a few clock patterns, so "TWY T CLSD DAILY SR-SS", "EXC SUN" or "FROM 1745 UNTIL
+1945" found no span and the record had "no schedule"; and body-to-Item D equivalence
+sampled 400 days from B, missing a later leap day. One shared detector
+(scheduleLanguage, datedPeriod) now finds every schedule-bearing statement anywhere
+in the body; each must be accounted for (a dated period containing the validity, or a
+run the grammar reads that is proven equal to Item D) or the record is a review.
+Equality is proven structurally, or over the whole bounded validity - never sampled.
 """
 from __future__ import annotations
 
@@ -52,12 +61,11 @@ _DASHES = re.compile(_FIELD["dashes"])
 _FIELD_LINE = re.compile(_FIELD["fieldLine"])
 _REVIEW_LANGUAGE = re.compile(_FIELD["reviewLanguage"])
 _COLON_CLOCK = re.compile(_FIELD["colonClock"])
-_FREE_TEXT_WORDS = re.compile(_FIELD["freeTextWords"])
-_FREE_TEXT_TIME = re.compile(_FIELD["freeTextTime"])
-_CLOCK_RANGE = re.compile(_FIELD["clockRange"])
-_DAY_H24 = re.compile(_FIELD["dayH24"])
+_SCHEDULE_LANGUAGE = re.compile(_FIELD["scheduleLanguage"])
+_DATED_PERIOD = re.compile(_FIELD["datedPeriod"])
+_PERIOD_GROUPS: dict[str, int] = _FIELD["datedPeriodGroups"]
 _PHRASE = re.compile(_FIELD["phrase"])
-_BODY_EQUIVALENCE_DAYS = _FIELD["bodyEquivalenceDays"]
+_ENUMERATION_MAX_DAYS = _FIELD["equivalenceEnumerationMaxDays"]
 _REGIME = re.compile(NOTAM_TIMING_RULES["runwayClosureRegimes"]["pattern"], re.IGNORECASE)
 _REGIME_GROUPS: dict[str, int] = NOTAM_TIMING_RULES["runwayClosureRegimes"]["groups"]
 _OPEN_END_SEARCH_DAYS = NOTAM_TIMING_RULES["decision"]["openEndSearchDays"]
@@ -122,29 +130,97 @@ def _field_text(line: Any) -> str:
     return " ".join(_DASHES.sub("-", str(line or "").upper()).split())
 
 
-def _free_text_time_spans(text: str) -> list[tuple[int, int]]:
-    """Every time statement the free text makes: clock ranges, days at H24, and times beside schedule words."""
-    spans = [match.span() for match in _CLOCK_RANGE.finditer(text)]
-    spans.extend(match.span() for match in _DAY_H24.finditer(text))
-    if _FREE_TEXT_WORDS.search(text):
-        spans.extend(match.span() for match in _FREE_TEXT_TIME.finditer(text))
-    return spans
+def _period_bound(day: str, month: str, year: str, time: str | None, end_of_day: bool) -> float | None:
+    """A dated period's bound in ms: the date at the stated time, else the start (or the end) of that day."""
+    full_year = f"20{year}" if len(year) == 2 else year
+    if int(full_year) < 2000:
+        return None
+    if not time:
+        ms = _utc_ms(day, month, full_year[2:], "00", "00")
+        return None if ms is None else ms + (_DAY_MS if end_of_day else 0)
+    return _utc_ms(day, month, full_year[2:], time[:2], time[2:])
 
 
-def _merged_coverage(entries: list[dict[str, Any]], validity: Mapping[str, Any]) -> str:
+def _dated_periods(text: str, validity: Mapping[str, Any] | None) -> list[tuple[int, int, bool]]:
+    """Every dated period in the free text, with whether it is accounted for: it contains the whole B/C validity, so it
+    adds no restriction inside it. A lone dated reference (no FROM/UNTIL word, no second date) is not a period."""
+    g = _PERIOD_GROUPS
+    start_ms = parse_ms((validity or {}).get("startsAt"))
+    end_ms = (parse_ms(validity.get("endsAt")) if validity.get("endsAt") else math.inf) if validity and validity.get("startsAt") else math.nan
+    periods: list[tuple[int, int, bool]] = []
+    for match in _DATED_PERIOD.finditer(text):
+        prep = match.group(g["prep"])
+        has_end = bool(match.group(g["endDay"]) or match.group(g["endOpen"]))
+        if not prep and not has_end:
+            continue
+        start_time = match.group(g["startTimeBefore"]) or match.group(g["startTimeAfter"])
+        first = _period_bound(match.group(g["startDay"]), match.group(g["startMonth"]), match.group(g["startYear"]), start_time, False)
+        held = not math.isnan(start_ms)
+        if not has_end and prep in {"UNTIL", "TIL", "TILL"}:
+            # A one-sided end: at or after C, or at or before B, it does not cut into the validity.
+            high = _period_bound(match.group(g["startDay"]), match.group(g["startMonth"]), match.group(g["startYear"]), start_time, True)
+            accounted = held and high is not None and (high >= end_ms or high <= start_ms)
+        elif not has_end:
+            # A one-sided effective date: at or before B, or at or after C, it does not cut into the validity.
+            accounted = held and first is not None and (first <= start_ms or first >= end_ms)
+        else:
+            end_time = match.group(g["endTimeBefore"]) or match.group(g["endTimeAfter"])
+            high = math.inf if match.group(g["endOpen"]) else _period_bound(
+                match.group(g["endDay"]), match.group(g["endMonth"]), match.group(g["endYear"]), end_time, True)
+            accounted = held and first is not None and high is not None and first <= start_ms and high >= end_ms
+        periods.append((match.start(), match.end(), bool(accounted)))
+    return periods
+
+
+def _merged_times(times: list[dict[str, int]]) -> str:
+    merged: list[list[int]] = []
+    for time in sorted(times, key=lambda item: (item["start"], item["end"])):
+        if merged and time["start"] <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], time["end"])
+        else:
+            merged.append([time["start"], time["end"]])
+    return ",".join(f"{start}-{end}" for start, end in merged)
+
+
+def _day_part(entry: Mapping[str, Any]) -> str:
+    """An entry's day part, canonical: D (daily), W<days> (weekdays) or M<month-days>R<ranges> (dates)."""
+    if entry["kind"] == "daily":
+        return "D"
+    if entry["kind"] == "weekdays":
+        return "W" + ",".join(str(day) for day in sorted(entry["days"]))
+    return ("M" + ",".join(str(key) for key in sorted(entry["monthDays"]))
+            + "R" + ",".join(sorted(f"{low}-{high}" for low, high in entry["ranges"])))
+
+
+def _canonical_rules(entries: list[dict[str, Any]]) -> str:
+    """The canonical rule set: each day part with its merged hours. Equal rule sets have equal occurrences every day."""
+    by_part: dict[str, list[dict[str, int]]] = {}
+    for entry in entries:
+        by_part.setdefault(_day_part(entry), []).extend(entry["times"])
+    return ";".join(sorted(f"{key}:{_merged_times(times)}" for key, times in by_part.items()))
+
+
+def _whole_validity_coverage(entries: list[dict[str, Any]], validity: Mapping[str, Any]) -> str | None:
+    """The merged occurrences over the WHOLE validity; None when it is open-ended or longer than the enumeration bound."""
     start_ms = parse_ms(validity.get("startsAt"))
     end_ms = parse_ms(validity.get("endsAt")) if validity.get("endsAt") else math.inf
-    horizon = min(end_ms, start_ms + _BODY_EQUIVALENCE_DAYS * _DAY_MS)
+    if not math.isfinite(end_ms) or end_ms - start_ms > _ENUMERATION_MAX_DAYS * _DAY_MS:
+        return None
     merged: list[list[float]] = []
-    for item_start, item_end in schedule_occurrences(entries, start_ms, end_ms, start_ms, horizon):
-        end = min(item_end, horizon)
-        if item_start >= end:
-            continue
+    for item_start, item_end in schedule_occurrences(entries, start_ms, end_ms, start_ms, end_ms):
         if merged and item_start <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], end)
+            merged[-1][1] = max(merged[-1][1], item_end)
         else:
-            merged.append([item_start, end])
+            merged.append([item_start, item_end])
     return ",".join(f"{int(start)}-{int(end)}" for start, end in merged)
+
+
+def _same_schedule(left: list[dict[str, Any]], right: list[dict[str, Any]], validity: Mapping[str, Any]) -> bool:
+    """Proven equal: the same canonical rule set, or the same occurrences over the whole bounded validity."""
+    if _canonical_rules(left) == _canonical_rules(right):
+        return True
+    coverage = _whole_validity_coverage(left, validity)
+    return coverage is not None and coverage == _whole_validity_coverage(right, validity)
 
 
 def _time_keys(entries: list[dict[str, Any]]) -> set[str]:
@@ -153,10 +229,10 @@ def _time_keys(entries: list[dict[str, Any]]) -> set[str]:
 
 def _free_text_agrees_with_field(text: str, spans: list[tuple[int, int]], entries: list[dict[str, Any]],
                                  validity: Mapping[str, Any]) -> bool:
-    """Whether the free text's time statements say what the accepted Item D says. Each must sit in a run of schedule
-    tokens the grammar reads. A run that names no day ("BTN THE HOURS OF 1500-0600") restates hours: each of its
-    ranges must be one of the field's. Runs that name days must together give exactly the field's occurrences over
-    the validity."""
+    """Whether the free text's schedule statements say what the accepted Item D says. Each must sit in a run of
+    schedule tokens the grammar reads. A run naming no day ("BTN THE HOURS OF 1500-0600") restates hours: each range
+    must be one of the field's. A run naming days and no hours ("ACT MON-FRI") restates days: each day part must be one
+    of the field's. Runs naming days and hours must together be the field (_same_schedule)."""
     phrases = [(match.start(), match.end(), match.group(0)) for match in _PHRASE.finditer(text)]
     held: list[str] = []
     for start, end in spans:
@@ -166,49 +242,69 @@ def _free_text_agrees_with_field(text: str, spans: list[tuple[int, int]], entrie
         if phrase[2] not in held:
             held.append(phrase[2])
     field_times = _time_keys(entries)
+    field_parts = {_day_part(entry) for entry in entries}
     dated: list[dict[str, Any]] = []
     for phrase_text in held:
-        phrase_entries, error = parse_schedule_field(phrase_text, validity)
+        phrase_entries, error = parse_schedule_field(phrase_text, validity, allow_date_only=True)
         if error:
             return False
-        if all(entry.get("undated") for entry in phrase_entries):
+        date_only = [entry for entry in phrase_entries if not entry["times"]]
+        if date_only:
+            if len(date_only) != len(phrase_entries) or any(_day_part(entry) not in field_parts for entry in date_only):
+                return False
+        elif all(entry.get("undated") for entry in phrase_entries):
             if not _time_keys(phrase_entries) <= field_times:
                 return False
         else:
             dated.extend(phrase_entries)
-    return not dated or _merged_coverage(dated, validity) == _merged_coverage(entries, validity)
+    return not dated or _same_schedule(dated, entries, validity)
+
+
+def _free_text_review(text: str, field: str | None, entries: list[dict[str, Any]] | None,
+                      validity: Mapping[str, Any] | None) -> str | None:
+    """The review the free text after the field calls for, or None. Every schedule-bearing statement the shared
+    detector finds (scheduleLanguage, datedPeriod) must be accounted for: a dated period by containing the whole
+    validity, any other statement by agreeing with an accepted Item D field. With no field, any unaccounted statement
+    is a review."""
+    periods = _dated_periods(text, validity)
+    reason = TIMING_REVIEW_REASONS["freeTextConflict"] if field else TIMING_REVIEW_REASONS["freeText"]
+    if any(not accounted for _, _, accounted in periods):
+        return reason
+    open_spans = [match.span() for match in _SCHEDULE_LANGUAGE.finditer(text)
+                  if not any(low <= match.start() and match.end() <= high for low, high, _ in periods)]
+    if not open_spans:
+        return None
+    if not field or entries is None or not (validity or {}).get("startsAt"):
+        return reason
+    return None if _free_text_agrees_with_field(text, open_spans, entries, validity) else reason
 
 
 def read_lido_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Item D of a LIDO record: the leading body lines made only of schedule tokens, joined with one space, across
     line wraps. ``review`` is why the record's timing cannot be read: schedule language this spec does not evaluate, a
-    leading field the grammar cannot read in full, or free text stating schedule hours the field does not account for
-    (with no field, any schedule language in the free text). ``validity`` is the record's read_lido_validity() result;
-    without one the record is a validity review and only the field's own language is checked."""
+    leading field the grammar cannot read in full, or schedule-bearing language in the free text that is not accounted
+    for (QA502: daylight, exception and holiday words, day words, dates and clocks in any connective form, anywhere in
+    the body). ``validity`` is the record's read_lido_validity() result; without one the record is a validity review."""
     lines = [text for text in (_field_text(line) for line in body_lines or []) if text]
     line_count = 0
     while line_count < len(lines) and _FIELD_LINE.search(re.sub(r"\.$", "", lines[line_count])):
         line_count += 1
     field = " ".join(lines[:line_count]) if line_count else None
     free_text = " ".join(lines[line_count:])
-    spans = _free_text_time_spans(free_text)
 
     def read(review: str | None) -> dict[str, Any]:
         return {"field": field, "lineCount": line_count, "review": review}
 
     if not field:
-        return read(TIMING_REVIEW_REASONS["freeText"] if spans else None)
+        return read(_free_text_review(free_text, None, None, validity))
     if _REVIEW_LANGUAGE.search(field):
         return read(TIMING_REVIEW_REASONS["reviewLanguage"])
     if not (validity or {}).get("startsAt"):
-        return read(TIMING_REVIEW_REASONS["freeTextConflict"] if spans else None)
+        return read(_free_text_review(free_text, field, None, None))
     entries, error = parse_schedule_field(field, validity)
     if error:
         return read(error)
-    if not spans:
-        return read(None)
-    return read(None if _free_text_agrees_with_field(free_text, spans, entries, validity)
-                else TIMING_REVIEW_REASONS["freeTextConflict"])
+    return read(_free_text_review(free_text, field, entries, validity))
 
 
 _TOKEN = re.compile("|".join([
@@ -303,7 +399,8 @@ def _tokenize(text: str) -> tuple[list[dict[str, Any]], str | None]:
     return tokens, None
 
 
-def parse_schedule_field(field: Any, validity: Mapping[str, Any] | None = None) -> tuple[list[dict[str, Any]], str | None]:
+def parse_schedule_field(field: Any, validity: Mapping[str, Any] | None = None, *,
+                         allow_date_only: bool = False) -> tuple[list[dict[str, Any]], str | None]:
     """Item D read into entries; the error is a timing review. Month-less day numbers take
     the latest month named earlier in the field, else the validity month when B and C
     share one month. Every day must exist within the validity's years (FEB 30 never,
@@ -336,9 +433,10 @@ def parse_schedule_field(field: Any, validity: Mapping[str, Any] | None = None) 
             raw.append(current)
             current = {"dates": [], "times": []}
         current["dates"].append(token)
-    if current["dates"] and not current["times"]:
+    # A body run may restate days without hours ("ACT MON-FRI"); Item D itself may not end on a date.
+    if current["dates"] and not current["times"] and not allow_date_only:
         return [], f"Item D date without a time: {text}"
-    if current["times"]:
+    if current["times"] or current["dates"]:
         raw.append(current)
     if not raw:
         return [], "Item D holds no time."

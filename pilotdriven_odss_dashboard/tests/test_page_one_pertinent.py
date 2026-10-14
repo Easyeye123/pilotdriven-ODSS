@@ -99,10 +99,13 @@ def test_nothing_reduced_and_nothing_held_are_still_different_statements():
 # Real flights through the real download path: the view publishes the field,
 # and page 1 prints exactly it. The expected numbers for SQ303 and SQ352 are the
 # ones independent QA read off the live dashboards' count of consequences and
-# held notices, now stated on both surfaces.
+# held notices, now stated on both surfaces. QA502 (15 Oct 2026) moved SQ303's
+# departure from 5 to 6 unresolved: EBBR SX14/26's text states year-less
+# periods ("FROM 23MAR 0700 UNTIL 17JUL 1500") that no Item D holds, so its
+# timing is a review instead of active for the whole B/C validity.
 REAL = {
     "SQ303": ("SQ30316072026BRU 81.pdf", {
-        "departure": ((2, 5), ["RWY 25R ILS; RWY 07L VOR unavailable (not planned RWY 07R).",
+        "departure": ((2, 6), ["RWY 25R ILS; RWY 07L VOR unavailable (not planned RWY 07R).",
                                "Taxi access constrained: W1; Y."]),
         "destination": ((2, 1), ["Planned RWY 20R: 1 held notice unresolved (timing at arrival).",
                                  "RWY 02R/20L not available for civil use (not planned RWY 20R).",

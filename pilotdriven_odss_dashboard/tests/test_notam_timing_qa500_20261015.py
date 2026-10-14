@@ -86,10 +86,26 @@ BODY = "TWY Z9 CLSD. SYNTHETIC PROPERTY CASE."
 # Refinement 2: under a readable validity wholly outside the window every variant - readable or not - is excluded by
 # validity exactly as a record with no schedule is.
 OUTSIDE_VALIDITIES = ["01-JAN-26 0000 - 31-JAN-26 2359", "01-OCT-26 0000 - 31-OCT-26 2359"]
+# QA502: schedule-bearing qualifiers in the body - daylight, exception and holiday words, day words, dates and clocks in
+# any connective form. With the field they must agree with it; with no field they are a review. (kind, text, with-field
+# expectation): a day word or a date alone may restate one of the field's own day parts.
+BODY_QUALIFIERS = [
+    ("sr-ss", "DAILY SR-SS", "review"), ("hj", "HJ", "review"), ("hn", "DLY HN", "review"), ("sunrise-sunset", "SUNRISE TO SUNSET", "review"),
+    ("daylight", "DRG DAYLIGHT", "review"), ("night", "AT NIGHT", "review"), ("exc-weekday", "EXC SUN", "review"),
+    ("exc-date", "EXCEPT AUG 16", "review"), ("exc-hol", "EXC HOL", "review"), ("holidays", "ON PUBLIC HOLIDAYS", "review"),
+    ("from-until", "FROM 0001 UNTIL 0002", "review"), ("fm-til", "FM 0001 TIL 0002", "review"), ("btn-and", "BTN 0001 AND 0002", "review"),
+    ("between-and", "BETWEEN 0001 AND 0002", "review"), ("before", "BEFORE 0002", "review"), ("after", "AFTER 2358", "review"),
+    ("slash", "0001/0002", "review"), ("colon", "00:01-00:02", "review"), ("weekday", "WED", "equal_or_review"),
+    ("month-day", "AUG 17", "equal_or_review"), ("dated-narrower", "FROM 20 AUG 2026 TO 21 AUG 2026", "review"),
+]
+# QA502: validities that cross leap days, bounded and open-ended, with references on and around 29 FEB 2028.
+LONG_VALIDITIES = ["01-JAN-26 0000 - 31-DEC-28 2359", "01-JAN-26 0000 - UFN"]
+LONG_REFERENCES = ["2027-08-16T09:00:00.000Z", "2028-02-29T09:00:00.000Z", "2028-02-28T23:30:00.000Z"]
+LEAP_REFERENCE = "2028-02-29T00:01:30.000Z"
 DASH_VARIANTS = ["‐", "‑", "‒", "–", "—", "―", "−"]
 # The count and digest the app pins too (same generator, same order).
-PROPERTY_COUNT = 13650
-PROPERTY_DIGEST = "2e8d1f35eaf8b18b96521431681c6ee9810fa02dc0a94813e0bf3f09a7fb8b4f"
+PROPERTY_COUNT = 32908
+PROPERTY_DIGEST = "9059870b9d5428f2cc67a5d20b4f71604d56c638ebcf49fafc55449d30227550"
 
 
 def _cuts(text: str) -> list[dict]:
@@ -176,6 +192,13 @@ def property_variants(schedule: str) -> list[tuple[str, str, list[str]]]:
     shifted = _shift_hours(schedule)
     if shifted != schedule:
         add("free-text-shifted-hours", "review", [schedule, f"TWY Z9 CLSD {shifted}."])
+    for kind, text, with_field in BODY_QUALIFIERS:
+        add(f"body-{kind}", with_field, [schedule, f"TWY Z9 CLSD {text}."])
+        add(f"body-only-{kind}", "review", [f"TWY Z9 CLSD {text}."])
+    first = re.search(r"\b(\d{4})-(\d{4})\b", schedule)
+    if first:
+        add("restated-from-until", "equal_or_review", [schedule, f"TWY Z9 CLSD FROM {first.group(1)} UNTIL {first.group(2)}."])
+        add("restated-btn-and", "equal_or_review", [schedule, f"TWY Z9 CLSD BTN {first.group(1)} AND {first.group(2)}."])
     return variants
 
 
@@ -234,6 +257,39 @@ def test_property_wrapped_redashed_recased_and_restated_item_d_decides_as_its_on
                     if _verdict(decision) != _verdict(excluded):
                         failures.append(f"NOT EXCLUDED BY VALIDITY {case_id} @{reference_at} {outside} {kind} {lines}: "
                                         f"{_verdict(decision)} vs {_verdict(excluded)}")
+        # QA502: the same invariants under validities that cross leap days (no sampling horizon).
+        for long_validity in LONG_VALIDITIES:
+            for reference_at in LONG_REFERENCES:
+                window = _window(reference_at)
+                canonical = decide_lido_record(long_validity, [schedule, BODY], window)
+                for kind, expectation, lines in variants:
+                    decision = decide_lido_record(long_validity, lines, window)
+                    total += 1
+                    counts["long_validity"] += 1
+                    digest.update(f"{case_id}|{long_validity}|{reference_at}|{kind}|{chr(10).join(lines)}|{_verdict(decision)}\n".encode("utf-8"))
+                    where = f"{case_id} {long_validity} @{reference_at} {kind} {lines}: {_verdict(decision)} vs {_verdict(canonical)} {decision.get('reason') or ''}"
+                    same = _verdict(decision) == _verdict(canonical)
+                    if decision["status"] == "affecting" and not decision["schedule"]:
+                        failures.append(f"ACTIVE WITHOUT SCHEDULE {where}")
+                    if decision["status"] == "outside_window" and canonical["status"] != "outside_window":
+                        failures.append(f"OUTSIDE INSTEAD {where}")
+                    if expectation == "exact" and not same:
+                        failures.append(f"NOT EXACT {where}")
+                    if expectation == "review" and decision["status"] != "review":
+                        failures.append(f"NOT REVIEW {where}")
+                    if expectation == "equal_or_review" and not same and decision["status"] != "review":
+                        failures.append(f"NEITHER {where}")
+            # The body adds 29 FEB 2028 0001-0002. Accepted only if the field already holds that minute; else a review.
+            window = _window(LEAP_REFERENCE)
+            canonical = decide_lido_record(long_validity, [schedule, BODY], window)
+            lines = [schedule, f"TWY Z9 CLSD {schedule}, FEB 29 0001-0002."]
+            decision = decide_lido_record(long_validity, lines, window)
+            total += 1
+            counts["leap_day"] += 1
+            digest.update(f"{case_id}|{long_validity}|leap|{chr(10).join(lines)}|{_verdict(decision)}\n".encode("utf-8"))
+            if decision["status"] != "review" and not (_verdict(decision) == _verdict(canonical)
+                                                       and canonical["stateAtReference"] == "active_at_reference"):
+                failures.append(f"LEAP DAY NOT ACCOUNTED {case_id} {long_validity} {lines}: {_verdict(decision)} vs {_verdict(canonical)}")
     assert failures[:40] == [], f"{len(failures)} property failures"
     for state in ["affecting:active_at_reference", "affecting:begins_after_reference", "affecting:ended_before_reference",
                   "outside_window:begins_after_reference"]:

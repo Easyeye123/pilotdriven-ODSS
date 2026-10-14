@@ -471,6 +471,89 @@
      "TWY Z9 CLSD 1800-2000. SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9048/26",
+    "case": "QA502_BODY_DAYLIGHT",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD DAILY SR-SS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9049/26",
+    "case": "QA502_BODY_EXCEPTION",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 1800-2000",
+     "TWY Z9 CLSD EXC SAT. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9050/26",
+    "case": "QA502_BODY_FROM_UNTIL",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD FROM 0300 UNTIL 0500. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9051/26",
+    "case": "QA502_BODY_HOLIDAYS",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD ON PUBLIC HOLIDAYS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9052/26",
+    "case": "QA502_BODY_NIGHT",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD AT NIGHT. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9053/26",
+    "case": "QA502_DATED_PERIOD_EQUAL",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD. VALIDITY: 10AUG26 1900UTC - 20AUG26 1900UTC. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9054/26",
+    "case": "QA502_DATED_PERIOD_NARROWER",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD FROM 16 AUG 2026 TO 17 AUG 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9055/26",
+    "case": "QA502_CONTROL_EXC_PPR",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD EXC 30MIN PPR. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9056/26",
+    "case": "QA502_LEAP_AFTER_HORIZON",
+    "validity": "01-JAN-26 0000 - 31-DEC-28 2359",
+    "body": [
+     "FEB 28 0800-1000",
+     "TWY Z9 CLSD FEB 28-29 0800-1000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
    }
   ],
   "EGKK": [
@@ -942,6 +1025,89 @@
      "TWY Z9 CLSD 0800-1000. SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9148/26",
+    "case": "QA502_BODY_DAYLIGHT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD DAILY SR-SS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9149/26",
+    "case": "QA502_BODY_EXCEPTION",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z9 CLSD EXC SUN. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9150/26",
+    "case": "QA502_BODY_FROM_UNTIL",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD FROM 1700 UNTIL 1900. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9151/26",
+    "case": "QA502_BODY_HOLIDAYS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD ON PUBLIC HOLIDAYS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9152/26",
+    "case": "QA502_BODY_NIGHT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD AT NIGHT. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9153/26",
+    "case": "QA502_DATED_PERIOD_EQUAL",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD. VALIDITY: 11AUG26 0900UTC - 21AUG26 0900UTC. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9154/26",
+    "case": "QA502_DATED_PERIOD_NARROWER",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD FROM 17 AUG 2026 TO 18 AUG 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9155/26",
+    "case": "QA502_CONTROL_EXC_PPR",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD EXC 30MIN PPR. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9156/26",
+    "case": "QA502_LEAP_AFTER_HORIZON",
+    "validity": "01-JAN-26 0000 - 31-DEC-28 2359",
+    "body": [
+     "FEB 28 0800-1000",
+     "TWY Z9 CLSD FEB 28-29 0800-1000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
    }
   ],
   "EGCC": [
@@ -1411,6 +1577,89 @@
     "validity": "11-AUG-26 0900 - 16-AUG-26 0600",
     "body": [
      "TWY Z9 CLSD 0800-1000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9248/26",
+    "case": "QA502_BODY_DAYLIGHT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD DAILY SR-SS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9249/26",
+    "case": "QA502_BODY_EXCEPTION",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z9 CLSD EXC SUN. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9250/26",
+    "case": "QA502_BODY_FROM_UNTIL",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD FROM 1700 UNTIL 1900. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9251/26",
+    "case": "QA502_BODY_HOLIDAYS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD ON PUBLIC HOLIDAYS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9252/26",
+    "case": "QA502_BODY_NIGHT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD AT NIGHT. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9253/26",
+    "case": "QA502_DATED_PERIOD_EQUAL",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD. VALIDITY: 11AUG26 0900UTC - 21AUG26 0900UTC. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9254/26",
+    "case": "QA502_DATED_PERIOD_NARROWER",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD FROM 17 AUG 2026 TO 18 AUG 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9255/26",
+    "case": "QA502_CONTROL_EXC_PPR",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD EXC 30MIN PPR. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9256/26",
+    "case": "QA502_LEAP_AFTER_HORIZON",
+    "validity": "01-JAN-26 0000 - 31-DEC-28 2359",
+    "body": [
+     "FEB 28 0800-1000",
+     "TWY Z9 CLSD FEB 28-29 0800-1000. SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": null
    }
