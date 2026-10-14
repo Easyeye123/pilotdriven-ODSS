@@ -18,7 +18,8 @@ RUN apt-get update \
         libleptonica-dev=1.82.0-3build4 \
         libicu-dev=74.2-1ubuntu3.1 \
         libarchive-dev=3.7.2-2ubuntu0.9 \
-        libcurl4-openssl-dev=8.5.0-2ubuntu10.15 \
+        libcurl4-openssl-dev=8.5.0-2ubuntu10.16 \
+        libcurl4t64=8.5.0-2ubuntu10.16 \
     && python3 ocr/build_component.py
 
 FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 AS dependencies
