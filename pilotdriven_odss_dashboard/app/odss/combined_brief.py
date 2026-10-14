@@ -208,7 +208,11 @@ WAFC_CHARTS_PER_PAGE = 3
 # 14 Oct 2026 (v99, Codex QA of release 496, QA496-01..04): the six-page briefing links every cited MEL/CDL/CDDL item on
 # the origin it was requested from; route-map aerodromes are drawn only at an identity-proven reference point (governed LIDO
 # table, else the published OSM aerodrome with the exact ICAO tag), never on a route row.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-14-governed-links-aerodromes-v99"
+# 14 Oct 2026 (v100, PD item #3, Gatwick): one timing decision per station notice. The card, the PDF text, the
+# dashboard chart and the PDF map read the same LIDO record by the same rules (notam_timing_rules.json, byte-identical
+# in the app): +/-2h departure and destination windows, one Item D reader and grammar, one state at the reference
+# (a schedule occurrence that ended inside the window is "ended", not "outside the schedule"), unknown is a review.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-14-one-timing-decision-v100"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

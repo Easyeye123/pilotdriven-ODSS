@@ -37,4 +37,10 @@ the two are bumped together whenever the parser's extraction changes.
 # printed weather-chart identity missing from the first OCR pass. Held v9
 # analyses keep their original chart classifications until the source is
 # re-read into a separate analysis. Corpus case records and digests are unchanged.
-EXTRACTION_RULES = "2026-10-12-weather-ocr-recovery-v10"
+# v11 (14 Oct 2026, ITEM 3 Gatwick timing): a LIDO station record's VALID range and Item D are read by the rules the
+# app reads them by (notam_timing_rules.json): Item D is the record's leading schedule lines joined (a D field wrapped
+# over two lines is read whole; a bare "2130-0330", a day-number line or "DAILY SR-SS" is Item D, not free text read as
+# no schedule); a schedule-like line inside the free text is a review, never a second schedule; an absent end is a
+# review, never an open end. Notice records held under v10 can differ in schedule, schedule_review, validity_review and
+# valid_to; a v10 analysis is an older extraction and Create updated briefing re-reads the OFP.
+EXTRACTION_RULES = "2026-10-14-lido-item-d-validity-v11"
