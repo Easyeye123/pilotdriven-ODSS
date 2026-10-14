@@ -43,4 +43,8 @@ the two are bumped together whenever the parser's extraction changes.
 # no schedule); a schedule-like line inside the free text is a review, never a second schedule; an absent end is a
 # review, never an open end. Notice records held under v10 can differ in schedule, schedule_review, validity_review and
 # valid_to; a v10 analysis is an older extraction and Create updated briefing re-reads the OFP.
-EXTRACTION_RULES = "2026-10-14-lido-item-d-validity-v11"
+# v12 (15 Oct 2026, Codex QA of release 500): Item D is the whole leading run of schedule lines across line wraps and
+# is accepted only when the grammar reads all of it; schedule language left in the free text must agree with it, and with
+# no Item D any schedule hours in the free text are a review; every date is checked against the calendar. Notice records
+# held under v11 can differ in schedule and schedule_review; a v11 analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-15-lido-item-d-whole-v12"

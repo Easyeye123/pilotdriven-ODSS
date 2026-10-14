@@ -6,8 +6,9 @@ from app.odss.flight_briefing_publication import current_rules_briefing
 from tests.test_saved_pack_current_rules_view import stored  # noqa: F401
 
 OLD_TOKEN = "2026-10-10-contingency-label-v9"
-# The current token; v10 (weather OCR) was superseded by v11 (item 3, LIDO Item D and validity, 14 Oct 2026).
-NEW_TOKEN = "2026-10-14-lido-item-d-validity-v11"
+# The current token; v10 (weather OCR) was superseded by v11 (item 3, LIDO Item D and validity, 14 Oct 2026) and v11
+# by v12 (QA500, Item D read whole and checked against the free text, 15 Oct 2026).
+NEW_TOKEN = "2026-10-15-lido-item-d-whole-v12"
 
 
 def test_new_analysis_has_new_weather_extraction_stamp(stored):  # noqa: F811

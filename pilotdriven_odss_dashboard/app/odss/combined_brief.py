@@ -212,7 +212,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # dashboard chart and the PDF map read the same LIDO record by the same rules (notam_timing_rules.json, byte-identical
 # in the app): +/-2h departure and destination windows, one Item D reader and grammar, one state at the reference
 # (a schedule occurrence that ended inside the window is "ended", not "outside the schedule"), unknown is a review.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-14-one-timing-decision-v100"
+# 15 Oct 2026 (v101, Codex QA of release 500, QA500-01/02/04): a wrapped or re-written Item D is read whole or is a
+# review, never "no schedule" read as active all day; free text stating other hours than Item D is a review; schedule
+# hours in the free text of a record with no Item D are a review; an impossible date is a review.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-schedule-text-accounted-v101"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
