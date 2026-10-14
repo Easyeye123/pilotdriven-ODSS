@@ -83,10 +83,13 @@ PROPERTY_CANONICALS = [
 PROPERTY_REFERENCES = ["2026-08-16T09:00:00.000Z", "2026-08-16T19:00:00.000Z", "2026-08-16T23:00:00.000Z",
                        "2026-08-17T03:00:00.000Z", "2026-08-21T14:30:00.000Z", "2026-08-12T05:00:00.000Z"]
 BODY = "TWY Z9 CLSD. SYNTHETIC PROPERTY CASE."
+# Refinement 2: under a readable validity wholly outside the window every variant - readable or not - is excluded by
+# validity exactly as a record with no schedule is.
+OUTSIDE_VALIDITIES = ["01-JAN-26 0000 - 31-JAN-26 2359", "01-OCT-26 0000 - 31-OCT-26 2359"]
 DASH_VARIANTS = ["‐", "‑", "‒", "–", "—", "―", "−"]
 # The count and digest the app pins too (same generator, same order).
-PROPERTY_COUNT = 4416
-PROPERTY_DIGEST = "aac0ca632b6beba744b06a513ffda93db5fe3b28aea3cb79e9b53dcf75efb59b"
+PROPERTY_COUNT = 13650
+PROPERTY_DIGEST = "2e8d1f35eaf8b18b96521431681c6ee9810fa02dc0a94813e0bf3f09a7fb8b4f"
 
 
 def _cuts(text: str) -> list[dict]:
@@ -162,6 +165,10 @@ def property_variants(schedule: str) -> list[tuple[str, str, list[str]]]:
     slash = re.sub(r"\b(\d{4})-(\d{4})\b", r"\1/\2", schedule)
     if slash != schedule:
         add("slash-range", "review", [slash, BODY])
+    # Refinement 1: a zero-length range (start = end) is a review, never 24 hours.
+    zero = re.sub(r"\b(\d{4})-(\d{4})\b", r"\1-\1", schedule)
+    if zero != schedule:
+        add("zero-length-range", "review", [zero, BODY])
     add("d-label-prefix", "review", [f"D) {schedule}", BODY])
     add("d-label-line", "review", ["D)", schedule, BODY])
     add("inside-free-text", "review", [f"{schedule} {BODY}"])
@@ -184,6 +191,7 @@ def _verdict(decision: dict) -> str:
 
 
 def test_property_wrapped_redashed_recased_and_restated_item_d_decides_as_its_one_line_form_or_is_a_review() -> None:
+    """Also: a zero-length range is a review, and under a validity outside the window every variant is excluded."""
     failures: list[str] = []
     counts: Counter = Counter()
     digest = hashlib.sha256()
@@ -214,6 +222,18 @@ def test_property_wrapped_redashed_recased_and_restated_item_d_decides_as_its_on
                     failures.append(f"NOT REVIEW {where}")
                 if expectation == "equal_or_review" and not same and decision["status"] != "review":
                     failures.append(f"NEITHER {where}")
+            for outside in OUTSIDE_VALIDITIES:
+                excluded = decide_lido_record(outside, [BODY], window)
+                if excluded["status"] != "outside_window":
+                    failures.append(f"{case_id} @{reference_at} {outside}: the validity alone is not outside the window")
+                for kind, _, lines in [("canonical", "exact", [schedule, BODY]), *variants]:
+                    decision = decide_lido_record(outside, lines, window)
+                    total += 1
+                    counts["outside_validity"] += 1
+                    digest.update(f"{case_id}|{reference_at}|{outside}|{kind}|{chr(10).join(lines)}|{_verdict(decision)}\n".encode("utf-8"))
+                    if _verdict(decision) != _verdict(excluded):
+                        failures.append(f"NOT EXCLUDED BY VALIDITY {case_id} @{reference_at} {outside} {kind} {lines}: "
+                                        f"{_verdict(decision)} vs {_verdict(excluded)}")
     assert failures[:40] == [], f"{len(failures)} property failures"
     for state in ["affecting:active_at_reference", "affecting:begins_after_reference", "affecting:ended_before_reference",
                   "outside_window:begins_after_reference"]:
@@ -221,3 +241,16 @@ def test_property_wrapped_redashed_recased_and_restated_item_d_decides_as_its_on
     print(f"property: {total} variant decisions {dict(counts)} digest {digest.copy().hexdigest()}")
     assert total == PROPERTY_COUNT
     assert digest.hexdigest() == PROPERTY_DIGEST, "the app pins the same digest: both runtimes decide every variant the same"
+
+
+def test_a_zero_length_runway_regime_is_not_read_as_a_24_hour_closure() -> None:
+    # Refinement 1 in the dated runway-regime reader (SYNTHETIC text in the genuine SX120/25 form): "BTN 1700UTC TO
+    # 1700UTC" states no period; it yields no runway state, as an invalid clock does, while the 1700-2200 control does.
+    from datetime import datetime, timezone
+    from app.odss.runway_closure_schedule import assess_runway_closure_schedule
+    reference = datetime(2026, 8, 16, 19, 0, tzinfo=timezone.utc)  # a Sunday
+    text = "RWY 02L/20R WILL BE CLSD BTN 1700UTC TO {end} EV SUN AND WED FM 01AUG26 TO 31AUG26 FOR MAINT. SYNTHETIC."
+    control = assess_runway_closure_schedule(text.format(end="2200UTC"), role="destination", reference_time=reference)
+    zero = assess_runway_closure_schedule(text.format(end="1700UTC"), role="destination", reference_time=reference)
+    assert control and [statement["stateAtReference"] for statement in control["statements"]] == ["active_at_reference"]
+    assert zero is None or not zero.get("statements")

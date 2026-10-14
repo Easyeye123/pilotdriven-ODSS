@@ -45,10 +45,10 @@
     "bodyEquivalenceDays": 400,
     "rules": [
       "Item D is printed as the first body line(s) of a LIDO record. Typographic hyphens and dashes (dashes) are read as '-'. The field is the leading run of body lines made only of schedule tokens (fieldLine), joined with one space: a D field wrapped over several lines is one field, wherever the line breaks ('AUG 16' then '1800-2000', 'AUG' then '16 1800-2000', 'AUG 16 1800-' then '2000').",
-      "The field is accepted only when the grammar below reads all of it. A leading run it cannot read in full - a date with no time, a clock written HH:MM (colonClock), '/' between two times, 2400, an impossible date - is a timing review, never 'no schedule'.",
+      "The field is accepted only when the grammar below reads all of it. A leading run it cannot read in full - a date with no time, a clock written HH:MM (colonClock), '/' between two times, 2400, a zero-length range, an impossible date - is a timing review, never 'no schedule'.",
       "Daylight, exception and holiday rules (reviewLanguage) are a timing review.",
       "Schedule language in the free text after the field is a clock range (clockRange: HHMM or HH:MM, optionally UTC/Z/L/LT, joined by '-', '/', TO, or BTN .. AND ..; a 4-digit number straight after a month name is a year, and a number followed by a unit is not a clock), day words followed by H24 (dayH24), or schedule words (freeTextWords) together with a time (freeTextTime). With no field, any of it is a timing review: no schedule is assumed continuous. With a field, every such statement must sit in a run of schedule tokens (phrase) the grammar reads; a run naming no day restates hours, and each of its ranges must be one of the field's; runs naming days must together give exactly the field's occurrences over the validity (from its start, at most bodyEquivalenceDays). Otherwise it is a timing review: the record states two schedules.",
-      "Grammar, after upper-casing, folding dashes, DAILY->DLY, dropping EVERY/EV/AND, dropping UTC/Z after a time and closing spaces around '-': date parts and time ranges alternate; a date token after a time closes an entry; ',' ';' ':' only separate. A date part is DLY, weekdays (MON-FRI ranges allowed), month days (AUG 12 14 15, AUG 01-05), or a cross-month range (JUL 20-SEP 30). Day numbers with no month take the latest month named earlier in the field, else the validity month when B and C are in one month, else a timing review. Every day must exist: a day past its month's length, or 29 FEB when no leap year falls within the validity, is a timing review. An entry with no date part is daily only when it is the first entry. Times are HHMM-HHMM with HH 00-23 and MM 00-59 (an end at or before the start crosses midnight) or H24. Anything else is a timing review.",
+      "Grammar, after upper-casing, folding dashes, DAILY->DLY, dropping EVERY/EV/AND, dropping UTC/Z after a time and closing spaces around '-': date parts and time ranges alternate; a date token after a time closes an entry; ',' ';' ':' only separate. A date part is DLY, weekdays (MON-FRI ranges allowed), month days (AUG 12 14 15, AUG 01-05), or a cross-month range (JUL 20-SEP 30). Day numbers with no month take the latest month named earlier in the field, else the validity month when B and C are in one month, else a timing review. Every day must exist: a day past its month's length, or 29 FEB when no leap year falls within the validity, is a timing review. An entry with no date part is daily only when it is the first entry. Times are HHMM-HHMM with HH 00-23 and MM 00-59 (an end before the start crosses midnight; an end equal to the start, such as 1800-1800, is a timing review: no LIDO or ICAO convention for a zero-length range is held here, so it is neither read as 24 hours nor as nothing) or H24. Anything else is a timing review.",
       "Occurrences are clipped to the validity."
     ]
   },
@@ -67,8 +67,8 @@
       "review"
     ],
     "rules": [
-      "review: the source record, the validity or the schedule could not be read; state unknown_at_reference, no minutes, no reference interval.",
-      "Validity not overlapping the window: outside_window; the state is the validity's relation to the reference.",
+      "Validity not overlapping the window: outside_window (outsideBy validity), decided before any source or schedule review - schedule text that cannot be read cannot put a notice in force outside its own validity; the state is the validity's relation to the reference.",
+      "review: the validity could not be read (absent or unreadable start or end), or it overlaps the window and the source record or the schedule could not be read; state unknown_at_reference, no minutes, no reference interval.",
       "With a schedule: occurrences overlapping the window make it affecting; the state is the occurrence covering the reference, else the next one after it, else the last one before it. With none in the window: outside_window, and the state is read from every occurrence searched (validity, at most lookbackDays before the window, and openEndSearchDays after it for an open end).",
       "Without a schedule: affecting; the state is the validity's relation to the reference.",
       "No reference instant: state unknown_at_reference with the status above.",
@@ -85,7 +85,7 @@
     "pattern": "\\bRWY\\s+(\\d{2}[LCR]?(?:/\\d{2}[LCR]?)?)\\s+WILL\\s+BE\\s+CLSD\\s+BTN\\s+(\\d{4})(?:UTC)?\\s+TO\\s+(\\d{4})(?:UTC)?\\s+EV\\s+((?:MON|TUE|WED|THU|FRI|SAT|SUN)(?:\\s+AND\\s+(?:MON|TUE|WED|THU|FRI|SAT|SUN))*)\\s+FM\\s+(\\d{2}[A-Z]{3}\\d{2})\\s+TO\\s+(\\d{2}[A-Z]{3}\\d{2})\\b",
     "rules": [
       "A notice printing dated runway-closure regimes (WSSS SX120/25) is decided per runway: each regime with an occurrence on the reference day, or the previous evening's occurrence still running at the reference, yields that runway's state; the notice itself stays a timing review when other schedule language remains.",
-      "This is ODSS's 19 Sep 2026 runway_closure_schedule rule, unchanged; the dashboard chart now draws the same per-runway state the PDF map and PDF text publish."
+      "This is ODSS's 19 Sep 2026 runway_closure_schedule rule; the dashboard chart now draws the same per-runway state the PDF map and PDF text publish. A regime whose start equals its end is not read (no runway state from it; the notice stays a timing review), as an invalid clock is not."
     ],
     "groups": {
       "runways": 1,

@@ -360,6 +360,20 @@
    "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
+   "id": "QA500_ZERO_LENGTH_RANGE",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 1",
+   "lines": [
+    "DLY 1800-1800",
+    "TWY T CLSD."
+   ],
+   "expect": {
+    "field": "DLY 1800-1800",
+    "review": true
+   },
+   "note": "a zero-length range was read as 24 hours (an end at or before the start crossed midnight); no convention for it is held, so it is a review",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
    "id": "QA500_FEB_30",
    "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case invalid_feb_day)",
    "validity": "01-FEB-26 0000 - 28-FEB-26 2359",
@@ -1990,6 +2004,227 @@
     "stateAtReference": "unknown_at_reference",
     "minutesDelta": null
    }
+  },
+  {
+   "id": "QA500_ZERO_LENGTH_RANGE",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 1",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-1800",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "read as 24 hours before the refinement: active at 0900Z"
+  },
+  {
+   "id": "QA500_ZERO_LENGTH_MIDNIGHT",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 1",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG 16 0000-0000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_ZERO_LENGTH_IN_LIST",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 1",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 0800-1000 1200-1200",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "one zero-length range makes the whole field unreadable"
+  },
+  {
+   "id": "QA500_ZERO_LENGTH_IN_FREE_TEXT",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 1",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY Z9 CLSD DAILY 0800-0800."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_VALIDITY_AFTER_UNREADABLE_SCHEDULE",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 2",
+   "validity": "16-AUG-26 1200 - 20-AUG-26 1200",
+   "lines": [
+    "DAILY SR-SS",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 180,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T12:00:00.000Z",
+     "endsAt": "2026-08-20T12:00:00.000Z"
+    }
+   },
+   "note": "was a review: daylight words cannot put the notice in force before its validity starts"
+  },
+  {
+   "id": "QA500_VALIDITY_BEFORE_FREE_TEXT_SCHEDULE",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 2",
+   "validity": "10-AUG-26 0000 - 16-AUG-26 0600",
+   "lines": [
+    "TWY Z9 CLSD 1800-2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "ended_before_reference",
+    "minutesDelta": 180,
+    "referenceInterval": {
+     "startsAt": "2026-08-10T00:00:00.000Z",
+     "endsAt": "2026-08-16T06:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "QA500_VALIDITY_AFTER_WRAPPED_DATE_ONLY",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 2",
+   "validity": "17-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "AUG 17",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 900
+   }
+  },
+  {
+   "id": "QA500_VALIDITY_AFTER_CONFLICTING_FREE_TEXT",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 2",
+   "validity": "17-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY Z9 CLSD DAILY 1800-2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 900
+   }
+  },
+  {
+   "id": "QA500_VALIDITY_AFTER_ZERO_LENGTH",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 2",
+   "validity": "17-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DLY 1800-1800",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 900
+   }
+  },
+  {
+   "id": "QA500_VALIDITY_OVERLAPS_UNREADABLE_SCHEDULE",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 2 control",
+   "validity": "16-AUG-26 1000 - 20-AUG-26 1200",
+   "lines": [
+    "DAILY SR-SS",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "the validity overlaps the window, so the schedule decides: a review"
+  },
+  {
+   "id": "QA500_VALIDITY_MISSING_END_UNREADABLE_SCHEDULE",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026) refinement 2 control",
+   "validity": "17-AUG-26 0000",
+   "lines": [
+    "DAILY SR-SS",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "an absent end is never read as a validity, so nothing can exclude it"
   },
   {
    "id": "GENUINE_SQ02325072026JFK_LIRF_1A2314_26",

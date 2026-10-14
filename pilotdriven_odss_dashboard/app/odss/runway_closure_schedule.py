@@ -75,6 +75,9 @@ def _regimes(text: str) -> tuple[list[dict[str, Any]], bool]:
         end_minutes = int(end_text[:2]) * 60 + int(end_text[2:])
         if int(start_text[:2]) > 23 or int(end_text[:2]) > 23 or int(start_text[2:]) > 59 or int(end_text[2:]) > 59:
             continue
+        # A zero-length regime (start = end) is not read, as an invalid clock is not (notam_timing_rules.json).
+        if start_minutes == end_minutes:
+            continue
         covered.append(match.span())
         regimes.append({
             "label": match.group(group["runways"]).upper(),

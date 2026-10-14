@@ -275,7 +275,10 @@ def _tokenize(text: str) -> tuple[list[dict[str, Any]], str | None]:
             start, end = _minutes_of(groups[6]), _minutes_of(groups[7])
             if start is None or end is None:
                 return [], f"Invalid UTC time in Item D: {match.group('time')}"
-            tokens.append({"kind": "time", "start": start, "end": end + 1440 if end <= start else end})
+            # A zero-length range (1800-1800) states no period this spec can read: a review, never 24 hours.
+            if start == end:
+                return [], f"Zero-length time range in Item D: {match.group('time')}"
+            tokens.append({"kind": "time", "start": start, "end": end + 1440 if end < start else end})
         elif kind == "h24":
             tokens.append({"kind": "time", "start": 0, "end": 1440})
         elif kind == "wdrange":
@@ -480,10 +483,7 @@ def decide_notice_timing(notice: Mapping[str, Any], window: Mapping[str, Any]) -
     def review(reason: str) -> dict[str, Any]:
         return {**base, "status": "review", "reason": reason}
 
-    if notice.get("review"):
-        return review(str(notice["review"]))
-    if math.isnan(start_ms) or math.isnan(end_ms) or start_ms >= end_ms:
-        return review(TIMING_REVIEW_REASONS["validity"])
+    readable_validity = not (math.isnan(start_ms) or math.isnan(end_ms) or start_ms >= end_ms)
 
     def decided(status: str, intervals: list[tuple[float, float]], **extra: Any) -> dict[str, Any]:
         state, delta, interval = _state_from(intervals, reference_ms)
@@ -491,8 +491,14 @@ def decide_notice_timing(notice: Mapping[str, Any], window: Mapping[str, Any]) -
                 "referenceInterval": _interval_out(interval)}
 
     validity_interval = [(start_ms, end_ms)]
-    if not (start_ms < window_end and window_start < end_ms):
+    # QA500 refinement (15 Oct 2026): a readable validity wholly outside the window excludes the notice before any
+    # source or schedule review - text that cannot be read cannot put a notice in force outside its own validity.
+    if readable_validity and not (start_ms < window_end and window_start < end_ms):
         return decided("outside_window", validity_interval, outsideBy="validity")
+    if notice.get("review"):
+        return review(str(notice["review"]))
+    if not readable_validity:
+        return review(TIMING_REVIEW_REASONS["validity"])
     if not notice.get("schedule"):
         return decided("affecting", validity_interval)
     entries, error = parse_schedule_field(notice["schedule"], validity)
