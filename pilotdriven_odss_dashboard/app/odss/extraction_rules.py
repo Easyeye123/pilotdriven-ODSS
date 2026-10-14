@@ -47,4 +47,9 @@ the two are bumped together whenever the parser's extraction changes.
 # is accepted only when the grammar reads all of it; schedule language left in the free text must agree with it, and with
 # no Item D any schedule hours in the free text are a review; every date is checked against the calendar. Notice records
 # held under v11 can differ in schedule and schedule_review; a v11 analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-15-lido-item-d-whole-v12"
+# v13 (15 Oct 2026, ALTERNATES-PARSE): the FLT PLANNING ALTN SUMMARY row reads APPROACH and MINIMA as optional columns,
+# told apart by word shape, so a row printed with either blank is read and the blank stays blank; the EDTO ENROUTE ALTN
+# AIRPORTS row takes its last word as the minima only when it is minima-shaped; a row printed in either table that is
+# not read is held in alternates_unread. Analyses held under v12 can lack planned alternates (16 in 9 of the 30 held
+# originals) and their station NOTAM and weather records; a v12 analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-15-alternate-rows-read-v13"

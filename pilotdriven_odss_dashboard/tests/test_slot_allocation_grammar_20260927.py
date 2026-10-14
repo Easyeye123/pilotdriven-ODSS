@@ -297,6 +297,6 @@ def test_page_six_prints_an_unread_allocation_as_printed_not_absent(tmp_path_fac
 
 
 def test_the_tokens_move_together():
-    assert EXTRACTION_RULES == "2026-10-15-lido-item-d-whole-v12"
+    assert EXTRACTION_RULES == "2026-10-15-alternate-rows-read-v13"
     assert ENROUTE_CONTACT_RULE == "enroute-contact-v16"
-    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-10-15-schedule-text-accounted-v101"
+    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-10-15-every-printed-alternate-v102"

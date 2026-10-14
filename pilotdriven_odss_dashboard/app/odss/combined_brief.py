@@ -215,7 +215,11 @@ WAFC_CHARTS_PER_PAGE = 3
 # 15 Oct 2026 (v101, Codex QA of release 500, QA500-01/02/04): a wrapped or re-written Item D is read whole or is a
 # review, never "no schedule" read as active all day; free text stating other hours than Item D is a review; schedule
 # hours in the free text of a record with no Item D are a review; an impossible date is a review.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-schedule-text-accounted-v101"
+# 15 Oct 2026 (v102, ALTERNATES-PARSE): every planned alternate the OFP's FLT PLANNING ALTN SUMMARY prints is read,
+# with a blank APPROACH or MINIMA column kept blank; an alternate printed that way (16 in 9 of the 30 held originals,
+# SQ279 all three) now has its NOTAM and weather analysis, airport card, matrix row and PDF lines. A row that cannot be
+# read is a stated review on the findings, in the alternate matrix and on PDF page 4.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-every-printed-alternate-v102"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
