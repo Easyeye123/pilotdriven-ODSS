@@ -1070,36 +1070,129 @@ def _parse_named_procedure(
     return None, None
 
 
+# The planned alternates: LIDO's "FLT PLANNING ALTN SUMMARY" table, ALTN/RWY  APPROACH  MINIMA  DIST  FL  COMP
+# TIME  FUEL. APPROACH and MINIMA are optional columns; the genuine forms of the 30 held originals are
+#   "EGKK/26L    CAT1DME   200FT/550M   0085   060 P003   0021 04014"   both printed (SQ322)
+#   "YSSY/16R               1479FT/7000M 0705    350 P013   0142 09186"  APPROACH blank (SQ279)
+#   "RJBB/06R                   0M       0519   330 P004   0122 07729"   APPROACH blank, minima "0M" (SQ606)
+#   "WIDD/22                           0085  140 M003  0020 01802"     APPROACH and MINIMA blank (SQ303)
+# (ALTERNATES-PARSE, 15 Oct 2026: the reader required a word in each column and skipped the other rows without a
+# word - 16 alternates in 9 originals, SQ279's three among them, were never analysed.) The columns are told apart by
+# word shape, never by position: a minima is digits with FT and/or M, an approach word holds a letter and is never
+# minima-shaped. A blank column stays blank ("") and is never filled from a neighbouring column.
+_ALTERNATE_MINIMA = r"(?:\d{1,5}FT/\d{1,5}M|\d{1,5}FT|\d{1,5}M)"
+_ALTERNATE_MINIMA_WORD = re.compile(_ALTERNATE_MINIMA)
+_ALTERNATE_APPROACH_WORD = rf"(?!{_ALTERNATE_MINIMA}(?![^ \t]))(?=[^ \t]*[A-Z])[A-Z0-9][A-Z0-9+./@-]*"
+_ALTERNATE_ROW = re.compile(
+    r"[ \t]*(?P<apt>[A-Z]{4})/(?P<rwy>[0-9A-Z]{2,3})"
+    rf"(?:[ \t]+(?P<approach>{_ALTERNATE_APPROACH_WORD}(?:[ \t]+{_ALTERNATE_APPROACH_WORD})*))?"
+    rf"(?:[ \t]+(?P<minima>{_ALTERNATE_MINIMA}))?"
+    r"[ \t]+(?P<dist>\d{4})[ \t]+\d{3}[ \t]+[MP]\d{3}[ \t]+(?P<time>\d{4})[ \t]+(?P<fuel>\d{5})[ \t]*"
+)
+_ALTERNATE_TABLE_HEADER = re.compile(r"^[ \t]*ALTN/RWY[ \t]+APPROACH[ \t]+MINIMA\b")
+_ALTERNATE_ROW_START = re.compile(r"^[ \t]*(?P<airport>[A-Z]{4})/(?P<runway>[0-9A-Z]{2,3})(?![^ \t])")
+# The EDTO table, "EDTO ENROUTE ALTN AIRPORTS:" / APT  PERIOD CHKD  RWY  APCH  MINIMA; APCH is printed blank too
+# (SQ34 "PASY     2155-0140           28                                400FT/2409M").
+_EDTO_ALTERNATE_ROW = re.compile(
+    r"^[ \t]*(?P<airport>[A-Z]{4})[ \t]+"
+    r"(?P<start>\d{4})-(?P<end>\d{4})[ \t]+"
+    r"(?P<runway>[0-9A-Z]{2,3})(?:[ \t]+(?P<tail>\S.*?))?[ \t]*$"
+)
+_EDTO_ALTERNATE_TABLE_HEADER = re.compile(r"^[ \t]*APT[ \t]+PERIOD[ \t]+CHKD[ \t]+RWY[ \t]+APCH[ \t]+MINIMA\b")
+_EDTO_ALTERNATE_ROW_START = re.compile(r"^[ \t]*(?P<airport>[A-Z]{4})[ \t]+\d")
+_ALTERNATE_ROW_NOT_READ = (
+    "the row is printed in the {table} but the row grammar ({columns}) does not read it; the alternate is not "
+    "analysed here"
+)
+
+
 def _parse_alternates(cfp_pages: list[str]) -> list[dict[str, Any]]:
     # The alternate table spills past the first page on long-haul plans, so the
     # whole CFP section is scanned. The scan stays inside that section, never
     # the NOTAM or weather sections, so unrelated rows cannot match.
-    section_text = "\n".join(cfp_pages)
-    pattern = re.compile(
-        r"^(?P<apt>[A-Z]{4})/(?P<rwy>[0-9A-Z]{2,3})[ \t]+"
-        r"(?P<approach>[A-Z0-9][A-Z0-9+./-]*(?:[ \t]+[A-Z0-9][A-Z0-9+./-]*)*?)[ \t]+"
-        r"(?P<minima>\S+)[ \t]+(?P<dist>\d{4})[ \t]+\d{3}[ \t]+[MP]\d{3}[ \t]+"
-        r"(?P<time>\d{4})[ \t]+(?P<fuel>\d{5})$",
-        re.MULTILINE,
-    )
     alternates: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
-    for match in pattern.finditer(section_text):
-        # A summary page can restate the same row; keep the first occurrence.
-        key = (match.group("apt"), match.group("rwy"), match.group("approach"))
-        if key in seen:
-            continue
-        seen.add(key)
-        alternates.append({
-            "airport": match.group("apt"),
-            "runway": match.group("rwy"),
-            "approach": " ".join(match.group("approach").split()),
-            "minima": match.group("minima"),
-            "distance_nm": int(match.group("dist")),
-            "time_minutes": int(match.group("time")[:2]) * 60 + int(match.group("time")[2:]),
-            "fuel_kg": int(match.group("fuel")),
-        })
+    for page in cfp_pages:
+        for line in page.splitlines():
+            match = _ALTERNATE_ROW.fullmatch(line)
+            if not match:
+                continue
+            approach = " ".join((match.group("approach") or "").split())
+            # A summary page can restate the same row; keep the first occurrence.
+            key = (match.group("apt"), match.group("rwy"), approach)
+            if key in seen:
+                continue
+            seen.add(key)
+            alternates.append({
+                "airport": match.group("apt"),
+                "runway": match.group("rwy"),
+                "approach": approach,
+                "minima": match.group("minima") or "",
+                "distance_nm": int(match.group("dist")),
+                "time_minutes": int(match.group("time")[:2]) * 60 + int(match.group("time")[2:]),
+                "fuel_kg": int(match.group("fuel")),
+            })
     return alternates
+
+
+def _alternate_rows_not_read(cfp_pages: list[str], start_page_number: int) -> list[dict[str, Any]]:
+    """Every row printed inside an alternate table that its row grammar does not read, held verbatim.
+
+    A table starts after its column header and continues across page furniture (the package footer, the running
+    header, the LIDO page header) and blank lines: SQ437 prints its fourth alternate on the next page. It ends at the
+    first other line that does not open as a row - the destination table's "<ICAO> RTE:" lines, the EDTO table's next
+    section. Every line inside is a printed alternate row, so each must be read; one that is not is returned here
+    (its airport, runway, text, page, its 0-based place in the table and the reason), never dropped.
+    """
+    tables = (
+        ("destination_alternates", _ALTERNATE_TABLE_HEADER, _ALTERNATE_ROW_START,
+         lambda line: _ALTERNATE_ROW.fullmatch(line) is not None,
+         "FLT PLANNING ALTN SUMMARY table", "ALTN/RWY [APPROACH] [MINIMA] DIST FL COMP TIME FUEL"),
+        ("edto_alternates", _EDTO_ALTERNATE_TABLE_HEADER, _EDTO_ALTERNATE_ROW_START,
+         lambda line: _EDTO_ALTERNATE_ROW.match(line) is not None,
+         "EDTO ENROUTE ALTN AIRPORTS table", "APT PERIOD RWY [APCH] [MINIMA]"),
+    )
+    stream = [
+        (start_page_number + index, line)
+        for index, page in enumerate(cfp_pages)
+        for line in page.splitlines()
+    ]
+    unread: list[dict[str, Any]] = []
+    held: set[tuple[str, str]] = set()
+    for table, header, row_start, readable, table_name, columns in tables:
+        position: int | None = None
+        for page_number, line in stream:
+            if header.match(line):
+                position = 0
+                continue
+            if position is None:
+                continue
+            stripped = line.strip()
+            if (
+                not stripped
+                or _NOTAM_PAGE_FURNITURE.fullmatch(stripped)
+                or _LIDO_PAGE_HEADER_RE.match(line)
+            ):
+                continue
+            start = row_start.match(line)
+            if not start:
+                position = None
+                continue
+            if not readable(line):
+                text = " ".join(stripped.split())
+                if (table, text) not in held:
+                    held.add((table, text))
+                    unread.append({
+                        "table": table,
+                        "airport": start.group("airport"),
+                        "runway": start.groupdict().get("runway") or None,
+                        "text": text,
+                        "source_page": page_number,
+                        "position": position,
+                        "reason": _ALTERNATE_ROW_NOT_READ.format(table=table_name, columns=columns),
+                    })
+            position += 1
+    return unread
 
 
 def _decimal_coordinate(hemisphere: str, degrees: str, minutes: str) -> float:
@@ -1479,22 +1572,20 @@ def _parse_edto_airports(
     missing approach. Read one physical table row at a time and split the
     trailing minima from the optional approach instead.
     """
-    row_pattern = re.compile(
-        r"^(?P<airport>[A-Z]{4})[ \t]+"
-        r"(?P<start>\d{4})-(?P<end>\d{4})[ \t]+"
-        r"(?P<runway>[0-9A-Z]{2,3})[ \t]+(?P<tail>\S.*)$"
-    )
     airports: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, str, str, str]] = set()
     for line in edto_text.splitlines():
-        match = row_pattern.match(line)
+        match = _EDTO_ALTERNATE_ROW.match(line)
         if not match:
             continue
-        tail_parts = match.group("tail").rsplit(maxsplit=1)
+        # APCH and MINIMA are optional columns: the last word is the minima only when it is minima-shaped, so an
+        # approach printed with a blank MINIMA stays the approach (ALTERNATES-PARSE, 15 Oct 2026).
+        tail = match.group("tail") or ""
+        tail_parts = tail.rsplit(maxsplit=1)
         approach, minima = (
-            (tail_parts[0], tail_parts[1])
-            if len(tail_parts) == 2
-            else ("", tail_parts[0])
+            (tail_parts[0] if len(tail_parts) == 2 else "", tail_parts[-1])
+            if tail_parts and _ALTERNATE_MINIMA_WORD.fullmatch(tail_parts[-1])
+            else (tail, "")
         )
         key = (
             match.group("airport"),
@@ -2182,6 +2273,32 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         # sector or checked-period airport was parsed.
         has_timing_data=bool(entry_match and exit_match),
     )
+    fuel_summary = parse_page1_fuel_summary(page1)
+    alternates = _parse_alternates(cfp_pages)
+    alternates_unread = _alternate_rows_not_read(cfp_pages, cfp_start + 1)
+    # Page 1 names the planned first alternate ("ALTN SYD (YSSY)"); an OFP whose table does not yield it has an
+    # alternate this reader did not see, which is a review too.
+    page_one_alternate = ((fuel_summary or {}).get("alternate") or {}).get("icao")
+    if (
+        page_one_alternate
+        and page_one_alternate not in {row["airport"] for row in alternates}
+        and page_one_alternate not in {
+            row["airport"] for row in alternates_unread if row["table"] == "destination_alternates"
+        }
+    ):
+        page_one_line = re.search(rf"^.*ALTN\s+[A-Z]{{3}}\s+\({page_one_alternate}\).*$", page1, re.MULTILINE)
+        alternates_unread.append({
+            "table": "destination_alternates",
+            "airport": page_one_alternate,
+            "runway": None,
+            "text": " ".join((page_one_line.group(0) if page_one_line else page_one_alternate).split()),
+            "source_page": cfp_start + 1,
+            "position": 0,
+            "reason": (
+                "page 1 names this alternate, but no row for it was read from the FLT PLANNING ALTN SUMMARY table; "
+                "the alternate is not analysed here"
+            ),
+        })
     level_match = re.search(r"^[A-Z]{3}/\d{3}(?:/.*)?$", page1, re.MULTILINE)
     route_identifier_match = re.search(
         r"\bRTE\s+NO\s+(?P<route_identifier>\S+)",
@@ -2331,13 +2448,16 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         # The extraction rules this parse applied (extraction_rules.py); a
         # composition over an analysis without the value in service says so.
         "extraction_rules": EXTRACTION_RULES,
-        "alternates": _parse_alternates(cfp_pages),
+        "alternates": alternates,
+        # Rows printed inside an alternate table that were not read (normally none): each one is a stated review on
+        # the findings and in the alternate matrix, never a silent absence.
+        "alternates_unread": alternates_unread,
         "performance": performance,
         "fuel": fuel,
         # The complete page-1 summary with its arithmetic proved; display
         # layers key off its state and must show a review flag, not figures,
         # when it is anything but "verified".
-        "fuel_summary": parse_page1_fuel_summary(page1),
+        "fuel_summary": fuel_summary,
         "masses": masses,
         "edto": {
             "assessment": edto_assessment,

@@ -1864,6 +1864,10 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     alternate_lines = []
     for row in view.get("alternate_assessment_rows") or []:
         analysis = next((p for p in alternate_analysis if p["icao"] == row.get("airport")), {"lines": []})
+        if (row.get("assessment") or {}).get("row_not_read"):
+            # A printed alternate row the parser did not read: its review, never an empty plan line.
+            alternate_lines.append(f"{text(row.get('airport'))} {str(row.get('role') or 'alternate').upper()} · {row['assessment']['text']}")
+            continue
         alternate_lines.append(f"{text(row.get('airport'))}/{text(row.get('runway'))} {str(row.get('role') or 'alternate').upper()} · {text(row.get('approach'))} · MIN {text(row.get('minima'))} · {text(row.get('distance_nm'))} NM / {text(row.get('time_minutes'))} min / {kg(row.get('fuel_kg'))}.")
         alternate_lines.extend(r["text"] for r in analysis["lines"])
 

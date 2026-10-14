@@ -1271,6 +1271,60 @@ def _alternate_assessment_rows(
             "constraint": constraint,
             "assessment": assessment,
         })
+    # A row printed in the alternate table that the parser did not read stands at its printed place as a review:
+    # nothing about it is analysed or inferred, and it is never left out (ALTERNATES-PARSE, 15 Oct 2026).
+    unread_rows = sorted(
+        (
+            row
+            for row in flight.get("alternates_unread") or []
+            if isinstance(row, dict) and row.get("table") == "destination_alternates"
+        ),
+        key=lambda row: int(row.get("position") or 0),
+    )
+    for row in unread_rows:
+        airport = str(row.get("airport") or "").strip().upper()
+        page = row.get("source_page")
+        where = f"OFP p{int(page)}" if isinstance(page, int) and not isinstance(page, bool) else "The OFP"
+        not_analysed = {
+            "status": "unavailable",
+            "selection_basis": "row_not_read",
+            "record_type": None,
+            "notam_id": None,
+            "source_icao": airport or None,
+            "source_role": None,
+            "text": "NOT ANALYSED - the alternate row was not read.",
+            "source_page": None,
+            "source_reference": "SOURCE PAGE UNAVAILABLE",
+            "planned_match": None,
+            "different_runway": None,
+            "applicability_inferred": False,
+        }
+        projected.insert(min(int(row.get("position") or 0), len(projected)), {
+            "role": "alternate",
+            "is_preferred": False,
+            "airport": airport or "----",
+            "runway": row.get("runway"),
+            "approach": None,
+            "minima": None,
+            "distance_nm": None,
+            "time_minutes": None,
+            "fuel_kg": None,
+            "forecast": dict(not_analysed),
+            "constraint": dict(not_analysed),
+            "assessment": {
+                "status": "review_required",
+                "source_status": "unavailable",
+                "text": (
+                    f'REVIEW - {where} prints this alternate, but its row was not read: "{row.get("text")}"; '
+                    "not analysed."
+                ),
+                "suitability_concluded": False,
+                "row_not_read": True,
+            },
+        })
+    for index, item in enumerate(projected):
+        item["role"] = "preferred" if index == 0 else "alternate"
+        item["is_preferred"] = index == 0
     return projected
 
 

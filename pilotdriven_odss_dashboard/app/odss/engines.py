@@ -383,6 +383,38 @@ def _weather_source_reference(
     }
 
 
+def _alternate_row_not_read_finding(row: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """A row printed in an alternate table that the parser did not read: a stated review, never an absence."""
+    edto = row.get("table") == "edto_alternates"
+    airport = str(row.get("airport") or "an alternate").strip().upper()
+    page = row.get("source_page")
+    where = f"OFP p{int(page)}" if isinstance(page, int) and not isinstance(page, bool) else "The OFP"
+    kind = "EDTO alternate" if edto else "planned alternate"
+    analysis = "EDTO checked-period" if edto else "NOTAM, weather or fuel"
+    summary = (
+        f'{where} prints {kind} {airport}, but its row was not read: "{str(row.get("text") or "").strip()}". '
+        f"{airport} has no {analysis} analysis here; read it from the OFP."
+    )
+    return finding(
+        "edto" if edto else "qa",
+        "warning",
+        "EDTO alternate row not read" if edto else "Planned alternate row not read",
+        summary,
+        [str(row.get("reason") or "").strip()] if row.get("reason") else [],
+        {
+            "airport": airport,
+            "table": row.get("table"),
+            "source_page": page,
+            "text": row.get("text"),
+            "source_references": [{
+                "source_type": "uploaded_cfp",
+                "pages": [int(page)] if isinstance(page, int) and not isinstance(page, bool) else [],
+                "section": "EDTO ENROUTE ALTN AIRPORTS" if edto else "FLT PLANNING ALTN SUMMARY",
+            }],
+        },
+    ), summary
+
+
 def _official_weather_review_finding(
     review: dict[str, Any],
 ) -> dict[str, Any] | None:
@@ -2880,6 +2912,12 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         warnings.append(
             "Official public METAR/TAF coverage is incomplete."
         )
+
+    for unread_row in flight.get("alternates_unread") or []:
+        if isinstance(unread_row, dict):
+            unread_finding, unread_warning = _alternate_row_not_read_finding(unread_row)
+            findings.append(unread_finding)
+            warnings.append(unread_warning)
 
     alternate_airports = {a["airport"] for a in flight["alternates"]}
     fuel_enroute_airports = {

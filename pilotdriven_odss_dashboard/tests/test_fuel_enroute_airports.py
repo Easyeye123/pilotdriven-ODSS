@@ -382,8 +382,9 @@ _CORPUS = Path(__file__).resolve().parents[2] / "private_cfp_corpus"
         ("SQ36507082026FCO.pdf", ["WIMM"], {"LIRF", "WSSS", "WSAP", "WMKK", "WIDD", "WIMM", "EDDM"}, "VAAH"),
         # NON EDTO: the same shape, both headings on p39; 6 instead of 21.
         ("SQ60508092026ICN.pdf", ["VVTS"], {"RKSI", "WSSS", "WSAP", "WMKK", "WIDD", "VVTS"}, "WMSA"),
-        # EDTO, the adequate section follows the fuel section directly (p41); 7 instead of 50.
-        ("SQ30316072026BRU 81.pdf", ["VTSP"], {"EBBR", "WSSS", "WSAP", "WMKK", "VTSP", "VTBD", "EDDM"}, "EBOS"),
+        # EDTO, the adequate section follows the fuel section directly (p41); 7 instead of 50. ALTERNATES-PARSE
+        # (15 Oct 2026): the planned alternate WIDD, printed with APPROACH and MINIMA blank, is read and analysed: 8.
+        ("SQ30316072026BRU 81.pdf", ["VTSP"], {"EBBR", "WSSS", "WSAP", "WMKK", "WIDD", "VTSP", "VTBD", "EDDM"}, "EBOS"),
         # EDTO, the same shape (p25/p26); WIII is both the fuel and the EDTO airport; 6 instead of 12.
         ("lido-briefing_SQ_214_16Aug2026_PER_SIN.pdf", ["WIII"], {"YPPH", "WSSS", "WSAP", "WMKK", "WIDD", "WIII"}, "WADD"),
         # Control: an EDTO SUITABLE section already closed the fuel section; 6, as before.
