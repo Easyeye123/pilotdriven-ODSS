@@ -20,18 +20,12 @@ from datetime import datetime, timedelta, timezone
 import re
 from typing import Any, Mapping, Sequence
 
+from .notam_timing import regime_groups, regime_matches
+
 _RUNWAY_TOKEN = re.compile(r"\b(?:RWY\s*)?(\d{2}[LCR]?)\b")
-_CLOSURE_REGIME = re.compile(
-    r"\bRWY\s+(?P<runways>\d{2}[LCR]?(?:/\d{2}[LCR]?)?)\s+"
-    r"WILL\s+BE\s+CLSD\s+BTN\s+"
-    r"(?P<start>\d{4})(?:UTC)?\s+TO\s+"
-    r"(?P<end>\d{4})(?:UTC)?\s+EV\s+"
-    r"(?P<weekdays>(?:MON|TUE|WED|THU|FRI|SAT|SUN)"
-    r"(?:\s+AND\s+(?:MON|TUE|WED|THU|FRI|SAT|SUN))*)\s+"
-    r"FM\s+(?P<valid_from>\d{2}[A-Z]{3}\d{2})\s+"
-    r"TO\s+(?P<valid_to>\d{2}[A-Z]{3}\d{2})\b",
-    re.IGNORECASE,
-)
+# ITEM 3 (14 Oct 2026): the regime grammar is the shared one (notam_timing_rules.json "runwayClosureRegimes"), so
+# the app's dashboard chart draws each runway in the state this module publishes for it on the PDF.
+_REGIME_GROUPS = regime_groups()
 _WEEKDAY_INDEX = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
 # Schedule language the regime grammar above does not read. When any survives
 # outside the parsed regimes, the notice keeps an open review.
@@ -69,28 +63,29 @@ def _regimes(text: str) -> tuple[list[dict[str, Any]], bool]:
     raw = " ".join(str(text or "").upper().split())
     regimes: list[dict[str, Any]] = []
     covered: list[tuple[int, int]] = []
-    for match in _CLOSURE_REGIME.finditer(raw):
+    group = _REGIME_GROUPS
+    for match in regime_matches(raw):
         try:
-            valid_from = datetime.strptime(match.group("valid_from").upper(), "%d%b%y").date()
-            valid_to = datetime.strptime(match.group("valid_to").upper(), "%d%b%y").date()
+            valid_from = datetime.strptime(match.group(group["validFrom"]).upper(), "%d%b%y").date()
+            valid_to = datetime.strptime(match.group(group["validTo"]).upper(), "%d%b%y").date()
         except ValueError:
             continue
-        start_text, end_text = match.group("start"), match.group("end")
+        start_text, end_text = match.group(group["start"]), match.group(group["end"])
         start_minutes = int(start_text[:2]) * 60 + int(start_text[2:])
         end_minutes = int(end_text[:2]) * 60 + int(end_text[2:])
         if int(start_text[:2]) > 23 or int(end_text[:2]) > 23 or int(start_text[2:]) > 59 or int(end_text[2:]) > 59:
             continue
         covered.append(match.span())
         regimes.append({
-            "label": match.group("runways").upper(),
-            "runways": sorted(set(_designators(match.group("runways")))),
+            "label": match.group(group["runways"]).upper(),
+            "runways": sorted(set(_designators(match.group(group["runways"])))),
             "start": start_text,
             "end": end_text,
             "startMinutes": start_minutes,
             "endMinutes": end_minutes,
             "weekdays": sorted({
                 _WEEKDAY_INDEX[token]
-                for token in re.findall(r"MON|TUE|WED|THU|FRI|SAT|SUN", match.group("weekdays").upper())
+                for token in re.findall(r"MON|TUE|WED|THU|FRI|SAT|SUN", match.group(group["weekdays"]).upper())
             }),
             "validFrom": valid_from,
             "validTo": valid_to,

@@ -47,10 +47,15 @@ def _timing(record: dict[str, Any], role: str) -> tuple[str | None, str]:
     if state == "active_at_reference":
         return f"at {name} {_clock(reference)}", "active"
     if state == "begins_after_reference":
-        start, anchor = _time(record.get("valid_from_utc")), _time(reference)
+        # ITEM 3 (14 Oct 2026): "begins" is measured to the start of the occurrence the shared decision found - the
+        # next Item D occurrence, not the validity start - so the PDF says what the chart's scheduled mark says. An
+        # assessment held before the shared rules carries no interval and still reads the validity start.
+        interval = assessed.get("referenceInterval") if isinstance(assessed.get("referenceInterval"), dict) else {}
+        start, anchor = _time(interval.get("startsAt")) or _time(record.get("valid_from_utc")), _time(reference)
         if start and anchor and start >= anchor:
             minutes = int((start - anchor).total_seconds() // 60)
             return f"begins {minutes} min after {name} {_clock(reference)}; actual taxi timing determines exposure", "scheduled"
+    # A stored assessment (before the shared rules) can still hold this state; a new one never does.
     if state == "outside_schedule_at_reference":
         return f"outside the active schedule at {name} {_clock(reference)}, but overlaps the checked window", "scheduled"
     return None, "unresolved reference time"

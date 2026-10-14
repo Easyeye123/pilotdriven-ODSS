@@ -25,7 +25,7 @@ def test_departure_and_arrival_notam_windows_follow_actual_anchor():
     actual = datetime(2026, 8, 25, 19, tzinfo=timezone.utc)
     arrival = actual + timedelta(minutes=601)
     for station, expected_role, reference, margin in (
-        ("FAOR", "departure", actual, 60),
+        ("FAOR", "departure", actual, 120),
         ("WSSS", "destination", arrival, 120),
         ("WMKK", "destination alternate", arrival, 120),
     ):

@@ -141,9 +141,9 @@ WSSS/SIN SINGAPORE CHANGI
 ACTIVE1/26 VALID: 11-JUL-26 0900 - 11-JUL-26 1200
 DAILY 1000-1100
 RWY 02L CLSD
-EXPIRED1/26 VALID: 11-JUL-26 0800 - 11-JUL-26 0929
+EXPIRED1/26 VALID: 11-JUL-26 0700 - 11-JUL-26 0829
 RWY 02C CLSD
-FUTURE1/26 VALID: 11-JUL-26 1131 - 11-JUL-26 1300
+FUTURE1/26 VALID: 11-JUL-26 1231 - 11-JUL-26 1400
 RWY 20R CLSD
 OFFSCH1/26 VALID: 11-JUL-26 0900 - 11-JUL-26 1200
 DAILY 1300-1400
@@ -617,8 +617,8 @@ def test_service_briefing_exposes_only_flight_evaluated_notam_findings(
         "schedule_status": "overlaps_flight_window",
         "valid_from_utc": "2026-07-11T09:00:00+00:00",
         "valid_to_utc": "2026-07-11T12:00:00+00:00",
-        "window_start_utc": "2026-07-11T09:30:00+00:00",
-        "window_end_utc": "2026-07-11T11:30:00+00:00",
+        "window_start_utc": "2026-07-11T08:30:00+00:00",
+        "window_end_utc": "2026-07-11T12:30:00+00:00",
         "schedule": "DAILY 1000-1100",
         "state_at_reference": "active_at_reference",
         "reference_at": "2026-07-11T10:30:00+00:00",

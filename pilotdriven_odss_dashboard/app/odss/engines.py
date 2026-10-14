@@ -8,7 +8,6 @@ from typing import Any
 from .constants import (
     COMMUNICATION_RULES,
     MEL_REFERENCES,
-    MONTHS,
     REFERENCE_LIBRARY_METADATA,
     edto_sectors,
     format_actm,
@@ -40,6 +39,14 @@ from .pilot_briefing import (
     pilot_notam_key,
 )
 from .runway_closure_schedule import reconcile_runway_closure_findings
+from .notam_timing import (
+    NOTAM_TIMING_RULES,
+    decide_notice_timing,
+    notice_timing_input,
+    parse_schedule_field,
+    schedule_occurrences,
+    shared_station_window,
+)
 from .airport_taxi_consequences import (
     bounded_taxiway_extents,
     is_prose_word,
@@ -54,8 +61,6 @@ from .reviewed_publications import reviewed_publication_for_notam
 from .report_facts import required_operational_reference_times
 from .weather_timing import select_taf_for_window, summarize_metar_for_window, summarize_taf_for_window
 
-_WEEKDAYS = {name: index for index, name in enumerate(("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"))}
-_TIME_RANGE = re.compile(r"\b(\d{4})(?:UTC|Z)?\s*(?:-|TO)\s*(\d{4})(?:UTC|Z)?\b")
 _INSTRUMENT_APPROACH_ADVERSE = re.compile(
     r"\b(?:U/S|UNSERVICEAB(?:LE|ILITY)|NOT\s+(?:AVBL|AVAILABLE|"
     r"AUTHORI[ZS]ED|MONITORED)|CLSD|CLOSED|SUSPENDED|INOP(?:ERATIVE)?|"
@@ -659,121 +664,25 @@ def _reference_library_is_approved() -> bool:
     }
 
 
-def _intervals_overlap(
-    first_start: datetime,
-    first_end: datetime,
-    second_start: datetime,
-    second_end: datetime,
-) -> bool:
-    return first_start < second_end and second_start < first_end
-
-
-def _minute_of_day(value: str) -> int | None:
-    hour = int(value[:2])
-    minute = int(value[2:])
-    if hour > 23 or minute > 59:
-        return None
-    return hour * 60 + minute
-
-
-def _schedule_weekdays(value: str) -> set[int] | None:
-    weekday = r"MON|TUE|WED|THU|FRI|SAT|SUN"
-    normalized = re.sub(r"\s*,\s*", " ", value.strip())
-    range_match = re.fullmatch(rf"({weekday})-({weekday})", normalized)
-    if range_match:
-        start = _WEEKDAYS[range_match.group(1)]
-        end = _WEEKDAYS[range_match.group(2)]
-        result = {start}
-        while start != end:
-            start = (start + 1) % 7
-            result.add(start)
-        return result
-    if not re.fullmatch(rf"(?:{weekday})(?:\s+(?:{weekday}))*", normalized):
-        return None
-    tokens = re.findall(weekday, normalized)
-    return {_WEEKDAYS[token] for token in tokens}
-
-
 def _schedule_overlaps(
     schedule: str, window_start: datetime, window_end: datetime,
     *, valid_from: datetime | None = None, valid_to: datetime | None = None,
 ) -> bool | None:
-    months = "JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC"
-    # A comma after a time separates dated entries; commas within a date
-    # list do not. Keep unsupported syntax intact so it requires review.
-    normalized = re.sub(
-        rf"(\d{{4}}(?:UTC|Z)?)\s*,\s*(?=(?:{months})\b|\d{{2}}(?:-\d{{2}})?(?:[ ,]+\d{{2}}(?:-\d{{2}})?)*\s+\d{{4}})",
-        r"\1;", schedule.upper(),
-    )
-    entries = [entry.strip() for entry in normalized.split(";") if entry.strip()]
-    if not entries:
+    """Whether an Item D schedule has an occurrence overlapping the window; None when it cannot be read.
+
+    ITEM 3 (14 Oct 2026): the grammar is the shared one in notam_timing_rules.json - the app reads every Item D
+    by the same rules - so this is a view of that reader, kept for callers that only need overlap.
+    """
+    anchor_start, anchor_end = valid_from or window_start, valid_to or window_end
+    validity = {"startsAt": anchor_start.isoformat(), "endsAt": anchor_end.isoformat(), "endKind": "explicit"}
+    entries, error = parse_schedule_field(schedule, validity)
+    if error:
         return None
-    parsed_entries = 0
-    overlaps = False
-    first_day = (window_start - timedelta(days=1)).date()
-    day_count = (window_end.date() - first_day).days + 1
-    for entry in entries:
-        matches = list(_TIME_RANGE.finditer(entry))
-        if not matches:
-            return None
-        gaps = [entry[matches[index].end():matches[index + 1].start()] for index in range(len(matches) - 1)]
-        gaps.append(entry[matches[-1].end():])
-        if any(not re.fullmatch(r"[\s,/]*", gap) for gap in gaps):
-            return None
-        ranges = []
-        for match in matches:
-            start_minutes = _minute_of_day(match.group(1))
-            end_minutes = _minute_of_day(match.group(2))
-            if start_minutes is None or end_minutes is None:
-                return None
-            ranges.append((start_minutes, end_minutes))
-        prefix = entry[:matches[0].start()].strip(" ,")
-        date_match = re.fullmatch(rf"(?:({months})\s+)?(\d{{2}}(?:-\d{{2}})?(?:[ ,]+\d{{2}}(?:-\d{{2}})?)*)", prefix)
-        month_days: set[int] | None = None
-        month_number = None
-        if date_match:
-            month_number = MONTHS.get(date_match.group(1))
-            if month_number is None:
-                # Numbered dates omit the month only within an unambiguous
-                # validity month. Do not turn a cross-month notice into a
-                # recurring monthly closure.
-                anchor_start, anchor_end = valid_from or window_start, valid_to or window_end
-                if (anchor_start.year, anchor_start.month) != (anchor_end.year, anchor_end.month):
-                    return None
-                month_number = anchor_start.month
-            date_expression = date_match.group(2)
-            if not re.fullmatch(r"\d{2}(?:-\d{2})?(?:[ ,]+\d{2}(?:-\d{2})?)*", date_expression):
-                return None
-            month_days = set()
-            for token in re.findall(r"\d{2}(?:-\d{2})?", date_expression):
-                if "-" in token:
-                    start_day, end_day = (int(value) for value in token.split("-", 1))
-                    if start_day > end_day:
-                        return None
-                    month_days.update(range(start_day, end_day + 1))
-                else:
-                    month_days.add(int(token))
-            if not month_days or not month_days <= set(range(1, 32)):
-                return None
-        daily = prefix in {"DAILY", "DLY"}
-        weekdays = None if daily or date_match else _schedule_weekdays(prefix)
-        if not daily and not date_match and weekdays is None:
-            return None
-        parsed_entries += 1
-        for offset in range(day_count):
-            day = first_day + timedelta(days=offset)
-            if date_match and ((month_number and day.month != month_number) or day.day not in month_days):
-                continue
-            if weekdays is not None and day.weekday() not in weekdays:
-                continue
-            for start_minutes, end_minutes in ranges:
-                occurrence_start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(minutes=start_minutes)
-                occurrence_end = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(minutes=end_minutes)
-                if end_minutes <= start_minutes:
-                    occurrence_end += timedelta(days=1)
-                if _intervals_overlap(occurrence_start, occurrence_end, window_start, window_end):
-                    overlaps = True
-    return overlaps if parsed_entries == len(entries) else None
+    start_ms, end_ms = window_start.timestamp() * 1000, window_end.timestamp() * 1000
+    occurrences = schedule_occurrences(entries, anchor_start.timestamp() * 1000,
+                                       anchor_end.timestamp() * 1000 if valid_to is not None else float("inf"),
+                                       start_ms, end_ms)
+    return any(occurrence_start < end_ms and start_ms < occurrence_end for occurrence_start, occurrence_end in occurrences)
 
 
 def _notam_role_window(
@@ -785,16 +694,14 @@ def _notam_role_window(
     source_role: str | None = None,
 ) -> tuple[str, datetime, datetime]:
     departure_utc, arrival_utc = required_operational_reference_times(flight)
-    departure_margin = timedelta(
-        minutes=_configured_window_minutes("ODSS_NOTAM_DEPARTURE_WINDOW_MINUTES", 60)
-    )
-    arrival_margin = timedelta(
-        minutes=_configured_window_minutes("ODSS_NOTAM_ARRIVAL_WINDOW_MINUTES", 120)
-    )
+    # ITEM 3 (14 Oct 2026): the departure and destination windows are the shared ones (notam_timing_rules.json,
+    # +/-2h, the operator default the app has used since 25 Jul). The one-hour departure window and the per-service
+    # environment overrides let the card and the PDF text leave out a closure the chart and the PDF map drew.
     if location == flight["departure"]:
-        return "departure", departure_utc - departure_margin, departure_utc + departure_margin
+        return ("departure", *shared_station_window("departure", departure_utc))
     if location == flight["destination"]:
-        return "destination", arrival_utc - arrival_margin, arrival_utc + arrival_margin
+        return ("destination", *shared_station_window("destination", arrival_utc))
+    arrival_margin = timedelta(minutes=NOTAM_TIMING_RULES["stationWindows"]["destination"]["afterMinutes"])
     is_fuel_enroute = (
         source_role == "fuel_enroute_airport"
         or location in (fuel_enroute_airports or set())
@@ -850,29 +757,37 @@ def _assess_notam_window(
     record: dict[str, Any], flight: dict[str, Any], role: str,
     start: datetime, end: datetime, valid_from: datetime, valid_to: datetime,
 ) -> dict[str, Any]:
+    """One role's assessment of a station notice: the shared decision (notam_timing.py), in this service's words.
+
+    ITEM 3 (14 Oct 2026): the app decides the same record by the same rules for the dashboard chart, the PDF map
+    marks and its NOTAM records, so the card and the PDF text cannot say "active" where the map says "review".
+    ``valid_from``/``valid_to`` are kept in the signature for callers; the decision reads the record itself.
+    """
     reference = _notam_reference_at(flight, role, start)
-    state, delta = _notam_reference_state(record, reference, valid_from, valid_to)
+    decision = decide_notice_timing(notice_timing_input(record), {
+        "startsAt": start.isoformat(), "endsAt": end.isoformat(), "referenceAt": reference.isoformat()})
+    status = decision["status"]
+    schedule = decision["schedule"]
     result = {
         "role": role, "window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(),
         "window_label": _utc_window_label(start, end),
-        "referenceAt": reference.isoformat(), "stateAtReference": state, "minutesDelta": delta,
-        "applicability": "active", "validity_status": "overlaps_flight_window", "schedule_status": "not_applicable",
+        "referenceAt": reference.isoformat(), "stateAtReference": decision["stateAtReference"],
+        "minutesDelta": decision["minutesDelta"], "referenceInterval": decision["referenceInterval"],
+        "applicability": "active", "validity_status": "overlaps_flight_window",
+        "schedule_status": "overlaps_flight_window" if schedule else "not_applicable",
     }
-    if record.get("validity_review"):
-        result.update(applicability="review", validity_status="review_required")
-    elif not _intervals_overlap(valid_from, valid_to, start, end):
+    if status == "review":
+        unreadable_validity = notice_timing_input(record)["validity"] is None
+        result.update(
+            applicability="review",
+            validity_status="review_required" if unreadable_validity else "overlaps_flight_window",
+            schedule_status="not_applicable" if unreadable_validity else "review_required",
+            timing_review_reason=decision.get("reason"),
+        )
+    elif status == "outside_window" and decision["outsideBy"] == "validity":
         result.update(applicability="outside_time_window", validity_status="outside_time_window")
-        return result
-    if record.get("schedule"):
-        active = _schedule_overlaps(record["schedule"], max(start, valid_from), min(end, valid_to), valid_from=valid_from, valid_to=valid_to)
-        if active is False and not record.get("validity_review"):
-            result.update(applicability="outside_schedule", schedule_status="outside_schedule")
-        elif active is None:
-            result.update(applicability="review", schedule_status="review_required")
-        else:
-            result["schedule_status"] = "overlaps_flight_window"
-    elif record.get("schedule_review"):
-        result.update(applicability="review", schedule_status="review_required")
+    elif status == "outside_window":
+        result.update(applicability="outside_schedule", schedule_status="outside_schedule")
     return result
 
 def _utc_window_label(window_start: datetime, window_end: datetime) -> str:
@@ -896,42 +811,6 @@ def _notam_reference_at(
     # EDTO windows use sector entry as their operational reference. Enroute
     # informational records use the beginning of the checked flight window.
     return window_start
-
-
-def _notam_reference_state(
-    record: dict[str, Any],
-    reference_at: datetime,
-    valid_from: datetime,
-    valid_to: datetime,
-) -> tuple[str, int | None]:
-    if record.get("validity_review"):
-        return "unknown_at_reference", None
-    if reference_at < valid_from:
-        return (
-            "begins_after_reference",
-            round((valid_from - reference_at).total_seconds() / 60),
-        )
-    if reference_at >= valid_to:
-        return (
-            "ended_before_reference",
-            round((reference_at - valid_to).total_seconds() / 60),
-        )
-
-    schedule = record.get("schedule")
-    if schedule:
-        active_at_reference = _schedule_overlaps(
-            schedule,
-            reference_at,
-            reference_at + timedelta(minutes=1),
-            valid_from=valid_from, valid_to=valid_to,
-        )
-        if active_at_reference is False:
-            return "outside_schedule_at_reference", None
-        if active_at_reference is None:
-            return "unknown_at_reference", None
-    elif record.get("schedule_review"):
-        return "unknown_at_reference", None
-    return "active_at_reference", 0
 
 
 def _weather_role_window(
@@ -3364,6 +3243,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "stateAtReference": state_at_reference,
             "referenceAt": reference_at.isoformat(),
             "minutesDelta": minutes_delta,
+            "referenceInterval": assessed.get("referenceInterval"),
             "pilot_status": "pending",
         }
         notam_audit_records.append(audit_record)
@@ -3451,6 +3331,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "stateAtReference": state_at_reference,
                 "referenceAt": reference_at.isoformat(),
                 "minutesDelta": minutes_delta,
+                "referenceInterval": assessed.get("referenceInterval"),
                 "raw_text": record["text"],
                 "operational_details": operational_details,
                 **(

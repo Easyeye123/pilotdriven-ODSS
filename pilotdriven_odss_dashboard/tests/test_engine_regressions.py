@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 
@@ -402,13 +402,21 @@ def test_item_d_schedule_lines_are_preserved(schedule: str) -> None:
     assert records[0]["schedule"] == schedule
 
 
+def test_a_weekday_after_a_time_starts_a_new_item_d_entry() -> None:
+    # ITEM 3 (14 Oct 2026): the app always read "MON 0100-0200 TUE 0300-0400" as two entries; this service held it
+    # for review, so the chart and the card disagreed. One grammar now (notam_timing_rules.json).
+    schedule = "MON 0100-0200 TUE 0300-0400"
+    tuesday = datetime(2026, 7, 14, 3, 30, tzinfo=UTC)
+    assert _schedule_overlaps(schedule, tuesday, tuesday + timedelta(minutes=10)) is True
+    assert _schedule_overlaps(schedule, tuesday - timedelta(hours=2), tuesday - timedelta(hours=1)) is False
+
+
 @pytest.mark.parametrize(
     "schedule",
     (
         "MON-FRI EXC HOL 0500-1500",
         "JUL 01-31 EXC 04 1100-2300",
         "DAILY 0100-0200 EXC SAT",
-        "MON 0100-0200 TUE 0300-0400",
     ),
 )
 def test_item_d_schedule_exceptions_require_manual_review(schedule: str) -> None:
@@ -457,10 +465,12 @@ def test_departure_notam_preserves_reference_state_and_actual_validity() -> None
             text="RWY 04L/22R CLSD",
             category="RUNWAY",
         ),
+        # ITEM 3 (14 Oct 2026): the departure window is the shared +/-2h (notam_timing_rules.json), so the record
+        # just outside it starts 121 min after the 0215Z departure.
         _record(
             "OUTSIDE/26",
             "KJFK",
-            "2026-07-25T03:16:00+00:00",
+            "2026-07-25T04:16:00+00:00",
             "2026-07-25T10:00:00+00:00",
             text="RWY 13L/31R CLSD",
             category="RUNWAY",
@@ -494,13 +504,16 @@ def test_departure_notam_preserves_reference_state_and_actual_validity() -> None
     } == {"OUTSIDE/26"}
 
 
-def test_arrival_notam_window_is_configurable(
+def test_arrival_notam_window_is_the_shared_window_and_a_per_service_override_cannot_narrow_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # ITEM 3 (14 Oct 2026): a window only this service honoured is how the card and the PDF text came to leave out
+    # what the app's chart and PDF map drew. The departure and destination windows are the shared rules' +/-2h.
     monkeypatch.setenv("ODSS_NOTAM_ARRIVAL_WINDOW_MINUTES", "30")
+    monkeypatch.setenv("ODSS_NOTAM_DEPARTURE_WINDOW_MINUTES", "30")
     notams = [
-        _record("OUTSIDE/26", "RJBB", "2026-07-16T11:00:00+00:00", "2026-07-16T11:29:00+00:00"),
-        _record("INSIDE/26", "RJBB", "2026-07-16T11:30:00+00:00", "2026-07-16T12:15:00+00:00"),
+        _record("OUTSIDE/26", "RJBB", "2026-07-16T08:00:00+00:00", "2026-07-16T09:59:00+00:00"),
+        _record("INSIDE/26", "RJBB", "2026-07-16T10:00:00+00:00", "2026-07-16T10:15:00+00:00"),
     ]
 
     findings, _ = analyse(_flight(notams=notams))

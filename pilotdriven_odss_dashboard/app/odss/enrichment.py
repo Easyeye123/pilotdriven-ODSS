@@ -6,12 +6,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .constants import MONTHS, OPERATIONAL_KEYWORDS
+from .notam_timing import parse_schedule_field, read_lido_schedule_field, read_lido_validity
 
 _NOTAM_START = re.compile(r"^(?P<id>[A-Z0-9]+/\d{2})\s+VALID:\s+(?P<validity>.+)$")
-_SCHEDULE_LINE = re.compile(
-    r"^(?:DAILY|DLY|MON|TUE|WED|THU|FRI|SAT|SUN|"
-    r"JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|\d{2}(?=[ ,\d-]*\s+\d{4}))\b"
-)
 _FUEL_ENROUTE_HEADING = re.compile(
     r"^FUEL\s+ENROUTE\s+AIRPORT(?:\(S\)|S)?\s*:?\s*$",
     re.IGNORECASE,
@@ -759,6 +756,11 @@ def _parse_notam_datetime(value: str) -> datetime | None:
         return None
 
 
+def _utc_iso(value: str) -> str:
+    """The shared reader's ISO instant in this module's isoformat()."""
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
+
+
 def _parse_validity(value: str, fallback: datetime) -> tuple[datetime, datetime | None, bool]:
     parts = re.split(r"\s+-\s+", value, maxsplit=1)
     parsed_start = _parse_notam_datetime(parts[0])
@@ -787,13 +789,6 @@ def _notice_score(text: str, category: str) -> int:
     )
 
 
-def _has_schedule_language(text: str) -> bool:
-    return bool(
-        re.search(r"\b(?:DAILY|DLY|EV|EVERY|MON|TUE|WED|THU|FRI|SAT|SUN)\b", text, re.IGNORECASE)
-        and re.search(r"\b\d{4}(?:UTC|Z)?\s*(?:-|TO)\s*\d{4}(?:UTC|Z)?\b", text, re.IGNORECASE)
-    )
-
-
 def _parse_airport_notams(
     icao: str,
     block: str,
@@ -813,26 +808,28 @@ def _parse_airport_notams(
         if not current_id:
             return
         text = " ".join(line.strip() for line in current_lines if line.strip())
-        valid_from, valid_to, validity_parsed = _parse_validity(current_validity, fallback)
-        schedule_lines = [
-            line.strip().rstrip(".")
-            for line in current_lines
-            if _SCHEDULE_LINE.match(line.strip().upper())
-            and re.search(r"\b\d{4}(?:UTC|Z)?\s*-\s*\d{4}(?:UTC|Z)?\b", line, re.IGNORECASE)
-        ]
-        schedule = "; ".join(schedule_lines) or None
-        schedule_review = schedule is None and _has_schedule_language(text)
+        # ITEM 3 (14 Oct 2026): validity and Item D are read by the rules the app reads them by
+        # (notam_timing_rules.json). Item D is the record's leading schedule lines, joined - not every line that
+        # merely starts like one - so a wrapped D field is read whole and a schedule-like line inside the free text
+        # is a review, never a second schedule. An absent end is a review, never an open end.
+        validity = read_lido_validity(current_validity)
+        field = read_lido_schedule_field(current_lines)
+        schedule = field["field"]
+        review = field["review"]
+        if validity is not None and schedule and review is None:
+            review = parse_schedule_field(schedule, validity)[1]
         score = _notice_score(text, current_category)
         record = {
             "notam_id": current_id,
             "location": icao,
             "category": current_category,
             "text": text,
-            "valid_from_utc": valid_from.isoformat(),
-            "valid_to_utc": valid_to.isoformat() if valid_to else None,
+            "valid_from_utc": _utc_iso(validity["startsAt"]) if validity else fallback.isoformat(),
+            # None only for an open end (UFN, PERM); an absent or unreadable end is validity_review.
+            "valid_to_utc": _utc_iso(validity["endsAt"]) if validity and validity["endsAt"] else None,
             "schedule": schedule,
-            "schedule_review": schedule_review,
-            "validity_review": not validity_parsed,
+            "schedule_review": review is not None,
+            "validity_review": validity is None,
             "priority_score": score,
         }
         if include_all or score > 0:

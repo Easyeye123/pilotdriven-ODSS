@@ -1,0 +1,1249 @@
+{
+ "specVersion": "notam-timing-2026-10-14-v1",
+ "defaultWindow": {
+  "startsAt": "2026-08-16T07:00:00.000Z",
+  "endsAt": "2026-08-16T11:00:00.000Z"
+ },
+ "defaultReferenceAt": "2026-08-16T09:00:00.000Z",
+ "validityCases": [
+  {
+   "id": "UFN",
+   "text": "16-JUL-25 0000 - UFN",
+   "expect": {
+    "startsAt": "2025-07-16T00:00:00.000Z",
+    "endsAt": null,
+    "endKind": "until_further_notice"
+   }
+  },
+  {
+   "id": "PERM",
+   "text": "19-NOV-25 0815 - PERM",
+   "expect": {
+    "startsAt": "2025-11-19T08:15:00.000Z",
+    "endsAt": null,
+    "endKind": "permanent"
+   }
+  },
+  {
+   "id": "EXPLICIT",
+   "text": "04-SEP-25 1700 - 31-MAR-27 2130",
+   "expect": {
+    "startsAt": "2025-09-04T17:00:00.000Z",
+    "endsAt": "2027-03-31T21:30:00.000Z",
+    "endKind": "explicit"
+   }
+  },
+  {
+   "id": "EST",
+   "text": "12-JUN-26 0525 - 08-SEP-26 2359 EST",
+   "expect": {
+    "startsAt": "2026-06-12T05:25:00.000Z",
+    "endsAt": "2026-09-08T23:59:00.000Z",
+    "endKind": "estimated"
+   }
+  },
+  {
+   "id": "MISSING_END",
+   "text": "10-AUG-26 0000",
+   "expect": null
+  },
+  {
+   "id": "UNREADABLE_END",
+   "text": "10-AUG-26 0000 - SOON",
+   "expect": null
+  },
+  {
+   "id": "INVALID_DATE",
+   "text": "31-FEB-26 0000 - UFN",
+   "expect": null
+  },
+  {
+   "id": "INVALID_TIME",
+   "text": "10-AUG-26 2460 - UFN",
+   "expect": null
+  },
+  {
+   "id": "END_BEFORE_START",
+   "text": "16-AUG-26 1000 - 16-AUG-26 0800",
+   "expect": null
+  }
+ ],
+ "fieldCases": [
+  {
+   "id": "DAILY_LINE",
+   "lines": [
+    "DAILY 0800-1000",
+    "RWY 09 CLSD"
+   ],
+   "expect": {
+    "field": "DAILY 0800-1000",
+    "review": false
+   }
+  },
+  {
+   "id": "NO_FIELD",
+   "lines": [
+    "RWY 09 CLSD"
+   ],
+   "expect": {
+    "field": null,
+    "review": false
+   }
+  },
+  {
+   "id": "BARE_TIME",
+   "lines": [
+    "2130-0330",
+    "LIT CRANE OPR BTN 512828N 0002706W"
+   ],
+   "expect": {
+    "field": "2130-0330",
+    "review": false
+   }
+  },
+  {
+   "id": "GENUINE_SQ60606092026SIN_RCAA_A2710_26",
+   "lines": [
+    "AUG 31 2330-2359, SEP 01-29 0000-0400 0600-0900 2330-2359, SEP",
+    "30 0000-0400 0600-0900",
+    "AIR EXER WILL TAKE PLACE:"
+   ],
+   "expect": {
+    "field": "AUG 31 2330-2359, SEP 01-29 0000-0400 0600-0900 2330-2359, SEP 30 0000-0400 0600-0900",
+    "review": false
+   }
+  },
+  {
+   "id": "GENUINE_SQ91021082026SIN_RPLL_B3172_26",
+   "lines": [
+    "0000-2359 EXC JUL 04 06",
+    "EXER CTN WHEN OPR GA MOV AREA DUE WIP (HANGAR CONST) AT COORD:"
+   ],
+   "expect": {
+    "field": "0000-2359 EXC JUL 04 06",
+    "review": true
+   }
+  },
+  {
+   "id": "FREE_TEXT",
+   "lines": [
+    "TWY Z9 CLSD BTN 0800-1700 DAILY."
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   }
+  },
+  {
+   "id": "GENUINE_WSSS_SX120_25_HEAD",
+   "lines": [
+    "SX0120/25 AIP SUPPLEMENT",
+    "WSSS/SINGAPORE/CHANGI",
+    "VALIDITY: 04SEP25 1700UTC - 31MAR27 2130UTC",
+    "RWY 02L/20R WILL BE CLSD BTN 1700UTC TO 2200UTC EV SUN AND WED FM"
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   }
+  },
+  {
+   "id": "FIRST_LINE_WITHOUT_TIME",
+   "lines": [
+    "AUG 07 21 28",
+    "RWY 09 CLSD"
+   ],
+   "expect": {
+    "field": null,
+    "review": false
+   }
+  },
+  {
+   "id": "DAY_NUMBERS",
+   "lines": [
+    "15 1800-2000",
+    "TWY Z9 CLSD."
+   ],
+   "expect": {
+    "field": "15 1800-2000",
+    "review": false
+   }
+  },
+  {
+   "id": "TRAILING_STOP",
+   "lines": [
+    "DAILY 0800-1000.",
+    "TWY Z9 CLSD."
+   ],
+   "expect": {
+    "field": "DAILY 0800-1000.",
+    "review": false
+   }
+  },
+  {
+   "id": "NUMBERED_TEXT",
+   "lines": [
+    "1. AREA: 374816N 0234627E"
+   ],
+   "expect": {
+    "field": null,
+    "review": false
+   }
+  }
+ ],
+ "decisionCases": [
+  {
+   "id": "UFN_ACTIVE",
+   "label": "SYNTHETIC",
+   "validity": "16-JUL-26 0000 - UFN",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-07-16T00:00:00.000Z",
+     "endsAt": null
+    }
+   }
+  },
+  {
+   "id": "PERM_ACTIVE",
+   "label": "SYNTHETIC",
+   "validity": "01-JAN-26 0000 - PERM",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-01-01T00:00:00.000Z",
+     "endsAt": null
+    }
+   }
+  },
+  {
+   "id": "UFN_STARTS_BEYOND_WINDOW",
+   "label": "SYNTHETIC",
+   "validity": "16-AUG-26 1200 - UFN",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 180
+   }
+  },
+  {
+   "id": "UFN_STARTS_IN_WINDOW",
+   "label": "SYNTHETIC",
+   "validity": "16-AUG-26 1000 - UFN",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 60,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T10:00:00.000Z",
+     "endsAt": null
+    }
+   }
+  },
+  {
+   "id": "EST_END_AFTER_REFERENCE",
+   "label": "SYNTHETIC",
+   "validity": "15-AUG-26 0000 - 16-AUG-26 0930 EST",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-08-15T00:00:00.000Z",
+     "endsAt": "2026-08-16T09:30:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "EST_END_BEFORE_REFERENCE",
+   "label": "SYNTHETIC",
+   "validity": "15-AUG-26 0000 - 16-AUG-26 0830 EST",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "ended_before_reference",
+    "minutesDelta": 30
+   }
+  },
+  {
+   "id": "START_AFTER_BEYOND_WINDOW",
+   "label": "SYNTHETIC",
+   "validity": "16-AUG-26 1200 - 16-AUG-26 1400",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 180
+   }
+  },
+  {
+   "id": "END_BEFORE_IN_WINDOW",
+   "label": "SYNTHETIC",
+   "validity": "16-AUG-26 0400 - 16-AUG-26 0800",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "ended_before_reference",
+    "minutesDelta": 60
+   }
+  },
+  {
+   "id": "END_BEFORE_BEYOND_WINDOW",
+   "label": "SYNTHETIC",
+   "validity": "16-AUG-26 0100 - 16-AUG-26 0600",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "ended_before_reference",
+    "minutesDelta": 180
+   }
+  },
+  {
+   "id": "REFERENCE_AT_START",
+   "label": "SYNTHETIC",
+   "validity": "16-AUG-26 0900 - 16-AUG-26 1300",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "start inclusive"
+  },
+  {
+   "id": "REFERENCE_AT_END",
+   "label": "SYNTHETIC",
+   "validity": "16-AUG-26 0500 - 16-AUG-26 0900",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "ended_before_reference",
+    "minutesDelta": 0
+   },
+   "note": "end exclusive"
+  },
+  {
+   "id": "DLY_ACTIVE",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T08:00:00.000Z",
+     "endsAt": "2026-08-16T10:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "DLY_BEGINS_IN_WINDOW",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY 0930-1200",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 30,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T09:30:00.000Z",
+     "endsAt": "2026-08-16T12:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "DLY_ENDED_IN_WINDOW",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY 0600-0830",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "ended_before_reference",
+    "minutesDelta": 30,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T06:00:00.000Z",
+     "endsAt": "2026-08-16T08:30:00.000Z"
+    }
+   },
+   "note": "ODSS published outside_schedule_at_reference here; the app said ended. One state now."
+  },
+  {
+   "id": "DLY_OUTSIDE_WINDOW",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY 1300-1500",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 240,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T13:00:00.000Z",
+     "endsAt": "2026-08-16T15:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "DLY_CROSSES_MIDNIGHT",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY 2200-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-08-15T22:00:00.000Z",
+     "endsAt": "2026-08-16T10:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "WEEKDAYS_EXCLUDE_REFERENCE_DAY",
+   "label": "SYNTHETIC",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "MON-SAT 0000-2359",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 900,
+    "referenceInterval": {
+     "startsAt": "2026-08-17T00:00:00.000Z",
+     "endsAt": "2026-08-17T23:59:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "WEEKDAY_INCLUDES_REFERENCE_DAY",
+   "label": "SYNTHETIC",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "SUN 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "MULTIPLE_PERIODS",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY 0030-0330 0630-0930",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T06:30:00.000Z",
+     "endsAt": "2026-08-16T09:30:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "SUNRISE_SUNSET",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY SR-SS",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "HJ",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY HJ",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "H24_ON_REFERENCE_DAY",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "SUN H24",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T00:00:00.000Z",
+     "endsAt": "2026-08-17T00:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "EXCEPTION",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY 0000-2359 EXC TUE",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "BARE_TIME_RANGE_IS_DAILY",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T08:00:00.000Z",
+     "endsAt": "2026-08-16T10:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "GENUINE_SQ322_EGLL_A2106_26",
+   "label": "GENUINE lido-briefing_SQ_322_16Aug2026_SIN_LHR.pdf EGLL 1A2106/26 at the scheduled ETA",
+   "validity": "08-JUN-26 2130 - 08-SEP-26 0330",
+   "lines": [
+    "2130-0330",
+    "LIT CRANE OPR BTN 512828N 0002706W - 512828N 0002703W -",
+    "512827N 0002702W - 512827N 0002705W - 512828N 0002706W (HEATHROW).",
+    "MAX HGT 136FT AGL, 216FT AMSL. CRANE WILL ONLY OPR WHEN RWY",
+    "09L/27R",
+    "IS CLSD. NO CRANE OPR IN LVP. CRANE REF 20260602162"
+   ],
+   "window": {
+    "startsAt": "2026-08-17T02:55:00.000Z",
+    "endsAt": "2026-08-17T06:55:00.000Z"
+   },
+   "referenceAt": "2026-08-17T04:55:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "ended_before_reference",
+    "minutesDelta": 85,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T21:30:00.000Z",
+     "endsAt": "2026-08-17T03:30:00.000Z"
+    }
+   },
+   "note": "ODSS read the bare D line as no schedule and published the crane active at 0455Z; it operates 2130-0330."
+  },
+  {
+   "id": "MONTHLESS_DAYS_SAME_MONTH",
+   "label": "SYNTHETIC",
+   "validity": "01-AUG-26 0000 - 28-AUG-26 0000",
+   "lines": [
+    "15 16 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "MONTHLESS_DAYS_CROSS_MONTH",
+   "label": "SYNTHETIC",
+   "validity": "27-JUL-26 0900 - 05-SEP-26 0900",
+   "lines": [
+    "16 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "the app read this D line as no schedule and published it active all day"
+  },
+  {
+   "id": "MONTH_INHERITED_FROM_FIELD",
+   "label": "SYNTHETIC",
+   "validity": "29-JUL-26 0400 - 20-AUG-26 1100",
+   "lines": [
+    "JUL 29 30 0400-1630, AUG 01 08 0400-1100, 15-17 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "CROSS_MONTH_RANGE",
+   "label": "SYNTHETIC",
+   "validity": "20-JUL-26 0000 - 30-SEP-26 2359",
+   "lines": [
+    "JUL 20-SEP 30 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "CROSS_MONTH_RANGE_SPACED",
+   "label": "SYNTHETIC",
+   "validity": "30-JUL-26 0000 - 31-OCT-26 2359",
+   "lines": [
+    "JUL 30 - OCT 31 0000-0300,1900-2359",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 600,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T19:00:00.000Z",
+     "endsAt": "2026-08-16T23:59:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "COMMA_SEPARATED_ENTRIES",
+   "label": "SYNTHETIC",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TUE-FRI 0600-2300, SUN 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "TIMES_THEN_WEEKDAY",
+   "label": "SYNTHETIC",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "MON 0100-0200 SUN 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "MULTI_LINE_FIELD",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "AUG 14 0000-0100,",
+    "AUG 16 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T08:00:00.000Z",
+     "endsAt": "2026-08-16T10:00:00.000Z"
+    }
+   },
+   "note": "the app read only the first D line and excluded this record"
+  },
+  {
+   "id": "FREE_TEXT_SCHEDULE",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "TWY Z9 CLSD BTN 0800-1700 DAILY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "MISSING_END",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "ODSS read an absent end as open-ended and published it active"
+  },
+  {
+   "id": "UNREADABLE_END",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - SOON",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "END_BEFORE_START",
+   "label": "SYNTHETIC",
+   "validity": "16-AUG-26 1000 - 16-AUG-26 0800",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "NO_REFERENCE_INSTANT",
+   "label": "SYNTHETIC",
+   "validity": "16-JUL-26 0000 - UFN",
+   "lines": [
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": null,
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "OCCURRENCE_ENDS_AT_WINDOW_START",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY 0500-0700",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 1200,
+    "referenceInterval": {
+     "startsAt": "2026-08-17T05:00:00.000Z",
+     "endsAt": "2026-08-17T07:00:00.000Z"
+    }
+   },
+   "note": "end exclusive: 0500-0700 does not touch a 0700 window"
+  },
+  {
+   "id": "DAILY_WITH_COLON",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY: 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "WEEKDAY_LIST_WITH_COLON",
+   "label": "SYNTHETIC",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "SAT, SUN: 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "UTC_SUFFIX",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY 0800UTC-1000UTC",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "TRUNCATED_FIELD",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "AUG 14 0000-0100, AUG",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "INVALID_DAY",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "AUG 00-33 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "UNSUPPORTED_WORDS",
+   "label": "SYNTHETIC",
+   "validity": "10-AUG-26 0000 - 20-AUG-26 0000",
+   "lines": [
+    "DAILY 1000-1100; ON REQUEST 1200-1300",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "UFN_LIMITED_BY_SCHEDULE",
+   "label": "SYNTHETIC",
+   "validity": "16-JUL-25 0000 - UFN",
+   "lines": [
+    "DLY 2200-0400",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 780,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T22:00:00.000Z",
+     "endsAt": "2026-08-17T04:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "GENUINE_SQ314_EGKK_SX67_25",
+   "label": "GENUINE lido-briefing_SQ_314_15Aug2026_SIN_LGW.pdf EGKK SX67/25 at the scheduled ETA",
+   "validity": "16-JUL-25 0000 - UFN",
+   "lines": [
+    "SX0067/25 AIP SUPPLEMENT",
+    "EGKK/LONDON/GATWICK",
+    "VALIDITY: 16JUL25-UFN",
+    "TAXIWAY TANGO CLOSED NORTH OF TAXIWAY JULIET."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2025-07-16T00:00:00.000Z",
+     "endsAt": null
+    }
+   }
+  }
+ ],
+ "regimeCases": [
+  {
+   "id": "GENUINE_SX120_25_SUN_BEFORE",
+   "referenceAt": "2026-08-16T14:10:00.000Z",
+   "expect": [
+    {
+     "runways": [
+      "02L",
+      "20R"
+     ],
+     "stateAtReference": "begins_after_reference",
+     "referenceInterval": {
+      "startsAt": "2026-08-16T17:30:00+00:00",
+      "endsAt": "2026-08-16T21:30:00+00:00"
+     }
+    }
+   ],
+   "text": "SX0120/25 AIP SUPPLEMENT\nWSSS/SINGAPORE/CHANGI\nVALIDITY: 04SEP25 1700UTC - 31MAR27 2130UTC\nUPDATED CLOSURE SCHEDULES FOR RUNWAY 02L/20R AND RUNWAY 02C/20C\nRWY 02L/20R WILL BE CLSD BTN 1700UTC TO 2200UTC EV SUN AND WED FM\n04SEP25 TO 30SEP25 FOR RESURFACING WORKS AND MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI TWO HR.\nRWY 02C/20C WILL BE CLSD BTN 1800UTC TO 2200UTC EV TUE AND FRI\nFM 04SEP25 TO 30SEP25 FOR MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI 30 MIN.\nLONG CLOSURES OF RWY 02L/20R AND RWY 02C/20C FM 30SEP25\nTO 31MAR27\nRWY 02L/20R WILL BE CLSD BTN 1730UTC TO 2130UTC EV SUN AND WED\nFM 30SEP25 TO 31MAR27 FOR MAINT.\nRWY 02C/20C WILL BE CLSD BTN 1730UTC TO 2130UTC EV TUE AND FRI\nFM 30SEP25 TO 31MAR27 FOR MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI 30 MIN.\nDETAILS IN THIS ANNEX SHOULD BE READ IN CONJUNCTION WITH AIP\nSINGAPORE, SECTION WSSS AD 2.12, ITEM 14 FM 04SEP25, 1700UTC TO\n30SEP25, 2200UTC.\nSKED CLOSURE OF RWY 02L/20R\nBTN 1700-2200UTC ON EV SUN AND WED OF THE MONTH (RESURFACING AND\nPREVENTIVE MAINT WORK). IN THE EVENT OF AN EMERG, RWY WILL BE\nRE-OPN WI 2 HR.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02C/20C\nBTN 1800-2200UTC ON EV TUE AND FRI OF THE MONTH (PREVENTIVE MAINT\nWORK). IN THE EVENT OF AN EMERG, RWY WILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02R/20L\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nADDN INSPECTION AND MAINT CLOSURES\nA. ON DAYS WHEN THERE IS A SKED RWY CLOSURE BTN 1700-2200UTC OR\n1800- 2200UTC\n10-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 1500-1610UTC ON\nTHE OTHER OPR RWY(S);\n15-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 2300-2359UTC ON\nTHE OTHER OPR RWY(S);\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC ON THE\nRE-OPN RWY.\nB. ON DAYS WHEN THERE IS NO SKED RWY CLOSURE BTN 1700-2200UTC OR\n1800-2200UTC\nRWY 02L/20R;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1830-1900UTC\nRWY 02C/20C;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1930-2000UTC\nRWY 02R/20L;\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nDETAILS IN THIS ANNEX SHOULD BE READ IN CONJUNCTION WITH AIP\nSINGAPORE, SECTION WSSS AD 2.12, ITEM 14 FM 30SEP25, 2201UTC TO\n31MAR27, 2130UTC.\nSKED CLOSURE OF RWY 02L/20R BTN 1730-2130UTC ON EV SUN AND WED OF\nTHE MONTH (PREVENTIVE MAINT WORK). IN THE EVENT OF AN EMERG, RWY\nWILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02C/20C\nBTN 1730-2130UTC ON EV TUE AND FRI OF THE MONTH (PREVENTIVE MAINT\nWORK). IN THE EVENT OF AN EMERG, RWY WILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02R/20L\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nADDN INSPECTION AND MAINT CLOSURES\nON DAYS WHEN THERE IS A SKED RWY CLOSURE BTN 1730-2130UTC\n10-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 1500-1610UTC ON THE\nOTHER OPR RWY(S);\n15-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 2300-2359UTC ON THE\nOTHER OPR RWY(S);\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC ON THE\nRE-OPN RWY.\nON DAYS WHEN THERE IS NO SKED RWY CLOSURE BTN 1730-2130UTC\nRWY 02L/20R;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1830-1900UTC RWY 02C/20C;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1930-2000UTC\nRWY 02R/20L;\nRWY 02R/20L IS NOT AVBL FOR CIV USE",
+   "label": "GENUINE WSSS SX120/25 item text as held in lido-briefing_SQ_214_16Aug2026_PER_SIN.pdf"
+  },
+  {
+   "id": "GENUINE_SX120_25_SUN_DURING",
+   "referenceAt": "2026-08-16T19:00:00.000Z",
+   "expect": [
+    {
+     "runways": [
+      "02L",
+      "20R"
+     ],
+     "stateAtReference": "active_at_reference",
+     "referenceInterval": {
+      "startsAt": "2026-08-16T17:30:00+00:00",
+      "endsAt": "2026-08-16T21:30:00+00:00"
+     }
+    }
+   ],
+   "text": "SX0120/25 AIP SUPPLEMENT\nWSSS/SINGAPORE/CHANGI\nVALIDITY: 04SEP25 1700UTC - 31MAR27 2130UTC\nUPDATED CLOSURE SCHEDULES FOR RUNWAY 02L/20R AND RUNWAY 02C/20C\nRWY 02L/20R WILL BE CLSD BTN 1700UTC TO 2200UTC EV SUN AND WED FM\n04SEP25 TO 30SEP25 FOR RESURFACING WORKS AND MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI TWO HR.\nRWY 02C/20C WILL BE CLSD BTN 1800UTC TO 2200UTC EV TUE AND FRI\nFM 04SEP25 TO 30SEP25 FOR MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI 30 MIN.\nLONG CLOSURES OF RWY 02L/20R AND RWY 02C/20C FM 30SEP25\nTO 31MAR27\nRWY 02L/20R WILL BE CLSD BTN 1730UTC TO 2130UTC EV SUN AND WED\nFM 30SEP25 TO 31MAR27 FOR MAINT.\nRWY 02C/20C WILL BE CLSD BTN 1730UTC TO 2130UTC EV TUE AND FRI\nFM 30SEP25 TO 31MAR27 FOR MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI 30 MIN.\nDETAILS IN THIS ANNEX SHOULD BE READ IN CONJUNCTION WITH AIP\nSINGAPORE, SECTION WSSS AD 2.12, ITEM 14 FM 04SEP25, 1700UTC TO\n30SEP25, 2200UTC.\nSKED CLOSURE OF RWY 02L/20R\nBTN 1700-2200UTC ON EV SUN AND WED OF THE MONTH (RESURFACING AND\nPREVENTIVE MAINT WORK). IN THE EVENT OF AN EMERG, RWY WILL BE\nRE-OPN WI 2 HR.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02C/20C\nBTN 1800-2200UTC ON EV TUE AND FRI OF THE MONTH (PREVENTIVE MAINT\nWORK). IN THE EVENT OF AN EMERG, RWY WILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02R/20L\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nADDN INSPECTION AND MAINT CLOSURES\nA. ON DAYS WHEN THERE IS A SKED RWY CLOSURE BTN 1700-2200UTC OR\n1800- 2200UTC\n10-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 1500-1610UTC ON\nTHE OTHER OPR RWY(S);\n15-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 2300-2359UTC ON\nTHE OTHER OPR RWY(S);\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC ON THE\nRE-OPN RWY.\nB. ON DAYS WHEN THERE IS NO SKED RWY CLOSURE BTN 1700-2200UTC OR\n1800-2200UTC\nRWY 02L/20R;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1830-1900UTC\nRWY 02C/20C;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1930-2000UTC\nRWY 02R/20L;\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nDETAILS IN THIS ANNEX SHOULD BE READ IN CONJUNCTION WITH AIP\nSINGAPORE, SECTION WSSS AD 2.12, ITEM 14 FM 30SEP25, 2201UTC TO\n31MAR27, 2130UTC.\nSKED CLOSURE OF RWY 02L/20R BTN 1730-2130UTC ON EV SUN AND WED OF\nTHE MONTH (PREVENTIVE MAINT WORK). IN THE EVENT OF AN EMERG, RWY\nWILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02C/20C\nBTN 1730-2130UTC ON EV TUE AND FRI OF THE MONTH (PREVENTIVE MAINT\nWORK). IN THE EVENT OF AN EMERG, RWY WILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02R/20L\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nADDN INSPECTION AND MAINT CLOSURES\nON DAYS WHEN THERE IS A SKED RWY CLOSURE BTN 1730-2130UTC\n10-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 1500-1610UTC ON THE\nOTHER OPR RWY(S);\n15-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 2300-2359UTC ON THE\nOTHER OPR RWY(S);\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC ON THE\nRE-OPN RWY.\nON DAYS WHEN THERE IS NO SKED RWY CLOSURE BTN 1730-2130UTC\nRWY 02L/20R;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1830-1900UTC RWY 02C/20C;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1930-2000UTC\nRWY 02R/20L;\nRWY 02R/20L IS NOT AVBL FOR CIV USE",
+   "label": "GENUINE WSSS SX120/25 item text as held in lido-briefing_SQ_214_16Aug2026_PER_SIN.pdf"
+  },
+  {
+   "id": "GENUINE_SX120_25_SUN_AFTER",
+   "referenceAt": "2026-08-16T23:00:00.000Z",
+   "expect": [
+    {
+     "runways": [
+      "02L",
+      "20R"
+     ],
+     "stateAtReference": "ended_before_reference",
+     "referenceInterval": {
+      "startsAt": "2026-08-16T17:30:00+00:00",
+      "endsAt": "2026-08-16T21:30:00+00:00"
+     }
+    }
+   ],
+   "text": "SX0120/25 AIP SUPPLEMENT\nWSSS/SINGAPORE/CHANGI\nVALIDITY: 04SEP25 1700UTC - 31MAR27 2130UTC\nUPDATED CLOSURE SCHEDULES FOR RUNWAY 02L/20R AND RUNWAY 02C/20C\nRWY 02L/20R WILL BE CLSD BTN 1700UTC TO 2200UTC EV SUN AND WED FM\n04SEP25 TO 30SEP25 FOR RESURFACING WORKS AND MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI TWO HR.\nRWY 02C/20C WILL BE CLSD BTN 1800UTC TO 2200UTC EV TUE AND FRI\nFM 04SEP25 TO 30SEP25 FOR MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI 30 MIN.\nLONG CLOSURES OF RWY 02L/20R AND RWY 02C/20C FM 30SEP25\nTO 31MAR27\nRWY 02L/20R WILL BE CLSD BTN 1730UTC TO 2130UTC EV SUN AND WED\nFM 30SEP25 TO 31MAR27 FOR MAINT.\nRWY 02C/20C WILL BE CLSD BTN 1730UTC TO 2130UTC EV TUE AND FRI\nFM 30SEP25 TO 31MAR27 FOR MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI 30 MIN.\nDETAILS IN THIS ANNEX SHOULD BE READ IN CONJUNCTION WITH AIP\nSINGAPORE, SECTION WSSS AD 2.12, ITEM 14 FM 04SEP25, 1700UTC TO\n30SEP25, 2200UTC.\nSKED CLOSURE OF RWY 02L/20R\nBTN 1700-2200UTC ON EV SUN AND WED OF THE MONTH (RESURFACING AND\nPREVENTIVE MAINT WORK). IN THE EVENT OF AN EMERG, RWY WILL BE\nRE-OPN WI 2 HR.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02C/20C\nBTN 1800-2200UTC ON EV TUE AND FRI OF THE MONTH (PREVENTIVE MAINT\nWORK). IN THE EVENT OF AN EMERG, RWY WILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02R/20L\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nADDN INSPECTION AND MAINT CLOSURES\nA. ON DAYS WHEN THERE IS A SKED RWY CLOSURE BTN 1700-2200UTC OR\n1800- 2200UTC\n10-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 1500-1610UTC ON\nTHE OTHER OPR RWY(S);\n15-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 2300-2359UTC ON\nTHE OTHER OPR RWY(S);\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC ON THE\nRE-OPN RWY.\nB. ON DAYS WHEN THERE IS NO SKED RWY CLOSURE BTN 1700-2200UTC OR\n1800-2200UTC\nRWY 02L/20R;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1830-1900UTC\nRWY 02C/20C;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1930-2000UTC\nRWY 02R/20L;\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nDETAILS IN THIS ANNEX SHOULD BE READ IN CONJUNCTION WITH AIP\nSINGAPORE, SECTION WSSS AD 2.12, ITEM 14 FM 30SEP25, 2201UTC TO\n31MAR27, 2130UTC.\nSKED CLOSURE OF RWY 02L/20R BTN 1730-2130UTC ON EV SUN AND WED OF\nTHE MONTH (PREVENTIVE MAINT WORK). IN THE EVENT OF AN EMERG, RWY\nWILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02C/20C\nBTN 1730-2130UTC ON EV TUE AND FRI OF THE MONTH (PREVENTIVE MAINT\nWORK). IN THE EVENT OF AN EMERG, RWY WILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02R/20L\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nADDN INSPECTION AND MAINT CLOSURES\nON DAYS WHEN THERE IS A SKED RWY CLOSURE BTN 1730-2130UTC\n10-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 1500-1610UTC ON THE\nOTHER OPR RWY(S);\n15-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 2300-2359UTC ON THE\nOTHER OPR RWY(S);\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC ON THE\nRE-OPN RWY.\nON DAYS WHEN THERE IS NO SKED RWY CLOSURE BTN 1730-2130UTC\nRWY 02L/20R;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1830-1900UTC RWY 02C/20C;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1930-2000UTC\nRWY 02R/20L;\nRWY 02R/20L IS NOT AVBL FOR CIV USE",
+   "label": "GENUINE WSSS SX120/25 item text as held in lido-briefing_SQ_214_16Aug2026_PER_SIN.pdf"
+  },
+  {
+   "id": "GENUINE_SX120_25_MON_EARLY",
+   "referenceAt": "2026-08-17T00:10:00.000Z",
+   "expect": [],
+   "text": "SX0120/25 AIP SUPPLEMENT\nWSSS/SINGAPORE/CHANGI\nVALIDITY: 04SEP25 1700UTC - 31MAR27 2130UTC\nUPDATED CLOSURE SCHEDULES FOR RUNWAY 02L/20R AND RUNWAY 02C/20C\nRWY 02L/20R WILL BE CLSD BTN 1700UTC TO 2200UTC EV SUN AND WED FM\n04SEP25 TO 30SEP25 FOR RESURFACING WORKS AND MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI TWO HR.\nRWY 02C/20C WILL BE CLSD BTN 1800UTC TO 2200UTC EV TUE AND FRI\nFM 04SEP25 TO 30SEP25 FOR MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI 30 MIN.\nLONG CLOSURES OF RWY 02L/20R AND RWY 02C/20C FM 30SEP25\nTO 31MAR27\nRWY 02L/20R WILL BE CLSD BTN 1730UTC TO 2130UTC EV SUN AND WED\nFM 30SEP25 TO 31MAR27 FOR MAINT.\nRWY 02C/20C WILL BE CLSD BTN 1730UTC TO 2130UTC EV TUE AND FRI\nFM 30SEP25 TO 31MAR27 FOR MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI 30 MIN.\nDETAILS IN THIS ANNEX SHOULD BE READ IN CONJUNCTION WITH AIP\nSINGAPORE, SECTION WSSS AD 2.12, ITEM 14 FM 04SEP25, 1700UTC TO\n30SEP25, 2200UTC.\nSKED CLOSURE OF RWY 02L/20R\nBTN 1700-2200UTC ON EV SUN AND WED OF THE MONTH (RESURFACING AND\nPREVENTIVE MAINT WORK). IN THE EVENT OF AN EMERG, RWY WILL BE\nRE-OPN WI 2 HR.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02C/20C\nBTN 1800-2200UTC ON EV TUE AND FRI OF THE MONTH (PREVENTIVE MAINT\nWORK). IN THE EVENT OF AN EMERG, RWY WILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02R/20L\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nADDN INSPECTION AND MAINT CLOSURES\nA. ON DAYS WHEN THERE IS A SKED RWY CLOSURE BTN 1700-2200UTC OR\n1800- 2200UTC\n10-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 1500-1610UTC ON\nTHE OTHER OPR RWY(S);\n15-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 2300-2359UTC ON\nTHE OTHER OPR RWY(S);\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC ON THE\nRE-OPN RWY.\nB. ON DAYS WHEN THERE IS NO SKED RWY CLOSURE BTN 1700-2200UTC OR\n1800-2200UTC\nRWY 02L/20R;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1830-1900UTC\nRWY 02C/20C;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1930-2000UTC\nRWY 02R/20L;\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nDETAILS IN THIS ANNEX SHOULD BE READ IN CONJUNCTION WITH AIP\nSINGAPORE, SECTION WSSS AD 2.12, ITEM 14 FM 30SEP25, 2201UTC TO\n31MAR27, 2130UTC.\nSKED CLOSURE OF RWY 02L/20R BTN 1730-2130UTC ON EV SUN AND WED OF\nTHE MONTH (PREVENTIVE MAINT WORK). IN THE EVENT OF AN EMERG, RWY\nWILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02C/20C\nBTN 1730-2130UTC ON EV TUE AND FRI OF THE MONTH (PREVENTIVE MAINT\nWORK). IN THE EVENT OF AN EMERG, RWY WILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02R/20L\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nADDN INSPECTION AND MAINT CLOSURES\nON DAYS WHEN THERE IS A SKED RWY CLOSURE BTN 1730-2130UTC\n10-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 1500-1610UTC ON THE\nOTHER OPR RWY(S);\n15-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 2300-2359UTC ON THE\nOTHER OPR RWY(S);\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC ON THE\nRE-OPN RWY.\nON DAYS WHEN THERE IS NO SKED RWY CLOSURE BTN 1730-2130UTC\nRWY 02L/20R;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1830-1900UTC RWY 02C/20C;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1930-2000UTC\nRWY 02R/20L;\nRWY 02R/20L IS NOT AVBL FOR CIV USE",
+   "label": "GENUINE WSSS SX120/25 item text as held in lido-briefing_SQ_214_16Aug2026_PER_SIN.pdf"
+  },
+  {
+   "id": "GENUINE_SX120_25_TUE",
+   "referenceAt": "2026-08-18T18:00:00.000Z",
+   "expect": [
+    {
+     "runways": [
+      "02C",
+      "20C"
+     ],
+     "stateAtReference": "active_at_reference",
+     "referenceInterval": {
+      "startsAt": "2026-08-18T17:30:00+00:00",
+      "endsAt": "2026-08-18T21:30:00+00:00"
+     }
+    }
+   ],
+   "text": "SX0120/25 AIP SUPPLEMENT\nWSSS/SINGAPORE/CHANGI\nVALIDITY: 04SEP25 1700UTC - 31MAR27 2130UTC\nUPDATED CLOSURE SCHEDULES FOR RUNWAY 02L/20R AND RUNWAY 02C/20C\nRWY 02L/20R WILL BE CLSD BTN 1700UTC TO 2200UTC EV SUN AND WED FM\n04SEP25 TO 30SEP25 FOR RESURFACING WORKS AND MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI TWO HR.\nRWY 02C/20C WILL BE CLSD BTN 1800UTC TO 2200UTC EV TUE AND FRI\nFM 04SEP25 TO 30SEP25 FOR MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI 30 MIN.\nLONG CLOSURES OF RWY 02L/20R AND RWY 02C/20C FM 30SEP25\nTO 31MAR27\nRWY 02L/20R WILL BE CLSD BTN 1730UTC TO 2130UTC EV SUN AND WED\nFM 30SEP25 TO 31MAR27 FOR MAINT.\nRWY 02C/20C WILL BE CLSD BTN 1730UTC TO 2130UTC EV TUE AND FRI\nFM 30SEP25 TO 31MAR27 FOR MAINT.\nIN THE EVENT OF AN EMERG, THE RWY WILL BE RE-OPN WI 30 MIN.\nDETAILS IN THIS ANNEX SHOULD BE READ IN CONJUNCTION WITH AIP\nSINGAPORE, SECTION WSSS AD 2.12, ITEM 14 FM 04SEP25, 1700UTC TO\n30SEP25, 2200UTC.\nSKED CLOSURE OF RWY 02L/20R\nBTN 1700-2200UTC ON EV SUN AND WED OF THE MONTH (RESURFACING AND\nPREVENTIVE MAINT WORK). IN THE EVENT OF AN EMERG, RWY WILL BE\nRE-OPN WI 2 HR.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02C/20C\nBTN 1800-2200UTC ON EV TUE AND FRI OF THE MONTH (PREVENTIVE MAINT\nWORK). IN THE EVENT OF AN EMERG, RWY WILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02R/20L\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nADDN INSPECTION AND MAINT CLOSURES\nA. ON DAYS WHEN THERE IS A SKED RWY CLOSURE BTN 1700-2200UTC OR\n1800- 2200UTC\n10-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 1500-1610UTC ON\nTHE OTHER OPR RWY(S);\n15-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 2300-2359UTC ON\nTHE OTHER OPR RWY(S);\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC ON THE\nRE-OPN RWY.\nB. ON DAYS WHEN THERE IS NO SKED RWY CLOSURE BTN 1700-2200UTC OR\n1800-2200UTC\nRWY 02L/20R;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1830-1900UTC\nRWY 02C/20C;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1930-2000UTC\nRWY 02R/20L;\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nDETAILS IN THIS ANNEX SHOULD BE READ IN CONJUNCTION WITH AIP\nSINGAPORE, SECTION WSSS AD 2.12, ITEM 14 FM 30SEP25, 2201UTC TO\n31MAR27, 2130UTC.\nSKED CLOSURE OF RWY 02L/20R BTN 1730-2130UTC ON EV SUN AND WED OF\nTHE MONTH (PREVENTIVE MAINT WORK). IN THE EVENT OF AN EMERG, RWY\nWILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02C/20C\nBTN 1730-2130UTC ON EV TUE AND FRI OF THE MONTH (PREVENTIVE MAINT\nWORK). IN THE EVENT OF AN EMERG, RWY WILL BE RE-OPN WI 30 MIN.\nA 5-MIN INSPECTION CONDUCTED WI THE PERIODS BTN 0100-0359UTC\n0500-0759UTC 0800-1059UTC DLY.\nSKED CLOSURE OF RWY 02R/20L\nRWY 02R/20L IS NOT AVBL FOR CIV USE.\nADDN INSPECTION AND MAINT CLOSURES\nON DAYS WHEN THERE IS A SKED RWY CLOSURE BTN 1730-2130UTC\n10-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 1500-1610UTC ON THE\nOTHER OPR RWY(S);\n15-MIN INSPECTION CONDUCTED WI THE PERIOD BTN 2300-2359UTC ON THE\nOTHER OPR RWY(S);\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC ON THE\nRE-OPN RWY.\nON DAYS WHEN THERE IS NO SKED RWY CLOSURE BTN 1730-2130UTC\nRWY 02L/20R;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1830-1900UTC RWY 02C/20C;\n5-MIN INSPECTION CONDUCTED WI PERIOD BTN 2300-2359UTC\n30-MIN MAINT WILL BE CONDUCTED BTN 1930-2000UTC\nRWY 02R/20L;\nRWY 02R/20L IS NOT AVBL FOR CIV USE",
+   "label": "GENUINE WSSS SX120/25 item text as held in lido-briefing_SQ_214_16Aug2026_PER_SIN.pdf"
+  }
+ ]
+}

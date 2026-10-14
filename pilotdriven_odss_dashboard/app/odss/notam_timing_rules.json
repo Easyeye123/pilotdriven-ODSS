@@ -1,0 +1,93 @@
+{
+  "specVersion": "notam-timing-2026-10-14-v1",
+  "purpose": "ONE timing decision for an OFP station notice. The app (dashboard chart, PDF map marks, NOTAM records) and ODSS (airport cards, PDF consequences, PDF cards) each read the same LIDO record from the same OFP; both evaluate it with these rules, byte-identical in both repos (app notam-timing-rules.json = ODSS app/odss/notam_timing_rules.json), and both suites run tests/fixtures/notam-timing-vectors.json. Item 3 (Gatwick, 14 Oct 2026): the decision was made by three evaluators with three rule sets.",
+  "stationWindows": {
+    "departure": {
+      "reference": "departure",
+      "beforeMinutes": 120,
+      "afterMinutes": 120
+    },
+    "destination": {
+      "reference": "arrival",
+      "beforeMinutes": 120,
+      "afterMinutes": 120
+    },
+    "readFrom": "Operator default: NOTAM validity is assessed two hours either side of the station time (app 94a7019, 25 Jul 2026; HelpYou plan A8, 30 Jul 2026: 'window default +/-2h stays'). ODSS had kept a one-hour departure window, so a closure 60-120 min from ETD was drawn on the chart and the PDF map but absent from the card and the PDF text."
+  },
+  "noReferenceStations": {
+    "status": "open_product_decision",
+    "note": "Destination alternates, EDTO, fuel-enroute and enroute stations: the app holds no reference instant (window ETA-2h to ETA+24h, boss 02 Sep chart ruling); ODSS judges alternates at the destination ETA (ETA +/-2h), EDTO at sector entry, fuel-enroute and enroute at departure. That policy is the product owner's to choose; until then each runtime keeps its own window and reference for those roles. The evaluation rules below are shared for every role."
+  },
+  "validity": {
+    "range": "^\\s*(\\d{2})-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(\\d{2})\\s+(\\d{2})(\\d{2})\\s*-\\s*(.+?)\\s*$",
+    "end": "^(\\d{2})-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(\\d{2})\\s+(\\d{2})(\\d{2})(?:\\s+(EST))?$",
+    "openEnds": {
+      "UFN": "until_further_notice",
+      "PERM": "permanent"
+    },
+    "rules": [
+      "The LIDO VALID range is start ' - ' end. No start, or no end that reads as a date-time, UFN or PERM, is a timing review: an absent end is never read as open-ended.",
+      "UFN and PERM are open-ended: in force from the start, no end is invented.",
+      "An EST end is held as the end (flagged estimated), as both runtimes did before this spec.",
+      "Start is inclusive and end is exclusive."
+    ]
+  },
+  "scheduleField": {
+    "fieldLine": "^(?:(?:DAILY|DLY|EVERY|EV|AND|H24|SR|SS|SUNRISE|SUNSET|HJ|HN|EXC|EXCEPT|HOL|MON|TUE|WED|THU|FRI|SAT|SUN|JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|\\d{4}(?:UTC|Z)?|\\d{1,2})(?:\\s*[-,;:/]\\s*|\\s+|$))+$",
+    "fieldStartsWithTime": "(?:\\b\\d{4}(?:UTC|Z)?\\s*-\\s*\\d{4}(?:UTC|Z)?\\b|\\bH24\\b|\\b(?:SR|SS|SUNRISE|SUNSET|HJ|HN)\\b)",
+    "reviewLanguage": "\\b(?:SR|SS|SUNRISE|SUNSET|HJ|HN|EXC|EXCEPT|HOL)\\b",
+    "freeTextWords": "\\b(?:DAILY|DLY|EVERY|EV|MON|TUE|WED|THU|FRI|SAT|SUN|BTN)\\b",
+    "freeTextTime": "\\b\\d{4}(?:UTC)?\\s*(?:[-/]|TO)\\s*\\d{4}(?:UTC|Z)?\\b",
+    "rules": [
+      "Item D is printed as the first body line(s) of a LIDO record. The field is the leading run of body lines made only of schedule tokens (fieldLine); its first line must hold a time (fieldStartsWithTime). The lines are joined with one space.",
+      "Schedule language left in the free text after the field (freeTextWords and freeTextTime both present) is a timing review: no schedule is assumed continuous.",
+      "Daylight, exception and holiday rules (reviewLanguage) are a timing review.",
+      "Grammar, after upper-casing, DAILY->DLY, dropping EVERY/EV/AND, dropping UTC/Z after a time and closing spaces around '-': date parts and time ranges alternate; a date token after a time closes an entry; ',' ';' ':' only separate. A date part is DLY, weekdays (MON-FRI ranges allowed), month days (AUG 12 14 15, AUG 01-05), or a cross-month range (JUL 20-SEP 30). Day numbers with no month take the latest month named earlier in the field, else the validity month when B and C are in one month, else a timing review. An entry with no date part is daily only when it is the first entry. Times are HHMM-HHMM (an end at or before the start crosses midnight) or H24. Anything else is a timing review.",
+      "Occurrences are clipped to the validity."
+    ]
+  },
+  "decision": {
+    "openEndSearchDays": 30,
+    "lookbackDays": 400,
+    "states": [
+      "active_at_reference",
+      "begins_after_reference",
+      "ended_before_reference",
+      "unknown_at_reference"
+    ],
+    "statuses": [
+      "affecting",
+      "outside_window",
+      "review"
+    ],
+    "rules": [
+      "review: the source record, the validity or the schedule could not be read; state unknown_at_reference, no minutes, no reference interval.",
+      "Validity not overlapping the window: outside_window; the state is the validity's relation to the reference.",
+      "With a schedule: occurrences overlapping the window make it affecting; the state is the occurrence covering the reference, else the next one after it, else the last one before it. With none in the window: outside_window, and the state is read from every occurrence searched (validity, at most lookbackDays before the window, and openEndSearchDays after it for an open end).",
+      "Without a schedule: affecting; the state is the validity's relation to the reference.",
+      "No reference instant: state unknown_at_reference with the status above.",
+      "minutesDelta: 0 when active, minutes to the start when it begins after, minutes since the end when it ended before."
+    ]
+  },
+  "reviewReasons": {
+    "validity": "The LIDO VALID range could not be read; the timing is unresolved.",
+    "reviewLanguage": "Schedule uses daylight, exception, or holiday rules that are not evaluated; the timing is unresolved.",
+    "freeText": "The LIDO record contains schedule language inside free text; the timing is unresolved."
+  },
+  "runwayClosureRegimes": {
+    "pattern": "\\bRWY\\s+(\\d{2}[LCR]?(?:/\\d{2}[LCR]?)?)\\s+WILL\\s+BE\\s+CLSD\\s+BTN\\s+(\\d{4})(?:UTC)?\\s+TO\\s+(\\d{4})(?:UTC)?\\s+EV\\s+((?:MON|TUE|WED|THU|FRI|SAT|SUN)(?:\\s+AND\\s+(?:MON|TUE|WED|THU|FRI|SAT|SUN))*)\\s+FM\\s+(\\d{2}[A-Z]{3}\\d{2})\\s+TO\\s+(\\d{2}[A-Z]{3}\\d{2})\\b",
+    "rules": [
+      "A notice printing dated runway-closure regimes (WSSS SX120/25) is decided per runway: each regime with an occurrence on the reference day, or the previous evening's occurrence still running at the reference, yields that runway's state; the notice itself stays a timing review when other schedule language remains.",
+      "This is ODSS's 19 Sep 2026 runway_closure_schedule rule, unchanged; the dashboard chart now draws the same per-runway state the PDF map and PDF text publish."
+    ],
+    "groups": {
+      "runways": 1,
+      "start": 2,
+      "end": 3,
+      "weekdays": 4,
+      "validFrom": 5,
+      "validTo": 6
+    },
+    "flags": "case-insensitive, read against the item text upper-cased with whitespace collapsed"
+  }
+}
