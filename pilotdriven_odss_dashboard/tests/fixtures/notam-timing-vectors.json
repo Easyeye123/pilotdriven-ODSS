@@ -78,7 +78,8 @@
    "expect": {
     "field": "DAILY 0800-1000",
     "review": false
-   }
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
    "id": "NO_FIELD",
@@ -88,7 +89,8 @@
    "expect": {
     "field": null,
     "review": false
-   }
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
    "id": "BARE_TIME",
@@ -99,7 +101,8 @@
    "expect": {
     "field": "2130-0330",
     "review": false
-   }
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
    "id": "GENUINE_SQ60606092026SIN_RCAA_A2710_26",
@@ -111,7 +114,8 @@
    "expect": {
     "field": "AUG 31 2330-2359, SEP 01-29 0000-0400 0600-0900 2330-2359, SEP 30 0000-0400 0600-0900",
     "review": false
-   }
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
    "id": "GENUINE_SQ91021082026SIN_RPLL_B3172_26",
@@ -122,7 +126,8 @@
    "expect": {
     "field": "0000-2359 EXC JUL 04 06",
     "review": true
-   }
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
    "id": "FREE_TEXT",
@@ -132,7 +137,8 @@
    "expect": {
     "field": null,
     "review": true
-   }
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
    "id": "GENUINE_WSSS_SX120_25_HEAD",
@@ -145,7 +151,8 @@
    "expect": {
     "field": null,
     "review": true
-   }
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
    "id": "FIRST_LINE_WITHOUT_TIME",
@@ -154,9 +161,11 @@
     "RWY 09 CLSD"
    ],
    "expect": {
-    "field": null,
-    "review": false
-   }
+    "field": "AUG 07 21 28",
+    "review": true
+   },
+   "note": "QA500-01: was field null, review false - read as no schedule, i.e. active all day. A leading date the grammar cannot read is a review.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
    "id": "DAY_NUMBERS",
@@ -167,7 +176,8 @@
    "expect": {
     "field": "15 1800-2000",
     "review": false
-   }
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
    "id": "TRAILING_STOP",
@@ -178,7 +188,8 @@
    "expect": {
     "field": "DAILY 0800-1000.",
     "review": false
-   }
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
   },
   {
    "id": "NUMBERED_TEXT",
@@ -188,7 +199,310 @@
    "expect": {
     "field": null,
     "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_DATE_LINE_WRAPPED",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case date_line_wrapped)",
+   "lines": [
+    "AUG 16",
+    "1800-2000",
+    "TWY T CLSD."
+   ],
+   "expect": {
+    "field": "AUG 16 1800-2000",
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_MONTH_DAY_SPLIT",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case month_day_split)",
+   "lines": [
+    "AUG",
+    "16 1800-2000",
+    "TWY T CLSD."
+   ],
+   "expect": {
+    "field": "AUG 16 1800-2000",
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_TIME_SPLIT",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case time_split)",
+   "lines": [
+    "AUG 16 1800-",
+    "2000",
+    "TWY T CLSD."
+   ],
+   "expect": {
+    "field": "AUG 16 1800- 2000",
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_UNICODE_DASH",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case unicode_dash)",
+   "lines": [
+    "AUG 16 1800–2000",
+    "TWY T CLSD."
+   ],
+   "expect": {
+    "field": "AUG 16 1800-2000",
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_COLON_CLOCK",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case colon_clock)",
+   "lines": [
+    "AUG 16 18:00-20:00",
+    "TWY T CLSD."
+   ],
+   "expect": {
+    "field": "AUG 16 18:00-20:00",
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_SLASH_CLOCK",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case slash_clock)",
+   "lines": [
+    "AUG 16 1800/2000",
+    "TWY T CLSD."
+   ],
+   "expect": {
+    "field": "AUG 16 1800/2000",
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_D_PREFIX",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case explicit_D_prefix)",
+   "lines": [
+    "D) AUG 16 1800-2000",
+    "TWY T CLSD."
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_CONFLICTING_FREE_TEXT",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case conflicting_free_text)",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY T CLSD DAILY 1800-2000."
+   ],
+   "expect": {
+    "field": "DLY 0800-1000",
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_EQUIVALENT_FREE_TEXT",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY T CLSD DAILY 0800-1000."
+   ],
+   "expect": {
+    "field": "DLY 0800-1000",
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_FIRST_LINE_DATE_ONLY",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "lines": [
+    "AUG 16",
+    "TWY T CLSD."
+   ],
+   "expect": {
+    "field": "AUG 16",
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_INLINE_MONTH_SCHEDULE",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "lines": [
+    "TWY T CLSD AUG 16 1800-2000."
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_BARE_FREE_TEXT_TIME",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "lines": [
+    "TWY T CLSD 1800-2000."
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA500_FEB_30",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case invalid_feb_day)",
+   "validity": "01-FEB-26 0000 - 28-FEB-26 2359",
+   "lines": [
+    "FEB 30 0800-1000",
+    "TWY T CLSD."
+   ],
+   "expect": {
+    "field": "FEB 30 0800-1000",
+    "review": true
    }
+  },
+  {
+   "id": "GENUINE_SQ02422072026SIN_PAFA_1A176_26",
+   "label": "GENUINE SQ02422072026SIN.pdf PAFA 1A176/26: the free text restates the field's hours",
+   "validity": "19-MAR-26 1500 - 31-OCT-26 0600",
+   "lines": [
+    "MON-FRI 1500-0600",
+    "YUKON 1-5, DELTA AND FOX ATC ASSIGNED AIRSPACE WILL NORMALLY BE",
+    "ACT MON-FRI BTN THE HOURS OF 1500-0600. WHEN AIRSPACE IS ACT THE",
+    "FOLLOWING RESTRICTIONS ARE RQRD:",
+    "1. FLTS ENTERING ANCHORAGE FIR N OF 620000N1410000W MUST BE",
+    "ESTABLISHED EITHER:",
+    "(A) ON OR N OF GOATS DCT BTT",
+    "(B) ON OR S OF ORT J124 GKN DTOUR",
+    "2. THE FOLLOWING RTES/FIXES ARE NOT AVBL:",
+    "(A) FIORD, CHAPO, FANES, GOATS DCT FYU",
+    "(B) J502/J515/Q902 BTN FAI AND ORT",
+    "(C) J507 BTN ORT AND FYU",
+    "3. ACFT FILED BTN FAI AND ORT WILL BE RESTRICTED AT OR BLW 17000FT",
+    "FROM FAI TO 65NM W ORT",
+    "FOR CURRENT ACT AIRSPACE SEE SUA.FAA.GOV. FOR QUESTIONS, CTC",
+    "ANCHORAGE /ZAN/ ARTCC TM AT TEL 907-269-1108",
+    "F) FL180 G) FL600"
+   ],
+   "expect": {
+    "field": "MON-FRI 1500-0600",
+    "review": false
+   }
+  },
+  {
+   "id": "GENUINE_SQ30316072026BRU_LGAV_1A2325_26",
+   "label": "GENUINE SQ30316072026BRU 81.pdf LGAV 1A2325/26: two areas' hours together are the field's 0500-1130",
+   "validity": "14-JUL-26 0500 - 17-JUL-26 1130",
+   "lines": [
+    "14-17 0500-1130",
+    "UAV FLIGHTS IN SUPPORT OF HELLENIC POLICE COAST GUARD OPERATION",
+    "WILL TAKE PLACE WITHIN ATHINAI FIR AS DESCRIBED BELOW:",
+    "1.- CORRIDOR 1NM EITHER SIDE OF A LINE: 380810N 0235727E - 382300N",
+    "0243917E.",
+    "ATHINAI TMA, KOTRONI MATZ, LGR23, LGR58 AFFECTED.",
+    "VERTICAL LIMITS: SFC-2000FT AMSL.",
+    "DATES AND TIMES: JUL 14-17 0500-0630 1000-1130.",
+    "2.- AREA: 383312N 0251309E - 382202N 0243945E - 383224N 0243344E -",
+    "384333N 0250637E - 383312N 0251309E.",
+    "AWYS T514 (NEVRA-URUDI), G33 AND T162 (NEVRA-AMISI), G8 AND N604",
+    "(SOSIR-ATSOV), G802 AND Y134 (SOSIR-PANOX), N130 (ETRUD-PIVOS)",
+    "AFFECTED.",
+    "VERTICAL LIMITS: SFC-12000FT AMSL.",
+    "DATES AND TIMES: JUL 14-17 0600-1000.",
+    "3. - REMARK: BEFORE THE COMMENCEMENT OF THE UAV FLIGHTS, FLIGHT",
+    "PLANS MUST BE SUBMITTED AND PERMISSION BY APPROPRIATE ATC UNIT",
+    "MUST",
+    "BE OBTAINED.",
+    "F) SFC G) 12000FT AMSL"
+   ],
+   "expect": {
+    "field": "14-17 0500-1130",
+    "review": false
+   }
+  },
+  {
+   "id": "GENUINE_SQ314_EBBR_1D427_26",
+   "label": "GENUINE lido-briefing_SQ_314_15Aug2026_SIN_LGW.pdf EBBR 1D427/26: the free text restates the field's period",
+   "validity": "28-JUL-26 1337 - 25-OCT-26 0700 EST",
+   "lines": [
+    "DAILY 1500-0700",
+    "IAP RNP RWY07L LNAV/VNAV INCREASED OCA CAT A: 428FT, CAT B:",
+    "438FT, CAT C: 447FT, CAT D: 457FT.",
+    "REF AIP SUP 044/2026, INCREASED OCA IAP RNP RWY07L LNAV/VNAV",
+    "DEPICTED IN THE SUP REFER ONLY TO THE PERIOD 1500-0700"
+   ],
+   "expect": {
+    "field": "DAILY 1500-0700",
+    "review": false
+   }
+  },
+  {
+   "id": "GENUINE_SQ30316072026BRU_LFPG_1A4500_26",
+   "label": "GENUINE SQ30316072026BRU 81.pdf LFPG 1A4500/26: the free text restates the field's hours",
+   "validity": "09-JUL-26 1230 - 30-SEP-26 1500",
+   "lines": [
+    "1230-1500",
+    "FOLLOWING ARRIVAL PROCEDURES CAN BE FLIGHT PLANNED BETWEEN",
+    "1230-1500 (IAF FLYING HOUR) :",
+    "..IF LFPG FACING WEST :",
+    "-STAR LUKIP 9X, BIBAX 9X FOR MOPAR ARRIVALS,",
+    "-STAR ROMGO 9X, KEPER 9X, SABLE 9X, KOVAK 9X FOR BANOX ARRIVALS,",
+    "..IF LFPG FACING EAST :",
+    "-STAR TRO 9X, MOU 9X, TINIL 9X, PIBAT 9X, EPL 9X, RLP 9X, DJL 9X",
+    "FOR OKIPA ARRIVALS,",
+    "-STAR ENORI 9X, MOPIL 9X, RAPOR 9X FOR LORNI ARRIVALS,",
+    "..STANDARD PROC STAR 9E / 9W AND STANDARD INITIAL APCH PROC 1E /",
+    "1N",
+    "/ 1W CAN BE GIVEN BY ATC ACCORDING TO TACTICAL CONDITIONS (METEO,",
+    "TRAFFIC, RUNWAYS CONFIGURATIONS,...)."
+   ],
+   "expect": {
+    "field": "1230-1500",
+    "review": false
+   }
+  },
+  {
+   "id": "GENUINE_SQ02325072026JFK_LIRF_1A2314_26",
+   "label": "GENUINE SQ02325072026JFK.pdf LIRF 1A2314/26: runway hours in free text, no field (was read as in force all validity)",
+   "validity": "13-MAY-26 1814 - 10-AUG-26 1800",
+   "lines": [
+    "RWY 16R/34L NOT AVBL FOR ACFT WITH TSAT (TARGET START-UP APPROVAL",
+    "TIME) BETWEEN HR 2130-0445 (2030-0345) AND/OR ELDT",
+    "(ESTIMATED LANDING TIME) BETWEEN HR 2200-0500 (2100-0400).",
+    "ACFT CONCERNED SHALL PLAN RWY 16L/34R FOR TKOF AND LDG OPS.",
+    "REF AIP AD 2 LIRF 1-25"
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   }
+  },
+  {
+   "id": "GENUINE_SQ02325072026JFK_KBOS_1A372_25",
+   "label": "GENUINE SQ02325072026JFK.pdf KBOS 1A372/25: MOCA altitudes '1200 TO 1900' read as a clock range - a review, never active",
+   "validity": "30-OCT-25 1500 - PERM",
+   "lines": [
+    "BOS STAR GENERAL EDWARD LAWRENCE LOGAN INTL, BOSTON, MA.",
+    "OOSHN FIVE ARRIVAL...",
+    "RIFLE ROUTE INCREASE MOCA FROM CUTOX TO CUJKE 1200 TO 1900,",
+    "WINDMILL AT 873 OBS (25-077159)"
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   },
+   "note": "Known conservative over-reach: the reader cannot tell altitudes from hours when written HHMM TO HHMM."
   }
  ],
  "decisionCases": [
@@ -1159,6 +1473,546 @@
      "endsAt": null
     }
    }
+  },
+  {
+   "id": "QA500_DATE_LINE_WRAPPED",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case date_line_wrapped)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG 16",
+    "1800-2000",
+    "TWY T CLSD. SYNTHETIC QA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T18:00:00.000Z",
+     "endsAt": "2026-08-16T20:00:00.000Z"
+    }
+   },
+   "note": "500 read no schedule and published TWY T active at 0900Z"
+  },
+  {
+   "id": "QA500_MONTH_DAY_SPLIT",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case month_day_split)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG",
+    "16 1800-2000",
+    "TWY T CLSD. SYNTHETIC QA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T18:00:00.000Z",
+     "endsAt": "2026-08-16T20:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "QA500_TIME_SPLIT",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case time_split)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG 16 1800-",
+    "2000",
+    "TWY T CLSD. SYNTHETIC QA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T18:00:00.000Z",
+     "endsAt": "2026-08-16T20:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "QA500_UNICODE_DASH",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case unicode_dash)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG 16 1800–2000",
+    "TWY T CLSD. SYNTHETIC QA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T18:00:00.000Z",
+     "endsAt": "2026-08-16T20:00:00.000Z"
+    }
+   },
+   "note": "typographic dashes are '-' (rules: dashes)"
+  },
+  {
+   "id": "QA500_COLON_CLOCK",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case colon_clock)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG 16 18:00-20:00",
+    "TWY T CLSD. SYNTHETIC QA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "HH:MM is not Item D grammar (rules: colonClock)"
+  },
+  {
+   "id": "QA500_SLASH_CLOCK",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case slash_clock)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG 16 1800/2000",
+    "TWY T CLSD. SYNTHETIC QA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_D_PREFIX",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case explicit_D_prefix)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "D) AUG 16 1800-2000",
+    "TWY T CLSD. SYNTHETIC QA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_CONFLICTING_FREE_TEXT",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case conflicting_free_text)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY T CLSD DAILY 1800-2000. SYNTHETIC QA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "500 accepted D and published TWY T active at 0900Z; the body states other hours"
+  },
+  {
+   "id": "QA500_FEB_30",
+   "label": "SYNTHETIC (Codex independent QA of release 500, output/pd-500-codex-qa-20261015, case invalid_feb_day)",
+   "validity": "01-FEB-26 0000 - 28-FEB-26 2359",
+   "lines": [
+    "FEB 30 0800-1000",
+    "TWY T CLSD. SYNTHETIC QA."
+   ],
+   "window": {
+    "startsAt": "2026-02-15T07:00:00.000Z",
+    "endsAt": "2026-02-15T11:00:00.000Z"
+   },
+   "referenceAt": "2026-02-15T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "500 said outside_window with no occurrences"
+  },
+  {
+   "id": "QA500_WRAPPED_ACTIVE",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG 16",
+    "0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T08:00:00.000Z",
+     "endsAt": "2026-08-16T10:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "QA500_EN_DASH_DAY_RANGE",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG 15–17 0800–1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T08:00:00.000Z",
+     "endsAt": "2026-08-16T10:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "QA500_EQUIVALENT_FREE_TEXT",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 0800-1000",
+    "TWY Z9 CLSD DAILY 0800-1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA500_RESTATED_HOURS",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "SUN 0800-1000",
+    "TWY Z9 CLSD BTN THE HOURS OF 0800-1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA500_RESTATED_OTHER_HOURS",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "SUN 0800-1000",
+    "TWY Z9 CLSD BTN THE HOURS OF 1800-2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_AREAS_PARTITION_FIELD",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG 16 0500-1130",
+    "CORRIDOR: AUG 16 0500-0630 1000-1130. AREA: AUG 16 0600-1000. TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2026-08-16T05:00:00.000Z",
+     "endsAt": "2026-08-16T11:30:00.000Z"
+    }
+   },
+   "note": "the free text's runs together give the field's occurrences"
+  },
+  {
+   "id": "QA500_INLINE_MONTH_SCHEDULE",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD AUG 16 1800-2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "500 read no schedule (no schedule word) and published it active"
+  },
+  {
+   "id": "QA500_BARE_FREE_TEXT_TIME",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD 1800-2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_FIRST_LINE_DATE_ONLY",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AUG 16",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_DAY_PAST_MONTH_END",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 30-SEP-26 2359",
+   "lines": [
+    "SEP 31 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_DAY_RANGE_PAST_MONTH_END",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 30-SEP-26 2359",
+   "lines": [
+    "AUG 16, SEP 25-31 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_CROSS_MONTH_RANGE_PAST_MONTH_END",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "20-JUL-26 0000 - 30-SEP-26 2359",
+   "lines": [
+    "JUL 20-SEP 31 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_FEB_29_NON_LEAP",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-FEB-26 0000 - 28-FEB-26 2359",
+   "lines": [
+    "FEB 29 0800-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-02-15T07:00:00.000Z",
+    "endsAt": "2026-02-15T11:00:00.000Z"
+   },
+   "referenceAt": "2026-02-15T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA500_FEB_29_LEAP",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-FEB-28 0000 - 02-MAR-28 2359",
+   "lines": [
+    "FEB 29 2200-0200",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2028-02-29T21:00:00.000Z",
+    "endsAt": "2028-03-01T01:00:00.000Z"
+   },
+   "referenceAt": "2028-02-29T23:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0,
+    "referenceInterval": {
+     "startsAt": "2028-02-29T22:00:00.000Z",
+     "endsAt": "2028-03-01T02:00:00.000Z"
+    }
+   }
+  },
+  {
+   "id": "QA500_CLOCK_2400",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 2200-2400",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "2400 is not defined by the grammar"
+  },
+  {
+   "id": "QA500_CLOCK_MINUTE_60",
+   "label": "SYNTHETIC (QA500 repair, 15 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 0860-1000",
+    "TWY Z9 CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "GENUINE_SQ02325072026JFK_LIRF_1A2314_26",
+   "label": "GENUINE SQ02325072026JFK.pdf LIRF 1A2314/26 text at a SYNTHETIC reference inside its validity",
+   "validity": "13-MAY-26 1814 - 10-AUG-26 1800",
+   "lines": [
+    "RWY 16R/34L NOT AVBL FOR ACFT WITH TSAT (TARGET START-UP APPROVAL",
+    "TIME) BETWEEN HR 2130-0445 (2030-0345) AND/OR ELDT",
+    "(ESTIMATED LANDING TIME) BETWEEN HR 2200-0500 (2100-0400).",
+    "ACFT CONCERNED SHALL PLAN RWY 16L/34R FOR TKOF AND LDG OPS.",
+    "REF AIP AD 2 LIRF 1-25"
+   ],
+   "window": {
+    "startsAt": "2026-07-25T10:00:00.000Z",
+    "endsAt": "2026-07-25T14:00:00.000Z"
+   },
+   "referenceAt": "2026-07-25T12:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "RWY 16R/34L restricted only 2130-0445/2200-0500; 500 read no schedule and held it in force all day"
   }
  ],
  "regimeCases": [

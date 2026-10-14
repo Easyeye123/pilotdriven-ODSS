@@ -14,6 +14,15 @@ copy of the app's ``notam-timing-rules.json``, evaluated there by
 
 Nothing here forces a notice active: an unreadable validity, schedule or source
 record is a review on every surface, and no end time is invented.
+
+QA500 (Codex's QA of release 500, 15 Oct 2026): the reader itself treated "I could
+not account for the schedule text" as a certain answer. A D field wrapped as
+"AUG 16" / "1800-2000" was dropped because its first line held no time, so the
+record had no schedule and was published active all day; a D field it did accept
+silenced free text stating other hours; FEB 30 was "outside the window". The field
+is now the whole leading run of schedule lines and is accepted only when the grammar
+reads all of it; schedule language left in the free text must agree with it (or,
+with no field, is a review); and every date is checked against the calendar.
 """
 from __future__ import annotations
 
@@ -39,11 +48,16 @@ _VALIDITY_RANGE = re.compile(NOTAM_TIMING_RULES["validity"]["range"])
 _VALIDITY_END = re.compile(NOTAM_TIMING_RULES["validity"]["end"])
 _OPEN_ENDS: dict[str, str] = NOTAM_TIMING_RULES["validity"]["openEnds"]
 _FIELD = NOTAM_TIMING_RULES["scheduleField"]
+_DASHES = re.compile(_FIELD["dashes"])
 _FIELD_LINE = re.compile(_FIELD["fieldLine"])
-_FIELD_TIME = re.compile(_FIELD["fieldStartsWithTime"])
 _REVIEW_LANGUAGE = re.compile(_FIELD["reviewLanguage"])
+_COLON_CLOCK = re.compile(_FIELD["colonClock"])
 _FREE_TEXT_WORDS = re.compile(_FIELD["freeTextWords"])
 _FREE_TEXT_TIME = re.compile(_FIELD["freeTextTime"])
+_CLOCK_RANGE = re.compile(_FIELD["clockRange"])
+_DAY_H24 = re.compile(_FIELD["dayH24"])
+_PHRASE = re.compile(_FIELD["phrase"])
+_BODY_EQUIVALENCE_DAYS = _FIELD["bodyEquivalenceDays"]
 _REGIME = re.compile(NOTAM_TIMING_RULES["runwayClosureRegimes"]["pattern"], re.IGNORECASE)
 _REGIME_GROUPS: dict[str, int] = NOTAM_TIMING_RULES["runwayClosureRegimes"]["groups"]
 _OPEN_END_SEARCH_DAYS = NOTAM_TIMING_RULES["decision"]["openEndSearchDays"]
@@ -105,30 +119,96 @@ def read_lido_validity(text: Any) -> dict[str, Any] | None:
 
 
 def _field_text(line: Any) -> str:
-    return " ".join(str(line or "").upper().split())
+    return " ".join(_DASHES.sub("-", str(line or "").upper()).split())
 
 
-def read_lido_schedule_field(body_lines: Iterable[Any]) -> dict[str, Any]:
-    """Item D of a LIDO record: the leading body lines made only of schedule tokens
-    (the first must hold a time), joined with one space. ``review`` names schedule
-    language this spec does not evaluate; such a record is a review."""
+def _free_text_time_spans(text: str) -> list[tuple[int, int]]:
+    """Every time statement the free text makes: clock ranges, days at H24, and times beside schedule words."""
+    spans = [match.span() for match in _CLOCK_RANGE.finditer(text)]
+    spans.extend(match.span() for match in _DAY_H24.finditer(text))
+    if _FREE_TEXT_WORDS.search(text):
+        spans.extend(match.span() for match in _FREE_TEXT_TIME.finditer(text))
+    return spans
+
+
+def _merged_coverage(entries: list[dict[str, Any]], validity: Mapping[str, Any]) -> str:
+    start_ms = parse_ms(validity.get("startsAt"))
+    end_ms = parse_ms(validity.get("endsAt")) if validity.get("endsAt") else math.inf
+    horizon = min(end_ms, start_ms + _BODY_EQUIVALENCE_DAYS * _DAY_MS)
+    merged: list[list[float]] = []
+    for item_start, item_end in schedule_occurrences(entries, start_ms, end_ms, start_ms, horizon):
+        end = min(item_end, horizon)
+        if item_start >= end:
+            continue
+        if merged and item_start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([item_start, end])
+    return ",".join(f"{int(start)}-{int(end)}" for start, end in merged)
+
+
+def _time_keys(entries: list[dict[str, Any]]) -> set[str]:
+    return {f"{time['start']}-{time['end']}" for entry in entries for time in entry["times"]}
+
+
+def _free_text_agrees_with_field(text: str, spans: list[tuple[int, int]], entries: list[dict[str, Any]],
+                                 validity: Mapping[str, Any]) -> bool:
+    """Whether the free text's time statements say what the accepted Item D says. Each must sit in a run of schedule
+    tokens the grammar reads. A run that names no day ("BTN THE HOURS OF 1500-0600") restates hours: each of its
+    ranges must be one of the field's. Runs that name days must together give exactly the field's occurrences over
+    the validity."""
+    phrases = [(match.start(), match.end(), match.group(0)) for match in _PHRASE.finditer(text)]
+    held: list[str] = []
+    for start, end in spans:
+        phrase = next((item for item in phrases if item[0] <= start and end <= item[1]), None)
+        if phrase is None:
+            return False
+        if phrase[2] not in held:
+            held.append(phrase[2])
+    field_times = _time_keys(entries)
+    dated: list[dict[str, Any]] = []
+    for phrase_text in held:
+        phrase_entries, error = parse_schedule_field(phrase_text, validity)
+        if error:
+            return False
+        if all(entry.get("undated") for entry in phrase_entries):
+            if not _time_keys(phrase_entries) <= field_times:
+                return False
+        else:
+            dated.extend(phrase_entries)
+    return not dated or _merged_coverage(dated, validity) == _merged_coverage(entries, validity)
+
+
+def read_lido_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Item D of a LIDO record: the leading body lines made only of schedule tokens, joined with one space, across
+    line wraps. ``review`` is why the record's timing cannot be read: schedule language this spec does not evaluate, a
+    leading field the grammar cannot read in full, or free text stating schedule hours the field does not account for
+    (with no field, any schedule language in the free text). ``validity`` is the record's read_lido_validity() result;
+    without one the record is a validity review and only the field's own language is checked."""
     lines = [text for text in (_field_text(line) for line in body_lines or []) if text]
-    field: list[str] = []
-    for line in lines:
-        tokens = re.sub(r"\.$", "", line)
-        if not _FIELD_LINE.search(tokens):
-            break
-        if not field and not _FIELD_TIME.search(tokens):
-            break
-        field.append(line)
-    text = " ".join(field) if field else None
-    if text and _REVIEW_LANGUAGE.search(text):
-        return {"field": text, "lineCount": len(field), "review": TIMING_REVIEW_REASONS["reviewLanguage"]}
-    if not text:
-        free_text = " ".join(lines)
-        if _FREE_TEXT_WORDS.search(free_text) and _FREE_TEXT_TIME.search(free_text):
-            return {"field": None, "lineCount": 0, "review": TIMING_REVIEW_REASONS["freeText"]}
-    return {"field": text, "lineCount": len(field), "review": None}
+    line_count = 0
+    while line_count < len(lines) and _FIELD_LINE.search(re.sub(r"\.$", "", lines[line_count])):
+        line_count += 1
+    field = " ".join(lines[:line_count]) if line_count else None
+    free_text = " ".join(lines[line_count:])
+    spans = _free_text_time_spans(free_text)
+
+    def read(review: str | None) -> dict[str, Any]:
+        return {"field": field, "lineCount": line_count, "review": review}
+
+    if not field:
+        return read(TIMING_REVIEW_REASONS["freeText"] if spans else None)
+    if _REVIEW_LANGUAGE.search(field):
+        return read(TIMING_REVIEW_REASONS["reviewLanguage"])
+    if not (validity or {}).get("startsAt"):
+        return read(TIMING_REVIEW_REASONS["freeTextConflict"] if spans else None)
+    entries, error = parse_schedule_field(field, validity)
+    if error:
+        return read(error)
+    if not spans:
+        return read(None)
+    return read(None if _free_text_agrees_with_field(free_text, spans, entries, validity)
+                else TIMING_REVIEW_REASONS["freeTextConflict"])
 
 
 _TOKEN = re.compile("|".join([
@@ -143,6 +223,32 @@ _TOKEN = re.compile("|".join([
     r"(?P<daily>DLY)\b",
     r"(?P<sep>[\s,;:]+)",
 ]))
+
+
+_MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+
+def _is_leap(year: int) -> bool:
+    return (year % 4 == 0 and year % 100 != 0) or year % 400 == 0
+
+
+def _validity_years(validity: Mapping[str, Any] | None) -> tuple[int, int | None] | None:
+    """The validity's calendar years (from, to; to None for an open end), or None when the validity is not held."""
+    start_ms = parse_ms((validity or {}).get("startsAt"))
+    if math.isnan(start_ms):
+        return None
+    end_ms = parse_ms((validity or {}).get("endsAt"))
+    start_year = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc).year
+    return start_year, None if math.isnan(end_ms) else datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc).year
+
+
+def _month_length(month: int, years: tuple[int, int | None] | None) -> int:
+    """The longest the month can be within the validity: 29 FEB only when a leap year falls within it."""
+    if month != 1:
+        return _MONTH_DAYS[month]
+    if years is None or years[1] is None:
+        return 29
+    return 29 if any(_is_leap(year) for year in range(years[0], years[1] + 1)) else 28
 
 
 def _minutes_of(hhmm: str) -> int | None:
@@ -197,9 +303,10 @@ def _tokenize(text: str) -> tuple[list[dict[str, Any]], str | None]:
 def parse_schedule_field(field: Any, validity: Mapping[str, Any] | None = None) -> tuple[list[dict[str, Any]], str | None]:
     """Item D read into entries; the error is a timing review. Month-less day numbers take
     the latest month named earlier in the field, else the validity month when B and C
-    share one month."""
+    share one month. Every day must exist within the validity's years (FEB 30 never,
+    FEB 29 only in a leap year); an HH:MM clock is not read."""
     text = str(field or "").upper()
-    text = re.sub("[–—]", "-", text)
+    text = _DASHES.sub("-", text)
     text = re.sub(r"\bDAILY\b", "DLY", text)
     text = re.sub(r"(\d{4})(?:UTC|Z)\b", r"\1", text)
     text = re.sub(r"\s*-\s*", "-", text)
@@ -210,6 +317,8 @@ def parse_schedule_field(field: Any, validity: Mapping[str, Any] | None = None) 
         return [], "Item D is empty."
     if _REVIEW_LANGUAGE.search(text):
         return [], TIMING_REVIEW_REASONS["reviewLanguage"]
+    if _COLON_CLOCK.search(text):
+        return [], f"Item D clock written HH:MM: {text}"
     tokens, error = _tokenize(text)
     if error:
         return [], error
@@ -240,6 +349,7 @@ def parse_schedule_field(field: Any, validity: Mapping[str, Any] | None = None) 
         if (start_dt.year, start_dt.month) == (end_dt.year, end_dt.month):
             validity_month = start_dt.month - 1
 
+    years = _validity_years(validity)
     named_month: int | None = None
     entries: list[dict[str, Any]] = []
     for index, entry in enumerate(raw):
@@ -247,7 +357,7 @@ def parse_schedule_field(field: Any, validity: Mapping[str, Any] | None = None) 
         if not entry["dates"]:
             if index != 0:
                 return [], f"Item D times without a date: {text}"
-            entries.append({"kind": "daily", "times": entry["times"]})
+            entries.append({"kind": "daily", "times": entry["times"], "undated": True})
             continue
         if "daily" in kinds:
             if len(entry["dates"]) != 1:
@@ -267,7 +377,7 @@ def parse_schedule_field(field: Any, validity: Mapping[str, Any] | None = None) 
                 named_month = token["month"]
             elif token["kind"] == "cross":
                 (from_month, from_day), (to_month, to_day) = token["from"], token["to"]
-                if not (1 <= from_day <= 31 and 1 <= to_day <= 31):
+                if not (1 <= from_day <= _month_length(from_month, years) and 1 <= to_day <= _month_length(to_month, years)):
                     return [], f"Invalid date in Item D: {text}"
                 ranges.append((from_month * 100 + from_day, to_month * 100 + to_day))
                 named_month = to_month
@@ -275,7 +385,7 @@ def parse_schedule_field(field: Any, validity: Mapping[str, Any] | None = None) 
                 month = named_month if named_month is not None else validity_month
                 if month is None:
                     return [], f"Item D day numbers name no month: {text}"
-                if token["from"] < 1 or token["to"] > 31 or token["from"] > token["to"]:
+                if token["from"] < 1 or token["to"] > _month_length(month, years) or token["from"] > token["to"]:
                     return [], f"Invalid date in Item D: {text}"
                 month_days.update(month * 100 + day for day in range(token["from"], token["to"] + 1))
         if not month_days and not ranges:
@@ -400,9 +510,9 @@ def decide_notice_timing(notice: Mapping[str, Any], window: Mapping[str, Any]) -
 
 def decide_lido_record(validity_text: Any, lines: Iterable[Any], window: Mapping[str, Any]) -> dict[str, Any]:
     """Read a LIDO record (validity text + body lines) and decide it: the whole shared path."""
-    field = read_lido_schedule_field(lines)
-    return decide_notice_timing({"validity": read_lido_validity(validity_text), "schedule": field["field"],
-                                 "review": field["review"]}, window)
+    validity = read_lido_validity(validity_text)
+    field = read_lido_schedule_field(lines, validity)
+    return decide_notice_timing({"validity": validity, "schedule": field["field"], "review": field["review"]}, window)
 
 
 def notice_timing_input(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -410,7 +520,8 @@ def notice_timing_input(record: Mapping[str, Any]) -> dict[str, Any]:
 
     The record holds what the shared readers read: no valid_to only for an open end (UFN, PERM) - an absent or
     unreadable end is validity_review - and Item D in ``schedule``; schedule language with no Item D is
-    schedule_review. An Item D the grammar cannot read is re-read here and decided as a review with its reason.
+    schedule_review. An Item D the grammar cannot read is re-read here and decided as a review with its reason; an
+    Item D it reads on a record still held for review is one whose free text states other hours (QA500).
     """
     if record.get("validity_review"):
         validity = None
@@ -423,7 +534,13 @@ def notice_timing_input(record: Mapping[str, Any]) -> dict[str, Any]:
             "endKind": "until_further_notice" if math.isnan(end) else "explicit",
         }
     schedule = record.get("schedule") or None
-    review = TIMING_REVIEW_REASONS["freeText"] if record.get("schedule_review") and not schedule else None
+    review = None
+    if record.get("schedule_review") and not schedule:
+        review = TIMING_REVIEW_REASONS["freeText"]
+    elif record.get("schedule_review") and validity is not None:
+        # QA500 (15 Oct 2026): a held Item D the grammar reads, on a record the reader still held for review, is a
+        # field whose free text states other hours (read_lido_schedule_field); it is never decided on the field alone.
+        review = parse_schedule_field(schedule, validity)[1] or TIMING_REVIEW_REASONS["freeTextConflict"]
     return {"validity": validity, "schedule": schedule, "review": review}
 
 

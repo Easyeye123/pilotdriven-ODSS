@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .constants import MONTHS, OPERATIONAL_KEYWORDS
-from .notam_timing import parse_schedule_field, read_lido_schedule_field, read_lido_validity
+from .notam_timing import read_lido_schedule_field, read_lido_validity
 
 _NOTAM_START = re.compile(r"^(?P<id>[A-Z0-9]+/\d{2})\s+VALID:\s+(?P<validity>.+)$")
 _FUEL_ENROUTE_HEADING = re.compile(
@@ -813,11 +813,10 @@ def _parse_airport_notams(
         # merely starts like one - so a wrapped D field is read whole and a schedule-like line inside the free text
         # is a review, never a second schedule. An absent end is a review, never an open end.
         validity = read_lido_validity(current_validity)
-        field = read_lido_schedule_field(current_lines)
+        # QA500 (15 Oct 2026): the reader needs the grammar to read the whole field and checks the free text against it.
+        field = read_lido_schedule_field(current_lines, validity)
         schedule = field["field"]
         review = field["review"]
-        if validity is not None and schedule and review is None:
-            review = parse_schedule_field(schedule, validity)[1]
         score = _notice_score(text, current_category)
         record = {
             "notam_id": current_id,

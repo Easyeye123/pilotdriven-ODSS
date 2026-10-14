@@ -33,16 +33,22 @@
     ]
   },
   "scheduleField": {
+    "dashes": "[\\u2010\\u2011\\u2012\\u2013\\u2014\\u2015\\u2212]",
     "fieldLine": "^(?:(?:DAILY|DLY|EVERY|EV|AND|H24|SR|SS|SUNRISE|SUNSET|HJ|HN|EXC|EXCEPT|HOL|MON|TUE|WED|THU|FRI|SAT|SUN|JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|\\d{4}(?:UTC|Z)?|\\d{1,2})(?:\\s*[-,;:/]\\s*|\\s+|$))+$",
-    "fieldStartsWithTime": "(?:\\b\\d{4}(?:UTC|Z)?\\s*-\\s*\\d{4}(?:UTC|Z)?\\b|\\bH24\\b|\\b(?:SR|SS|SUNRISE|SUNSET|HJ|HN)\\b)",
     "reviewLanguage": "\\b(?:SR|SS|SUNRISE|SUNSET|HJ|HN|EXC|EXCEPT|HOL)\\b",
+    "colonClock": "(?<!\\d)\\d{1,2}:\\d{2}(?!\\d)",
     "freeTextWords": "\\b(?:DAILY|DLY|EVERY|EV|MON|TUE|WED|THU|FRI|SAT|SUN|BTN)\\b",
     "freeTextTime": "\\b\\d{4}(?:UTC)?\\s*(?:[-/]|TO)\\s*\\d{4}(?:UTC|Z)?\\b",
+    "clockRange": "(?<![\\dA-Z.:/-])(?<!(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC) )(?:(?:[01]\\d|2[0-3])[0-5]\\d|2400|(?:[01]?\\d|2[0-3]):[0-5]\\d)(?:UTC|Z|LT|L)?(?: (?:UTC|LT))?\\s*(?:-|/|TO\\b)\\s*(?:(?:[01]\\d|2[0-3])[0-5]\\d|2400|(?:[01]?\\d|2[0-3]):[0-5]\\d)(?:UTC|Z|LT|L)?(?![\\dA-Z:])(?![./]\\d)(?! ?(?:FT|M|NM|KM|KG|MHZ|KHZ|HZ)\\b)|\\b(?:BTN|BETWEEN) (?:(?:[01]\\d|2[0-3])[0-5]\\d|2400|(?:[01]?\\d|2[0-3]):[0-5]\\d)(?:UTC|Z|LT|L)?(?: (?:UTC|LT))? AND (?:(?:[01]\\d|2[0-3])[0-5]\\d|2400|(?:[01]?\\d|2[0-3]):[0-5]\\d)(?:UTC|Z|LT|L)?(?![\\dA-Z:])",
+    "dayH24": "\\b(?:DAILY|DLY|MON|TUE|WED|THU|FRI|SAT|SUN|JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\\b(?:(?:\\s*[-,;:/]\\s*|\\s+)(?:MON|TUE|WED|THU|FRI|SAT|SUN|\\d{1,2})\\b)*(?:\\s*[-,;:/]\\s*|\\s+)H24\\b",
+    "phrase": "\\b(?:DAILY|DLY|EVERY|EV|AND|H24|SR|SS|SUNRISE|SUNSET|HJ|HN|EXC|EXCEPT|HOL|MON|TUE|WED|THU|FRI|SAT|SUN|JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|\\d{4}(?:UTC|Z)?|\\d{1,2})\\b(?:(?:\\s*[-,;:/]\\s*|\\s+)\\b(?:DAILY|DLY|EVERY|EV|AND|H24|SR|SS|SUNRISE|SUNSET|HJ|HN|EXC|EXCEPT|HOL|MON|TUE|WED|THU|FRI|SAT|SUN|JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|\\d{4}(?:UTC|Z)?|\\d{1,2})\\b)*",
+    "bodyEquivalenceDays": 400,
     "rules": [
-      "Item D is printed as the first body line(s) of a LIDO record. The field is the leading run of body lines made only of schedule tokens (fieldLine); its first line must hold a time (fieldStartsWithTime). The lines are joined with one space.",
-      "Schedule language left in the free text after the field (freeTextWords and freeTextTime both present) is a timing review: no schedule is assumed continuous.",
+      "Item D is printed as the first body line(s) of a LIDO record. Typographic hyphens and dashes (dashes) are read as '-'. The field is the leading run of body lines made only of schedule tokens (fieldLine), joined with one space: a D field wrapped over several lines is one field, wherever the line breaks ('AUG 16' then '1800-2000', 'AUG' then '16 1800-2000', 'AUG 16 1800-' then '2000').",
+      "The field is accepted only when the grammar below reads all of it. A leading run it cannot read in full - a date with no time, a clock written HH:MM (colonClock), '/' between two times, 2400, an impossible date - is a timing review, never 'no schedule'.",
       "Daylight, exception and holiday rules (reviewLanguage) are a timing review.",
-      "Grammar, after upper-casing, DAILY->DLY, dropping EVERY/EV/AND, dropping UTC/Z after a time and closing spaces around '-': date parts and time ranges alternate; a date token after a time closes an entry; ',' ';' ':' only separate. A date part is DLY, weekdays (MON-FRI ranges allowed), month days (AUG 12 14 15, AUG 01-05), or a cross-month range (JUL 20-SEP 30). Day numbers with no month take the latest month named earlier in the field, else the validity month when B and C are in one month, else a timing review. An entry with no date part is daily only when it is the first entry. Times are HHMM-HHMM (an end at or before the start crosses midnight) or H24. Anything else is a timing review.",
+      "Schedule language in the free text after the field is a clock range (clockRange: HHMM or HH:MM, optionally UTC/Z/L/LT, joined by '-', '/', TO, or BTN .. AND ..; a 4-digit number straight after a month name is a year, and a number followed by a unit is not a clock), day words followed by H24 (dayH24), or schedule words (freeTextWords) together with a time (freeTextTime). With no field, any of it is a timing review: no schedule is assumed continuous. With a field, every such statement must sit in a run of schedule tokens (phrase) the grammar reads; a run naming no day restates hours, and each of its ranges must be one of the field's; runs naming days must together give exactly the field's occurrences over the validity (from its start, at most bodyEquivalenceDays). Otherwise it is a timing review: the record states two schedules.",
+      "Grammar, after upper-casing, folding dashes, DAILY->DLY, dropping EVERY/EV/AND, dropping UTC/Z after a time and closing spaces around '-': date parts and time ranges alternate; a date token after a time closes an entry; ',' ';' ':' only separate. A date part is DLY, weekdays (MON-FRI ranges allowed), month days (AUG 12 14 15, AUG 01-05), or a cross-month range (JUL 20-SEP 30). Day numbers with no month take the latest month named earlier in the field, else the validity month when B and C are in one month, else a timing review. Every day must exist: a day past its month's length, or 29 FEB when no leap year falls within the validity, is a timing review. An entry with no date part is daily only when it is the first entry. Times are HHMM-HHMM with HH 00-23 and MM 00-59 (an end at or before the start crosses midnight) or H24. Anything else is a timing review.",
       "Occurrences are clipped to the validity."
     ]
   },
@@ -72,7 +78,8 @@
   "reviewReasons": {
     "validity": "The LIDO VALID range could not be read; the timing is unresolved.",
     "reviewLanguage": "Schedule uses daylight, exception, or holiday rules that are not evaluated; the timing is unresolved.",
-    "freeText": "The LIDO record contains schedule language inside free text; the timing is unresolved."
+    "freeText": "The LIDO record contains schedule language inside free text; the timing is unresolved.",
+    "freeTextConflict": "The LIDO record states schedule hours in its free text that its Item D does not account for; the timing is unresolved."
   },
   "runwayClosureRegimes": {
     "pattern": "\\bRWY\\s+(\\d{2}[LCR]?(?:/\\d{2}[LCR]?)?)\\s+WILL\\s+BE\\s+CLSD\\s+BTN\\s+(\\d{4})(?:UTC)?\\s+TO\\s+(\\d{4})(?:UTC)?\\s+EV\\s+((?:MON|TUE|WED|THU|FRI|SAT|SUN)(?:\\s+AND\\s+(?:MON|TUE|WED|THU|FRI|SAT|SUN))*)\\s+FM\\s+(\\d{2}[A-Z]{3}\\d{2})\\s+TO\\s+(\\d{2}[A-Z]{3}\\d{2})\\b",

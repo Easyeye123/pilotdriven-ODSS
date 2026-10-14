@@ -300,6 +300,148 @@
      "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 30."
     ],
     "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9031/26",
+    "case": "QA500_DATE_LINE_WRAPPED",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AUG 15",
+     "1800-2000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 31."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9032/26",
+    "case": "QA500_DATE_LINE_WRAPPED_LATER",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AUG 15",
+     "0400-0600",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 32."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9033/26",
+    "case": "QA500_MONTH_DAY_SPLIT",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AUG",
+     "15 2000-2200",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 33."
+    ],
+    "expect_scheduled": "scheduled"
+   },
+   {
+    "id": "Z9034/26",
+    "case": "QA500_TIME_SPLIT",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AUG 15 1800-",
+     "2000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 34."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9035/26",
+    "case": "QA500_UNICODE_DASH",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AUG 15 1800\u20132000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 35."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9036/26",
+    "case": "QA500_COLON_CLOCK",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AUG 15 18:00-20:00",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 36."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9037/26",
+    "case": "QA500_SLASH_CLOCK",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AUG 15 1800/2000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 37."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9038/26",
+    "case": "QA500_D_PREFIX",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "D) AUG 15 1800-2000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 38."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9039/26",
+    "case": "QA500_FIRST_LINE_DATE_ONLY",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AUG 15",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 39."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9040/26",
+    "case": "QA500_CONFLICTING_FREE_TEXT",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 1800-2000",
+     "TWY Z9 CLSD DAILY 0300-0500. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9041/26",
+    "case": "QA500_EQUIVALENT_FREE_TEXT",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 1800-2000",
+     "TWY Z9 CLSD DAILY 1800-2000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9042/26",
+    "case": "QA500_INLINE_SCHEDULE",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD AUG 15 1800-2000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9043/26",
+    "case": "QA500_BARE_FREE_TEXT_TIME",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD 1800-2000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9044/26",
+    "case": "QA500_DAY_PAST_MONTH_END",
+    "validity": "10-AUG-26 1900 - 24-SEP-26 1900",
+    "body": [
+     "SEP 31 1800-2000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 44."
+    ],
+    "expect_scheduled": "review"
    }
   ],
   "EGKK": [
@@ -600,6 +742,148 @@
      "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 30."
     ],
     "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9131/26",
+    "case": "QA500_DATE_LINE_WRAPPED",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16",
+     "0800-1000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 31."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9132/26",
+    "case": "QA500_DATE_LINE_WRAPPED_LATER",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16",
+     "1800-2000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 32."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9133/26",
+    "case": "QA500_MONTH_DAY_SPLIT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG",
+     "16 1000-1200",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 33."
+    ],
+    "expect_scheduled": "scheduled"
+   },
+   {
+    "id": "Z9134/26",
+    "case": "QA500_TIME_SPLIT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16 0800-",
+     "1000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 34."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9135/26",
+    "case": "QA500_UNICODE_DASH",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16 0800\u20131000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 35."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9136/26",
+    "case": "QA500_COLON_CLOCK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16 08:00-10:00",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 36."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9137/26",
+    "case": "QA500_SLASH_CLOCK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16 0800/1000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 37."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9138/26",
+    "case": "QA500_D_PREFIX",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "D) AUG 16 0800-1000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 38."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9139/26",
+    "case": "QA500_FIRST_LINE_DATE_ONLY",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 39."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9140/26",
+    "case": "QA500_CONFLICTING_FREE_TEXT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z9 CLSD DAILY 1700-1900. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9141/26",
+    "case": "QA500_EQUIVALENT_FREE_TEXT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z9 CLSD DAILY 0800-1000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9142/26",
+    "case": "QA500_INLINE_SCHEDULE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD AUG 16 0800-1000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9143/26",
+    "case": "QA500_BARE_FREE_TEXT_TIME",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD 0800-1000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9144/26",
+    "case": "QA500_DAY_PAST_MONTH_END",
+    "validity": "11-AUG-26 0900 - 25-SEP-26 0900",
+    "body": [
+     "SEP 31 0800-1000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 44."
+    ],
+    "expect_scheduled": "review"
    }
   ],
   "EGCC": [
@@ -898,6 +1182,148 @@
     "validity": "11-AUG-26 0900 - SOON",
     "body": [
      "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 30."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9231/26",
+    "case": "QA500_DATE_LINE_WRAPPED",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16",
+     "0800-1000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 31."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9232/26",
+    "case": "QA500_DATE_LINE_WRAPPED_LATER",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16",
+     "1800-2000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 32."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9233/26",
+    "case": "QA500_MONTH_DAY_SPLIT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG",
+     "16 1000-1200",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 33."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9234/26",
+    "case": "QA500_TIME_SPLIT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16 0800-",
+     "1000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 34."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9235/26",
+    "case": "QA500_UNICODE_DASH",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16 0800\u20131000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 35."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9236/26",
+    "case": "QA500_COLON_CLOCK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16 08:00-10:00",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 36."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9237/26",
+    "case": "QA500_SLASH_CLOCK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16 0800/1000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 37."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9238/26",
+    "case": "QA500_D_PREFIX",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "D) AUG 16 0800-1000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 38."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9239/26",
+    "case": "QA500_FIRST_LINE_DATE_ONLY",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AUG 16",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 39."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9240/26",
+    "case": "QA500_CONFLICTING_FREE_TEXT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z9 CLSD DAILY 1700-1900. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9241/26",
+    "case": "QA500_EQUIVALENT_FREE_TEXT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z9 CLSD DAILY 0800-1000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9242/26",
+    "case": "QA500_INLINE_SCHEDULE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD AUG 16 0800-1000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9243/26",
+    "case": "QA500_BARE_FREE_TEXT_TIME",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD 0800-1000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9244/26",
+    "case": "QA500_DAY_PAST_MONTH_END",
+    "validity": "11-AUG-26 0900 - 25-SEP-26 0900",
+    "body": [
+     "SEP 31 0800-1000",
+     "TWY Z9 CLSD. SYNTHETIC CENSUS RECORD 44."
     ],
     "expect_scheduled": null
    }
