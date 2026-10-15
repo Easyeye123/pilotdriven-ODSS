@@ -5119,6 +5119,60 @@
     "stateAtReference": "active_at_reference",
     "minutesDelta": 0
    }
+  },
+  {
+   "id": "QA506_CONTROL_AMENDED_ALTITUDE",
+   "label": "GENUINE form (VIAR 1G667/24) as a SYNTHETIC benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD. 4D(IAMR) ALTITUDE IS AMENDED AS 2030."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA506_CONTROL_DATED_TWO_DIGIT_YEAR",
+   "label": "GENUINE form (WIII SX74/25) as a SYNTHETIC benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY Z9 CLSD. REF CODING TABLE ILS RWY 24 DATED 04 SEP 25."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA506_CONTROL_RESTORATION_TIME",
+   "label": "GENUINE form (VOHS 1A2317/26) as a SYNTHETIC benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "RWY 09L/27R CLSD. MAX RESTORATION TIME 04HRS FOR ACTIVATION OF SRY RWY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
   }
  ],
  "regimeCases": [

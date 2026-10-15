@@ -102,17 +102,21 @@ def test_nothing_reduced_and_nothing_held_are_still_different_statements():
 # held notices, now stated on both surfaces. QA502 (15 Oct 2026) moved SQ303's
 # departure from 5 to 6 unresolved: EBBR SX14/26's text states year-less
 # periods ("FROM 23MAR 0700 UNTIL 17JUL 1500") that no Item D holds, so its
-# timing is a review instead of active for the whole B/C validity.
+# timing is a review instead of active for the whole B/C validity. QA506 (15 Oct
+# 2026) moved WSSS - SQ303's destination and SQ352's departure - by one more
+# unresolved notice and one fewer taxi constraint: WSSS SX68/26's text restates
+# its validity as "14MAY26 1430TC - 01OCT26 2130UTC" (a typo the grammar cannot
+# read), so its timing is a review (fail closed) instead of active.
 REAL = {
     "SQ303": ("SQ30316072026BRU 81.pdf", {
         "departure": ((2, 6), ["RWY 25R ILS; RWY 07L VOR unavailable (not planned RWY 07R).",
                                "Taxi access constrained: W1; Y."]),
-        "destination": ((2, 1), ["Planned RWY 20R: 1 held notice unresolved (timing at arrival).",
+        "destination": ((2, 2), ["Planned RWY 20R: 1 held notice unresolved (timing at arrival).",
                                  "RWY 02R/20L not available for civil use (not planned RWY 20R).",
-                                 "Taxi access constrained by 7 notice(s)."]),
+                                 "Taxi access constrained by 6 notice(s)."]),
     }),
     "SQ352": ("lido-briefing_SQ_352_15Aug2026_SIN_CPH.pdf", {
-        "departure": ((2, 3), ["Planned RWY 20C: 2 held notices unresolved (timing at departure, effect).",
+        "departure": ((2, 4), ["Planned RWY 20C: 2 held notices unresolved (timing at departure, effect).",
                                "RWY 02R/20L not available for civil use (not planned RWY 20C)."]),
         "destination": ((2, 4), ["RWY 22L CAT II/III operations not available (planned runway).",
                                  "Planned RWY 22L: 1 held notice unresolved (effect).",

@@ -20,10 +20,10 @@ from pathlib import Path
 from app.odss.notam_timing import decide_notice_timing, read_lido_schedule_field, read_lido_validity
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "notam-timing-adversarial-qa506.json.gz"
-FIXTURE_SHA256 = "1c49195c75012b5e6411709150e76f4cd3ce9c7c1080613e7d99f875dc9d8cd5"
-DECISIONS = 434520
+FIXTURE_SHA256 = "0c01d2a35eec06ca2fdd2d5813315a1e04834e7f3125f0c1f0cb1353e07d88f0"
+DECISIONS = 436248
 CONSERVATIVE_REVIEWS = 384
-DECISION_DIGEST = "e49912acb92c653fedb89a791855b5161bc31e8466cf36ea1213c9a47712045a"
+DECISION_DIGEST = "56a2007ae9584eaf8715207d0d3c46e18c8f8d4205aadacd0ac24f78e43c8eff"
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")
 
 
