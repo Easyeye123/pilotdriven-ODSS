@@ -516,9 +516,9 @@
    ],
    "expect": {
     "field": null,
-    "review": false
+    "review": true
    },
-   "note": "QA506: a route altitude after MOCA, its segment named first ('MOCA FROM CUTOX TO CUJKE 1200 TO 1900'), is a stated benign class (routeAltitude) - no longer the known over-reach review."
+   "note": "QA506: a route altitude after MOCA, its segment named first ('MOCA FROM CUTOX TO CUJKE 1200 TO 1900'), is a stated benign class (routeAltitude). QA510: 'WINDMILL AT 873 OBS' - the 3-digit group after AT is a clock-like shape no grammar form reads (an obstacle height with no unit, after a time preposition), so the record is a review again; listed in the QA510 false-review census."
   },
   {
    "id": "QA502_BODY_DAYLIGHT",
@@ -724,6 +724,43 @@
    "label": "SYNTHETIC (QA506 repair, 15 Oct 2026) benign control",
    "lines": [
     "TWY Z9 CLSD. MOCA FROM CUTOX TO CUJKE 1200 TO 1900."
+   ],
+   "expect": {
+    "field": null,
+    "review": false
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA510_OUT_OF_RANGE_WITH_FIELD",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-002)",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 2500-2600."
+   ],
+   "expect": {
+    "field": "DLY 1800-2000",
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA510_DURATION_PERIOD",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-035)",
+   "lines": [
+    "TWY J CLSD FOR A PERIOD OF 2 HOURS."
+   ],
+   "expect": {
+    "field": null,
+    "review": true
+   },
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359"
+  },
+  {
+   "id": "QA510_CONTROL_RESTORATION",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-091)",
+   "lines": [
+    "TWY J CLSD. MAX RESTORATION TIME 04HRS."
    ],
    "expect": {
     "field": null,
@@ -5162,6 +5199,2892 @@
    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
    "lines": [
     "RWY 09L/27R CLSD. MAX RESTORATION TIME 04HRS FOR ACTIVATION OF SRY RWY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-001",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-001): Temporal or malformed timing text must not become continuous: TWY J CLSD 2500-2600.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 2500-2600."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-002",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-002): Conflicting temporal content beside Item D: TWY J CLSD 2500-2600.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 2500-2600."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-003",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-003): Temporal or malformed timing text must not become continuous: TWY J CLSD 2460-2560.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 2460-2560."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-004",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-004): Conflicting temporal content beside Item D: TWY J CLSD 2460-2560.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 2460-2560."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-005",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-005): Temporal or malformed timing text must not become continuous: TWY J CLSD 0860-1060.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 0860-1060."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-006",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-006): Conflicting temporal content beside Item D: TWY J CLSD 0860-1060.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 0860-1060."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-007",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-007): Temporal or malformed timing text must not become continuous: TWY J CLSD 080O-100O.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 080O-100O."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-008",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-008): Conflicting temporal content beside Item D: TWY J CLSD 080O-100O.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 080O-100O."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-009",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-009): Temporal or malformed timing text must not become continuous: TWY J CLSD 0800A-1000A.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 0800A-1000A."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-010",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-010): Conflicting temporal content beside Item D: TWY J CLSD 0800A-1000A.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 0800A-1000A."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-011",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-011): Temporal or malformed timing text must not become continuous: TWY J CLSD 0800GMT-1000GMT.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 0800GMT-1000GMT."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-012",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-012): Conflicting temporal content beside Item D: TWY J CLSD 0800GMT-1000GMT.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 0800GMT-1000GMT."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-013",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-013): Temporal or malformed timing text must not become continuous: TWY J CLSD 08H00-10H00.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 08H00-10H00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-014",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-014): Conflicting temporal content beside Item D: TWY J CLSD 08H00-10H00.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 08H00-10H00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-015",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-015): Temporal or malformed timing text must not become continuous: TWY J CLSD 08.00/10.00.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 08.00/10.00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-016",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-016): Conflicting temporal content beside Item D: TWY J CLSD 08.00/10.00.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 08.00/10.00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-017",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-017): Temporal or malformed timing text must not become continuous: TWY J CLSD 0800/1000.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 0800/1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-018",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-018): Conflicting temporal content beside Item D: TWY J CLSD 0800/1000.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 0800/1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-019",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-019): Temporal or malformed timing text must not become continuous: TWY J CLSD 8AM THROUGH 10AM.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 8AM THROUGH 10AM."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-020",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-020): Conflicting temporal content beside Item D: TWY J CLSD 8AM THROUGH 10AM.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 8AM THROUGH 10AM."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-021",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-021): Temporal or malformed timing text must not become continuous: TWY J CLSD 08:00:00-10:00:00.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 08:00:00-10:00:00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-022",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-022): Conflicting temporal content beside Item D: TWY J CLSD 08:00:00-10:00:00.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 08:00:00-10:00:00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-023",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-023): Temporal or malformed timing text must not become continuous: TWY J CLSD 0800 TO 1000 LOCAL.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 0800 TO 1000 LOCAL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-024",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-024): Conflicting temporal content beside Item D: TWY J CLSD 0800 TO 1000 LOCAL.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 0800 TO 1000 LOCAL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-025",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-025): Temporal or malformed timing text must not become continuous: TWY J CLSD 0800-1000 UTC+8.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 0800-1000 UTC+8."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-026",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-026): Conflicting temporal content beside Item D: TWY J CLSD 0800-1000 UTC+8.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 0800-1000 UTC+8."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-027",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-027): Temporal or malformed timing text must not become continuous: TWY J CLSD 0800-1000 EXCLUDING HOLIDAYS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 0800-1000 EXCLUDING HOLIDAYS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-028",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-028): Conflicting temporal content beside Item D: TWY J CLSD 0800-1000 EXCLUDING HOLIDAYS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 0800-1000 EXCLUDING HOLIDAYS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-029",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-029): Temporal or malformed timing text must not become continuous: TWY J CLSD H24 EXCEPT ON DEMAND.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD H24 EXCEPT ON DEMAND."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-030",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-030): Conflicting temporal content beside Item D: TWY J CLSD H24 EXCEPT ON DEMAND.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD H24 EXCEPT ON DEMAND."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-031",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-031): Temporal or malformed timing text must not become continuous: TWY J CLSD FOR MAX 2 HOURS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FOR MAX 2 HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-032",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-032): Conflicting temporal content beside Item D: TWY J CLSD FOR MAX 2 HOURS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FOR MAX 2 HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-033",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-033): Temporal or malformed timing text must not become continuous: TWY J CLSD DURING THE LAST 2 HOURS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD DURING THE LAST 2 HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-034",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-034): Conflicting temporal content beside Item D: TWY J CLSD DURING THE LAST 2 HOURS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD DURING THE LAST 2 HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-035",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-035): Temporal or malformed timing text must not become continuous: TWY J CLSD FOR A PERIOD OF 2 HOURS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FOR A PERIOD OF 2 HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-036",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-036): Conflicting temporal content beside Item D: TWY J CLSD FOR A PERIOD OF 2 HOURS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FOR A PERIOD OF 2 HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-039",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-039): Temporal or malformed timing text must not become continuous: TWY J CLSD FROM 01/09/2026 TO 02/09/2026.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 01/09/2026 TO 02/09/2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-040",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-040): Conflicting temporal content beside Item D: TWY J CLSD FROM 01/09/2026 TO 02/09/2026.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 01/09/2026 TO 02/09/2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-041",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-041): Temporal or malformed timing text must not become continuous: TWY J CLSD FROM 32 AUG 2026 TO 35 AUG 2026.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 32 AUG 2026 TO 35 AUG 2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-042",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-042): Conflicting temporal content beside Item D: TWY J CLSD FROM 32 AUG 2026 TO 35 AUG 2026.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 32 AUG 2026 TO 35 AUG 2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-043",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-043): Temporal or malformed timing text must not become continuous: TWY J CLSD FROM 29 FEB 2027 TO 01 MAR 2027.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 29 FEB 2027 TO 01 MAR 2027."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-044",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-044): Conflicting temporal content beside Item D: TWY J CLSD FROM 29 FEB 2027 TO 01 MAR 2027.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 29 FEB 2027 TO 01 MAR 2027."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-045",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-045): Temporal or malformed timing text must not become continuous: TWY J CLSD FROM 2026-08-32 TO 2026-09-02.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 2026-08-32 TO 2026-09-02."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-046",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-046): Conflicting temporal content beside Item D: TWY J CLSD FROM 2026-08-32 TO 2026-09-02.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 2026-08-32 TO 2026-09-02."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-047",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-047): Temporal or malformed timing text must not become continuous: TWY J CLSD FROM 3108261800 TO 3108262000.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 3108261800 TO 3108262000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-048",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-048): Conflicting temporal content beside Item D: TWY J CLSD FROM 3108261800 TO 3108262000.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 3108261800 TO 3108262000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-049",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-049): Temporal or malformed timing text must not become continuous: TWY J CLSD ONLY WHEN ACTIVATED BY ATC.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD ONLY WHEN ACTIVATED BY ATC."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-050",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-050): Conflicting temporal content beside Item D: TWY J CLSD ONLY WHEN ACTIVATED BY ATC.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD ONLY WHEN ACTIVATED BY ATC."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-051",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-051): Temporal or malformed timing text must not become continuous: TWY J CLSD DURING TWR OPERATING HOURS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD DURING TWR OPERATING HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-052",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-052): Conflicting temporal content beside Item D: TWY J CLSD DURING TWR OPERATING HOURS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD DURING TWR OPERATING HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-053",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-053): Temporal or malformed timing text must not become continuous: TWY J CLSD EVERY SECOND TUESDAY.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD EVERY SECOND TUESDAY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-054",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-054): Conflicting temporal content beside Item D: TWY J CLSD EVERY SECOND TUESDAY.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD EVERY SECOND TUESDAY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-055",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-055): Temporal or malformed timing text must not become continuous: TWY J CLSD SUNRISE PLUS 30 MIN UNTIL SUNSET MINUS 30 MIN.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD SUNRISE PLUS 30 MIN UNTIL SUNSET MINUS 30 MIN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-056",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-056): Conflicting temporal content beside Item D: TWY J CLSD SUNRISE PLUS 30 MIN UNTIL SUNSET MINUS 30 MIN.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD SUNRISE PLUS 30 MIN UNTIL SUNSET MINUS 30 MIN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-057",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-057): Temporal or malformed timing text must not become continuous: TWY J CLSD AT 1800. TEL +65 6123 4567.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD AT 1800. TEL +65 6123 4567."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-058",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-058): Conflicting temporal content beside Item D: TWY J CLSD AT 1800. TEL +65 6123 4567.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD AT 1800. TEL +65 6123 4567."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-059",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-059): Temporal or malformed timing text must not become continuous: TWY J CLSD 1800-2000. CRANE HEIGHT 1800-2000FT.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 1800-2000. CRANE HEIGHT 1800-2000FT."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-060",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-060): Corrected oracle: body exactly restates Item D with benign adjacent content",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 1800-2000. CRANE HEIGHT 1800-2000FT."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-061",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-061): Corrected oracle: H24 equals full validity",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD H24. FREQ 121.900MHZ."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-062",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-062): Conflicting temporal content beside Item D: TWY J CLSD H24. FREQ 121.900MHZ.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD H24. FREQ 121.900MHZ."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-063",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-063): Temporal or malformed timing text must not become continuous: TWY J CLSD 1800-2000. REF A1800/26.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 1800-2000. REF A1800/26."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-064",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-064): Corrected oracle: body exactly restates Item D with benign adjacent content",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 1800-2000. REF A1800/26."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-065",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-065): Temporal or malformed timing text must not become continuous: TWY J CLSD FROM 18 00 TO 20 00.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 18 00 TO 20 00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-066",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-066): Conflicting temporal content beside Item D: TWY J CLSD FROM 18 00 TO 20 00.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 18 00 TO 20 00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-067",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-067): Temporal or malformed timing text must not become continuous: TWY J CLSD 1800Z THROUGH 2000Z.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 1800Z THROUGH 2000Z."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-068",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-068): Corrected oracle: body exactly restates Item D with benign adjacent content",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 1800Z THROUGH 2000Z."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-069",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-069): Temporal or malformed timing text must not become continuous: TWY J CLSD FROM 18H TO 20H.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 18H TO 20H."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-070",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-070): Conflicting temporal content beside Item D: TWY J CLSD FROM 18H TO 20H.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 18H TO 20H."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-071",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-071): Temporal or malformed timing text must not become continuous: TWY J CLSD EVERY SATURDAY EVENING.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD EVERY SATURDAY EVENING."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-072",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-072): Conflicting temporal content beside Item D: TWY J CLSD EVERY SATURDAY EVENING.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD EVERY SATURDAY EVENING."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-073",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-073): Benign control continuous: TWY J CLSD. CRANE HGT 1800FT AMSL.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. CRANE HGT 1800FT AMSL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-074",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-074): Benign control preserves Item D: TWY J CLSD. CRANE HGT 1800FT AMSL.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. CRANE HGT 1800FT AMSL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-075",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-075): Benign control continuous: TWY J CLSD. OBST 1800-2000FT AMSL.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. OBST 1800-2000FT AMSL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-076",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-076): Benign control preserves Item D: TWY J CLSD. OBST 1800-2000FT AMSL.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. OBST 1800-2000FT AMSL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-077",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-077): Benign control continuous: TWY J CLSD. TORA 2100 TODA 2300 ASDA 2100.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. TORA 2100 TODA 2300 ASDA 2100."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-078",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-078): Benign control preserves Item D: TWY J CLSD. TORA 2100 TODA 2300 ASDA 2100.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. TORA 2100 TODA 2300 ASDA 2100."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-079",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-079): Benign control continuous: TWY J CLSD. FREQ 118.075MHZ.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. FREQ 118.075MHZ."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-080",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-080): Benign control preserves Item D: TWY J CLSD. FREQ 118.075MHZ.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. FREQ 118.075MHZ."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-081",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-081): Benign control continuous: TWY J CLSD. NDB RIC 347.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. NDB RIC 347."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-082",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-082): Benign control preserves Item D: TWY J CLSD. NDB RIC 347.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. NDB RIC 347."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-083",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-083): Benign control continuous: TWY J CLSD. TEL +65 6123 4567.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. TEL +65 6123 4567."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-084",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-084): Benign control preserves Item D: TWY J CLSD. TEL +65 6123 4567.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. TEL +65 6123 4567."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-085",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-085): Benign control continuous: TWY J CLSD. REF A1234/26.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. REF A1234/26."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-086",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-086): Benign control preserves Item D: TWY J CLSD. REF A1234/26.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. REF A1234/26."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-087",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-087): Benign control continuous: TWY J CLSD. PPR 48 HOURS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. PPR 48 HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-088",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-088): Benign control preserves Item D: TWY J CLSD. PPR 48 HOURS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. PPR 48 HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-089",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-089): Benign control continuous: TWY J CLSD. RE-OPN WI 2 HR.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. RE-OPN WI 2 HR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-090",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-090): Benign control preserves Item D: TWY J CLSD. RE-OPN WI 2 HR.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. RE-OPN WI 2 HR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-091",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-091): Benign control continuous: TWY J CLSD. MAX RESTORATION TIME 04HRS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. MAX RESTORATION TIME 04HRS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-092",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-092): Benign control preserves Item D: TWY J CLSD. MAX RESTORATION TIME 04HRS.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. MAX RESTORATION TIME 04HRS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-093",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-093): Benign control continuous: TWY J CLSD. MOCA FROM ABC TO DEF 1200 TO 1900.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. MOCA FROM ABC TO DEF 1200 TO 1900."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-094",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-094): Benign control preserves Item D: TWY J CLSD. MOCA FROM ABC TO DEF 1200 TO 1900.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. MOCA FROM ABC TO DEF 1200 TO 1900."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-095",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-095): Benign control continuous: TWY J CLSD. ALTITUDE IS AMENDED AS 2030.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. ALTITUDE IS AMENDED AS 2030."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-096",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-096): Benign control preserves Item D: TWY J CLSD. ALTITUDE IS AMENDED AS 2030.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. ALTITUDE IS AMENDED AS 2030."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-097",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-097): Benign control continuous: TWY J CLSD. CAT A 1150 (386).",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. CAT A 1150 (386)."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-098",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-098): Benign control preserves Item D: TWY J CLSD. CAT A 1150 (386).",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. CAT A 1150 (386)."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-099",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-099): Benign control continuous: TWY J CLSD. NIGHT MARKED AND LIGHTED.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. NIGHT MARKED AND LIGHTED."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-100",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-100): Benign control preserves Item D: TWY J CLSD. NIGHT MARKED AND LIGHTED.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. NIGHT MARKED AND LIGHTED."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-101",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-101): Benign control continuous: TWY J CLSD. SUN GLARE POSSIBLE.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. SUN GLARE POSSIBLE."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-102",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-102): Benign control preserves Item D: TWY J CLSD. SUN GLARE POSSIBLE.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. SUN GLARE POSSIBLE."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-103",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-103): Benign control continuous: TWY J CLSD. REF CHART DATED 20 MAR 2025.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. REF CHART DATED 20 MAR 2025."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-104",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-104): Benign control preserves Item D: TWY J CLSD. REF CHART DATED 20 MAR 2025.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. REF CHART DATED 20 MAR 2025."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-105",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-105): Benign control continuous: TWY J CLSD. B777-300ER AND A350-900.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. B777-300ER AND A350-900."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-106",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-106): Benign control preserves Item D: TWY J CLSD. B777-300ER AND A350-900.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. B777-300ER AND A350-900."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-107",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-107): Benign control continuous: TWY J CLSD. FL110-FL240.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. FL110-FL240."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-108",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-108): Benign control preserves Item D: TWY J CLSD. FL110-FL240.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. FL110-FL240."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-109",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-109): Benign control continuous: TWY J CLSD. RWY 09/27 STANDS 201-203.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. RWY 09/27 STANDS 201-203."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-110",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-110): Benign control preserves Item D: TWY J CLSD. RWY 09/27 STANDS 201-203.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. RWY 09/27 STANDS 201-203."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-111",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-111): Benign control continuous: TWY J CLSD. MAG VAR 1.75DEG W (2010).",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. MAG VAR 1.75DEG W (2010)."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-112",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-112): Benign control preserves Item D: TWY J CLSD. MAG VAR 1.75DEG W (2010).",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. MAG VAR 1.75DEG W (2010)."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-113",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-113): Benign control continuous: TWY J CLSD. OBS AT 2608151200.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. OBS AT 2608151200."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-114",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-114): Benign control preserves Item D: TWY J CLSD. OBS AT 2608151200.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. OBS AT 2608151200."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-115",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-115): Benign control continuous: TWY J CLSD. VIS 0800M AND RVR 1800M.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. VIS 0800M AND RVR 1800M."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-116",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-116): Benign control preserves Item D: TWY J CLSD. VIS 0800M AND RVR 1800M.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. VIS 0800M AND RVR 1800M."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-117",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-117): Benign control continuous: TWY J CLSD. OBST CASE 2025-AEA-4238-NRA.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. OBST CASE 2025-AEA-4238-NRA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-118",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-118): Benign control preserves Item D: TWY J CLSD. OBST CASE 2025-AEA-4238-NRA.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. OBST CASE 2025-AEA-4238-NRA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-119",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-119): Benign control continuous: TWY J CLSD. ACFT MAY BE DELAYED.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. ACFT MAY BE DELAYED."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-120",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-120): Benign control preserves Item D: TWY J CLSD. ACFT MAY BE DELAYED.",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. ACFT MAY BE DELAYED."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-121",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-121): Exact schedule restatement",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD DLY 1800-2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-122",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-122): Exact schedule restatement",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 1800 TO 2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-123",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-123): Exact schedule restatement",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD BTN 1800 AND 2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-124",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-124): Containing period control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 01 AUG 2026 UNTIL 31 AUG 2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-125",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-125): Containing period control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD WEF 31 JUL 2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-126",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-126): Containing period control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD UNTIL 01 SEP 2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-127",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-127): Outside-validity excludes before schedule review",
+   "validity": "01-JUL-26 0000 - 31-JUL-26 2359",
+   "lines": [
+    "TWY J CLSD 2500-2600."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "ended_before_reference",
+    "minutesDelta": 22141
+   }
+  },
+  {
+   "id": "QA510_CODEX_Q510-128",
+   "label": "SYNTHETIC (Codex QA of release 510, output/pd-510-codex-qa-20261016, case Q510-128): Outside-validity excludes before schedule review",
+   "validity": "01-JUL-26 0000 - 31-JUL-26 2359",
+   "lines": [
+    "TWY J CLSD DAILY SR-SS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "ended_before_reference",
+    "minutesDelta": 22141
+   }
+  },
+  {
+   "id": "QA510_SPACED_ONE_DIGIT_HOUR",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 8 00 TO 10 00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510-01: a clock with a space separator, any hour width"
+  },
+  {
+   "id": "QA510_SUBSTITUTION_MOSTLY_LETTERS",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD O8OO-1OOO."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510-01: letters for three of four digits"
+  },
+  {
+   "id": "QA510_LOWER_L_FOR_ONE",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD l800-2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510-01: a lower-case l for 1 is never a route designator"
+  },
+  {
+   "id": "QA510_FULL_WIDTH_DIGITS_READ",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD １８００-２０００."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   },
+   "note": "QA510: NFKC - full-width digits are digits; the body restates Item D"
+  },
+  {
+   "id": "QA510_FULL_WIDTH_MALFORMED",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD ０８６０-１０６０."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_ZERO_WIDTH_SPLIT",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 18​00-2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   },
+   "note": "QA510: a zero-width space never splits a clock"
+  },
+  {
+   "id": "QA510_TWO_DIGIT_RANGE",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 18-20."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510-01: two 2-digit groups joined by a range connector"
+  },
+  {
+   "id": "QA510_PARTIAL_RANGE",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 1800-20."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510-01: a partial range"
+  },
+  {
+   "id": "QA510_SINGLE_DIGIT_PAIR_WITH_PREPOSITION",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 8 TO 10."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_TWO_DIGIT_SUFFIX",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 18-20Z."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_COMMA_SEPARATOR",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 18,00-20,00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_PM_DOTTED",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 6 P.M. TO 8 P.M."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_WORD_CLOCK",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM EIGHTEEN HUNDRED TO TWENTY HUNDRED."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_RANGE_BEHIND_NDB",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. NDB RIC 1700-1900."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510: a benign span is never one side of a range"
+  },
+  {
+   "id": "QA510_PHONE_SWALLOWS_MALFORMED",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. TEL 6123 4567 0860-1060."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510: a benign span never holds a clock-like range"
+  },
+  {
+   "id": "QA510_FL_CUTS_CLOCK",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FL180/18 00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510: a benign span never cuts a clock-like shape"
+  },
+  {
+   "id": "QA510_EVENT_YEAR_AFTER_UNTIL",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD UNTIL 2000 FOR GRAND PRIX."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_MAG_VAR_WORDS",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "MAG VAR 2DEG W TWY J CLSD 1800 2026."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CONTACT_HOURS_OUTSIDE",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "OUTSIDE OFFICE HOURS OF THE CAA TWY J CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_MAY_DATE_ONLY",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 01 MAY ONLY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_PAGE_DASH_DATE",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 01-09-26 TO 02-09-26."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_FOR_24_HR",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FOR 24 HR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510-02: a duration attached to the restriction - not H24"
+  },
+  {
+   "id": "QA510_WI_ALONE",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD WI 2 HR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510-02: WI is benign only after a restoration word"
+  },
+  {
+   "id": "QA510_AT_LEAST_BEFORE_VVIP",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD AT LEAST 2 HR BEFORE ARR OF VVIP."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA510-02: no application context"
+  },
+  {
+   "id": "QA510_PPR_REFUSED_AFTER_FOR",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FOR 24 HR PPR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA510_CONTROL_NOTICE_FORMS",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. PPR 48 HOURS. 24 HR PN. RE-OPN WI 2 HR. MAX RESTORATION TIME 04HRS. FILE FPLS AT LEAST 3 HR BFR THE EOBT. OPERATOR SHALL NOTIFY ATC 24 HR IN ADVANCE."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CONTROL_AIP_PAGES",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. REF AD 2 EDDF 4-2-1, 4-2-7 BOTH DATED 30 OCT 2025, 4-2-2 THRU 4-2-6. EINN AD 2.24-1 AND EINN AD 2.24-2. PARA 3.10 AND 3.11."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CONTROL_NUMBERS",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. 180-DEGREE TURNS. VDP AT 0.87 DME. ED-R GH 470FL/660FL. TORA(M)2862. 2436(7992)(2.10). CAT C 900-2 3/4. (866) 598-9522. 9V-SHA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CONTROL_POSITIONS_AND_NAMES",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. MAYON VOLCANO (1315N 12341E). STAR ATRIN-7E/7F/7G/7H. AIC M 076/2026. MOWP 2024-1. 14 CFR PART 99.13."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA510_CONTROL_LIT_OBSTACLE",
+   "label": "SYNTHETIC (QA510 repair, 16 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. OBST LIGHTED AT NIGHT. RWY 27 MAY BE SLIPPERY."
    ],
    "window": {
     "startsAt": "2026-08-16T07:00:00.000Z",

@@ -43,6 +43,18 @@ first (benign), and every temporal token must sit in a statement the grammar rea
 periods with a year, and days bound to hours - that is proven equal on its own to Item D
 (or to the whole validity), else the record is a review. A start date must lie at or before
 B and an end date at or after C.
+
+QA510 (Codex's QA of release 510, 16 Oct 2026): temporal content was still found by
+VALIDITY - "2500-2600", "080O-100O", "0800A-1000A", "08.00/10.00", "FROM 18 00 TO 20 00",
+"FROM 18H TO 20H" matched no class, and a free text with no token returned "no schedule" -
+and the notice-duration mask hid a duration attached to the restriction ("FOR MAX 2 HOURS",
+"DURING THE LAST 2 HOURS", "FOR A PERIOD OF 2 HOURS"). Temporal content is now found by
+SHAPE: every clock-like shape, whatever its values, is a token the grammar must read (it
+reads only its own forms), and "no schedule" comes only out of the accounting. A duration is
+benign only as an explicit notice, permission or restoration lead time; every benign class
+needs its stated context, and a benign span never holds or cuts a clock-like range, never
+cuts a clock-like shape and is never one side of a range. Lines are NFKC-normalised,
+stripped of format characters, and a lower-case l in a run holding a digit is written I.
 """
 from __future__ import annotations
 
@@ -51,6 +63,7 @@ import json
 import math
 from pathlib import Path
 import re
+import unicodedata
 from typing import Any, Iterable, Mapping
 
 RULES_FILE = Path(__file__).with_name("notam_timing_rules.json")
@@ -80,8 +93,12 @@ def _js_replacement(replacement: str) -> str:
     return re.sub(r"\$(\d)", r"\\g<\1>", replacement)
 
 
+_LETTER_FOR_DIGIT_RUN = re.compile(_FIELD["letterForDigit"]["run"], _A)
 _BENIGN = [(item["class"], re.compile(item["pattern"], _A), bool(item.get("allowClockRange"))) for item in _FIELD["benign"]]
 _BENIGN_NEVER_HOLDS = re.compile(_FIELD["benignNeverHolds"], _A)
+_BENIGN_NEVER_CUTS = re.compile(_FIELD["benignNeverCuts"], _A)
+_ABUTS_AFTER = re.compile(_FIELD["rangeAbutment"]["after"], _A)
+_ABUTS_BEFORE = re.compile(_FIELD["rangeAbutment"]["before"], _A)
 _TEMPORAL = [(item["class"], re.compile(item["pattern"], _A)) for item in _FIELD["temporal"]]
 _STATEMENT = re.compile(_FIELD["statement"], _A)
 _NEGATIONS = re.compile(_FIELD["negations"], _A)
@@ -163,7 +180,16 @@ def read_lido_validity(text: Any) -> dict[str, Any] | None:
 
 
 def _field_text(line: Any) -> str:
-    return " ".join(_DASHES.sub("-", str(line or "").upper()).split())
+    """A body line as the grammar reads it: format characters dropped and NFKC-normalised (normalisation: a full-width
+    digit is a digit, no zero-width character splits a clock), upper-cased, dashes folded, whitespace collapsed. A
+    lower-case 'l' inside a run holding a digit is written 'I' first (letterForDigit): a letter for a digit ('l800')
+    stays a clock-like shape the grammar never reads, where upper-casing alone would turn it into a route designator
+    (L800)."""
+    rule, norm = _FIELD["letterForDigit"], _FIELD["normalisation"]
+    text = "".join(ch for ch in str(line or "") if unicodedata.category(ch) != norm["drop"])
+    text = _LETTER_FOR_DIGIT_RUN.sub(lambda run: run.group(0).replace(rule["letter"], rule["as"]),
+                                     unicodedata.normalize(norm["form"], text))
+    return " ".join(_DASHES.sub("-", text.upper()).split())
 
 
 def _period_day(day: str, month: str, year: int) -> float | None:
@@ -316,15 +342,49 @@ def _clipped_coverage(entries: list[dict[str, Any]], validity_start: float, vali
     return ",".join(f"{int(start)}-{int(end)}" for start, end in merged)
 
 
-def _mask_benign(text: str) -> str:
-    """The text with every span a benign class POSITIVELY classifies as not temporal replaced by '#'. A span holding
-    a clock range is never benign unless its class states allowClockRange."""
+def _paint(text: str, spans: list[tuple[int, int]]) -> str:
     chars = list(text)
-    for _name, pattern, allow_clock_range in _BENIGN:
-        for match in pattern.finditer(text):
-            if match.end() > match.start() and (allow_clock_range or not _BENIGN_NEVER_HOLDS.search(match.group(0))):
-                chars[match.start():match.end()] = "#" * (match.end() - match.start())
+    for start, end in spans:
+        chars[start:end] = "#" * (end - start)
     return "".join(chars)
+
+
+def _temporal_tokens(masked: str) -> list[tuple[int, int]]:
+    return [match.span() for _name, pattern in _TEMPORAL for match in pattern.finditer(masked) if match.end() > match.start()]
+
+
+def _mask_benign(text: str) -> str:
+    """The text with every span a benign class POSITIVELY classifies as not temporal replaced by '#'. A span never cuts
+    a clock-like shape found in the unmasked text (benignNeverCuts: it may hold a whole one - 'TORA 2100' - never part
+    of one: 'FL180/18' of 'FL180/18 00'); a span that holds or cuts a clock-like range is never benign unless its class
+    states allowClockRange (benignNeverHolds); and a span is never one side of a range: it is refused when a range
+    connector joins it to temporal content left unmasked once every candidate span is masked (rangeAbutment)."""
+    ranges = [match.span() for match in _BENIGN_NEVER_HOLDS.finditer(text)]
+    shapes = [match.span() for match in _BENIGN_NEVER_CUTS.finditer(text)]
+
+    def meets_range(start: int, end: int) -> bool:
+        return any(low < end and start < high for low, high in ranges)
+
+    def cuts_shape(start: int, end: int) -> bool:
+        return any(low < start < high or low < end < high for low, high in shapes)
+
+    spans = [match.span() for _name, pattern, allow_clock_range in _BENIGN for match in pattern.finditer(text)
+             if match.end() > match.start() and not cuts_shape(match.start(), match.end())
+             and (allow_clock_range or not meets_range(match.start(), match.end()))]
+    provisional = _paint(text, spans)
+    tokens = _temporal_tokens(provisional)
+    starts = {start for start, _ in tokens}
+    ends = {end for _, end in tokens}
+
+    def abuts(span: tuple[int, int]) -> bool:
+        start, end = span
+        after = _ABUTS_AFTER.search(provisional[end:])
+        if after and end + after.end() in starts:
+            return True
+        before = _ABUTS_BEFORE.search(provisional[:start])
+        return bool(before and before.start() in ends)
+
+    return _paint(text, [span for span in spans if not abuts(span)])
 
 
 def _regroup(text: str) -> str:
@@ -390,24 +450,21 @@ def _statement_accounted(periods: list[tuple[float, float]], entries: list[dict[
 
 def _free_text_review(text: str, field: str | None, entries: list[dict[str, Any]] | None,
                       validity: Mapping[str, Any] | None) -> str | None:
-    """The review the free text after the field calls for, or None (QA506: fail closed). Benign spans are masked; every
-    temporal token left must sit in a statement the grammar reads whole and that is accounted for - else a review.
-    There is no path from text this spec cannot read to 'no schedule'."""
+    """The review the free text after the field calls for, or None (QA506: fail closed; QA510: temporal content is
+    found by SHAPE). Benign spans are masked; every temporal token left - every clock-like shape whatever its values -
+    must sit in a statement the grammar reads whole and that is accounted for, else a review. None comes only out of
+    that accounting: free text with no temporal content of any shape, or whose every statement is proven."""
     reason = TIMING_REVIEW_REASONS["freeTextConflict"] if field else TIMING_REVIEW_REASONS["freeText"]
-    if not text:
-        return None
-    masked = _mask_benign(text)
-    tokens = [match.span() for _name, pattern in _TEMPORAL for match in pattern.finditer(masked) if match.end() > match.start()]
-    if not tokens:
-        return None
+    masked = _mask_benign(text or "")
+    tokens = _temporal_tokens(masked)
     statements = [(match.start(), match.end(), match.group(0)) for match in _STATEMENT.finditer(masked)]
     if any(not any(low <= start and end <= high for low, high, _ in statements) for start, end in tokens):
-        return reason
-    if not (validity or {}).get("startsAt"):
         return reason
     for low, high, statement in statements:
         if not any(low <= start and end <= high for start, end in tokens):
             continue
+        if not (validity or {}).get("startsAt"):
+            return reason
         parsed = _parse_statement(statement, validity)
         if parsed is None or not _statement_accounted(parsed[0], parsed[1], entries if field else None, validity):
             return reason

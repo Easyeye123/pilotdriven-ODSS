@@ -28,8 +28,8 @@ RULES_FILE = ROOT / "app" / "odss" / "notam_timing_rules.json"
 VECTORS_FILE = ROOT / "tests" / "fixtures" / "notam-timing-vectors.json"
 CORPUS = ROOT.parent / "private_cfp_corpus"
 # The app pins the same two digests (tests/notam-timing-shared-rules-20261014.test.mjs).
-SHARED_RULES_SHA256 = "a2fab54d0d584eeb41b9831e14601f3eb651001df2eb36901e754e276da55ad7"
-SHARED_VECTORS_SHA256 = "79dd4aeb307d9b5259a616d832cf05b631962caaeecedc8650cdd8bd5bbe8727"
+SHARED_RULES_SHA256 = "2e4364c6f46d5798c6d6f043d2b0be48c19c3717eede977f3c5b2d3845d7573f"
+SHARED_VECTORS_SHA256 = "47bf765d0260445fce70d5c7c36b649aa6fdf89e515884025d41edfbec575c3c"
 VECTORS = json.loads(VECTORS_FILE.read_text(encoding="utf-8"))
 STATUS = {"active": "affecting", "review": "review", "outside_time_window": "outside_window", "outside_schedule": "outside_window"}
 

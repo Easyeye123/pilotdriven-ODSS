@@ -22,8 +22,11 @@ from app.odss.notam_timing import decide_notice_timing, read_lido_schedule_field
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "notam-timing-adversarial-qa506.json.gz"
 FIXTURE_SHA256 = "0c01d2a35eec06ca2fdd2d5813315a1e04834e7f3125f0c1f0cb1353e07d88f0"
 DECISIONS = 436248
-CONSERVATIVE_REVIEWS = 384
-DECISION_DIGEST = "56a2007ae9584eaf8715207d0d3c46e18c8f8d4205aadacd0ac24f78e43c8eff"
+# QA510 (16 Oct 2026) moved the conservative count and the digest, never a failure (see the app's pin note): four benign
+# phrases stop being benign by design and four are reviews right after CLSD; seven of the eight 'hidden' ranges behind a
+# keyword now read as the range, reaching the canonical decision instead of a review.
+CONSERVATIVE_REVIEWS = 2352
+DECISION_DIGEST = "e9b06eb8e1f138e888bc02fe44980b9097b4520726a966afd0a83fd23b82aa36"
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")
 
 

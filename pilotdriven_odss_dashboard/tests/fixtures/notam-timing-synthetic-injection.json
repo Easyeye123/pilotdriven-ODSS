@@ -639,6 +639,128 @@
      "TWY Z9 CLSD. OCA (OCH) 690 (441). CAT A 560 (347). SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9066/26",
+    "case": "QA510_BODY_OUT_OF_RANGE",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD 2500-2600. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9067/26",
+    "case": "QA510_BODY_OUT_OF_RANGE_AGAINST_FIELD",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z9 CLSD 0860-1060. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9068/26",
+    "case": "QA510_BODY_LETTERS_FOR_DIGITS",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD 080O-100O. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9069/26",
+    "case": "QA510_BODY_SUFFIX_LETTERS",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z9 CLSD 0800A-1000A. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9070/26",
+    "case": "QA510_BODY_DOTTED_SLASH",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD 08.00/10.00. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9071/26",
+    "case": "QA510_BODY_SPACED",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z9 CLSD FROM 18 00 TO 20 00. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9072/26",
+    "case": "QA510_BODY_H_MARKS",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD FROM 18H TO 20H. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9073/26",
+    "case": "QA510_BODY_PERIOD_OF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z9 CLSD FOR A PERIOD OF 2 HOURS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9074/26",
+    "case": "QA510_BODY_MAX_HOURS",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD FOR MAX 2 HOURS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9075/26",
+    "case": "QA510_BODY_LAST_HOURS",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD DURING THE LAST 2 HOURS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9076/26",
+    "case": "QA510_BODY_FOR_24_HR",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD FOR 24 HR. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9077/26",
+    "case": "QA510_CONTROL_NOTICE",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD. PPR 48 HOURS. RE-OPN WI 2 HR. MAX RESTORATION TIME 04HRS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9078/26",
+    "case": "QA510_CONTROL_CRANE_HEIGHT",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 1800-2000",
+     "TWY Z9 CLSD. CRANE HGT 1800FT AMSL. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
    }
   ],
   "EGKK": [
@@ -1278,6 +1400,128 @@
      "TWY Z9 CLSD. OCA (OCH) 690 (441). CAT A 560 (347). SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9166/26",
+    "case": "QA510_BODY_OUT_OF_RANGE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD 2500-2600. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9167/26",
+    "case": "QA510_BODY_OUT_OF_RANGE_AGAINST_FIELD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z9 CLSD 0860-1060. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9168/26",
+    "case": "QA510_BODY_LETTERS_FOR_DIGITS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD 080O-100O. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9169/26",
+    "case": "QA510_BODY_SUFFIX_LETTERS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z9 CLSD 0800A-1000A. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9170/26",
+    "case": "QA510_BODY_DOTTED_SLASH",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD 08.00/10.00. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9171/26",
+    "case": "QA510_BODY_SPACED",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z9 CLSD FROM 18 00 TO 20 00. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9172/26",
+    "case": "QA510_BODY_H_MARKS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD FROM 18H TO 20H. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9173/26",
+    "case": "QA510_BODY_PERIOD_OF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z9 CLSD FOR A PERIOD OF 2 HOURS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9174/26",
+    "case": "QA510_BODY_MAX_HOURS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD FOR MAX 2 HOURS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9175/26",
+    "case": "QA510_BODY_LAST_HOURS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD DURING THE LAST 2 HOURS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9176/26",
+    "case": "QA510_BODY_FOR_24_HR",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD FOR 24 HR. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9177/26",
+    "case": "QA510_CONTROL_NOTICE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD. PPR 48 HOURS. RE-OPN WI 2 HR. MAX RESTORATION TIME 04HRS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9178/26",
+    "case": "QA510_CONTROL_CRANE_HEIGHT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z9 CLSD. CRANE HGT 1800FT AMSL. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
    }
   ],
   "EGCC": [
@@ -1915,6 +2159,128 @@
     "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
     "body": [
      "TWY Z9 CLSD. OCA (OCH) 690 (441). CAT A 560 (347). SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9266/26",
+    "case": "QA510_BODY_OUT_OF_RANGE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD 2500-2600. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9267/26",
+    "case": "QA510_BODY_OUT_OF_RANGE_AGAINST_FIELD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z9 CLSD 0860-1060. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9268/26",
+    "case": "QA510_BODY_LETTERS_FOR_DIGITS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD 080O-100O. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9269/26",
+    "case": "QA510_BODY_SUFFIX_LETTERS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z9 CLSD 0800A-1000A. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9270/26",
+    "case": "QA510_BODY_DOTTED_SLASH",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD 08.00/10.00. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9271/26",
+    "case": "QA510_BODY_SPACED",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z9 CLSD FROM 18 00 TO 20 00. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9272/26",
+    "case": "QA510_BODY_H_MARKS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD FROM 18H TO 20H. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9273/26",
+    "case": "QA510_BODY_PERIOD_OF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z9 CLSD FOR A PERIOD OF 2 HOURS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9274/26",
+    "case": "QA510_BODY_MAX_HOURS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD FOR MAX 2 HOURS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9275/26",
+    "case": "QA510_BODY_LAST_HOURS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD DURING THE LAST 2 HOURS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9276/26",
+    "case": "QA510_BODY_FOR_24_HR",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD FOR 24 HR. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9277/26",
+    "case": "QA510_CONTROL_NOTICE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD. PPR 48 HOURS. RE-OPN WI 2 HR. MAX RESTORATION TIME 04HRS. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9278/26",
+    "case": "QA510_CONTROL_CRANE_HEIGHT",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z9 CLSD. CRANE HGT 1800FT AMSL. SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": null
    }
