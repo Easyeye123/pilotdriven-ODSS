@@ -70,4 +70,9 @@ the two are bumped together whenever the parser's extraction changes.
 # table with no identified end holds its remainder; EDTO printings are reconciled and an ETP-named EDTO alternate with
 # no row is held by name. Genuine holdings are unchanged; a v16 analysis of a damaged table can lack the damaged row
 # and the rows after it (EDTO with no review), so a v16 analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-15-table-ends-structural-v17"
+# v18 (16 Oct 2026, QA510): v17, and the timing spec notam-timing-2026-10-16-v5 - a clock-like shape the grammar does
+# not read (out of range, a letter for a digit, suffix letters, a dot, colon, space or H separator, a partial range)
+# and a duration attached to the restriction (FOR, MAX, LAST, PERIOD OF, DURING) are temporal content and hold the
+# record for timing review, where v17 read them as no schedule. Analyses held under v17 can differ in schedule_review
+# (10 of the 2,989 unique records of the 30 held originals); a v17 analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-16-clock-like-temporal-shapes-v18"

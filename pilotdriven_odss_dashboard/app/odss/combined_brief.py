@@ -235,7 +235,12 @@ WAFC_CHARTS_PER_PAGE = 3
 # 15 Oct 2026 (v106, QA508-01 - Codex QA of release 508): v105, and an alternate table ends only at the LIDO layout's
 # own structure, never on what a cell holds: a lowercase, dotted or junk cell no longer closes the table and loses the
 # damaged row and the rows after it; a damaged EDTO row is held by name (from the ETP lines) with its review.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-table-ends-structural-v106"
+# 16 Oct 2026 (v107, QA510 - Codex QA of release 510): v106, and temporal content in a NOTAM's free text is found by
+# shape, never by validity: any clock-like shape (2500-2600, 080O, 0800A, 08.00/10.00, 18 00, 18H, ranges of them)
+# is temporal content the grammar must read or the timing is a review; a duration is benign only as a notice,
+# permission or restoration lead time; every benign class needs its stated context and never holds, cuts or abuts a
+# clock-like range.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-16-clock-like-temporal-shapes-v107"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

@@ -11,8 +11,9 @@ OLD_TOKEN = "2026-10-10-contingency-label-v9"
 # alternate row read, 15 Oct 2026), v13 by v14 (with QA502: one detector for schedule language anywhere in the
 # body, 15 Oct 2026), v14 by v15 (QA504-01: alternate tables bounded and every line accounted, 15 Oct 2026) and v15
 # by v16 (QA504 integrated with QA506: temporal content accounted for, fail closed, 15 Oct 2026) and v16 by v17
-# (QA508-01: an alternate table ends only at the layout's structure; EDTO rows recovered by name, 15 Oct 2026).
-NEW_TOKEN = "2026-10-15-table-ends-structural-v17"
+# (QA508-01: an alternate table ends only at the layout's structure; EDTO rows recovered by name, 15 Oct 2026) and
+# v17 by v18 (QA510: temporal content found by shape, durations benign only as notice lead times, 16 Oct 2026).
+NEW_TOKEN = "2026-10-16-clock-like-temporal-shapes-v18"
 
 
 def test_new_analysis_has_new_weather_extraction_stamp(stored):  # noqa: F811
