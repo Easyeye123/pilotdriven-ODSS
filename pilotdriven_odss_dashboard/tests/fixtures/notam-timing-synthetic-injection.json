@@ -554,6 +554,91 @@
      "TWY Z9 CLSD FEB 28-29 0800-1000. SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9057/26",
+    "case": "QA506_BODY_H24_AGAINST_FIELD",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z9 CLSD H24. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9058/26",
+    "case": "QA506_BODY_WEF_CLOCK",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD WEF 0300 UTC. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9059/26",
+    "case": "QA506_BODY_START_AFTER_C",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD WEF 14 SEP 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9060/26",
+    "case": "QA506_BODY_END_BEFORE_B",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD UNTIL 16 JUL 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9061/26",
+    "case": "QA506_BODY_BORROWED_HOURS",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "SAT 1800-2000 MON 0300-0500",
+     "TWY Z9 CLSD ON SAT BETWEEN HR 0300-0500. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9062/26",
+    "case": "QA506_BODY_EQUAL_HOURS_FIRST",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "SAT 1800-2000",
+     "TWY Z9 CLSD 1800-2000 ON SAT. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9063/26",
+    "case": "QA506_CONTROL_START_BEFORE_B",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD WEF 16 JUL 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9064/26",
+    "case": "QA506_BODY_LOCAL_TIME",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 1800-2000",
+     "TWY Z9 CLSD 1800-2000 LOCAL. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9065/26",
+    "case": "QA506_CONTROL_MINIMA",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z9 CLSD. OCA (OCH) 690 (441). CAT A 560 (347). SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
    }
   ],
   "EGKK": [
@@ -1108,6 +1193,91 @@
      "TWY Z9 CLSD FEB 28-29 0800-1000. SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9157/26",
+    "case": "QA506_BODY_H24_AGAINST_FIELD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z9 CLSD H24. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9158/26",
+    "case": "QA506_BODY_WEF_CLOCK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD WEF 1700 UTC. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9159/26",
+    "case": "QA506_BODY_START_AFTER_C",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD WEF 15 SEP 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9160/26",
+    "case": "QA506_BODY_END_BEFORE_B",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD UNTIL 17 JUL 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9161/26",
+    "case": "QA506_BODY_BORROWED_HOURS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "SUN 0800-1000 MON 1700-1900",
+     "TWY Z9 CLSD ON SUN BETWEEN HR 1700-1900. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9162/26",
+    "case": "QA506_BODY_EQUAL_HOURS_FIRST",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "SUN 0800-1000",
+     "TWY Z9 CLSD 0800-1000 ON SUN. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9163/26",
+    "case": "QA506_CONTROL_START_BEFORE_B",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD WEF 17 JUL 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9164/26",
+    "case": "QA506_BODY_LOCAL_TIME",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z9 CLSD 0800-1000 LOCAL. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9165/26",
+    "case": "QA506_CONTROL_MINIMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD. OCA (OCH) 690 (441). CAT A 560 (347). SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": "active"
    }
   ],
   "EGCC": [
@@ -1660,6 +1830,91 @@
     "body": [
      "FEB 28 0800-1000",
      "TWY Z9 CLSD FEB 28-29 0800-1000. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9257/26",
+    "case": "QA506_BODY_H24_AGAINST_FIELD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z9 CLSD H24. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9258/26",
+    "case": "QA506_BODY_WEF_CLOCK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD WEF 1700 UTC. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9259/26",
+    "case": "QA506_BODY_START_AFTER_C",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD WEF 15 SEP 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9260/26",
+    "case": "QA506_BODY_END_BEFORE_B",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD UNTIL 17 JUL 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9261/26",
+    "case": "QA506_BODY_BORROWED_HOURS",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "SUN 0800-1000 MON 1700-1900",
+     "TWY Z9 CLSD ON SUN BETWEEN HR 1700-1900. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9262/26",
+    "case": "QA506_BODY_EQUAL_HOURS_FIRST",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "SUN 0800-1000",
+     "TWY Z9 CLSD 0800-1000 ON SUN. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9263/26",
+    "case": "QA506_CONTROL_START_BEFORE_B",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD WEF 17 JUL 2026. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9264/26",
+    "case": "QA506_BODY_LOCAL_TIME",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z9 CLSD 0800-1000 LOCAL. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9265/26",
+    "case": "QA506_CONTROL_MINIMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z9 CLSD. OCA (OCH) 690 (441). CAT A 560 (347). SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": null
    }

@@ -104,8 +104,10 @@ LONG_REFERENCES = ["2027-08-16T09:00:00.000Z", "2028-02-29T09:00:00.000Z", "2028
 LEAP_REFERENCE = "2028-02-29T00:01:30.000Z"
 DASH_VARIANTS = ["‐", "‑", "‒", "–", "—", "―", "−"]
 # The count and digest the app pins too (same generator, same order).
+# QA506 moved the digest: a restated hours-only or days-only body is now a review unless it equals Item D on its own,
+# and all seven weekdays are daily.
 PROPERTY_COUNT = 32908
-PROPERTY_DIGEST = "9059870b9d5428f2cc67a5d20b4f71604d56c638ebcf49fafc55449d30227550"
+PROPERTY_DIGEST = "c00f8a4ad26f9be8ccb1223c4537313c2960f0ebdfb1db4f6925fb0d1be60e2d"
 
 
 def _cuts(text: str) -> list[dict]:
