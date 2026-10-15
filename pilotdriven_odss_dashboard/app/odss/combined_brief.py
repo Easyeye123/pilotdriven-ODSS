@@ -227,7 +227,12 @@ WAFC_CHARTS_PER_PAGE = 3
 # table is bounded by the LIDO layout and every line in it is read or held - a damaged identity, runway or cell, or a
 # wrapped row, never ends the table and never loses the rows after it; an alternate that is also the fuel-enroute
 # airport shows its card's TAF and alternate-window notice in the matrix instead of FORECAST/CONSTRAINT UNAVAILABLE.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-alternate-tables-accounted-v104"
+# 15 Oct 2026 (v105, QA504 integrated + QA506 - Codex re-QA of release 506): v104's alternate tables and dual-role matrix
+# rows, and the timing detector inverted to fail closed. Temporal content is found broadly, stated benign classes are
+# masked first, and every temporal token must sit in a statement read whole (days bound to hours) and proven equal on its
+# own to Item D or the whole validity, else a timing review; a start date must lie at or before B and an end date at or
+# after C.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-tables-accounted-temporal-fail-closed-v105"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

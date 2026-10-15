@@ -61,4 +61,8 @@ the two are bumped together whenever the parser's extraction changes.
 # airport when readable), a row wrapped onto the next line is read whole, the two printings are reconciled and a
 # route-line alternate with no row is held. Genuine holdings are unchanged; a v14 analysis of a damaged table can lack
 # alternates without a review, so a v14 analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-15-alternate-tables-bounded-v15"
+# v16 (15 Oct 2026, QA504 integrated + QA506): v15's alternate tables, and every temporal token in a LIDO record's text,
+# outside the stated benign classes, must sit in a statement read whole and proven equal on its own to Item D or the
+# validity, else the record is held for timing review. Analyses held under v15 can differ in schedule_review (80 records
+# in 28 of the 30 held originals); a v15 analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-15-tables-bounded-temporal-accounted-v16"
