@@ -7,9 +7,10 @@ from tests.test_saved_pack_current_rules_view import stored  # noqa: F401
 
 OLD_TOKEN = "2026-10-10-contingency-label-v9"
 # The current token; v10 (weather OCR) was superseded by v11 (item 3, LIDO Item D and validity, 14 Oct 2026) and v11
-# by v12 (QA500, Item D read whole and checked against the free text, 15 Oct 2026) and v12 by v13 (every printed
-# alternate row read, 15 Oct 2026).
-NEW_TOKEN = "2026-10-15-alternate-rows-read-v13"
+# by v12 (QA500, Item D read whole and checked against the free text, 15 Oct 2026), v12 by v13 (every printed
+# alternate row read, 15 Oct 2026) and v13 by v14 (with QA502: one detector for schedule language anywhere in the
+# body, 15 Oct 2026).
+NEW_TOKEN = "2026-10-15-alternate-rows-body-schedule-v14"
 
 
 def test_new_analysis_has_new_weather_extraction_stamp(stored):  # noqa: F811

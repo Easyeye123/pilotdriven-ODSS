@@ -52,4 +52,8 @@ the two are bumped together whenever the parser's extraction changes.
 # AIRPORTS row takes its last word as the minima only when it is minima-shaped; a row printed in either table that is
 # not read is held in alternates_unread. Analyses held under v12 can lack planned alternates (16 in 9 of the 30 held
 # originals) and their station NOTAM and weather records; a v12 analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-15-alternate-rows-read-v13"
+# v14 (15 Oct 2026, release 502 + ALTERNATES-PARSE + QA502 integrated): v13's alternate rows, and one shared detector
+# finds schedule-bearing language anywhere in a LIDO record's text; every statement must be accounted for or the record
+# is held for timing review. Analyses held under v12 or v13 can lack planned alternates and their records, or differ in
+# schedule_review; a v12 or v13 analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-15-alternate-rows-body-schedule-v14"

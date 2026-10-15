@@ -219,7 +219,11 @@ WAFC_CHARTS_PER_PAGE = 3
 # with a blank APPROACH or MINIMA column kept blank; an alternate printed that way (16 in 9 of the 30 held originals,
 # SQ279 all three) now has its NOTAM and weather analysis, airport card, matrix row and PDF lines. A row that cannot be
 # read is a stated review on the findings, in the alternate matrix and on PDF page 4.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-every-printed-alternate-v102"
+# 15 Oct 2026 (v103, release 502 + ALTERNATES-PARSE + QA502 integrated): v102's alternates and, with Codex re-QA of
+# release 502 (QA502-01/02), daylight, exception and holiday words, day words, dates and clocks in any connective form
+# anywhere in a notice's text are accounted for (a dated period containing the validity, or a run proven equal to Item
+# D) or the notice is a timing review; equivalence is proven, never sampled.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-printed-alternates-schedule-language-v103"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

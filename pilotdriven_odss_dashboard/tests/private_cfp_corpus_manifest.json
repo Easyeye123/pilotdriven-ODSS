@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "extraction_contract_version": 2,
- "extraction_rules": "2026-10-15-alternate-rows-read-v13",
+ "extraction_rules": "2026-10-15-alternate-rows-body-schedule-v14",
  "description": "Private physical-PDF release corpus. Files remain outside git; exact hashes make the gate reproducible and fail closed.",
  "extraction_baseline_policy": "Frozen and reviewed from fresh current full-analysis outputs of the exact SHA-pinned sources with live NOAA AWC disabled. Counts and SHA-256 digests cover all full ordered deterministic records. Any parser change requires deliberate evidence review and explicit remint; the release runner never derives or blesses these values. On 2026-09-09, 22 planning-publication digests were deliberately reminted after independent source-page verification of previously omitted inline PLAN QNH and PLAN WIND values. All source hashes, counts and other extraction digests remain unchanged; wind tokens are retained as printed without conversion. On 2026-09-19, five deferred_items counts and digests were deliberately reminted (SQ882-SIN-HKG-10SEP 5->7, SQ214-PER-SIN-19AUG 5->6, SQ606-SIN-ICN-06SEP 3->5, SQ322-SIN-LHR 2->3, SQ482-SIN-JNB 1->2) after the production audit found page-1 declarations the parser never extracted (labels beyond EE, the EN kind, unrecognised kinds). Each new value was checked against an independent hand reading of the source page cross-checked with Poppler (tests/fixtures/page1_source_declarations.json); the remint aborted unless every other pinned count and digest was byte-identical, and they were. Later the same day, after independent review, the SQ24-SIN-JFK-15AUG deferred_items digest (count unchanged at 1) was deliberately reminted: its one CDL no longer holds the general ZFW, EDTO, take-off and excess-fuel remarks printed after a paragraph break beneath it, which are now held in page1_remarks. Every other pinned count and digest was byte-identical. On 2026-09-22, two fuel_enroute_airports counts and digests were deliberately reminted (SQ303-BRU-SIN 52->50, SQ352-SIN-CPH 2->1) after the production audit found two NOTAM item-E lines being read as aerodromes. A LIDO item-E body sits inside the appendix the station scanner walks and prints in the same AAAA/BBB name shape a station header uses, so 'ELEV/HGT (FT) - 135/153' and 'DVOR/DME STJ 113.200MHZ/CH 79X U/S' were published as airports and the dashboard's Jump to airport offered both. The removed identities are exactly ELEV and DVOR, in exactly the two corpus files whose sources contain those lines; the other 27 files' station lists are byte-identical, no file lost a genuine aerodrome, and every other pinned count and digest was byte-identical. Each new value was checked against an independent recomputation from the source PDF before the remint was accepted. Evidence: output/pd-boss-fixes-20260922/b5-odss-station-identity/. On 2026-09-23, after the independent production audit of release 402 found the fuel-enroute section of SQ365 running on into its EDTO ADEQUATE ENROUTE AIRPORT(S) section, the airport-section heading pattern was completed to every heading the 28 held OFPs print (EDTO/ETOPS suitable and adequate, bare adequate, CRITICAL EDTO AIRPORTS, EDTO ENROUTE ALTN AIRPORTS, DESTINATION ALTERNATE(S)) and 25 cases were deliberately reminted. Five had held every station after their fuel-enroute section as a fuel-enroute airport with its notices and weather: SQ365-FCO-SIN fuel/notams/weather 35/206/154 -> 1/62/17, SQ605-ICN-SIN-08SEP 17/128/77 -> 1/42/13, SQ303-BRU-SIN 50/289/212 -> 1/64/17, SQ214-PER-SIN 7/56/46 -> 1/41/16, SQ482-SIN-JNB 15/122/66 -> 1/56/22 (the weather list runs FUEL ENROUTE, CRITICAL EDTO, ADEQUATE). In every one of the 25 the last notice before a heading the pattern had not named had that heading appended to its text (SQ352 EKCH SX1/26 ended 'DESTINATION ALTERNATE(S)', VOMM 1G1146/24 'EDTO ADEQUATE ENROUTE AIRPORT(S)'); only the notams digest moves on the other 20 and the counts are unchanged. Each new value was recomputed by this runner's own snapshot from the full corpus run on the fixed tree; a verifier classed every changed record as either a removed fuel-station record, a dropped heading tail, or the false fuel source_role removed from a retained weather record at a planning station the source does not file as fuel-enroute (SQ303 VTBD/EDDM, SQ365 EDDM, SQ482 WIMM/VCBI/FIMP; text, other fields and order unchanged), and required every other pinned count and digest, and every planning station's applicability windows, byte-identical - they were. 50 pinned values move in 25 cases. Live NOAA AWC weather is not pinned. Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r9-adequate-roles/. On 2026-09-24, after the independent production QA of release 418 found the genuine SQ366 and SQ23 OFPs printing TIBA / contact / voice instructions the parser never held (it admitted only FIR-headed CPDLC / ADS-C notices), the notam_procedure_records counts and digests were deliberately reminted in 24 cases: the parser now holds every record under a FIR or airway-segment heading whose body prints a communication instruction (contact / CTC / call, establish or maintain contact, report position, monitor a frequency, comply with TIBA / broadcast / transmission, logon, CPDLC / ADS-C) and each record carries heading_kind, fir and segment. A verifier over this runner's own full corpus run on the fixed tree, against the release-418 gate-6 analyses, required every previously held record to be retained with identical identity, validity, heading, page and text (it was, in every case), classified every added record by heading kind and instruction kind ({'fir/voice_contact': 22, 'fir/tiba_broadcast': 16, 'segment/tiba_broadcast': 11, 'segment/voice_contact': 10}), and required every other pinned count and digest to be byte-identical (they were). No source hash, route hash or other extraction field moved. Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r20-atc-source-coverage/design/remint-verifier-report.txt. On 2026-09-26, after the independent production QA of release 432 found the genuine SQ322 Kabul notices (1G272/26, 1G216/26, 1G197/26) held under the previous airway-segment heading because 'OAKX  KABUL FIR' is printed at the foot of p70 with its underline on p71, the NOTAM heading readers were made to read across page breaks and every procedure record was given heading_page (the page its heading is printed on); the notam_procedure_records digests were deliberately reminted in 24 cases (counts unchanged). A verifier (remint_verifier.py) required release 432's own gate-6 analyses to reproduce every previously pinned value, required every other pinned count and digest to be byte-identical on the repaired tree, and classified every record: 121 gained only heading_page and 3 changed owner - exactly the three SQ322 Kabul records, each now under the heading an independent poppler-text oracle names (124/124 records agree, heading and page). Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r26-heading-ownership/corpus-audit/. On 2026-09-27, after the independent QA of release 436 asked for ATC/FIR completeness under headings such as 'UBBA BAKU FIR LOWER' and 'KZNY NEW YORK DOMESTIC LOWER', the NOTAM heading readers were made to recognise FIR headings that name the airspace part (FIR/UIR followed by LOWER, UPPER, OCEANIC or DOMESTIC, and DOMESTIC or OCEANIC with LOWER or UPPER), kept as the record's `airspace`, and to hold notices under enroute topic headings (heading_kind 'topic', owner not established); the notam_procedure_records counts and digests were deliberately reminted in 7 cases. A verifier (remint_verifier_r28.py) required release 436's own gate-6 analyses to reproduce every previously pinned value, required every other pinned count and digest to be byte-identical on the repaired tree, and required all 124 previously held records to be kept byte-identical and in order; the 14 added records (11 under airspace-part FIR headings, 3 under topic headings) each sit under the heading and page an independent poppler-text oracle names (138/138 records agree). Evidence: output/pd-boss-fixes-20260922/residual3-20260923/r28-remaining-gaps/corpus-audit/. On 2026-09-30, after the independent ITEM1 source/body/owner/label/page, admission, condition and saved-source review cleared freeze4 SHA 7ef7fe8e2a3e83df713591affddc4b0399e880537a1973e5fdfb6cfa3de06bd1, only notam_procedure_records counts and digests were deliberately reminted from the exact 28 unchanged originals. All 138 previously held full ordered records retain every original field and value; 177 source-backed records were added, yielding 315 held and 315 composed. Structural headings and qualified communications/aircraft-control duties are retained without inventing applicability, calls, channels or crossing times. Owning headings and literal series labels are separate provenance; incompatible series prefixes remain unassociated. Every unrelated extraction count/digest, route identity and source hash is unchanged. Evidence: output/pd-item1-atc-repair-20260930/freeze-4/extraction-delta-verification.json and output/pd-item1-atc-qa-20260930/LOCAL-DONECHECK-freeze4.md. These local corpus pins do not establish production acceptance. On 2026-10-01, after the independent production QA of release 444 found SQ23 CO188/02 (LTAA ANKARA FIR p106: a crew refusal of Ercan-issued clearances and a contention-conditioned clarification from Nicosia Control) in the normal raw FIR source but absent from the structured ATC record, and the same enumerated-verb gap dropped the SQ605/SQ606 NON-RNAV radar-vector requests to DAEGU/INCHEON ACC, the parser admission (extraction v7, ATC-CLEARANCE-FAMILY) was extended to a request, clarification or confirmation addressed to an ATC unit and the refusal or acceptance of an ATC clearance or ATC instruction, on positive ATC evidence only. Only notam_procedure_records counts and digests were deliberately reminted, in exactly 11 cases: 13 records were added (CO188/02 x9 at its own LTAA heading and page in SQ23, SQ303, SQ304, SQ314, SQ322, SQ326, SQ352, SQ365 and SQ366; 1Z624/26 under SOT SONGTAN in SQ605 p60 and SQ606 p72; SX62/26 and SX40/26 under PSN BUSAN in SQ606 p75). All 315 previously held full records are byte-identical and in order; every other pinned count and digest and every source and route identity is unchanged. Each added record's heading, page, validity and full body equals the independent original-source acceptance packet (output/pd-item1-atc-repair-20260930/support-readonly/CO188-ACC-acceptance-20261001/SOURCE-ACCEPTANCE.json); the CO188/02 bodies on the other eight originals are identical to the SQ23 p106 body it checks. Evidence: output/pd-item1-atc-repair-20260930/clearance-family-20261001/extraction-delta-verification.json. These local corpus pins do not establish production acceptance. On 2026-10-10 (releases 468 and 470), after Codex's QA of releases 466 and 468, the route identities were deliberately reminted twice for parser repairs: a LIDO '**ETP<n> -1D' scenario row closes the waypoint before it (12 flights' route_waypoints digests; counts unchanged), then ARINC lat/long fix names, a lone first navlog row, EXITI and the blank MSA column (route hash and count moved for SQ304, SQ23, SQ297, SQ34 and SQ365; every flight's route_waypoints digest moved because a destination row prints no MSA). Evidence: output/pd-odss-guidance-etp-20261010/ and output/pd-odss-navlog-qa468-20261010/. Both remints moved identities under the unchanged extraction v7, so a pack saved before them reopened as a current extraction (Codex F9). Extraction is now 2026-10-10-navlog-etp-rows-v8, this manifest records extraction_rules (the token its identities were minted under) and scripts/mint_corpus_case.py refuses to write a refresh that moves any identity under that same token. The v8 remint moved no count, digest, route or source identity. Evidence: output/pd-f9-f10-20261010/. These local corpus pins do not establish production acceptance. Later on 2026-10-10 (extraction v9, F13 of Codex's QA of release 472), the page-1 contingency line was read in its printed percentage form as well ('3% CONT 00.23 002497' on SQ314 SIN-LGW 15 Aug, which held no contingency before) and every contingency row now holds its printed label. A remint under the unchanged v8 was refused by the mint for all 28 cases and wrote nothing; under v9 only the planning_publication digests moved, in all 28 cases (the label on each contingency row; SQ314's row is new), and every count, other digest, route and source identity is unchanged. All 30 originals now hold their contingency and verify their page-1 arithmetic. Evidence: output/pd-f11-f13-20261010/. On 2026-10-14 (extraction v11, PD item #3, Gatwick timing), the LIDO station-record readers became the shared ones (app/odss/notam_timing_rules.json, byte-identical to the app's notam-timing-rules.json): Item D is the record's leading schedule lines joined, a schedule-like line inside the free text is a review instead of a second schedule, and an absent end is a review instead of an open end. Only the notams digests moved, in 16 of the 28 cases, and every count is unchanged: across all 30 originals 30 records in 18 files changed, each only in schedule, schedule_review, validity_review or valid_to, with every other field, every other record and the order byte-identical (output/pd-item3-timing-20261014/corpus-remint/notam-record-delta.txt). Every other pinned count and digest and every route and source identity is unchanged (output/pd-item3-timing-20261014/corpus-remint/manifest-delta.txt). These local corpus pins do not establish production acceptance.",
  "cases": [
@@ -33,7 +33,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "d63dbea4c7d71e2a53762d2db0baf89be07a78e5325b4f399d0cd95a10c2f3ae",
+     "notams": "f007bf9430acf501e22565482c952f4cd35172470b647347316205ed33454f67",
      "weather": "0f5628f4d6b00a0448563756f5b68dbe2474d6bb86748000eb011533918e57d6",
      "alternates": "783af50ccf71cd6c45bd4b76ba6a17820b236412ee01c697491d6a7f6432c0ad",
      "deferred_items": "0183b22bc39d341a31fcf8c87cf46d48670822948dc768a0b0c3744cd8d37b37",
@@ -76,7 +76,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "4c10d7b3a0c04dfdd9634ab380fc3f41d993dacb94c86c440b030f91efcce7e4",
+     "notams": "185ab74d96e0c6fbecafddc2548417c2efa4af9bffcb72ac5e4f0504a48c38a2",
      "weather": "c428c953c1ac258e4950b10b1191ecb6ee76ce066140c37af0c5be4aafbfd2df",
      "alternates": "69076fdb860bf4254ea6d895250c47a53d9b03299dd3ca2ad5d62b7a8e916419",
      "deferred_items": "0b9dc0d7a292d031805a92552367f9a4f2404f6f352ef597f6ba29556f956a70",
@@ -119,7 +119,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "1c25ce108c73c7d9c5b7253431d8a0684e3dc2a1630895639099da6bc0d30801",
+     "notams": "5280aa808da41a4a48d3df824b0be0781171597f0b85049de3012b6f510e778c",
      "weather": "5844e78ad7afaca457e3a7d1ce0da2ae1ea5e37cc2b9d555c4ef39a7ca6c96df",
      "alternates": "f8a95e642e2fe8e84b891188f9eacef962d3e62d89ccafc814aca8ded776bdb6",
      "deferred_items": "f190c4c2073a874f5caf9effebe3be6981c25551e50ee236bea41019bda0092e",
@@ -205,7 +205,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "02f5e3bbf33c5bdee176779d6151541b68518f87a1fdf8cb9dcbce00327e060c",
+     "notams": "e85349da2581b90bed8bc62fdbfd9e79d79e7cc3e7ed65dd790906062cf525cd",
      "weather": "421f37a67e9f0ed806c2ccab6750c66633fab1ecee127a803a728784da844fed",
      "alternates": "95adfa13f640d3219382d8a5e7a7ab26a6c888cf9f474b3b5a9aff038a12a853",
      "deferred_items": "3f7f48446b51ccd7663465e2d957da5ac6a08f836279a58cd3151b8ee1b80066",
@@ -291,7 +291,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "4fb7e37e519e0665c38dc44fa80d3a87c0727f572afc77f3d98412c3d9f0c12d",
+     "notams": "5fadb65f58d586271be40f0f4b83fa557466cb7d12008661d18e2bfecbc6d0fc",
      "weather": "e29b90df74ffc253fcd4a6b6ad67cfbad7a020defce75363b948be21210e78a4",
      "alternates": "288f7f225355337ffdc6e2d99d9d668d9e0380c6a719d6ee956550477201dedf",
      "deferred_items": "7c4abb55f6fe86369b544054b9f320fb52225517e5f8779330852796197f70e6",
@@ -334,7 +334,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "191ce8086ace3cede82477a988d3f31560e26e3836d56ecb8ddaf362f639cb0b",
+     "notams": "7775d4eb366cfd2b693a01a036f3b9ec67f5c9cd7c6403651eba7464235b750c",
      "weather": "50c7438306676014f269fe8d16bb7c81d31d8f9bfb6daa82d9a2e417641c6f58",
      "alternates": "dd69bf0220c6553e9efe9653e45513fae9f19aac2aff7fa5855890290032cc9c",
      "deferred_items": "a16cb468f932caf5c1c236d7ed52191cc993161cb214db49f5e7927856b6a2c3",
@@ -377,7 +377,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "1cf7ed8234b102feeefe0933927f07394b6e45db3476ca857a51cf239d28a8e0",
+     "notams": "0eefdcbe3099738476e003fd9e6c442952a77263dd08c13e81bb9fb75eedb00f",
      "weather": "daae8c517170d4ce7e7900cca4612e3460bdd4b7a6a2675abeab5b8f18a11e7a",
      "alternates": "80aa021da895203e713df9894cdc686aa30225d762ac9f674b91cc709a64fce6",
      "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -420,7 +420,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "5df67ddc2b433dea52db12d5f3f8c16e0d22eb5fc278b4506db06987b62513aa",
+     "notams": "fe75910950ba3770f015040e46ec9a0b61862b4fe5a2a024a8010ef6d4bf0f4f",
      "weather": "897ae460ae35f8fabb763cb059e8f1728a2e9df76122496ebe66e41080957604",
      "alternates": "34d77872f5207ffee40353a3eee4a7e97781d28b9b1297d516d6e5deb7381508",
      "deferred_items": "fc900a86121249debcd8bf17d7bfc1a6ade5d03d8b1fe9ccd87d00607854b6f3",
@@ -463,7 +463,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "6437b853c929817210ef3ab28ad14a5886f8bbbf790f20f553d6779e1b85ab9d",
+     "notams": "1a6ac260ccd7546a06195ad9460f65044a43ff51c8cbdee33f4a7ec5e47a98bf",
      "weather": "3ebee3874ec63a2011afe5c6b454ae34485eb3e1afdf294782ea5fa1ab3157ca",
      "alternates": "36a5e336f0f0098ca545f4705c144f68cea4f535780572adcd26761062489502",
      "deferred_items": "1321a574fe109497b8c391cf276eeeb0718f2e427e92b17eefc7be5acbea7f4c",
@@ -506,7 +506,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "8b29b1a0ecc7c5ab50aa2d7fe3ccb8e4f1e05070afd378e277ed81933b7ca252",
+     "notams": "80c12887228a1de1ef08d9ee77e591b3f61e5e1f15d6c8977df5553d9c35b8eb",
      "weather": "f23236c20562b2953307ccdc49bbf091815e6341a84fb57cc40540ed6a44cbd2",
      "alternates": "7b217e90572e17d22f7548b244acf0a3c15f1ed9639aae89ba530c009a8c19aa",
      "deferred_items": "a24267045327e2fe9e7c44fb6318d212bd72d7404b016e7997cda04925bd636e",
@@ -549,7 +549,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "517818926777c105799b234b3a657ba07b414a0cd664ef946815ebbaf31a0cc8",
+     "notams": "5b5cf288b2d172a1a509d49ca3271843e5056b367c8447899dad4e7cb303d6fb",
      "weather": "9fcd9c94a96b583a2f804d5e4e1970e731af7ba4ffc94ebb8aa3ab8f2e2fc761",
      "alternates": "fd33a12079a7a3241137db82af5a5c0ed5c2954d18b5ca34a9e2cbb314176f49",
      "deferred_items": "024f4cef5f720c6c47304020c4b399b257d8f9c3b443be6ad268f16706655265",
@@ -592,7 +592,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "c53fe6226c22169d9fcd1483f5285ac5aeb76483cc21e3e97f2e48e5a164115f",
+     "notams": "7ebae72a4e9f43fd763fab8ea39de9b489ce3285f59b0b54b80723000e6af326",
      "weather": "b55e988b54f5d56b656eb6b77989fd9dd21637c5b7a9b3636758f39e72417376",
      "alternates": "b1a98239764554434d76aede17d0957af04c03d422a36cbb72910b52a3f693ad",
      "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -635,7 +635,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "a7748a6afd11d59e55d26eb169fafd50609144a67c2f9482fbe061b32430df36",
+     "notams": "183d4548258b6eb220c873d05f870a906e3ddf52a9582766e615b701ea0eeab7",
      "weather": "ae415cf0b1242093e7b7dc5456de0626fc6fa547f17b6be81136bbf1909d48b2",
      "alternates": "294476f5c8f53959a7e10bf0c0b2e1af98436c1dc8908c668be719ad3b7ff67c",
      "deferred_items": "5b5e15c22aa0eba47cb094f439174cda899d9eaaf5bca319f391af7a28551216",
@@ -678,7 +678,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "34a2badc24bbfc330353d73263aa7ebb9b1b9e68a5c6aee4a12d599f7f718c66",
+     "notams": "aa17303e7fdf9d417fbc381dd9cce29de7f60d248983420b01a6e0f08a8100e1",
      "weather": "d9aa842196288e9f42d337d2f8e717429e2cf6b8644a6043c683f673c31cf033",
      "alternates": "6f3db68ba37a30e013d2b5d5bead5f4e8cddf7c1c824f3458d8c7e9a8cb9ca79",
      "deferred_items": "392baf0d8d564874a567d50aa2fa0d98d3ef0f086a14ea53f06cb7577051282c",
@@ -721,7 +721,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "e03e3ef222610ad0f3f45faa8b8ca4aab5fa3376ecaae81ee8f88339ddd15201",
+     "notams": "ff7472282bdaca7604c44245a4cce7c98fdbe55599b2dd9382eed13da091049e",
      "weather": "af6cc4c06d68c5de4c60c8c0e964f70c7859311859a9e98a1c10340cac7b4889",
      "alternates": "7d99a903d679770e1008dbe0facaaad69971b0c1da75e6ca1ca34f2e949d5cae",
      "deferred_items": "492924b28aac8df0d3cb05015e81328b713cd639a1c5aa98b64fe2d9b0fec14e",
@@ -764,7 +764,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "8f15abbe3ea661486e3c5510ef0416ac2f13a3c0b39188cddca5966246e9a396",
+     "notams": "820eba015f42d1984d5abf3df0daa7ce5edeed81072f67ae10d5499014d209ee",
      "weather": "fe7f2893b59385f2ace8cd99f98621a2b6af86e17ee6b9ac4ec592ed0e182ee7",
      "alternates": "b13534685adc73b96c0803c0fb44c52ccbbcb15257a278c6e98ff659881da3d5",
      "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -807,7 +807,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "8d521088e5f6d62e8fff235f65ccbcec1931c9adfd510372c3f659aa2cf111df",
+     "notams": "274d1dcc59d8d808fe8c602d39d1300c09f394f345a176b0d90be865e5bc8aae",
      "weather": "5be9b67d7008c9f00f718f088c328b5ca29d83cb98f4450c0a53a703f2df331a",
      "alternates": "7e986c29d5bd40396e9ae6f4c6d2f9194bc777bbd8295d78c81a12f468f81f05",
      "deferred_items": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -850,7 +850,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "44f82d5694ee2ce2286e962666fbffc983d5f8c46819c6503ee58e8b715e9305",
+     "notams": "87a9a44be0fa3032bd2c7f239f6cbb1415f5fde21dcb2851500037a69b17c33e",
      "weather": "b188d1a08ce42b3cd696b345224d399da5f84dd6473deb5e6e52f9854b873371",
      "alternates": "767cd949307d49e550680d3bf628e4fa3d98af2ccdddddebb9ebf7374cd9c041",
      "deferred_items": "3b6e05499f4570d32a6a04cb906f7854276019edf3f4a5e466205f394a18448a",
@@ -893,7 +893,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "a9e47cffa657585b830879daf02ea67e7fe2ffa13ef0c539a1a3dff4b8772aaa",
+     "notams": "1158d773a731a64be29a9378324e8aceae7b29e2c54f882c856abb5cec688a6c",
      "weather": "cced751f0bf1158bf7da43151ea245d8b2a2bd675ea31929e21450502c8c90fd",
      "alternates": "0e10a411902ce4ba3a018b1891951a2aa22d6ca957e22805995c01d196bf0b3b",
      "deferred_items": "d04e2a32d7a1829ee176c0d13369005112a1a262246f730d34ed30f893e2fbef",
@@ -936,7 +936,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "c7cf30f320d458ad11d8c00324179902158635d16d0acc2ac555228a45c9da90",
+     "notams": "685a86fe8194ba37774d1a0b7e097bf3473d9cb49b6f2f2732e63545768e9c66",
      "weather": "d29d9d2ad23aa1c4f7c7e937daa8f73fb779b429c71b4e5e20c602861656fc86",
      "alternates": "669ae9f72136678fa2a93a5b10e6a81213cbe404710d61c6eab6b35a8b96bc4c",
      "deferred_items": "8f0e645f575edaf25ff9c7c3276597160bdbec5176b6f034f61f8ac8e3623027",
@@ -979,7 +979,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "b2f5f7a7f9d990c4b3e211fc31ccb2ca62b4668a783a795503c6c10bd04ae859",
+     "notams": "9731944b2e0e0888083613989ced06d5a742dc5d5f928b783a75309529551cb6",
      "weather": "a8111baf7784ce01254c6540c05feab023b755059b2518eaa46e1ff6b4d69192",
      "alternates": "cd88010295e71a141d620db274e3fa4bcbf245c0587bdfc26c57b90aef536a4f",
      "deferred_items": "786b4c469b3010bebbae9a82637b0c41be8aa22dd5407ddf350002425f72efd0",
@@ -1022,7 +1022,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "45d8e2bedb1a4430c15e6f231cdf9a6bf0cf6768cb0a269ca095f83ee773ba35",
+     "notams": "f9d4fd41b0600e9a6f986f39a0e8189ca74aa644e06863f26334a3e2ffa65f90",
      "weather": "10c909e364674b7dc3be41be272bbb3c3db1de2142c0a6aba05d05451673f1b6",
      "alternates": "d6ad115323bfb4dae81d85c93c09fb544f94f6ce4bf2606114d76f87ee54e730",
      "deferred_items": "800fbdc5c3b5ffbfe694d2da627e7a2659a3de11603deebf49216a123344e959",
@@ -1065,7 +1065,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "b5c5483998452b4ca3d93feb08dc0c514ce8fbd27f36775161a63ef9397595e1",
+     "notams": "a54b3bdf1a902f6e5126d43dbab133182ba989f37ea79fe74af6f76512ab3d4b",
      "weather": "d5a9d1b1b574fa331ca47671b5e9b4ca2dbc4fc4e7e03fdca639063d2e39c514",
      "alternates": "dfc2fa79712104a41aa8c4dabc4610bc25751b182f37a66eaedc092ca1c80289",
      "deferred_items": "5ae75ea85c6e4a30f2d85ff45c51495cccfe756c7170d63027a8eb89bdaa1b6a",
@@ -1108,7 +1108,7 @@
      "planning_publication": 1
     },
     "identity_sha256": {
-     "notams": "af2b66afb34f253dfb2cfb4e6c33394795fdc80c3efb992f2115033d32c49eb4",
+     "notams": "0cc383ce37ef4f104e0cf8f3deb2c638015da501570c9504d08adc81a53c00a4",
      "weather": "b1aea018265a4ce6f5ca533822d6b6fecc0644c4682a01f17ad16718f504ddc1",
      "alternates": "1c4a42430eab651515657c9c8f8d4e8dd21207bf0fc5ffcc112ec18911e93265",
      "deferred_items": "6c7027b115e14af753ee015c3ca00acbdbc8366fda263e2216af9d32f0c93587",
