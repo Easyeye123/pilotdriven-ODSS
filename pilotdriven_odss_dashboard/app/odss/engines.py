@@ -386,14 +386,19 @@ def _weather_source_reference(
 def _alternate_row_not_read_finding(row: dict[str, Any]) -> tuple[dict[str, Any], str]:
     """A row printed in an alternate table that the parser did not read: a stated review, never an absence."""
     edto = row.get("table") == "edto_alternates"
-    airport = str(row.get("airport") or "an alternate").strip().upper()
+    airport = str(row.get("airport") or "").strip().upper() or None
     page = row.get("source_page")
     where = f"OFP p{int(page)}" if isinstance(page, int) and not isinstance(page, bool) else "The OFP"
     kind = "EDTO alternate" if edto else "planned alternate"
     analysis = "EDTO checked-period" if edto else "NOTAM, weather or fuel"
+    printed = str(row.get("text") or "").strip()
+    # QA504-01: a line inside the table whose airport cannot be read is held as printed; no airport is named for it.
     summary = (
-        f'{where} prints {kind} {airport}, but its row was not read: "{str(row.get("text") or "").strip()}". '
+        f'{where} prints {kind} {airport}, but its row was not read: "{printed}". '
         f"{airport} has no {analysis} analysis here; read it from the OFP."
+        if airport
+        else f'{where} prints a line in its {kind} table that was not read: "{printed}". '
+        f"The {kind} it belongs to has no {analysis} analysis here; read it from the OFP."
     )
     return finding(
         "edto" if edto else "qa",

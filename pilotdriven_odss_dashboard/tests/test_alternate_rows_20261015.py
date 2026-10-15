@@ -100,14 +100,14 @@ def _row(airport, runway, approach, minima, distance, time, fuel) -> dict:
                  _row("ZZZZ", "09", "CAT1DME", "200FT", 85, 20, 1802), id="synthetic-feet-only"),
 ])
 def test_an_alternate_row_reads_each_column_it_prints_and_keeps_a_blank_one_blank(line: str, expected: dict) -> None:
-    pages = [f"{HEADER}\n{line}\n\n\nZZZZ RTE: WSSS DCT\n"]
+    pages = [f"{HEADER}\n{line}\n\n\n{line[:4]} RTE: WSSS DCT\n"]
     assert _parse_alternates(pages) == [expected]
     assert lido_parser._alternate_rows_not_read(pages, 1) == []
 
 
 @pytest.mark.parametrize(("line", "why"), [
-    pytest.param("ZZZZ/09    VORDME    3000FT/5000M 0085  140 M003  0020", "FUEL wrapped onto the next line",
-                 id="synthetic-wrapped"),
+    pytest.param("ZZZZ/09    VORDME    3000FT/5000M 0085  140 M003  0020", "FUEL not printed",
+                 id="synthetic-fuel-missing"),
     pytest.param("ZZZZ/09    VORDME    3000FT/5000M XYZ 0085  140 M003  0020 01802", "a word after the minima",
                  id="synthetic-word-after-minima"),
     pytest.param("ZZZZ/09    1234      0085  140 M003  0020 01802", "a bare number is never an approach",
@@ -117,7 +117,9 @@ def test_an_alternate_row_reads_each_column_it_prints_and_keeps_a_blank_one_blan
     pytest.param("ZZZZ/09", "nothing but the airport", id="synthetic-bare-airport"),
 ])
 def test_a_row_inside_the_table_the_grammar_cannot_read_is_held_as_a_stated_review(line: str, why: str) -> None:
-    pages = [f"{HEADER}\nZZZY/27    CAT1DME   200FT/550M   0085   060 P003   0021 04014\n{line}\n01802\n\n"
+    # QA504-01: this fixture used to carry a stray "01802" line after the row, which closed the table unread; every line
+    # inside the table is now accounted, so the stray line has its own test below.
+    pages = [f"{HEADER}\nZZZY/27    CAT1DME   200FT/550M   0085   060 P003   0021 04014\n{line}\n\n"
              "ZZZY RTE: WSSS DCT\nZZZZ RTE: WSSS DCT\n"]
     assert [row["airport"] for row in _parse_alternates(pages)] == ["ZZZY"], why
     unread = lido_parser._alternate_rows_not_read(pages, 7)
@@ -187,7 +189,8 @@ def test_an_edto_alternate_row_keeps_a_blank_column_blank(line: str, approach: s
 
 def test_an_edto_row_the_grammar_cannot_read_is_held_as_a_stated_review() -> None:
     text = (f"{EDTO_HEADER}\nWIMM     1940-2257           05            CAT1DME           407FT/1600M\n"
-            "ZZZZ     19:40-2257          05            CAT1DME           407FT/1600M\n\nSTATION WEATHER REPORTS\n")
+            "ZZZZ     19:40-2257          05            CAT1DME           407FT/1600M\n\nSTATION WEATHER REPORTS!\n"
+            "-----------------------\n")
     assert [row["airport"] for row in _parse_edto_airports(text, DEPARTURE, ARRIVAL)] == ["WIMM"]
     unread = lido_parser._alternate_rows_not_read([text], 9)
     assert [(row["airport"], row["table"], row["source_page"], row["position"]) for row in unread] == [

@@ -105,7 +105,7 @@ def test_sq23_positive_edto_requires_parsed_operational_evidence() -> None:
     flight = parse_lido(
         _lido_pages(
             "SQ23",
-            "EDTO INFORMATION\nWIMM 0900-1200 23 ILS 200FT",
+            "EDTO INFORMATION\nEDTO ENROUTE ALTN AIRPORTS:\nWIMM 0900-1200 23 ILS 200FT",
         ),
         "SQ23-controlled-cfp.pdf",
     )
@@ -169,7 +169,7 @@ def test_explicit_nil_conflicting_with_operational_data_requires_review() -> Non
     flight = parse_lido(
         _lido_pages(
             "SQ722",
-            "EDTO INFORMATION\nEDTO STATUS: NIL\nWIMM 0900-1200 23 ILS 200FT",
+            "EDTO INFORMATION\nEDTO STATUS: NIL\nEDTO ENROUTE ALTN AIRPORTS:\nWIMM 0900-1200 23 ILS 200FT",
         ),
         "SQ722-conflicting-cfp.pdf",
     )
@@ -193,7 +193,7 @@ def test_summary_non_edto_declaration_is_recognised_with_source_page():
 
 
 def test_non_edto_summary_cannot_override_positive_operational_evidence():
-    pages = _lido_pages('SQ605', 'EDTO INFORMATION\nWIMM 0900-1200 23 ILS 200FT')
+    pages = _lido_pages('SQ605', 'EDTO INFORMATION\nEDTO ENROUTE ALTN AIRPORTS:\nWIMM 0900-1200 23 ILS 200FT')
     pages[0] = pages[0].replace('SUMMARY EDTO CFP', 'SUMMARY NON EDTO CFP')
     assessment = parse_lido(pages, 'contradiction.pdf')['edto']['assessment']
     assert assessment['status'] == 'review_required'
