@@ -5,6 +5,7 @@ from hashlib import sha256
 from datetime import datetime, timezone
 from typing import Any
 
+from . import table_cells
 from .constants import MONTHS, OPERATIONAL_KEYWORDS
 from .notam_timing import read_lido_schedule_field, read_lido_validity
 
@@ -189,33 +190,81 @@ def _weather_section(pages: list[str]) -> str:
     return "\n".join(pages[start:end])
 
 
-def _fuel_enroute_stations(section_text: str) -> list[dict[str, str]]:
-    """Read station identities only from a dedicated fuel-enroute section.
+# QA512: a fuel-enroute station row is the row of the FUEL ENROUTE AIRPORT table - its ICAO and IATA cells are
+# validated like every other promoted table cell (table_cells). The cells are taken as printed, before any case folding,
+# so "vtsp/HKT" is an invalid ICAO cell in both runtimes rather than a station in one of them.
+_STATION_ROW_CELLS = re.compile(r"^\s*(?P<icao>[^\s/]+)\s*/\s*(?P<iata>[^\s/]+)(?:\s+(?P<name>.*?))?\s*$")
+_FUEL_ENROUTE_RULE = re.compile(r"^[=\-_*+]{5,}$")
+_FUEL_ENROUTE_ROW_NOT_READ = (
+    "the station row is printed under the FUEL ENROUTE AIRPORT heading but {problem}; the airport is not analysed as "
+    "the fuel-enroute airport here and no value is assumed"
+)
+_FUEL_ENROUTE_ROW_GRAMMAR = "the station-row grammar (ICAO/IATA NAME) does not read it"
+_FUEL_ENROUTE_ROW_FAILED = "reading it failed ({error})"
+
+
+def _fuel_enroute_section_rows(section_text: str) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+    """Every station row of a dedicated fuel-enroute section: read, or held naming why (QA512).
 
     An ICAO-like token elsewhere in a bulletin is not enough.  The section
     heading opens the scope and the next airport-section heading closes it,
     which keeps the discovery generic without promoting route or FIR text.
+
+    Inside it a station row is the first line under the heading (LIDO prints the
+    station there in both appendices), any line underlined by a dashed rule (the
+    NOTAM appendix's station header) and any line that reads as a station. A row is read only when it
+    reads whole and its ICAO and IATA cells are valid; otherwise it is held with
+    its printed text, its airport when the ICAO cell is valid, and the invalid
+    field named. Reading one row can never fail the section: any error while
+    reading it holds that row.
     """
     stations: list[dict[str, str]] = []
+    held: list[dict[str, Any]] = []
     seen: set[str] = set()
     in_fuel_section = False
+    expect_row = False
+    position = 0
     lines = [raw_line.strip() for raw_line in section_text.splitlines()]
     for index, line in enumerate(lines):
         if _FUEL_ENROUTE_HEADING.fullmatch(line):
             in_fuel_section = True
+            expect_row = True
             continue
         if in_fuel_section and _AIRPORT_SECTION_HEADING.fullmatch(line):
             in_fuel_section = False
+            expect_row = False
             continue
-        if not in_fuel_section:
+        if not in_fuel_section or not line or _FUEL_ENROUTE_RULE.fullmatch(line) or _PAGE_CHROME.match(line):
             continue
-        station = classify_bulletin_station_line(line)
-        if station is None:
+        first_row, expect_row = expect_row, False
+        cells = _STATION_ROW_CELLS.match(line)
+        try:
+            station = classify_bulletin_station_line(line)
+            # A row whose IATA column is also an airspace-volume abbreviation
+            # cannot be judged by its shape; its place in the OFP settles it.
+            if station is not None and station["iata"] in AIRSPACE_VOLUME_CODES and not _heads_station_block(
+                lines, index
+            ):
+                station = None
+            if station is None and not first_row and not _underlined_station_row(lines, index):
+                continue  # a line of the station's notices or reports, not a station row
+            problems = (
+                table_cells.row_problems([("icao", cells.group("icao")), ("iata", cells.group("iata"))])
+                if cells
+                else []
+            )
+            if station is None or problems:
+                problem = table_cells.problems_text(problems) if problems else _FUEL_ENROUTE_ROW_GRAMMAR
+                held.append(_held_fuel_enroute_row(line, cells, position, problem, problems))
+                position += 1
+                continue
+        except Exception as error:  # noqa: BLE001 - one row's failure holds that row (QA512-01)
+            held.append(_held_fuel_enroute_row(
+                line, cells, position, _FUEL_ENROUTE_ROW_FAILED.format(error=f"{type(error).__name__}: {error}"), [],
+            ))
+            position += 1
             continue
-        # A row whose IATA column is also an airspace-volume abbreviation
-        # cannot be judged by its shape; its place in the OFP settles it.
-        if station["iata"] in AIRSPACE_VOLUME_CODES and not _heads_station_block(lines, index):
-            continue
+        position += 1
         icao = station["icao"]
         if icao in seen:
             continue
@@ -232,7 +281,44 @@ def _fuel_enroute_stations(section_text: str) -> list[dict[str, str]]:
             "name": name,
             "role": "fuel_enroute_airport",
         })
-    return stations
+    return stations, held
+
+
+def _underlined_station_row(lines: list[str], index: int) -> bool:
+    """The NOTAM appendix underlines every station header with a dashed rule (``EHAM /AMS ...`` over ``-----``)."""
+    following = [line for line in lines[index + 1:index + 8] if line]
+    while following and _PAGE_CHROME.match(following[0]) and len(following) > 1:
+        following = following[1:]
+    return bool(following) and re.fullmatch(r"-{5,}", following[0]) is not None
+
+
+def _held_fuel_enroute_row(
+    line: str,
+    cells: re.Match[str] | None,
+    position: int,
+    problem: str,
+    problems: list[dict[str, str]],
+) -> dict[str, Any]:
+    icao = cells.group("icao") if cells else None
+    entry: dict[str, Any] = {
+        "table": "fuel_enroute_airports",
+        "airport": icao if icao and table_cells.cell_problem("icao", icao) is None else None,
+        "runway": None,
+        "text": " ".join(line.split()),
+        "source_page": None,
+        "position": position,
+        "reason": _FUEL_ENROUTE_ROW_NOT_READ.format(problem=problem),
+        # The printed identity cells, so the two appendices' copies of one damaged row are held once (never parsed).
+        "_identity": (cells.group("icao"), cells.group("iata")) if cells else (" ".join(line.split()),),
+    }
+    if problems:
+        entry["invalid_fields"] = [item["field"] for item in problems]
+    return entry
+
+
+def _fuel_enroute_stations(section_text: str) -> list[dict[str, str]]:
+    """The fuel-enroute stations a section reads (its held rows: ``_fuel_enroute_section_rows``)."""
+    return _fuel_enroute_section_rows(section_text)[0]
 
 
 def _station_header_source_pages(
@@ -712,8 +798,11 @@ def _discover_fuel_enroute_stations(
         ("weather", _weather_section_bounds(pages), _weather_section(pages)),
         ("notam", _notam_section_bounds(pages), _notam_section(pages)),
     )
+    held: list[tuple[tuple[int, int] | None, dict[str, Any]]] = []
     for source_kind, bounds, section_text in sources:
-        for station in _fuel_enroute_stations(section_text):
+        stations, held_rows = _fuel_enroute_section_rows(section_text)
+        held.extend((bounds, row) for row in held_rows)
+        for station in stations:
             _register_fuel_enroute_station(
                 flight,
                 station,
@@ -735,7 +824,47 @@ def _discover_fuel_enroute_stations(
                     source_kind,
                     source_pages,
                 )
+    _hold_fuel_enroute_rows(flight, pages, held)
     return list(flight.get("fuel_enroute_airports") or [])
+
+
+def _hold_fuel_enroute_rows(
+    flight: dict[str, Any],
+    pages: list[str],
+    held: list[tuple[tuple[int, int] | None, dict[str, Any]]],
+) -> None:
+    """Hold the fuel-enroute station rows not read, reconciled across the two appendices by printed identity (QA512).
+
+    An airport read in one appendix is read: its damaged copy in the other is not a second review. A row whose
+    printed identity cells are the same in both appendices is held once. Idempotent - discovery runs for the weather
+    and again for the NOTAM enrichment."""
+    read = {str(item.get("airport") or "").upper() for item in flight.get("fuel_enroute_airports") or []}
+    unread = flight.setdefault("alternates_unread", [])
+    held_keys = {
+        (row.get("table"), row.get("text"))
+        for row in unread
+        if isinstance(row, dict) and row.get("table") == "fuel_enroute_airports"
+    }
+    identities: set[tuple[str, ...]] = set()
+    for bounds, row in held:
+        identity = row.pop("_identity")
+        if (row["airport"] and row["airport"] in read) or identity in identities:
+            continue
+        identities.add(identity)
+        if (row["table"], row["text"]) in held_keys:
+            continue
+        held_keys.add((row["table"], row["text"]))
+        if bounds is not None:
+            start, end = bounds
+            row["source_page"] = next(
+                (
+                    page_index + 1
+                    for page_index in range(start, end)
+                    if any(" ".join(line.split()) == row["text"] for line in pages[page_index].splitlines())
+                ),
+                None,
+            )
+        unread.append(row)
 
 
 def _parse_notam_datetime(value: str) -> datetime | None:

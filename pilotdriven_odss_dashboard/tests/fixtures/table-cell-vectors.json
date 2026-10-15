@@ -1,0 +1,636 @@
+{
+ "spec": "table-cells-2026-10-16-v1",
+ "about": "LABELLED test vectors for table-cell-rules.json (QA512). Byte-identical in the app (tests/fixtures/table-cell-vectors.json) and ODSS (tests/fixtures/table-cell-vectors.json); both runtimes must agree with every 'valid'.",
+ "vectors": [
+  {
+   "kind": "icao",
+   "value": "WSSS",
+   "valid": true
+  },
+  {
+   "kind": "icao",
+   "value": "YMML",
+   "valid": true
+  },
+  {
+   "kind": "icao",
+   "value": "ZZZZ",
+   "valid": true
+  },
+  {
+   "kind": "icao",
+   "value": "WS1S",
+   "valid": false
+  },
+  {
+   "kind": "icao",
+   "value": "wsss",
+   "valid": false
+  },
+  {
+   "kind": "icao",
+   "value": "WSS",
+   "valid": false
+  },
+  {
+   "kind": "icao",
+   "value": "WSSSS",
+   "valid": false
+  },
+  {
+   "kind": "icao",
+   "value": "????",
+   "valid": false
+  },
+  {
+   "kind": "icao",
+   "value": "",
+   "valid": false
+  },
+  {
+   "kind": "icao",
+   "value": ".....",
+   "valid": false
+  },
+  {
+   "kind": "icao",
+   "value": "x.Y:",
+   "valid": false
+  },
+  {
+   "kind": "iata",
+   "value": "CJU",
+   "valid": true
+  },
+  {
+   "kind": "iata",
+   "value": "SIN",
+   "valid": true
+  },
+  {
+   "kind": "iata",
+   "value": "C1U",
+   "valid": false
+  },
+  {
+   "kind": "iata",
+   "value": "cju",
+   "valid": false
+  },
+  {
+   "kind": "iata",
+   "value": "CJ",
+   "valid": false
+  },
+  {
+   "kind": "iata",
+   "value": "CJUX",
+   "valid": false
+  },
+  {
+   "kind": "iata",
+   "value": "???",
+   "valid": false
+  },
+  {
+   "kind": "iata",
+   "value": "",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "01",
+   "valid": true
+  },
+  {
+   "kind": "runway",
+   "value": "09",
+   "valid": true
+  },
+  {
+   "kind": "runway",
+   "value": "18C",
+   "valid": true
+  },
+  {
+   "kind": "runway",
+   "value": "27L",
+   "valid": true
+  },
+  {
+   "kind": "runway",
+   "value": "34",
+   "valid": true
+  },
+  {
+   "kind": "runway",
+   "value": "36",
+   "valid": true
+  },
+  {
+   "kind": "runway",
+   "value": "36R",
+   "valid": true
+  },
+  {
+   "kind": "runway",
+   "value": "06R",
+   "valid": true
+  },
+  {
+   "kind": "runway",
+   "value": "00",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "00L",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "37",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "37R",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "99",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "1",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "360",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "3A",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "16r",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "??",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": ".....",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "x.Y:",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "16X",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "0000",
+   "valid": true
+  },
+  {
+   "kind": "clock",
+   "value": "0020",
+   "valid": true
+  },
+  {
+   "kind": "clock",
+   "value": "1946",
+   "valid": true
+  },
+  {
+   "kind": "clock",
+   "value": "2327",
+   "valid": true
+  },
+  {
+   "kind": "clock",
+   "value": "2359",
+   "valid": true
+  },
+  {
+   "kind": "clock",
+   "value": "2400",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "2401",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "2460",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "2500",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "1960",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "2360",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "9999",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "195",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "19:46",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "19?6",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "",
+   "valid": false
+  },
+  {
+   "kind": "duration",
+   "value": "0001",
+   "valid": true
+  },
+  {
+   "kind": "duration",
+   "value": "0016",
+   "valid": true
+  },
+  {
+   "kind": "duration",
+   "value": "0142",
+   "valid": true
+  },
+  {
+   "kind": "duration",
+   "value": "0332",
+   "valid": true
+  },
+  {
+   "kind": "duration",
+   "value": "1000",
+   "valid": true
+  },
+  {
+   "kind": "duration",
+   "value": "0000",
+   "valid": false
+  },
+  {
+   "kind": "duration",
+   "value": "0060",
+   "valid": false
+  },
+  {
+   "kind": "duration",
+   "value": "0199",
+   "valid": false
+  },
+  {
+   "kind": "duration",
+   "value": "1001",
+   "valid": false
+  },
+  {
+   "kind": "duration",
+   "value": "9999",
+   "valid": false
+  },
+  {
+   "kind": "duration",
+   "value": "142",
+   "valid": false
+  },
+  {
+   "kind": "duration",
+   "value": "",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "0001",
+   "valid": true
+  },
+  {
+   "kind": "distance_nm",
+   "value": "0065",
+   "valid": true
+  },
+  {
+   "kind": "distance_nm",
+   "value": "1491",
+   "valid": true
+  },
+  {
+   "kind": "distance_nm",
+   "value": "3000",
+   "valid": true
+  },
+  {
+   "kind": "distance_nm",
+   "value": "0000",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "3001",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "9999",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "065",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "",
+   "valid": false
+  },
+  {
+   "kind": "flight_level",
+   "value": "010",
+   "valid": true
+  },
+  {
+   "kind": "flight_level",
+   "value": "060",
+   "valid": true
+  },
+  {
+   "kind": "flight_level",
+   "value": "370",
+   "valid": true
+  },
+  {
+   "kind": "flight_level",
+   "value": "510",
+   "valid": true
+  },
+  {
+   "kind": "flight_level",
+   "value": "000",
+   "valid": false
+  },
+  {
+   "kind": "flight_level",
+   "value": "009",
+   "valid": false
+  },
+  {
+   "kind": "flight_level",
+   "value": "511",
+   "valid": false
+  },
+  {
+   "kind": "flight_level",
+   "value": "999",
+   "valid": false
+  },
+  {
+   "kind": "flight_level",
+   "value": "60",
+   "valid": false
+  },
+  {
+   "kind": "flight_level",
+   "value": "",
+   "valid": false
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "M000",
+   "valid": true
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "P013",
+   "valid": true
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "P080",
+   "valid": true
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "M250",
+   "valid": true
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "P251",
+   "valid": false
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "M999",
+   "valid": false
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "X010",
+   "valid": false
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "P13",
+   "valid": false
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "013",
+   "valid": false
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "",
+   "valid": false
+  },
+  {
+   "kind": "fuel_kg",
+   "value": "00001",
+   "valid": true
+  },
+  {
+   "kind": "fuel_kg",
+   "value": "01763",
+   "valid": true
+  },
+  {
+   "kind": "fuel_kg",
+   "value": "18913",
+   "valid": true
+  },
+  {
+   "kind": "fuel_kg",
+   "value": "99999",
+   "valid": true
+  },
+  {
+   "kind": "fuel_kg",
+   "value": "00000",
+   "valid": false
+  },
+  {
+   "kind": "fuel_kg",
+   "value": "1763",
+   "valid": false
+  },
+  {
+   "kind": "fuel_kg",
+   "value": "",
+   "valid": false
+  },
+  {
+   "kind": "fuel_kg",
+   "value": ".....",
+   "valid": false
+  },
+  {
+   "kind": "fuel_kg",
+   "value": "9999X",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "0M",
+   "valid": true
+  },
+  {
+   "kind": "minima",
+   "value": "550M",
+   "valid": true
+  },
+  {
+   "kind": "minima",
+   "value": "200FT",
+   "valid": true
+  },
+  {
+   "kind": "minima",
+   "value": "200FT/550M",
+   "valid": true
+  },
+  {
+   "kind": "minima",
+   "value": "1479FT/7000M",
+   "valid": true
+  },
+  {
+   "kind": "minima",
+   "value": "20000FT",
+   "valid": true
+  },
+  {
+   "kind": "minima",
+   "value": "10000M",
+   "valid": true
+  },
+  {
+   "kind": "minima",
+   "value": "20001FT",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "10001M",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "99999FT/99999M",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "FT",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "M",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "/",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "700FT/250",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "700ft/2500M",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": ".....",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "200FT/",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "/550M",
+   "valid": false
+  }
+ ]
+}

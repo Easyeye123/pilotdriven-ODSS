@@ -1356,8 +1356,8 @@ def _alternate_assessment_rows(
                 "status": "review_required",
                 "source_status": "unavailable",
                 "text": (
-                    f'REVIEW - {where} prints this alternate, but its row was not read: "{row.get("text")}"; '
-                    "not analysed."
+                    f'REVIEW - {where} prints this alternate, but its row was not read{_invalid_cells_note(row)}: '
+                    f'"{row.get("text")}"; not analysed.'
                 ),
                 "suitability_concluded": False,
                 "row_not_read": True,
@@ -2449,6 +2449,12 @@ def _edto_classification(flight: dict[str, Any]) -> str:
 
 
 
+def _invalid_cells_note(row: dict[str, Any]) -> str:
+    """" (runway not valid)" when the parser held the row for a cell that breaks a table-cell rule (QA512), else ""."""
+    fields = [str(field) for field in row.get("invalid_fields") or [] if str(field).strip()]
+    return f" ({', '.join(fields)} not valid)" if fields else ""
+
+
 def _edto_unread_rows(flight: dict[str, Any]) -> list[dict[str, Any]]:
     """Every EDTO table row the parser held unread, as the review both EDTO surfaces print in its printed place."""
     rows: list[dict[str, Any]] = []
@@ -2464,8 +2470,32 @@ def _edto_unread_rows(flight: dict[str, Any]) -> list[dict[str, Any]]:
             "text": text,
             "source_page": page if isinstance(page, int) and not isinstance(page, bool) else None,
             "review": (
-                f'REVIEW - {where} prints this EDTO alternate, but its row was not read: "{text}"; its checked '
-                "period is not analysed."
+                f'REVIEW - {where} prints this EDTO alternate, but its row was not read{_invalid_cells_note(row)}: '
+                f'"{text}"; its checked period is not analysed.'
+            ),
+        })
+    return rows
+
+
+def _fuel_enroute_unread_rows(flight: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every FUEL ENROUTE AIRPORT station row the parser held unread (QA512), as the review the dashboard's EDTO glance
+    and PDF page 5's EDTO AIRPORT WINDOWS print: the airport is not analysed in its fuel-enroute role and no value of the
+    row is published."""
+    rows: list[dict[str, Any]] = []
+    for row in flight.get("alternates_unread") or []:
+        if not isinstance(row, dict) or row.get("table") != "fuel_enroute_airports":
+            continue
+        page = row.get("source_page")
+        where = f"OFP p{int(page)}" if isinstance(page, int) and not isinstance(page, bool) else "The OFP"
+        text = " ".join(str(row.get("text") or "").split())
+        rows.append({
+            "airport": str(row.get("airport") or "").strip().upper() or None,
+            "position": int(row.get("position") or 0),
+            "text": text,
+            "source_page": page if isinstance(page, int) and not isinstance(page, bool) else None,
+            "review": (
+                f"REVIEW - {where} prints this fuel-enroute airport, but its station row was not read"
+                f'{_invalid_cells_note(row)}: "{text}"; it is not analysed as the fuel-enroute airport.'
             ),
         })
     return rows
@@ -6586,6 +6616,7 @@ def build_briefing_view(
             for panel in airport_operational_panels
             if "fuel_enroute_airport" in panel["role_keys"]
         ],
+        "fuel_enroute_unread_rows": _fuel_enroute_unread_rows(flight),
         "overview": _overview_projection(
             flight,
             source_findings,

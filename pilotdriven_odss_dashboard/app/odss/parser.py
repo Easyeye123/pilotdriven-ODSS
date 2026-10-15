@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator
 
+from . import table_cells
 from .extraction_rules import EXTRACTION_RULES
 from .fuel_rows import CONTINGENCY_LABEL
 
@@ -1090,7 +1091,7 @@ _ALTERNATE_ROW = re.compile(
     rf"[ \t]*(?P<apt>[A-Z]{{4}})/(?P<rwy>{_ALTERNATE_RUNWAY})"
     rf"(?:[ \t]+(?P<approach>{_ALTERNATE_APPROACH_WORD}(?:[ \t]+{_ALTERNATE_APPROACH_WORD})*))?"
     rf"(?:[ \t]+(?P<minima>{_ALTERNATE_MINIMA}))?"
-    r"[ \t]+(?P<dist>\d{4})[ \t]+\d{3}[ \t]+[MP]\d{3}[ \t]+(?P<time>\d{4})[ \t]+(?P<fuel>\d{5})[ \t]*"
+    r"[ \t]+(?P<dist>\d{4})[ \t]+(?P<fl>\d{3})[ \t]+(?P<comp>[MP]\d{3})[ \t]+(?P<time>\d{4})[ \t]+(?P<fuel>\d{5})[ \t]*"
 )
 # The destination table opens at its section heading as well as at its column header (59 of the 60 printings print the
 # heading and its rule directly over the header; SQ606's page 1 puts a page break between them), so the table is still
@@ -1220,6 +1221,16 @@ _ALTERNATE_DECLARED_NOT_READ = (
     "the OFP declares this planned alternate in its route line, but no row for it was read from the {table}; the "
     "alternate is not analysed here"
 )
+_ALTERNATE_CELL_NOT_VALID = (
+    "the row is printed in the {table} but {problems}; the alternate is not analysed here and no value is assumed"
+)
+_ALTERNATE_WRAPPED_NOT_READ = (
+    "the row is printed in the {table} and continues on the next line with text the row grammar does not read; the "
+    "alternate is not analysed here"
+)
+_ALTERNATE_ROW_FAILED = (
+    "the row is printed in the {table} but reading it failed ({error}); the alternate is not analysed here"
+)
 _EDTO_DECLARED_NOT_READ = (
     "the OFP's EDTO ETP lines name this EDTO alternate, but no row for it was read from the {table}; its checked period "
     "is not analysed here"
@@ -1230,24 +1241,100 @@ _ALTERNATE_END_NOT_FOUND = (
 )
 
 
-def _alternate_table_ends(stream: list[tuple[int, str]], index: int) -> bool:
-    """Whether the line at ``index``, a line that opens no row, is the next block's structure (see QA508-01 above)."""
+def _alternate_heading_shaped(stream: list[tuple[int, str]], index: int) -> bool:
+    """Whether the line at ``index`` has the whole-line shape of a section heading, a labelled field, a form line or a
+    rule (QA508-01): the structure that starts the next block."""
     line = stream[index][1]
     if (
-        _ALTERNATE_ROUTE_LINE.match(line)
-        or _ALTERNATE_SECTION_LABEL.fullmatch(line)
+        _ALTERNATE_SECTION_LABEL.fullmatch(line)
         or _ALTERNATE_FIELD_LABEL.match(line)
         or _ALTERNATE_FORM_LINE.match(line)
         or _ALTERNATE_SECTION_RULE.fullmatch(line)
-        or any(spec["header"].match(line) for spec in _ALTERNATE_TABLES.values())
     ):
         return True
     following = next((text for _, text in stream[index + 1:] if text.strip()), "")
     return bool(_ALTERNATE_UNDERLINED_HEADING.fullmatch(line) and _ALTERNATE_SECTION_RULE.fullmatch(following))
 
 
+# The EDTO table's own trailer: all 20 EDTO originals print "STATION WEATHER REPORTS!" over its rule directly after the
+# table (the app's text layer reads the "!" as an unmapped mark).
+_EDTO_TABLE_TRAILER = re.compile(r"[ \t]*STATION[ \t]+WEATHER[ \t]+REPORTS\b[^A-Za-z0-9]*")
+
+
+def _alternate_table_ends(stream: list[tuple[int, str]], index: int, table: str) -> bool:
+    """Whether the line at ``index``, a line that opens no row, is the next block's structure (see QA508-01 above).
+
+    The table's own trailer (an "<ICAO> RTE:" line; "STATION WEATHER REPORTS" after the EDTO table) and another table's
+    opener always end it. A heading-shaped line
+    ends it only when the table does not go on after it (QA512 exploratory): if, past blank lines, page furniture and
+    other heading-shaped lines, the next line opens a row of this table, the heading-shaped line is a damaged cell
+    printed on a line of its own - held with the table - and never a reason to lose the rows after it."""
+    line = stream[index][1]
+    if _ALTERNATE_ROUTE_LINE.match(line) or any(spec["header"].match(line) for spec in _ALTERNATE_TABLES.values()):
+        return True
+    if table == "edto_alternates" and _EDTO_TABLE_TRAILER.fullmatch(line):
+        return True
+    if not _alternate_heading_shaped(stream, index):
+        return False
+    identity = _ALTERNATE_TABLES[table]["identity"]
+    for later in range(index + 1, len(stream)):
+        text = stream[later][1]
+        stripped = text.strip()
+        if not stripped or _NOTAM_PAGE_FURNITURE.fullmatch(stripped) or _LIDO_PAGE_HEADER_RE.match(text):
+            continue
+        if _alternate_heading_shaped(stream, later):
+            continue
+        return identity(text) is None
+    return True
+
+
+def _alternate_row_cells(table: str, match: re.Match[str]) -> list[tuple[Any, ...]]:
+    """The numeric and coded cells of one read row, in printed order, by their table_cells kind (QA512)."""
+    if table == "destination_alternates":
+        return [("icao", match.group("apt")), ("runway", match.group("rwy")), ("minima", match.group("minima")),
+                ("distance_nm", match.group("dist")), ("flight_level", match.group("fl")),
+                ("wind_component_kt", match.group("comp")), ("duration", match.group("time")),
+                ("fuel_kg", match.group("fuel"))]
+    return [("icao", match.group("airport")), ("clock", match.group("start"), "period start"),
+            ("clock", match.group("end"), "period end"),
+            ("runway", match.group("runway")), ("minima", match.group("minima"))]
+
+
+# An EDTO row's body - its period cell, readable or damaged ("1946-2327", "19?6-2327", "1946-23") - among a line's first
+# two words. A line inside the EDTO table with no identity and no body is not a row of its own: it is the row above
+# printed onto the next line (QA512 exploratory: a wrapped MINIMA cell printed as junk).
+_EDTO_ROW_BODY = re.compile(r"[ \t]*(?:[^ \t]+[ \t]+)?[^ \t]*(?:\d-|-\d)")
+
+
+# The leading identity cell of a printed line, as printed: "<cell>/" in the destination table, "<cell>" in the EDTO table.
+_IDENTITY_CELL = {
+    "destination_alternates": re.compile(r"(?P<lead>[ \t]*)(?P<cell>[^ \t/]+)(?=/)"),
+    "edto_alternates": re.compile(r"(?P<lead>[ \t]*)(?P<cell>[^ \t]+)"),
+}
+
+
+def _identity_cell_problems(table: str, line: str) -> list[dict[str, str]]:
+    """The airport cell's problem when a line that opens no row reads whole as a row except that cell (QA512).
+
+    Such a line is the row of an alternate whose ICAO cell is invalid ("YP1N", "YPD", "ymml"). Its airport is still not
+    read - no identity is inferred - but the review names the invalid field. Any other line opens no row for a reason
+    that is not one cell, and stays a line held as printed."""
+    match = _IDENTITY_CELL[table].match(line)
+    if match is None:
+        return []
+    spec = _ALTERNATE_TABLES[table]
+    standing = match.group("lead") + "ZZZZ" + line[match.end("cell"):]  # a valid ICAO cell in the same place
+    if spec["identity"](standing) is None or spec["row"].fullmatch(standing) is None:
+        return []
+    return table_cells.row_problems([("icao", match.group("cell"))])
+
+
 def _alternate_table_entries(table: str, lines: list[tuple[int, str]]) -> list[dict[str, Any]]:
-    """One printing of a table, line by line: every line becomes a read row, an unread row or an unread line."""
+    """One printing of a table, line by line: every line becomes a read row, an unread row or an unread line.
+
+    A row is read only when its printed text reads whole under the row grammar and every numeric or coded cell in it
+    is valid (table_cells, QA512); otherwise it is held with its airport, its printed text and the invalid field named.
+    Reading one row can never fail the table: any error while reading it holds that row (QA512-01)."""
     spec = _ALTERNATE_TABLES[table]
     entries: list[dict[str, Any]] = []
     index = 0
@@ -1255,41 +1342,70 @@ def _alternate_table_entries(table: str, lines: list[tuple[int, str]]) -> list[d
         page_number, line = lines[index]
         identity = spec["identity"](line)
         if identity is None:
-            entries.append({"kind": "line", "airport": None, "runway": None, "text": " ".join(line.split()),
-                            "source_page": page_number, "position": len(entries)})
+            entries.append(_alternate_line_entry(table, page_number, line, len(entries)))
             index += 1
             continue
         following = index + 1
         while following < len(lines) and spec["identity"](lines[following][1]) is None:
             following += 1
         tails = lines[index + 1:following]
-        # A row wrapped onto the next line(s) reads whole only with them; the longest such reading is the row. A row
-        # that reads by itself and is followed by a line that does not complete it keeps that line as its own entry.
-        match, consumed = None, 0
-        for count in range(len(tails), -1, -1):
-            candidate = spec["row"].fullmatch(" ".join([line.rstrip(), *(text.strip() for _, text in tails[:count])]))
-            if candidate is not None:
-                match, consumed = candidate, count
-                break
-        printed = " ".join(" ".join([line, *(text for _, text in tails[:consumed])]).split())
-        # The runway cell as printed: "" when blank, None when the row gives no runway cell to judge.
         airport, runway_token = identity
-        runway = runway_token if runway_token and re.fullmatch(_ALTERNATE_RUNWAY, runway_token) else None
-        entries.append({
-            "kind": "row" if match is not None else "unread",
-            "airport": airport,
-            "runway": runway,
-            "runway_token": runway_token,
-            "match": match,
-            "text": printed,
-            "source_page": page_number,
-            "position": len(entries),
-        })
+        # The runway cell as printed: "" when blank, None when the row gives no runway cell to judge.
+        runway = runway_token if runway_token and table_cells.cell_problem("runway", runway_token) is None else None
+        entry: dict[str, Any] = {"kind": "unread", "airport": airport, "runway": runway, "runway_token": runway_token,
+                                 "match": None, "text": " ".join(line.split()), "source_page": page_number,
+                                 "position": len(entries)}
+        consumed = 0
+        try:
+            # A row wrapped onto the next line(s) reads whole only with them; the longest such reading is the row. A
+            # row that reads by itself and is followed by a line that does not complete it keeps that line as its own
+            # entry - unless (EDTO) the row stops before its MINIMA and the line carries no row body of its own.
+            match = None
+            for count in range(len(tails), -1, -1):
+                candidate = spec["row"].fullmatch(" ".join([line.rstrip(), *(text.strip() for _, text in tails[:count])]))
+                if candidate is not None:
+                    match, consumed = candidate, count
+                    break
+            if (
+                table == "edto_alternates" and match is not None and not match.group("minima")
+                and consumed < len(tails) and _EDTO_ROW_BODY.match(tails[consumed][1]) is None
+            ):
+                while consumed < len(tails) and _EDTO_ROW_BODY.match(tails[consumed][1]) is None:
+                    consumed += 1
+                match = None
+                entry["reason"] = _ALTERNATE_WRAPPED_NOT_READ.format(table=spec["name"])
+            entry["text"] = " ".join(" ".join([line, *(text for _, text in tails[:consumed])]).split())
+            if match is not None:
+                problems = table_cells.row_problems(_alternate_row_cells(table, match))
+                if problems:
+                    entry["invalid_fields"] = [item["field"] for item in problems]
+                    entry["reason"] = _ALTERNATE_CELL_NOT_VALID.format(
+                        table=spec["name"], problems=table_cells.problems_text(problems))
+                else:
+                    if table == "destination_alternates":
+                        entry["row"] = _destination_alternate_row(match)
+                    entry["kind"], entry["match"] = "row", match
+        except Exception as error:  # noqa: BLE001 - one row's failure is that row's review, never the analysis's
+            entry.update(kind="unread", match=None, reason=_ALTERNATE_ROW_FAILED.format(
+                table=spec["name"], error=f"{type(error).__name__}: {error}"))
+        entries.append(entry)
         for tail_page, tail in tails[consumed:]:
-            entries.append({"kind": "line", "airport": None, "runway": None, "text": " ".join(tail.split()),
-                            "source_page": tail_page, "position": len(entries)})
+            entries.append(_alternate_line_entry(table, tail_page, tail, len(entries)))
         index = following
     return entries
+
+
+def _alternate_line_entry(table: str, page_number: int, line: str, position: int) -> dict[str, Any]:
+    """A line inside the table that opens no row, held as printed; it names the airport cell when that cell is the one
+    defect of an otherwise whole row (QA512)."""
+    entry: dict[str, Any] = {"kind": "line", "airport": None, "runway": None, "text": " ".join(line.split()),
+                             "source_page": page_number, "position": position}
+    problems = _identity_cell_problems(table, line)
+    if problems:
+        entry["invalid_fields"] = [item["field"] for item in problems]
+        entry["reason"] = _ALTERNATE_CELL_NOT_VALID.format(
+            table=_ALTERNATE_TABLES[table]["name"], problems=table_cells.problems_text(problems))
+    return entry
 
 
 def _printing_entries(printing: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1309,6 +1425,7 @@ def _printing_entries(printing: dict[str, Any]) -> list[dict[str, Any]]:
         "text": text if len(text) <= 160 else f"{text[:140]} ... ({len(trailing)} lines)",
         "reason": _ALTERNATE_END_NOT_FOUND.format(table=_ALTERNATE_TABLES[table]["name"]),
     }
+    block.pop("invalid_fields", None)  # the block's reason is its missing end, not one line's cell
     return [*entries[:last_row + 1], block]
 
 
@@ -1325,7 +1442,7 @@ def _destination_alternate_row(match: re.Match[str]) -> dict[str, Any]:
 
 
 def _unread_alternate(table: str, entry: dict[str, Any], reason: str) -> dict[str, Any]:
-    return {
+    unread = {
         "table": table,
         "airport": entry["airport"],
         "runway": entry["runway"],
@@ -1334,6 +1451,9 @@ def _unread_alternate(table: str, entry: dict[str, Any], reason: str) -> dict[st
         "position": entry["position"],
         "reason": reason,
     }
+    if entry.get("invalid_fields"):
+        unread["invalid_fields"] = list(entry["invalid_fields"])
+    return unread
 
 
 def _entry_reason(table: str, entry: dict[str, Any]) -> str:
@@ -1402,7 +1522,10 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
             continue  # the rule under the table's section heading
         # A line that opens a row is a table line whatever its cells hold; only a line that opens none can be the
         # next block's structure (QA508-01).
-        if _ALTERNATE_TABLES[current["table"]]["identity"](line) is None and _alternate_table_ends(stream, index):
+        if (
+            _ALTERNATE_TABLES[current["table"]]["identity"](line) is None
+            and _alternate_table_ends(stream, index, current["table"])
+        ):
             current["closed"] = True
             current = None
             continue
@@ -1421,7 +1544,7 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
     for printing_index, entry in destination:
         if entry["kind"] == "row":
             read_rows.setdefault(entry["airport"], []).append(
-                ((entry["position"], printing_index), _destination_alternate_row(entry["match"]), entry))
+                ((entry["position"], printing_index), entry["row"], entry))
     alternates_by_place: list[tuple[tuple[int, int], dict[str, Any]]] = []
     differing: dict[str, dict[str, Any]] = {}
     for airport, occurrences in read_rows.items():
@@ -1450,7 +1573,8 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
                 unread.append(differing[airport])
                 continue
             held_airports.add(airport)
-            unread.append(_unread_alternate("destination_alternates", entry, _entry_reason("destination_alternates", entry)))
+            unread.append(_unread_alternate("destination_alternates", entry,
+                                            entry.get("reason") or _entry_reason("destination_alternates", entry)))
             continue
         if ("destination_alternates", entry["text"]) in held_lines:
             continue
@@ -1476,21 +1600,46 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
     # across printings a damaged row is the copy of the row its own printing's place holds read in another printing
     # (same airport, same place). An ETP-named EDTO alternate that is neither read nor held is held by name.
     edto_printings = [_printing_entries(p) for p in printings if p["table"] == "edto_alternates"]
+
+    def edto_key(entry: dict[str, Any]) -> tuple[str, ...]:
+        return tuple(" ".join((entry["match"].group(name) or "").split())
+                     for name in ("airport", "start", "end", "runway", "approach", "minima"))
+
     read_places = {
         (entry["airport"], entry["position"])
         for entries in edto_printings
         for entry in entries
         if entry["kind"] == "row"
     }
+    # Printings that give one airport different rows analyse none of them (QA512 exploratory): within one printing an
+    # airport may hold several checked periods, so each printing's set of rows for the airport is compared whole.
+    printed_sets: dict[str, list[frozenset[tuple[str, ...]]]] = {}
+    for entries in edto_printings:
+        per_airport: dict[str, set[tuple[str, ...]]] = {}
+        for entry in entries:
+            if entry["kind"] == "row":
+                per_airport.setdefault(entry["airport"], set()).add(edto_key(entry))
+        for airport, keys in per_airport.items():
+            printed_sets.setdefault(airport, []).append(frozenset(keys))
+    differing_edto = {airport for airport, sets in printed_sets.items() if len(set(sets)) > 1}
     edto_rows: list[re.Match[str]] = []
     edto_keys: set[tuple[str, ...]] = set()
     edto_named: set[str] = set()
     for entries in edto_printings:
         for entry in entries:
+            if entry["kind"] == "row" and entry["airport"] in differing_edto:
+                if entry["airport"] not in edto_named:
+                    edto_named.add(entry["airport"])
+                    texts = " / ".join(dict.fromkeys(
+                        other["text"] for others in edto_printings for other in others
+                        if other["kind"] == "row" and other["airport"] == entry["airport"]))
+                    unread.append(_unread_alternate("edto_alternates", {**entry, "text": texts},
+                                                    _ALTERNATE_PRINTINGS_DIFFER.format(
+                                                        table=_ALTERNATE_TABLES["edto_alternates"]["name"])))
+                continue
             if entry["kind"] == "row":
                 edto_named.add(entry["airport"])
-                key = tuple(" ".join((entry["match"].group(name) or "").split())
-                            for name in ("airport", "start", "end", "runway", "approach", "minima"))
+                key = edto_key(entry)
                 if key not in edto_keys:
                     edto_keys.add(key)
                     edto_rows.append(entry["match"])
@@ -1899,6 +2048,7 @@ def _parse_edto_airports(
     edto_text: str,
     departure_utc: datetime,
     arrival_utc: datetime,
+    failed: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Parse every checked-period row without joining a blank approach row.
 
@@ -1925,12 +2075,26 @@ def _parse_edto_airports(
         if key in seen:
             continue
         seen.add(key)
-        period_start, period_end = _edto_period(
-            match.group("start"),
-            match.group("end"),
-            departure_utc,
-            arrival_utc,
-        )
+        try:
+            period_start, period_end = _edto_period(
+                match.group("start"),
+                match.group("end"),
+                departure_utc,
+                arrival_utc,
+            )
+        except Exception as error:  # noqa: BLE001 - QA512-01: one row's failure holds that row, never the analysis
+            if failed is not None:
+                failed.append({
+                    "table": "edto_alternates",
+                    "airport": match.group("airport"),
+                    "runway": None,
+                    "text": " ".join(match.group(0).split()),
+                    "source_page": None,
+                    "position": len(airports),
+                    "reason": _ALTERNATE_ROW_FAILED.format(
+                        table=_ALTERNATE_TABLES["edto_alternates"]["name"], error=f"{type(error).__name__}: {error}"),
+                })
+            continue
         airports.append({
             "airport": match.group("airport"),
             "period_start_utc": period_start.isoformat(),
@@ -2583,10 +2747,12 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
         )
     ]
     primary_edto_sector = edto_sectors[0] if edto_sectors else None
+    edto_failed: list[dict[str, Any]] = []
     edto_airports = _parse_edto_airports(
         edto_text,
         departure_utc,
         arrival_utc,
+        edto_failed,
     )
     edto_assessment = _build_edto_assessment(
         cfp_pages=cfp_pages,
@@ -2604,6 +2770,14 @@ def parse_lido(pages: list[str], source_name: str) -> dict[str, Any]:
     alternate_tables = _read_alternate_tables(cfp_pages, cfp_start + 1)
     alternates = alternate_tables["alternates"]
     alternates_unread = alternate_tables["unread"]
+    # QA512-01: an EDTO row whose checked period could not be built is held as that row's review, with its page.
+    for row in edto_failed:
+        row["source_page"] = next(
+            (cfp_start + 1 + index for index, page in enumerate(cfp_pages)
+             if row["text"] in " ".join(page.split())),
+            None,
+        )
+        alternates_unread.append(row)
     # Page 1 names the planned first alternate ("ALTN SYD (YSSY)"); an OFP whose table does not yield it has an
     # alternate this reader did not see, which is a review too.
     page_one_alternate = ((fuel_summary or {}).get("alternate") or {}).get("icao")

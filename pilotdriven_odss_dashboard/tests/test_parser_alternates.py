@@ -3,7 +3,9 @@ from __future__ import annotations
 from app.odss.parser import _parse_alternates
 
 _ROW = "WMKK/14L   LOCDME    446FT/1400M  0287  200 M002  0055 04680"
-_SECOND_ROW = "WSSS/20R   ILS       200FT/0550M  0301  210 M003  0061 05120"
+# QA512: TIME is printed HHMM; this fixture printed an impossible "0061" (61 minutes is 0101), which the table-cell rules
+# now hold as an invalid time cell. The row is otherwise unchanged.
+_SECOND_ROW = "WSSS/20R   ILS       200FT/0550M  0301  210 M003  0101 05120"
 _MULTIWORD_APPROACH_ROW = (
     "LIMC/17R RNAV GPS LN 606FT/2900M  0331  320 P006  0056 04989"
 )

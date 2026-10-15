@@ -386,24 +386,33 @@ def _weather_source_reference(
 def _alternate_row_not_read_finding(row: dict[str, Any]) -> tuple[dict[str, Any], str]:
     """A row printed in an alternate table that the parser did not read: a stated review, never an absence."""
     edto = row.get("table") == "edto_alternates"
+    # QA512: the FUEL ENROUTE AIRPORT station row is held the same way when it does not read.
+    fuel_enroute = row.get("table") == "fuel_enroute_airports"
     airport = str(row.get("airport") or "").strip().upper() or None
     page = row.get("source_page")
     where = f"OFP p{int(page)}" if isinstance(page, int) and not isinstance(page, bool) else "The OFP"
-    kind = "EDTO alternate" if edto else "planned alternate"
-    analysis = "EDTO checked-period" if edto else "NOTAM, weather or fuel"
+    kind = "EDTO alternate" if edto else "fuel-enroute airport" if fuel_enroute else "planned alternate"
+    analysis = (
+        "EDTO checked-period" if edto else "fuel-enroute NOTAM or weather" if fuel_enroute else "NOTAM, weather or fuel"
+    )
     printed = str(row.get("text") or "").strip()
+    # QA512: a row held for a cell that breaks a table-cell rule names that cell.
+    fields = [str(field) for field in row.get("invalid_fields") or [] if str(field).strip()]
+    invalid = f" ({', '.join(fields)} not valid)" if fields else ""
     # QA504-01: a line inside the table whose airport cannot be read is held as printed; no airport is named for it.
     summary = (
-        f'{where} prints {kind} {airport}, but its row was not read: "{printed}". '
+        f'{where} prints {kind} {airport}, but its row was not read{invalid}: "{printed}". '
         f"{airport} has no {analysis} analysis here; read it from the OFP."
         if airport
-        else f'{where} prints a line in its {kind} table that was not read: "{printed}". '
+        else f'{where} prints a line in its {kind} table that was not read{invalid}: "{printed}". '
         f"The {kind} it belongs to has no {analysis} analysis here; read it from the OFP."
     )
     return finding(
         "edto" if edto else "qa",
         "warning",
-        "EDTO alternate row not read" if edto else "Planned alternate row not read",
+        "EDTO alternate row not read" if edto
+        else "Fuel-enroute airport row not read" if fuel_enroute
+        else "Planned alternate row not read",
         summary,
         [str(row.get("reason") or "").strip()] if row.get("reason") else [],
         {
@@ -414,7 +423,11 @@ def _alternate_row_not_read_finding(row: dict[str, Any]) -> tuple[dict[str, Any]
             "source_references": [{
                 "source_type": "uploaded_cfp",
                 "pages": [int(page)] if isinstance(page, int) and not isinstance(page, bool) else [],
-                "section": "EDTO ENROUTE ALTN AIRPORTS" if edto else "FLT PLANNING ALTN SUMMARY",
+                "section": (
+                    "EDTO ENROUTE ALTN AIRPORTS" if edto
+                    else "FUEL ENROUTE AIRPORT" if fuel_enroute
+                    else "FLT PLANNING ALTN SUMMARY"
+                ),
             }],
         },
     ), summary

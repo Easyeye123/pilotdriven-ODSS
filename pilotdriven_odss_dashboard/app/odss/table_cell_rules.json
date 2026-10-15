@@ -1,0 +1,66 @@
+{
+  "spec": "table-cells-2026-10-16-v1",
+  "purpose": "QA512 (Codex QA of release 512, 16 Oct 2026): the semantic validity of every numeric or coded cell the OFP table readers promote into a plan - the FLT PLANNING ALTN SUMMARY rows, the EDTO ENROUTE ALTN AIRPORTS rows and the FUEL ENROUTE AIRPORT station rows. A row whose cell breaks a rule keeps its airport (when readable) and its printed text, is held unread naming the invalid field, and publishes no value; no value is chosen or inferred. One file, byte-identical in the app (table-cell-rules.json) and ODSS (app/odss/table_cell_rules.json); both runtimes run tests/fixtures/table-cell-vectors.json against it.",
+  "cells": {
+    "icao": {
+      "field": "airport",
+      "letters": 4,
+      "rule": "an ICAO location indicator is four letters A-Z (ICAO Doc 7910)"
+    },
+    "iata": {
+      "field": "IATA code",
+      "letters": 3,
+      "rule": "an IATA airport code is three letters A-Z"
+    },
+    "runway": {
+      "field": "runway",
+      "number_min": 1,
+      "number_max": 36,
+      "suffixes": ["L", "C", "R"],
+      "rule": "a runway designator is a two-digit number 01-36 (the magnetic azimuth to the nearest 10 degrees), with L, C or R for parallel runways (FAA AIM 2-3-3); 00 and numbers above 36 do not exist"
+    },
+    "clock": {
+      "field": "period clock",
+      "hour_max": 23,
+      "minute_max": 59,
+      "allow_2400": false,
+      "rule": "a UTC clock HHMM has HH 00-23 and MM 00-59; the EDTO checked period prints 0000-2359 (2400 does not occur in the format)"
+    },
+    "duration": {
+      "field": "time",
+      "minute_max": 59,
+      "total_minutes_min": 1,
+      "total_minutes_max": 600,
+      "rule": "a flight time HHMM has MM 00-59 and lies between 1 minute and 10 hours (the 30 held originals print 0016-0332)"
+    },
+    "distance_nm": {
+      "field": "distance",
+      "min": 1,
+      "max": 3000,
+      "rule": "a destination-alternate distance lies between 1 and 3000 NM (the 30 held originals print 65-1491)"
+    },
+    "flight_level": {
+      "field": "flight level",
+      "min": 10,
+      "max": 510,
+      "rule": "a planned flight level lies between FL010 and FL510 (the 30 held originals print FL060-FL370)"
+    },
+    "wind_component_kt": {
+      "field": "wind component",
+      "max": 250,
+      "rule": "a wind component is M (head) or P (tail) and 000-250 kt (the 30 held originals print M000-P080)"
+    },
+    "fuel_kg": {
+      "field": "fuel",
+      "min": 1,
+      "max": 99999,
+      "rule": "a planned alternate fuel lies between 1 and 99999 kg (the 30 held originals print 1763-18913)"
+    },
+    "minima": {
+      "field": "minima",
+      "feet_max": 20000,
+      "metres_max": 10000,
+      "rule": "minima print a height or altitude in feet (0-20000 FT), a visibility or RVR in metres (0-10000 M), or both (the 30 held originals print 200-3000 FT and 0-7000 M)"
+    }
+  }
+}
