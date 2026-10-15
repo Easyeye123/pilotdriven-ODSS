@@ -232,7 +232,10 @@ WAFC_CHARTS_PER_PAGE = 3
 # masked first, and every temporal token must sit in a statement read whole (days bound to hours) and proven equal on its
 # own to Item D or the whole validity, else a timing review; a start date must lie at or before B and an end date at or
 # after C.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-tables-accounted-temporal-fail-closed-v105"
+# 15 Oct 2026 (v106, QA508-01 - Codex QA of release 508): v105, and an alternate table ends only at the LIDO layout's
+# own structure, never on what a cell holds: a lowercase, dotted or junk cell no longer closes the table and loses the
+# damaged row and the rows after it; a damaged EDTO row is held by name (from the ETP lines) with its review.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-table-ends-structural-v106"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

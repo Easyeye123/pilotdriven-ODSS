@@ -238,5 +238,5 @@ def test_genuine_baku_lower_heading_names_its_fir():
 
 
 def test_the_tokens_move_together():
-    assert EXTRACTION_RULES == "2026-10-15-tables-bounded-temporal-accounted-v16"
+    assert EXTRACTION_RULES == "2026-10-15-table-ends-structural-v17"
     assert ENROUTE_CONTACT_RULE == "enroute-contact-v16"

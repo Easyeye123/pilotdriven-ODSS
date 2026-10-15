@@ -65,4 +65,9 @@ the two are bumped together whenever the parser's extraction changes.
 # outside the stated benign classes, must sit in a statement read whole and proven equal on its own to Item D or the
 # validity, else the record is held for timing review. Analyses held under v15 can differ in schedule_review (80 records
 # in 28 of the 30 held originals); a v15 analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-15-tables-bounded-temporal-accounted-v16"
+# v17 (15 Oct 2026, QA508-01): v16, and an alternate table ends only at the next block's structure - a line that opens
+# a row is a table line whatever its cells hold - so a lowercase, dotted or junk cell is read or held, never an end; a
+# table with no identified end holds its remainder; EDTO printings are reconciled and an ETP-named EDTO alternate with
+# no row is held by name. Genuine holdings are unchanged; a v16 analysis of a damaged table can lack the damaged row
+# and the rows after it (EDTO with no review), so a v16 analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-15-table-ends-structural-v17"
