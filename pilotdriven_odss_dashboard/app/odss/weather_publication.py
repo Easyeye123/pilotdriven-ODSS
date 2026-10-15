@@ -36,16 +36,26 @@ def edto_window_lines(flight, view):
 
     edto = view.get('edto') or {}
     assessment = _edto_assessment_view(flight.get('edto') or {})
-    if assessment['status'] == 'verified_not_applicable' and not edto.get('airports') and not edto.get('sectors'):
+    # QA508-01: an EDTO table row that was not read is a review in its printed place, never an absent window.
+    reviews = sorted(
+        ((int(r.get('position') or 0), f"{clean(r.get('airport')) or '----'} · {clean(r.get('review'))}")
+         for r in edto.get('unread_rows') or [] if isinstance(r, dict)),
+        key=lambda item: item[0],
+    )
+    if (assessment['status'] == 'verified_not_applicable' and not edto.get('airports') and not edto.get('sectors')
+            and not reviews):
         return ['Not applicable - this flight is NON-EDTO.']
     rows = [f"{clean(r.get('airport')) or 'Not held'}/{clean(r.get('runway')) or 'Not held'}: "
             f"{clean(r.get('approach')) or 'Not held'} {clean(r.get('minima')) or 'Not held'}; "
             f"{clean(r.get('period')) or 'Not held'}." for r in edto.get('airports') or []]
-    if rows:
+    windows = bool(rows)
+    for position, line in reviews:
+        rows.insert(min(position, len(rows)), line)
+    if windows:
         return rows
     if assessment['status'] == 'affected':
-        return ['EDTO applies, but airport suitability windows are missing.']
-    return ['EDTO applicability is unresolved; airport suitability windows cannot be established.']
+        return [*rows, 'EDTO applies, but airport suitability windows are missing.']
+    return [*rows, 'EDTO applicability is unresolved; airport suitability windows cannot be established.']
 
 
 def sigmet_lines(flight, view):

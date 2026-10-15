@@ -259,172 +259,21 @@ def test_the_destination_table_opens_at_its_section_heading_when_its_column_head
     assert [row["airport"] for row in tables["alternates"]] == ["ZZZY"] and tables["unread"] == []
 
 
-@pytest.mark.parametrize("end", ["SID: WSSS/20C VMR9B", "Airport WX List", "ARR ATIS ......................", "DISP BY: X"])
+@pytest.mark.parametrize("end", ["SID: WSSS/20C VMR9B", "EXCESS FUEL REASON:", "ARR ATIS ......................",
+                                 "DISP BY: X"])
 def test_a_table_without_its_trailer_closes_at_the_next_block(end: str) -> None:
-    """LIDO always prints the route-line trailer; without it the next block's labelled field, a dot-leader form line or
-    the package's own mixed-case text still bounds the table, so nothing after it is taken for a table line."""
+    """LIDO always prints the route-line trailer; without it the next block's heading, labelled field or dot-leader form
+    line still bounds the table, and the EDTO table closes at its underlined STATION WEATHER REPORTS heading, so nothing
+    after them is taken for a table line. (QA508-01: the package's mixed-case text is no longer an end; see
+    tests/test_alternate_tables_qa508_20261015.py.)"""
     pages = [f"{HEADER}\n{ZZZY}\n{end}\nRTOW(PERF) 285609 FLAPS 2\nEDTO ENROUTE ALTN AIRPORTS:\n"
-             "ZZZZ     1900-2220          03       CAT1DME        492FT/2000M\nAirport WX List\nSA 121320 04009KT CAVOK=\n"]
+             "ZZZZ     1900-2220          03       CAT1DME        492FT/2000M\nSTATION WEATHER REPORTS\n"
+             "-----------------------\nSA 121320 04009KT CAVOK=\n"]
     tables = lido_parser._read_alternate_tables(pages, 1)
     assert [row["airport"] for row in tables["alternates"]] == ["ZZZY"]
     assert [m.group("airport") for m in tables["edto_rows"]] == ["ZZZZ"]
     assert tables["unread"] == []
 
 
-# ------------------------------------------------------------ the exhaustive mutation test over the 30 held originals
-
-def _spans(line: str) -> list[tuple[int, int]]:
-    return [match.span() for match in re.finditer(r"\S+", line)]
-
-
-def _replace(line: str, start: int, end: int, value: str) -> str:
-    return line[:start] + value + line[end:]
-
-
-def _cell_variants(line: str, start: int, end: int) -> list[tuple[str, str]]:
-    token = line[start:end]
-    return [
-        ("blank", _replace(line, start, end, " " * len(token))),
-        ("??", _replace(line, start, end, "??")),
-        ("truncated", _replace(line, start, end, token[:max(1, len(token) - 2)])),
-    ]
-
-
-def _destination_mutations(line: str) -> list[tuple[str, str, str]]:
-    """(cell, variant, mutated text) for one printed destination row; "identity" keeps no readable airport."""
-    spans = _spans(line)
-    first_start, first_end = spans[0]
-    slash = line.index("/", first_start)
-    mutations = [("identity", variant, text) for variant, text in _cell_variants(line, first_start, slash)]
-    mutations += [("runway", variant, text) for variant, text in _cell_variants(line, slash + 1, first_end)]
-    for cell, (start, end) in zip(("dist", "fl", "comp", "time", "fuel"), spans[-5:]):
-        mutations += [(cell, variant, text) for variant, text in _cell_variants(line, start, end)]
-    fuel_start = spans[-1][0]
-    mutations.append(("wrap", "fuel onto the next line", line[:fuel_start].rstrip() + "\n" + " " * fuel_start + line[fuel_start:]))
-    mutations.append(("wrap", "after the runway", line[:first_end] + "\n" + " " * first_end + line[first_end:]))
-    mutations.append(("row", "truncated after the runway", line[:first_end]))
-    return mutations
-
-
-def _edto_mutations(line: str) -> list[tuple[str, str, str]]:
-    spans = _spans(line)
-    mutations = [("identity", variant, text) for variant, text in _cell_variants(line, *spans[0])]
-    mutations += [("period", variant, text) for variant, text in _cell_variants(line, *spans[1])]
-    mutations += [("runway", variant, text) for variant, text in _cell_variants(line, *spans[2])]
-    if len(spans) > 3:
-        cut = spans[-1][0]
-        mutations.append(("wrap", "last cell onto the next line", line[:cut].rstrip() + "\n" + " " * cut + line[cut:]))
-        cut = spans[3][0]
-        if cut != spans[-1][0]:
-            mutations.append(("wrap", "after the runway", line[:cut].rstrip() + "\n" + " " * cut + line[cut:]))
-    mutations.append(("row", "truncated after the period", line[:spans[1][1]]))
-    return mutations
-
-
-def _printed_lines(cfp_pages: list[str], expression: re.Pattern[str], prefix: str) -> list[tuple[int, int]]:
-    return [(page_index, line_index)
-            for page_index, page in enumerate(cfp_pages)
-            for line_index, line in enumerate(page.split("\n"))
-            if line.strip().startswith(prefix) and expression.fullmatch(line)]
-
-
-def _mutate(cfp_pages: list[str], places: list[tuple[int, int]], text: str) -> list[str]:
-    pages = [page.split("\n") for page in cfp_pages]
-    for page_index, line_index in places:
-        pages[page_index][line_index] = text
-    return ["\n".join(lines) for lines in pages]
-
-
-def _edto_key(match: re.Match[str]) -> tuple:
-    return tuple(match.group(name) for name in ("airport", "start", "end", "runway", "approach", "minima"))
-
-
-def test_every_mutation_of_every_alternate_row_in_the_corpus_is_read_or_held_never_silently_absent() -> None:
-    """For every row of every alternate table the 30 originals print: damage its identity, its runway or a numeric cell
-    (blank, "??", truncated), wrap it onto the next line, or cut it after its runway - in every printing, and in each
-    printing alone. The damaged row is read exactly as printed or held unread with its printed text; every other row
-    of the table is read exactly as before; nothing else is held."""
-    pdfs = sorted(_corpus().glob("*.pdf"))
-    checked = destination_rows = edto_rows = 0
-    problems: list[str] = []
-    for pdf in pdfs:
-        pages = extract_pages(pdf)
-        cfp_start, cfp_end = lido_parser._detect_sections(pages)["cfp"]
-        cfp_pages = pages[cfp_start:cfp_end]
-        read = lambda mutated: lido_parser._read_alternate_tables(mutated, cfp_start + 1)  # noqa: E731
-        control = read(cfp_pages)
-        flight = parse_lido(pages, pdf.name)
-        assert control["alternates"] == flight["alternates"] and control["unread"] == flight["alternates_unread"] == []
-        control_edto = [_edto_key(match) for match in control["edto_rows"]]
-
-        for alternate in control["alternates"]:
-            prefix = f'{alternate["airport"]}/{alternate["runway"]}'
-            places = _printed_lines(cfp_pages, _ROW, prefix)
-            if not places:
-                problems.append(f"{pdf.name} {prefix}: printed row not found")
-                continue
-            destination_rows += 1
-            others = [row for row in control["alternates"] if row["airport"] != alternate["airport"]]
-            line = cfp_pages[places[0][0]].split("\n")[places[0][1]]
-            scopes = [("every printing", places)] + ([("first printing", places[:1]), ("last printing", places[-1:])]
-                                                     if len(places) > 1 else [])
-            for cell, variant, text in _destination_mutations(line):
-                printed = " ".join(text.split())
-                for scope, chosen in scopes:
-                    checked += 1
-                    result = read(_mutate(cfp_pages, chosen, text))
-                    label = f"{pdf.name} {prefix} {cell} {variant} ({scope})"
-                    held = [(row["airport"], row["text"]) for row in result["unread"]]
-                    if cell == "wrap":
-                        expected_alternates, expected_held = control["alternates"], []
-                    elif scope != "every printing":
-                        expected_alternates = control["alternates"]
-                        expected_held = [(None, printed)] if cell == "identity" else []
-                    elif cell == "identity":
-                        # The line is held as printed; the alternate is held by name from the OFP's route line.
-                        expected_alternates, expected_held = others, [(None, printed)]
-                    else:
-                        expected_alternates, expected_held = others, [(alternate["airport"], printed)]
-                    if result["alternates"] != expected_alternates:
-                        problems.append(f"{label}: read {[r['airport'] for r in result['alternates']]}")
-                    if cell == "identity" and scope == "every printing":
-                        if held[:1] != expected_held or [airport for airport, _ in held[1:]] != [alternate["airport"]] \
-                                or not held[1][1].startswith(f"{alternate['airport']} RTE:"):
-                            problems.append(f"{label}: held {held}")
-                    elif held != expected_held:
-                        problems.append(f"{label}: held {held}")
-                    if [_edto_key(match) for match in result["edto_rows"]] != control_edto:
-                        problems.append(f"{label}: the EDTO table changed")
-
-        for match in control["edto_rows"]:
-            key = _edto_key(match)
-            places = _printed_lines(cfp_pages, _EDTO_ROW, f'{key[0]} ')
-            places = [place for place in places
-                      if _edto_key(_EDTO_ROW.fullmatch(cfp_pages[place[0]].split("\n")[place[1]])) == key]
-            if not places:
-                problems.append(f"{pdf.name} EDTO {key[0]}: printed row not found")
-                continue
-            edto_rows += 1
-            others = [other for other in control_edto if other != key]
-            line = cfp_pages[places[0][0]].split("\n")[places[0][1]]
-            for cell, variant, text in _edto_mutations(line):
-                checked += 1
-                printed = " ".join(text.split())
-                result = read(_mutate(cfp_pages, places, text))
-                label = f"{pdf.name} EDTO {key[0]} {cell} {variant}"
-                read_rows = [_edto_key(row) for row in result["edto_rows"]]
-                held = [(row["table"], row["airport"], row["text"]) for row in result["unread"]]
-                if cell == "wrap":
-                    expected_rows, expected_held = control_edto, []
-                else:
-                    expected_rows = others
-                    expected_held = [("edto_alternates", None if cell == "identity" else key[0], printed)]
-                if read_rows != expected_rows:
-                    problems.append(f"{label}: read {read_rows}")
-                if held != expected_held:
-                    problems.append(f"{label}: held {held}")
-                if result["alternates"] != control["alternates"]:
-                    problems.append(f"{label}: the destination table changed")
-    print(f"{len(pdfs)} OFPs: {destination_rows} destination rows and {edto_rows} EDTO rows, {checked} mutations")
-    assert destination_rows == 104 and edto_rows == 52
-    assert not problems, f"{len(problems)} mutation(s) not accounted:\n" + "\n".join(problems[:40])
+# The exhaustive mutation test over the 30 held originals is extended with QA508-01's damage classes (case changes,
+# form-leader dots, mixed junk, on every cell) in tests/test_alternate_tables_qa508_20261015.py.

@@ -2449,6 +2449,28 @@ def _edto_classification(flight: dict[str, Any]) -> str:
 
 
 
+def _edto_unread_rows(flight: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every EDTO table row the parser held unread, as the review both EDTO surfaces print in its printed place."""
+    rows: list[dict[str, Any]] = []
+    for row in flight.get("alternates_unread") or []:
+        if not isinstance(row, dict) or row.get("table") != "edto_alternates":
+            continue
+        page = row.get("source_page")
+        where = f"OFP p{int(page)}" if isinstance(page, int) and not isinstance(page, bool) else "The OFP"
+        text = " ".join(str(row.get("text") or "").split())
+        rows.append({
+            "airport": str(row.get("airport") or "").strip().upper() or None,
+            "position": int(row.get("position") or 0),
+            "text": text,
+            "source_page": page if isinstance(page, int) and not isinstance(page, bool) else None,
+            "review": (
+                f'REVIEW - {where} prints this EDTO alternate, but its row was not read: "{text}"; its checked '
+                "period is not analysed."
+            ),
+        })
+    return rows
+
+
 def _edto_gate_sentence(edto_view: dict[str, Any]) -> str:
     assessment = edto_view.get("assessment")
     status = str((assessment or {}).get("status") if isinstance(assessment, dict) else assessment or "").strip()
@@ -6185,6 +6207,9 @@ def build_briefing_view(
         ),
         "sectors": edto_sector_view,
         "airports": edto_airports,
+        # QA508-01: a row printed in the EDTO table that was not read stands with the windows as a review, in its
+        # printed place, on the dashboard and on PDF page 5 - never an absent window.
+        "unread_rows": _edto_unread_rows(flight),
     }
     # The pilot-readable EDTO rows, composed once. The combined PDF prints
     # them and the dashboard renders them verbatim - neither surface derives

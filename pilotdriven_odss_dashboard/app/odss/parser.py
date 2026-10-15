@@ -1082,7 +1082,9 @@ def _parse_named_procedure(
 # minima-shaped. A blank column stays blank ("") and is never filled from a neighbouring column. A runway is a
 # designator (two digits and an optional L, C or R), as on all 156 rows the corpus prints in both tables.
 _ALTERNATE_MINIMA = r"(?:\d{1,5}FT/\d{1,5}M|\d{1,5}FT|\d{1,5}M)"
-_ALTERNATE_APPROACH_WORD = rf"(?!{_ALTERNATE_MINIMA}(?![^ \t]))(?=[^ \t]*[A-Z])[A-Z0-9][A-Z0-9+./@-]*"
+# An approach word starts with a letter (all 18 approach words the 30 originals print do), so it is never minima-shaped
+# and a damaged minima ("700FT/250", a truncated "700FT/2500M") is never taken for an approach (QA508-01 mutation test).
+_ALTERNATE_APPROACH_WORD = r"[A-Z][A-Z0-9+./@-]*"
 _ALTERNATE_RUNWAY = r"\d{2}[LCR]?"
 _ALTERNATE_ROW = re.compile(
     rf"[ \t]*(?P<apt>[A-Z]{{4}})/(?P<rwy>{_ALTERNATE_RUNWAY})"
@@ -1147,26 +1149,41 @@ def _edto_row_identity(line: str) -> tuple[str, str | None] | None:
 
 # QA504-01 (Codex QA of release 504, 15 Oct 2026): the accounting ended a table at the first line that did not open as
 # a readable row, and "readable" required a runway. "YMML/??" (or "YMML/", or a fuel value wrapped onto its own line)
-# therefore closed the table and every row after it disappeared without a review. A table is now bounded by the LIDO
-# layout itself, never by the readability of its rows:
+# therefore closed the table and every row after it disappeared without a review.
+# QA508-01 (Codex QA of release 508, 15 Oct 2026, P1): the end test still read cell content - any lowercase letter or
+# any run of dots closed the table - and it ran before a line could be read or held, so "700ft", "cat1dme" or a fuel or
+# minima printed "....." closed the table and the damaged row and every row after it were lost (EDTO with no warning).
+# A table is bounded by the LIDO layout alone, never by what a cell holds:
 #   - it opens at its section heading or its column header (a heading's rule and the header under it open nothing);
-#   - the destination table closes at its own trailer, the "<ICAO> RTE:" lines LIDO prints after every printing (all
-#     60 printings in the 30 originals), and the EDTO table at the next section heading ("STATION WEATHER REPORTS",
-#     in all 20); either closes at any section heading - a label ending in ":" or "!", a labelled field ("SID: ..."),
-#     a line underlined by a rule, a rule, a dot-leader form line ("ARR ATIS ......"), the package's own mixed-case
-#     text ("Airport WX List") - at another table's header, or at the end of the CFP section;
-#   - page furniture (package footer, running header, LIDO page header) and blank lines inside are skipped.
-# Every other line inside is accounted: a row start (its identity is readable), a continuation of that row (a line
-# without an identity that, appended, makes the row read whole - a row wrapped onto the next line), or an unread line
-# held with its raw text. A damaged cell or a continuation never closes a table, and nothing is inferred: a row is read
-# only when its own printed text reads whole under the row grammar.
+#   - a line that opens a row (its identity is readable: "<ICAO>/<runway cell>", "<ICAO> <period cell>") is always a
+#     table line, whatever its cells hold;
+#   - any other line ends the table only when its whole line is the next block's structure: the destination table's
+#     own trailer, the "<ICAO> RTE:" lines LIDO prints after every printing (all 60 printings in the 30 originals); a
+#     section heading in words - ending in ":" or "!" ("EXCESS FUEL REASON:", "STATION WEATHER REPORTS!", all 20 EDTO
+#     tables), or underlined by a rule ("STATION WEATHER REPORTS" / "-----") - a rule, a labelled field in words
+#     ("SID: ...", "DISP BY: ..."), a form line of words and a dot leader ("ARR ATIS ......"), or another table's
+#     opener. Lowercase, dots, junk or a damaged cell inside the bounds are damage, never an end;
+#   - page furniture (package footer, running header, LIDO page header) and blank lines inside are skipped;
+#   - a table that reaches the end of the CFP section with no such boundary has no positively identified end: the lines
+#     after its last row are held unread as one block, never dropped.
+# Every other line inside is accounted: a row start, a continuation of that row (a line without an identity that,
+# appended, makes the row read whole - a row wrapped onto the next line), or an unread line held with its raw text.
+# Nothing is inferred: a row is read only when its own printed text reads whole under the row grammar.
 _ALTERNATE_ROUTE_LINE = re.compile(r"[ \t]*(?P<airport>[A-Z]{4})[ \t]+RTE:")
-_ALTERNATE_SECTION_LABEL = re.compile(r"[ \t]*[A-Z][A-Z0-9 /&().,'-]*[:!][ \t]*")
-# A labelled field of the next block ("SID: WSSS/20C ...", "DISP BY: ..."): a label of words, then a colon. No alternate
-# row holds a colon after words alone.
-_ALTERNATE_FIELD_LABEL = re.compile(r"[ \t]*[A-Z][A-Z ()/.&'-]*[A-Z)]:(?:[ \t]|$)")
+_ALTERNATE_HEADING_WORDS = r"[A-Za-z][A-Za-z ]*[A-Za-z]"
+_ALTERNATE_SECTION_LABEL = re.compile(rf"[ \t]*{_ALTERNATE_HEADING_WORDS}[ \t]*[:!][ \t]*")
+_ALTERNATE_FIELD_LABEL = re.compile(rf"[ \t]*{_ALTERNATE_HEADING_WORDS}:[ \t]+\S")
+_ALTERNATE_FORM_LINE = re.compile(rf"[ \t]*{_ALTERNATE_HEADING_WORDS}[ \t]*\.{{3,}}")
+# An underlined heading may end in a mark the text layer cannot map (the app's reader gets "STATION WEATHER REPORTS \x00"
+# where PyMuPDF reads "!"); its rule is what makes it a heading.
+_ALTERNATE_UNDERLINED_HEADING = re.compile(rf"[ \t]*{_ALTERNATE_HEADING_WORDS}[^A-Za-z0-9]*")
 _ALTERNATE_SECTION_RULE = re.compile(r"[ \t]*(?:-{3,}|={3,})[ \t]*")
-_ALTERNATE_FORM_LEADER = re.compile(r"\.{5,}")
+# The EDTO section's ETP lines name the EDTO alternates independently of the table (in all 20 EDTO originals the ETP
+# airports are exactly the table's): "      3.04  S1917.5  WAAA 83 ..." over " 1E  .....  E11658.9 YPDN 39 ...".
+_ETP_FIRST_LINE = re.compile(r"[ \t]*\d{1,2}\.\d{2}[ \t]+[NS]\d{4}(?:\.\d+)?[ \t]+(?P<airport>[A-Z]{4})(?![^ \t])")
+_ETP_SECOND_LINE = re.compile(
+    r"[ \t]*\d+[A-Z][ \t]+\.*[ \t]*[EW]\d{5}(?:\.\d+)?(?:[ \t]+(?P<airport>[A-Z]{4})(?![^ \t]))?"
+)
 _ALTERNATE_TABLES = {
     "destination_alternates": {
         "header": _ALTERNATE_TABLE_OPENER,
@@ -1203,24 +1220,30 @@ _ALTERNATE_DECLARED_NOT_READ = (
     "the OFP declares this planned alternate in its route line, but no row for it was read from the {table}; the "
     "alternate is not analysed here"
 )
+_EDTO_DECLARED_NOT_READ = (
+    "the OFP's EDTO ETP lines name this EDTO alternate, but no row for it was read from the {table}; its checked period "
+    "is not analysed here"
+)
+_ALTERNATE_END_NOT_FOUND = (
+    "the {table} reaches the end of the OFP section with no heading or trailer after it; the lines after its last row "
+    "are held as printed and nothing in them is analysed"
+)
 
 
 def _alternate_table_ends(stream: list[tuple[int, str]], index: int) -> bool:
-    """Whether the line at ``index`` is past the alternate table it would belong to (see QA504-01 above)."""
+    """Whether the line at ``index``, a line that opens no row, is the next block's structure (see QA508-01 above)."""
     line = stream[index][1]
     if (
         _ALTERNATE_ROUTE_LINE.match(line)
         or _ALTERNATE_SECTION_LABEL.fullmatch(line)
         or _ALTERNATE_FIELD_LABEL.match(line)
-        # The LIDO OFP prints in capitals; a line in mixed case is the briefing package's own text ("Airport WX List").
-        or re.search(r"[a-z]", line)
+        or _ALTERNATE_FORM_LINE.match(line)
         or _ALTERNATE_SECTION_RULE.fullmatch(line)
-        or _ALTERNATE_FORM_LEADER.search(line)
         or any(spec["header"].match(line) for spec in _ALTERNATE_TABLES.values())
     ):
         return True
     following = next((text for _, text in stream[index + 1:] if text.strip()), "")
-    return bool(_ALTERNATE_SECTION_RULE.fullmatch(following))
+    return bool(_ALTERNATE_UNDERLINED_HEADING.fullmatch(line) and _ALTERNATE_SECTION_RULE.fullmatch(following))
 
 
 def _alternate_table_entries(table: str, lines: list[tuple[int, str]]) -> list[dict[str, Any]]:
@@ -1269,6 +1292,26 @@ def _alternate_table_entries(table: str, lines: list[tuple[int, str]]) -> list[d
     return entries
 
 
+def _printing_entries(printing: dict[str, Any]) -> list[dict[str, Any]]:
+    """A printing's entries; a printing with no positively identified end holds the lines after its last row as one
+    unread block (QA508-01): nothing is dropped, and a section's remainder is not turned into one review per line."""
+    table = printing["table"]
+    entries = _alternate_table_entries(table, printing["lines"])
+    if printing.get("closed"):
+        return entries
+    last_row = max((index for index, entry in enumerate(entries) if entry["kind"] != "line"), default=-1)
+    trailing = entries[last_row + 1:]
+    if len(trailing) < 1:
+        return entries
+    text = " / ".join(entry["text"] for entry in trailing)
+    block = {
+        **trailing[0],
+        "text": text if len(text) <= 160 else f"{text[:140]} ... ({len(trailing)} lines)",
+        "reason": _ALTERNATE_END_NOT_FOUND.format(table=_ALTERNATE_TABLES[table]["name"]),
+    }
+    return [*entries[:last_row + 1], block]
+
+
 def _destination_alternate_row(match: re.Match[str]) -> dict[str, Any]:
     return {
         "airport": match.group("apt"),
@@ -1315,7 +1358,9 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
     an alternate unread in every printing is held once. A line with no readable identity cannot be matched to an
     alternate without guessing, so it is held as printed. Last, every alternate the OFP declares in a "<ICAO> RTE:"
     route line that is neither read nor held is held too, so an alternate whose identity is damaged in every printing
-    is still named.
+    is still named. The EDTO table gets the same recovery (QA508-01): across printings a damaged row is reconciled with
+    the row read at its place, and every EDTO alternate the ETP lines name that is neither read nor held is held by
+    name. A printing with no positively identified end holds the lines after its last row as one block.
     """
     stream = [
         (start_page_number + index, line)
@@ -1324,16 +1369,28 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
     ]
     printings: list[dict[str, Any]] = []
     declared: list[tuple[str, str, int]] = []
+    edto_declared: list[tuple[str, str, int]] = []
     current: dict[str, Any] | None = None
     for index, (page_number, line) in enumerate(stream):
         route = _ALTERNATE_ROUTE_LINE.match(line)
         if route:
             declared.append((route.group("airport"), " ".join(line.split()), page_number))
+        etp = _ETP_FIRST_LINE.match(line)
+        if etp:
+            second_index = next((i for i in range(index + 1, len(stream)) if stream[i][1].strip()), None)
+            second = _ETP_SECOND_LINE.match(stream[second_index][1]) if second_index is not None else None
+            if second:
+                edto_declared.append((etp.group("airport"), " ".join(line.split()), page_number))
+                if second.group("airport"):
+                    edto_declared.append((second.group("airport"), " ".join(stream[second_index][1].split()),
+                                          stream[second_index][0]))
         table = next((name for name, spec in _ALTERNATE_TABLES.items() if spec["header"].match(line)), None)
         if table is not None:
             if current is not None and current["table"] == table and not current["lines"]:
                 continue  # the column header under the table's section heading
-            current = {"table": table, "lines": []}
+            if current is not None:
+                current["closed"] = True
+            current = {"table": table, "lines": [], "closed": False}
             printings.append(current)
             continue
         if current is None:
@@ -1343,7 +1400,10 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
             continue
         if not current["lines"] and _ALTERNATE_SECTION_RULE.fullmatch(line):
             continue  # the rule under the table's section heading
-        if _alternate_table_ends(stream, index):
+        # A line that opens a row is a table line whatever its cells hold; only a line that opens none can be the
+        # next block's structure (QA508-01).
+        if _ALTERNATE_TABLES[current["table"]]["identity"](line) is None and _alternate_table_ends(stream, index):
+            current["closed"] = True
             current = None
             continue
         current["lines"].append((page_number, line))
@@ -1355,7 +1415,7 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
     destination = [
         (printing_index, entry)
         for printing_index, printing in enumerate(p for p in printings if p["table"] == "destination_alternates")
-        for entry in _alternate_table_entries("destination_alternates", printing["lines"])
+        for entry in _printing_entries(printing)
     ]
     read_rows: dict[str, list[tuple[tuple[int, int], dict[str, Any], dict[str, Any]]]] = {}
     for printing_index, entry in destination:
@@ -1395,7 +1455,8 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
         if ("destination_alternates", entry["text"]) in held_lines:
             continue
         held_lines.add(("destination_alternates", entry["text"]))
-        unread.append(_unread_alternate("destination_alternates", entry, _entry_reason("destination_alternates", entry)))
+        unread.append(_unread_alternate("destination_alternates", entry,
+                                        entry.get("reason") or _entry_reason("destination_alternates", entry)))
     declared_order = list(dict.fromkeys(airport for airport, _, _ in declared))
     for airport, text, page_number in declared:
         if airport in read_airports or airport in held_airports:
@@ -1411,17 +1472,51 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
             "reason": _ALTERNATE_DECLARED_NOT_READ.format(table=_ALTERNATE_TABLES["destination_alternates"]["name"]),
         })
 
-    # EDTO alternates: printed once; one airport can be checked in more than one period, so each row stands alone.
+    # EDTO alternates. One airport can be checked in more than one period, so a row stands alone within its printing;
+    # across printings a damaged row is the copy of the row its own printing's place holds read in another printing
+    # (same airport, same place). An ETP-named EDTO alternate that is neither read nor held is held by name.
+    edto_printings = [_printing_entries(p) for p in printings if p["table"] == "edto_alternates"]
+    read_places = {
+        (entry["airport"], entry["position"])
+        for entries in edto_printings
+        for entry in entries
+        if entry["kind"] == "row"
+    }
     edto_rows: list[re.Match[str]] = []
-    for printing in (p for p in printings if p["table"] == "edto_alternates"):
-        for entry in _alternate_table_entries("edto_alternates", printing["lines"]):
+    edto_keys: set[tuple[str, ...]] = set()
+    edto_named: set[str] = set()
+    for entries in edto_printings:
+        for entry in entries:
             if entry["kind"] == "row":
-                edto_rows.append(entry["match"])
+                edto_named.add(entry["airport"])
+                key = tuple(" ".join((entry["match"].group(name) or "").split())
+                            for name in ("airport", "start", "end", "runway", "approach", "minima"))
+                if key not in edto_keys:
+                    edto_keys.add(key)
+                    edto_rows.append(entry["match"])
+                continue
+            if entry["kind"] == "unread" and (entry["airport"], entry["position"]) in read_places:
                 continue
             if ("edto_alternates", entry["text"]) in held_lines:
                 continue
             held_lines.add(("edto_alternates", entry["text"]))
-            unread.append(_unread_alternate("edto_alternates", entry, _entry_reason("edto_alternates", entry)))
+            if entry["airport"]:
+                edto_named.add(entry["airport"])
+            unread.append(_unread_alternate("edto_alternates", entry, entry.get("reason") or _entry_reason("edto_alternates", entry)))
+    edto_order = list(dict.fromkeys(airport for airport, _, _ in edto_declared))
+    for airport, text, page_number in edto_declared:
+        if airport in edto_named:
+            continue
+        edto_named.add(airport)
+        unread.append({
+            "table": "edto_alternates",
+            "airport": airport,
+            "runway": None,
+            "text": text,
+            "source_page": page_number,
+            "position": edto_order.index(airport),
+            "reason": _EDTO_DECLARED_NOT_READ.format(table=_ALTERNATE_TABLES["edto_alternates"]["name"]),
+        })
     return {"alternates": alternates, "edto_rows": edto_rows, "unread": unread}
 
 
