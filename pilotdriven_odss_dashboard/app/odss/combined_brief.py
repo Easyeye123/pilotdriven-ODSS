@@ -223,7 +223,11 @@ WAFC_CHARTS_PER_PAGE = 3
 # release 502 (QA502-01/02), daylight, exception and holiday words, day words, dates and clocks in any connective form
 # anywhere in a notice's text are accounted for (a dated period containing the validity, or a run proven equal to Item
 # D) or the notice is a timing review; equivalence is proven, never sampled.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-printed-alternates-schedule-language-v103"
+# 15 Oct 2026 (v104, release 506 + QA504 integrated): v103 and, with Codex QA of release 504 (QA504-01), an alternate
+# table is bounded by the LIDO layout and every line in it is read or held - a damaged identity, runway or cell, or a
+# wrapped row, never ends the table and never loses the rows after it; an alternate that is also the fuel-enroute
+# airport shows its card's TAF and alternate-window notice in the matrix instead of FORECAST/CONSTRAINT UNAVAILABLE.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-15-alternate-tables-accounted-v104"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

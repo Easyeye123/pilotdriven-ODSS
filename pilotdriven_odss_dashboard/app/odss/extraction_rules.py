@@ -56,4 +56,9 @@ the two are bumped together whenever the parser's extraction changes.
 # finds schedule-bearing language anywhere in a LIDO record's text; every statement must be accounted for or the record
 # is held for timing review. Analyses held under v12 or v13 can lack planned alternates and their records, or differ in
 # schedule_review; a v12 or v13 analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-15-alternate-rows-body-schedule-v14"
+# v15 (15 Oct 2026, release 506 + QA504 integrated, QA504-01): v14, and both alternate tables are read inside their
+# printed bounds and every line in them is accounted - a row with an unreadable identity, runway or cell is held (by
+# airport when readable), a row wrapped onto the next line is read whole, the two printings are reconciled and a
+# route-line alternate with no row is held. Genuine holdings are unchanged; a v14 analysis of a damaged table can lack
+# alternates without a review, so a v14 analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-15-alternate-tables-bounded-v15"
