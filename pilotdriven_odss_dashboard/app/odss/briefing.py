@@ -277,20 +277,15 @@ def _station_source_weather(
     flight: dict[str, Any],
     location: str,
     record_type: str,
-    *,
-    allowed_source_roles: set[str] | None = None,
 ) -> dict[str, Any] | None:
-    normalised_allowed_roles = {
-        re.sub(r"[_\s]+", " ", role.strip().lower())
-        for role in (allowed_source_roles or set())
-        if role.strip()
-    }
+    """The station's first page-provenanced METAR or TAF, whichever weather-list heading LIDO printed it under.
+
+    A station's report is the station's, not a role's: LIDO prints a station that is both a planned alternate and the
+    fuel-enroute airport once, under the FUEL ENROUTE AIRPORT heading (SQ606 RKPC, SQ437 WMKK), and that TAF is the
+    one forecast for every use of the station. The heading is kept on the record as ``source_role`` (provenance); it
+    never decides which surface may show the report (QA504 dual-role matrix, 15 Oct 2026).
+    """
     for record in flight.get("weather") or []:
-        source_role = re.sub(
-            r"[_\s]+",
-            " ",
-            str(record.get("source_role") or "").strip().lower(),
-        )
         if (
             str(record.get("location") or "").upper() == location
             and record.get("record_type") == record_type
@@ -298,16 +293,6 @@ def _station_source_weather(
             and isinstance(record.get("source_page"), int)
             and not isinstance(record.get("source_page"), bool)
             and int(record["source_page"]) > 0
-            # Untagged OFP weather belongs to the ordinary station bundle.
-            # Explicitly tagged weather may only cross into this projection
-            # when the caller names that role.  In particular, a fuel-enroute
-            # TAF must never become destination-alternate evidence merely
-            # because both planning roles use the same ICAO station.
-            and (
-                allowed_source_roles is None
-                or not source_role
-                or source_role in normalised_allowed_roles
-            )
         ):
             return {
                 "record_type": record_type,
@@ -1082,6 +1067,55 @@ def _airport_operational_panels(
     return panels
 
 
+_ALTERNATE_WINDOW_FIELDS = (
+    "applicability",
+    "window_start_utc",
+    "window_end_utc",
+    "stateAtReference",
+    "referenceAt",
+    "minutesDelta",
+)
+
+
+def _alternate_window_notice(item: dict[str, Any]) -> dict[str, Any] | None:
+    """A card notice as the engine assessed it for the destination-alternate window, or None.
+
+    The engine assesses a station notice once per role the station holds
+    (``role_applicability``) and keeps one primary role on the finding. The
+    alternate matrix reads the destination-alternate assessment itself, so a
+    notice active at a fuel-enroute alternate in both windows is alternate
+    evidence with its alternate-window timing, and a notice with no relevant
+    alternate assessment (only another role's) is not.
+    """
+    def role_of(value: Any) -> str:
+        return re.sub(r"[_\s]+", " ", str(value or "").strip().lower())
+
+    if role_of(item.get("role")) == "destination alternate":
+        return dict(item)
+    for assessed in item.get("role_applicability") or []:
+        if (
+            isinstance(assessed, dict)
+            and role_of(assessed.get("role")) == "destination alternate"
+            and assessed.get("applicability") in {"active", "review"}
+        ):
+            notice = {
+                **item,
+                "role": "destination alternate",
+                **{key: assessed.get(key) for key in _ALTERNATE_WINDOW_FIELDS if key in assessed},
+            }
+            # The engine worded the stored summary for the primary role's window; the alternate matrix states the
+            # alternate window, worded by the same engine rule.
+            notice["summary"] = _notam_operational_summary(
+                str(item.get("item_e_text") or ""),
+                str(item.get("pertinence_kind") or ""),
+                "destination alternate",
+                str(notice.get("applicability") or "active"),
+                category=str(item.get("category") or ""),
+            )
+            return notice
+    return None
+
+
 def _alternate_assessment_rows(
     flight: dict[str, Any],
     airport_panels: list[dict[str, Any]],
@@ -1094,6 +1128,21 @@ def _alternate_assessment_rows(
     This projection selects the one compact forecast and one compact constraint
     printed in the operational matrix.  Dashboard and PDF consume these same
     rows so evidence from a neighbouring alternate cannot be borrowed.
+
+    QA504 dual-role matrix (15 Oct 2026): the row reads the same held station
+    records as the station's card. It used to keep only weather and notices
+    whose LIDO print heading (``source_role``) was an alternate heading and
+    whose single primary engine role was "destination alternate". LIDO prints a
+    station that is also the fuel-enroute airport once, under the FUEL ENROUTE
+    AIRPORT heading, and the engine's primary role for a notice active in both
+    windows is the fuel-enroute one, so SQ606 RKPC, SQ437 WMKK, SQ297 YBBN, SQ438
+    VCBI, SQ194 VVDN and SQ223/SQ24 YGEL printed FORECAST/CONSTRAINT UNAVAILABLE
+    while their cards held the TAF and the notices (page 4's alternate analysis
+    already printed RKPC's SX56/26). The forecast is now the card's TAF (else its
+    METAR); a constraint is a card notice the engine assessed for the
+    destination-alternate window (active or review), shown with that window's
+    assessment. A notice assessed only for another role's window is never
+    alternate evidence, and nothing crosses between stations.
     """
     panel_by_icao = {
         str(panel.get("icao") or "").strip().upper(): panel
@@ -1106,16 +1155,12 @@ def _alternate_assessment_rows(
             continue
         airport = str(alternate.get("airport") or "").strip().upper()
         panel = panel_by_icao.get(airport, {})
-        forecast_source = _station_source_weather(
-            flight,
-            airport,
-            "TAF",
-            allowed_source_roles={"destination alternate", "alternate"},
-        ) or _station_source_weather(
-            flight,
-            airport,
-            "METAR",
-            allowed_source_roles={"destination alternate", "alternate"},
+        card_weather = panel.get("weather") if isinstance(panel.get("weather"), dict) else None
+        forecast_source = (
+            (card_weather.get("taf") or card_weather.get("metar"))
+            if card_weather is not None
+            else _station_source_weather(flight, airport, "TAF")
+            or _station_source_weather(flight, airport, "METAR")
         )
         if isinstance(forecast_source, dict) and str(
             forecast_source.get("text") or ""
@@ -1150,22 +1195,16 @@ def _alternate_assessment_rows(
             }
 
         alternate_notams = [
-            item
-            for item in panel.get("selected_notams") or []
-            if isinstance(item, dict)
-            and re.sub(
-                r"[_\s]+",
-                " ",
-                str(item.get("role") or "").strip().lower(),
-            ) == "destination alternate"
-            and re.sub(
-                r"[_\s]+",
-                " ",
-                str(item.get("source_role") or "").strip().lower(),
-            ) in {"", "destination alternate", "alternate"}
-            and isinstance(item.get("source_page"), int)
-            and not isinstance(item.get("source_page"), bool)
-            and int(item["source_page"]) > 0
+            notice
+            for notice in (
+                _alternate_window_notice(item)
+                for item in panel.get("selected_notams") or []
+                if isinstance(item, dict)
+            )
+            if notice is not None
+            and isinstance(notice.get("source_page"), int)
+            and not isinstance(notice.get("source_page"), bool)
+            and int(notice["source_page"]) > 0
         ]
         notam_lines = _compact_notam_lines(
             alternate_notams,
@@ -1202,6 +1241,8 @@ def _alternate_assessment_rows(
                 ),
                 "source_icao": airport or None,
                 "source_role": selected_constraint.get("source_role"),
+                # The window the notice was assessed for; source_role is only the heading LIDO printed it under.
+                "assessed_role": "destination alternate",
                 "text": str(selected_constraint.get("text") or "").strip(),
                 "source_page": selected_constraint.get("source_page"),
                 "planned_match": selected_constraint.get("planned_match"),

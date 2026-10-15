@@ -1290,33 +1290,32 @@ def test_alternate_assessment_rows_fallback_and_missing_sources_fail_closed() ->
     )
 
 
-def test_alternate_assessment_never_borrows_fuel_enroute_sources() -> None:
-    flight = _flight(LOG_PAGE_LOW)
-    flight["alternates"] = [{"airport": "YGEL", "runway": "03"}]
-    flight["fuel_enroute_airports"] = [{
-        "airport": "YGEL",
-        "role": "fuel_enroute_airport",
-        "source_pages": [15, 24],
+def _fuel_enroute_notice(notam_id: str, raw: str, alternate_applicability: str | None) -> dict:
+    """A YGEL notice printed under the FUEL ENROUTE AIRPORT heading, assessed per role as the engine does."""
+    role_applicability = [{
+        "role": "fuel enroute airport", "applicability": "active",
+        "window_start_utc": "2026-08-16T01:30:00+00:00", "window_end_utc": "2026-08-16T08:40:00+00:00",
+        "stateAtReference": "active_at_reference", "referenceAt": "2026-08-16T01:30:00+00:00", "minutesDelta": 0,
     }]
-    flight["weather"] = [{
-        "location": "YGEL",
-        "record_type": "TAF",
-        "text": "FT FUEL-ENROUTE-ONLY YGEL",
-        "source_page": 15,
-        "source_role": "fuel_enroute_airport",
-    }]
-    fuel_notam = {
+    if alternate_applicability:
+        role_applicability.append({
+            "role": "destination alternate", "applicability": alternate_applicability,
+            "window_start_utc": "2026-08-16T06:00:00+00:00", "window_end_utc": "2026-08-16T10:00:00+00:00",
+            "stateAtReference": "active_at_reference", "referenceAt": "2026-08-16T08:00:00+00:00", "minutesDelta": 0,
+        })
+    return {
         "engine": "notam",
         "severity": "warning",
-        "title": "Fuel-enroute YGEL NOTAM 1F2187/26",
-        "summary": "NDB unavailable in the fuel-enroute window.",
+        "title": f"Fuel Enroute Airport NOTAM {notam_id}",
+        "summary": "NDB unavailable during the applicable fuel enroute airport window.",
         "details": [],
         "data": {
             "role": "fuel enroute airport",
+            "role_applicability": role_applicability,
             "source_role": "fuel_enroute_airport",
             "location": "YGEL",
-            "notam_id": "1F2187/26",
-            "raw_text": "NDB GEL 359KHZ U/S",
+            "notam_id": notam_id,
+            "raw_text": raw,
             "category": "APPROACH PROCEDURE",
             "priority_score": 10,
             "pertinence_rank": 2,
@@ -1324,23 +1323,64 @@ def test_alternate_assessment_never_borrows_fuel_enroute_sources() -> None:
             "applicability": "active",
             "window_start_utc": "2026-08-16T01:30:00+00:00",
             "window_end_utc": "2026-08-16T08:40:00+00:00",
+            "stateAtReference": "active_at_reference",
+            "referenceAt": "2026-08-16T01:30:00+00:00",
+            "minutesDelta": 0,
             "source_page": 24,
         },
     }
 
-    row = build_briefing_view(
-        flight,
-        [fuel_notam],
-        [],
-    )["alternate_assessment_rows"][0]
+
+def test_a_dual_role_alternate_reads_the_same_held_records_as_its_card() -> None:
+    """QA504 dual-role matrix (15 Oct 2026).
+
+    This test used to assert the defect: an alternate that is also the fuel-enroute airport (SQ223 YGEL, SQ606 RKPC,
+    SQ437 WMKK) printed FORECAST/CONSTRAINT UNAVAILABLE while its card held the TAF and the notices, because the matrix
+    kept only records whose LIDO print heading was an alternate heading and whose primary engine role was the
+    alternate. LIDO prints such a station once, under FUEL ENROUTE AIRPORT. The station's TAF is the station's forecast
+    whatever heading printed it, and the engine assesses each notice for every role the station holds. The matrix now
+    shows the card's TAF and a card notice the engine assessed for the alternate window, in that window's words; a
+    notice assessed only for the fuel-enroute window is still never alternate evidence, and no other station's record
+    is ever used.
+    """
+    flight = _flight(LOG_PAGE_LOW)
+    flight["alternates"] = [{"airport": "YGEL", "runway": "03"}]
+    flight["fuel_enroute_airports"] = [{
+        "airport": "YGEL",
+        "role": "fuel_enroute_airport",
+        "source_pages": [15, 24],
+    }]
+    flight["weather"] = [
+        {"location": "YPPH", "record_type": "TAF", "text": "FT NEIGHBOUR YPPH", "source_page": 14,
+         "source_role": "destination alternate"},
+        {"location": "YGEL", "record_type": "TAF", "text": "FT YGEL PRINTED UNDER FUEL ENROUTE", "source_page": 15,
+         "source_role": "fuel_enroute_airport"},
+    ]
+    fuel_window_only = _fuel_enroute_notice("1F2186/26", "VOR GEL 114.1MHZ U/S", None)
+    both_windows = _fuel_enroute_notice("1F2187/26", "NDB GEL 359KHZ U/S", "active")
+
+    view = build_briefing_view(flight, [fuel_window_only, both_windows], [])
+    row = view["alternate_assessment_rows"][0]
+    card = next(panel for panel in view["airport_operational_panels"] if panel["icao"] == "YGEL")
 
     assert row["airport"] == "YGEL"
-    assert row["forecast"]["status"] == "unavailable"
-    assert "FUEL-ENROUTE-ONLY" not in row["forecast"]["text"]
-    assert row["constraint"]["status"] == "unavailable"
-    assert row["constraint"]["notam_id"] is None
-    assert "1F2187/26" not in row["constraint"]["text"]
-    assert row["assessment"]["source_status"] == "unavailable"
+    assert row["forecast"]["status"] == "held"
+    assert row["forecast"]["text"] == card["weather"]["taf"]["text"] == "FT YGEL PRINTED UNDER FUEL ENROUTE"
+    assert row["forecast"]["source_reference"] == "OFP p15"
+    assert row["constraint"]["status"] == "held"
+    assert row["constraint"]["notam_id"] == "F2187/26"
+    assert row["constraint"]["source_role"] == "fuel_enroute_airport", "the heading LIDO printed it under, as provenance"
+    assert row["constraint"]["assessed_role"] == "destination alternate"
+    assert {item["notam_id"] for item in card["selected_notams"]} == {"F2186/26", "F2187/26"}
+    assert "alternate window" in row["constraint"]["text"]
+    assert "fuel enroute" not in row["constraint"]["text"].lower()
+    assert row["assessment"]["source_status"] == "held"
+
+    only_fuel_window = build_briefing_view(flight, [fuel_window_only], [])["alternate_assessment_rows"][0]
+    assert only_fuel_window["forecast"]["text"] == "FT YGEL PRINTED UNDER FUEL ENROUTE"
+    assert only_fuel_window["constraint"]["status"] == "unavailable"
+    assert only_fuel_window["constraint"]["notam_id"] is None
+    assert "F2186/26" not in only_fuel_window["constraint"]["text"]
 
 
 def test_alternate_constraint_without_page_provenance_fails_closed() -> None:
