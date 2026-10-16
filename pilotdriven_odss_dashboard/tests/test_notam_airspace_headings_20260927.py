@@ -238,5 +238,5 @@ def test_genuine_baku_lower_heading_names_its_fir():
 
 
 def test_the_tokens_move_together():
-    assert EXTRACTION_RULES == "2026-10-16-clock-like-temporal-shapes-v18"
+    assert EXTRACTION_RULES == "2026-10-16-table-cells-valid-v19"
     assert ENROUTE_CONTACT_RULE == "enroute-contact-v16"

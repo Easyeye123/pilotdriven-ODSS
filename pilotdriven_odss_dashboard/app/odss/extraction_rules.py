@@ -75,4 +75,9 @@ the two are bumped together whenever the parser's extraction changes.
 # and a duration attached to the restriction (FOR, MAX, LAST, PERIOD OF, DURING) are temporal content and hold the
 # record for timing review, where v17 read them as no schedule. Analyses held under v17 can differ in schedule_review
 # (10 of the 2,989 unique records of the 30 held originals); a v17 analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-16-clock-like-temporal-shapes-v18"
+# v19 (16 Oct 2026, QA512-01/02, on v18): every numeric or coded table cell is checked against the shared table-cell
+# rules (table_cell_rules.json) before its row is read: an invalid clock, runway, distance, level, wind component,
+# time, fuel, minima or identifier holds the row naming the field; one row's failure holds that row; fuel-enroute
+# station rows are held when they do not read. Genuine holdings are unchanged; a v18 analysis of a table with an
+# invalid cell can hold an impossible value as read (or have failed), so a v18 analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-16-table-cells-valid-v19"

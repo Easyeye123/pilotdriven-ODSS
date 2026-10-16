@@ -240,7 +240,11 @@ WAFC_CHARTS_PER_PAGE = 3
 # is temporal content the grammar must read or the timing is a review; a duration is benign only as a notice,
 # permission or restoration lead time; every benign class needs its stated context and never holds, cuts or abuts a
 # clock-like range.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-16-clock-like-temporal-shapes-v107"
+# 16 Oct 2026 (v108, QA512-01/02 - Codex QA of release 512, integrated on release 514): v107, and a table cell is
+# promoted only when it is semantically valid: an impossible EDTO clock (19:60) or runway (00, 37, 99) is held as a
+# review naming the field, never printed as a plan or allowed to fail the analysis; a FUEL ENROUTE AIRPORT row that
+# does not read is a review on page 5; every review names its invalid cells.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-16-table-cells-valid-v108"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
