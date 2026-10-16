@@ -94,11 +94,17 @@ def _js_replacement(replacement: str) -> str:
 
 
 _LETTER_FOR_DIGIT_RUN = re.compile(_FIELD["letterForDigit"]["run"], _A)
-_BENIGN = [(item["class"], re.compile(item["pattern"], _A), bool(item.get("allowClockRange"))) for item in _FIELD["benign"]]
+_BENIGN = [(item["class"], re.compile(item["pattern"], _A), bool(item.get("allowClockRange")),
+            bool(item.get("holdsNoTemporal")), int(item.get("maskGroup") or 0)) for item in _FIELD["benign"]]
 _BENIGN_NEVER_HOLDS = re.compile(_FIELD["benignNeverHolds"], _A)
 _BENIGN_NEVER_CUTS = re.compile(_FIELD["benignNeverCuts"], _A)
 _ABUTS_AFTER = re.compile(_FIELD["rangeAbutment"]["after"], _A)
 _ABUTS_BEFORE = re.compile(_FIELD["rangeAbutment"]["before"], _A)
+_GOVERNING_CONNECTIVE = re.compile(_FIELD["benignGovernance"]["connective"], _A)
+_GOVERNED_OBJECT = re.compile(_FIELD["benignGovernance"]["object"], _A)
+_PERIOD_CONNECTIVE = re.compile(_FIELD["benignGovernance"]["periodConnective"], _A)
+_SELF_EVIDENT = re.compile(_FIELD["benignGovernance"]["selfEvident"], _A)
+_ACCOUNTED_RESIDUE = re.compile(_FIELD["accountedResidue"], _A)
 _TEMPORAL = [(item["class"], re.compile(item["pattern"], _A)) for item in _FIELD["temporal"]]
 _STATEMENT = re.compile(_FIELD["statement"], _A)
 _NEGATIONS = re.compile(_FIELD["negations"], _A)
@@ -353,12 +359,17 @@ def _temporal_tokens(masked: str) -> list[tuple[int, int]]:
     return [match.span() for _name, pattern in _TEMPORAL for match in pattern.finditer(masked) if match.end() > match.start()]
 
 
-def _mask_benign(text: str) -> str:
-    """The text with every span a benign class POSITIVELY classifies as not temporal replaced by '#'. A span never cuts
-    a clock-like shape found in the unmasked text (benignNeverCuts: it may hold a whole one - 'TORA 2100' - never part
-    of one: 'FL180/18' of 'FL180/18 00'); a span that holds or cuts a clock-like range is never benign unless its class
-    states allowClockRange (benignNeverHolds); and a span is never one side of a range: it is refused when a range
-    connector joins it to temporal content left unmasked once every candidate span is masked (rangeAbutment)."""
+def _benign_spans(text: str) -> list[tuple[int, int, str]]:
+    """The benign spans kept in one free-text line, as (start, end, class): every span a benign class POSITIVELY
+    classifies as not temporal. A span never cuts a clock-like shape found in the unmasked text (benignNeverCuts: it
+    may hold a whole one - 'TORA 2100' - never part of one: 'FL180/18' of 'FL180/18 00'), and never holds any
+    temporal token of the unmasked text when its class states holdsNoTemporal; a span that holds or cuts a clock-
+    like range is never benign unless its class states allowClockRange (benignNeverHolds); a span is never the
+    object of a temporal connective (benignGovernance, QA514: one beginning with a digit or a time word directly
+    after DURING, UNTIL, FROM, AT, TO ..., and any holding a digit after DURING, OUTSIDE, SINCE or WEF, unless it is
+    self-evidently not a time); and a span is never one side of a range: it is refused when a range connector joins
+    it to temporal content left unmasked once every candidate span is masked (rangeAbutment). A class that states
+    maskGroup masks only that group of its match."""
     ranges = [match.span() for match in _BENIGN_NEVER_HOLDS.finditer(text)]
     shapes = [match.span() for match in _BENIGN_NEVER_CUTS.finditer(text)]
 
@@ -368,23 +379,52 @@ def _mask_benign(text: str) -> str:
     def cuts_shape(start: int, end: int) -> bool:
         return any(low < start < high or low < end < high for low, high in shapes)
 
-    spans = [match.span() for _name, pattern, allow_clock_range in _BENIGN for match in pattern.finditer(text)
-             if match.end() > match.start() and not cuts_shape(match.start(), match.end())
-             and (allow_clock_range or not meets_range(match.start(), match.end()))]
-    provisional = _paint(text, spans)
+    temporal = _temporal_tokens(text)
+
+    def holds_temporal(start: int, end: int) -> bool:
+        return any(low < end and start < high for low, high in temporal)
+
+    def governed(start: int, end: int) -> bool:
+        span, before = text[start:end], text[:start]
+        governing = ((_GOVERNED_OBJECT.search(span) and _GOVERNING_CONNECTIVE.search(before))
+                     or (re.search(r"[0-9]", span) and _PERIOD_CONNECTIVE.search(before)))
+        return bool(governing and not _SELF_EVIDENT.search(span))
+
+    spans: list[tuple[int, int, str]] = []
+    for name, pattern, allow_clock_range, holds_no_temporal, mask_group in _BENIGN:
+        for match in pattern.finditer(text):
+            start, end = match.span(mask_group)
+            if end <= start or cuts_shape(start, end) or (not allow_clock_range and meets_range(start, end)):
+                continue
+            if (holds_no_temporal and holds_temporal(start, end)) or governed(start, end):
+                continue
+            spans.append((start, end, name))
+    provisional = _paint(text, [(start, end) for start, end, _ in spans])
     tokens = _temporal_tokens(provisional)
     starts = {start for start, _ in tokens}
     ends = {end for _, end in tokens}
 
-    def abuts(span: tuple[int, int]) -> bool:
-        start, end = span
+    def abuts(span: tuple[int, int, str]) -> bool:
+        start, end, _name = span
         after = _ABUTS_AFTER.search(provisional[end:])
         if after and end + after.end() in starts:
             return True
         before = _ABUTS_BEFORE.search(provisional[:start])
         return bool(before and before.start() in ends)
 
-    return _paint(text, [span for span in spans if not abuts(span)])
+    return [span for span in spans if not abuts(span)]
+
+
+def _mask_benign(text: str) -> str:
+    return _paint(text, [(start, end) for start, end, _ in _benign_spans(text)])
+
+
+def explain_schedule_free_text(text: str) -> dict[str, Any]:
+    """The benign spans kept in one free-text line and the text they leave (QA514 tests and fuzzing: which class
+    masked what). ``text`` is a body line as the grammar reads it (upper case, dashes folded, whitespace collapsed)."""
+    spans = _benign_spans(str(text or ""))
+    return {"masked": _paint(str(text or ""), [(start, end) for start, end, _ in spans]),
+            "spans": [{"class": name, "start": start, "end": end} for start, end, name in spans]}
 
 
 def _regroup(text: str) -> str:
@@ -451,12 +491,13 @@ def _statement_accounted(periods: list[tuple[float, float]], entries: list[dict[
 def _free_text_review(text: str, field: str | None, entries: list[dict[str, Any]] | None,
                       validity: Mapping[str, Any] | None) -> str | None:
     """The review the free text after the field calls for, or None (QA506: fail closed; QA510: temporal content is
-    found by SHAPE). Benign spans are masked; every temporal token left - every clock-like shape whatever its values -
-    must sit in a statement the grammar reads whole and that is accounted for, else a review. None comes only out of
-    that accounting: free text with no temporal content of any shape, or whose every statement is proven."""
+    found by SHAPE; QA514: every digit accounted for). Benign spans are masked; every temporal token left - every
+    clock-like shape whatever its values - and EVERY digit left (accountedResidue) must sit in a statement the grammar
+    reads whole and that is accounted for, else a review. None comes only out of that accounting: free text that,
+    masked, holds no digit and no temporal content of any shape, or whose every statement is proven."""
     reason = TIMING_REVIEW_REASONS["freeTextConflict"] if field else TIMING_REVIEW_REASONS["freeText"]
     masked = _mask_benign(text or "")
-    tokens = _temporal_tokens(masked)
+    tokens = _temporal_tokens(masked) + [match.span() for match in _ACCOUNTED_RESIDUE.finditer(masked)]
     statements = [(match.start(), match.end(), match.group(0)) for match in _STATEMENT.finditer(masked)]
     if any(not any(low <= start and end <= high for low, high, _ in statements) for start, end in tokens):
         return reason

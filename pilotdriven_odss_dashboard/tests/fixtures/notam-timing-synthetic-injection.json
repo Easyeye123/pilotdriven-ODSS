@@ -761,6 +761,617 @@
      "TWY Z9 CLSD. CRANE HGT 1800FT AMSL. SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9300/26",
+    "case": "QA514_TEMPORAL_00_NONE",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD DURING THE OFFICE HOURS OF THE CAA. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9301/26",
+    "case": "QA514_TEMPORAL_01_PERIOD",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "OUTSIDE THE OFFICE HOURS OF THE CAA. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9302/26",
+    "case": "QA514_TEMPORAL_02_COMMA",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD, IN THE BUSINESS HOURS OF THE AIRPORT AUTHORITY. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9303/26",
+    "case": "QA514_TEMPORAL_03_SEMICOLON",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "OFFICE HOURS APPLY; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9304/26",
+    "case": "QA514_TEMPORAL_04_LINEBREAK",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD",
+     "08000-10000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9305/26",
+    "case": "QA514_TEMPORAL_05_PARENTHESES",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "(8:3-9:3) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9306/26",
+    "case": "QA514_TEMPORAL_06_NONE",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD 8.3-9.3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9307/26",
+    "case": "QA514_TEMPORAL_07_PERIOD",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "FOR 1.5H. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9308/26",
+    "case": "QA514_TEMPORAL_08_COMMA",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD, FROM EIGHT TO TEN. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9309/26",
+    "case": "QA514_TEMPORAL_09_SEMICOLON",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "AT 1,200; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9310/26",
+    "case": "QA514_TEMPORAL_10_LINEBREAK",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD",
+     ".0800-.1000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9311/26",
+    "case": "QA514_TEMPORAL_11_PARENTHESES",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "(#0800-#1000) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9312/26",
+    "case": "QA514_TEMPORAL_12_NONE",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD UNTIL 121.9. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9313/26",
+    "case": "QA514_TEMPORAL_13_PERIOD",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "O8OO-IOOO. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9314/26",
+    "case": "QA514_TEMPORAL_14_COMMA",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD, FROM 08;00 TO 10;00. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9315/26",
+    "case": "QA514_TEMPORAL_15_SEMICOLON",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "08:0-10:0; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9316/26",
+    "case": "QA514_CONTACT_NONE_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9317/26",
+    "case": "QA514_CONTACT_NONE_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "CONTACT CAA DURING NORMAL OFFICE HOURS TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9318/26",
+    "case": "QA514_CONTACT_PERIOD_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9319/26",
+    "case": "QA514_CONTACT_PERIOD_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "CONTACT CAA DURING NORMAL OFFICE HOURS. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9320/26",
+    "case": "QA514_CONTACT_COMMA_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD, CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9321/26",
+    "case": "QA514_CONTACT_COMMA_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "CONTACT CAA DURING NORMAL OFFICE HOURS, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9322/26",
+    "case": "QA514_CONTACT_SEMICOLON_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD; CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9323/26",
+    "case": "QA514_CONTACT_SEMICOLON_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "CONTACT CAA DURING NORMAL OFFICE HOURS; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9324/26",
+    "case": "QA514_CONTACT_LINEBREAK_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD",
+     "CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9325/26",
+    "case": "QA514_CONTACT_LINEBREAK_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "CONTACT CAA DURING NORMAL OFFICE HOURS",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9326/26",
+    "case": "QA514_CONTACT_PARENTHESES_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD (CONTACT CAA DURING NORMAL OFFICE HOURS). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9327/26",
+    "case": "QA514_CONTACT_PARENTHESES_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "(CONTACT CAA DURING NORMAL OFFICE HOURS) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9328/26",
+    "case": "QA514_ADVERBIAL_NONE_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9329/26",
+    "case": "QA514_ADVERBIAL_NONE_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AFTER HOURS CTC TEL +65 6789 1234 TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9330/26",
+    "case": "QA514_ADVERBIAL_PERIOD_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD. AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9331/26",
+    "case": "QA514_ADVERBIAL_PERIOD_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "AFTER HOURS CTC TEL +65 6789 1234. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9332/26",
+    "case": "QA514_ADVERBIAL_COMMA_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD, AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9333/26",
+    "case": "QA514_ADVERBIAL_COMMA_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AFTER HOURS CTC TEL +65 6789 1234, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9334/26",
+    "case": "QA514_ADVERBIAL_SEMICOLON_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD; AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9335/26",
+    "case": "QA514_ADVERBIAL_SEMICOLON_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "AFTER HOURS CTC TEL +65 6789 1234; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9336/26",
+    "case": "QA514_ADVERBIAL_LINEBREAK_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD",
+     "AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9337/26",
+    "case": "QA514_ADVERBIAL_LINEBREAK_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "AFTER HOURS CTC TEL +65 6789 1234",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9338/26",
+    "case": "QA514_ADVERBIAL_PARENTHESES_RF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD (AFTER HOURS CTC TEL +65 6789 1234). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9339/26",
+    "case": "QA514_ADVERBIAL_PARENTHESES_CF",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "(AFTER HOURS CTC TEL +65 6789 1234) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9340/26",
+    "case": "QA514_BENIGN_00_NONE",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "FREQ 122.850 MHZ TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9341/26",
+    "case": "QA514_BENIGN_01_PERIOD",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD. CRANE HGT 2350FT AMSL. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9342/26",
+    "case": "QA514_BENIGN_02_COMMA",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TORA 3200M TODA 3400M, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9343/26",
+    "case": "QA514_BENIGN_03_SEMICOLON",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD; STANDS 301-309. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9344/26",
+    "case": "QA514_BENIGN_04_LINEBREAK",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TERMINAL 2",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9345/26",
+    "case": "QA514_BENIGN_05_PARENTHESES",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD (REF A9876/26). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9346/26",
+    "case": "QA514_BENIGN_06_NONE",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "ATS RTE Q907 TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9347/26",
+    "case": "QA514_BENIGN_07_PERIOD",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD. OBST 1315N 12341E. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9348/26",
+    "case": "QA514_BENIGN_08_COMMA",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TEL +65 6789 1234, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9349/26",
+    "case": "QA514_BENIGN_09_SEMICOLON",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD; PPR 36 HR. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9350/26",
+    "case": "QA514_BENIGN_10_LINEBREAK",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "FICON 5/5/5",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9351/26",
+    "case": "QA514_BENIGN_11_PARENTHESES",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD (YUKON 1-5). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9352/26",
+    "case": "QA514_BENIGN_12_NONE",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "FOR 90 MIN TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9353/26",
+    "case": "QA514_EQUAL_RESTATED",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 1800-2000",
+     "TWY Z8 CLSD 1800-2000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9354/26",
+    "case": "QA514_BOUND_AT_START_BENIGN",
+    "validity": "15-AUG-26 1900 - 15-AUG-26 2300",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9355/26",
+    "case": "QA514_BOUND_AT_START_TEMPORAL",
+    "validity": "15-AUG-26 1900 - 15-AUG-26 2300",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9356/26",
+    "case": "QA514_BOUND_AT_END_BENIGN",
+    "validity": "15-AUG-26 1500 - 15-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "ended"
+   },
+   {
+    "id": "Z9357/26",
+    "case": "QA514_BOUND_AT_END_TEMPORAL",
+    "validity": "15-AUG-26 1500 - 15-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9358/26",
+    "case": "QA514_BOUND_START_IN_WINDOW_BENIGN",
+    "validity": "15-AUG-26 2000 - 16-AUG-26 0000",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "scheduled"
+   },
+   {
+    "id": "Z9359/26",
+    "case": "QA514_BOUND_START_IN_WINDOW_TEMPORAL",
+    "validity": "15-AUG-26 2000 - 16-AUG-26 0000",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9360/26",
+    "case": "QA514_BOUND_START_BEYOND_WINDOW_BENIGN",
+    "validity": "15-AUG-26 2200 - 16-AUG-26 0000",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9361/26",
+    "case": "QA514_BOUND_START_BEYOND_WINDOW_TEMPORAL",
+    "validity": "15-AUG-26 2200 - 16-AUG-26 0000",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9362/26",
+    "case": "QA514_BOUND_END_IN_WINDOW_BENIGN",
+    "validity": "15-AUG-26 1400 - 15-AUG-26 1800",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "ended"
+   },
+   {
+    "id": "Z9363/26",
+    "case": "QA514_BOUND_END_IN_WINDOW_TEMPORAL",
+    "validity": "15-AUG-26 1400 - 15-AUG-26 1800",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
    }
   ],
   "EGKK": [
@@ -1522,6 +2133,617 @@
      "TWY Z9 CLSD. CRANE HGT 1800FT AMSL. SYNTHETIC CENSUS RECORD."
     ],
     "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9400/26",
+    "case": "QA514_TEMPORAL_00_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD DURING THE OFFICE HOURS OF THE CAA. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9401/26",
+    "case": "QA514_TEMPORAL_01_PERIOD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "OUTSIDE THE OFFICE HOURS OF THE CAA. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9402/26",
+    "case": "QA514_TEMPORAL_02_COMMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD, IN THE BUSINESS HOURS OF THE AIRPORT AUTHORITY. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9403/26",
+    "case": "QA514_TEMPORAL_03_SEMICOLON",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "OFFICE HOURS APPLY; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9404/26",
+    "case": "QA514_TEMPORAL_04_LINEBREAK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD",
+     "08000-10000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9405/26",
+    "case": "QA514_TEMPORAL_05_PARENTHESES",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "(8:3-9:3) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9406/26",
+    "case": "QA514_TEMPORAL_06_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD 8.3-9.3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9407/26",
+    "case": "QA514_TEMPORAL_07_PERIOD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "FOR 1.5H. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9408/26",
+    "case": "QA514_TEMPORAL_08_COMMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD, FROM EIGHT TO TEN. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9409/26",
+    "case": "QA514_TEMPORAL_09_SEMICOLON",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "AT 1,200; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9410/26",
+    "case": "QA514_TEMPORAL_10_LINEBREAK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD",
+     ".0800-.1000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9411/26",
+    "case": "QA514_TEMPORAL_11_PARENTHESES",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "(#0800-#1000) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9412/26",
+    "case": "QA514_TEMPORAL_12_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL 121.9. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9413/26",
+    "case": "QA514_TEMPORAL_13_PERIOD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "O8OO-IOOO. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9414/26",
+    "case": "QA514_TEMPORAL_14_COMMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD, FROM 08;00 TO 10;00. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9415/26",
+    "case": "QA514_TEMPORAL_15_SEMICOLON",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "08:0-10:0; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9416/26",
+    "case": "QA514_CONTACT_NONE_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9417/26",
+    "case": "QA514_CONTACT_NONE_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "CONTACT CAA DURING NORMAL OFFICE HOURS TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9418/26",
+    "case": "QA514_CONTACT_PERIOD_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9419/26",
+    "case": "QA514_CONTACT_PERIOD_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "CONTACT CAA DURING NORMAL OFFICE HOURS. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9420/26",
+    "case": "QA514_CONTACT_COMMA_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD, CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9421/26",
+    "case": "QA514_CONTACT_COMMA_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "CONTACT CAA DURING NORMAL OFFICE HOURS, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9422/26",
+    "case": "QA514_CONTACT_SEMICOLON_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD; CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9423/26",
+    "case": "QA514_CONTACT_SEMICOLON_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "CONTACT CAA DURING NORMAL OFFICE HOURS; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9424/26",
+    "case": "QA514_CONTACT_LINEBREAK_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD",
+     "CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9425/26",
+    "case": "QA514_CONTACT_LINEBREAK_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "CONTACT CAA DURING NORMAL OFFICE HOURS",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9426/26",
+    "case": "QA514_CONTACT_PARENTHESES_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD (CONTACT CAA DURING NORMAL OFFICE HOURS). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9427/26",
+    "case": "QA514_CONTACT_PARENTHESES_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "(CONTACT CAA DURING NORMAL OFFICE HOURS) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9428/26",
+    "case": "QA514_ADVERBIAL_NONE_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9429/26",
+    "case": "QA514_ADVERBIAL_NONE_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AFTER HOURS CTC TEL +65 6789 1234 TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9430/26",
+    "case": "QA514_ADVERBIAL_PERIOD_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9431/26",
+    "case": "QA514_ADVERBIAL_PERIOD_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "AFTER HOURS CTC TEL +65 6789 1234. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9432/26",
+    "case": "QA514_ADVERBIAL_COMMA_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD, AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9433/26",
+    "case": "QA514_ADVERBIAL_COMMA_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AFTER HOURS CTC TEL +65 6789 1234, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9434/26",
+    "case": "QA514_ADVERBIAL_SEMICOLON_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD; AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9435/26",
+    "case": "QA514_ADVERBIAL_SEMICOLON_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "AFTER HOURS CTC TEL +65 6789 1234; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9436/26",
+    "case": "QA514_ADVERBIAL_LINEBREAK_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD",
+     "AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9437/26",
+    "case": "QA514_ADVERBIAL_LINEBREAK_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AFTER HOURS CTC TEL +65 6789 1234",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9438/26",
+    "case": "QA514_ADVERBIAL_PARENTHESES_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD (AFTER HOURS CTC TEL +65 6789 1234). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9439/26",
+    "case": "QA514_ADVERBIAL_PARENTHESES_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "(AFTER HOURS CTC TEL +65 6789 1234) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9440/26",
+    "case": "QA514_BENIGN_00_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "FREQ 122.850 MHZ TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9441/26",
+    "case": "QA514_BENIGN_01_PERIOD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD. CRANE HGT 2350FT AMSL. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9442/26",
+    "case": "QA514_BENIGN_02_COMMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TORA 3200M TODA 3400M, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9443/26",
+    "case": "QA514_BENIGN_03_SEMICOLON",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD; STANDS 301-309. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9444/26",
+    "case": "QA514_BENIGN_04_LINEBREAK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TERMINAL 2",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9445/26",
+    "case": "QA514_BENIGN_05_PARENTHESES",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD (REF A9876/26). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9446/26",
+    "case": "QA514_BENIGN_06_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "ATS RTE Q907 TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9447/26",
+    "case": "QA514_BENIGN_07_PERIOD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD. OBST 1315N 12341E. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9448/26",
+    "case": "QA514_BENIGN_08_COMMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TEL +65 6789 1234, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9449/26",
+    "case": "QA514_BENIGN_09_SEMICOLON",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD; PPR 36 HR. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9450/26",
+    "case": "QA514_BENIGN_10_LINEBREAK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "FICON 5/5/5",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9451/26",
+    "case": "QA514_BENIGN_11_PARENTHESES",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD (YUKON 1-5). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9452/26",
+    "case": "QA514_BENIGN_12_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "FOR 90 MIN TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9453/26",
+    "case": "QA514_EQUAL_RESTATED",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z8 CLSD 0800-1000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9454/26",
+    "case": "QA514_BOUND_AT_START_BENIGN",
+    "validity": "16-AUG-26 0900 - 16-AUG-26 1300",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9455/26",
+    "case": "QA514_BOUND_AT_START_TEMPORAL",
+    "validity": "16-AUG-26 0900 - 16-AUG-26 1300",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9456/26",
+    "case": "QA514_BOUND_AT_END_BENIGN",
+    "validity": "16-AUG-26 0500 - 16-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "ended"
+   },
+   {
+    "id": "Z9457/26",
+    "case": "QA514_BOUND_AT_END_TEMPORAL",
+    "validity": "16-AUG-26 0500 - 16-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9458/26",
+    "case": "QA514_BOUND_START_IN_WINDOW_BENIGN",
+    "validity": "16-AUG-26 1000 - 16-AUG-26 1400",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "scheduled"
+   },
+   {
+    "id": "Z9459/26",
+    "case": "QA514_BOUND_START_IN_WINDOW_TEMPORAL",
+    "validity": "16-AUG-26 1000 - 16-AUG-26 1400",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9460/26",
+    "case": "QA514_BOUND_START_BEYOND_WINDOW_BENIGN",
+    "validity": "16-AUG-26 1200 - 16-AUG-26 1400",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9461/26",
+    "case": "QA514_BOUND_START_BEYOND_WINDOW_TEMPORAL",
+    "validity": "16-AUG-26 1200 - 16-AUG-26 1400",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9462/26",
+    "case": "QA514_BOUND_END_IN_WINDOW_BENIGN",
+    "validity": "16-AUG-26 0400 - 16-AUG-26 0800",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "ended"
+   },
+   {
+    "id": "Z9463/26",
+    "case": "QA514_BOUND_END_IN_WINDOW_TEMPORAL",
+    "validity": "16-AUG-26 0400 - 16-AUG-26 0800",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
    }
   ],
   "EGCC": [
@@ -2281,6 +3503,617 @@
     "body": [
      "DLY 0800-1000",
      "TWY Z9 CLSD. CRANE HGT 1800FT AMSL. SYNTHETIC CENSUS RECORD."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9500/26",
+    "case": "QA514_TEMPORAL_00_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD DURING THE OFFICE HOURS OF THE CAA. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9501/26",
+    "case": "QA514_TEMPORAL_01_PERIOD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "OUTSIDE THE OFFICE HOURS OF THE CAA. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9502/26",
+    "case": "QA514_TEMPORAL_02_COMMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD, IN THE BUSINESS HOURS OF THE AIRPORT AUTHORITY. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9503/26",
+    "case": "QA514_TEMPORAL_03_SEMICOLON",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "OFFICE HOURS APPLY; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9504/26",
+    "case": "QA514_TEMPORAL_04_LINEBREAK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD",
+     "08000-10000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9505/26",
+    "case": "QA514_TEMPORAL_05_PARENTHESES",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "(8:3-9:3) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9506/26",
+    "case": "QA514_TEMPORAL_06_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD 8.3-9.3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9507/26",
+    "case": "QA514_TEMPORAL_07_PERIOD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "FOR 1.5H. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9508/26",
+    "case": "QA514_TEMPORAL_08_COMMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD, FROM EIGHT TO TEN. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9509/26",
+    "case": "QA514_TEMPORAL_09_SEMICOLON",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "AT 1,200; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9510/26",
+    "case": "QA514_TEMPORAL_10_LINEBREAK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD",
+     ".0800-.1000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9511/26",
+    "case": "QA514_TEMPORAL_11_PARENTHESES",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "(#0800-#1000) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9512/26",
+    "case": "QA514_TEMPORAL_12_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL 121.9. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9513/26",
+    "case": "QA514_TEMPORAL_13_PERIOD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "O8OO-IOOO. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9514/26",
+    "case": "QA514_TEMPORAL_14_COMMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD, FROM 08;00 TO 10;00. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9515/26",
+    "case": "QA514_TEMPORAL_15_SEMICOLON",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "08:0-10:0; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9516/26",
+    "case": "QA514_CONTACT_NONE_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9517/26",
+    "case": "QA514_CONTACT_NONE_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "CONTACT CAA DURING NORMAL OFFICE HOURS TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9518/26",
+    "case": "QA514_CONTACT_PERIOD_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9519/26",
+    "case": "QA514_CONTACT_PERIOD_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "CONTACT CAA DURING NORMAL OFFICE HOURS. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9520/26",
+    "case": "QA514_CONTACT_COMMA_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD, CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9521/26",
+    "case": "QA514_CONTACT_COMMA_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "CONTACT CAA DURING NORMAL OFFICE HOURS, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9522/26",
+    "case": "QA514_CONTACT_SEMICOLON_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD; CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9523/26",
+    "case": "QA514_CONTACT_SEMICOLON_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "CONTACT CAA DURING NORMAL OFFICE HOURS; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9524/26",
+    "case": "QA514_CONTACT_LINEBREAK_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD",
+     "CONTACT CAA DURING NORMAL OFFICE HOURS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9525/26",
+    "case": "QA514_CONTACT_LINEBREAK_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "CONTACT CAA DURING NORMAL OFFICE HOURS",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9526/26",
+    "case": "QA514_CONTACT_PARENTHESES_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD (CONTACT CAA DURING NORMAL OFFICE HOURS). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9527/26",
+    "case": "QA514_CONTACT_PARENTHESES_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "(CONTACT CAA DURING NORMAL OFFICE HOURS) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9528/26",
+    "case": "QA514_ADVERBIAL_NONE_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9529/26",
+    "case": "QA514_ADVERBIAL_NONE_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AFTER HOURS CTC TEL +65 6789 1234 TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9530/26",
+    "case": "QA514_ADVERBIAL_PERIOD_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9531/26",
+    "case": "QA514_ADVERBIAL_PERIOD_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "AFTER HOURS CTC TEL +65 6789 1234. TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9532/26",
+    "case": "QA514_ADVERBIAL_COMMA_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD, AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9533/26",
+    "case": "QA514_ADVERBIAL_COMMA_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AFTER HOURS CTC TEL +65 6789 1234, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9534/26",
+    "case": "QA514_ADVERBIAL_SEMICOLON_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD; AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9535/26",
+    "case": "QA514_ADVERBIAL_SEMICOLON_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "AFTER HOURS CTC TEL +65 6789 1234; TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9536/26",
+    "case": "QA514_ADVERBIAL_LINEBREAK_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD",
+     "AFTER HOURS CTC TEL +65 6789 1234. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9537/26",
+    "case": "QA514_ADVERBIAL_LINEBREAK_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AFTER HOURS CTC TEL +65 6789 1234",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9538/26",
+    "case": "QA514_ADVERBIAL_PARENTHESES_RF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD (AFTER HOURS CTC TEL +65 6789 1234). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9539/26",
+    "case": "QA514_ADVERBIAL_PARENTHESES_CF",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "(AFTER HOURS CTC TEL +65 6789 1234) TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9540/26",
+    "case": "QA514_BENIGN_00_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "FREQ 122.850 MHZ TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9541/26",
+    "case": "QA514_BENIGN_01_PERIOD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD. CRANE HGT 2350FT AMSL. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9542/26",
+    "case": "QA514_BENIGN_02_COMMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TORA 3200M TODA 3400M, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9543/26",
+    "case": "QA514_BENIGN_03_SEMICOLON",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD; STANDS 301-309. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9544/26",
+    "case": "QA514_BENIGN_04_LINEBREAK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TERMINAL 2",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9545/26",
+    "case": "QA514_BENIGN_05_PARENTHESES",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD (REF A9876/26). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9546/26",
+    "case": "QA514_BENIGN_06_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "ATS RTE Q907 TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9547/26",
+    "case": "QA514_BENIGN_07_PERIOD",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD. OBST 1315N 12341E. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9548/26",
+    "case": "QA514_BENIGN_08_COMMA",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TEL +65 6789 1234, TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9549/26",
+    "case": "QA514_BENIGN_09_SEMICOLON",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD; PPR 36 HR. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9550/26",
+    "case": "QA514_BENIGN_10_LINEBREAK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "FICON 5/5/5",
+     "TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9551/26",
+    "case": "QA514_BENIGN_11_PARENTHESES",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD (YUKON 1-5). SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9552/26",
+    "case": "QA514_BENIGN_12_NONE",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "FOR 90 MIN TWY Z8 CLSD. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9553/26",
+    "case": "QA514_EQUAL_RESTATED",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 0800-1000",
+     "TWY Z8 CLSD 0800-1000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9554/26",
+    "case": "QA514_BOUND_AT_START_BENIGN",
+    "validity": "16-AUG-26 0900 - 16-AUG-26 1300",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9555/26",
+    "case": "QA514_BOUND_AT_START_TEMPORAL",
+    "validity": "16-AUG-26 0900 - 16-AUG-26 1300",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9556/26",
+    "case": "QA514_BOUND_AT_END_BENIGN",
+    "validity": "16-AUG-26 0500 - 16-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9557/26",
+    "case": "QA514_BOUND_AT_END_TEMPORAL",
+    "validity": "16-AUG-26 0500 - 16-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9558/26",
+    "case": "QA514_BOUND_START_IN_WINDOW_BENIGN",
+    "validity": "16-AUG-26 1000 - 16-AUG-26 1400",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9559/26",
+    "case": "QA514_BOUND_START_IN_WINDOW_TEMPORAL",
+    "validity": "16-AUG-26 1000 - 16-AUG-26 1400",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9560/26",
+    "case": "QA514_BOUND_START_BEYOND_WINDOW_BENIGN",
+    "validity": "16-AUG-26 1200 - 16-AUG-26 1400",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9561/26",
+    "case": "QA514_BOUND_START_BEYOND_WINDOW_TEMPORAL",
+    "validity": "16-AUG-26 1200 - 16-AUG-26 1400",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9562/26",
+    "case": "QA514_BOUND_END_IN_WINDOW_BENIGN",
+    "validity": "16-AUG-26 0400 - 16-AUG-26 0800",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS. FREQ 122.850 MHZ. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9563/26",
+    "case": "QA514_BOUND_END_IN_WINDOW_TEMPORAL",
+    "validity": "16-AUG-26 0400 - 16-AUG-26 0800",
+    "body": [
+     "TWY Z8 CLSD 8:3-9:3. SYNTHETIC QA514."
     ],
     "expect_scheduled": null
    }

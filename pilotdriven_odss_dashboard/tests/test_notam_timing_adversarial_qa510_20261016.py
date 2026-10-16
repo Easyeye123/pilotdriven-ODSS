@@ -23,8 +23,12 @@ from app.odss.notam_timing import decide_notice_timing, read_lido_schedule_field
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "notam-timing-adversarial-qa510.json.gz"
 FIXTURE_SHA256 = "7957639640c676b9b9c2337a1858d49fb14d9c7b65b8a0d9eff410bf562c796f"
 DECISIONS = 339696
-CONSERVATIVE_REVIEWS = 156
-DECISION_DIGEST = "19820758f95fa9714e62412a830c2f6596c9cb17e05551316a78edd99fe16a33"
+# QA514 (17 Oct 2026) moved the conservative count and the digest, never a failure: bare single-digit ranges ('1-3',
+# '6 TO 9') are unaccounted digits; 'BETWEEN 15 AND 30 MINUTES BEFORE ETA' is the object of BETWEEN; 'AFTER NORMAL
+# BUSINESS HOURS, FOR EMERGENCY REQUESTS' right after the restriction and 'CONSIDERATION TO THE OFFICE HOURS ...' (no
+# contact verb) are reviews.
+CONSERVATIVE_REVIEWS = 460
+DECISION_DIGEST = "e2cbfe3a8bbd6fb339c34a1ab9f400cb509398d4a37bd658b403f3f19935136b"
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")
 
 

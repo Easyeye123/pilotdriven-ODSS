@@ -8096,6 +8096,2306 @@
     "stateAtReference": "active_at_reference",
     "minutesDelta": 0
    }
+  },
+  {
+   "id": "QA514_CODEX_Q514-001",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-001): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD DURING THE OFFICE HOURS OF THE CAA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-002",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-002): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD DURING THE OFFICE HOURS OF THE CAA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-003",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-003): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD OUTSIDE THE OFFICE HOURS OF THE CAA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-004",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-004): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD OUTSIDE THE OFFICE HOURS OF THE CAA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-005",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-005): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD IN THE BUSINESS HOURS OF THE AIRPORT AUTHORITY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-006",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-006): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD IN THE BUSINESS HOURS OF THE AIRPORT AUTHORITY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-007",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-007): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD DURING NORMAL OFFICE HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-008",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-008): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD DURING NORMAL OFFICE HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-009",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-009): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. OFFICE HOURS APPLY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-010",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-010): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. OFFICE HOURS APPLY."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-011",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-011): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 08:0 TO 10:0."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-012",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-012): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 08:0 TO 10:0."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-013",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-013): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 08:000-10:000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-014",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-014): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 08:000-10:000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-015",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-015): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 08000-10000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-016",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-016): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 08000-10000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-017",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-017): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 08OO-1OOO."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-018",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-018): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 08OO-1OOO."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-019",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-019): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD O8OO-IOOO."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-020",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-020): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD O8OO-IOOO."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-021",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-021): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD .0800-.1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-022",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-022): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD .0800-.1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-023",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-023): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD #0800-#1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-024",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-024): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD #0800-#1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-025",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-025): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 8:3-9:3."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-026",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-026): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 8:3-9:3."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-027",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-027): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 8.3-9.3."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-028",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-028): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 8.3-9.3."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-029",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-029): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 08;00 TO 10;00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-030",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-030): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 08;00 TO 10;00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-031",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-031): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM EIGHT TO TEN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-032",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-032): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM EIGHT TO TEN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-033",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-033): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM EIGHT HUNDRED TO TEN HUNDRED."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-034",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-034): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM EIGHT HUNDRED TO TEN HUNDRED."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-035",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-035): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FOR ONE AND A HALF HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-036",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-036): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FOR ONE AND A HALF HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-037",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-037): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FOR 1.5H."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-038",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-038): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FOR 1.5H."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-039",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-039): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FOR TWO H."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-040",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-040): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FOR TWO H."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-041",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-041): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 0800 UNTIL 1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-042",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-042): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 0800 UNTIL 1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-043",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-043): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM 0000 UNTIL 2359 EXCLUDING SUN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-044",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-044): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 0000 UNTIL 2359 EXCLUDING SUN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-045",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-045): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD PER AIP SUP 012/26 UNTIL 1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-046",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-046): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD PER AIP SUP 012/26 UNTIL 1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-047",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-047): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. CRANE HGT 1500FT UNTIL 1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-048",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-048): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. CRANE HGT 1500FT UNTIL 1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-049",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-049): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. PPR 2 HR, CLSD 0800-1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-050",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-050): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. PPR 2 HR, CLSD 0800-1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-051",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-051): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD DURING: OFFICE HOURS OF THE CAA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-052",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-052): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD DURING: OFFICE HOURS OF THE CAA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-053",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-053): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD AT 0800; NOTIFY ATC 2 HR IN ADVANCE."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-054",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-054): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD AT 0800; NOTIFY ATC 2 HR IN ADVANCE."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-055",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-055): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD NIGHT-LIGHTING WORK."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-056",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-056): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD NIGHT-LIGHTING WORK."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-057",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-057): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD UNTIL 121.9."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-058",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-058): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD UNTIL 121.9."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-059",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-059): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD AT 1,200."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-060",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-060): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD AT 1,200."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-061",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-061): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD O800-O900."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-062",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-062): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD O800-O900."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-063",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-063): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD ０８：０－１０：０."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-064",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-064): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD ０８：０－１０：０."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-065",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-065): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 08​60-10​60."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-066",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-066): temporal",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 08​60-10​60."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-067",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-067): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-068",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-068): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-069",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-069): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. FOR INFO CTC THE OFFICE HOURS OF THE CAA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-070",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-070): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. FOR INFO CTC THE OFFICE HOURS OF THE CAA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-071",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-071): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. PPR 36 HR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-072",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-072): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. PPR 36 HR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-073",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-073): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. NOTIFY TWR 3 HR IN ADVANCE."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-074",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-074): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. NOTIFY TWR 3 HR IN ADVANCE."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-075",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-075): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. MAX RECOVERY TIME 3 HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-076",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-076): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. MAX RECOVERY TIME 3 HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-077",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-077): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. TORA 3200M TODA 3400M ASDA 3250M."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-078",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-078): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. TORA 3200M TODA 3400M ASDA 3250M."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-079",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-079): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. CRANE HGT 2350FT AMSL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-080",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-080): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. CRANE HGT 2350FT AMSL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-081",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-081): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. FREQ 122.850 MHZ."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-082",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-082): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. FREQ 122.850 MHZ."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-083",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-083): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. NDB ABC 385 KHZ."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-084",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-084): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. NDB ABC 385 KHZ."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-085",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-085): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. TEL +65 6789 1234."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-086",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-086): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. TEL +65 6789 1234."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-087",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-087): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. OBS AT 2608160830."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-088",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-088): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. OBS AT 2608160830."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-089",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-089): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. REF AIP AD 2.24-11."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-090",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-090): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. REF AIP AD 2.24-11."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-091",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-091): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. REF A9876/26."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-092",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-092): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. REF A9876/26."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-093",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-093): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. FL120-FL260."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-094",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-094): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. FL120-FL260."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-095",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-095): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. STANDS 301-309."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-096",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-096): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. STANDS 301-309."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-097",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-097): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. ACFT B737-800."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-098",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-098): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. ACFT B737-800."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-099",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-099): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. OBST LGTD AT NIGHT."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-100",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-100): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. OBST LGTD AT NIGHT."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-101",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-101): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. CRANE HGT 2400-2600FT AMSL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-102",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-102): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. CRANE HGT 2400-2600FT AMSL."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-103",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-103): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. VIS 1500M RVR 0650M."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-104",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-104): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. VIS 1500M RVR 0650M."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-105",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-105): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. APAM-1620-AF-BRF-0032."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-106",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-106): benign",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD. APAM-1620-AF-BRF-0032."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-107",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-107): exact restatement control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD FROM 1800 TO 2000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_CODEX_Q514-108",
+   "label": "SYNTHETIC (Codex QA of release 514, output/pd-514-codex-qa-20261017, case Q514-108): exact restatement control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 1800-2000. CRANE HGT 2400FT."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00Z",
+    "endsAt": "2026-08-16T11:00:00Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00Z",
+   "expect": {
+    "status": "outside_window",
+    "stateAtReference": "begins_after_reference",
+    "minutesDelta": 540
+   }
+  },
+  {
+   "id": "QA514_UNMATCHED_FIVE_DIGITS",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 08000-10000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA514-02: every digit left after masking must lie in an accounted statement"
+  },
+  {
+   "id": "QA514_ONE_DIGIT_MINUTES",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 8:3-9:3."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA514-02"
+  },
+  {
+   "id": "QA514_DECIMAL_HOURS",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FOR 1.5H."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA514-02"
+  },
+  {
+   "id": "QA514_NUMBER_WORDS",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FROM EIGHT TO TEN."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA514-02: numberWordTime"
+  },
+  {
+   "id": "QA514_THOUSANDS_AFTER_AT",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD AT 1,200."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA514-02"
+  },
+  {
+   "id": "QA514_GLUED_SIGN",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD UNTIL +24 HR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA514: a statement never starts after a glued sign (the connective would be dropped)"
+  },
+  {
+   "id": "QA514_LABEL_RANGE_TWO_DIGITS",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. TERMINAL 8-10."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA514: a label never holds a clock-like range"
+  },
+  {
+   "id": "QA514_OFFICE_HOURS_GOVERNED_BY_CLSD",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD DURING THE OFFICE HOURS OF THE CAA."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA514-01: the nearest verb is the restriction"
+  },
+  {
+   "id": "QA514_OFFICE_HOURS_FRONTED_BEFORE_CLSD",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "OUTSIDE OFFICE HOURS TWY J CLSD, CONTACT TWR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA514-01: the next verb is the restriction"
+  },
+  {
+   "id": "QA514_FREQUENCY_AFTER_UNTIL",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD UNTIL 121.9."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA514-01: governance - never the object of a temporal connective"
+  },
+  {
+   "id": "QA514_CONTACT_AFTER_COMMA",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD, CONTACT CAA DURING NORMAL OFFICE HOURS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "QA514-03: the nearest verb is CONTACT"
+  },
+  {
+   "id": "QA514_CONTACT_FRONTED",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "AFTER HOURS CTC TEL +65 6789 1234. TWY J CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_FREQUENCY_CHANGED_TO",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. TWR FREQ CHANGED TO 118.705."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "QA514: TO after an amendment verb takes a value"
+  },
+  {
+   "id": "QA514_CONTROL_LABELS_AND_COUNTS",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. TERMINAL 2 RAMP. ALERT LVL 2. RFF CAT 8. YUKON 1-5. 3 BOATS. 1. TWY K. (2) APN. REF AIP AD 2. MAP 13-2-1."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CONTROL_DESIGNATORS",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. ATS RTE Q907 LEMOD-N644-DOBAT. RWY18R/36L. N/UN644. ZGSZ-5L-11:IAC. 16L B2. 2A9. FICON 5/5/5. VIS CAT C/D 1 7/8."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
+  },
+  {
+   "id": "QA514_CONTROL_POSITIONS",
+   "label": "SYNTHETIC (QA514 repair, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. 143248.67N 1205929.43E. 37DEG26'15.0000\"N. 14 CFR 91.225. 1 700 M FM ARP. 4D(IAMR). FIX AT 3.2 ISW DME."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   }
   }
  ],
  "regimeCases": [
