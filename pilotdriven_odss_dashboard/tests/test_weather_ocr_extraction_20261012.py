@@ -13,8 +13,9 @@ OLD_TOKEN = "2026-10-10-contingency-label-v9"
 # by v16 (QA504 integrated with QA506: temporal content accounted for, fail closed, 15 Oct 2026) and v16 by v17
 # (QA508-01: an alternate table ends only at the layout's structure; EDTO rows recovered by name, 15 Oct 2026) and
 # v17 by v18 (QA510: temporal content found by shape, durations benign only as notice lead times, 16 Oct 2026) and
-# v18 by v19 (QA512: a table cell is promoted only when it is semantically valid, 16 Oct 2026).
-NEW_TOKEN = "2026-10-16-table-cells-valid-v19"
+# v18 by v19 (QA512: a table cell is promoted only when it is semantically valid, 16 Oct 2026) and
+# v19 by v21 (QA514 + QA516 on release 516, 17 Oct 2026: every digit accounted for; accounting never truncated).
+NEW_TOKEN = "2026-10-17-every-digit-and-row-accounted-v21"
 
 
 def test_new_analysis_has_new_weather_extraction_stamp(stored):  # noqa: F811

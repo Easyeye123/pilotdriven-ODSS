@@ -244,7 +244,17 @@ WAFC_CHARTS_PER_PAGE = 3
 # promoted only when it is semantically valid: an impossible EDTO clock (19:60) or runway (00, 37, 99) is held as a
 # review naming the field, never printed as a plan or allowed to fail the analysis; a FUEL ENROUTE AIRPORT row that
 # does not read is a review on page 5; every review names its invalid cells.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-16-table-cells-valid-v108"
+# 17 Oct 2026 (v110: QA514 and QA516 integrated on release 516, each was its own v109). QA514 (Codex QA of release
+# 514): every digit left in a NOTAM's free text once the benign spans are masked - any script's digit - must be
+# read by the grammar or the timing is a review; benign masks are governed by syntax (never the object of a
+# temporal connective; an office's hours only under a contact verb) and genuine identifiers, measured or designated
+# numbers, list labels and contact strings stay benign by what governs them. QA516-01 (Codex QA of release 516):
+# accounting is never truncated - page 4 prints every alternate row it can hold and states the rest ("+N further
+# alternate row(s) on the dashboard.") instead of failing; every held, unread and read row reaches the view; a table
+# cell with a non-ASCII character is held. The PDF repair (release-516 QA): every held raw line prints in one
+# canonical printable form - a character the briefing's faces cannot print is its code point, [U+FF11] - and the
+# publication gate folds that same form (pdf_printable.py), so a held row never refuses the whole briefing.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-17-every-digit-and-row-accounted-v110"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

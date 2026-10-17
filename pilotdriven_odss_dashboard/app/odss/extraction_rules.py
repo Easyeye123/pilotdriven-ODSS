@@ -80,4 +80,13 @@ the two are bumped together whenever the parser's extraction changes.
 # time, fuel, minima or identifier holds the row naming the field; one row's failure holds that row; fuel-enroute
 # station rows are held when they do not read. Genuine holdings are unchanged; a v18 analysis of a table with an
 # invalid cell can hold an impossible value as read (or have failed), so a v18 analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-16-table-cells-valid-v19"
+# v21 (17 Oct 2026, on v19: QA514 and QA516 integrated on release 516, each was its own v20). QA514: the timing spec
+# notam-timing-2026-10-17-v7 - every digit left once the benign spans are masked (any Unicode decimal digit) must lie
+# in a statement the grammar reads and accounts for, a benign mask is never the object of a temporal connective, an
+# office's hours are benign only under a contact verb, genuine non-time numbers are benign by what governs them, and
+# a time designator glued to a valid clock is a clock; held station records can differ in schedule_review. QA516-01:
+# accounting is never truncated - the app parser holds every unread row, alternate, EDTO alternate, deferred item,
+# remark, weather report (four originals lost 1-23 at the old cap of 64), SIGMET, terrain event and FIR crossing;
+# destination rows are reconciled by slot; every weather/NOTAM block of a station is read; a table cell is ASCII in
+# both runtimes. A v19 analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-17-every-digit-and-row-accounted-v21"
