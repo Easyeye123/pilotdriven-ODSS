@@ -18,6 +18,7 @@ in tests/test_notam_timing_qa500_surfaces_20261015.py and the parity census, fro
 """
 from __future__ import annotations
 
+import bisect
 import hashlib
 import json
 import os
@@ -32,10 +33,10 @@ from app.odss.notam_timing import (
 from tests import notam_timing_qa514_generators as G
 
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")
-COMPOSITION = {"records": 71595, "decisions": 357975, "caseDigest": "4424e73331c2b9bfbca8c8ce145d5a01faa43301e3055fc79f324d7bf6c8135a", "decisionDigest": "994926520ae975a6ecb384e46a6cf17f613a586c328758ae4227602c914653d0"}
+COMPOSITION = {"records": 71595, "decisions": 357975, "caseDigest": "4424e73331c2b9bfbca8c8ce145d5a01faa43301e3055fc79f324d7bf6c8135a", "decisionDigest": "c32e20749a6114b476a3db4b9b7c6d63e073d1a19970a6767a14ac58c03d2371"}
 FUZZ_SEED = 20261017
-FUZZ_DEFAULT = {"cases": 20000, "decisions": 100000, "caseDigest": "1e3385675a5801211aa85178160173a0eb64e3e0dfa630da946c821d5abb47aa", "decisionDigest": "c75d4b2eae988a28c78c0a22287d0b2f504bf335ec7a6ade257de53806b4c2d6"}
-FUZZ_FULL = {"cases": 200000, "decisions": 1000000, "caseDigest": "740cb12c03dd79681cf804cc118514afc3131c5cd6e0220d5883e8cdff2d5911", "decisionDigest": "c4c58d6d57d34e964bd23ec86ece1917c4cc69d01420180a95154eb27482e475"}
+FUZZ_DEFAULT = {"cases": 20000, "decisions": 100000, "caseDigest": "1e3385675a5801211aa85178160173a0eb64e3e0dfa630da946c821d5abb47aa", "decisionDigest": "5aa1e9f673e4ff859fcecbf30657795cd5830be91505e136368f244c59b6be9e"}
+FUZZ_FULL = {"cases": 200000, "decisions": 1000000, "caseDigest": "740cb12c03dd79681cf804cc118514afc3131c5cd6e0220d5883e8cdff2d5911", "decisionDigest": "c6008eaf51e6333d5984c3aef96af29ac4f3066d4019f35dc4b5bcbe3301367f"}
 
 _A = re.ASCII
 # I2, independently: what a span after a temporal connective must show to be benign (QA514 G2: a unit or a head noun
@@ -117,14 +118,16 @@ def _run_fuzz(count: int) -> tuple[list[str], dict]:
         if key not in canonical:
             canonical[key] = read_lido_schedule_field([*G.ITEM_D[fc["itemD"]], fc["base"]], validity)
         canon = canonical[key]
-        line = fc["line"].upper()
-        spans = explain_schedule_free_text(line)["spans"]
+        # QA518 I5: the masks are computed on the syntactic text, so their definitions are checked there too
+        view = explain_schedule_free_text(fc["line"].upper())
+        line, spans, origin = view["text"], view["syntaxSpans"], view["origin"]
+        mapped = {**fc, "segmentStart": bisect.bisect_left(origin, fc["segmentStart"]), "segmentEnd": bisect.bisect_left(origin, fc["segmentEnd"])}
         for window in G.WINDOWS.values():
             decisions += 1
             got = decide_notice_timing({"validity": validity, "schedule": read["field"], "review": read["review"]}, window)
             expected = decide_notice_timing({"validity": validity, "schedule": canon["field"], "review": canon["review"]}, window)
             digest.update((_pick(got) + "\n").encode())
-            why = G.fuzz_verdict(fc, line, spans, got, expected)
+            why = G.fuzz_verdict(mapped, line, spans, got, expected)
             if why and len(failures) < 25:
                 failures.append(f'{fc["itemD"]} {fc["validity"]} {fc["line"]!r}: {why}')
     return failures, {"cases": count, "decisions": decisions, "caseDigest": cases.hexdigest(), "decisionDigest": digest.hexdigest()}

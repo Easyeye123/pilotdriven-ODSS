@@ -127,7 +127,10 @@ def compose_lines(restriction: str, component: str, order: str, joiner: str) -> 
 
 
 def composition_expectation(kind: str, order: str, joiner: str, item_d: str) -> str:
-    """'review', 'canonical' or 'canonicalOrReview' - from the component's syntax, never from the implementation."""
+    """'review', 'canonical' or 'canonicalOrReview' - from the component's syntax, never from the implementation.
+    QA518 I5: parentheses only wrap, so a parenthesised component reads exactly as one with no joiner."""
+    if joiner == "parentheses":
+        joiner = "none"
     if kind == "temporal":
         return "review"
     if kind == "equal":
@@ -370,8 +373,10 @@ FUZZ_CLASS_DEFINITIONS: dict[str, Callable[[str, str, int, int], bool]] = {
         or _full(r"\d{1,6}\([A-Z]{1,3}\)(?:\([A-Z0-9]{1,3}\))*", span))
     and not re.match(r" ?(?:-|/|TO|AND|OR) ?\d", text[end:], _A) and not _TIME_WORD.search(_next_word(text, end)),
     # QA514 G3: a list label opening the body line (offset 0 of a single fuzz line)
+    # (QA518 I5: its wrapping brackets are punctuation, so a bare number before a noun opens the line as '(n)' does)
     "lineEnumeration": lambda span, text, start, end: start == 0
-    and _full(r"\(\d{1,2}\)|\d{1,2}[.)]|[1-9](?:\.\d{1,2}){1,3}", span)
+    and (_full(r"\(\d{1,2}\)|\d{1,2}[.)]|[1-9](?:\.\d{1,2}){1,3}", span)
+         or (_full(r"[1-9]\d?", span) and len(_next_word(text, end)) >= 2 and not _NOT_NOUN.search(_next_word(text, end))))
     and not re.match(r"[0-9]", text[end:], _A) and not re.match(r" ?(?:-|/|TO|AND|OR) ?\d", text[end:], _A) and not _TIME_WORD.search(_next_word(text, end)),
     # QA514 G1: a letter-led glued alphanumeric is an identifier - never a time designator glued to a valid clock, never
     # letters for digits, and after a temporal connective never a four-digit group glued to letters

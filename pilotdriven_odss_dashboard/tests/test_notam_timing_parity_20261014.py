@@ -138,7 +138,7 @@ def _shared_input(source: dict) -> dict:
     return notice_timing_input(source)
 
 
-def _compare(name: str, scenario: str, odss: dict, app: dict, prefix: str | None = None) -> tuple[list[str], list[str], int]:
+def _compare(name: str, scenario: str, odss: dict, app: dict, prefix: str | tuple[str, ...] | None = None) -> tuple[list[str], list[str], int]:
     from app.odss.notam_timing import decide_notice_timing
     failures: list[str] = []
     policy: list[str] = []
@@ -209,7 +209,7 @@ def _compare(name: str, scenario: str, odss: dict, app: dict, prefix: str | None
     return failures, policy, compared
 
 
-def _run(pdfs: list[Path], inject: dict | None = None, prefix: str | None = None) -> tuple[list[str], list[str], int]:
+def _run(pdfs: list[Path], inject: dict | None = None, prefix: str | tuple[str, ...] | None = None) -> tuple[list[str], list[str], int]:
     odss_runs: dict[str, dict] = {}
     request = {"pdfs": [], "inject": inject}
     for pdf in pdfs:
@@ -249,7 +249,8 @@ def test_labelled_synthetic_timing_forms_reach_one_verdict_on_every_surface() ->
     _app_root()
     cases = json.loads((ROOT / "tests" / "fixtures" / "notam-timing-synthetic-injection.json").read_text())
     assert cases["label"] == "SYNTHETIC" and cases["base"] == BASE
-    failures, policy, compared = _run([corpus / BASE], inject=cases, prefix="Z9")
+    # the labelled synthetic ids: Z9nnn (the census forms) and Codex's QA518 records Z68nn at EGKK
+    failures, policy, compared = _run([corpus / BASE], inject=cases, prefix=("Z9", "Z68"))
     print(f"compared {compared} synthetic station notices; open no-reference-station policy differences: {len(policy)}")
     assert compared == 2 * sum(len(rows) for rows in cases["stations"].values())
     assert not failures, f"{len(failures)} cross-surface timing disagreements:\n" + "\n".join(failures[:60])

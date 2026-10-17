@@ -28,8 +28,12 @@ DECISIONS = 436248
 # QA514 (17 Oct 2026) moved the conservative count and the digest, never a failure: 'AFTER NORMAL BUSINESS HOURS, FOR
 # EMERGENCY REQUESTS CONTACT ATC' right after 'TWY J CLSD,' or in its brackets is a review (the nearest verb is the
 # restriction); 'PAGE AD 2 0800-1000' now reads the hidden range (the canonical decision).
-CONSERVATIVE_REVIEWS = 2432
-DECISION_DIGEST = "c3654cb34dbe0fd57cf2311008527b47e1e819adbd862a8b86dbb890ad30ab28"
+# QA518 (17 Oct 2026) moved the conservative count and the digest, never a failure: punctuation no longer licenses a
+# benign mask - a bracketed phrase right after the restriction verb reads as that phrase unbracketed ('TWY J CLSD (SUN
+# GLARE)', '(DAY AND NIGHT MARKED)' are reviews, as without the brackets); a wrapped range ('0800' / '- 1000') still
+# reads as the range.
+CONSERVATIVE_REVIEWS = 2560
+DECISION_DIGEST = "d1c443f616b87f97aa796ea348e156a3b57ab65580ada630acc10bc10c71cf0e"
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")
 
 

@@ -27,8 +27,11 @@ DECISIONS = 339696
 # '6 TO 9') are unaccounted digits; 'BETWEEN 15 AND 30 MINUTES BEFORE ETA' is the object of BETWEEN; 'AFTER NORMAL
 # BUSINESS HOURS, FOR EMERGENCY REQUESTS' right after the restriction and 'CONSIDERATION TO THE OFFICE HOURS ...' (no
 # contact verb) are reviews.
-CONSERVATIVE_REVIEWS = 460
-DECISION_DIGEST = "e2cbfe3a8bbd6fb339c34a1ab9f400cb509398d4a37bd658b403f3f19935136b"
+# QA518 (17 Oct 2026) moved the conservative count and the digest, never a failure: punctuation no longer licenses a
+# benign mask - '(24 HR PPR)', '(48HR PN)', '(1HR PPR)', '(72 HOURS PRIOR NOTICE)' and '(DAY AND NIGHT MARKINGS
+# PROVIDED)' right after the restriction verb read as without their brackets: reviews.
+CONSERVATIVE_REVIEWS = 500
+DECISION_DIGEST = "e0e1dfa8cdac65e4198dd3b5dd5357274021344f9c10e0d22e8da72f6e70eb77"
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")
 
 

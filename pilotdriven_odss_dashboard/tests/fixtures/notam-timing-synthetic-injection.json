@@ -1602,6 +1602,80 @@
      "TWY Z8 CLSD. RAD LT2168. FIX H2575. SYNTHETIC QA514."
     ],
     "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9600/26",
+    "case": "QA518_REVIEW_00",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD UNTIL \"121.35\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9601/26",
+    "case": "QA518_REVIEW_01",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD UNTIL [121.35]. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9602/26",
+    "case": "QA518_REVIEW_05",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD AFTER HALF PAST EIGHT. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9603/26",
+    "case": "QA518_REVIEW_07",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD UNTIL TEATIME. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9604/26",
+    "case": "QA518_CONTROL_00",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD AFTER TWY B. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9605/26",
+    "case": "QA518_CONTROL_00_ITEM_D",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD AFTER TWY B. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9606/26",
+    "case": "QA518_CONTROL_01",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD. \"FREQ 122.850 MHZ\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9607/26",
+    "case": "QA518_CONTROL_01_ITEM_D",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD. \"FREQ 122.850 MHZ\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "excluded"
    }
   ],
   "EGKK": [
@@ -3204,6 +3278,275 @@
      "TWY Z8 CLSD. RAD LT2168. FIX H2575. SYNTHETIC QA514."
     ],
     "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9700/26",
+    "case": "QA518_REVIEW_00",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL \"121.35\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9701/26",
+    "case": "QA518_REVIEW_01",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL [121.35]. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9702/26",
+    "case": "QA518_REVIEW_02",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL - 121.35. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9703/26",
+    "case": "QA518_REVIEW_03",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL : 121.35. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9704/26",
+    "case": "QA518_REVIEW_04",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD AFT (121.35). SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9705/26",
+    "case": "QA518_REVIEW_05",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD AFTER HALF PAST EIGHT. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9706/26",
+    "case": "QA518_REVIEW_06",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD AFTER SIX O'CLOCK. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9707/26",
+    "case": "QA518_REVIEW_07",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL TEATIME. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9708/26",
+    "case": "QA518_REVIEW_08",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD DURING PRAYER. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9709/26",
+    "case": "QA518_REVIEW_09",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AFTER TEATIME TWY Z8 CLSD. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9710/26",
+    "case": "QA518_REVIEW_10",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD AT LUNCH. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9711/26",
+    "case": "QA518_REVIEW_11",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING OFFICE HOURS. TWY Z8 CLSD AFTER HALF PAST EIGHT. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9712/26",
+    "case": "QA518_REVIEW_00_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD UNTIL \"121.35\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9713/26",
+    "case": "QA518_REVIEW_05_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD AFTER HALF PAST EIGHT. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9714/26",
+    "case": "QA518_CONTROL_00",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD AFTER TWY B. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9715/26",
+    "case": "QA518_CONTROL_00_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD AFTER TWY B. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9716/26",
+    "case": "QA518_CONTROL_01",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. \"FREQ 122.850 MHZ\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9717/26",
+    "case": "QA518_CONTROL_01_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD. \"FREQ 122.850 MHZ\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z9718/26",
+    "case": "QA518_CONTROL_02",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD (CONTACT CAA DURING NORMAL OFFICE HOURS). SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z9719/26",
+    "case": "QA518_CONTROL_02_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD (CONTACT CAA DURING NORMAL OFFICE HOURS). SYNTHETIC QA518."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z6801/26",
+    "case": "QA518_CODEX_Z6801",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "TWY J CLSD UNTIL \"121.35\"."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z6802/26",
+    "case": "QA518_CODEX_Z6802",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "DLY 1800-2000",
+     "TWY Y CLSD UNTIL [121.35]."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z6803/26",
+    "case": "QA518_CODEX_Z6803",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "TWY T CLSD AFTER HALF PAST EIGHT."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z6804/26",
+    "case": "QA518_CODEX_Z6804",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "DLY 1800-2000",
+     "TWY J CLSD AFTER HALF PAST EIGHT."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z6805/26",
+    "case": "QA518_CODEX_Z6805",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "TWY Y CLSD FOR 2.25H."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z6806/26",
+    "case": "QA518_CODEX_Z6806",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "TWY T CLSD. DURING OFFICE HOURS CONTACT AIS."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z6807/26",
+    "case": "QA518_CODEX_Z6807",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "DLY 1800-2000",
+     "TWY Y CLSD. CRANE HGT 387FT AMSL."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z6808/26",
+    "case": "QA518_CODEX_Z6808",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "TWY J CLSD DURING THE OFFICE HOURS OF THE CAA."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z6811/26",
+    "case": "QA518_CODEX_Z6811",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "RWY 08R/26L CLSD AFTER HALF PAST EIGHT."
+    ],
+    "expect_scheduled": "review"
    }
   ],
   "EGCC": [
@@ -4804,6 +5147,191 @@
     "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
     "body": [
      "TWY Z8 CLSD. RAD LT2168. FIX H2575. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9800/26",
+    "case": "QA518_REVIEW_00",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL \"121.35\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9801/26",
+    "case": "QA518_REVIEW_01",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL [121.35]. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9802/26",
+    "case": "QA518_REVIEW_02",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL - 121.35. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9803/26",
+    "case": "QA518_REVIEW_03",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL : 121.35. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9804/26",
+    "case": "QA518_REVIEW_04",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD AFT (121.35). SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9805/26",
+    "case": "QA518_REVIEW_05",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD AFTER HALF PAST EIGHT. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9806/26",
+    "case": "QA518_REVIEW_06",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD AFTER SIX O'CLOCK. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9807/26",
+    "case": "QA518_REVIEW_07",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UNTIL TEATIME. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9808/26",
+    "case": "QA518_REVIEW_08",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD DURING PRAYER. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9809/26",
+    "case": "QA518_REVIEW_09",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "AFTER TEATIME TWY Z8 CLSD. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9810/26",
+    "case": "QA518_REVIEW_10",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD AT LUNCH. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9811/26",
+    "case": "QA518_REVIEW_11",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. CONTACT CAA DURING OFFICE HOURS. TWY Z8 CLSD AFTER HALF PAST EIGHT. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9812/26",
+    "case": "QA518_REVIEW_00_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD UNTIL \"121.35\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9813/26",
+    "case": "QA518_REVIEW_05_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD AFTER HALF PAST EIGHT. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9814/26",
+    "case": "QA518_CONTROL_00",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD AFTER TWY B. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9815/26",
+    "case": "QA518_CONTROL_00_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD AFTER TWY B. SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9816/26",
+    "case": "QA518_CONTROL_01",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. \"FREQ 122.850 MHZ\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9817/26",
+    "case": "QA518_CONTROL_01_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD. \"FREQ 122.850 MHZ\". SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9818/26",
+    "case": "QA518_CONTROL_02",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD (CONTACT CAA DURING NORMAL OFFICE HOURS). SYNTHETIC QA518."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9819/26",
+    "case": "QA518_CONTROL_02_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD (CONTACT CAA DURING NORMAL OFFICE HOURS). SYNTHETIC QA518."
     ],
     "expect_scheduled": null
    }
