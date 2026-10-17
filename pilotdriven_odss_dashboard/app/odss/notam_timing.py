@@ -77,14 +77,22 @@ _WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 _MONTH_SOURCE = "|".join(_MONTHS)
 _WEEKDAY_SOURCE = "|".join(_WEEKDAYS)
 
-_VALIDITY_RANGE = re.compile(NOTAM_TIMING_RULES["validity"]["range"])
-_VALIDITY_END = re.compile(NOTAM_TIMING_RULES["validity"]["end"])
+
+def _ascii_digits(pattern: str) -> str:
+    """JavaScript's \\d is 0-9 only; Python's, without re.ASCII, is any Unicode decimal digit. The grammar reads ASCII
+    values only (QA516: an Arabic-Indic or Devanagari digit is never read as a value - in the free text it is an
+    unaccounted digit, a review), so a pattern compiled without re.ASCII reads \\d as [0-9], as the app does."""
+    return pattern.replace("\\d", "[0-9]")
+
+
+_VALIDITY_RANGE = re.compile(_ascii_digits(NOTAM_TIMING_RULES["validity"]["range"]))
+_VALIDITY_END = re.compile(_ascii_digits(NOTAM_TIMING_RULES["validity"]["end"]))
 _OPEN_ENDS: dict[str, str] = NOTAM_TIMING_RULES["validity"]["openEnds"]
 _FIELD = NOTAM_TIMING_RULES["scheduleField"]
 _DASHES = re.compile(_FIELD["dashes"])
-_FIELD_LINE = re.compile(_FIELD["fieldLine"])
-_REVIEW_LANGUAGE = re.compile(_FIELD["reviewLanguage"])
-_COLON_CLOCK = re.compile(_FIELD["colonClock"])
+_FIELD_LINE = re.compile(_ascii_digits(_FIELD["fieldLine"]))
+_REVIEW_LANGUAGE = re.compile(_ascii_digits(_FIELD["reviewLanguage"]))
+_COLON_CLOCK = re.compile(_ascii_digits(_FIELD["colonClock"]))
 _A = re.ASCII  # '\\b', '\\d' and '\\w' read as in JavaScript
 
 
@@ -95,7 +103,8 @@ def _js_replacement(replacement: str) -> str:
 
 _LETTER_FOR_DIGIT_RUN = re.compile(_FIELD["letterForDigit"]["run"], _A)
 _BENIGN = [(item["class"], re.compile(item["pattern"], _A), bool(item.get("allowClockRange")),
-            bool(item.get("holdsNoTemporal")), int(item.get("maskGroup") or 0)) for item in _FIELD["benign"]]
+            bool(item.get("holdsNoTemporal")), int(item.get("maskGroup") or 0), bool(item.get("atLineStart")))
+           for item in _FIELD["benign"]]
 _BENIGN_NEVER_HOLDS = re.compile(_FIELD["benignNeverHolds"], _A)
 _BENIGN_NEVER_CUTS = re.compile(_FIELD["benignNeverCuts"], _A)
 _ABUTS_AFTER = re.compile(_FIELD["rangeAbutment"]["after"], _A)
@@ -104,7 +113,32 @@ _GOVERNING_CONNECTIVE = re.compile(_FIELD["benignGovernance"]["connective"], _A)
 _GOVERNED_OBJECT = re.compile(_FIELD["benignGovernance"]["object"], _A)
 _PERIOD_CONNECTIVE = re.compile(_FIELD["benignGovernance"]["periodConnective"], _A)
 _SELF_EVIDENT = re.compile(_FIELD["benignGovernance"]["selfEvident"], _A)
-_ACCOUNTED_RESIDUE = re.compile(_FIELD["accountedResidue"], _A)
+# Every decimal digit of any script (QA516: Unicode category Nd, i.e. str.isdecimal() - Arabic-Indic or Devanagari
+# digits are digits the grammar never reads as values, so an unmasked run of them is unaccounted for: a review).
+_RESIDUE_CATEGORY = _FIELD["accountedResidue"]["category"]
+# A benign span never touches a digit the grammar does not read (a decimal digit of another script).
+_TOUCH_CATEGORY = _FIELD["benignNeverTouches"]["category"]
+_TOUCH_EXCEPT = re.compile(_FIELD["benignNeverTouches"]["except"], _A)
+
+
+def _unread_digit(ch: str) -> bool:
+    return unicodedata.category(ch) == _TOUCH_CATEGORY and not _TOUCH_EXCEPT.fullmatch(ch)
+
+
+def _residue_spans(masked: str) -> list[tuple[int, int]]:
+    """Every run of decimal digits (accountedResidue: Unicode category Nd) left in the masked text."""
+    spans: list[tuple[int, int]] = []
+    start = None
+    for index, ch in enumerate(masked + " "):
+        digit = index < len(masked) and unicodedata.category(ch) == _RESIDUE_CATEGORY
+        if digit and start is None:
+            start = index
+        elif not digit and start is not None:
+            spans.append((start, index))
+            start = None
+    return spans
+
+
 _TEMPORAL = [(item["class"], re.compile(item["pattern"], _A)) for item in _FIELD["temporal"]]
 _STATEMENT = re.compile(_FIELD["statement"], _A)
 _NEGATIONS = re.compile(_FIELD["negations"], _A)
@@ -125,7 +159,7 @@ _H24_DAILY: list[dict[str, Any]] = [{"kind": "daily", "times": [{"start": 0, "en
 _CALENDAR_KEYS: tuple[int, ...] = tuple(month * 100 + day for month, days in enumerate((31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31))
                                         for day in range(1, days + 1))
 _ENUMERATION_MAX_DAYS = _FIELD["equivalenceEnumerationMaxDays"]
-_REGIME = re.compile(NOTAM_TIMING_RULES["runwayClosureRegimes"]["pattern"], re.IGNORECASE)
+_REGIME = re.compile(_ascii_digits(NOTAM_TIMING_RULES["runwayClosureRegimes"]["pattern"]), re.IGNORECASE)
 _REGIME_GROUPS: dict[str, int] = NOTAM_TIMING_RULES["runwayClosureRegimes"]["groups"]
 _OPEN_END_SEARCH_DAYS = NOTAM_TIMING_RULES["decision"]["openEndSearchDays"]
 _LOOKBACK_DAYS = NOTAM_TIMING_RULES["decision"]["lookbackDays"]
@@ -359,7 +393,7 @@ def _temporal_tokens(masked: str) -> list[tuple[int, int]]:
     return [match.span() for _name, pattern in _TEMPORAL for match in pattern.finditer(masked) if match.end() > match.start()]
 
 
-def _benign_spans(text: str) -> list[tuple[int, int, str]]:
+def _benign_spans(text: str, line_starts: Iterable[int] = (0,)) -> list[tuple[int, int, str]]:
     """The benign spans kept in one free-text line, as (start, end, class): every span a benign class POSITIVELY
     classifies as not temporal. A span never cuts a clock-like shape found in the unmasked text (benignNeverCuts: it
     may hold a whole one - 'TORA 2100' - never part of one: 'FL180/18' of 'FL180/18 00'), and never holds any
@@ -369,7 +403,11 @@ def _benign_spans(text: str) -> list[tuple[int, int, str]]:
     after DURING, UNTIL, FROM, AT, TO ..., and any holding a digit after DURING, OUTSIDE, SINCE or WEF, unless it is
     self-evidently not a time); and a span is never one side of a range: it is refused when a range connector joins
     it to temporal content left unmasked once every candidate span is masked (rangeAbutment). A class that states
-    maskGroup masks only that group of its match."""
+    maskGroup masks only that group of its match; a class that states atLineStart keeps a match only where a body
+    line opens (QA514 G3: a list label at a line's start), ``line_starts`` being the offsets at which the free text's
+    body lines open. A span never touches a digit the grammar does not read (benignNeverTouches, QA516: a decimal digit
+    of another script before or after it)."""
+    opens = set(line_starts)
     ranges = [match.span() for match in _BENIGN_NEVER_HOLDS.finditer(text)]
     shapes = [match.span() for match in _BENIGN_NEVER_CUTS.finditer(text)]
 
@@ -391,10 +429,13 @@ def _benign_spans(text: str) -> list[tuple[int, int, str]]:
         return bool(governing and not _SELF_EVIDENT.search(span))
 
     spans: list[tuple[int, int, str]] = []
-    for name, pattern, allow_clock_range, holds_no_temporal, mask_group in _BENIGN:
+    for name, pattern, allow_clock_range, holds_no_temporal, mask_group, at_line_start in _BENIGN:
         for match in pattern.finditer(text):
             start, end = match.span(mask_group)
-            if end <= start or cuts_shape(start, end) or (not allow_clock_range and meets_range(start, end)):
+            if (end <= start or (at_line_start and start not in opens) or cuts_shape(start, end)
+                    or (not allow_clock_range and meets_range(start, end))):
+                continue
+            if (start > 0 and _unread_digit(text[start - 1])) or (end < len(text) and _unread_digit(text[end])):
                 continue
             if (holds_no_temporal and holds_temporal(start, end)) or governed(start, end):
                 continue
@@ -415,14 +456,15 @@ def _benign_spans(text: str) -> list[tuple[int, int, str]]:
     return [span for span in spans if not abuts(span)]
 
 
-def _mask_benign(text: str) -> str:
-    return _paint(text, [(start, end) for start, end, _ in _benign_spans(text)])
+def _mask_benign(text: str, line_starts: Iterable[int] = (0,)) -> str:
+    return _paint(text, [(start, end) for start, end, _ in _benign_spans(text, line_starts)])
 
 
-def explain_schedule_free_text(text: str) -> dict[str, Any]:
+def explain_schedule_free_text(text: str, line_starts: Iterable[int] = (0,)) -> dict[str, Any]:
     """The benign spans kept in one free-text line and the text they leave (QA514 tests and fuzzing: which class
-    masked what). ``text`` is a body line as the grammar reads it (upper case, dashes folded, whitespace collapsed)."""
-    spans = _benign_spans(str(text or ""))
+    masked what). ``text`` is a body line as the grammar reads it (upper case, dashes folded, whitespace collapsed), or
+    body lines joined with one space, ``line_starts`` the offsets at which they open."""
+    spans = _benign_spans(str(text or ""), line_starts)
     return {"masked": _paint(str(text or ""), [(start, end) for start, end, _ in spans]),
             "spans": [{"class": name, "start": start, "end": end} for start, end, name in spans]}
 
@@ -489,15 +531,15 @@ def _statement_accounted(periods: list[tuple[float, float]], entries: list[dict[
 
 
 def _free_text_review(text: str, field: str | None, entries: list[dict[str, Any]] | None,
-                      validity: Mapping[str, Any] | None) -> str | None:
+                      validity: Mapping[str, Any] | None, line_starts: Iterable[int] = (0,)) -> str | None:
     """The review the free text after the field calls for, or None (QA506: fail closed; QA510: temporal content is
     found by SHAPE; QA514: every digit accounted for). Benign spans are masked; every temporal token left - every
     clock-like shape whatever its values - and EVERY digit left (accountedResidue) must sit in a statement the grammar
     reads whole and that is accounted for, else a review. None comes only out of that accounting: free text that,
     masked, holds no digit and no temporal content of any shape, or whose every statement is proven."""
     reason = TIMING_REVIEW_REASONS["freeTextConflict"] if field else TIMING_REVIEW_REASONS["freeText"]
-    masked = _mask_benign(text or "")
-    tokens = _temporal_tokens(masked) + [match.span() for match in _ACCOUNTED_RESIDUE.finditer(masked)]
+    masked = _mask_benign(text or "", line_starts)
+    tokens = _temporal_tokens(masked) + _residue_spans(masked)
     statements = [(match.start(), match.end(), match.group(0)) for match in _STATEMENT.finditer(masked)]
     if any(not any(low <= start and end <= high for low, high, _ in statements) for start, end in tokens):
         return reason
@@ -525,23 +567,28 @@ def read_lido_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, A
         line_count += 1
     field = " ".join(lines[:line_count]) if line_count else None
     free_text = " ".join(lines[line_count:])
+    # Where each free-text body line opens in the joined text (QA514 G3: a list label opening a line is structure).
+    line_starts, offset = [], 0
+    for line in lines[line_count:]:
+        line_starts.append(offset)
+        offset += len(line) + 1
 
     def read(review: str | None) -> dict[str, Any]:
         return {"field": field, "lineCount": line_count, "review": review}
 
     if not field:
-        return read(_free_text_review(free_text, None, None, validity))
+        return read(_free_text_review(free_text, None, None, validity, line_starts))
     if _REVIEW_LANGUAGE.search(field):
         return read(TIMING_REVIEW_REASONS["reviewLanguage"])
     if not (validity or {}).get("startsAt"):
-        return read(_free_text_review(free_text, field, None, None))
+        return read(_free_text_review(free_text, field, None, None, line_starts))
     entries, error = parse_schedule_field(field, validity)
     if error:
         return read(error)
-    return read(_free_text_review(free_text, field, entries, validity))
+    return read(_free_text_review(free_text, field, entries, validity, line_starts))
 
 
-_TOKEN = re.compile("|".join([
+_TOKEN = re.compile(_ascii_digits("|".join([
     rf"(?P<cross>({_MONTH_SOURCE}) (\d{{1,2}})-({_MONTH_SOURCE}) (\d{{1,2}}))(?!\d)",
     r"(?P<time>(\d{4})-(\d{4}))(?!\d)",
     r"(?P<h24>H24)\b",
@@ -552,7 +599,7 @@ _TOKEN = re.compile("|".join([
     r"(?P<day>\d{1,2})(?!\d)",
     r"(?P<daily>DLY)\b",
     r"(?P<sep>[\s,;:]+)",
-]))
+])))
 
 
 _MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -642,7 +689,7 @@ def parse_schedule_field(field: Any, validity: Mapping[str, Any] | None = None, 
     text = str(field or "").upper()
     text = _DASHES.sub("-", text)
     text = re.sub(r"\bDAILY\b", "DLY", text)
-    text = re.sub(r"(\d{4})(?:UTC|Z)\b", r"\1", text)
+    text = re.sub(r"([0-9]{4})(?:UTC|Z)\b", r"\1", text)
     text = re.sub(r"\s*-\s*", "-", text)
     text = re.sub(r"\b(?:EVERY|EV|AND)\b", " ", text)
     text = re.sub(r"\.\s*$", "", text)

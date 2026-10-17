@@ -10396,6 +10396,351 @@
     "stateAtReference": "active_at_reference",
     "minutesDelta": 0
    }
+  },
+  {
+   "id": "QA514G_UNTIL_IDENTIFIER",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD UNTIL S0840."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "G1: a connective and a clock-shaped identifier is unreadable timing"
+  },
+  {
+   "id": "QA514G_TRAP_HEAD_THEN_CLOCK",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. FREQ 121.9 MHZ 18.00-20.00."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "G2: a head never governs a clock-like shape"
+  },
+  {
+   "id": "QA514G_TRAP_TWY_18H",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. TWY B 18H."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "G2"
+  },
+  {
+   "id": "QA514G_TRAP_CAT_RANGE",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. CAT C 0800-1."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "G2"
+  },
+  {
+   "id": "QA514G_TRAP_RWY_UNTIL",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. RWY 24 UNTIL 1800."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "G2: UNTIL governs 1800"
+  },
+  {
+   "id": "QA514G_DURATION_DIGIT_LED",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD FOR 8D."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "G1: never an identifier after a duration's lead"
+  },
+  {
+   "id": "QA514G_LABEL_AFTER_VERB",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 2. 60MIN PN FOR NML OPS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "G3: a label directly after the restriction verb in its line is not structure"
+  },
+  {
+   "id": "QA514G_CONTROL_IDENTIFIERS",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. POINTS BEYOND ASSAD: S0840 (SUBJ COOR), S1040. RAD LT2168. REF AD2 LFAY.22.2. REF AIP AD.2 UTDD-145,146. RADAR (TRAC2000/RSM970). EKCHHOJ0001035/CRANE. STAR BIBAX 9E 9D. CRANE 439FT MSL (4A). THE ALTITUDE AT 4D IS AMENDED AS 1290FT."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "G1"
+  },
+  {
+   "id": "QA514G_CONTROL_HEADS",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. BEYOND TORA RWY 24 AND 200M LEFT. ONLY AT 25 THR. HGT FT AMSL: 422.24. LEAD RADIAL L.R.147. HF 11297/11396/13300 KHZ. VIS CAT B RVR 4000, C/D 1 7/8. PROFILE ALT 770FT AT 2.2 TO SSYEM. NO ACCESS TO 121.605 FREQUENCY. MAX IAS 250KT BY 20 TAC. COURSE 360(000.3). I-LTN/I-LJ D 3.9."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "G2"
+  },
+  {
+   "id": "QA514G_CONTROL_STRUCTURE",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD",
+    "2. 60MIN PN FOR NML OPS. PROC : (1)12MIN INTERVAL. PURSUANT TO 49 USC 40103(B)(3). REF AIP UATG AD 2.24.11 - 5."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "G3"
+  },
+  {
+   "id": "QA514G_CONTROL_CONTACT",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. CONTACT THE FAA AT 9-ATOR-HQ-IFOS FAA.GOV. PHONE : +33 1 48 62 43 92. BY CALLING +33 2 34 34 71 36."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "G4"
+  },
+  {
+   "id": "QA514G_GOVERNED_DAY_LENGTH",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD AT 24 HRS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "found by the fuzzer: a governed 24 HR is never H24"
+  },
+  {
+   "id": "QA514G_DEADLINE_DAY_LENGTH",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD BY 24 HRS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "BY 24 HRS is a duration attached to the restriction"
+  },
+  {
+   "id": "QA514G_PERIODIC_DAY_LENGTH",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD EVERY 24 HRS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "EVERY 24 HRS is an interval, never H24"
+  },
+  {
+   "id": "QA514G_CONTROL_DAY_LENGTH",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD 24 HRS."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "an ungoverned 24 HR is H24"
+  },
+  {
+   "id": "QA516_ARABIC_INDIC_CLOCK",
+   "label": "SYNTHETIC (QA516: digits of any script, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD ٠٨٠٠-١٠٠٠."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA516: an unaccounted digit of any script is a review"
+  },
+  {
+   "id": "QA516_DEVANAGARI_ITEM_D",
+   "label": "SYNTHETIC (QA516: digits of any script, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY ०८००-१०००",
+    "TWY J CLSD."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA516: never read as Item D"
+  },
+  {
+   "id": "QA516_MIXED_DIGITS",
+   "label": "SYNTHETIC (QA516: digits of any script, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD 08٠0-1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "QA516"
   }
  ],
  "regimeCases": [

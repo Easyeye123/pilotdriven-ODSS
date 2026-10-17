@@ -32,13 +32,14 @@ from app.odss.notam_timing import (
 from tests import notam_timing_qa514_generators as G
 
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")
-COMPOSITION = {"records": 31185, "decisions": 155925, "caseDigest": "ce2e3fe7e9fd226e34009080a34e5a2e81897073cd0be45b5af6fca11d286164", "decisionDigest": "035f7d319512490b97cee6517dc5529b9096618e9639171378489d5a00b5c9e0"}
+COMPOSITION = {"records": 62415, "decisions": 312075, "caseDigest": "5cf57adcc73fddf8844274d4235b7bb32ddc2fdeb53726dc2940fad96094212d", "decisionDigest": "6a97e0c32c6616391100e8c036aa5fdcdea76725d76538311f8e0e5437f99445"}
 FUZZ_SEED = 20261017
-FUZZ_DEFAULT = {"cases": 20000, "decisions": 100000, "caseDigest": "dc262940625e28b62d569aab5bf902c15d63b6fcedbf1a2ae733093a18465e72", "decisionDigest": "9d90a868a5cbde0f5baf59120a09855800f9d6b87f367b57f0e5aae97e202e04"}
-FUZZ_FULL = {"cases": 200000, "decisions": 1000000, "caseDigest": "669df014d97885d2dadf3eb51190b1dcfc11b80b9969847cf4eb211e0e030ab7", "decisionDigest": "285b5f7263858e2088ec1a6a75321dfd4cb1554ad74989a105c978d0f021759a"}
+FUZZ_DEFAULT = {"cases": 20000, "decisions": 100000, "caseDigest": "78fc5992ec1058d5ed591475810adcd54cd632394002ffd710154de0f75d6cf6", "decisionDigest": "ce0955dc5bd28e805536deb9c11c2565101e6120a84e62b79a8be740b463e2d0"}
+FUZZ_FULL = {"cases": 200000, "decisions": 1000000, "caseDigest": "390c6ccb355d9ce4369cb9e3f2d4e2b7d3422dbc43e02ecefcd2a8f51e5d69c9", "decisionDigest": "4d8cea499c0bc7ca55c42f020f06a1f843f3eb5cffcccf756cd3f7d8c21ac953"}
 
 _A = re.ASCII
-# I2, independently: what a span after a temporal connective must show to be benign.
+# I2, independently: what a span after a temporal connective must show to be benign (QA514 G2: a unit or a head noun
+# after the number - 25 THR, 121.605 FREQUENCY, 2.2 TO SSYEM, a DME fix 4D, a legal title 49 USC).
 _CONNECTIVE_BEFORE = re.compile(r"(?:^|[^A-Z0-9])(DURING|DRG|OUTSIDE|UNTIL|TILL|TIL|FROM|FM|BEFORE|BFR|AFTER|BTN|BETWEEN|AT|BY|"
                                 r"WEF|TO|THRU|THROUGH|SINCE)(?: (?:THE|A|AN))?:? ?[(+#.]? ?$", _A)
 _VALUE_LEAD = re.compile(r"(?:^|[^A-Z])(?:UP|SUBJECT|CHANGED|AMENDED|UPDATE|UPDATED|SET|REDUCED|INCREASED|REPLACED|VALUE|"
@@ -48,7 +49,9 @@ _TIME_LED = re.compile(r"(?:[+(]? ?\d|(?:ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT
                        r"DEC|SR|SS|OFFICE|BUSINESS|WORKING|NORMAL)(?![A-Z0-9]))", _A)
 _SELF_EVIDENT = re.compile(r"\d ?-?(?:FT|FEET|M|NM|KM|SM|KG|T|KT|KTS|DEG|DEGREES|PCT|%|AMSL|AGL|MSL|DME|FTAMSL)(?![A-Z0-9])"
                            r"|\bFL ?\d|\d ?FL\b|\d[NS] ?/? ?\d{3,8}(?:\.\d+)?[EW]\b|^\d{6,7}(?:\.\d+)?[NSEW]$|^\d{3,4} ?/? ?\("
-                           r"|^SUN ?(?:REFLECTIONS?|GLARE|LIGHT)|^\d{1,2} (?:CFR|FAR)\b|^\d{1,3}(?:\.\d{1,2})? [A-Z]{2,4} DME$", _A)
+                           r"|^SUN ?(?:REFLECTIONS?|GLARE|LIGHT)|^\d{1,2} (?:CFR|FAR)\b|^\d{1,3}(?:\.\d{1,2})? [A-Z]{2,4} DME$"
+                           r"|\d ?-?(?:CM|TAC)(?![A-Z0-9])|^(?:0?[1-9]|[12]\d|3[0-6])[LRC]? THR$|^\d{2,3}\.\d{1,3} FREQUENCY$"
+                           r"|^\d{1,3}(?:\.\d{1,2})? TO [A-Z]{5}$|^\d{1,2}D(?:\([A-Z]{3,4}\))?$|^\d{1,2} USC$", _A)
 
 
 def _pick(decision: dict) -> str:
@@ -74,7 +77,7 @@ def test_compositional_qa514_the_outcome_the_syntax_gives_in_both_orders_six_joi
     failures: list[str] = []
     records = decisions = 0
     for c in G.compositions():
-        cases.update((json.dumps([c["itemD"], c["lines"]], separators=(",", ":")) + "\n").encode())
+        cases.update((json.dumps([c["itemD"], c["lines"]], separators=(",", ":"), ensure_ascii=False) + "\n").encode())
         for text in G.VALIDITIES.values():
             validity = read_lido_validity(text)
             read = read_lido_schedule_field([*G.ITEM_D[c["itemD"]], *c["lines"]], validity)
@@ -107,7 +110,7 @@ def _run_fuzz(count: int) -> tuple[list[str], dict]:
     canonical: dict[tuple, dict] = {}
     decisions = 0
     for fc in G.fuzz_cases(FUZZ_SEED, count):
-        cases.update((json.dumps([fc["itemD"], fc["validity"], fc["line"]], separators=(",", ":")) + "\n").encode())
+        cases.update((json.dumps([fc["itemD"], fc["validity"], fc["line"]], separators=(",", ":"), ensure_ascii=False) + "\n").encode())
         validity = read_lido_validity(G.VALIDITIES[fc["validity"]])
         read = read_lido_schedule_field([*G.ITEM_D[fc["itemD"]], fc["line"]], validity)
         key = (fc["itemD"], fc["validity"], fc["base"])
@@ -142,6 +145,24 @@ def test_i2_qa514_no_benign_span_is_the_object_of_a_temporal_connective_unless_s
     for fc in G.fuzz_cases(FUZZ_SEED, FUZZ_DEFAULT["cases"]):
         breaches += _governance_breaches(fc["line"].upper())
     assert list(dict.fromkeys(breaches))[:25] == []
+
+
+def test_qa516_a_clock_in_digits_of_any_script_is_never_read_as_a_value_free_text_item_d_or_validity_is_a_review() -> None:
+    """I1: a digit is any Unicode decimal digit (str.isdecimal()); Arabic-Indic, Extended Arabic-Indic, Devanagari,
+    Bengali, Thai or Adlam digits, or ASCII mixed with them, are never read as values."""
+    august = read_lido_validity("01-AUG-26 0000 - 31-AUG-26 2359")
+    clocks = ["\u0660\u0668\u0660\u0660-\u0661\u0660\u0660\u0660", "\u06F0\u06F8\u06F0\u06F0-\u06F1\u06F0\u06F0\u06F0",
+              "\u0966\u096E\u0966\u0966-\u0967\u0966\u0966\u0966", "\u09E6\u09EE\u09E6\u09E6-\u09E7\u09E6\u09E6\u09E6",
+              "\u0E50\u0E58\u0E50\u0E50-\u0E51\u0E50\u0E50\u0E50",
+              "\U0001E950\U0001E958\U0001E950\U0001E950-\U0001E951\U0001E950\U0001E950\U0001E950", "08\u06600-1000"]
+    for clock in clocks:
+        for lines in ([f"TWY J CLSD {clock}."], ["DLY 0800-1000", f"TWY J CLSD {clock}."], [f"DLY {clock}", "TWY J CLSD."],
+                      [f"TWY J CLSD BTN {clock}."]):
+            assert read_lido_schedule_field(lines, august)["review"], lines
+        if not clock[0].isascii():
+            assert read_lido_validity(f"{clock[:2]}-AUG-26 0000 - 31-AUG-26 2359") is None, clock
+    # full-width digits are folded to ASCII by NFKC and read as the clock they are
+    assert read_lido_schedule_field(["DLY 0800-1000", "TWY J CLSD \uFF10\uFF18\uFF10\uFF10-\uFF11\uFF10\uFF10\uFF10."], august)["review"] is None
 
 
 def test_qa514_codex_forms_are_reviews_with_and_without_item_d_and_a_separate_contact_instruction_is_not() -> None:

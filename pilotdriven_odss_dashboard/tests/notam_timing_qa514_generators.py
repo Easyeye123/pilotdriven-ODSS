@@ -10,7 +10,8 @@ compositions(): every restriction x every component x both word orders x every j
   instructions, frequencies, altitudes, distances, designators, references) is the canonical decision; an office's
   hours are benign only when a contact verb governs them (the nearest verb before them is a contact verb, or they open
   a clause whose next verb is one).
-fuzz_cases(): random digit tokens - 1 to 3 groups of 1 to 6 digits joined by . : - / space H h Z L , - with
+fuzz_cases(): random digit tokens - 1 to 3 groups of 1 to 6 digits (ASCII, or a script NFKC leaves alone: Arabic-
+  Indic, Extended Arabic-Indic, Devanagari, Bengali, Thai, or mixed) joined by . : - / space H h Z L , - with
   connectives before and after, placed after, before, inside, beside or bracketed with a restriction, with and without
   Item D. fuzz_verdict() is the invariant: a digit no stated class masks makes the decision a review (unless the
   segment restates Item D exactly); a digit a class masks must fit that class's stated definition; the decision is
@@ -47,6 +48,10 @@ RESTRICTIONS = ["TWY J CLSD", "RWY 09/27 CLSD", "AREA R123 ACT"]
 # contact = an hours phrase after its contact verb (canonical; 'CALL OPS ...' is temporal: OPS is a restriction word,
 # so the nearest verb is not a contact verb); adverbial = an hours phrase opening its contact clause (canonical unless
 # it directly follows the restriction verb in the same clause); benign = canonical.
+# QA514 G3 (structure): opening = a label that is structure only where it opens a clause or a body line (canonical
+# there, a review elsewhere); lineOpening = only where it opens a body line; listAfterVerb = a list label, a review only
+# directly after the restriction verb in the same line; closing = a page that is structure only where it closes the
+# reference (followed by the end, '.', ',', ';' or ')').
 COMPONENTS = [
     ("temporal", "DURING THE OFFICE HOURS OF THE CAA"), ("temporal", "OUTSIDE THE OFFICE HOURS OF THE CAA"),
     ("temporal", "IN THE BUSINESS HOURS OF THE AIRPORT AUTHORITY"), ("temporal", "DURING NORMAL OFFICE HOURS"),
@@ -68,11 +73,34 @@ COMPONENTS = [
     ("benign", "PPR 36 HR"), ("benign", "NOTIFY TWR 3 HR IN ADVANCE"), ("benign", "MAX RECOVERY TIME 3 HOURS"),
     ("benign", "FICON 5/5/5"), ("benign", "ACFT B737-800"), ("benign", "OBST LGTD AT NIGHT"), ("benign", "FOR 90 MIN"),
     ("benign", "APAM-1620-AF-BRF-0032"), ("benign", "OBS AT 2608160830"), ("benign", "FIX AT 3.2 ISW DME"),
+    # QA514 round 2 (G1-G4): traps that must stay timing, and genuine forms each rule makes benign by its context
+    ("equal", "RWY 24 CLSD 0800-1000"), ("temporal", "TWY B 18H"), ("temporal", "FREQ 121.9 MHZ 18.00-20.00"),
+    ("temporal", "CAT C 0800-1"), ("temporal", "RWY 24 UNTIL 1800"), ("temporal", "UNTIL S0840"), ("temporal", "AT S0840"),
+    ("temporal", "CLSD-0800"), ("temporal", "8A-5P"), ("temporal", "AT 8A"), ("temporal", "FOR 8D"), ("temporal", "AT 24 HRS"), ("temporal", "BY 24 HRS"), ("temporal", "EVERY 24 HRS"), ("equal", "TWY K-0800-1000"),
+    # QA516: a clock in digits NFKC leaves alone is never read as a value - an unaccounted digit, so a review
+    ("temporal", "\u0660\u0668\u0660\u0660-\u0661\u0660\u0660\u0660"), ("temporal", "FROM \u06F0\u06F8\u06F0\u06F0 TO \u06F1\u06F0\u06F0\u06F0"),
+    ("temporal", "\u0966\u096E\u0966\u0966-\u0967\u0966\u0966\u0966"), ("temporal", "08\u06600-1000"), ("temporal", "DLY \u0660\u0668\u0660\u0660-\u0661\u0660\u0660\u0660"),
+    ("benign", "POINTS BEYOND ASSAD: S0840, S1040"), ("benign", "RAD LT2168"), ("benign", "REF AD2 LFAY.22.2"),
+    ("benign", "REF AIP AD.2 UTDD-145,146"), ("benign", "RADAR (TRAC2000/RSM970)"), ("benign", "VIA NDB 'ZJ'-G345-OLRIS"),
+    ("benign", "EKCHHOJ0001035/CRANE"), ("benign", "STAR BIBAX 9E 9D"), ("benign", "CRANE 439FT MSL (4A)"),
+    ("benign", "THE ALTITUDE AT 4D IS AMENDED AS 1290FT"), ("benign", "BEYOND TORA RWY 24 AND 200M LEFT"),
+    ("benign", "ONLY AT 25 THR"), ("benign", "HGT FT AMSL: 422.24"), ("benign", "LEAD RADIAL L.R.147"),
+    ("benign", "HF 11297/11396/13300 KHZ"), ("benign", "VIS CAT B RVR 4000, C/D 1 7/8"), ("benign", "PROFILE ALT 770FT AT 2.2 TO SSYEM"),
+    ("benign", "NO ACCESS TO 121.605 FREQUENCY"), ("benign", "MAX IAS 250KT BY 20 TAC"), ("benign", "COURSE 360(000.3)"),
+    ("benign", "BTN 0.3 NM-(-0.5)NM"), ("benign", "MISSED APPROACH...473 FT"), ("benign", "LESS THAN 1/10TH INCH"),
+    ("benign", "RWY TODA 09 2436(7992)(2.10) 27 2436(7992)(1.55)"), ("benign", "AOC TYPE B NR RF 4/7"),
+    ("benign", "PURSUANT TO 49 USC 40103(B)(3)"), ("benign", "MARKED BY 90 X 90 CM FLAG"), ("benign", "SECTION 40103(B)(3)"),
+    ("benign", "CONTACT THE FAA AT 9-ATOR-HQ-IFOS FAA.GOV"), ("benign", "QUESTIONS TO NCRCC AT 9-ATO-NCRCC(AT)FAA.GOV"),
+    ("benign", "PHONE : +33 1 48 62 43 92"), ("benign", "BY CALLING +33 2 34 34 71 36"),
+    ("opening", "(1)12MIN INTERVAL"), ("opening", "3.2.2 45.93 FT (14.47 M) AMSL"),
+    ("opening", "1ST: 080651.12N 0981846.78E 2ND: 080651.92N 0981853.48E"), ("lineOpening", "2. 60MIN PN FOR NML OPS"),
+    ("listAfterVerb", "3. EXPECT RADAR VECTORING"), ("closing", "REF AIP UATG AD 2.24.11 - 5"),
 ]
 
 ORDERS = ["restrictionFirst", "componentFirst"]
 JOINERS = ["none", "period", "comma", "semicolon", "linebreak", "parentheses"]
 _BOUNDARY = {"period", "semicolon"}
+_CLOSES = {"period", "comma", "semicolon", "parentheses"}
 
 
 def compose_lines(restriction: str, component: str, order: str, joiner: str) -> list[str]:
@@ -98,6 +126,15 @@ def composition_expectation(kind: str, order: str, joiner: str, item_d: str) -> 
         return "canonicalOrReview" if item_d == "D0800" else "review"
     if kind == "adverbial":
         return "canonical" if order == "componentFirst" or joiner in _BOUNDARY else "review"
+    opens_line = (order == "componentFirst" and joiner != "parentheses") or (order == "restrictionFirst" and joiner == "linebreak")
+    if kind == "opening":
+        return "canonical" if opens_line or (order == "restrictionFirst" and joiner in _BOUNDARY) else "review"
+    if kind == "lineOpening":
+        return "canonical" if opens_line else "review"
+    if kind == "listAfterVerb":
+        return "review" if order == "restrictionFirst" and joiner == "none" else "canonical"
+    if kind == "closing":
+        return "canonical" if order == "restrictionFirst" or joiner in _CLOSES else "review"
     return "canonical"
 
 
@@ -140,6 +177,10 @@ class Mulberry32:
 FUZZ: dict[str, list[Any]] = {
     "separators": [".", ":", "-", "/", " ", "H", "h", "Z", "L", ","],
     "leads": ["", "", "", "", "", "", ".", "#", "0", "+"],
+    # QA516: the script a token's digits are written in - ASCII mostly, else a script NFKC leaves alone (Arabic-Indic,
+    # Extended Arabic-Indic, Devanagari, Bengali, Thai) or ASCII and Arabic-Indic mixed digit by digit
+    "digitScripts": ["ascii", "ascii", "ascii", "ascii", "ascii", "ascii", "arabicIndic", "extendedArabicIndic", "devanagari",
+                     "bengali", "thai", "mixed"],
     "prefixes": ["", "", "", "FROM ", "UNTIL ", "TILL ", "TIL ", "AT ", "BY ", "BTN ", "BETWEEN ", "TO ", "DURING ",
                  "AFTER ", "BEFORE ", "WEF ", "THRU ", "OUTSIDE ", "FOR ", "ON ", "EVERY ", "DLY ", "SINCE ",
                  "TERMINAL ", "STAND "],
@@ -154,14 +195,25 @@ FUZZ: dict[str, list[Any]] = {
 }
 
 
+# The zero of each decimal-digit script (Unicode category Nd) the fuzzer writes digits in.
+DIGIT_ZERO = {"arabicIndic": 0x0660, "extendedArabicIndic": 0x06F0, "devanagari": 0x0966, "bengali": 0x09E6, "thai": 0x0E50}
+
+
+def _fuzz_digit(rng: Mulberry32, script: str) -> str:
+    digit = rng.below(10)
+    written = ("ascii" if rng.below(2) else "arabicIndic") if script == "mixed" else script
+    return str(digit) if written == "ascii" else chr(DIGIT_ZERO[written] + digit)
+
+
 def _fuzz_token(rng: Mulberry32) -> str:
+    script = rng.pick(FUZZ["digitScripts"])
     groups = 1 + rng.below(3)
     token = rng.pick(FUZZ["leads"])
     for g in range(groups):
         if g > 0:
             token += rng.pick(FUZZ["separators"])
         for _ in range(1 + rng.below(6)):
-            token += str(rng.below(10))
+            token += _fuzz_digit(rng, script)
     return token
 
 
@@ -217,6 +269,15 @@ _DESIGNATOR_KEYWORD = re.compile(
     r"ORDER|PARTS?|SUBPART|CHAPTER|CHAP|APPENDIX)\b", _A)
 
 
+_MEASURE_OR_DESIGNATION = re.compile(
+    r"^(?:(?:HGT|HEIGHT|ALT|ALTITUDE|ELEV|ELEVATION|AMSL|AGL|MSL|FT|NM|RADIAL|RDL|QDM|QDR|CRS|COURSE|TRK|TRACK|BRG|BEARING|"
+    r"HDG|HEADING|FREQ|FREQUENCY|MHZ|KHZ|HF|VHF|UHF|CH|CHANNEL|VIS|VISIBILITY|RVR|MDA|MDH|DA|DH|OCA|OCH|IAS|TAS|KT|SPEED|"
+    r"DIST|DISTANCE|LEN|LENGTH|WIDTH|RWY|RWYS|RUNWAY|THR|THRESHOLD|TWY|TAXIWAY|STAND|STANDS|GATE|CAT|PAGE|PARA|"
+    r"PARAGRAPH|CHAPTER|SECTION|REF|AIP|AMDT|SUP|EDITION|SHEET|CHART|NR|NO|NUMBER|TEL|FAX)[ /.]*)+:? ?\d{1,5}"
+    r"(?:\.\d{1,3})?(?:\(\d{1,5}(?:\.\d{1,3})?\))?[LRC]?$|^(?:NR|NO|NUMBER|PAGE|SHEET|CHART)\.? [A-Z]{1,3} \d{1,3}/\d{1,3}$"
+    r"|^L\.R\. ?\d{3}$", _A)
+
+
 def _next_word(text: str, end: int) -> str:
     match = re.match(r" ?\(?([A-Z][A-Z0-9/]*)", text[end:], _A)
     return match.group(1) if match else ""
@@ -270,6 +331,31 @@ FUZZ_CLASS_DEFINITIONS: dict[str, Callable[[str, str, int, int], bool]] = {
         r"|04\d{2} \d{3} \d{3})", span),
     "caseNumber": lambda span, text, start, end: _full(r"\d{2}-\d{6}", span),
     "phone": lambda span, text, start, end: re.match(r"\(?\+ ?\d", span, _A) is not None,
+    # QA514 G1: one or two digits and letters that are never a time letter or word, a letter for a digit, a unit or an
+    # ordinal; never after a temporal connective unless a DME fix (4D), never a range side, never before a time word
+    "digitLedIdentifier": lambda span, text, start, end: _full(r"\d{1,2}[A-GKMNP-Y][A-Z]{0,2}\d{0,2}", span)
+    and not _full(r"\d{1,2}(?:ST|ND|RD|TH|AM|PM|HR|UTC|GMT|LT|MIN|SEC|DAY|WK|FT|NM|KM|KT|MB|DEG|DME)", span)
+    and (_not_governed(text, start) or _full(r"\d{1,2}D", span))
+    and not re.search(r"(?:^|[^A-Z])(?:FOR|MAX|WITHIN|WI|LASTING) $", text[:start], _A) and not _TIME_WORD.search(_next_word(text, end))
+    and not re.match(r" ?(?:-|TO|UNTIL|THRU) ?\d", text[end:], _A),
+    # QA514 G2: a number governed by a measurement or designation noun directly before it, or by a head after it
+    "headedNumber": lambda span, text, start, end: (
+        (_MEASURE_OR_DESIGNATION.search(span) is not None and not re.search(r"(?:^|\s)(?:\d{3,4}|\d{1,2}[.:]\d{2})(?:[LRC])?$", span, _A)
+         and not _TIME_WORD.search(_next_word(text, end)))
+        or _full(r"(?:0?[1-9]|[12]\d|3[0-6])[LRC]? (?:THR|THRESHOLD)|\d{2,3}[.,]\d{1,3}(?: ?(?:MHZ|KHZ))? (?:FREQ|FREQUENCY)"
+                 r"|\d{1,2} (?:CFR|FAR|USC|CODE OF FEDERAL REGULATIONS|UNITED STATES CODE)|\d{1,3}(?:\.\d{1,2})?(?: ?NM)? TO [A-Z]{5}", span)),
+    # QA514 G3: a label opening a clause ('(1)', a section number of three levels), a statute's bracketed sub-paragraphs
+    "enumerationLabel": lambda span, text, start, end: (
+        (_full(r"\(\d{1,2}\)|[1-9](?:\.\d{1,2}){2,3}", span) and re.search(r"(?:^|[.:;] ?)$", text[:start], _A) is not None)
+        or _full(r"\d{1,6}\([A-Z]{1,3}\)(?:\([A-Z0-9]{1,3}\))*", span))
+    and not re.match(r" ?(?:-|/|TO|AND|OR) ?\d", text[end:], _A) and not _TIME_WORD.search(_next_word(text, end)),
+    # QA514 G3: a list label opening the body line (offset 0 of a single fuzz line)
+    "lineEnumeration": lambda span, text, start, end: start == 0
+    and _full(r"\(\d{1,2}\)|\d{1,2}[.)]|[1-9](?:\.\d{1,2}){1,3}", span)
+    and not re.match(r"[0-9]", text[end:], _A) and not re.match(r" ?(?:-|/|TO|AND|OR) ?\d", text[end:], _A) and not _TIME_WORD.search(_next_word(text, end)),
+    # QA514 G4: an e-mail address after AT, its mailbox holding a letter, its domain ending in a top-level domain
+    "emailAddress": lambda span, text, start, end: _full(
+        r"(?:AT )?[A-Z0-9._-]*[A-Z][A-Z0-9._-]*(?:@|\(AT\)| )[A-Z0-9-]+(?:\.[A-Z0-9-]+)*\.[A-Z]{2,4}", span),
 }
 
 _ITEM_D_RANGE = {"NONE": ["0000-2400", "0000-2359", "H24"], "D0800": ["0800-1000"], "D1800": ["1800-2000"]}
@@ -299,7 +385,7 @@ def fuzz_verdict(case: dict[str, Any], line: str, spans: list[dict[str, Any]], g
     if not same and got.get("status") != "review":
         return f"neither canonical nor a review ({got.get('status')})"
     start, end = case["segmentStart"], case["segmentEnd"]
-    digits = [index for index in range(start, end) if "0" <= line[index] <= "9"]
+    digits = [index for index in range(start, end) if line[index].isdecimal()]
     for span in spans:
         if not any(span["start"] <= index < span["end"] for index in digits):
             continue
