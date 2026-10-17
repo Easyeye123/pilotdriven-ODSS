@@ -1,6 +1,6 @@
 {
- "spec": "table-cells-2026-10-16-v1",
- "about": "LABELLED test vectors for table-cell-rules.json (QA512). Byte-identical in the app (tests/fixtures/table-cell-vectors.json) and ODSS (tests/fixtures/table-cell-vectors.json); both runtimes must agree with every 'valid'.",
+ "spec": "table-cells-2026-10-17-v2",
+ "about": "LABELLED test vectors for table-cell-rules.json (QA512; QA516 non-ASCII cells, all invalid in both runtimes). Byte-identical in the app (tests/fixtures/table-cell-vectors.json) and ODSS (tests/fixtures/table-cell-vectors.json); both runtimes must agree with every 'valid'.",
  "vectors": [
   {
    "kind": "icao",
@@ -630,6 +630,131 @@
   {
    "kind": "minima",
    "value": "/550M",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "０３９６",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "𝟎𝟑𝟗𝟔",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "٠٣٩٦",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "۰۳۹۶",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "0​396",
+   "valid": false
+  },
+  {
+   "kind": "distance_nm",
+   "value": "03­96",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "１９４６",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "١٩٤٦",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "१९४६",
+   "valid": false
+  },
+  {
+   "kind": "clock",
+   "value": "19​46",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "２９",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "٢٩",
+   "valid": false
+  },
+  {
+   "kind": "runway",
+   "value": "２９Ｌ",
+   "valid": false
+  },
+  {
+   "kind": "icao",
+   "value": "ＷＳＳＳ",
+   "valid": false
+  },
+  {
+   "kind": "icao",
+   "value": "W​SSS",
+   "valid": false
+  },
+  {
+   "kind": "fuel_kg",
+   "value": "０５８１７",
+   "valid": false
+  },
+  {
+   "kind": "fuel_kg",
+   "value": "٠٥٨١٧",
+   "valid": false
+  },
+  {
+   "kind": "flight_level",
+   "value": "３３０",
+   "valid": false
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "Ｐ００７",
+   "valid": false
+  },
+  {
+   "kind": "wind_component_kt",
+   "value": "P٠٠٧",
+   "valid": false
+  },
+  {
+   "kind": "duration",
+   "value": "０１０５",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "７００ＦＴ/２５００Ｍ",
+   "valid": false
+  },
+  {
+   "kind": "minima",
+   "value": "700FT/٢٥٠٠M",
+   "valid": false
+  },
+  {
+   "kind": "iata",
+   "value": "ＨＫＴ",
+   "valid": false
+  },
+  {
+   "kind": "iata",
+   "value": "H​KT",
    "valid": false
   }
  ]

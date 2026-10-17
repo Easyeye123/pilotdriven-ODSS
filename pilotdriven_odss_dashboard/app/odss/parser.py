@@ -1082,16 +1082,16 @@ def _parse_named_procedure(
 # word shape, never by position: a minima is digits with FT and/or M, an approach word holds a letter and is never
 # minima-shaped. A blank column stays blank ("") and is never filled from a neighbouring column. A runway is a
 # designator (two digits and an optional L, C or R), as on all 156 rows the corpus prints in both tables.
-_ALTERNATE_MINIMA = r"(?:\d{1,5}FT/\d{1,5}M|\d{1,5}FT|\d{1,5}M)"
+_ALTERNATE_MINIMA = r"(?:[0-9]{1,5}FT/[0-9]{1,5}M|[0-9]{1,5}FT|[0-9]{1,5}M)"
 # An approach word starts with a letter (all 18 approach words the 30 originals print do), so it is never minima-shaped
 # and a damaged minima ("700FT/250", a truncated "700FT/2500M") is never taken for an approach (QA508-01 mutation test).
 _ALTERNATE_APPROACH_WORD = r"[A-Z][A-Z0-9+./@-]*"
-_ALTERNATE_RUNWAY = r"\d{2}[LCR]?"
+_ALTERNATE_RUNWAY = r"[0-9]{2}[LCR]?"
 _ALTERNATE_ROW = re.compile(
     rf"[ \t]*(?P<apt>[A-Z]{{4}})/(?P<rwy>{_ALTERNATE_RUNWAY})"
     rf"(?:[ \t]+(?P<approach>{_ALTERNATE_APPROACH_WORD}(?:[ \t]+{_ALTERNATE_APPROACH_WORD})*))?"
     rf"(?:[ \t]+(?P<minima>{_ALTERNATE_MINIMA}))?"
-    r"[ \t]+(?P<dist>\d{4})[ \t]+(?P<fl>\d{3})[ \t]+(?P<comp>[MP]\d{3})[ \t]+(?P<time>\d{4})[ \t]+(?P<fuel>\d{5})[ \t]*"
+    r"[ \t]+(?P<dist>[0-9]{4})[ \t]+(?P<fl>[0-9]{3})[ \t]+(?P<comp>[MP][0-9]{3})[ \t]+(?P<time>[0-9]{4})[ \t]+(?P<fuel>[0-9]{5})[ \t]*"
 )
 # The destination table opens at its section heading as well as at its column header (59 of the 60 printings print the
 # heading and its rule directly over the header; SQ606's page 1 puts a page break between them), so the table is still
@@ -1104,7 +1104,7 @@ _ALTERNATE_TABLE_OPENER = re.compile(
 # same word shapes as the destination table, so a word that is neither (a damaged cell, a stray line) is never taken
 # for an approach.
 _EDTO_ALTERNATE_ROW = re.compile(
-    rf"[ \t]*(?P<airport>[A-Z]{{4}})[ \t]+(?P<start>\d{{4}})-(?P<end>\d{{4}})[ \t]+(?P<runway>{_ALTERNATE_RUNWAY})"
+    rf"[ \t]*(?P<airport>[A-Z]{{4}})[ \t]+(?P<start>[0-9]{{4}})-(?P<end>[0-9]{{4}})[ \t]+(?P<runway>{_ALTERNATE_RUNWAY})"
     rf"(?:[ \t]+(?P<approach>{_ALTERNATE_APPROACH_WORD}(?:[ \t]+{_ALTERNATE_APPROACH_WORD})*))?"
     rf"(?:[ \t]+(?P<minima>{_ALTERNATE_MINIMA}))?[ \t]*"
 )
@@ -1144,7 +1144,7 @@ def _edto_row_identity(line: str) -> tuple[str, str | None] | None:
         and not re.fullmatch(_ALTERNATE_RUNWAY, period)  # the runway, its period cell blank
     ):
         return None
-    readable_period = period is not None and re.fullmatch(r"\d{4}-\d{4}", period) is not None
+    readable_period = period is not None and re.fullmatch(r"[0-9]{4}-[0-9]{4}", period) is not None
     return match.group("airport"), (match.group("runway") or "") if readable_period else None
 
 
@@ -1181,9 +1181,9 @@ _ALTERNATE_UNDERLINED_HEADING = re.compile(rf"[ \t]*{_ALTERNATE_HEADING_WORDS}[^
 _ALTERNATE_SECTION_RULE = re.compile(r"[ \t]*(?:-{3,}|={3,})[ \t]*")
 # The EDTO section's ETP lines name the EDTO alternates independently of the table (in all 20 EDTO originals the ETP
 # airports are exactly the table's): "      3.04  S1917.5  WAAA 83 ..." over " 1E  .....  E11658.9 YPDN 39 ...".
-_ETP_FIRST_LINE = re.compile(r"[ \t]*\d{1,2}\.\d{2}[ \t]+[NS]\d{4}(?:\.\d+)?[ \t]+(?P<airport>[A-Z]{4})(?![^ \t])")
+_ETP_FIRST_LINE = re.compile(r"[ \t]*[0-9]{1,2}\.[0-9]{2}[ \t]+[NS][0-9]{4}(?:\.[0-9]+)?[ \t]+(?P<airport>[A-Z]{4})(?![^ \t])")
 _ETP_SECOND_LINE = re.compile(
-    r"[ \t]*\d+[A-Z][ \t]+\.*[ \t]*[EW]\d{5}(?:\.\d+)?(?:[ \t]+(?P<airport>[A-Z]{4})(?![^ \t]))?"
+    r"[ \t]*[0-9]+[A-Z][ \t]+\.*[ \t]*[EW][0-9]{5}(?:\.[0-9]+)?(?:[ \t]+(?P<airport>[A-Z]{4})(?![^ \t]))?"
 )
 _ALTERNATE_TABLES = {
     "destination_alternates": {
@@ -1303,7 +1303,7 @@ def _alternate_row_cells(table: str, match: re.Match[str]) -> list[tuple[Any, ..
 # An EDTO row's body - its period cell, readable or damaged ("1946-2327", "19?6-2327", "1946-23") - among a line's first
 # two words. A line inside the EDTO table with no identity and no body is not a row of its own: it is the row above
 # printed onto the next line (QA512 exploratory: a wrapped MINIMA cell printed as junk).
-_EDTO_ROW_BODY = re.compile(r"[ \t]*(?:[^ \t]+[ \t]+)?[^ \t]*(?:\d-|-\d)")
+_EDTO_ROW_BODY = re.compile(r"[ \t]*(?:[^ \t]+[ \t]+)?[^ \t]*(?:[0-9]-|-[0-9])")
 
 
 # The leading identity cell of a printed line, as printed: "<cell>/" in the destination table, "<cell>" in the EDTO table.
@@ -1482,6 +1482,9 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
     the row read at its place, and every EDTO alternate the ETP lines name that is neither read nor held is held by
     name. A printing with no positively identified end holds the lines after its last row as one block.
     """
+    # QA516: a digit is ASCII 0-9 in both runtimes - the grammars spell their digits [0-9] (Python's \d reads every
+    # script's digits, JavaScript's only 0-9) and no line is normalised, so a cell printed with any other character is
+    # not read and its row is held (table_cell_rules.json "text").
     stream = [
         (start_page_number + index, line)
         for index, page in enumerate(cfp_pages)
@@ -1558,7 +1561,20 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
     alternates = [row for _, row in sorted(alternates_by_place, key=lambda item: item[0])]
     read_airports = {row["airport"] for row in alternates}
     held_airports: set[str] = set()
-    for _, entry in destination:
+    # QA516 (accounting is never truncated): a damaged row is reconciled only with the row of its airport that another
+    # printing reads at the same slot - an airport's k-th row in a printing is the copy of its k-th row in another. A
+    # further row of an airport within one printing is a row of its own and is held; it used to be dropped whenever the
+    # airport was read or held anywhere. A row damaged in every printing is held once (one per slot).
+    read_count: dict[tuple[int, str], int] = {}
+    for printing_index, entry in destination:
+        if entry["kind"] == "row":
+            read_count[(printing_index, entry["airport"])] = read_count.get((printing_index, entry["airport"]), 0) + 1
+    most_read: dict[str, int] = {}
+    for (_, airport), count in read_count.items():
+        most_read[airport] = max(most_read.get(airport, 0), count)
+    unread_seen: dict[tuple[int, str], int] = {}
+    held_slots: set[tuple[str, int]] = set()
+    for printing_index, entry in destination:
         airport = entry["airport"]
         if entry["kind"] == "row":
             if airport in differing and airport not in held_airports:
@@ -1566,12 +1582,17 @@ def _read_alternate_tables(cfp_pages: list[str], start_page_number: int = 1) -> 
                 unread.append(differing[airport])
             continue
         if entry["kind"] == "unread":
-            if airport in read_airports or airport in held_airports:
-                continue
+            nth = unread_seen.get((printing_index, airport), 0)
+            unread_seen[(printing_index, airport)] = nth + 1
+            slot = read_count.get((printing_index, airport), 0) + nth
             if airport in differing:
-                held_airports.add(airport)
-                unread.append(differing[airport])
+                if airport not in held_airports:
+                    held_airports.add(airport)
+                    unread.append(differing[airport])
                 continue
+            if slot < most_read.get(airport, 0) or (airport, slot) in held_slots:
+                continue  # the copy of a row another printing reads, or of a row already held
+            held_slots.add((airport, slot))
             held_airports.add(airport)
             unread.append(_unread_alternate("destination_alternates", entry,
                                             entry.get("reason") or _entry_reason("destination_alternates", entry)))

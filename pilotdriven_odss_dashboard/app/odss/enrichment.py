@@ -175,9 +175,14 @@ def _weather_section_bounds(pages: list[str]) -> tuple[int, int] | None:
     start = next((i for i, text in enumerate(pages) if "AIRPORT WX LIST" in text.upper()), None)
     if start is None:
         return None
+    # QA516 (accounting is never truncated): with no "AIRPORTLIST ENDED" the section ran 13 pages and stopped, silently
+    # leaving later station records out. It now runs to the next structure LIDO prints - the NOTAM bulletin - or to the
+    # end of the document; all 30 held originals print the marker, so they are unchanged.
+    notam = _notam_section_bounds(pages)
+    fallback = (notam[0] - 1) if notam is not None and notam[0] > start else len(pages) - 1
     end = next(
         (i for i in range(start, len(pages)) if "AIRPORTLIST ENDED" in pages[i].upper()),
-        min(start + 12, len(pages) - 1),
+        fallback,
     )
     return start, end + 1
 
@@ -387,8 +392,11 @@ def _extract_station_block(weather_text: str, icao: str) -> str:
         rf"(?ms)^{re.escape(icao)}\s*/\s*[A-Z0-9]{{3}}\s+.*?\n(?P<body>.*?)"
         rf"(?=^[A-Z]{{4}}\s*/\s*[A-Z0-9]{{3}}\s+|^[A-Z][A-Za-z ()/-]+:\s*$|^AIRPORTLIST ENDED|\Z)"
     )
-    match = pattern.search(weather_text)
-    return match.group("body").strip() if match else ""
+    # QA516 (accounting is never truncated): a station LIDO prints in more than one block (under two role headings)
+    # keeps every block's records; only the first was read. Identical blocks - all 7 such stations in the 30 held
+    # originals - are read once, so they are unchanged.
+    bodies = list(dict.fromkeys(match.group("body").strip() for match in pattern.finditer(weather_text)))
+    return "\n".join(body for body in bodies if body)
 
 
 def _parse_station_weather(
@@ -905,8 +913,10 @@ def _extract_airport_notam_block(notam_text: str, icao: str) -> str:
         rf"(?ms)^{re.escape(icao)}\s*/[A-Z0-9]{{3}}\s+.*?\n[-]+\n(?P<body>.*?)"
         rf"(?=^[A-Z]{{4}}\s*/[A-Z0-9]{{3}}\s+.*?\n[-]+|\Z)"
     )
-    match = pattern.search(notam_text)
-    return match.group("body") if match else ""
+    # QA516: every block of the station's notices, not only the first (identical blocks are read once; no held original
+    # prints a station's NOTAM block twice).
+    bodies = list(dict.fromkeys(match.group("body") for match in pattern.finditer(notam_text)))
+    return "\n".join(bodies)
 
 
 def _notice_score(text: str, category: str) -> int:

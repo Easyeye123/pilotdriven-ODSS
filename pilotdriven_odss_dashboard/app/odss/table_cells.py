@@ -18,14 +18,20 @@ from typing import Any
 RULES_PATH = Path(__file__).with_name("table_cell_rules.json")
 RULES: dict[str, Any] = json.loads(RULES_PATH.read_text(encoding="utf-8"))
 CELLS: dict[str, dict[str, Any]] = RULES["cells"]
+TEXT: dict[str, Any] = RULES["text"]
 
-_MINIMA = re.compile(r"(?:(?P<feet>\d{1,5})FT)?(?P<slash>/)?(?:(?P<metres>\d{1,5})M)?")
+# QA516: a cell is ASCII in both runtimes (rules "text"). Python's \d and int() read every script's decimal digits and
+# JavaScript's \d reads 0-9 only, so every pattern here spells its digits [0-9] and nothing is normalised: a cell with a
+# full-width, Arabic-Indic or zero-width character is not valid and its row is held.
+_MINIMA = re.compile(r"(?:(?P<feet>[0-9]{1,5})FT)?(?P<slash>/)?(?:(?P<metres>[0-9]{1,5})M)?")
 
 
 def cell_problem(kind: str, value: Any) -> str | None:
     """None when ``value`` is a valid ``kind`` cell, else the rule it breaks (the rules file's wording)."""
     rule = CELLS[kind]
     text = "" if value is None else str(value)
+    if not text.isascii():
+        return f'{rule["rule"]}; {TEXT["short"]}'
     if _valid(kind, rule, text):
         return None
     return str(rule["rule"])
@@ -35,34 +41,34 @@ def _valid(kind: str, rule: dict[str, Any], text: str) -> bool:
     if kind in {"icao", "iata"}:
         return re.fullmatch(rf"[A-Z]{{{int(rule['letters'])}}}", text) is not None
     if kind == "runway":
-        match = re.fullmatch(r"(\d{2})([A-Z]?)", text)
+        match = re.fullmatch(r"([0-9]{2})([A-Z]?)", text)
         return bool(
             match
             and int(rule["number_min"]) <= int(match.group(1)) <= int(rule["number_max"])
             and (not match.group(2) or match.group(2) in rule["suffixes"])
         )
     if kind == "clock":
-        match = re.fullmatch(r"(\d{2})(\d{2})", text)
+        match = re.fullmatch(r"([0-9]{2})([0-9]{2})", text)
         if not match:
             return False
         if text == "2400":
             return bool(rule["allow_2400"])
         return int(match.group(1)) <= int(rule["hour_max"]) and int(match.group(2)) <= int(rule["minute_max"])
     if kind == "duration":
-        match = re.fullmatch(r"(\d{2})(\d{2})", text)
+        match = re.fullmatch(r"([0-9]{2})([0-9]{2})", text)
         if not match or int(match.group(2)) > int(rule["minute_max"]):
             return False
         total = int(match.group(1)) * 60 + int(match.group(2))
         return int(rule["total_minutes_min"]) <= total <= int(rule["total_minutes_max"])
     if kind == "distance_nm":
-        return re.fullmatch(r"\d{4}", text) is not None and int(rule["min"]) <= int(text) <= int(rule["max"])
+        return re.fullmatch(r"[0-9]{4}", text) is not None and int(rule["min"]) <= int(text) <= int(rule["max"])
     if kind == "flight_level":
-        return re.fullmatch(r"\d{3}", text) is not None and int(rule["min"]) <= int(text) <= int(rule["max"])
+        return re.fullmatch(r"[0-9]{3}", text) is not None and int(rule["min"]) <= int(text) <= int(rule["max"])
     if kind == "wind_component_kt":
-        match = re.fullmatch(r"[MP](\d{3})", text)
+        match = re.fullmatch(r"[MP]([0-9]{3})", text)
         return bool(match) and int(match.group(1)) <= int(rule["max"])
     if kind == "fuel_kg":
-        return re.fullmatch(r"\d{5}", text) is not None and int(rule["min"]) <= int(text) <= int(rule["max"])
+        return re.fullmatch(r"[0-9]{5}", text) is not None and int(rule["min"]) <= int(text) <= int(rule["max"])
     if kind == "minima":
         match = _MINIMA.fullmatch(text)
         if not match or not (match.group("feet") or match.group("metres")):

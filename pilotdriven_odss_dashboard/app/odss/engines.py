@@ -581,7 +581,8 @@ def _hazard_review_findings(
 
     def track_details() -> list[str]:
         details: list[str] = []
-        for cyclone in (track_context.get("cyclones") or [])[:3]:
+        # QA516: every tracked cyclone is described (the details stopped at three, with no count).
+        for cyclone in track_context.get("cyclones") or []:
             movement = cyclone.get("movement") or {}
             closest = cyclone.get("closest_route_screening") or {}
             if movement:

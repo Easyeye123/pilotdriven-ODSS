@@ -1861,15 +1861,27 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
             [r["text"] for r in analysed["lines"]]
             or ["No supported closure consequence was established for the planned movement. No gate, exit or taxi route is inferred."],
             CYAN if role == "departure" else RED, f"sec_{role}", paragraph_gap=2.0))
-    alternate_lines = []
+    # One group of lines per alternate row (its plan line and its consequences), so a page that cannot hold every row
+    # defers whole trailing rows and states how many (QA516: a display limit shows what it leaves out, never drops it).
+    alternate_groups = []
     for row in view.get("alternate_assessment_rows") or []:
         analysis = next((p for p in alternate_analysis if p["icao"] == row.get("airport")), {"lines": []})
         if (row.get("assessment") or {}).get("row_not_read"):
             # A printed alternate row the parser did not read: its review, never an empty plan line.
-            alternate_lines.append(f"{text(row.get('airport'))} {str(row.get('role') or 'alternate').upper()} · {row['assessment']['text']}")
+            alternate_groups.append([f"{text(row.get('airport'))} {str(row.get('role') or 'alternate').upper()} · {row['assessment']['text']}"])
             continue
-        alternate_lines.append(f"{text(row.get('airport'))}/{text(row.get('runway'))} {str(row.get('role') or 'alternate').upper()} · {text(row.get('approach'))} · MIN {text(row.get('minima'))} · {text(row.get('distance_nm'))} NM / {text(row.get('time_minutes'))} min / {kg(row.get('fuel_kg'))}.")
-        alternate_lines.extend(r["text"] for r in analysis["lines"])
+        alternate_groups.append([
+            f"{text(row.get('airport'))}/{text(row.get('runway'))} {str(row.get('role') or 'alternate').upper()} · {text(row.get('approach'))} · MIN {text(row.get('minima'))} · {text(row.get('distance_nm'))} NM / {text(row.get('time_minutes'))} min / {kg(row.get('fuel_kg'))}.",
+            *(r["text"] for r in analysis["lines"]),
+        ])
+
+    def alternate_lines_keeping(keep: int) -> list[str]:
+        lines = [line for group in alternate_groups[:keep] for line in group]
+        if keep < len(alternate_groups):
+            lines.append(f"+{len(alternate_groups) - keep} further alternate row(s) on the dashboard.")
+        return lines
+
+    alternate_lines = alternate_lines_keeping(len(alternate_groups))
 
     # His reference page 4 is a DEPARTURE AIRPORT column beside a DESTINATION
     # AIRPORT column, the alternate matrix under both. Each column here is the
@@ -1892,9 +1904,21 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                          alternate_lines or ["No alternate rows are held."], AMBER,
                          tag="CFP P2", paragraph_gap=2.0)]),
         ]
-    sections["airports"] = plan_page_flexible(
-        "AIRPORTS / ALTERNATES", "sec_airports", airport_rows, ribbon_index=3, aliases=("sec_departure", "sec_destination", "sec_alternates"),
-        assurance="AIRPORT / ALTERNATE APPLICABILITY | FLIGHT-TIME CONSEQUENCES ONLY")
+    # Every alternate row is printed when the page holds them all (every held original does). Only when it cannot are
+    # whole trailing rows left to the dashboard, with their stated count - never cut silently, never a failed page.
+    keep = len(alternate_groups)
+    while True:
+        try:
+            sections["airports"] = plan_page_flexible(
+                "AIRPORTS / ALTERNATES", "sec_airports", airport_rows, ribbon_index=3,
+                aliases=("sec_departure", "sec_destination", "sec_alternates"),
+                assurance="AIRPORT / ALTERNATE APPLICABILITY | FLIGHT-TIME CONSEQUENCES ONLY")
+            break
+        except ValueError:
+            if keep == 0:
+                raise
+            keep -= 1
+            alternate_lines = alternate_lines_keeping(keep)
 
     # ---------------------------------------------------------------- page 5
     from .page_one_weather import page_one_taf_change_groups

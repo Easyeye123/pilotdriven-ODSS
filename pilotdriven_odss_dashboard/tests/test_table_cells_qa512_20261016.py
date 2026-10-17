@@ -52,8 +52,8 @@ RULES = ROOT / "app" / "odss" / "table_cell_rules.json"
 VECTORS = ROOT / "tests" / "fixtures" / "table-cell-vectors.json"
 # The shared files are byte-identical in the app (table-cell-rules.json, tests/fixtures/table-cell-vectors.json) and
 # pinned by the same digests in its suite.
-RULES_SHA256 = "0372ccdab52786f1c8789671fe298236d8b20af446cefc8f2f179104adcaede7"
-VECTORS_SHA256 = "e96ce639a73c61238b8ff128607d5522aa8b99895e9e611110705751b379645f"
+RULES_SHA256 = "265688879a049778e1bef0c1fc4552e9ed8c9d45e9abbd7c9ebcb0f43a573c57"
+VECTORS_SHA256 = "884dbbe4cd64e71a0221a032a10bd831272e39f864b9f3ad02c7ba397d0bb280"
 
 
 def _corpus() -> Path:
@@ -98,7 +98,7 @@ def test_the_rules_and_vectors_are_the_pinned_shared_files() -> None:
 
 def test_every_shared_vector_is_judged_as_stated() -> None:
     vectors = json.loads(VECTORS.read_text())["vectors"]
-    assert len(vectors) == 126
+    assert len(vectors) == 151  # QA516: + 25 non-ASCII cells, all invalid
     wrong = [vector for vector in vectors if (table_cells.cell_problem(vector["kind"], vector["value"]) is None)
              != vector["valid"]]
     assert wrong == []
@@ -595,3 +595,29 @@ def test_every_semantically_invalid_cell_of_every_table_row_is_held_naming_it_ne
           f"{checked} semantic mutations")
     assert (destination_rows, edto_rows, fuel_rows) == (104, 52, 27)
     assert not problems, f"{len(problems)} mutation(s) not accounted:\n" + "\n".join(problems[:40])
+
+
+# ------------------------------------------------------------- QA516: a table cell is ASCII in both runtimes (fail-closed)
+@pytest.mark.parametrize(("table", "old", "new"), [("destination", "0396", "０３９６"), ("destination", "0396", "٠٣٩٦"),
+                                                   ("edto", "1946", "１９４６"), ("edto", "1946", "١٩٤٦"),
+                                                   ("edto", "1946", "19​46")])
+def test_qa516_a_cell_with_a_non_ascii_character_is_held_in_both_runtimes(table: str, old: str, new: str) -> None:
+    """Codex's local QA516 observation: Python's \\d and int() read full-width and Arabic-Indic digits, JavaScript's \\d
+    does not, so ODSS read the row and the app held it. Both runtimes now read a cell only in ASCII (rules "text"):
+    the row is held, fail-closed (the app twin runs the same cases)."""
+    opening = r"^\s*YMML/" if table == "destination" else r"^\s*YPDN\s+1946-"
+    flight = parse_lido(_mutated(opening, old, new), SQ279)
+    airport = "YMML" if table == "destination" else "YPDN"
+    read = flight["alternates"] if table == "destination" else flight["edto"]["airports"]
+    assert airport not in [row["airport"] for row in read]
+    assert airport in [row["airport"] for row in flight["alternates_unread"]]
+
+
+def test_qa516_table_cells_and_timing_differ_in_normalisation_on_purpose() -> None:
+    """The table-cell rules are ASCII-only with no normalisation; the NOTAM timing rules normalise (NFKC, Cf dropped).
+    Both are fail-closed for their direction: an unrecognised clock reads as no schedule, so timing recognises more; a
+    recognised cell publishes its value, so table cells recognise less. This pins the two stated contracts."""
+    text = table_cells.RULES["text"]
+    assert (text["characters"], text["digits"], text["normalisation"]) == ("ASCII", "0-9", None)
+    timing = json.loads((ROOT / "app" / "odss" / "notam_timing_rules.json").read_text())["scheduleField"]["normalisation"]
+    assert timing == {"form": "NFKC", "drop": "Cf"}
