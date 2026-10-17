@@ -238,5 +238,5 @@ def test_genuine_baku_lower_heading_names_its_fir():
 
 
 def test_the_tokens_move_together():
-    assert EXTRACTION_RULES == "2026-10-17-every-digit-and-row-accounted-v21"
+    assert EXTRACTION_RULES == "2026-10-18-syntactic-governance-v22"
     assert ENROUTE_CONTACT_RULE == "enroute-contact-v16"

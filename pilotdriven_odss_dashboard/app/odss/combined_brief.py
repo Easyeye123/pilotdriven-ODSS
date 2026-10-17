@@ -254,7 +254,13 @@ WAFC_CHARTS_PER_PAGE = 3
 # cell with a non-ASCII character is held. The PDF repair (release-516 QA): every held raw line prints in one
 # canonical printable form - a character the briefing's faces cannot print is its code point, [U+FF11] - and the
 # publication gate folds that same form (pdf_printable.py), so a held row never refuses the whole briefing.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-17-every-digit-and-row-accounted-v110"
+# 18 Oct 2026 (v111, on v110). QA518 (Codex QA of release 518): a NOTAM's timing governance is read on the syntactic
+# text - punctuation that only wraps or joins tokens (quotes, brackets, a joiner dash, a label colon) never licenses a
+# benign mask, so 'UNTIL "121.35"' is the review 'UNTIL 121.35' is; a time in number words ('AFTER HALF PAST
+# EIGHT') and the unclassified object of a temporal connective in a restriction sentence ('UNTIL TEATIME') are
+# reviews, never 'no schedule'; same-role connective synonyms read alike. The tables, the accounting and the PDF
+# printable form are unchanged.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-18-syntactic-governance-v111"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

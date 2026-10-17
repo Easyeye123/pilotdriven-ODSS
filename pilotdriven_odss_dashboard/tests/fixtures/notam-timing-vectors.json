@@ -1,5 +1,5 @@
 {
- "specVersion": "notam-timing-2026-10-17-v7",
+ "specVersion": "notam-timing-2026-10-18-v8",
  "defaultWindow": {
   "startsAt": "2026-08-16T07:00:00.000Z",
   "endsAt": "2026-08-16T11:00:00.000Z"

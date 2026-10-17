@@ -89,4 +89,10 @@ the two are bumped together whenever the parser's extraction changes.
 # remark, weather report (four originals lost 1-23 at the old cap of 64), SIGMET, terrain event and FIR crossing;
 # destination rows are reconciled by slot; every weather/NOTAM block of a station is read; a table cell is ASCII in
 # both runtimes. A v19 analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-17-every-digit-and-row-accounted-v21"
+# v22 (18 Oct 2026, on v21). QA518: the timing spec notam-timing-2026-10-18-v8 - every governance relation is read on
+# the syntactic text (wrapping and joining punctuation removed by role; one clause boundary; a record's field and
+# free text each one stream across line breaks), numeric content in words is numeric content, the object of a
+# temporal connective in a restriction sentence is temporal content unless a role its connective admits classifies
+# it, and every connective list names its same-role synonyms; held station records can differ in schedule_review.
+# A v21 analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-18-syntactic-governance-v22"
