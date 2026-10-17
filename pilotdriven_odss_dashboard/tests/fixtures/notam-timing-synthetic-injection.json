@@ -1574,6 +1574,34 @@
      "TWY Z8 CLSD 2. 60MIN PN FOR NML OPS. SYNTHETIC QA514."
     ],
     "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9385/26",
+    "case": "QA514G_DESIGNATED_CLOCK",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD UTC0800-1000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9386/26",
+    "case": "QA514G_DESIGNATED_CLOCK_ITEM_D",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "DLY 0300-0500",
+     "TWY Z8 CLSD Z0800. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9387/26",
+    "case": "QA514G_DESIGNATOR_INVALID_CLOCK",
+    "validity": "10-AUG-26 1900 - 20-AUG-26 1900",
+    "body": [
+     "TWY Z8 CLSD. RAD LT2168. FIX H2575. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
    }
   ],
   "EGKK": [
@@ -3148,6 +3176,34 @@
      "TWY Z8 CLSD 2. 60MIN PN FOR NML OPS. SYNTHETIC QA514."
     ],
     "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9485/26",
+    "case": "QA514G_DESIGNATED_CLOCK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UTC0800-1000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9486/26",
+    "case": "QA514G_DESIGNATED_CLOCK_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD Z0800. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z9487/26",
+    "case": "QA514G_DESIGNATOR_INVALID_CLOCK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. RAD LT2168. FIX H2575. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": "active"
    }
   ],
   "EGCC": [
@@ -4720,6 +4776,34 @@
     "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
     "body": [
      "TWY Z8 CLSD 2. 60MIN PN FOR NML OPS. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9585/26",
+    "case": "QA514G_DESIGNATED_CLOCK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD UTC0800-1000. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9586/26",
+    "case": "QA514G_DESIGNATED_CLOCK_ITEM_D",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "DLY 1700-1900",
+     "TWY Z8 CLSD Z0800. SYNTHETIC QA514."
+    ],
+    "expect_scheduled": null
+   },
+   {
+    "id": "Z9587/26",
+    "case": "QA514G_DESIGNATOR_INVALID_CLOCK",
+    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
+    "body": [
+     "TWY Z8 CLSD. RAD LT2168. FIX H2575. SYNTHETIC QA514."
     ],
     "expect_scheduled": null
    }

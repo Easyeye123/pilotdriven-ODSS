@@ -10684,6 +10684,83 @@
    "note": "an ungoverned 24 HR is H24"
   },
   {
+   "id": "QA514G_DESIGNATED_CLOCK",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD UTC0800-1000."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "G1: a time designator glued to a valid clock is a clock"
+  },
+  {
+   "id": "QA514G_DESIGNATED_CLOCK_WITH_ITEM_D",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "DLY 1800-2000",
+    "TWY J CLSD Z0800."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "G1: never read as a value"
+  },
+  {
+   "id": "QA514G_TIME_SCALE_AFTER_CONNECTIVE",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026)",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD TIL GMT5 24 HR."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "review",
+    "stateAtReference": "unknown_at_reference",
+    "minutesDelta": null
+   },
+   "note": "G1: a time-scale name glued to digits after a connective is unreadable timing"
+  },
+  {
+   "id": "QA514G_CONTROL_DESIGNATOR_INVALID_CLOCK",
+   "label": "SYNTHETIC (QA514 round 2: G1-G4, 17 Oct 2026) benign control",
+   "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+   "lines": [
+    "TWY J CLSD. RAD LT2168. FIX H2575. POINT T0860."
+   ],
+   "window": {
+    "startsAt": "2026-08-16T07:00:00.000Z",
+    "endsAt": "2026-08-16T11:00:00.000Z"
+   },
+   "referenceAt": "2026-08-16T09:00:00.000Z",
+   "expect": {
+    "status": "affecting",
+    "stateAtReference": "active_at_reference",
+    "minutesDelta": 0
+   },
+   "note": "G1: an invalid clock after a designator is an identifier"
+  },
+  {
    "id": "QA516_ARABIC_INDIC_CLOCK",
    "label": "SYNTHETIC (QA516: digits of any script, 17 Oct 2026)",
    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",

@@ -10,7 +10,8 @@ compositions(): every restriction x every component x both word orders x every j
   instructions, frequencies, altitudes, distances, designators, references) is the canonical decision; an office's
   hours are benign only when a contact verb governs them (the nearest verb before them is a contact verb, or they open
   a clause whose next verb is one).
-fuzz_cases(): random digit tokens - 1 to 3 groups of 1 to 6 digits (ASCII, or a script NFKC leaves alone: Arabic-
+fuzz_cases(): random digit tokens - letters glued before them or not (the time designators Z, L, LT, LCL, UTC, GMT, H,
+  T, or S, TD, KHUTA), 1 to 3 groups of 1 to 6 digits (ASCII, or a script NFKC leaves alone: Arabic-
   Indic, Extended Arabic-Indic, Devanagari, Bengali, Thai, or mixed) joined by . : - / space H h Z L , - with
   connectives before and after, placed after, before, inside, beside or bracketed with a restriction, with and without
   Item D. fuzz_verdict() is the invariant: a digit no stated class masks makes the decision a review (unless the
@@ -77,6 +78,13 @@ COMPONENTS = [
     ("equal", "RWY 24 CLSD 0800-1000"), ("temporal", "TWY B 18H"), ("temporal", "FREQ 121.9 MHZ 18.00-20.00"),
     ("temporal", "CAT C 0800-1"), ("temporal", "RWY 24 UNTIL 1800"), ("temporal", "UNTIL S0840"), ("temporal", "AT S0840"),
     ("temporal", "CLSD-0800"), ("temporal", "8A-5P"), ("temporal", "AT 8A"), ("temporal", "FOR 8D"), ("temporal", "AT 24 HRS"), ("temporal", "BY 24 HRS"), ("temporal", "EVERY 24 HRS"), ("equal", "TWY K-0800-1000"),
+    # G1 (coordinator): a time designator (Z, L, LT, LCL, UTC, GMT, H, T) glued to a VALID clock is a clock - with and
+    # without a connective and inside ranges; on an invalid clock, or after other letters, an identifier (after a
+    # connective a four-digit group glued to letters is still unreadable timing)
+    ("temporal", "Z0800"), ("temporal", "LT0800"), ("temporal", "UTC0800-1000"), ("temporal", "H0800"), ("temporal", "L0800"),
+    ("temporal", "LCL0800"), ("temporal", "GMT0800"), ("temporal", "T2400"), ("temporal", "UNTIL LT0800"), ("temporal", "FROM Z0800 TO Z1000"),
+    ("temporal", "0800-T1000"), ("temporal", "LT2168-2200"), ("temporal", "UNTIL LT2168"), ("temporal", "TIL GMT5 24 HR"),
+    ("benign", "FIX H2575"), ("benign", "POINT T0860"), ("benign", "WPT Z2460 AND KHUTA0800"),
     # QA516: a clock in digits NFKC leaves alone is never read as a value - an unaccounted digit, so a review
     ("temporal", "\u0660\u0668\u0660\u0660-\u0661\u0660\u0660\u0660"), ("temporal", "FROM \u06F0\u06F8\u06F0\u06F0 TO \u06F1\u06F0\u06F0\u06F0"),
     ("temporal", "\u0966\u096E\u0966\u0966-\u0967\u0966\u0966\u0966"), ("temporal", "08\u06600-1000"), ("temporal", "DLY \u0660\u0668\u0660\u0660-\u0661\u0660\u0660\u0660"),
@@ -181,6 +189,8 @@ FUZZ: dict[str, list[Any]] = {
     # Extended Arabic-Indic, Devanagari, Bengali, Thai) or ASCII and Arabic-Indic mixed digit by digit
     "digitScripts": ["ascii", "ascii", "ascii", "ascii", "ascii", "ascii", "arabicIndic", "extendedArabicIndic", "devanagari",
                      "bengali", "thai", "mixed"],
+    # G1: letters glued before a token's digits - the time designators, and letters that are no time designator
+    "letters": ["", "", "", "", "", "", "", "", "", "", "Z", "L", "LT", "LCL", "UTC", "GMT", "H", "T", "S", "TD", "KHUTA"],
     "prefixes": ["", "", "", "FROM ", "UNTIL ", "TILL ", "TIL ", "AT ", "BY ", "BTN ", "BETWEEN ", "TO ", "DURING ",
                  "AFTER ", "BEFORE ", "WEF ", "THRU ", "OUTSIDE ", "FOR ", "ON ", "EVERY ", "DLY ", "SINCE ",
                  "TERMINAL ", "STAND "],
@@ -208,7 +218,7 @@ def _fuzz_digit(rng: Mulberry32, script: str) -> str:
 def _fuzz_token(rng: Mulberry32) -> str:
     script = rng.pick(FUZZ["digitScripts"])
     groups = 1 + rng.below(3)
-    token = rng.pick(FUZZ["leads"])
+    token = rng.pick(FUZZ["leads"]) + rng.pick(FUZZ["letters"])
     for g in range(groups):
         if g > 0:
             token += rng.pick(FUZZ["separators"])
@@ -276,6 +286,16 @@ _MEASURE_OR_DESIGNATION = re.compile(
     r"PARAGRAPH|CHAPTER|SECTION|REF|AIP|AMDT|SUP|EDITION|SHEET|CHART|NR|NO|NUMBER|TEL|FAX)[ /.]*)+:? ?\d{1,5}"
     r"(?:\.\d{1,3})?(?:\(\d{1,5}(?:\.\d{1,3})?\))?[LRC]?$|^(?:NR|NO|NUMBER|PAGE|SHEET|CHART)\.? [A-Z]{1,3} \d{1,3}/\d{1,3}$"
     r"|^L\.R\. ?\d{3}$", _A)
+
+
+_TIME_DESIGNATOR = re.compile(r"(?:Z|L|LT|LCL|UTC|GMT|H|T)", _A)
+_VALID_CLOCK = re.compile(r"(?:(?:[01][0-9]|2[0-3])[0-5][0-9]|2400)", _A)
+
+
+def _identifier_part(part: str) -> bool:
+    match = re.match(r"([A-Z]+)([0-9]+)", part)
+    return match is None or (not (_TIME_DESIGNATOR.fullmatch(match.group(1)) and _VALID_CLOCK.fullmatch(match.group(2)))
+                             and re.fullmatch(r"[OI]+", match.group(1)) is None)
 
 
 def _next_word(text: str, end: int) -> str:
@@ -353,6 +373,15 @@ FUZZ_CLASS_DEFINITIONS: dict[str, Callable[[str, str, int, int], bool]] = {
     "lineEnumeration": lambda span, text, start, end: start == 0
     and _full(r"\(\d{1,2}\)|\d{1,2}[.)]|[1-9](?:\.\d{1,2}){1,3}", span)
     and not re.match(r"[0-9]", text[end:], _A) and not re.match(r" ?(?:-|/|TO|AND|OR) ?\d", text[end:], _A) and not _TIME_WORD.search(_next_word(text, end)),
+    # QA514 G1: a letter-led glued alphanumeric is an identifier - never a time designator glued to a valid clock, never
+    # letters for digits, and after a temporal connective never a four-digit group glued to letters
+    "alphanumericDesignator": lambda span, text, start, end: re.match(r"[A-Z]", span) is not None and re.search(r"[0-9]", span) is not None
+    and all(_identifier_part(part) for part in re.split(r"[-/]", span))
+    and not (not _not_governed(text, start) and re.search(r"[A-Z]-?[0-9]{4}(?![0-9]|/(?:19|20)?[0-9]{2}(?![0-9]))", span) is not None),
+    # a procedure named by its five-letter point, a number and a letter (OBOKA 3H, ATRIN-7E/7F)
+    "procedureName": lambda span, text, start, end: _full(r"[A-Z]{5}(?: ?- ?| )?[0-9][A-Z](?:/[0-9][A-Z])*", span),
+    # a latitude or longitude prefixed by its hemisphere (S DDMMSS, E DDDMMSS)
+    "coordinates": lambda span, text, start, end: _full(r"(?:[NS][0-9]{6}|[EW][0-9]{7})(?:\.[0-9]{1,4})?", span),
     # QA514 G4: an e-mail address after AT, its mailbox holding a letter, its domain ending in a top-level domain
     "emailAddress": lambda span, text, start, end: _full(
         r"(?:AT )?[A-Z0-9._-]*[A-Z][A-Z0-9._-]*(?:@|\(AT\)| )[A-Z0-9-]+(?:\.[A-Z0-9-]+)*\.[A-Z]{2,4}", span),

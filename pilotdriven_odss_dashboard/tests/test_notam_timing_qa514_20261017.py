@@ -32,10 +32,10 @@ from app.odss.notam_timing import (
 from tests import notam_timing_qa514_generators as G
 
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")
-COMPOSITION = {"records": 62415, "decisions": 312075, "caseDigest": "5cf57adcc73fddf8844274d4235b7bb32ddc2fdeb53726dc2940fad96094212d", "decisionDigest": "6a97e0c32c6616391100e8c036aa5fdcdea76725d76538311f8e0e5437f99445"}
+COMPOSITION = {"records": 71595, "decisions": 357975, "caseDigest": "4424e73331c2b9bfbca8c8ce145d5a01faa43301e3055fc79f324d7bf6c8135a", "decisionDigest": "994926520ae975a6ecb384e46a6cf17f613a586c328758ae4227602c914653d0"}
 FUZZ_SEED = 20261017
-FUZZ_DEFAULT = {"cases": 20000, "decisions": 100000, "caseDigest": "78fc5992ec1058d5ed591475810adcd54cd632394002ffd710154de0f75d6cf6", "decisionDigest": "ce0955dc5bd28e805536deb9c11c2565101e6120a84e62b79a8be740b463e2d0"}
-FUZZ_FULL = {"cases": 200000, "decisions": 1000000, "caseDigest": "390c6ccb355d9ce4369cb9e3f2d4e2b7d3422dbc43e02ecefcd2a8f51e5d69c9", "decisionDigest": "4d8cea499c0bc7ca55c42f020f06a1f843f3eb5cffcccf756cd3f7d8c21ac953"}
+FUZZ_DEFAULT = {"cases": 20000, "decisions": 100000, "caseDigest": "1e3385675a5801211aa85178160173a0eb64e3e0dfa630da946c821d5abb47aa", "decisionDigest": "c75d4b2eae988a28c78c0a22287d0b2f504bf335ec7a6ade257de53806b4c2d6"}
+FUZZ_FULL = {"cases": 200000, "decisions": 1000000, "caseDigest": "740cb12c03dd79681cf804cc118514afc3131c5cd6e0220d5883e8cdff2d5911", "decisionDigest": "c4c58d6d57d34e964bd23ec86ece1917c4cc69d01420180a95154eb27482e475"}
 
 _A = re.ASCII
 # I2, independently: what a span after a temporal connective must show to be benign (QA514 G2: a unit or a head noun
