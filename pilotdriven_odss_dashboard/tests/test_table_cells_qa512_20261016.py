@@ -615,8 +615,10 @@ def test_qa516_a_cell_with_a_non_ascii_character_is_held_in_both_runtimes(table:
 
 def test_qa516_table_cells_and_timing_differ_in_normalisation_on_purpose() -> None:
     """The table-cell rules are ASCII-only with no normalisation; the NOTAM timing rules normalise (NFKC, Cf dropped).
-    Both are fail-closed for their direction: an unrecognised clock reads as no schedule, so timing recognises more; a
-    recognised cell publishes its value, so table cells recognise less. This pins the two stated contracts."""
+    Both are fail-closed for their direction. Timing folds before it reads (a full-width digit is its digit, a
+    zero-width character never splits a clock), and since QA514 a digit of any script that its grammar does not read
+    makes the timing a review - never "no schedule". A recognised cell publishes its value, so table cells recognise
+    less: any character outside ASCII holds the row as a stated review. This pins the two stated contracts."""
     text = table_cells.RULES["text"]
     assert (text["characters"], text["digits"], text["normalisation"]) == ("ASCII", "0-9", None)
     timing = json.loads((ROOT / "app" / "odss" / "notam_timing_rules.json").read_text())["scheduleField"]["normalisation"]

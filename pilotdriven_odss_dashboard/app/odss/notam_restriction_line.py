@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 
 from .notam_plain_words import NOTAM_PLAIN_WORDS
+from .pdf_printable import printable
 
 LINE_LIMIT = 190
 SUPPLEMENT_LENGTH = 420
@@ -434,7 +435,8 @@ MIN_KEPT_LENGTH = 12
 
 
 def _gate_words(value: object) -> list[str]:
-    return re.sub(r'[^A-Z0-9]+', ' ', str(value).upper()).split()
+    """``concise_pdf_gate.normalized``, word for word: the folding of the printable form the page prints."""
+    return re.sub(r'[^A-Z0-9]+', ' ', printable(value).upper()).split()
 
 
 class _SourceCopy:

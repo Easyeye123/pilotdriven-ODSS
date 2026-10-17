@@ -21,7 +21,9 @@ from typing import Any
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.pdfbase.pdfmetrics import stringWidth
+# Every string is measured and drawn in its one printable form (pdf_printable: a character outside the faces'
+# repertoire prints as [U+XXXX], never as a notdef glyph read back as a look-alike letter).
+from .pdf_printable import PrintableCanvas, hard_break, printable, string_width as stringWidth
 
 from .analysed_briefing_content import (cyclone_content, deferred_item_label,
                                         excess_fuel_chain_label,
@@ -171,9 +173,11 @@ def unique(values: list[Any]) -> list[str]:
 
 
 def wrap(value: str, width: float, *, font: str = "Helvetica", size: float = BODY) -> list[str]:
-    """Wrap without ellipsis, including unbroken source tokens."""
+    """Wrap without ellipsis, including unbroken source tokens. The lines are the value's printable form (a
+    character outside the faces' repertoire is its [U+XXXX] escape); a token wider than the line is cut where it cuts
+    neither an escape nor a run of letters or digits (pdf_printable.hard_break)."""
     lines: list[str] = []
-    for paragraph in str(value).splitlines() or [""]:
+    for paragraph in printable(value).splitlines() or [""]:
         line = ""
         for word in paragraph.split():
             candidate = f"{line} {word}".strip()
@@ -187,6 +191,7 @@ def wrap(value: str, width: float, *, font: str = "Helvetica", size: float = BOD
                 end = len(word) - 1
                 while end > 1 and stringWidth(word[:end], font, size) > width:
                     end -= 1
+                end = hard_break(word, end)
                 lines.append(word[:end])
                 word = word[end:]
             line = word
@@ -2385,7 +2390,6 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
 
 def render_analysed_briefing(flight, findings, warnings, path, *, weather_charts=None, company_briefing_references=None) -> None:
     from pathlib import Path
-    from reportlab.pdfgen import canvas as pdf_canvas
     from .briefing import build_briefing_view
     from .airport_pdf_analysis import airport_pdf_analysis, alternate_pdf_analysis
     from .concise_pdf_gate import check_concise_pdf, PUBLICATION_FORMAT
@@ -2400,7 +2404,7 @@ def render_analysed_briefing(flight, findings, warnings, path, *, weather_charts
     pages = [page for key in order for page in sections[key]]
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    canvas = pdf_canvas.Canvas(str(target), pagesize=SIZE)
+    canvas = PrintableCanvas(str(target), pagesize=SIZE)
     canvas.setTitle(f"Flight Briefing {text(view.get('flight_number'))} {text(view.get('flight_date'))}")
     canvas.setSubject(PUBLICATION_FORMAT)
     for number, page in enumerate(pages, 1):

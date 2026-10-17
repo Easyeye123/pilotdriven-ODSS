@@ -10,7 +10,7 @@ from datetime import timedelta
 import re
 
 from reportlab.lib import colors
-from reportlab.pdfbase.pdfmetrics import stringWidth
+from .pdf_printable import string_width as stringWidth
 
 from .analysed_briefing_content import cyclone_content, flight_window, level_profile_label
 from .briefing import (_SIGMET_TIME_DISPOSITION, _screening_geometry, _sigmet_time_state,

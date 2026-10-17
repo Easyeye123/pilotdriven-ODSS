@@ -16,6 +16,8 @@ from typing import Any
 
 import fitz
 
+from .pdf_printable import printable
+
 MAX_BRIEFING_PAGES = 6
 PUBLICATION_FORMAT = "analysed-briefing-2026-09-15"
 PAGE_TITLES = (
@@ -89,7 +91,11 @@ def _source_notice_tokens(text: str, declared_ids: set[str]) -> list[str]:
 
 
 def normalized(value: Any) -> str:
-    return " ".join(re.sub(r"[^A-Z0-9]+", " ", str(value).upper()).split())
+    """The gate's word folding of the form the page prints: ``printable`` (a character outside the faces' repertoire
+    is its [U+XXXX] escape, the renderer's own form), upper-cased, every run of other characters one space. A held
+    line is compared in the form the page prints it, so a character the page cannot draw is neither dropped from the
+    expected line nor read back as a look-alike."""
+    return " ".join(re.sub(r"[^A-Z0-9]+", " ", printable(value).upper()).split())
 
 
 def check_airport_figure_states(page, overlay, analysis) -> list[dict[str, str]]:
@@ -361,6 +367,11 @@ def check_concise_pdf(path: Path, *, flight=None, view=None, airport_analysis=No
             folded = folded_pages[index]
             if "�" in page or "■" in page:
                 violations.append({"code": "UNSUPPORTED_GLYPH", "message": f"Page {index + 1} contains a replacement glyph."})
+            # reportlab draws a character its faces cannot print with ZapfDingbats' notdef, which extraction reads
+            # back as a letter ("I"), so the text above cannot see it; the face can. The renderer prints only the
+            # printable form, so a page in this face drew something outside it.
+            if any(font[3] == "ZapfDingbats" for font in pdf[index].get_fonts()):
+                violations.append({"code": "UNSUPPORTED_GLYPH", "message": f"Page {index + 1} draws a character its faces cannot print (notdef glyph)."})
             if index < MAX_BRIEFING_PAGES:
                 for item in NAV_RIBBON:
                     if normalized(item) not in folded:
