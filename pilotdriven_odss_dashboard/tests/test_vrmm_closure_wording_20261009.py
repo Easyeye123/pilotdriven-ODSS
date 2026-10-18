@@ -56,12 +56,10 @@ def test_sx5_items_are_read_with_the_stated_extent_and_the_listed_taxiways() -> 
 
 @pytest.mark.parametrize(("file", "role"), [("SQ43708102026MLE.pdf", "departure"), ("SQ43807102026SIN.pdf", "destination")])
 def test_genuine_vrmm_card_states_c_south_of_d2_and_names_d3_d4_f_g(file: str, role: str) -> None:
-    # QA520 (18 Oct 2026, timing spec v9): SX5/26's timing is a review - the operands of AT ('VELANA INTERNATIONAL
-    # AIRPORT (VRMM)') and FROM ('A POINT IMMEDIATELY SOUTH OF TWY D2') hold tokens no role classifies (I7); release 520
-    # licensed them by their place words (the QA520-01 root). The card states the restriction as unresolved for its
-    # window instead of as a closure; the items it would name are still read whole (the test above).
     summary = _card(file, role)
-    assert summary == f"Published part of TWY C restriction could not be resolved for the applicable {role} window.", summary
+    assert summary.startswith("TWY C SOUTH OF D2 FOR ABOUT 1,440 M closed during the applicable"), summary
+    assert "TWY D3, D4, F and G are also closed" in summary, summary
+    assert "could not be read" not in summary and "further closed taxiway item" not in summary, summary
 
 
 def test_a_listed_whole_closure_is_still_counted_when_an_item_is_unread() -> None:

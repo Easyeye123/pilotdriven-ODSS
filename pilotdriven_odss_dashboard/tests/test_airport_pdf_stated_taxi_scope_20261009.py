@@ -46,15 +46,10 @@ def test_genuine_sq314_egkk_pdf_consequence_states_tango_north_of_juliet() -> No
 
 
 def test_genuine_sq437_vrmm_pdf_consequence_names_every_closed_taxiway() -> None:
-    # QA520 (18 Oct 2026, timing spec v9): SX5/26's timing is a review. Its heading runs into the closure sentence with
-    # no period ('... REBUILDING PROJECT AT VELANA INTERNATIONAL AIRPORT (VRMM) A PORTION OF TWY C CLOSED ... FROM A POINT
-    # IMMEDIATELY SOUTH OF TWY D2'), and I7 classifies every token of a temporal connective's operand: the name VELANA,
-    # the bare indicator VRMM and the adverb IMMEDIATELY are classified by no role (release 520 licensed both operands by
-    # their place words - the QA520-01 root). The PDF therefore holds SX5/26 as unresolved, never as a stated closure;
-    # the stated extent itself is still read (test_vrmm_closure_wording_20261009: the SX5/26 items).
     airport = _pdf_airport("SQ43708102026MLE.pdf", "VRMM")
-    assert "SX5/26" in airport["unresolved_ids"]
-    assert not any("SX5/26" in line["notam_ids"] and line.get("family") == "taxiway" for line in airport["lines"])
+    assert "SX5/26" not in airport["unresolved_ids"]
+    text = _taxi_line(airport, "SX5/26")
+    assert "TWY C south of D2 for about 1,440 m, TWY D3, TWY D4, TWY F, TWY G (SX5/26)" in text, text
 
 
 def test_a_closure_whose_scope_cannot_be_read_stays_unresolved() -> None:
