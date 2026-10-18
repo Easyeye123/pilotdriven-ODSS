@@ -3,6 +3,9 @@ import gzip
 import hashlib
 import io
 import json
+import os
+from pathlib import Path
+import subprocess
 import tarfile
 import zipfile
 
@@ -64,3 +67,42 @@ def test_invalid_private_inputs_refuse_packaging(tmp_path, damage):
 def test_manifest_cannot_copy_unbounded_or_ambiguous_private_paths(tmp_path, names):
     with pytest.raises(ValueError):
         build_bundle(tmp_path, {"cases": [{"file": name} for name in names]})
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_build_command_delivers_large_readable_input_or_stops_before_docker(tmp_path, missing):
+    """Exercise the actual build command with a strict transport boundary double.
+
+    A real CodeBuild probe additionally tests mount and runtime-layer behavior.
+    The synthetic payload exceeds BuildKit's 500 KiB per-secret limit.
+    """
+    root = Path(__file__).resolve().parents[1]
+    buildspec = (root / "buildspec.aws.yml").read_text()
+    block = buildspec.split("  build:\n    commands:\n      - |\n", 1)[1].split("\n      - ", 1)[0]
+    command = "\n".join(line[8:] for line in block.splitlines())
+    bundle = tmp_path / BUNDLE_MEMBER
+    bundle.parent.mkdir()
+    if not missing:
+        bundle.write_bytes(b"SYNTHETIC transport bytes; no flight content\n" * 20_000)
+        bundle.chmod(0o600)
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    docker = binary / "docker"
+    docker.write_text('''#!/usr/bin/env python3
+import hashlib, pathlib, sys
+args = sys.argv[1:]
+assert "--secret" not in args
+context = args[args.index("--build-context") + 1]
+assert context.startswith("saved_analyses=")
+bundle = pathlib.Path(context.split("=", 1)[1]) / "saved-analysis-v74.tar"
+assert bundle.stat().st_size > 500 * 1024
+assert bundle.stat().st_mode & 0o444 == 0o444
+assert args[args.index("--build-arg") + 1] == "SAVED_ANALYSIS_BUNDLE_SHA256=" + hashlib.sha256(bundle.read_bytes()).hexdigest()
+pathlib.Path("docker-reached.json").write_text("true")
+''')
+    docker.chmod(0o755)
+    env = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"],
+           "ECR_REPOSITORY_URI": "synthetic-transport-test", "IMAGE_TAG": "not-pushed"}
+    result = subprocess.run(["bash", "-c", command], cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert (result.returncode != 0) if missing else (result.returncode == 0), result.stderr
+    assert (tmp_path / "docker-reached.json").exists() is not missing

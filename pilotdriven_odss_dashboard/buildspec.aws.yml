@@ -20,13 +20,15 @@ phases:
   build:
     commands:
       - |
+        set -euo pipefail
         fixture_bundle=.private-build-inputs/saved-analysis-v74.tar
+        chmod 0444 "$fixture_bundle"
         fixture_sha256=$(sha256sum "$fixture_bundle" | awk '{print $1}')
         docker build --pull --platform linux/amd64 \
-          --secret "id=saved_analyses,src=$fixture_bundle" \
+          --build-context saved_analyses=.private-build-inputs \
           --build-arg "SAVED_ANALYSIS_BUNDLE_SHA256=$fixture_sha256" \
           -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
-      - docker run --rm --platform linux/amd64 --network none --entrypoint sh "$ECR_REPOSITORY_URI:$IMAGE_TAG" -c 'test ! -e /run/secrets/saved-analysis-v74.tar && test ! -e /app/.private-build-inputs'
+      - docker run --rm --platform linux/amd64 --network none --entrypoint sh "$ECR_REPOSITORY_URI:$IMAGE_TAG" -c 'test ! -e /run/private-test-inputs/saved-analysis-v74.tar && test ! -e /app/.private-build-inputs'
       - docker run --rm --platform linux/amd64 --entrypoint python "$ECR_REPOSITORY_URI:$IMAGE_TAG" tests/check_webgl_runtime.py
       - docker run --rm --platform linux/amd64 --network none --entrypoint python "$ECR_REPOSITORY_URI:$IMAGE_TAG" tests/check_ocr_runtime.py
       - python3 ocr/scan_image.py "$ECR_REPOSITORY_URI:$IMAGE_TAG"

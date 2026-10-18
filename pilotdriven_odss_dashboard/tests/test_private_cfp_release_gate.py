@@ -130,7 +130,9 @@ def test_odss_runtime_image_is_reachable_only_through_the_full_pytest_stage():
     test_stage = dockerfile.split("FROM source AS test", 1)[1].split("FROM dependencies AS runtime", 1)[0]
     assert "python -m pytest -q" in test_stage
     assert "&& touch /tmp/odss-tests-passed" in test_stage
-    assert "--mount=type=secret" in test_stage and "required=true" in test_stage
+    assert "--mount=type=bind,from=saved_analyses" in test_stage
+    assert "readonly" in test_stage
+    assert "sha256sum --check --status" in test_stage
     assert "COPY --from=test /tmp/odss-tests-passed" in dockerfile
 
 

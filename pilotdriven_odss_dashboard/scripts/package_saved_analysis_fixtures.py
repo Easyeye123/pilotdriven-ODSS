@@ -1,7 +1,7 @@
 """Add only manifest-pinned private regression inputs to a private build archive.
 
 The bundle is excluded from Docker COPY and supplied to the test stage through
-a required BuildKit secret mount. It must never enter git or the runtime image.
+a read-only named build context. It must never enter git or the runtime image.
 """
 from __future__ import annotations
 
