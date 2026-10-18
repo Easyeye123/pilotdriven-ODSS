@@ -40,6 +40,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from app.odss.notam_timing import explain_schedule_free_text
 from tests import notam_timing_qa518_generators as G518
 from tests.notam_timing_qa514_generators import VALIDITIES, WINDOWS, Mulberry32
 
@@ -78,13 +79,23 @@ def connectives(lines: list[str]) -> Iterator[tuple[int, int, int, int, int]]:
     for li, line in enumerate(lines):
         toks = G518.tokens(line)
         words = [line[start:end] for start, _core_end, end in toks]
+        # a connective that a benign span covers while its next word lies outside that span is part of a positively
+        # classified phrase whose operand is stated or implied inside it - a notice lead time ('PRIOR PERMISSION AT
+        # LEAST 1HR BFR') - not an operand-taking connective of its own; one whose operand the span holds too ('CONTACT
+        # CAA DURING OFFICE HOURS', 'OBST LGTD AT NIGHT') stays a target: damaging it breaks the span
+        spans = explain_schedule_free_text(line)["spans"]
+
+        def own_phrase(start: int, end: int, nxt: tuple[int, int, int]) -> bool:
+            return any(span["start"] <= start and end <= span["end"] and not (span["start"] <= nxt[0] and nxt[1] <= span["end"])
+                       for span in spans)
+
         range_at = None
         for ti, (start, core, end) in enumerate(toks):
             word = words[ti]
             is_range_end = range_at is not None and ti - range_at <= RANGE_WITHIN and RANGE_END.fullmatch(word) is not None
             if RANGE_AFTER.fullmatch(word):
                 range_at = ti
-            if not (CONNECTIVE.fullmatch(word) or is_range_end) or ti + 1 >= len(toks):
+            if not (CONNECTIVE.fullmatch(word) or is_range_end) or ti + 1 >= len(toks) or own_phrase(start, core, toks[ti + 1]):
                 continue
             at = ti + 1
             while at + 1 < len(toks) and SKIP.fullmatch(words[at]):

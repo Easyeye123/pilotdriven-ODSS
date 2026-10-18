@@ -1260,10 +1260,16 @@ def _sentence_ledger(masked: str, text: str, start: int, end: int, temporal: lis
                               for conjunct in entry["conjuncts"]]
         if entry["operand"] in ("phrase", "postpositive") and not restricted:
             # a connective that qualifies no restriction needs its operand, not its operand's classification - but a
-            # mask the governance refuses hides temporal content there, which must be accounted for
-            entry["unclassified"] = [[item[0], item[1]] for item in entry["tokens"]
-                                     if item[3] is None and ("#" in item[2] or [item[0], item[1]] in entry["hidden"])]
+            # mask the governance refuses, or a token read again as temporal (_head_view), is temporal content there,
+            # and an operand that holds temporal content is accounted for whole: every unclassified token of it
+            # ('DURING THE LOCAL PRECEDING HOURS 24 HR' - LOCAL and PRECEDING lie in no statement)
+            temporal_held = any(item[3] is None and ("#" in item[2] or [item[0], item[1]] in entry["hidden"])
+                                for item in entry["tokens"])
+            entry["unclassified"] = ([[item[0], item[1]] for item in entry["tokens"] if item[3] is None]
+                                     if temporal_held else [])
             entry["status"] = "pending" if entry["unclassified"] else "free"
+            if not entry["tokens"]:
+                entry["status"], entry["reason"] = "undischarged", "empty"  # 'AFTER THE, ...': no operand
             if entry["cut"]:
                 entry["status"], entry["reason"] = "undischarged", "cutOff"
         elif entry["operand"] in ("phrase", "postpositive"):
