@@ -25,6 +25,9 @@ from __future__ import annotations
 
 import os
 import socket
+import gzip
+import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -373,33 +376,56 @@ def test_the_settled_route_pdf_states_the_completed_volcanic_check(monkeypatch, 
     assert "no current VA SIGMET crosses the route" in ash
 
 
-# ------------------------------------------------------------------------------------ a pack saved on release 436
+# --------------------------------------------------------------- actual archived pre-composed-check saved packs
 
-GATE_436 = Path("/Users/jabe/Documents/ezzo/output/pd-boss-fixes-20260922/release/deploy-20260926T2032Z/release-gates/private-cfp-corpus")
+LEGACY_MANIFEST = json.loads((ROOT / "tests/fixtures/saved-analysis-v74-manifest.json").read_text())
 
 
-def test_a_pack_saved_on_436_reopens_with_the_composed_check_and_the_checklist():
-    """Release 436's own gate-6 analysis of SQ34 (a saved pack's held analysis): its stored view predates the check and
-    the checklist; reopening rebuilds it under the rules in service from what the analysis held - no source moves - so
-    the dashboard and a re-created PDF print the same composed rows."""
-    import glob
-    import json
+def _legacy_analysis(case: dict, root: Path) -> tuple[dict, bytes]:
+    path = root / case["file"]
+    raw = gzip.decompress(path.read_bytes())  # Required input: missing/corrupt files must fail, never silently skip.
+    assert hashlib.sha256(raw).hexdigest() == case["sha256"], f"Historical fixture changed: {path}"
+    return json.loads(raw), raw
+
+
+@pytest.mark.parametrize("case", LEGACY_MANIFEST["cases"], ids=lambda case: case["id"])
+def test_a_saved_v74_pack_reopens_with_the_composed_check_and_the_checklist(case, monkeypatch):
+    """Recover the lost absolute-path regression using actual archived v74 SQ34 inputs.
+
+    These stored views predate the composed check/checklist. The manifest records their
+    provenance and provider simulations; none is passed off as the missing release-436
+    gate file. All original assertions remain, now exercised for four evidence conditions.
+    """
 
     from app.odss.flight_briefing_publication import current_rules_briefing
 
-    files = glob.glob(str(GATE_436 / "SQ34-SIN-SFO" / "analysis" / "*_analysis.json"))
-    if not files:
-        pytest.skip("release 436's gate-6 output is not on this machine")
-    analysis = json.loads(Path(files[0]).read_text())
+    _block_network(monkeypatch)
+    root = Path(os.environ.get("PILOTDRIVEN_PRIVATE_CFP_CORPUS_DIR", str(CORPUS))) / "saved-analysis-v74"
+    analysis, raw = _legacy_analysis(case, root)
     stored = analysis["view"]["briefing"]
+    assert stored["publication_rules"] == LEGACY_MANIFEST["publication_rules"]
     assert "coverage_receipt" not in stored and "check" not in (stored.get("vaa") or {})
     served = current_rules_briefing(analysis)
     assert served["rebuilt_from_held_analysis"] is True
     rebuilt = served["briefing"]
     check = rebuilt["vaa"]["check"]
     assert check["state"] in {"FOUND", "CHECKED · NO MATCH", "UNRESOLVED", "UNAVAILABLE", "NOT QUERIED"}
+    assert check["state"] == case["expected_state"]
     assert {"ANCHORAGE", "TOKYO"} <= set(check["responsible"])
     assert check["unsettled_points"] > 0 and check["state"] != "CHECKED · NO MATCH"
     rows = {row["key"]: row for row in rebuilt["coverage_receipt"]["rows"]}
     assert rows["vaa_vaac"]["detail"] == check["line"]
     assert "atc_fir_calls" in rows
+    assert gzip.decompress((root / case["file"]).read_bytes()) == raw
+
+
+def test_missing_historical_input_fails_instead_of_skipping(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        _legacy_analysis(LEGACY_MANIFEST["cases"][0], tmp_path)
+
+
+def test_modified_historical_input_fails_instead_of_becoming_an_oracle(tmp_path):
+    case = LEGACY_MANIFEST["cases"][0]
+    (tmp_path / case["file"]).write_bytes(gzip.compress(b'{}', mtime=0))
+    with pytest.raises(AssertionError, match="Historical fixture changed"):
+        _legacy_analysis(case, tmp_path)

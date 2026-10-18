@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "publication_rules": "2026-09-27-slot-allocation-v74",
+  "original_release_436_gate_file_recovered": false,
+  "missing_original_sha256": "7943b6614407197f0afff57c1fc076c40f6367c75580527bab75757b470f5a87",
+  "purpose": "Actual archived SQ34 pre-composed-check analyses; preserve all original reopen assertions across four evidence conditions. These are not the missing gate-436 bytes.",
+  "cases": [
+    {
+      "id": "disabled",
+      "file": "SQ34-disabled.json.gz",
+      "sha256": "81b5e3d93dadd8bdf9ba8417aaca42f756a8f49f8c6b1c360fa7cdec0e5bbd30",
+      "compressed_sha256": "c8c73223c283e2319aeb711b5cd0ce256658d61d0609c3b1c4df282cb346031a",
+      "expected_state": "NOT QUERIED",
+      "simulated_provider_answers": false,
+      "archive_source": "output/pd-boss-fixes-20260922/residual3-20260923/r28-remaining-gaps/checklist-volcanic-archaeology/work/clean_runs/SQ34/disabled/analysis.json"
+    },
+    {
+      "id": "sim_va_present",
+      "file": "SQ34-sim_va_present.json.gz",
+      "sha256": "42214f6d45a70442b87cf3c06145634562993459e4c3561ff2c192f534c7adb1",
+      "compressed_sha256": "78444d11b5c26f6c356dac54c49397f1969c6b5c78cab4e8e0ec8b7b65ed28cd",
+      "expected_state": "FOUND",
+      "simulated_provider_answers": true,
+      "archive_source": "output/pd-boss-fixes-20260922/residual3-20260923/r28-remaining-gaps/checklist-volcanic-archaeology/work/clean_runs/SQ34/sim_va_present/analysis.json"
+    },
+    {
+      "id": "prod_blocked",
+      "file": "SQ34-prod_blocked.json.gz",
+      "sha256": "571b2dbd4c601dcbc6d7e8d450474469e079628c614f63dd3c8d8c9049a30b60",
+      "compressed_sha256": "45de06dfd8a232ca57986f0e9471d3dcc8884616a59a28583b729ee1f987b5dc",
+      "expected_state": "UNAVAILABLE",
+      "simulated_provider_answers": false,
+      "archive_source": "output/pd-boss-fixes-20260922/residual3-20260923/r28-remaining-gaps/checklist-volcanic-archaeology/work/clean_runs/SQ34/prod_blocked/analysis.json"
+    },
+    {
+      "id": "sim_reached_0",
+      "file": "SQ34-sim_reached_0.json.gz",
+      "sha256": "560dd5e977977dce538b7e6768e318fb851df5e7ed40e6ae6e4679e2575a2026",
+      "compressed_sha256": "8f6c6afc34501312d31e7a2445aaf76a814edf1685558e1f0337cb43d05998d6",
+      "expected_state": "UNRESOLVED",
+      "simulated_provider_answers": true,
+      "archive_source": "output/pd-boss-fixes-20260922/residual3-20260923/r28-remaining-gaps/checklist-volcanic-archaeology/work/clean_runs/SQ34/sim_reached_0/analysis.json"
+    }
+  ]
+}

@@ -30,12 +30,10 @@ from app.odss.engines import analyse
 from app.odss.parser import extract_pages, parse_lido
 from app.odss.timing import build_timing_view
 from tests.cross_runtime import sibling_app_root
+from tests.notam_timing_role_contract import ODSS_ROLE, operational_role
 
 ROOT = Path(__file__).resolve().parents[1]
 ATOT_OFFSET = timedelta(minutes=23)
-ODSS_ROLE = {"departure": "departure", "destination": "destination", "destination_alternate": "destination alternate",
-             "edto": "EDTO", "edto_suitable": "EDTO", "edto_adequate": "EDTO", "fuel_enroute": "fuel enroute airport",
-             "enroute": "informational"}
 ROLE_RANK = ["departure", "destination", "destination_alternate", "edto_suitable", "edto_adequate", "edto", "fuel_enroute", "enroute"]
 STATUS = {"active": "affecting", "review": "review", "outside_time_window": "outside_window", "outside_schedule": "outside_window"}
 APP_STATUS = {"affecting": "affecting", "review_schedule": "review", "outside_window": "outside_window"}
@@ -118,6 +116,7 @@ def _odss(pages: list[str], name: str, atot: bool) -> dict:
     records = {(row["location"], _key(row["notam_id"])): row for row in flight["audit_evidence"]["notam"]["records"]}
     sources = {(row["location"], _key(row["notam_id"])): row for row in flight["notams"]}
     return {"records": records, "sources": sources, "effects": effects, "text": text_states,
+            "selected_edto": [row["airport"] for row in flight["edto"]["airports"]],
             "timing": None if timing_view is None else {"actual_takeoff_utc": flight["actual_takeoff_utc"],
                                                          "waypoints": timing_view.get("waypoints"),
                                                          "fir_crossings": timing_view.get("fir_crossings")}}
@@ -178,8 +177,12 @@ def _compare(name: str, scenario: str, odss: dict, app: dict, prefix: str | tupl
                 evaluated = (expected["status"], expected["stateAtReference"], _minute(expected["referenceAt"]), expected["minutesDelta"])
                 if evaluated != app_verdict:
                     failures.append(f"{where}: the app's decision {app_verdict} is not the shared rules' {evaluated} on the same inputs and window")
-                row = next((row for row in record.get("role_applicability") or [] if row["role"] == ODSS_ROLE[primary]), None)
-                if row is None or (STATUS.get(row["applicability"]), row["stateAtReference"], _minute(row["referenceAt"]), row["minutesDelta"]) != app_verdict:
+                expected_role = operational_role(primary, station["icao"], station["roles"], odss["selected_edto"])
+                row = next((row for row in record.get("role_applicability") or [] if row["role"] == expected_role), None)
+                if row is None:
+                    failures.append(f"{where}: ODSS holds no {expected_role} assessment")
+                    continue
+                if (STATUS.get(row["applicability"]), row["stateAtReference"], _minute(row["referenceAt"]), row["minutesDelta"]) != app_verdict:
                     policy.append(where)
                 continue
             row = next((row for row in record.get("role_applicability") or [] if row["role"] == primary), None)
