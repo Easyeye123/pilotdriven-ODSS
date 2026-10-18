@@ -67,6 +67,11 @@ def unpack(item: dict, destination: Path) -> None:
 
 
 def compile_and_test(source: Path, name: str, sanitized: bool) -> Path:
+    # Keep small local builds conservative; CI can budget more workers without
+    # changing compiler flags, regression targets, or the sanitizer checks.
+    jobs = os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL", "2")
+    if jobs not in tuple(str(value) for value in range(1, 9)):
+        raise ValueError("CMAKE_BUILD_PARALLEL_LEVEL must be an integer from 1 to 8")
     build = WORK / name
     flags = [
         "-DBUILD_SHARED_LIBS=OFF", "-DBUILD_TRAINING_TOOLS=OFF", "-DBUILD_TESTS=ON",
@@ -84,7 +89,7 @@ def compile_and_test(source: Path, name: str, sanitized: bool) -> Path:
         flags += ["-DCMAKE_BUILD_TYPE=Release"]
     run(name + "-configure", ["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja", *flags])
     targets = list(LOCK["regressions"])
-    run(name + "-compile", ["cmake", "--build", str(build), "--parallel", "2", "--target", "tesseract", *targets])
+    run(name + "-compile", ["cmake", "--build", str(build), "--parallel", jobs, "--target", "tesseract", *targets])
     environment = {**os.environ, "OMP_THREAD_LIMIT": "1"}
     if sanitized:
         environment.update(ASAN_OPTIONS="detect_leaks=1:halt_on_error=1", UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1")

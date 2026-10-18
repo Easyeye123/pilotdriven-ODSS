@@ -97,7 +97,9 @@ assert context.startswith("saved_analyses=")
 bundle = pathlib.Path(context.split("=", 1)[1]) / "saved-analysis-v74.tar"
 assert bundle.stat().st_size > 500 * 1024
 assert bundle.stat().st_mode & 0o444 == 0o444
-assert args[args.index("--build-arg") + 1] == "SAVED_ANALYSIS_BUNDLE_SHA256=" + hashlib.sha256(bundle.read_bytes()).hexdigest()
+build_args = [args[index + 1] for index, arg in enumerate(args) if arg == "--build-arg"]
+pinned_args = [arg for arg in build_args if arg.startswith("SAVED_ANALYSIS_BUNDLE_SHA256=")]
+assert pinned_args == ["SAVED_ANALYSIS_BUNDLE_SHA256=" + hashlib.sha256(bundle.read_bytes()).hexdigest()]
 pathlib.Path("docker-reached.json").write_text("true")
 ''')
     docker.chmod(0o755)

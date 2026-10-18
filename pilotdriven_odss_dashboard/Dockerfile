@@ -3,6 +3,7 @@
 FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 AS ocr-build
 WORKDIR /ocr-build
 COPY ocr ./ocr
+ARG OCR_BUILD_JOBS=2
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates python3 \
@@ -20,7 +21,7 @@ RUN apt-get update \
         libarchive-dev=3.7.2-2ubuntu0.9 \
         libcurl4-openssl-dev=8.5.0-2ubuntu10.16 \
         libcurl4t64=8.5.0-2ubuntu10.16 \
-    && python3 ocr/build_component.py
+    && CMAKE_BUILD_PARALLEL_LEVEL="$OCR_BUILD_JOBS" python3 ocr/build_component.py
 
 FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 AS dependencies
 

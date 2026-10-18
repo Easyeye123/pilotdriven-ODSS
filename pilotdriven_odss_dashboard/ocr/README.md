@@ -26,6 +26,13 @@ metadata, Ubuntu runtime-library dependencies and the upstream license.
 Required provenance and verification files live in
 `/usr/share/pilotdriven-tesseract`; the license is under `/usr/share/doc`.
 
+Compilation defaults to two workers for small local builds. The Docker build
+argument `OCR_BUILD_JOBS` sets CMake's worker budget for both builds; only whole
+numbers from 1 through 8 are accepted. CodeBuild uses four workers on its
+four-CPU Linux Medium builder so compilation leaves time for the full suite
+and security scan. This setting changes concurrency only: source pins,
+compiler flags, regression targets and sanitizer checks remain mandatory.
+
 The image retains the complete ODSS pytest build stage, non-root runtime,
 Playwright browser probe and a real OCR probe with AI disabled. The OCR probe
 uses labelled synthetic printed/scanned inputs and fail-closed controls.

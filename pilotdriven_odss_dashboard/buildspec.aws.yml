@@ -25,6 +25,7 @@ phases:
         chmod 0444 "$fixture_bundle"
         fixture_sha256=$(sha256sum "$fixture_bundle" | awk '{print $1}')
         docker build --pull --platform linux/amd64 \
+          --build-arg OCR_BUILD_JOBS=4 \
           --build-context saved_analyses=.private-build-inputs \
           --build-arg "SAVED_ANALYSIS_BUNDLE_SHA256=$fixture_sha256" \
           -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
