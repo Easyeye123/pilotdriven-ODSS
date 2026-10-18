@@ -1,7 +1,7 @@
 {
-  "publication_rules": "2026-10-18-operand-accounted-whole-v112",
+  "publication_rules": "2026-10-18-operand-boundaries-v113",
   "enroute_contact_rule": "enroute-contact-v16",
-  "extraction_rules": "2026-10-18-operand-accounted-whole-v23",
+  "extraction_rules": "2026-10-18-operand-boundaries-v24",
   "publication_format": "six-page-reference-briefing-2026-09-19",
-  "minted": "2026-10-18 QA520 on release 520 (v111 / v22 / notam-timing-2026-10-18-v8). QA520 (Codex QA of release 520, output/pd-520-codex-qa-20261018/): any role word licensed a whole connective object ('RWY 08R/26L CLSD DURING AIRPORT CURFEW' active, while 'DURING CURFEW' reviewed) and a recognised connective whose operand was missing or separated was dropped ('TWY J CLSD UNTIL.', 'TWY Y CLSD AFTER, CURFEW.' active or +540). An operand is now benign only if every content token of it is positively classified by a role its connective admits (I7: head-final composition, stated in the rules), and every temporal connective is an obligation in one ledger per record, discharged only by an operand read and accounted for or fully classified, checked once at the end (I8) (evidence: output/pd-qa520-timing-20261018/). Publication v112, extraction v23, timing spec notam-timing-2026-10-18-v9 (on release 520: v111 / v22 / v8); table-cells-2026-10-17-v2, the PDF printable form and enroute-contact unchanged. A v111 pack reopens rebuilt under v112 and as an older extraction; old saved analyses, models and PDF bytes are never rewritten. Production acceptance remains separate. Re-mint this file with any rule-token change; both suites fail on drift."
+  "minted": "2026-10-18 QA520 continuation on the unpublished v112/v23 candidate: spatial study-reference metadata and comma-coordinated clause boundaries. Every operand token and connective remains accounted for. Publication v113, extraction v24, timing spec notam-timing-2026-10-18-v10. Table cells, printable form and enroute-contact unchanged. Old saved analyses are older extractions; do not rewrite their bytes. Local verification and production acceptance are separate. See continuation DONECHECK for receipts."
 }

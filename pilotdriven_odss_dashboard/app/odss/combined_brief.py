@@ -266,7 +266,8 @@ WAFC_CHARTS_PER_PAGE = 3
 # obligation in one ledger per record, checked once at the end: a missing, separated or cut-off operand ('CLSD
 # UNTIL.', 'AFTER, CURFEW') is a review, never 'no schedule'. The tables, the accounting of statements and the PDF
 # printable form are unchanged.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-18-operand-accounted-whole-v112"
+# v113: rebuild publication for the v24 timing interpretation; saved PDF bytes stay immutable.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-18-operand-boundaries-v113"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

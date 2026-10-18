@@ -17,7 +17,7 @@ OLD_TOKEN = "2026-10-10-contingency-label-v9"
 # v19 by v21 (QA514 + QA516 on release 516, 17 Oct 2026: every digit accounted for; accounting never truncated) and
 # v21 by v22 (QA518, 18 Oct 2026: governance read on the syntactic text; an unread temporal qualification is a review) and
 # v22 by v23 (QA520, 18 Oct 2026: a connective's operand is accounted for whole - every token classified, every obligation discharged).
-NEW_TOKEN = "2026-10-18-operand-accounted-whole-v23"
+NEW_TOKEN = "2026-10-18-operand-boundaries-v24"
 
 
 def test_new_analysis_has_new_weather_extraction_stamp(stored):  # noqa: F811

@@ -100,4 +100,5 @@ the two are bumped together whenever the parser's extraction changes.
 # a noun phrase by stated composition) and every connective is an obligation in one ledger checked once (I8: a
 # missing, separated or cut-off operand is a review); held station records can differ in schedule_review. A v22
 # analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-18-operand-accounted-whole-v23"
+# v24: spatial metadata and independent-clause boundaries; timing spec v10. Re-mint derived corpus expectations.
+EXTRACTION_RULES = "2026-10-18-operand-boundaries-v24"

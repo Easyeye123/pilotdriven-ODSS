@@ -720,6 +720,8 @@ _OBJECT_MODIFIER = _words_rx(_OBJECT["temporalModifier"])
 _OBJECT_BOUND_PART = tuple(_OBJECT["boundPart"])
 _OBJECT_DEGREE = _words_rx(_OBJECT["degree"])
 _OBJECT_DIRECTION = _words_rx(_OBJECT["direction"])
+_OBJECT_ATTACHED_REFERENCE = _words_rx(_OBJECT["attachedReference"])
+_OBJECT_CLAUSE_PREDICATE = _words_rx(_OBJECT["clausePredicate"])
 _GAZ = _OBJECT["gazetteer"]
 _GAZ_STATION = re.compile(_GAZ["stationHeading"], _A)
 _GAZ_FIR = re.compile(_GAZ["firHeading"], _A)
@@ -801,11 +803,25 @@ def _ends_operand(word: str) -> bool:
 def _list_continues(words: list[tuple[int, int, str, bool]], at: int) -> bool:
     """Whether a comma before words[at] separates items of a list: AND/OR follows before anything that ends the
     operand ('BTN FAI, ORT AND BRW'; 'EXCEPT FOR HUMANITARIAN, SAR AND LEASED AIRCRAFT')."""
-    for _low, _high, word, closed in words[at:]:
+    for index in range(at, len(words)):
+        _low, _high, word, closed = words[index]
         if _OBJECT_COORDINATION.fullmatch(word):
-            return not closed
+            return not closed and not _opens_independent_clause(words, index + 1)
         if _ends_operand(word) or _connective_class(word):
             return False
+    return False
+
+
+def _opens_independent_clause(words: list[tuple[int, int, str, bool]], at: int) -> bool:
+    """A comma and coordinator followed by a subject and finite predicate opens a clause, not another noun in
+    the preceding object. Nothing is masked: all timing tokens and connectives still enter the same ledger."""
+    subject = False
+    for _low, _high, word, closed in words[at:]:
+        if _OBJECT_CLAUSE_PREDICATE.fullmatch(word):
+            return subject
+        if closed or _ends_operand(word) or _connective_class(word) or "#" in word:
+            return False
+        subject = subject or bool(_CONTENT.search(word) and not _OBJECT_FUNCTION.fullmatch(word))
     return False
 
 
@@ -1130,7 +1146,15 @@ def _classify_np(kind: str, np: list[tuple[int, int, str]], determined: bool,
                        if _CONTENT.search(later) and not _OBJECT_FUNCTION.fullmatch(later)), None)
         cls: str | None
         if "#" in word:
-            cls = "mask" if ctx is None or _mask_classifies(ctx, low, high, modifiers_only and ctx["first"]) else None
+            # Only complete metadata attached to an already classified spatial place. A missing/unknown place
+            # or an UNTIL/DURING operand cannot be licensed by this reference.
+            attached = (ctx is not None and kind == "spatial" and modifiers_only
+                        and any(value == "role:place" or (value == "mask" and
+                                _roles_of(ctx["text"][start:end].split(" ")[0], ["place"]))
+                                for start, end, _token, value in out)
+                        and _OBJECT_ATTACHED_REFERENCE.fullmatch(ctx["text"][low:high]))
+            cls = ("reference" if attached else "mask" if ctx is None
+                   or _mask_classifies(ctx, low, high, modifiers_only and ctx["first"]) else None)
         elif previous is not None and _designator(word, low, high, temporal, noun):
             cls = "designator"
         elif anaphoric and _OBJECT_ANAPHORA.fullmatch(word):
