@@ -95,4 +95,9 @@ the two are bumped together whenever the parser's extraction changes.
 # temporal connective in a restriction sentence is temporal content unless a role its connective admits classifies
 # it, and every connective list names its same-role synonyms; held station records can differ in schedule_review.
 # A v21 analysis is an older extraction.
-EXTRACTION_RULES = "2026-10-18-syntactic-governance-v22"
+# v23 (18 Oct 2026, on v22). QA520: the timing spec notam-timing-2026-10-18-v9 - a temporal connective's operand
+# is classified token by token (I7: one unclassified, temporal or event token makes it temporal content; the head of
+# a noun phrase by stated composition) and every connective is an obligation in one ledger checked once (I8: a
+# missing, separated or cut-off operand is a review); held station records can differ in schedule_review. A v22
+# analysis is an older extraction.
+EXTRACTION_RULES = "2026-10-18-operand-accounted-whole-v23"

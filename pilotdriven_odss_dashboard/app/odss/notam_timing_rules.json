@@ -1,5 +1,5 @@
 {
-  "specVersion": "notam-timing-2026-10-18-v8",
+  "specVersion": "notam-timing-2026-10-18-v9",
   "purpose": "ONE timing decision for an OFP station notice. The app (dashboard chart, PDF map marks, NOTAM records) and ODSS (airport cards, PDF consequences, PDF cards) each read the same LIDO record from the same OFP; both evaluate it with these rules, byte-identical in both repos (app notam-timing-rules.json = ODSS app/odss/notam_timing_rules.json), and both suites run tests/fixtures/notam-timing-vectors.json. Item 3 (Gatwick, 14 Oct 2026): the decision was made by three evaluators with three rule sets.",
   "stationWindows": {
     "departure": {

@@ -260,7 +260,13 @@ WAFC_CHARTS_PER_PAGE = 3
 # EIGHT') and the unclassified object of a temporal connective in a restriction sentence ('UNTIL TEATIME') are
 # reviews, never 'no schedule'; same-role connective synonyms read alike. The tables, the accounting and the PDF
 # printable form are unchanged.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-18-syntactic-governance-v111"
+# 18 Oct 2026 (v112, on v111). QA520 (Codex QA of release 520): a temporal connective's operand is accounted for
+# whole - it is benign only if every content token of it is positively classified by a role its connective admits
+# (head-final composition: 'DURING AIRPORT CURFEW' is a review, as 'DURING CURFEW' is), and every connective is an
+# obligation in one ledger per record, checked once at the end: a missing, separated or cut-off operand ('CLSD
+# UNTIL.', 'AFTER, CURFEW') is a review, never 'no schedule'. The tables, the accounting of statements and the PDF
+# printable form are unchanged.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-18-operand-accounted-whole-v112"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
