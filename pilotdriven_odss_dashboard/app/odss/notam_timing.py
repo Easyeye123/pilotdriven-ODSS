@@ -718,6 +718,19 @@ _OBJECT_STOP = _words_rx(_OBJECT["stop"])
 _OBJECT_OPEN_END = re.compile(f"(?:{_OBJECT['openEnd']})(?![A-Z0-9])", _A)
 _OBJECT_MODIFIER = _words_rx(_OBJECT["temporalModifier"])
 _OBJECT_BOUND_PART = tuple(_OBJECT["boundPart"])
+_OBJECT_DEGREE = _words_rx(_OBJECT["degree"])
+_OBJECT_DIRECTION = _words_rx(_OBJECT["direction"])
+_GAZ = _OBJECT["gazetteer"]
+_GAZ_STATION = re.compile(_GAZ["stationHeading"], _A)
+_GAZ_FIR = re.compile(_GAZ["firHeading"], _A)
+_GAZ_RULE = re.compile(_GAZ["rule"], _A)
+_GAZ_TAIL = re.compile(_GAZ["headingTail"], _A)
+_GAZ_SPLIT = re.compile(_GAZ["nameSplit"], _A)
+_GAZ_LINK = _words_rx(_GAZ["routeLink"])
+_GAZ_FIX = _words_rx(_GAZ["fix"])
+_GAZ_INDICATOR = _words_rx(_GAZ["indicator"])
+_GAZ_NAME_MIN = int(_GAZ["nameMin"])
+_GAZ_LINKS = int(_GAZ["routeLinks"])
 _OBJECT_LEAD = _words_rx(_OBJECT["leadModifier"])
 _OBJECT_LEAD_HEADS = _words_rx(_OBJECT["leadHeads"])
 _OBJECT_ANAPHORA = _words_rx(_OBJECT["anaphora"])
@@ -811,7 +824,7 @@ def _conjunct() -> dict[str, Any]:
 
 
 def _read_conjuncts(words: list[tuple[int, int, str, bool]], at: int, labels: set[int], heads: set[int],
-                    limit: int | None = None) -> tuple[list[dict[str, Any]], bool]:
+                    limit: int | None = None, inline: frozenset[int] = frozenset()) -> tuple[list[dict[str, Any]], bool]:
     """The operand's conjuncts read from words[at] (temporalObject: objectEnd, stop, restriction, label, complement,
     coordination; a list continues through commas to AND/OR; a head-only noun ends its phrase), and whether the operand
     is cut off: AND/OR or OF with nothing after it in the clause, or a boundary right after it ('BTN TWY B AND.'). No
@@ -828,7 +841,8 @@ def _read_conjuncts(words: list[tuple[int, int, str, bool]], at: int, labels: se
             if _OBJECT_COORDINATION.fullmatch(word) or (_OBJECT_COMPLEMENT.fullmatch(word)
                                                         and target is conjuncts[-1]["words"]):
                 follow = words[at + 1] if at + 1 < len(words) else None
-                if closed or follow is None or follow[0] in labels or (limit is not None and follow[0] >= limit):
+                if (closed or follow is None or (follow[0] in labels and follow[0] not in inline)
+                        or (limit is not None and follow[0] >= limit)):
                     cut = True  # 'BTN TWY B AND.', 'AT THE INTERSECTION OF.': the operand is cut off
                     break
             if _OBJECT_COORDINATION.fullmatch(word) and not closed:
@@ -902,7 +916,8 @@ def _statement_end(words: list[tuple[int, int, str, bool]], at: int, statements:
 
 
 def _read_operand(entry: dict[str, Any], words: list[tuple[int, int, str, bool]], index: int, masked: str,
-                  labels: set[int], heads: set[int], statements: list[tuple[int, int]], text: str) -> None:
+                  labels: set[int], heads: set[int], statements: list[tuple[int, int]], text: str,
+                  inline: frozenset[int] = frozenset()) -> None:
     """Fill ``entry`` with the operand of the connective words[index] (temporalObject; QA520 I8): a phrase (conjuncts),
     a chain to the connective that follows it, a shared operand, the noun phrase before a postpositive connective, an
     open end - or 'missing', with the reason no operand is there."""
@@ -929,7 +944,7 @@ def _read_operand(entry: dict[str, Any], words: list[tuple[int, int, str, bool]]
                 entry["skipped"].append(words[follow][2])
                 follow += 1
             entry["determined"] = determined
-            conjuncts, cut = (_read_conjuncts(words, follow, labels, heads, _statement_end(words, follow, statements))
+            conjuncts, cut = (_read_conjuncts(words, follow, labels, heads, _statement_end(words, follow, statements), inline)
                               if follow < len(words) and not words[at][3] else ([], False))
             if conjuncts:
                 entry.update(operand="phrase", conjuncts=conjuncts, cut=cut)
@@ -977,7 +992,7 @@ def _read_operand(entry: dict[str, Any], words: list[tuple[int, int, str, bool]]
     if _OBJECT_OPEN_END_AFTER.fullmatch(word) and _OBJECT_OPEN_END.match(masked, words[at][0]):
         entry.update(operand="openEnd")
         return
-    conjuncts, cut = _read_conjuncts(words, at, labels, heads, _statement_end(words, at, statements))
+    conjuncts, cut = _read_conjuncts(words, at, labels, heads, _statement_end(words, at, statements), inline)
     if conjuncts:
         entry.update(operand="phrase", conjuncts=conjuncts, cut=cut)
     else:
@@ -1014,8 +1029,66 @@ def _mask_classifies(ctx: dict[str, Any], low: int, high: int, object_position: 
     return not any(_OBJECT_CANONICAL_CLOCK.fullmatch(word.strip(",.;:()")) for word in span.split(" "))
 
 
+def build_timing_gazetteer(lines: Iterable[Any]) -> dict[str, list[str]]:
+    """QA520: the places the briefing itself names, read once per analysis from the OFP's own text lines
+    (temporalObject.gazetteer): the words of every NOTAM bulletin station heading's name and FIR heading's name
+    ('VRMM /MLE MALE/VELANA INTL - DETAILED INFO': MALE, VELANA, INTL; 'VHHK HONG KONG FIR': HONG, KONG), their location
+    indicators (VRMM, VHHK), and every five-letter fix a route string names next to DCT or an airway ('SAMKO W407').
+    Plain data, the same in both runtimes for the same lines; the decision classifies an operand's token against it."""
+    rows = [" ".join(str(line).upper().split()) for line in lines]
+    rows = [row for row in rows if row]
+    names: set[str] = set()
+    indicators: set[str] = set()
+    fixes: set[str] = set()
+    for index, row in enumerate(rows):
+        if index + 1 < len(rows) and _GAZ_RULE.fullmatch(rows[index + 1]):
+            station = _GAZ_STATION.fullmatch(row)
+            fir = None if station else _GAZ_FIR.fullmatch(row)
+            heading = station or fir
+            if heading:
+                indicators.add(heading.group(1))
+                name = _GAZ_TAIL.sub("", heading.group(2), count=1) if station else heading.group(2)
+                names.update(word for word in _GAZ_SPLIT.split(name) if word)
+        tokens = row.split(" ")
+        if sum(1 for token in tokens if _GAZ_LINK.fullmatch(token)) < _GAZ_LINKS:
+            continue
+        for at, token in enumerate(tokens):
+            if (_GAZ_FIX.fullmatch(token) and not _rule_word(token)
+                    and ((at and _GAZ_LINK.fullmatch(tokens[at - 1]))
+                         or (at + 1 < len(tokens) and _GAZ_LINK.fullmatch(tokens[at + 1])))):
+                fixes.add(token)
+    names = {word for word in names if len(word) >= _GAZ_NAME_MIN and word.isascii() and word.isalpha()}
+    return {"names": sorted(names), "indicators": sorted(word for word in indicators if _GAZ_INDICATOR.fullmatch(word)),
+            "fixes": sorted(fixes)}
+
+
+def _rule_word(word: str) -> bool:
+    """A word the rules know by another class - a role, stop, skip, function, verb, connective, label or temporal
+    word - is never a fix."""
+    return bool(_roles_of(word, _OBJECT_ROLES) or _OBJECT_STOP.fullmatch(word) or _OBJECT_SKIP.fullmatch(word)
+                or _OBJECT_FUNCTION.fullmatch(word) or _OBJECT_END.fullmatch(word) or _OBJECT_VERBS.fullmatch(word)
+                or _OBJECT_RESTRICTION_WORD.fullmatch(word) or _connective_class(word) or _OBJECT_LABELS.fullmatch(word)
+                or _OBJECT_MODIFIER.fullmatch(word) or _OBJECT_DESIGNATOR_NEVER.fullmatch(word)
+                or _OBJECT_CODE_NEVER.fullmatch(word) or _OBJECT_ANAPHORA.fullmatch(word))
+
+
+def _gazetteer_lookup(gazetteer: Mapping[str, Any] | None) -> frozenset[str] | None:
+    """Every word the gazetteer names as a place (names, indicators, fixes), or None."""
+    if not gazetteer:
+        return None
+    return frozenset([*gazetteer.get("names", ()), *gazetteer.get("indicators", ()), *gazetteer.get("fixes", ())])
+
+
+def _named_place(places: frozenset[str] | None, word: str, low: int, high: int, temporal: list[tuple[int, int]]) -> bool:
+    """A token the briefing names as a place (QA520 gazetteer) - never a temporal token, a temporal modifier, a word that
+    is never a designator (a day, a month, a time word) or a code that is never a code (ETD, NOW ...)."""
+    return (places is not None and word in places and not _OBJECT_MODIFIER.fullmatch(word)
+            and not _OBJECT_DESIGNATOR_NEVER.fullmatch(word) and not _OBJECT_CODE_NEVER.fullmatch(word)
+            and not any(start < high and low < end for start, end in temporal))
+
+
 def _compound_classified(kind: str, word: str, low: int, high: int, temporal: list[tuple[int, int]],
-                         noun: str | None) -> bool:
+                         noun: str | None, places: frozenset[str] | None = None) -> bool:
     """A token joined by a slash or holding a bracketed part ('ALTITUDE/HEIGHT', 'TO/OUTBOUND', 'OCA(H)', 'TWY B/C') is
     classified when each of its parts is, read as a phrase after the classified noun before it (if any) - coordination
     and stop words among the parts aside - and one part at least by a role or a designator; never when it holds
@@ -1027,13 +1100,14 @@ def _compound_classified(kind: str, word: str, low: int, high: int, temporal: li
     if not words:
         return False
     lead = [(0, 0, noun)] if noun is not None else []
-    classes = [item[3] for item in _classify_np(kind, lead + words, False, [], None)][len(lead):]
+    classes = [item[3] for item in _classify_np(kind, lead + words, False, [], None, places)][len(lead):]
     return all(cls is not None and not cls.endswith("?") for cls in classes) and any(
         cls.startswith("role:") or cls == "designator" for cls in classes)
 
 
 def _classify_np(kind: str, np: list[tuple[int, int, str]], determined: bool,
-                 temporal: list[tuple[int, int]], ctx: dict[str, Any] | None) -> list[list[Any]]:
+                 temporal: list[tuple[int, int]], ctx: dict[str, Any] | None,
+                 places: frozenset[str] | None = None) -> list[list[Any]]:
     """Classify every token of one noun phrase (QA520 I7) as [start, end, word, class]; class None is unclassified. A
     token is classified only by a mask, a designator right after a classified token, the notice's own stated content
     (anaphora, with a determiner or a period noun in the phrase), a lead modifier right before a notice or permission
@@ -1067,10 +1141,17 @@ def _classify_np(kind: str, np: list[tuple[int, int, str]], determined: bool,
             cls = "lead" if lead else "modifier?"  # 'AT SHORT NOTICE'; else resolved by the complement
         else:
             roles = _roles_of(word, nouns)
+            if not roles and "place" in nouns and _named_place(places, word, low, high, temporal):
+                roles = ["place"]  # a place the briefing itself names (QA520 gazetteer): 'AT VELANA INTL', 'AT LRBS'
             modifiers = _roles_of(word, _OBJECT_MODIFIERS[kind]) if not roles else []
             cls = ("role:" + roles[0]) if roles else ("modifier:" + modifiers[0]) if modifiers else None
-            if cls is None and _compound_classified(kind, word, low, high, temporal, noun if previous is not None else None):
+            if cls is None and _compound_classified(kind, word, low, high, temporal, noun if previous is not None else None,
+                                                    places):
                 cls = "compound"
+            if (cls is None and _OBJECT_DEGREE.fullmatch(word) and follow is not None and _OBJECT_DIRECTION.fullmatch(follow)
+                    and "place" in _roles_of(follow, nouns)):
+                cls = "degree"  # the degree of a place direction: 'A POINT IMMEDIATELY SOUTH OF TWY D2'
+
         out.append([low, high, word, cls])
         previous, noun = cls, word
         modifiers_only = modifiers_only and cls is not None
@@ -1112,7 +1193,8 @@ def _classify_operand(entry: dict[str, Any], temporal: list[tuple[int, int]], ct
     classified: list[list[list[Any]]] = []
     for number, conjunct in enumerate(entry["conjuncts"]):
         tokens = _classify_np(kind, conjunct["words"], entry["determined"] if number == 0 else False, temporal,
-                              {**ctx, "first": number == 0 and ctx["adjacent"]} if ctx is not None else None)
+                              {**ctx, "first": number == 0 and ctx["adjacent"]} if ctx is not None else None,
+                              ctx.get("places") if ctx is not None else None)
         content = [item for item in tokens if item[3] != "function"]
         before = [item for item in classified[-1] if item[3] != "function"] if classified else []
         if (content and before and all(item[3] is not None for item in before)
@@ -1120,7 +1202,8 @@ def _classify_operand(entry: dict[str, Any], temporal: list[tuple[int, int]], ct
             for item in content:
                 item[3] = "designator"  # 'TWY A AND B': B designates the noun of the conjunct before it
         complement = _classify_np(kind, conjunct["complement"], conjunct["complementDetermined"], temporal,
-                                  {**ctx, "first": False} if ctx is not None else None)
+                                  {**ctx, "first": False} if ctx is not None else None,
+                                  ctx.get("places") if ctx is not None else None)
         head = next((item for item in reversed(content) if item[3] != "designator"), None)
         if head is not None and head[3] == "modifier?":
             following = [item for item in complement if item[3] != "function"]
@@ -1189,7 +1272,8 @@ def _head_view(entry: dict[str, Any], text: str) -> None:
 
 def _sentence_ledger(masked: str, text: str, start: int, end: int, temporal: list[tuple[int, int]],
                      statements: list[tuple[int, int]], heads: set[int], ends: set[int], offset: int,
-                     restricted: bool) -> list[dict[str, Any]]:
+                     restricted: bool, places: frozenset[str] | None = None,
+                     inline: frozenset[int] = frozenset()) -> list[dict[str, Any]]:
     """The obligations of one sentence: every connective of temporalObject.connectives (and TO/UNTIL/TIL/TILL closing
     a FROM/FM range, in the range's role) with its operand read - and, in a sentence that holds a restriction
     (``restricted``), classified."""
@@ -1223,7 +1307,7 @@ def _sentence_ledger(masked: str, text: str, start: int, end: int, temporal: lis
                                  "conjuncts": [], "cut": False, "tokens": [], "unclassified": [], "chain": None,
                                  "rangeOf": None, "restricted": restricted, "skipped": [], "hidden": [],
                                  "status": None, "_ranges": ranges}
-        _read_operand(entry, words, index, masked, labels, heads, statements, text)
+        _read_operand(entry, words, index, masked, labels, heads, statements, text, inline)
         if closes is not None:
             entry["rangeOf"] = offset + closes
         if _OBJECT_RANGE_AFTER.fullmatch(word):
@@ -1238,7 +1322,7 @@ def _sentence_ledger(masked: str, text: str, start: int, end: int, temporal: lis
             ctx = {"text": text, "governing": bool(_GOVERNING_CONNECTIVE.search(before)),
                    "period": bool(_PERIOD_CONNECTIVE.search(before)),
                    # QA514's object: right after the connective, at most an article between
-                   "adjacent": all(word in ("THE", "A", "AN") for word in entry["skipped"])}
+                   "adjacent": all(word in ("THE", "A", "AN") for word in entry["skipped"]), "places": places}
             _classify_operand(entry, temporal, ctx)
             _head_view(entry, text)
     for entry in entries:
@@ -1287,7 +1371,8 @@ def _sentence_ledger(masked: str, text: str, start: int, end: int, temporal: lis
 
 
 def _connective_ledger(masked: str, text: str, temporal: list[tuple[int, int]], statements: list[tuple[int, int]],
-                       heads: set[int], ends: set[int]) -> list[dict[str, Any]]:
+                       heads: set[int], ends: set[int], places: frozenset[str] | None = None,
+                       inline: frozenset[int] = frozenset()) -> list[dict[str, Any]]:
     """QA520 I8: one obligation per temporal connective of every sentence (sentences found on ``text``, the unmasked
     syntactic text of which ``masked`` is the masked copy, character for character; a mask may paint over a sentence's
     period: '4.'). In a sentence that holds a restriction the operand must be accounted for or classified; in any other
@@ -1299,7 +1384,8 @@ def _connective_ledger(masked: str, text: str, temporal: list[tuple[int, int]], 
     for boundary in [*_OBJECT_SENTENCE.finditer(text), None]:
         end = boundary.start() if boundary else len(masked)
         restricted = bool(_OBJECT_RESTRICTION.search(masked[start:end]))
-        ledger.extend(_sentence_ledger(masked, text, start, end, temporal, statements, heads, ends, len(ledger), restricted))
+        ledger.extend(_sentence_ledger(masked, text, start, end, temporal, statements, heads, ends, len(ledger), restricted,
+                                       places, inline))
         start = boundary.end() if boundary else len(masked)
     return ledger
 
@@ -1323,8 +1409,8 @@ def _discharge(ledger: list[dict[str, Any]], accounted: Any) -> None:
 
 
 def _free_text_accounting(text: str, field: str | None, entries: list[dict[str, Any]] | None,
-                          validity: Mapping[str, Any] | None,
-                          line_starts: Iterable[int] = (0,)) -> tuple[str | None, list[dict[str, Any]], str]:
+                          validity: Mapping[str, Any] | None, line_starts: Iterable[int] = (0,),
+                          places: frozenset[str] | None = None) -> tuple[str | None, list[dict[str, Any]], str]:
     """The review the free text after the field calls for, or None, with the connective ledger and the masked text
     (QA506: fail closed; QA510: temporal content is found by SHAPE; QA514: every digit accounted for; QA520 I8: every
     connective's operand accounted for). Benign spans are masked; every temporal token left - every clock-like shape
@@ -1336,10 +1422,15 @@ def _free_text_accounting(text: str, field: str | None, entries: list[dict[str, 
     masked = _paint(text or "", [(start, end) for start, end, _ in kept])
     heads = {start for start, _end, name in kept if name in _OBJECT_HEAD_ONLY_MASKS}
     ends = {start for start, _end, name in kept if name in _OBJECT_END_MASKS}
+    # a numeric list label that opens no body line (QA520): after AND/OR it is a conjunct's number ('BTN SSYEF AND 2.2
+    # TO SSYEM' - a DME distance), never a new item cutting the operand off
+    opens = set(line_starts)
+    inline = frozenset(start for start in ends if start not in opens)
     temporal = _temporal_tokens(masked)
     tokens = temporal + _residue_spans(masked) + [match.span() for match in _RESIDUE_WORDS.finditer(masked)]
     statements = [(match.start(), match.end(), match.group(0)) for match in _STATEMENT.finditer(masked)]
-    ledger = _connective_ledger(masked, text or "", temporal, [(low, high) for low, high, _ in statements], heads, ends)
+    ledger = _connective_ledger(masked, text or "", temporal, [(low, high) for low, high, _ in statements], heads, ends,
+                                places, inline)
     verdicts: dict[int, bool] = {}
 
     def accounted(span: Iterable[int]) -> bool:
@@ -1365,8 +1456,8 @@ def _free_text_review(text: str, field: str | None, entries: list[dict[str, Any]
     return _free_text_accounting(text, field, entries, validity, line_starts)[0]
 
 
-def _read_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] | None,
-                         explain: bool) -> tuple[dict[str, Any], dict[str, Any] | None]:
+def _read_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] | None, explain: bool,
+                         gazetteer: Mapping[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """read_lido_schedule_field, and with ``explain`` the free text's accounting: its syntactic text, masked text and
     connective ledger (QA520 I8), computed on the same path."""
     lines = [text for text in (_field_text(line) for line in body_lines or []) if text]
@@ -1383,11 +1474,12 @@ def _read_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] 
         line_starts.append(bisect.bisect_left(origin, offset))
         offset += len(line) + 1
     explained: dict[str, Any] | None = None
+    places = _gazetteer_lookup(gazetteer)
 
     def account(field_text: str | None, entries: list[dict[str, Any]] | None,
                 held: Mapping[str, Any] | None) -> str | None:
         nonlocal explained
-        review, ledger, masked = _free_text_accounting(free_text, field_text, entries, held, line_starts)
+        review, ledger, masked = _free_text_accounting(free_text, field_text, entries, held, line_starts, places)
         if explain:
             explained = {"text": free_text, "masked": masked, "ledger": ledger, "freeTextReview": review}
         return review
@@ -1411,23 +1503,26 @@ def _read_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] 
     return read(account(field, entries, validity))
 
 
-def read_lido_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def read_lido_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] | None = None,
+                             gazetteer: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Item D of a LIDO record: the leading body lines made only of schedule tokens, joined with one space, across
     line wraps. ``review`` is why the record's timing cannot be read: schedule language this spec does not evaluate, a
     leading field the grammar cannot read in full, or schedule-bearing language in the free text that is not accounted
     for (QA506: every temporal token left once the stated benign classes are masked must sit in a statement the grammar
     reads whole and that is proven equal, on its own, to Item D or to the whole validity; QA520 I8: every temporal
     connective of a restriction sentence must have its operand accounted for or positively classified). ``validity`` is
-    the record's read_lido_validity() result; without one the record is a validity review."""
-    return _read_schedule_field(body_lines, validity, False)[0]
+    the record's read_lido_validity() result; without one the record is a validity review. ``gazetteer`` is the
+    analysis's build_timing_gazetteer() result: the places the briefing itself names (QA520)."""
+    return _read_schedule_field(body_lines, validity, False, gazetteer)[0]
 
 
-def explain_timing_ledger(body_lines: Iterable[Any], validity: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def explain_timing_ledger(body_lines: Iterable[Any], validity: Mapping[str, Any] | None = None,
+                          gazetteer: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """QA520 I8: the free text's connective ledger as read_lido_schedule_field computes it - every temporal connective
     of every restriction sentence with its operand (reading, conjuncts, classified tokens), its status (classified,
     accounted, chained, undischarged) and why - plus the read itself, the syntactic and masked free text. A read with
     no review has every obligation discharged (the ledger balances)."""
-    read, explained = _read_schedule_field(body_lines, validity, True)
+    read, explained = _read_schedule_field(body_lines, validity, True, gazetteer)
     return {**(explained or {"text": "", "masked": "", "ledger": [], "freeTextReview": None}), "read": read}
 
 
@@ -1736,10 +1831,12 @@ def decide_notice_timing(notice: Mapping[str, Any], window: Mapping[str, Any]) -
                    outsideBy="schedule")
 
 
-def decide_lido_record(validity_text: Any, lines: Iterable[Any], window: Mapping[str, Any]) -> dict[str, Any]:
-    """Read a LIDO record (validity text + body lines) and decide it: the whole shared path."""
+def decide_lido_record(validity_text: Any, lines: Iterable[Any], window: Mapping[str, Any],
+                       gazetteer: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Read a LIDO record (validity text + body lines) and decide it: the whole shared path (``gazetteer``: the places
+    the analysis's briefing names, build_timing_gazetteer)."""
     validity = read_lido_validity(validity_text)
-    field = read_lido_schedule_field(lines, validity)
+    field = read_lido_schedule_field(lines, validity, gazetteer)
     return decide_notice_timing({"validity": validity, "schedule": field["field"], "review": field["review"]}, window)
 
 
@@ -1795,6 +1892,7 @@ __all__ = [
     "NOTAM_TIMING_RULES",
     "NOTAM_TIMING_SPEC_VERSION",
     "TIMING_REVIEW_REASONS",
+    "build_timing_gazetteer",
     "decide_lido_record",
     "decide_notice_timing",
     "iso_ms",

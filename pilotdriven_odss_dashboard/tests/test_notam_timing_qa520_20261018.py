@@ -37,6 +37,7 @@ from pathlib import Path
 from app.odss.notam_timing import (
     LEDGER_DISCHARGED,
     LEDGER_STATUSES,
+    build_timing_gazetteer,
     decide_lido_record,
     decide_notice_timing,
     explain_timing_ledger,
@@ -44,6 +45,7 @@ from app.odss.notam_timing import (
     read_lido_validity,
 )
 from tests import notam_timing_qa514_generators as G514
+from tests import notam_timing_qa518_generators as G518
 from tests import notam_timing_qa520_generators as G
 from tests import test_notam_timing_qa518_20261017 as Q518
 
@@ -71,6 +73,10 @@ METAMORPHIC_CORPORA: dict = {"qa506":{"roleWord":[25776,19633,6143],"damage":[25
 METAMORPHIC_CORPORA_DIGEST = "f7b04e60a83c864a7de90f1261d799b642c33cf954457b81293a05cc8c0c32a4"
 FUZZ_DEFAULT: dict = {"cases": 20000, "decisions": 100000, "caseDigest": "9ed1715772f34abf657c15976bdaa2b56a08346fc9988ee44d01fbde0c2112db", "decisionDigest": "8b60590d09c66b609a545653348c292d96de5a86b88eab8f5c89cb83bba0c407"}
 FUZZ_FULL: dict = {"cases": 200000, "decisions": 1000000, "caseDigest": "1ae992129461dcf79b51a18b36cf81c0344498a358f928741b12e7ab94f027f4", "decisionDigest": "eb4d071a65202a455a547ca0b42043e1693b5d8f83fbac2c66e68063a02b1029"}
+# pinned: the gazetteer transforms {benign variants, review variants} and the gazetteer fuzz; the app pins the same
+METAMORPHIC_GAZETTEER: dict = {"benign":740,"review":492}
+FUZZ_GAZETTEER_DEFAULT: dict = {"cases": 20000, "decisions": 20000, "caseDigest": "2d1fb653d7a2298b18914ea7ff38455116f8725a989bd79deb92b7bbec77f2fe", "decisionDigest": "576418a2b577b61bef96d53fa160bc986a9109cb9173744c7e4f716a363ccf2d"}
+FUZZ_GAZETTEER_FULL: dict = {"cases": 200000, "decisions": 200000, "caseDigest": "f5bdc2dfeb43bf5dbd805103d05071145b2eff98be1b77bc073d55294dfea083", "decisionDigest": "382d226ce5c6cedcd23c661bbdbc9fc3b9076d88cbe4cb226823fab465bc614b"}
 
 
 def _pick(decision: dict) -> list:
@@ -424,5 +430,80 @@ def test_fuzz_qa520_seeded_role_compositions_and_damaged_operands_are_reviews_be
     pinned = FUZZ_FULL if full else FUZZ_DEFAULT
     failures, result, families = _run_fuzz(pinned.get("cases", 200000 if full else 20000))  # full: 1,000,000 decisions
     print(f"fuzz QA520 seed {SEED}: {json.dumps(result)} families {json.dumps(dict(sorted(families.items())))}")
+    assert failures == []
+    assert result == pinned, "the app pins the same cases and decisions for the same seed"
+
+
+# ---- QA520 gazetteer: places the briefing itself names -----------------------------------------------------------------
+# LABELLED SYNTHETIC. The gazetteer is built per analysis from the OFP's own lines (build_timing_gazetteer, the same data
+# in the app) and handed to the read; a token it names is a place. The app runs the same probes, transforms and fuzz.
+GAZ_LINES = ["VRMM /MLE   MALE/VELANA INTL - DETAILED INFO", "----------", "RKPC /CJU   JEJU INTL /ADEQ", "----------",
+             "VHHK        HONG KONG FIR", "----------", "WSAP RTE: WSSS SAMKO W407 VTK DCT OMKOM DCT TOPUN",
+             "PILOTS SHOULD AVOID DCT EYE EXPOSURES"]
+GAZ = build_timing_gazetteer(GAZ_LINES)
+GAZ_BENIGN = ["TWY C CLSD AT VELANA INTERNATIONAL AIRPORT.", "TWY C CLSD AT VELANA INTERNATIONAL AIRPORT (VRMM).",
+              "TWY J CLSD FROM RWY 07 OF RKPC.", "ILS/DME FOR RWY 07 AT JEJU INTL AIRPORT U/S.", "TWY J CLSD AFTER SAMKO.",
+              "RWY 04 CLSD EXC FLT DEP FM HONG KONG INTL AP.", "TWY C CLSD FROM A POINT IMMEDIATELY SOUTH OF TWY D2."]
+GAZ_REVIEW = ["TWY C CLSD DURING VELANA CURFEW.", "TWY C CLSD AT CHIBOUGAMAU.", "TWY C CLSD AT VELANA KELVINGROVE PARK.",
+              "TWY C CLSD AFTER VRMM ACTIVATION.", "TWY J CLSD UNTIL TOPUN TEATIME.", "TWY J CLSD AFTER AVOID.",
+              "TWY C CLSD FROM IMMEDIATELY."]
+
+
+def test_qa520_gazetteer_names_places_and_nothing_else() -> None:
+    """The briefing's own station and FIR headings and route fixes name places; a name it holds is a place, any other
+    word and any temporal head stay reviews."""
+    assert GAZ == {"names": ["HONG", "INTL", "JEJU", "KONG", "MALE", "VELANA"], "indicators": ["RKPC", "VHHK", "VRMM"],
+                   "fixes": ["OMKOM", "SAMKO", "TOPUN"]}
+    for body in GAZ_BENIGN:
+        for lines, want in (([body], ("affecting", 0)), (["DLY 1800-2000", body], ("outside_window", 540))):
+            got = decide_lido_record(AUGUST, lines, WINDOW, GAZ)
+            assert (got["status"], got.get("minutesDelta")) == want, (lines, got)
+        if "IMMEDIATELY" not in body:
+            assert decide_lido_record(AUGUST, [body], WINDOW)["status"] == "review", body
+    for body in GAZ_REVIEW:
+        for lines in ([body], ["DLY 1800-2000", body]):
+            assert decide_lido_record(AUGUST, lines, WINDOW, GAZ)["status"] == "review", lines
+
+
+def test_metamorphic_qa520_gazetteer_wrap_and_punctuate_keep_every_probe() -> None:
+    """Every wrap and punctuate variant (I5) of a gazetteer probe decides as the probe."""
+    tally = {"benign": 0, "review": 0}
+    failures: list[str] = []
+    for bodies, want in ((GAZ_BENIGN, "affecting"), (GAZ_REVIEW, "review")):
+        for body in bodies:
+            for transform in ("wrap", "punctuate"):
+                for name, lines in G518.variants([body], transform):
+                    got = decide_lido_record(AUGUST, lines, WINDOW, GAZ)["status"]
+                    tally["review" if want == "review" else "benign"] += 1
+                    if got != want and len(failures) < 25:
+                        failures.append(f"{transform} {name} {json.dumps(lines)}: {got}, not {want}")
+    print(f"metamorphic QA520 gazetteer: {json.dumps(tally, separators=(',', ':'))}")
+    assert failures == []
+    assert tally == METAMORPHIC_GAZETTEER
+
+
+def test_fuzz_qa520_gazetteer_named_places_benign_unnamed_and_event_heads_reviews() -> None:
+    full = os.environ.get("PD_TIMING_QA520_FUZZ_FULL") == "1"
+    pinned = FUZZ_GAZETTEER_FULL if full else FUZZ_GAZETTEER_DEFAULT
+    count = pinned.get("cases", 200000 if full else 20000)
+    cases, digest = hashlib.sha256(), hashlib.sha256()
+    families: Counter = Counter()
+    failures: list[str] = []
+    canonical: dict[str, dict] = {}
+    decisions = 0
+    for fc in G.fuzz_gazetteer_cases(SEED + 2, count):
+        families[fc["family"]] += 1
+        cases.update((json.dumps([fc["itemD"], fc["line"]], separators=(",", ":"), ensure_ascii=False) + "\n").encode())
+        key = "|".join(fc["itemD"])
+        if key not in canonical:
+            canonical[key] = decide_lido_record(AUGUST, [*fc["itemD"], "TWY J CLSD."], WINDOW, G.FUZZ_GAZETTEER)
+        got = decide_lido_record(AUGUST, [*fc["itemD"], fc["line"]], WINDOW, G.FUZZ_GAZETTEER)
+        decisions += 1
+        digest.update((json.dumps(_pick(got), separators=(",", ":")) + "\n").encode())
+        ok = (_pick(got) == _pick(canonical[key])) if fc["family"] == "named" else got["status"] == "review"
+        if not ok and len(failures) < 25:
+            failures.append(f"{fc['family']} {json.dumps([*fc['itemD'], fc['line']])}: {got['status']}")
+    result = {"cases": count, "decisions": decisions, "caseDigest": cases.hexdigest(), "decisionDigest": digest.hexdigest()}
+    print(f"fuzz QA520 gazetteer seed {SEED + 2}: {json.dumps(result)} families {json.dumps(dict(sorted(families.items())))}")
     assert failures == []
     assert result == pinned, "the app pins the same cases and decisions for the same seed"

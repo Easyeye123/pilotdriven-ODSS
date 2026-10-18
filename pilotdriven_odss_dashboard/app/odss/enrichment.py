@@ -7,7 +7,7 @@ from typing import Any
 
 from . import table_cells
 from .constants import MONTHS, OPERATIONAL_KEYWORDS
-from .notam_timing import read_lido_schedule_field, read_lido_validity
+from .notam_timing import build_timing_gazetteer, read_lido_schedule_field, read_lido_validity
 
 _NOTAM_START = re.compile(r"^(?P<id>[A-Z0-9]+/\d{2})\s+VALID:\s+(?P<validity>.+)$")
 _FUEL_ENROUTE_HEADING = re.compile(
@@ -934,6 +934,7 @@ def _parse_airport_notams(
     fallback: datetime,
     *,
     include_all: bool = False,
+    gazetteer: dict[str, list[str]] | None = None,
 ) -> list[dict[str, Any]]:
     notices: list[tuple[int, dict[str, Any]]] = []
     category = "AIRPORT"
@@ -953,7 +954,7 @@ def _parse_airport_notams(
         # is a review, never a second schedule. An absent end is a review, never an open end.
         validity = read_lido_validity(current_validity)
         # QA500 (15 Oct 2026): the reader needs the grammar to read the whole field and checks the free text against it.
-        field = read_lido_schedule_field(current_lines, validity)
+        field = read_lido_schedule_field(current_lines, validity, gazetteer)
         schedule = field["field"]
         review = field["review"]
         score = _notice_score(text, current_category)
@@ -1115,6 +1116,9 @@ def enrich_notams(flight: dict[str, Any], pages: list[str]) -> None:
     if "EDDM /MUC" in text:
         locations.append("EDDM")
     fallback = datetime.fromisoformat(flight["scheduled_departure_utc"])
+    # QA520: the places this briefing itself names (its NOTAM bulletin's station and FIR headings, its route strings'
+    # fixes), read once from the OFP's own lines and handed to every record's timing read as data - as the app does
+    gazetteer = build_timing_gazetteer("\n".join(pages).split("\n"))
     flight["volcanic_advisories"] = _parse_cfp_volcano_advisories(
         pages,
         fallback,
@@ -1130,6 +1134,7 @@ def enrich_notams(flight: dict[str, Any], pages: list[str]) -> None:
             block,
             fallback,
             include_all=icao in fuel_icaos,
+            gazetteer=gazetteer,
         )
         for record in records:
             record["source_page"] = _record_source_page(pages, record["notam_id"])

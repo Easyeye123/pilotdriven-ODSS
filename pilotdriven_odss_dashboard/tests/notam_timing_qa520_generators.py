@@ -273,3 +273,46 @@ def fuzz520_verdict(case: dict[str, Any], got: dict, canonical: dict) -> str | N
 
 __all__ = ["VALIDITIES", "WINDOWS", "TRANSFORMS", "ROLE_INSERTS", "DAMAGES", "POSTPOSITIVE", "connectives", "role_word_variants",
            "damage_variants", "variants", "sample", "FUZZ520", "fuzz520_cases", "fuzz520_verdict"]
+
+
+# QA520 gazetteer fuzz (LABELLED SYNTHETIC): a restriction with a temporal connective whose operand is built from the
+# places a fixed gazetteer names (FUZZ_GAZETTEER: names, indicators, fixes) and place words, in either order (after the
+# restriction, or fronted before it with a comma), with or without Item D:
+#   named      every content token a gazetteer place or a place word: the restriction's canonical decision;
+#   unnamed    a word the gazetteer does not hold (and no role names) in the operand: a review;
+#   namedEvent a gazetteer place before a temporal or event head ('VELANA CURFEW'): a review (I7, head-final).
+FUZZ_GAZETTEER: dict[str, list[str]] = {"names": ["HONG", "JEJU", "KONG", "MALE", "VELANA"],
+                                        "indicators": ["RKPC", "VHHK", "VRMM"], "fixes": ["SAMKO", "TOPUN"]}
+_GAZ_CONNECTIVES = ["UNTIL", "TIL", "AFTER", "AFT", "BEFORE", "BFR", "SINCE", "DURING", "DRG", "OUTSIDE", "AT", "FROM", "FM",
+                    "BTN", "EXCEPT", "EXC"]
+_GAZ_PLACES = ["VELANA", "MALE", "JEJU", "HONG KONG", "VRMM", "RKPC", "VHHK", "SAMKO", "TOPUN"]
+_GAZ_PLACE_WORDS = ["", "", "INTL", "INTERNATIONAL AIRPORT", "AIRPORT", "AP", "FIR", "AD"]
+_GAZ_UNKNOWN = ["CHIBOUGAMAU", "OLIVIA", "KELVINGROVE", "TEATIME", "ZORBLAX", "QUENTIX"]
+_GAZ_EVENTS = ["CURFEW", "ACTIVATION", "TRIAL", "TEATIME", "NIGHT", "FESTIVAL"]
+_GAZ_ITEM_D: list[list[str]] = [[], ["DLY 1800-2000"]]
+_GAZ_FAMILIES = ["named", "named", "unnamed", "namedEvent"]
+
+
+def fuzz_gazetteer_case(rng: Mulberry32) -> dict[str, Any]:
+    family = rng.pick(_GAZ_FAMILIES)
+    connective = rng.pick(_GAZ_CONNECTIVES)
+    places = [rng.pick(_GAZ_PLACES)]
+    if rng.below(3) == 0:
+        places.append(rng.pick(_GAZ_PLACES))
+    place_word = rng.pick(_GAZ_PLACE_WORDS)
+    if family == "named":
+        words = [*places, place_word]
+    elif family == "unnamed":
+        at = rng.below(len(places) + 1)
+        words = [*places[:at], rng.pick(_GAZ_UNKNOWN), *places[at:], place_word]
+    else:
+        words = [*places, rng.pick(_GAZ_EVENTS)]
+    operand = " ".join(word for word in words if word)
+    line = f"TWY J CLSD {connective} {operand}." if rng.below(2) else f"{connective} {operand}, TWY J CLSD."
+    return {"family": family, "itemD": rng.pick(_GAZ_ITEM_D), "line": line}
+
+
+def fuzz_gazetteer_cases(seed: int, count: int) -> Iterator[dict[str, Any]]:
+    rng = Mulberry32(seed)
+    for _ in range(count):
+        yield fuzz_gazetteer_case(rng)
