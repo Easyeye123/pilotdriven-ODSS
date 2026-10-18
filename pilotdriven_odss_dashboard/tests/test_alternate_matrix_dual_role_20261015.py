@@ -115,5 +115,8 @@ def test_sq606_rkpc_reads_one_source_on_the_dashboard_matrix_and_pdf_page_4() ->
         with fitz.open(out) as document:
             assert document.page_count == 6
             page4 = " ".join(document[3].get_text().split())
-    assert "RKPC/07 ALTERNATE" in page4 and "RWY 07 ILS/DME (SX56/26)" in page4
+    # QA520 (18 Oct 2026, timing spec v9): SX56/26's timing is a review - 'ILS/DME FOR RWY 07 AT JEJU INTL AIRPORT' and
+    # 'TAKE-OFF FROM RWY 07 OF RKPC' hold the name JEJU and the bare indicator RKPC, which no role classifies (I7); the
+    # page keeps the RKPC line and no longer states the aid as unavailable for the alternate window.
+    assert "RKPC/07 ALTERNATE" in page4 and "RWY 07 ILS/DME (SX56/26)" not in page4
     assert "UNAVAILABLE" not in page4
