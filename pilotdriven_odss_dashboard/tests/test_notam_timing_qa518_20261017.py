@@ -57,8 +57,8 @@ METAMORPHIC_CODEX: dict = {"q108":{"wrap":[7771,7771,0],"punctuate":[2307,2307,0
 METAMORPHIC_CODEX_DIGEST = "a4c3100f7e13133cd4fa4abd207356386d90bba8cbe3e4d7ea6fb82c659436d8"
 METAMORPHIC_COMPOSITIONAL: dict = {"wrap":[71595,71595,0],"punctuate":[71595,71595,0],"wordClock":[51075,24840,26235],"synonym":[11790,11790,0],"contactMove":[1800,1800,0]}
 METAMORPHIC_COMPOSITIONAL_DIGEST = "d7265bf389cbfbddfb08abfb9fae68cfc3496bcf45a68967dbb15ad3444e64c7"
-METAMORPHIC_CORPORA: dict = {"qa506":{"wrap":[72708,72708,0],"punctuate":[72708,72708,0],"wordClock":[66636,49717,16919],"synonym":[25464,25464,0]},"qa510":{"wrap":[56616,56616,0],"punctuate":[56616,56616,0],"wordClock":[31752,31110,642],"synonym":[20664,20664,0]}}
-METAMORPHIC_CORPORA_DIGEST = "38e497664bfcc73b8c87bc7c9952f8fb2438e51722d188d4e881a87ec16bae36"
+METAMORPHIC_CORPORA: dict = {"qa506":{"wrap":[72708,72708,0],"punctuate":[72708,72708,0],"wordClock":[66636,49717,16919],"synonym":[25464,25464,0]},"qa510":{"wrap":[56616,56616,0],"punctuate":[56616,56616,0],"wordClock":[31752,31114,638],"synonym":[20664,20664,0]}}
+METAMORPHIC_CORPORA_DIGEST = "2b4013a08919371685ab8539d56529952c4300d356643d2e314b3790e8c6745d"
 FUZZ_DEFAULT = {"cases": 20000, "decisions": 100000, "caseDigest": "3b49f4d5d11d22ca9ff8da0b72869ec9911acfd2bb25c0129bc63dbc225cc98f", "decisionDigest": "a4643b877798ff8668952d95ad31ee2bec27a83faa756b157e0f0c1b687d4da7"}
 FUZZ_FULL = {"cases": 200000, "decisions": 1000000, "caseDigest": "48f35b641b412d83291a91fc661d9b69ea2ac856f360a413cb0ea70ad3d64e3b", "decisionDigest": "1fc00a9d05f2da3456debdf9d90f525f2209f2d7ab1f36d88b3d2701b75a13de"}
 
@@ -172,11 +172,15 @@ def test_qa518_codex_forms_and_the_i6_role_probes() -> None:
                "AFTER TEATIME TWY T CLSD.", "TWY T CLSD AFTER TEATIME TWY B.", "TWY T CLSD DURING THE TRIAL.", "TWY T CLSD AT DAYBREAK.",
                "TWY T CLSD UNTIL TEATIME FOR TWY B.", "TWY T CLSD. CONTACT CAA DURING OFFICE HOURS. TWY T CLSD AFTER HALF PAST EIGHT.",
                "TWY T CLSD AFTER SIX O'CLOCK.", "TWY T CLSD AFTER EIGHTEEN HUNDRED.", "TWY T CLSD DRG CURFEW.",
-               "CRANE ERECTED. NO OPS DURING LOW VIS."]
+               "CRANE ERECTED. NO OPS DURING LOW VIS.",
+               # QA520 I7 (18 Oct 2026): every token of the operand must be classified, and a place named only by a proper
+               # name is classified by no role - this QA518 control was benign only through the 'governor' rule, which
+               # licensed any word after a facility (the QA520-01 root)
+               "PAL 253.2MHZ AT CHIBOUGAMAU U/S."]
     benign = ["TWY T CLSD AFTER TWY B.", "TWY T BTN TWY A AND TWY B CLSD.", "RWY 05 CLSD EXC SKED FLT.", "TWY T CLSD UFN.",
               "TWY T CLSD UNTIL FURTHER NOTICE.", "TWY T CLSD BEFORE THR 05.", "TWY T CLSD FM THR 05 TO TWY C.",
               "TWY T CLSD EXCEPT FOR ACFT WITH PPR.", "TWY T CLSD DURING THIS PERIOD.", "ATS RTE W10 NOT AVBL BTN BILAN AND POSIG.",
-              "PAL 253.2MHZ AT CHIBOUGAMAU U/S.", "TWY T CLSD ONLY FOR CODE C ACFT.", "STAND 12 CLSD EXC HEL.",
+              "TWY T CLSD ONLY FOR CODE C ACFT.", "STAND 12 CLSD EXC HEL.",
               "TWY Z9 MAY BE CLOSED AT SHORT NOTICE. ACFT MAY EXPECT DELAYS.", "TWY T CLSD. DURING OFFICE HOURS CONTACT AIS.",
               "TWY J CLSD. CONTACT CAA DURING NORMAL OFFICE HOURS.", "TWY J CLSD (CONTACT CAA DURING NORMAL OFFICE HOURS).",
               'TWY J CLSD. "FREQ 122.850 MHZ".', "TWY J CLSD. [CRANE HGT 2350FT AMSL].", "TWY J CLSD. TWO MANDATORY INSTRUCTION MARKINGS."]

@@ -64,7 +64,17 @@ the SYNTACTIC text (_syntax_text, read_body_line): punctuation that only wraps o
 tokens is removed by role, clauses end at one boundary, and the field and free text are each
 one stream. Number words are numeric content (I1), and the object of a temporal connective
 in a restriction sentence is temporal content unless a mask or a role its connective admits
-classifies it (I6, _object_tokens): unclassified, a review.
+classifies it (I6): unclassified, a review.
+
+QA520 (Codex's QA of release 520, 18 Oct 2026): an object was accounted for by a part of it -
+any role word licensed the whole object ('DURING AIRPORT CURFEW' active), and a connective
+whose operand was missing, separated or empty left nothing to account for ('TWY J CLSD
+UNTIL.', 'AFTER, CURFEW'). I7: an operand is benign only if every content token of it is
+positively classified by a role its connective admits; its head is defined by composition
+(head-final), so a place word never classifies a temporal head, and a pre-modifier never hides
+temporal content (_classify_np, _classify_operand, _head_view). I8: every connective creates an
+obligation in one ledger per decision (_connective_ledger, explain_timing_ledger), checked once
+at the end of _free_text_accounting: any undischarged obligation is a review.
 """
 from __future__ import annotations
 
@@ -690,30 +700,49 @@ _OBJECT_RESTRICTION = re.compile(f"(?<![A-Z0-9/])(?:{_OBJECT['restriction']})(?!
 _OBJECT_RESTRICTION_WORD = _words_rx(_OBJECT["restriction"])
 _OBJECT_SKIP = _words_rx(_OBJECT["skip"])
 _OBJECT_DETERMINER = _words_rx(_OBJECT["determiner"])
+_OBJECT_FUNCTION = _words_rx(_OBJECT["function"])
 _OBJECT_END = _words_rx(_OBJECT["objectEnd"])
+_OBJECT_VERBS = _words_rx(_OBJECT["verbs"])
+_OBJECT_LABELS = _words_rx(_OBJECT["labels"])
+# a label opening a token of the unmasked text (a mask may cover it with what follows: 'F) 7000FT AMSL')
+_OBJECT_LABEL_AT = re.compile(f"(?<![^ ])(?:{_OBJECT['labels']})(?![^ ,.;])", _A)
+_OBJECT_HEAD_ONLY = _words_rx(_OBJECT["headOnly"])
+_OBJECT_HEAD_ONLY_MASKS = frozenset(_OBJECT["headOnlyMasks"])
+_OBJECT_END_MASKS = frozenset(_OBJECT["endMasks"])
+_OBJECT_CANONICAL_CLOCK = _words_rx(_OBJECT["canonicalClock"])
+_OBJECT_COMPLEMENT = _words_rx(_OBJECT["complement"])
 _OBJECT_COORDINATION = _words_rx(_OBJECT["coordination"])
-_OBJECT_LISTS = frozenset(_OBJECT["lists"])
+_OBJECT_POSTPOSITIVE = _words_rx(_OBJECT["postpositive"])
+_OBJECT_OPEN_END_AFTER = _words_rx(_OBJECT["openEndAfter"])
 _OBJECT_STOP = _words_rx(_OBJECT["stop"])
 _OBJECT_OPEN_END = re.compile(f"(?:{_OBJECT['openEnd']})(?![A-Z0-9])", _A)
 _OBJECT_MODIFIER = _words_rx(_OBJECT["temporalModifier"])
-_OBJECT_MODIFIER_OF = _words_rx(_OBJECT["modifierOf"])
+_OBJECT_BOUND_PART = tuple(_OBJECT["boundPart"])
+_OBJECT_LEAD = _words_rx(_OBJECT["leadModifier"])
+_OBJECT_LEAD_HEADS = _words_rx(_OBJECT["leadHeads"])
 _OBJECT_ANAPHORA = _words_rx(_OBJECT["anaphora"])
 _OBJECT_ANAPHORA_PERIOD = _words_rx(_OBJECT["anaphoraPeriod"])
 _OBJECT_CODE = _words_rx(_OBJECT["code"])
 _OBJECT_CODE_NEVER = _words_rx(_OBJECT["codeNever"])
 _OBJECT_CODE_ALONE = _words_rx(_OBJECT["codeAlone"])
 _OBJECT_DESIGNATOR = _words_rx(_OBJECT["designator"])
-_OBJECT_DESIGNATION_NOUN = _words_rx(_OBJECT["designationNoun"])
-_OBJECT_GOVERNOR_ROLES = tuple(_OBJECT["governorRoles"])
+_OBJECT_DESIGNATOR_NEVER = _words_rx(_OBJECT["designatorNever"])
 _OBJECT_ROLES = {name: _words_rx(words) for name, words in _OBJECT["roles"].items()}
-_OBJECT_ADMITS = _OBJECT["admits"]
-_OBJECT_WINDOW = int(_OBJECT["windowWords"])
+_OBJECT_ADMITS = {kind: tuple(roles) for kind, roles in _OBJECT["admits"].items()}
+_OBJECT_MODIFIERS = {kind: tuple(roles) for kind, roles in _OBJECT["modifiers"].items()}
+_OBJECT_DESIGNATION_NOUN = _words_rx(_OBJECT["designationNoun"])
 _OBJECT_SENTENCE = re.compile(_FIELD["syntax"]["clauseBoundary"], _A)
 _OBJECT_BOUNDARY = re.compile(_OBJECT["objectBoundary"], _A)
+_CONTENT = re.compile(r"[A-Z0-9#]", _A)
+# the ledger's statuses (QA520 I8): an obligation is discharged by classification, by accounting, or by the connective
+# whose operand it takes; anything else is undischarged
+LEDGER_DISCHARGED = ("classified", "accounted", "chained", "free")
+LEDGER_STATUSES = (*LEDGER_DISCHARGED, "undischarged")
 
 
-def _has_role(word: str, roles: Iterable[str]) -> bool:
-    return any(_OBJECT_ROLES[role].fullmatch(word) for role in roles if role in _OBJECT_ROLES)
+def _roles_of(word: str, roles: Iterable[str]) -> list[str]:
+    """Every one of ``roles`` whose role list names ``word`` (a word may carry several: END is a place, a modifier)."""
+    return [role for role in roles if role in _OBJECT_ROLES and _OBJECT_ROLES[role].fullmatch(word)]
 
 
 def _object_words(masked: str, low: int, high: int) -> list[tuple[int, int, str, bool]]:
@@ -741,160 +770,599 @@ def _is_code(word: str) -> bool:
     return bool(_OBJECT_CODE.fullmatch(word)) and not _OBJECT_CODE_NEVER.fullmatch(word)
 
 
-def _object_is_temporal(kind: str, determined: bool, phrase: list[str], of_word: str | None,
-                        previous: str | None, structured: bool) -> bool:
-    """Whether a connective's object is temporal content (temporalObject): it is, unless positively classified by a
-    benign mask or by a role the connective admits."""
-    admits = _OBJECT_ADMITS[kind]
-    head = phrase[0]
-    if "#" in head:
-        return False  # a benign class (designator, position, quantity ...) governs it
-    if "anaphora" in admits:
-        lead = 0
-        while lead < len(phrase) and _OBJECT_ANAPHORA.fullmatch(phrase[lead]):
-            lead += 1
-        if lead and (determined or any(_OBJECT_ANAPHORA_PERIOD.fullmatch(word) for word in phrase[:lead])):
-            return False  # 'DURING THIS PERIOD', 'DRG THE CLOSURE', 'DRG EXER PERIOD': the notice's own stated content
-    if "notice" in admits and any(_has_role(word, ("notice",)) for word in phrase):
-        return False  # 'AT SHORT NOTICE': the notification's lead time, not the restriction's time
-    if "governor" in admits and previous is not None and ("#" in previous or _has_role(previous, _OBJECT_GOVERNOR_ROLES)):
-        return False  # 'PAL 253.2MHZ AT CHIBOUGAMAU', 'ENERGY PLANT AT OLIVIA': the location of what precedes
-    if _OBJECT_MODIFIER.fullmatch(head):
-        # 'AFTER LAST FLIGHT', 'AT SHORT NOTICE' are temporal; 'FM BEGINNING OF RWY 19R' is the place's part
-        return not (of_word is not None and ("#" in of_word or _has_role(of_word, ("place",))))
-    for index, word in enumerate(phrase):
-        if "#" in word and all(_has_role(before, _OBJECT_ROLES) for before in phrase[:index]):
-            return False  # 'AFTER ACFT STAND 517L': a masked designator headed by role words
-    if any(_has_role(word, admits) and not (index and index + 1 < len(phrase) and _OBJECT_DESIGNATION_NOUN.fullmatch(word)
-                                             and _OBJECT_DESIGNATOR.fullmatch(phrase[index + 1]))
-           for index, word in enumerate(phrase)):
-        return False  # a role word heads the object's noun phrase ('AT AIMING POINT', 'EXC SKED ACFT')
-    if "code" in admits and (structured or _OBJECT_CODE_ALONE.fullmatch(head)):
-        return False  # codes in a structure of codes, a route segment, a web address
-    return True
+def _connective_class(word: str) -> str | None:
+    """The connective class naming ``word`` (the classes are disjoint word lists, so at most one names it)."""
+    for name, pattern in _OBJECT_CLASSES.items():
+        if pattern.fullmatch(word):
+            return name
+    return None
 
 
-def _connective_objects(masked: str, start: int, end: int) -> list[dict[str, Any]]:
-    """The connectives of masked[start:end] with their objects (temporalObject; see _object_tokens)."""
-    words = _object_words(masked, start, end)
-    objects: list[dict[str, Any]] = []
-    range_at: int | None = None
-    range_object: dict[str, Any] | None = None
-    for index, (_, _, word, closed) in enumerate(words):
-        closes = None
-        if range_at is not None and index - range_at <= _OBJECT_RANGE_WITHIN and _OBJECT_RANGE_END.fullmatch(word):
-            kind: str | None = "spatial"
-            closes = range_object
-        else:
-            kind = next((name for name, pattern in _OBJECT_CLASSES.items() if pattern.fullmatch(word)), None)
-        opens = bool(_OBJECT_RANGE_AFTER.fullmatch(word))
-        if opens:
-            range_at, range_object = index, None
-        if kind is None or closed:
-            continue  # not a connective, or 'UNTIL,' - its object ends before it starts
-        previous = words[index - 1][2] if index and not words[index - 1][3] else None
-        at = index + 1
-        determined = False
-        while at < len(words) and _OBJECT_SKIP.fullmatch(words[at][2]) and not words[at][3]:
-            determined = determined or bool(_OBJECT_DETERMINER.fullmatch(words[at][2]))
-            at += 1
-        if at >= len(words) or _OBJECT_OPEN_END.match(masked, words[at][0]):
-            continue
-        phrase: list[tuple[int, int, str]] = []
-        joined: str | None = None
-        while at < len(words) and len(phrase) < _OBJECT_WINDOW:
-            low, high, word, closed = words[at]
-            if kind in _OBJECT_LISTS and phrase and _OBJECT_COORDINATION.fullmatch(word) and not closed:
-                if joined is None and at + 1 < len(words):
-                    joined = words[at + 1][2]
+def _ends_operand(word: str) -> bool:
+    """A word no operand continues through: a stop word, a restriction word, a word ending a noun phrase, a verb that is
+    no role word (the next clause's predicate), a label (a new item)."""
+    return bool(_OBJECT_STOP.fullmatch(word) or _OBJECT_RESTRICTION_WORD.fullmatch(word) or _OBJECT_END.fullmatch(word)
+                or _OBJECT_LABELS.fullmatch(word) or (_OBJECT_VERBS.fullmatch(word) and not _roles_of(word, _OBJECT_ROLES)))
+
+
+def _list_continues(words: list[tuple[int, int, str, bool]], at: int) -> bool:
+    """Whether a comma before words[at] separates items of a list: AND/OR follows before anything that ends the
+    operand ('BTN FAI, ORT AND BRW'; 'EXCEPT FOR HUMANITARIAN, SAR AND LEASED AIRCRAFT')."""
+    for _low, _high, word, closed in words[at:]:
+        if _OBJECT_COORDINATION.fullmatch(word):
+            return not closed
+        if _ends_operand(word) or _connective_class(word):
+            return False
+    return False
+
+
+def _shares_operand(word: str) -> bool:
+    """A word coordinated after a connective that shares its operand: a connective, a preposition (objectEnd), or a verb
+    (a verb that is no role word, or an -ING form with no other role) - 'AT OR BLW', 'FM OR OVERFLY', 'TO OR FROM, WITHIN,
+    OR TRANSITING'; never a noun ('BEFORE, OR HOLDING POINT B' has no operand)."""
+    if _connective_class(word) or _OBJECT_RANGE_END.fullmatch(word) or _OBJECT_END.fullmatch(word):
+        return True
+    roles = _roles_of(word, _OBJECT_ROLES)
+    return bool(_OBJECT_VERBS.fullmatch(word) and not roles) or roles == ["action"]
+
+
+def _conjunct() -> dict[str, Any]:
+    return {"words": [], "complement": [], "complementDetermined": False}
+
+
+def _read_conjuncts(words: list[tuple[int, int, str, bool]], at: int, labels: set[int], heads: set[int],
+                    limit: int | None = None) -> tuple[list[dict[str, Any]], bool]:
+    """The operand's conjuncts read from words[at] (temporalObject: objectEnd, stop, restriction, label, complement,
+    coordination; a list continues through commas to AND/OR; a head-only noun ends its phrase), and whether the operand
+    is cut off: AND/OR or OF with nothing after it in the clause, or a boundary right after it ('BTN TWY B AND.'). No
+    word limit: an operand is never truncated - but one the grammar reads (its first word in a statement) is that
+    statement's, and ends where the statement does (``limit``)."""
+    cut = False
+    conjuncts = [_conjunct()]
+    target = conjuncts[-1]["words"]
+    while at < len(words):
+        low, high, word, closed = words[at]
+        if (target and low in labels) or (limit is not None and low >= limit):
+            break
+        if target:
+            if _OBJECT_COORDINATION.fullmatch(word) or (_OBJECT_COMPLEMENT.fullmatch(word)
+                                                        and target is conjuncts[-1]["words"]):
+                follow = words[at + 1] if at + 1 < len(words) else None
+                if closed or follow is None or follow[0] in labels or (limit is not None and follow[0] >= limit):
+                    cut = True  # 'BTN TWY B AND.', 'AT THE INTERSECTION OF.': the operand is cut off
+                    break
+            if _OBJECT_COORDINATION.fullmatch(word) and not closed:
+                follow = words[at + 1][2]
+                if _ends_operand(follow) or _connective_class(follow):
+                    break
+                conjuncts.append(_conjunct())
+                target = conjuncts[-1]["words"]
                 at += 1
                 continue
-            if (_OBJECT_STOP.fullmatch(word) or _OBJECT_RESTRICTION_WORD.fullmatch(word)
-                    or (phrase and _OBJECT_END.fullmatch(word))):
+            if _OBJECT_COMPLEMENT.fullmatch(word) and not closed and target is conjuncts[-1]["words"]:
+                at += 1
+                determined = False
+                while at < len(words) and _OBJECT_SKIP.fullmatch(words[at][2]) and not words[at][3]:
+                    determined = determined or bool(_OBJECT_DETERMINER.fullmatch(words[at][2]))
+                    at += 1
+                conjuncts[-1]["complementDetermined"] = determined
+                target = conjuncts[-1]["complement"]
+                continue
+            if _ends_operand(word):
                 break
-            phrase.append((low, high, word))
+        elif _connective_class(word):
+            break
+        target.append((low, high, word))
+        at += 1
+        if ((_OBJECT_HEAD_ONLY.fullmatch(word) or low in heads) and target is conjuncts[-1]["words"] and at < len(words)
+                and not words[at - 1][3] and not _OBJECT_COMPLEMENT.fullmatch(words[at][2])
+                and not _OBJECT_COORDINATION.fullmatch(words[at][2])):
+            break  # 'DRG EXER PERIOD FLW RESTRICTIONS APPLY', 'AT PSN 512739N 0002745W HEATHROW': a head-only noun ends it
+        if closed:
+            if not _list_continues(words, at):
+                break
+            if at < len(words) and not _OBJECT_COORDINATION.fullmatch(words[at][2]):
+                conjuncts.append(_conjunct())
+                target = conjuncts[-1]["words"]
+    return [item for item in conjuncts if item["words"]], cut
+
+
+def _read_before(words: list[tuple[int, int, str, bool]], index: int) -> list[dict[str, Any]]:
+    """A postpositive connective's operand: the noun phrase before words[index] (conjuncts through AND/OR), back to a
+    boundary, a word that ends an operand or the sentence's start."""
+    taken: list[tuple[int, int, str]] = []
+    at = index - 1
+    while at >= 0:
+        low, high, word, closed = words[at]
+        if closed:
+            break
+        if _OBJECT_COORDINATION.fullmatch(word):
+            if not taken or at == 0 or words[at - 1][3] or _ends_operand(words[at - 1][2]) or _connective_class(words[at - 1][2]):
+                break
+        elif _ends_operand(word) or _connective_class(word):
+            break
+        taken.insert(0, (low, high, word))
+        at -= 1
+    conjuncts = [_conjunct()]
+    for item in taken:
+        if _OBJECT_COORDINATION.fullmatch(item[2]):
+            conjuncts.append(_conjunct())
+        else:
+            conjuncts[-1]["words"].append(item)
+    return [item for item in conjuncts if item["words"]]
+
+
+def _statement_end(words: list[tuple[int, int, str, bool]], at: int, statements: list[tuple[int, int]]) -> int | None:
+    """Where the statement holding the operand's first word ends, when the grammar reads that word: the grammar reads
+    the operand, so the operand is the statement's ('WEF 09MAY2024 0400UTC ACFT STANDS ...'), else None."""
+    if at >= len(words):
+        return None
+    low = words[at][0]
+    return next((end for start, end in statements if start <= low < end), None)
+
+
+def _read_operand(entry: dict[str, Any], words: list[tuple[int, int, str, bool]], index: int, masked: str,
+                  labels: set[int], heads: set[int], statements: list[tuple[int, int]], text: str) -> None:
+    """Fill ``entry`` with the operand of the connective words[index] (temporalObject; QA520 I8): a phrase (conjuncts),
+    a chain to the connective that follows it, a shared operand, the noun phrase before a postpositive connective, an
+    open end - or 'missing', with the reason no operand is there."""
+    word, closed = words[index][2], words[index][3]
+    postpositive = bool(_OBJECT_POSTPOSITIVE.fullmatch(word))
+
+    def shared(at: int) -> None:
+        # 'AT OR BLW 3000FT', 'BFR OR AFT THE CLOSURE', 'FROM, WITHIN, OR TRANSITING THE SFRA': the operand of the
+        # coordinated word words[at] - a preposition or a verb, or a mask holding one ('OR BLW 3000FT')
+        entry["reading"] = "shared"
+        opening = text[words[at][0]:words[at][1]].split(" ")[0]  # a mask's own first word ('OR BLW 3000FT')
+        if not _shares_operand(opening if "#" in words[at][2] else words[at][2]):
+            entry.update(operand="missing", reason="separated")
+        elif "#" in words[at][2]:
+            entry.update(operand="phrase", conjuncts=[{**_conjunct(), "words": [words[at][:3]]}])
+        elif _connective_class(words[at][2]) or (at in entry["_ranges"]):
+            entry.update(operand="chain", chainAt=at)
+        else:
+            follow = at + 1
+            determined = False
+            entry["skipped"].append(words[at][2])  # the coordinated word stands between the connective and the operand
+            while follow < len(words) and _OBJECT_SKIP.fullmatch(words[follow][2]) and not words[follow][3]:
+                determined = determined or bool(_OBJECT_DETERMINER.fullmatch(words[follow][2]))
+                entry["skipped"].append(words[follow][2])
+                follow += 1
+            entry["determined"] = determined
+            conjuncts, cut = (_read_conjuncts(words, follow, labels, heads, _statement_end(words, follow, statements))
+                              if follow < len(words) and not words[at][3] else ([], False))
+            if conjuncts:
+                entry.update(operand="phrase", conjuncts=conjuncts, cut=cut)
+            else:
+                entry.update(operand="missing", reason="sharedEmpty")
+
+    def before(reason: str) -> None:
+        conjuncts = _read_before(words, index)  # a restriction verb ends it: a bare predicate is no noun phrase
+        if conjuncts:
+            entry.update(operand="postpositive", conjuncts=conjuncts)
+        else:
+            entry.update(operand="missing", reason=reason)
+
+    if closed:
+        at = index + 1
+        while at < len(words) and words[at][3] and not _OBJECT_COORDINATION.fullmatch(words[at][2]):
             at += 1
-            if closed and not (kind in _OBJECT_LISTS and any(
-                    _OBJECT_COORDINATION.fullmatch(later[2]) for later in words[at:at + _OBJECT_WINDOW])):
-                break
-        if not phrase:
+        if at + 1 < len(words) and _OBJECT_COORDINATION.fullmatch(words[at][2]) and not words[at][3]:
+            shared(at + 1)
+        elif postpositive:
+            before("separated")
+        else:
+            entry.update(operand="missing", reason="separated")
+        return
+    at = index + 1
+    if at + 1 < len(words) and _OBJECT_COORDINATION.fullmatch(words[at][2]) and not words[at][3]:
+        shared(at + 1)
+        return
+    determined = False
+    while at < len(words) and _OBJECT_SKIP.fullmatch(words[at][2]) and not words[at][3]:
+        determined = determined or bool(_OBJECT_DETERMINER.fullmatch(words[at][2]))
+        entry["skipped"].append(words[at][2])
+        at += 1
+    entry["determined"] = determined
+    if at >= len(words):
+        if postpositive and at == index + 1:
+            before("clauseEnd")
+        else:
+            entry.update(operand="missing", reason="skipExhausted" if at > index + 1 else "clauseEnd")
+        return
+    follow = words[at][2]
+    if _connective_class(follow) or at in entry["_ranges"]:
+        entry.update(operand="chain", chainAt=at)
+        return
+    if _OBJECT_OPEN_END_AFTER.fullmatch(word) and _OBJECT_OPEN_END.match(masked, words[at][0]):
+        entry.update(operand="openEnd")
+        return
+    conjuncts, cut = _read_conjuncts(words, at, labels, heads, _statement_end(words, at, statements))
+    if conjuncts:
+        entry.update(operand="phrase", conjuncts=conjuncts, cut=cut)
+    else:
+        entry.update(operand="missing", reason="empty")
+
+
+def _designator(word: str, low: int, high: int, temporal: list[tuple[int, int]], noun: str | None = None) -> bool:
+    """A designator: a single letter, a token holding a digit, a spelling-alphabet word, or two letters after a noun
+    that takes them (designationNoun: 'TWY KE') - never a role word, a temporal modifier or temporal vocabulary
+    (designatorNever, or any temporal token of the masked text)."""
+    shaped = bool(_OBJECT_DESIGNATOR.fullmatch(word)) or (
+        noun is not None and bool(re.fullmatch("[A-Z]{2}", word)) and bool(_OBJECT_DESIGNATION_NOUN.fullmatch(noun)))
+    return (shaped and not _OBJECT_DESIGNATOR_NEVER.fullmatch(word) and not _OBJECT_MODIFIER.fullmatch(word)
+            and not _roles_of(word, _OBJECT_ROLES) and not any(start < high and low < end for start, end in temporal))
+
+
+def _mask_classifies(ctx: dict[str, Any], low: int, high: int, object_position: bool) -> bool:
+    """A benign mask classifies a token of a governing connective's operand (benignGovernance.connective: a connective
+    that takes a time) only where no place word licenses temporal content (I7): never (a) where QA514's governance
+    would refuse it directly after the connective - its text begins with a digit or a time word, or after DURING,
+    OUTSIDE, SINCE or WEF holds a digit - while only classified words (place, facility, designated place) stand between
+    it and the connective in the operand's first noun phrase (``object_position``: pre-modifiers do not change the
+    object: 'UNTIL AIRPORT 121.35', 'UNTIL RWY 08R 121.35' are 'UNTIL 121.35'); nor (b) anywhere, when a word of it is
+    a canonical clock (four digits, 0000-2359) or a time designator
+    glued to digits (UTC2865, Z0865) - a designation noun never licenses one ('UNTIL RUNWAY 1000'); unless it is
+    self-evidently not a time (a unit of length, height, speed, mass or angle, a flight level, a position ...)."""
+    if not ctx["governing"]:
+        return True
+    span = ctx["text"][low:high]
+    if _SELF_EVIDENT.search(span):
+        return True
+    if object_position and (_GOVERNED_OBJECT.search(span) or (ctx["period"] and re.search(r"[0-9]", span))):
+        return False
+    return not any(_OBJECT_CANONICAL_CLOCK.fullmatch(word.strip(",.;:()")) for word in span.split(" "))
+
+
+def _compound_classified(kind: str, word: str, low: int, high: int, temporal: list[tuple[int, int]],
+                         noun: str | None) -> bool:
+    """A token joined by a slash or holding a bracketed part ('ALTITUDE/HEIGHT', 'TO/OUTBOUND', 'OCA(H)', 'TWY B/C') is
+    classified when each of its parts is, read as a phrase after the classified noun before it (if any) - coordination
+    and stop words among the parts aside - and one part at least by a role or a designator; never when it holds
+    temporal content."""
+    parts = [part for part in re.split(r"[/()]", word) if part]
+    if len(parts) < 2 or any(start < high and low < end for start, end in temporal):
+        return False
+    words = [(0, 0, part) for part in parts if not (_OBJECT_COORDINATION.fullmatch(part) or _OBJECT_STOP.fullmatch(part))]
+    if not words:
+        return False
+    lead = [(0, 0, noun)] if noun is not None else []
+    classes = [item[3] for item in _classify_np(kind, lead + words, False, [], None)][len(lead):]
+    return all(cls is not None and not cls.endswith("?") for cls in classes) and any(
+        cls.startswith("role:") or cls == "designator" for cls in classes)
+
+
+def _classify_np(kind: str, np: list[tuple[int, int, str]], determined: bool,
+                 temporal: list[tuple[int, int]], ctx: dict[str, Any] | None) -> list[list[Any]]:
+    """Classify every token of one noun phrase (QA520 I7) as [start, end, word, class]; class None is unclassified. A
+    token is classified only by a mask, a designator right after a classified token, the notice's own stated content
+    (anaphora, with a determiner or a period noun in the phrase), a lead modifier right before a notice or permission
+    noun, a role the connective admits, or - not as the head - a modifier role (modifiers); a temporal modifier is
+    resolved by _classify_operand (a place part only when it heads OF and a place). The head is the last content token
+    that is not a designator: English compounds are head-final ('AIRPORT CURFEW' is a curfew)."""
+    admits = _OBJECT_ADMITS[kind]
+    nouns = [role for role in admits if role in _OBJECT_ROLES]
+    content = [word for _, _, word in np if _CONTENT.search(word) and not _OBJECT_FUNCTION.fullmatch(word)]
+    anaphoric = "anaphora" in admits and (determined or any(_OBJECT_ANAPHORA_PERIOD.fullmatch(word) for word in content))
+    out: list[list[Any]] = []
+    previous: str | None = None
+    noun: str | None = None
+    modifiers_only = True  # every content token so far classified: a mask here stands in the object position
+    for position, (low, high, word) in enumerate(np):
+        if not _CONTENT.search(word) or _OBJECT_FUNCTION.fullmatch(word):
+            out.append([low, high, word, "function"])
             continue
-        of_word = None
-        if at < len(words) and _OBJECT_MODIFIER_OF.fullmatch(words[at][2]) and not words[at][3]:
-            after = at + 1
-            while after < len(words) and _OBJECT_SKIP.fullmatch(words[after][2]) and not words[after][3]:
-                after += 1
-            of_word = words[after][2] if after < len(words) else None
-        head = phrase[0][2]
-        item = {"kind": kind, "phrase": phrase, "determined": determined, "of": of_word, "previous": previous,
-                "structured": _is_code(head) and joined is not None and (_is_code(joined) or "#" in joined)}
+        follow = next((later for _, _, later in np[position + 1:]
+                       if _CONTENT.search(later) and not _OBJECT_FUNCTION.fullmatch(later)), None)
+        cls: str | None
+        if "#" in word:
+            cls = "mask" if ctx is None or _mask_classifies(ctx, low, high, modifiers_only and ctx["first"]) else None
+        elif previous is not None and _designator(word, low, high, temporal, noun):
+            cls = "designator"
+        elif anaphoric and _OBJECT_ANAPHORA.fullmatch(word):
+            cls = "anaphora"  # 'DURING THIS PERIOD', 'DRG THE CLOSURE', 'DRG EXER PERIOD'
+        elif _OBJECT_MODIFIER.fullmatch(word):
+            lead = (_OBJECT_LEAD.fullmatch(word) and follow is not None and _OBJECT_LEAD_HEADS.fullmatch(follow)
+                    and _roles_of(follow, nouns))
+            cls = "lead" if lead else "modifier?"  # 'AT SHORT NOTICE'; else resolved by the complement
+        else:
+            roles = _roles_of(word, nouns)
+            modifiers = _roles_of(word, _OBJECT_MODIFIERS[kind]) if not roles else []
+            cls = ("role:" + roles[0]) if roles else ("modifier:" + modifiers[0]) if modifiers else None
+            if cls is None and _compound_classified(kind, word, low, high, temporal, noun if previous is not None else None):
+                cls = "compound"
+        out.append([low, high, word, cls])
+        previous, noun = cls, word
+        modifiers_only = modifiers_only and cls is not None
+    items = [item for item in out if item[3] != "function"]
+    head = next((item for item in reversed(items) if item[3] != "designator"), None)
+    if head is not None and head[3] is not None and head[3].startswith("modifier:"):
+        head[3] = None  # a modifier never classifies a head: 'AFTER ACFT' is no place
+    designated = head is not None and (head[3] == "mask" or (head is not items[-1] and head[3] is not None))
+    for item in items:
+        if item[3] is not None and item[3].startswith("modifier:") and not designated:
+            item[3] = None  # a modifier needs a designated head: 'ACFT STAND 517L', never 'ACFT AIRPORT'
+    return out
+
+
+def _designated_at(content: list[list[Any]], at: int, role: str, text: str, step: int) -> bool:
+    """Whether content[at] is a designated ``role`` word (temporalObject.boundPart), read from the side ``step`` points
+    away from: a mask whose text opens with a word of the role ('RWY 01R'), or a word of the role and its designator -
+    after it ('APCH END RWY 25L': step 1) or before it ('RWY 01R END' as two words: step -1)."""
+    if not 0 <= at < len(content):
+        return False
+    item = content[at]
+    if item[3] == "mask":
+        return bool(_roles_of(text[item[0]:item[1]].split(" ")[0], [role]))
+    pair = (at, at + 1) if step > 0 else (at - 1, at)
+    if not (0 <= pair[0] and pair[1] < len(content)):
+        return False
+    noun, designator = content[pair[0]], content[pair[1]]
+    return noun[3] == f"role:{role}" and designator[3] == "designator"
+
+
+def _classify_operand(entry: dict[str, Any], temporal: list[tuple[int, int]], ctx: dict[str, Any]) -> None:
+    """Classify the operand of a 'phrase' or 'postpositive' entry (QA520 I7): every content token of every conjunct
+    and complement. A temporal modifier is a place part only as the head of OF and a place ('FM BEGINNING OF RWY 19R'),
+    else temporal - or, a word of a boundPart role, bound to a designated place right after or before it ('AT RWY 01R
+    END'); designators of a designated conjunct ('TWY A AND B'); codes only in a structure of codes or in
+    codeAlone form."""
+    kind = entry["kind"]
+    admits = _OBJECT_ADMITS[kind]
+    classified: list[list[list[Any]]] = []
+    for number, conjunct in enumerate(entry["conjuncts"]):
+        tokens = _classify_np(kind, conjunct["words"], entry["determined"] if number == 0 else False, temporal,
+                              {**ctx, "first": number == 0 and ctx["adjacent"]} if ctx is not None else None)
+        content = [item for item in tokens if item[3] != "function"]
+        before = [item for item in classified[-1] if item[3] != "function"] if classified else []
+        if (content and before and all(item[3] is not None for item in before)
+                and all(_designator(item[2], item[0], item[1], temporal) for item in content)):
+            for item in content:
+                item[3] = "designator"  # 'TWY A AND B': B designates the noun of the conjunct before it
+        complement = _classify_np(kind, conjunct["complement"], conjunct["complementDetermined"], temporal,
+                                  {**ctx, "first": False} if ctx is not None else None)
+        head = next((item for item in reversed(content) if item[3] != "designator"), None)
+        if head is not None and head[3] == "modifier?":
+            following = [item for item in complement if item[3] != "function"]
+            noun = next((item for item in reversed(following) if item[3] != "designator"), None)
+            if noun is not None and noun[3] in ("role:place", "mask") and all(
+                    item[3] is not None and not item[3].endswith("?") for item in following):
+                head[3] = "placePart"  # the place's part: 'FM BEGINNING OF RWY 19R', 'AT THE END OF TWY B'
+        if ctx is not None and not any(item[3] != "function" for item in complement):
+            for at, item in enumerate(content):
+                if item[3] != "modifier?":
+                    continue
+                roles = _roles_of(item[2], [role for role in _OBJECT_BOUND_PART if role in admits])
+                if any(_designated_at(content, at - 1, role, ctx["text"], -1) or _designated_at(content, at + 1, role, ctx["text"], 1)
+                       for role in roles):
+                    item[3] = "boundPart"  # the place's part: 'AT RWY 01R END', 'BTN APCH END RWY 25L AND TWY B'
+        for item in tokens + complement:
+            if item[3] == "modifier?":
+                item[3] = None  # 'AFTER LAST FLIGHT', 'UNTIL COMPLETION OF WORKS', 'AFTER RWY END'
+        classified.append(tokens + complement)
+    if "code" in admits:
+        singles = [[item for item in tokens if item[3] != "function"] for tokens in classified]
+        singles = [content[0] for content in singles if len(content) == 1]
+        shaped = [item for item in singles if item[3] == "mask" or (item[3] is None and _is_code(item[2]))]
+        named = [item for item in shaped if item[3] is None]
+        if named and len(shaped) >= 2:
+            for item in named:
+                item[3] = "code"  # a structure of codes: 'BTN ONATI AND POTAS', 'FM RKJY AND RKPS'
+        for tokens in classified:
+            for item in tokens:
+                if item[3] is None and _OBJECT_CODE_ALONE.fullmatch(item[2]):
+                    item[3] = "code"  # a route segment, an ILS identifier, a web address
+    entry["tokens"] = [item for tokens in classified for item in tokens if item[3] != "function"]
+
+
+def _head_view(entry: dict[str, Any], text: str) -> None:
+    """I7 across pre-modifiers: every word or mask of the operand's first noun phrase that holds no digit and stands after
+    classified words (place or other role words, designators, masks) is read again right after the connective, the
+    words before it left out but the sentence's left context kept, masked and searched for temporal content by the same
+    rules ('EXC RWY 08R SUN REFLECTIONS' as 'EXC SUN REFLECTIONS', 'DURING AIRPORT ACTIVATION' as 'DURING ACTIVATION',
+    'ONLY AIRPORT DAY MARKED' as 'ONLY DAY MARKED'); temporal content or a digit left unaccounted there is that token's,
+    and it is unclassified - a pre-modifier never hides it. (A numeric token is governed in its object position by
+    _mask_classifies; a designation noun before it is its own.)"""
+    if not entry["conjuncts"]:
+        return
+    words = entry["conjuncts"][0]["words"]
+    classes = {item[0]: item for item in entry["tokens"]}
+    left = text[:entry["connective"][1]]  # the sentence's own left context, the pre-modifiers left out
+    seen = False
+    for position, (low, high, _word) in enumerate(words):
+        item = classes.get(low)
+        if item is None:
+            continue  # a function word
+        if seen and item[3] != "designator" and not re.search(r"[0-9]", text[low:high]):
+            probe = left + " " + text[low:words[-1][1]]
+            shift = len(left) + 1 - low
+            masked = _mask_benign(probe)
+            found = (_temporal_tokens(masked) + _residue_spans(masked)
+                     + [match.span() for match in _RESIDUE_WORDS.finditer(masked)])
+            if any(start < high + shift and low + shift < end for start, end in found):
+                item[3] = None
+                entry["hidden"].append([low, high])
+        if item[3] is None and entry["restricted"]:
+            return  # unclassified already: the operand is temporal content
+        seen = True
+
+
+def _sentence_ledger(masked: str, text: str, start: int, end: int, temporal: list[tuple[int, int]],
+                     statements: list[tuple[int, int]], heads: set[int], ends: set[int], offset: int,
+                     restricted: bool) -> list[dict[str, Any]]:
+    """The obligations of one sentence: every connective of temporalObject.connectives (and TO/UNTIL/TIL/TILL closing
+    a FROM/FM range, in the range's role) with its operand read - and, in a sentence that holds a restriction
+    (``restricted``), classified."""
+    words = _object_words(masked, start, end)
+    labels = {match.start() for match in _OBJECT_LABEL_AT.finditer(text) if start <= match.start() < end} | ends
+    entries: list[dict[str, Any]] = []
+    by_word: dict[int, int] = {}
+    ranges: set[int] = set()
+    range_at: int | None = None
+    range_entry: int | None = None
+    # the range ends first, so a connective right before one chains to it
+    for index, (_, _, word, _) in enumerate(words):
+        if range_at is not None and index - range_at <= _OBJECT_RANGE_WITHIN and _OBJECT_RANGE_END.fullmatch(word):
+            ranges.add(index)
+        if _OBJECT_RANGE_AFTER.fullmatch(word):
+            range_at = index
+    range_at = None
+    for index, (low, high, word, _closed) in enumerate(words):
+        closes = None
+        if index in ranges:
+            kind: str | None = "spatial"
+            closes = range_entry
+        else:
+            kind = _connective_class(word)
+        if _OBJECT_RANGE_AFTER.fullmatch(word):
+            range_at, range_entry = index, None
+        if kind is None:
+            continue
+        entry: dict[str, Any] = {"index": offset + len(entries), "connective": [low, high], "word": word, "kind": kind,
+                                 "operand": None, "reading": "direct", "reason": None, "determined": False,
+                                 "conjuncts": [], "cut": False, "tokens": [], "unclassified": [], "chain": None,
+                                 "rangeOf": None, "restricted": restricted, "skipped": [], "hidden": [],
+                                 "status": None, "_ranges": ranges}
+        _read_operand(entry, words, index, masked, labels, heads, statements, text)
         if closes is not None:
-            # the two ends of a FROM range: codes (or a mask) on both sides make both a place
-            ends = (closes["phrase"][0][2], head)
-            if all(_is_code(end) or "#" in end for end in ends) and any(_is_code(end) for end in ends):
-                closes["structured"] = item["structured"] = True
-        if opens:
-            range_object = item
-        objects.append(item)
-    return objects
+            entry["rangeOf"] = offset + closes
+        if _OBJECT_RANGE_AFTER.fullmatch(word):
+            range_entry = len(entries)
+        by_word[index] = len(entries)
+        entries.append(entry)
+    for entry in entries:
+        if entry["operand"] == "chain":
+            entry["chain"] = offset + by_word[entry.pop("chainAt")]
+        if entry["operand"] in ("phrase", "postpositive"):
+            before = text[:entry["connective"][1]]
+            ctx = {"text": text, "governing": bool(_GOVERNING_CONNECTIVE.search(before)),
+                   "period": bool(_PERIOD_CONNECTIVE.search(before)),
+                   # QA514's object: right after the connective, at most an article between
+                   "adjacent": all(word in ("THE", "A", "AN") for word in entry["skipped"])}
+            _classify_operand(entry, temporal, ctx)
+            _head_view(entry, text)
+    for entry in entries:
+        # the two single-code ends of a FROM range make both a place ('FROM PUT UNTIL BBS')
+        if entry["rangeOf"] is not None:
+            first = entries[entry["rangeOf"] - offset]
+            ends = [item["tokens"] for item in (first, entry)]
+            if all(len(tokens) == 1 for tokens in ends):
+                pair = [tokens[0] for tokens in ends]
+                if all(item[3] in (None, "mask", "code") and (item[3] == "mask" or _is_code(item[2])) for item in pair) \
+                        and any(item[3] != "mask" for item in pair) and "code" in _OBJECT_ADMITS["spatial"]:
+                    for item in pair:
+                        if item[3] is None:
+                            item[3] = "code"
+    for entry in entries:
+        del entry["_ranges"]
+        entry["conjuncts"] = [{"words": [list(item) for item in conjunct["words"]],
+                               "complement": [list(item) for item in conjunct["complement"]]}
+                              for conjunct in entry["conjuncts"]]
+        if entry["operand"] in ("phrase", "postpositive") and not restricted:
+            # a connective that qualifies no restriction needs its operand, not its operand's classification - but a
+            # mask the governance refuses hides temporal content there, which must be accounted for
+            entry["unclassified"] = [[item[0], item[1]] for item in entry["tokens"]
+                                     if item[3] is None and ("#" in item[2] or [item[0], item[1]] in entry["hidden"])]
+            entry["status"] = "pending" if entry["unclassified"] else "free"
+            if entry["cut"]:
+                entry["status"], entry["reason"] = "undischarged", "cutOff"
+        elif entry["operand"] in ("phrase", "postpositive"):
+            entry["unclassified"] = [[item[0], item[1]] for item in entry["tokens"] if item[3] is None]
+            entry["status"] = "classified" if not entry["unclassified"] else "pending"
+            if not entry["tokens"]:
+                entry["status"], entry["reason"] = "undischarged", "empty"  # 'UNTIL THE.': no content, no operand
+            if entry["cut"]:
+                entry["status"], entry["reason"] = "undischarged", "cutOff"
+        elif entry["operand"] == "openEnd":
+            entry["status"] = "classified" if restricted else "free"
+        elif entry["operand"] == "missing":
+            entry["status"] = "undischarged"
+    return entries
 
 
-def _object_tokens(masked: str, text: str) -> list[tuple[int, int]]:
-    """QA518 I6: the objects of temporal connectives that are temporal content. In a sentence (syntax.clauseBoundary)
-    of the masked syntactic text that holds a restriction, every connective of temporalObject.connectives (and
-    TO/UNTIL/TIL/TILL closing a FROM/FM range, in the range's role) takes as its object the words after it - determiners
-    and prepositions skipped - up to windowWords, an object boundary, a stop word, a restriction verb or a word ending
-    the phrase; a list object (spatial, exception) continues through AND/OR. The object is temporal content - its head a
-    token the grammar must account for - unless it is an open end or _object_is_temporal classifies it by a mask or an
-    admitted role. A connective followed by another connective, a stop word or a boundary has no object of its own.
-    The sentences are found on ``text``, the unmasked syntactic text (a mask may paint over a sentence's period: '4.')
-    of which ``masked`` is the masked copy, character for character."""
-    found: list[tuple[int, int]] = []
+def _connective_ledger(masked: str, text: str, temporal: list[tuple[int, int]], statements: list[tuple[int, int]],
+                       heads: set[int], ends: set[int]) -> list[dict[str, Any]]:
+    """QA520 I8: one obligation per temporal connective of every sentence (sentences found on ``text``, the unmasked
+    syntactic text of which ``masked`` is the masked copy, character for character; a mask may paint over a sentence's
+    period: '4.'). In a sentence that holds a restriction the operand must be accounted for or classified; in any other
+    the connective qualifies no restriction, but it must still have its operand - a connective cut from its operand by a
+    boundary ('DURING. CURFEW, RWY 08R/26L CLSD.') may qualify the restriction across it. Statuses 'pending' and chains
+    are settled by _discharge."""
+    ledger: list[dict[str, Any]] = []
     start = 0
     for boundary in [*_OBJECT_SENTENCE.finditer(text), None]:
         end = boundary.start() if boundary else len(masked)
-        if _OBJECT_RESTRICTION.search(masked[start:end]):
-            for item in _connective_objects(masked, start, end):
-                words = [word for _, _, word in item["phrase"]]
-                if _object_is_temporal(item["kind"], item["determined"], words, item["of"], item["previous"],
-                                       item["structured"]):
-                    found.append(item["phrase"][0][:2])
+        restricted = bool(_OBJECT_RESTRICTION.search(masked[start:end]))
+        ledger.extend(_sentence_ledger(masked, text, start, end, temporal, statements, heads, ends, len(ledger), restricted))
         start = boundary.end() if boundary else len(masked)
-    return found
+    return ledger
+
+
+def _discharge(ledger: list[dict[str, Any]], accounted: Any) -> None:
+    """Settle every obligation: a read operand whose unclassified tokens all lie in accounted statements is accounted
+    for; a chain takes the status of the connective whose operand it shares (chains point forward)."""
+    for entry in ledger:
+        if entry["status"] == "pending":
+            if all(accounted(span) for span in entry["unclassified"]):
+                entry["status"] = "accounted"
+            else:
+                entry["status"], entry["reason"] = "undischarged", "unaccounted"
+    for entry in reversed(ledger):
+        if entry["operand"] == "chain":
+            target = ledger[entry["chain"]]
+            if target["status"] in LEDGER_DISCHARGED:
+                entry["status"] = "chained"
+            else:
+                entry["status"], entry["reason"] = "undischarged", "chainUndischarged"
+
+
+def _free_text_accounting(text: str, field: str | None, entries: list[dict[str, Any]] | None,
+                          validity: Mapping[str, Any] | None,
+                          line_starts: Iterable[int] = (0,)) -> tuple[str | None, list[dict[str, Any]], str]:
+    """The review the free text after the field calls for, or None, with the connective ledger and the masked text
+    (QA506: fail closed; QA510: temporal content is found by SHAPE; QA514: every digit accounted for; QA520 I8: every
+    connective's operand accounted for). Benign spans are masked; every temporal token left - every clock-like shape
+    whatever its values - and EVERY digit left (accountedResidue) must sit in a statement the grammar reads whole and
+    that is accounted for; every obligation of the ledger must be discharged. Both are checked once, at the end, so no
+    path reaches None while a token is unaccounted or an obligation undischarged."""
+    reason = TIMING_REVIEW_REASONS["freeTextConflict"] if field else TIMING_REVIEW_REASONS["freeText"]
+    kept = _benign_spans(text or "", line_starts)
+    masked = _paint(text or "", [(start, end) for start, end, _ in kept])
+    heads = {start for start, _end, name in kept if name in _OBJECT_HEAD_ONLY_MASKS}
+    ends = {start for start, _end, name in kept if name in _OBJECT_END_MASKS}
+    temporal = _temporal_tokens(masked)
+    tokens = temporal + _residue_spans(masked) + [match.span() for match in _RESIDUE_WORDS.finditer(masked)]
+    statements = [(match.start(), match.end(), match.group(0)) for match in _STATEMENT.finditer(masked)]
+    ledger = _connective_ledger(masked, text or "", temporal, [(low, high) for low, high, _ in statements], heads, ends)
+    verdicts: dict[int, bool] = {}
+
+    def accounted(span: Iterable[int]) -> bool:
+        start, end = span
+        for number, (low, high, statement) in enumerate(statements):
+            if low <= start and end <= high:
+                if number not in verdicts:
+                    parsed = _parse_statement(statement, validity) if (validity or {}).get("startsAt") else None
+                    verdicts[number] = parsed is not None and _statement_accounted(
+                        parsed[0], parsed[1], entries if field else None, validity)
+                return verdicts[number]
+        return False
+
+    _discharge(ledger, accounted)
+    unaccounted = [span for span in tokens if not accounted(span)]
+    undischarged = [entry for entry in ledger if entry["status"] not in LEDGER_DISCHARGED]
+    return (reason if unaccounted or undischarged else None), ledger, masked
 
 
 def _free_text_review(text: str, field: str | None, entries: list[dict[str, Any]] | None,
                       validity: Mapping[str, Any] | None, line_starts: Iterable[int] = (0,)) -> str | None:
-    """The review the free text after the field calls for, or None (QA506: fail closed; QA510: temporal content is
-    found by SHAPE; QA514: every digit accounted for). Benign spans are masked; every temporal token left - every
-    clock-like shape whatever its values - and EVERY digit left (accountedResidue) must sit in a statement the grammar
-    reads whole and that is accounted for, else a review. None comes only out of that accounting: free text that,
-    masked, holds no digit and no temporal content of any shape, or whose every statement is proven."""
-    reason = TIMING_REVIEW_REASONS["freeTextConflict"] if field else TIMING_REVIEW_REASONS["freeText"]
-    masked = _mask_benign(text or "", line_starts)
-    tokens = (_temporal_tokens(masked) + _residue_spans(masked)
-              + [match.span() for match in _RESIDUE_WORDS.finditer(masked)] + _object_tokens(masked, text or ""))
-    statements = [(match.start(), match.end(), match.group(0)) for match in _STATEMENT.finditer(masked)]
-    if any(not any(low <= start and end <= high for low, high, _ in statements) for start, end in tokens):
-        return reason
-    for low, high, statement in statements:
-        if not any(low <= start and end <= high for start, end in tokens):
-            continue
-        if not (validity or {}).get("startsAt"):
-            return reason
-        parsed = _parse_statement(statement, validity)
-        if parsed is None or not _statement_accounted(parsed[0], parsed[1], entries if field else None, validity):
-            return reason
-    return None
+    """The review the free text after the field calls for, or None (see _free_text_accounting)."""
+    return _free_text_accounting(text, field, entries, validity, line_starts)[0]
 
 
-def read_lido_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """Item D of a LIDO record: the leading body lines made only of schedule tokens, joined with one space, across
-    line wraps. ``review`` is why the record's timing cannot be read: schedule language this spec does not evaluate, a
-    leading field the grammar cannot read in full, or schedule-bearing language in the free text that is not accounted
-    for (QA506: every temporal token left once the stated benign classes are masked must sit in a statement the grammar
-    reads whole and that is proven equal, on its own, to Item D or to the whole validity). ``validity`` is the record's
-    read_lido_validity() result; without one the record is a validity review."""
+def _read_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] | None,
+                         explain: bool) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """read_lido_schedule_field, and with ``explain`` the free text's accounting: its syntactic text, masked text and
+    connective ledger (QA520 I8), computed on the same path."""
     lines = [text for text in (_field_text(line) for line in body_lines or []) if text]
     line_count = 0
     while line_count < len(lines) and _FIELD_LINE.search(re.sub(r"\.$", "", lines[line_count])):
@@ -908,20 +1376,53 @@ def read_lido_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, A
     for line in lines[line_count:]:
         line_starts.append(bisect.bisect_left(origin, offset))
         offset += len(line) + 1
+    explained: dict[str, Any] | None = None
 
-    def read(review: str | None) -> dict[str, Any]:
-        return {"field": field, "lineCount": line_count, "review": review}
+    def account(field_text: str | None, entries: list[dict[str, Any]] | None,
+                held: Mapping[str, Any] | None) -> str | None:
+        nonlocal explained
+        review, ledger, masked = _free_text_accounting(free_text, field_text, entries, held, line_starts)
+        if explain:
+            explained = {"text": free_text, "masked": masked, "ledger": ledger, "freeTextReview": review}
+        return review
+
+    def read(review: str | None) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        return {"field": field, "lineCount": line_count, "review": review}, explained
 
     if not field:
-        return read(_free_text_review(free_text, None, None, validity, line_starts))
+        return read(account(None, None, validity))
     if _REVIEW_LANGUAGE.search(field):
+        if explain:
+            account(field, None, None)
         return read(TIMING_REVIEW_REASONS["reviewLanguage"])
     if not (validity or {}).get("startsAt"):
-        return read(_free_text_review(free_text, field, None, None, line_starts))
+        return read(account(field, None, None))
     entries, error = parse_schedule_field(field, validity)
     if error:
+        if explain:
+            account(field, None, None)
         return read(error)
-    return read(_free_text_review(free_text, field, entries, validity, line_starts))
+    return read(account(field, entries, validity))
+
+
+def read_lido_schedule_field(body_lines: Iterable[Any], validity: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Item D of a LIDO record: the leading body lines made only of schedule tokens, joined with one space, across
+    line wraps. ``review`` is why the record's timing cannot be read: schedule language this spec does not evaluate, a
+    leading field the grammar cannot read in full, or schedule-bearing language in the free text that is not accounted
+    for (QA506: every temporal token left once the stated benign classes are masked must sit in a statement the grammar
+    reads whole and that is proven equal, on its own, to Item D or to the whole validity; QA520 I8: every temporal
+    connective of a restriction sentence must have its operand accounted for or positively classified). ``validity`` is
+    the record's read_lido_validity() result; without one the record is a validity review."""
+    return _read_schedule_field(body_lines, validity, False)[0]
+
+
+def explain_timing_ledger(body_lines: Iterable[Any], validity: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """QA520 I8: the free text's connective ledger as read_lido_schedule_field computes it - every temporal connective
+    of every restriction sentence with its operand (reading, conjuncts, classified tokens), its status (classified,
+    accounted, chained, undischarged) and why - plus the read itself, the syntactic and masked free text. A read with
+    no review has every obligation discharged (the ledger balances)."""
+    read, explained = _read_schedule_field(body_lines, validity, True)
+    return {**(explained or {"text": "", "masked": "", "ledger": [], "freeTextReview": None}), "read": read}
 
 
 _TOKEN = re.compile(_ascii_digits("|".join([

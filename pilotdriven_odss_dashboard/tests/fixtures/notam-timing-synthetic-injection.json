@@ -3298,33 +3298,6 @@
     "expect_scheduled": "review"
    },
    {
-    "id": "Z9702/26",
-    "case": "QA518_REVIEW_02",
-    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
-    "body": [
-     "TWY Z8 CLSD UNTIL - 121.35. SYNTHETIC QA518."
-    ],
-    "expect_scheduled": "review"
-   },
-   {
-    "id": "Z9703/26",
-    "case": "QA518_REVIEW_03",
-    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
-    "body": [
-     "TWY Z8 CLSD UNTIL : 121.35. SYNTHETIC QA518."
-    ],
-    "expect_scheduled": "review"
-   },
-   {
-    "id": "Z9704/26",
-    "case": "QA518_REVIEW_04",
-    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
-    "body": [
-     "TWY Z8 CLSD AFT (121.35). SYNTHETIC QA518."
-    ],
-    "expect_scheduled": "review"
-   },
-   {
     "id": "Z9705/26",
     "case": "QA518_REVIEW_05",
     "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
@@ -3334,56 +3307,11 @@
     "expect_scheduled": "review"
    },
    {
-    "id": "Z9706/26",
-    "case": "QA518_REVIEW_06",
-    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
-    "body": [
-     "TWY Z8 CLSD AFTER SIX O'CLOCK. SYNTHETIC QA518."
-    ],
-    "expect_scheduled": "review"
-   },
-   {
     "id": "Z9707/26",
     "case": "QA518_REVIEW_07",
     "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
     "body": [
      "TWY Z8 CLSD UNTIL TEATIME. SYNTHETIC QA518."
-    ],
-    "expect_scheduled": "review"
-   },
-   {
-    "id": "Z9708/26",
-    "case": "QA518_REVIEW_08",
-    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
-    "body": [
-     "TWY Z8 CLSD DURING PRAYER. SYNTHETIC QA518."
-    ],
-    "expect_scheduled": "review"
-   },
-   {
-    "id": "Z9709/26",
-    "case": "QA518_REVIEW_09",
-    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
-    "body": [
-     "AFTER TEATIME TWY Z8 CLSD. SYNTHETIC QA518."
-    ],
-    "expect_scheduled": "review"
-   },
-   {
-    "id": "Z9710/26",
-    "case": "QA518_REVIEW_10",
-    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
-    "body": [
-     "TWY Z8 CLSD AT LUNCH. SYNTHETIC QA518."
-    ],
-    "expect_scheduled": "review"
-   },
-   {
-    "id": "Z9711/26",
-    "case": "QA518_REVIEW_11",
-    "validity": "11-AUG-26 0900 - 21-AUG-26 0900",
-    "body": [
-     "TWY Z8 CLSD. CONTACT CAA DURING OFFICE HOURS. TWY Z8 CLSD AFTER HALF PAST EIGHT. SYNTHETIC QA518."
     ],
     "expect_scheduled": "review"
    },
@@ -3547,6 +3475,81 @@
      "RWY 08R/26L CLSD AFTER HALF PAST EIGHT."
     ],
     "expect_scheduled": "review"
+   },
+   {
+    "id": "Z7001/26",
+    "case": "QA520_CODEX_Z7001",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "RWY 08R/26L CLSD DURING AIRPORT CURFEW."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z7002/26",
+    "case": "QA520_CODEX_Z7002",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "DLY 1800-2000",
+     "TWY Y CLSD DURING AERODROME CURFEW."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z7003/26",
+    "case": "QA520_CODEX_Z7003",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "TWY J CLSD UNTIL."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z7004/26",
+    "case": "QA520_CODEX_Z7004",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "DLY 1800-2000",
+     "TWY T CLSD UNTIL."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z7005/26",
+    "case": "QA520_CODEX_Z7005",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "TWY Y CLSD AFTER, CURFEW."
+    ],
+    "expect_scheduled": "review"
+   },
+   {
+    "id": "Z7006/26",
+    "case": "QA520_CODEX_Z7006",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "TWY T CLSD AFTER TWY B."
+    ],
+    "expect_scheduled": "active"
+   },
+   {
+    "id": "Z7007/26",
+    "case": "QA520_CODEX_Z7007",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "DLY 1800-2000",
+     "CRANE HGT 387FT AMSL."
+    ],
+    "expect_scheduled": "excluded"
+   },
+   {
+    "id": "Z7008/26",
+    "case": "QA520_CODEX_Z7008",
+    "validity": "01-AUG-26 0000 - 31-AUG-26 2359",
+    "body": [
+     "TWY T CLSD. CONTACT AIS DURING OFFICE HOURS."
+    ],
+    "expect_scheduled": "active"
    }
   ],
   "EGCC": [

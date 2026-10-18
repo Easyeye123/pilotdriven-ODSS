@@ -35,8 +35,8 @@ from tests import notam_timing_qa514_generators as G
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")
 COMPOSITION = {"records": 71595, "decisions": 357975, "caseDigest": "4424e73331c2b9bfbca8c8ce145d5a01faa43301e3055fc79f324d7bf6c8135a", "decisionDigest": "c32e20749a6114b476a3db4b9b7c6d63e073d1a19970a6767a14ac58c03d2371"}
 FUZZ_SEED = 20261017
-FUZZ_DEFAULT = {"cases": 20000, "decisions": 100000, "caseDigest": "1e3385675a5801211aa85178160173a0eb64e3e0dfa630da946c821d5abb47aa", "decisionDigest": "5aa1e9f673e4ff859fcecbf30657795cd5830be91505e136368f244c59b6be9e"}
-FUZZ_FULL = {"cases": 200000, "decisions": 1000000, "caseDigest": "740cb12c03dd79681cf804cc118514afc3131c5cd6e0220d5883e8cdff2d5911", "decisionDigest": "c6008eaf51e6333d5984c3aef96af29ac4f3066d4019f35dc4b5bcbe3301367f"}
+FUZZ_DEFAULT = {"cases": 20000, "decisions": 100000, "caseDigest": "1e3385675a5801211aa85178160173a0eb64e3e0dfa630da946c821d5abb47aa", "decisionDigest": "dd3cde70f3679affec00ec1231b6b7e6a3821fab6a983a26d0f75953ec37ad61"}
+FUZZ_FULL = {"cases": 200000, "decisions": 1000000, "caseDigest": "740cb12c03dd79681cf804cc118514afc3131c5cd6e0220d5883e8cdff2d5911", "decisionDigest": "e82f92cb53381a948352e7d6afe23543c48abe2fd42c97c652a2b93caf5cb9d1"}
 
 _A = re.ASCII
 # I2, independently: what a span after a temporal connective must show to be benign (QA514 G2: a unit or a head noun

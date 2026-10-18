@@ -32,6 +32,8 @@ DECISIONS = 436248
 # benign mask - a bracketed phrase right after the restriction verb reads as that phrase unbracketed ('TWY J CLSD (SUN
 # GLARE)', '(DAY AND NIGHT MARKED)' are reviews, as without the brackets); a wrapped range ('0800' / '- 1000') still
 # reads as the range.
+# QA520 (18 Oct 2026) moved the conservative count and the digest, never a failure: every connective's operand is
+# accounted for whole (I7/I8) - see output/pd-qa520-timing-20261018/work/moves-qa506.txt.
 CONSERVATIVE_REVIEWS = 2560
 DECISION_DIGEST = "d1c443f616b87f97aa796ea348e156a3b57ab65580ada630acc10bc10c71cf0e"
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")

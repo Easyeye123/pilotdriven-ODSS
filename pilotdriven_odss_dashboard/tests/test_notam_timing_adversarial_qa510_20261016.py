@@ -30,8 +30,11 @@ DECISIONS = 339696
 # QA518 (17 Oct 2026) moved the conservative count and the digest, never a failure: punctuation no longer licenses a
 # benign mask - '(24 HR PPR)', '(48HR PN)', '(1HR PPR)', '(72 HOURS PRIOR NOTICE)' and '(DAY AND NIGHT MARKINGS
 # PROVIDED)' right after the restriction verb read as without their brackets: reviews.
-CONSERVATIVE_REVIEWS = 500
-DECISION_DIGEST = "e0e1dfa8cdac65e4198dd3b5dd5357274021344f9c10e0d22e8da72f6e70eb77"
+# QA520 (18 Oct 2026) moved the conservative count and the digest, never a failure: every connective's operand is
+# accounted for whole (I7/I8) - a point named only by a bare code ('EXPECT TO REACH 3000' AT GUTOR') is classified by
+# no role; see output/pd-qa520-timing-20261018/work/moves-qa510.txt.
+CONSERVATIVE_REVIEWS = 540
+DECISION_DIGEST = "72fdede6e07ee7dfd290cec70bd3a5b97121bdbcf1434cfeca13d3bfe71a9b9c"
 KEYS = ("status", "stateAtReference", "minutesDelta", "outsideBy")
 
 

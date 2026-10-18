@@ -249,8 +249,8 @@ def test_labelled_synthetic_timing_forms_reach_one_verdict_on_every_surface() ->
     _app_root()
     cases = json.loads((ROOT / "tests" / "fixtures" / "notam-timing-synthetic-injection.json").read_text())
     assert cases["label"] == "SYNTHETIC" and cases["base"] == BASE
-    # the labelled synthetic ids: Z9nnn (the census forms) and Codex's QA518 records Z68nn at EGKK
-    failures, policy, compared = _run([corpus / BASE], inject=cases, prefix=("Z9", "Z68"))
+    # the labelled synthetic ids: Z9nnn (the census forms) and Codex's QA518 and QA520 records Z68nn and Z70nn at EGKK
+    failures, policy, compared = _run([corpus / BASE], inject=cases, prefix=("Z9", "Z68", "Z70"))
     print(f"compared {compared} synthetic station notices; open no-reference-station policy differences: {len(policy)}")
     assert compared == 2 * sum(len(rows) for rows in cases["stations"].values())
     assert not failures, f"{len(failures)} cross-surface timing disagreements:\n" + "\n".join(failures[:60])
