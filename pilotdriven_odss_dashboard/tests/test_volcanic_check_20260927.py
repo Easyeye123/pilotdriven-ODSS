@@ -28,6 +28,8 @@ import socket
 import gzip
 import hashlib
 import json
+import tarfile
+import io
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -381,9 +383,18 @@ def test_the_settled_route_pdf_states_the_completed_volcanic_check(monkeypatch, 
 LEGACY_MANIFEST = json.loads((ROOT / "tests/fixtures/saved-analysis-v74-manifest.json").read_text())
 
 
-def _legacy_analysis(case: dict, root: Path) -> tuple[dict, bytes]:
+def _legacy_analysis(case: dict, root: Path, bundle: Path | None = None) -> tuple[dict, bytes]:
     path = root / case["file"]
-    raw = gzip.decompress(path.read_bytes())  # Required input: missing/corrupt files must fail, never silently skip.
+    if bundle is None:
+        compressed = path.read_bytes()
+    else:
+        with tarfile.open(bundle, "r:") as archive:
+            matches = [member for member in archive.getmembers() if member.name == case["file"]]
+            assert len(matches) == 1 and matches[0].isfile(), f"Missing or ambiguous historical fixture: {case['file']}"
+            compressed = archive.extractfile(matches[0]).read()
+    # Required input: missing/corrupt files fail in local and container runs alike.
+    assert hashlib.sha256(compressed).hexdigest() == case["compressed_sha256"], f"Historical fixture changed: {path}"
+    raw = gzip.decompress(compressed)
     assert hashlib.sha256(raw).hexdigest() == case["sha256"], f"Historical fixture changed: {path}"
     return json.loads(raw), raw
 
@@ -401,7 +412,9 @@ def test_a_saved_v74_pack_reopens_with_the_composed_check_and_the_checklist(case
 
     _block_network(monkeypatch)
     root = Path(os.environ.get("PILOTDRIVEN_PRIVATE_CFP_CORPUS_DIR", str(CORPUS))) / "saved-analysis-v74"
-    analysis, raw = _legacy_analysis(case, root)
+    bundle_value = os.environ.get("PILOTDRIVEN_SAVED_ANALYSIS_BUNDLE")
+    bundle = Path(bundle_value) if bundle_value else None
+    analysis, raw = _legacy_analysis(case, root, bundle)
     stored = analysis["view"]["briefing"]
     assert stored["publication_rules"] == LEGACY_MANIFEST["publication_rules"]
     assert "coverage_receipt" not in stored and "check" not in (stored.get("vaa") or {})
@@ -416,7 +429,7 @@ def test_a_saved_v74_pack_reopens_with_the_composed_check_and_the_checklist(case
     rows = {row["key"]: row for row in rebuilt["coverage_receipt"]["rows"]}
     assert rows["vaa_vaac"]["detail"] == check["line"]
     assert "atc_fir_calls" in rows
-    assert gzip.decompress((root / case["file"]).read_bytes()) == raw
+    assert _legacy_analysis(case, root, bundle)[1] == raw
 
 
 def test_missing_historical_input_fails_instead_of_skipping(tmp_path):
@@ -429,3 +442,24 @@ def test_modified_historical_input_fails_instead_of_becoming_an_oracle(tmp_path)
     (tmp_path / case["file"]).write_bytes(gzip.compress(b'{}', mtime=0))
     with pytest.raises(AssertionError, match="Historical fixture changed"):
         _legacy_analysis(case, tmp_path)
+
+
+@pytest.mark.parametrize("damage", ["missing_bundle", "missing_member", "duplicate", "link", "modified"])
+def test_build_bundle_damage_fails_without_falling_back_to_local_inputs(tmp_path, damage):
+    case = LEGACY_MANIFEST["cases"][0]
+    bundle = tmp_path / "bundle.tar"
+    if damage != "missing_bundle":
+        with tarfile.open(bundle, "w") as archive:
+            count = 2 if damage == "duplicate" else 1
+            for _ in range(count):
+                member = tarfile.TarInfo("unrelated.json.gz" if damage == "missing_member" else case["file"])
+                if damage == "link":
+                    member.type = tarfile.SYMTYPE
+                    member.linkname = "/outside"
+                    archive.addfile(member)
+                else:
+                    content = gzip.compress(b'{}', mtime=0)
+                    member.size = len(content)
+                    archive.addfile(member, io.BytesIO(content))
+    with pytest.raises((FileNotFoundError, AssertionError)):
+        _legacy_analysis(case, CORPUS / "saved-analysis-v74", bundle)

@@ -25,3 +25,12 @@ and missing/modified-input failure checks.
 
 Run `python -m pytest -q tests/test_volcanic_check_20260927.py` with the private
 corpus mounted. No live provider access is needed.
+
+The guarded release packages exactly the manifest's files into
+`.private-build-inputs/saved-analysis-v74.tar` inside the encrypted private source
+archive. This directory is excluded from Git and Docker COPY. CodeBuild supplies
+the tar as a required BuildKit secret to the pytest stage; the tests read it via
+`PILOTDRIVEN_SAVED_ANALYSIS_BUNDLE` without extraction. A checksum build argument
+invalidates cached test results when bundle bytes change. All compressed and raw
+fixture hashes are still checked. The runtime image receives neither this bundle
+nor the full test tree; the build verifies the private input paths are absent.

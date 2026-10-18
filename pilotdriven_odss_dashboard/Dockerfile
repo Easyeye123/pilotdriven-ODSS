@@ -81,7 +81,13 @@ FROM source AS test
 USER root
 RUN pip install --no-cache-dir -r requirements-dev.txt
 USER 1000:1000
-RUN python -m pytest -q && touch /tmp/odss-tests-passed
+# Secret contents alone do not invalidate Docker's cache. Bind the test result
+# to the bundle checksum as well as the copied source and pinned manifest.
+ARG SAVED_ANALYSIS_BUNDLE_SHA256
+RUN --mount=type=secret,id=saved_analyses,target=/run/secrets/saved-analysis-v74.tar,uid=1000,gid=1000,required=true \
+    printf '%s  %s\n' "$SAVED_ANALYSIS_BUNDLE_SHA256" /run/secrets/saved-analysis-v74.tar | sha256sum --check --status \
+    && PILOTDRIVEN_SAVED_ANALYSIS_BUNDLE=/run/secrets/saved-analysis-v74.tar python -m pytest -q \
+    && touch /tmp/odss-tests-passed
 
 FROM dependencies AS runtime
 

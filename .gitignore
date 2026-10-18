@@ -13,3 +13,4 @@ pilotdriven_odss_dashboard/tests/fixtures/reference-briefs/
 
 # Private CFP corpus, including a symlink mount, is never committed
 /private_cfp_corpus
+pilotdriven_odss_dashboard/.private-build-inputs/

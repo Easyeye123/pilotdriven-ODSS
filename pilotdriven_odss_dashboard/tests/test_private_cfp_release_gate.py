@@ -127,7 +127,10 @@ def test_metadata_contract_rejects_pdf_headers_or_unbounded_history(content):
 def test_odss_runtime_image_is_reachable_only_through_the_full_pytest_stage():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
-    assert "RUN python -m pytest -q" in dockerfile
+    test_stage = dockerfile.split("FROM source AS test", 1)[1].split("FROM dependencies AS runtime", 1)[0]
+    assert "python -m pytest -q" in test_stage
+    assert "&& touch /tmp/odss-tests-passed" in test_stage
+    assert "--mount=type=secret" in test_stage and "required=true" in test_stage
     assert "COPY --from=test /tmp/odss-tests-passed" in dockerfile
 
 
