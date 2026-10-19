@@ -136,6 +136,14 @@ python -m compileall -q app
 pytest -q
 ```
 
+The container build runs the same complete suite with `python -m pytest -q -n 4
+--dist loadfile`. Four independent processes use the build host's four CPUs;
+each test file stays on one worker. This leaves time for the mandatory image
+security scan within the observed build limit. No tests or corpus cases are
+filtered. Use the same command locally when four workers fit the machine's
+memory budget; plain `pytest -q` remains sequential. The parallel runner is a
+development dependency and is not installed in the runtime image.
+
 The regression suite covers upload validation, failed reruns, last-known-good artifacts, NOTAM applicability and priority, route-coordinate parsing, conditional three/four-page Level 1 generation, volcanic-ash time/level/geometry and antimeridian checks, visual output, actual takeoff anchoring, waypoint-ATA re-anchoring, personal-note CRUD and report placement.
 
 GitHub Actions also generates Level 1 and Level 2 visual sample PDFs as build artifacts for visual inspection.

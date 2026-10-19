@@ -84,10 +84,13 @@ RUN pip install --no-cache-dir -r requirements-dev.txt
 USER 1000:1000
 # The private corpus is a read-only build context, not a credential-sized secret.
 # Bind the test result to its checksum and never copy this input into a layer.
+# Four independent worker processes fit the build host's CPU budget. Keep each
+# test file together so its fixtures and tests retain their sequential order.
+# The complete collected suite still gates the marker; no tests are filtered.
 ARG SAVED_ANALYSIS_BUNDLE_SHA256
 RUN --mount=type=bind,from=saved_analyses,source=saved-analysis-v74.tar,target=/run/private-test-inputs/saved-analysis-v74.tar,readonly \
     printf '%s  %s\n' "$SAVED_ANALYSIS_BUNDLE_SHA256" /run/private-test-inputs/saved-analysis-v74.tar | sha256sum --check --status \
-    && PILOTDRIVEN_SAVED_ANALYSIS_BUNDLE=/run/private-test-inputs/saved-analysis-v74.tar python -m pytest -q \
+    && PILOTDRIVEN_SAVED_ANALYSIS_BUNDLE=/run/private-test-inputs/saved-analysis-v74.tar python -m pytest -q -n 4 --dist loadfile \
     && touch /tmp/odss-tests-passed
 
 FROM dependencies AS runtime
