@@ -93,12 +93,13 @@ def test_the_weather_page_taf_field_keeps_whole_groups_and_states_the_rest() -> 
 
 @pytest.mark.parametrize("label,tafs,expect_whole", [
     ("KJFK 11 FM groups (control: whole, as before)", {"KJFK": fm_taf(11)}, True),
-    ("KJFK 12 FM groups", {"KJFK": fm_taf(12)}, False),
-    ("KJFK 14 FM groups", {"KJFK": fm_taf(14)}, False),
-    ("KJFK 18 FM groups", {"KJFK": fm_taf(18)}, False),
+    # Measured column widths now retain these formerly deferred records whole.
+    ("KJFK 12 FM groups", {"KJFK": fm_taf(12)}, True),
+    ("KJFK 14 FM groups", {"KJFK": fm_taf(14)}, True),
+    ("KJFK 18 FM groups", {"KJFK": fm_taf(18)}, True),
     ("KJFK 32 FM groups", {"KJFK": fm_taf(32)}, False),
-    ("KJFK 16 mixed FM/TEMPO/PROB30/BECMG groups", {"KJFK": mixed_taf(16)}, False),
-    ("WSSS and KJFK 14 FM groups each", {"KJFK": fm_taf(14), "WSSS": fm_taf(14, "21")}, False),
+    ("KJFK 16 mixed FM/TEMPO/PROB30/BECMG groups", {"KJFK": mixed_taf(16)}, True),
+    ("WSSS and KJFK 14 FM groups each", {"KJFK": fm_taf(14), "WSSS": fm_taf(14, "21")}, True),
 ])
 def test_a_long_taf_renders_six_conforming_pages_with_whole_groups_and_a_stated_deferral(label, tafs, expect_whole, tmp_path_factory) -> None:
     payload = sq24(tmp_path_factory)

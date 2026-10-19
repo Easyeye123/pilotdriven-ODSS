@@ -412,6 +412,47 @@ def row_widths(cards: list[Card], full_width: float) -> list[float]:
     return [usable * card.width_weight / total for card in cards]
 
 
+def balanced_row_widths(cards: list[Card], full_width: float, body: float,
+                        leading: float) -> list[float]:
+    """Give spare width to the taller of two text cards, measuring both.
+
+    Fixed grid weights can refuse a page while the adjacent column has room.
+    Search around the height crossover without changing paragraphs, fonts or
+    padding. Title wrapping/font steps make height slightly non-monotonic, so
+    retain the best *measured* candidate, including the original geometry.
+    This is a bounded improvement, not a claim of a globally optimal packing.
+    Figures and other row structures keep their declared geometry.
+    """
+    widths = row_widths(cards, full_width)
+    if len(cards) != 2 or any(card.kind != "text" for card in cards):
+        return widths
+    usable = full_width - GAP
+    minima = [max(56.0, 20 + CARD_TITLE +
+                  (stringWidth(card.tag, "Helvetica-Bold", LABEL) + 12 if card.tag else 0))
+              for card in cards]
+    low, high = minima[0], usable - minima[1]
+    if low >= high:
+        return widths
+    candidates = []
+
+    def measure(left):
+        heights = [card_height(card, width, body, leading)
+                   for card, width in zip(cards, (left, usable - left))]
+        candidates.append((max(heights), sum(heights), abs(left - widths[0]), left))
+        return heights
+
+    measure(widths[0])
+    while high - low > 0.01:
+        middle = (low + high) / 2
+        left_height, right_height = measure(middle)
+        if left_height > right_height:
+            low = middle
+        else:
+            high = middle
+    left = min(candidates)[-1]
+    return [left, usable - left]
+
+
 # The page-6 FIR / COMMUNICATION card quotes each row's conditions; its deferral
 # ladder may cut them (operational section builder, FIR_STEPS).
 _VALIDITY_CLAUSE = re.compile(r"validity .+: (?:covers this crossing|outside this crossing|not evaluable) \(at [^)]*\)")
@@ -568,7 +609,8 @@ def _primary_and_next_valued_call(lines: list[dict], primary: dict | None) -> li
 
 def plan_page(title: str, bookmark: str, rows: list[tuple[Any, list[Card]]], *,
               ribbon_index: int = 0, assurance: str = "", aliases: tuple[str, ...] = (),
-              body: float = BODY, leading: float = LEADING) -> list[Page]:
+              body: float = BODY, leading: float = LEADING,
+              balance_columns: bool = False) -> list[Page]:
     """Fit the reference grid at a readable size; never spill source text.
 
     A row height may be a fixed number, ``None`` (measured from its content)
@@ -582,8 +624,11 @@ def plan_page(title: str, bookmark: str, rows: list[tuple[Any, list[Card]]], *,
     budget = TOP - BOTTOM - GAP * (len(rows) - 1)
     lows: list[float] = []
     highs: list[float] = []
+    measured_widths: list[list[float]] = []
     for height, cards in rows:
-        widths = row_widths(cards, full_width)
+        widths = (balanced_row_widths(cards, full_width, body, leading) if balance_columns
+                  else row_widths(cards, full_width))
+        measured_widths.append(widths)
         needed = max([card_height(card, width, body, leading)
                       for card, width in zip(cards, widths)] or [0.0])
         if height is None:
@@ -613,8 +658,7 @@ def plan_page(title: str, bookmark: str, rows: list[tuple[Any, list[Card]]], *,
     if slack > 0 and heights:
         heights = [height + slack / len(heights) for height in heights]
     top = TOP
-    for (_, cards), height in zip(rows, heights):
-        widths = row_widths(cards, full_width)
+    for (_, cards), height, widths in zip(rows, heights, measured_widths):
         x = MARGIN
         for card, width in zip(cards, widths):
             if card.kind == "stack":
@@ -630,7 +674,8 @@ def plan_page(title: str, bookmark: str, rows: list[tuple[Any, list[Card]]], *,
     return [page]
 
 
-def plan_page_flexible(title, bookmark, rows_for, *, variants=(0,), steps=None, **kwargs) -> list[Page]:
+def plan_page_flexible(title, bookmark, rows_for, *, variants=(0,), steps=None,
+                       balance_columns: bool = False, **kwargs) -> list[Page]:
     """Try each grid variant on the readable body ladder before failing closed.
 
     Column width, not type size, is the first lever: a dense source-bound card
@@ -638,17 +683,21 @@ def plan_page_flexible(title, bookmark, rows_for, *, variants=(0,), steps=None, 
     steps below the published readable floor. ``steps``, when given, is an
     outermost content-deferral ladder the page owner interprets (page 1: how
     many trailing TAF change groups go to the WEATHER page); step 0 is the
-    whole content and is exhausted across every grid and size first.
+    whole content and is exhausted across every grid and size first. When
+    enabled, measured column balancing is tried after the original layouts
+    and before advancing to any content-deferral step.
     """
     last: ValueError | None = None
     for step in (steps if steps is not None else (None,)):
-        for variant in variants:
-            for body, leading in BODY_LADDER:
-                try:
-                    rows = rows_for(body, leading, variant) if step is None else rows_for(body, leading, variant, step)
-                    return plan_page(title, bookmark, rows, body=body, leading=leading, **kwargs)
-                except ValueError as exc:
-                    last = exc
+        for balance in ((False, True) if balance_columns else (False,)):
+            for variant in variants:
+                for body, leading in BODY_LADDER:
+                    try:
+                        rows = rows_for(body, leading, variant) if step is None else rows_for(body, leading, variant, step)
+                        return plan_page(title, bookmark, rows, body=body, leading=leading,
+                                         balance_columns=balance, **kwargs)
+                    except ValueError as exc:
+                        last = exc
     raise last
 
 
@@ -2078,6 +2127,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         "WEATHER / ROUTE HAZARDS", "sec_hazard", weather_rows, ribbon_index=4,
         aliases=("sec_hazards", "sec_weather"), variants=tuple(range(len(weather_grids))),
         steps=range(len(WEATHER_DEFER_LADDER)),
+        balance_columns=True,
         assurance="WEATHER SOURCE REVIEW | COVERAGE GAPS ARE NOT NIL | LIVE PRODUCTS CONTROL")
 
     # ---------------------------------------------------------------- page 6
