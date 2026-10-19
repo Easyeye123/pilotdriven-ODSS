@@ -1,7 +1,7 @@
 {
-  "publication_rules": "2026-10-18-operand-boundaries-v113",
+  "publication_rules": "2026-10-20-measured-weather-columns-v114",
   "enroute_contact_rule": "enroute-contact-v16",
   "extraction_rules": "2026-10-18-operand-boundaries-v24",
   "publication_format": "six-page-reference-briefing-2026-09-19",
-  "minted": "2026-10-18 QA520 continuation on the unpublished v112/v23 candidate: spatial study-reference metadata and comma-coordinated clause boundaries. Every operand token and connective remains accounted for. Publication v113, extraction v24, timing spec notam-timing-2026-10-18-v10. Table cells, printable form and enroute-contact unchanged. Old saved analyses are older extractions; do not rewrite their bytes. Local verification and production acceptance are separate. See continuation DONECHECK for receipts."
+  "minted": "2026-10-20: measured two-column weather layout uses adjacent spare space before any existing content deferral. Full retained SQ302 weather now fits six pages at the unchanged readable floor. Publication v114; extraction v24 and timing v10 are unchanged. Saved analysis bytes remain immutable; server PDF cache is renewed. Tests and live acceptance are recorded separately."
 }
