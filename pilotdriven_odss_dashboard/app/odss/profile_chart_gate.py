@@ -31,11 +31,37 @@ def _crop_box_valid(value: Any) -> bool:
     return x1 > x0 and y1 > y0
 
 
+def is_proposed_profile_finding(finding: dict[str, Any]) -> bool:
+    """True only for a complete controlled profile proposal.
+
+    The engine emits a ``chart_number`` finding for every selected profile,
+    including partial-coverage candidates (``coverage_complete`` is False)
+    that still need review. The chart loader serves only complete controlled
+    matches, so a partial candidate has no artifact to embed and must not be
+    treated as a proposed approved chart. Legacy findings that omit the
+    coverage/reference fields remain proposals for backward compatibility;
+    only an explicit incomplete or non-controlled marker demotes a finding
+    to candidate status.
+    """
+    if finding.get("engine") != "depressurisation":
+        return False
+    data = finding.get("data") or {}
+    if not _text(data.get("chart_number")):
+        return False
+    if "coverage_complete" in data and data.get("coverage_complete") is not True:
+        return False
+    if "reference_status" in data:
+        reference_status = data.get("reference_status")
+        if reference_status not in (None, "", "controlled-index-loaded"):
+            return False
+    return True
+
+
 def _matched_profile_numbers(findings: list[dict[str, Any]]) -> list[str]:
     """Return each proposed approved profile number once, in report order."""
     numbers: list[str] = []
     for finding in findings:
-        if finding.get("engine") != "depressurisation":
+        if not is_proposed_profile_finding(finding):
             continue
         chart_number = _text((finding.get("data") or {}).get("chart_number"))
         if chart_number and chart_number not in numbers:

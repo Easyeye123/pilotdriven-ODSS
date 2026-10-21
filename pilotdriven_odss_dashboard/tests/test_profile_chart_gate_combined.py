@@ -62,6 +62,23 @@ def test_combined_report_requires_valid_crop_box() -> None:
     )
 
 
+def test_combined_partial_candidate_does_not_require_a_chart() -> None:
+    findings = [
+        {
+            "engine": "depressurisation",
+            "data": {
+                "chart_number": "10-5",
+                "coverage_complete": False,
+                "reference_status": "controlled-index-loaded",
+            },
+        }
+    ]
+    assert validate_depressurisation_profile_charts({}, findings, "combined") == []
+    assert validate_depressurisation_profile_charts(
+        {}, findings, "flight-briefing"
+    ) == []
+
+
 def test_combined_report_accepts_validated_cropped_chart() -> None:
     flight = {"depressurisation_profile_charts": [_artifact()]}
     assert validate_depressurisation_profile_charts(

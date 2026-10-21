@@ -7061,10 +7061,9 @@ def _terrain_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _matched_profiles(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        f for f in findings
-        if f.get("engine") == "depressurisation" and (f.get("data") or {}).get("chart_number")
-    ]
+    from .profile_chart_gate import is_proposed_profile_finding
+
+    return [f for f in findings if is_proposed_profile_finding(f)]
 
 
 def _terrain_profile_width(full_width: float, *, image_count: int) -> float:

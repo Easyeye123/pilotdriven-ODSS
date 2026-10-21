@@ -6,6 +6,8 @@ from datetime import datetime
 import re
 from typing import Any, Iterable
 
+from .profile_chart_gate import is_proposed_profile_finding
+
 
 _FILENAME_RE = re.compile(r"^[A-Z0-9]+_[0-9]{2}[A-Z]{3}[0-9]{4}_Flight_Briefing\.pdf$")
 _PROHIBITED_TERMS = (
@@ -242,9 +244,7 @@ def required_source_crop_categories(
     if "edto" in engines or edto.get("entry_actm_minutes") is not None:
         required.add("EDTO")
     if any(
-        item.get("engine") == "depressurisation"
-        and _text((item.get("data") or {}).get("chart_number"))
-        for item in findings_list
+        is_proposed_profile_finding(item) for item in findings_list
     ):
         required.add("DEPRESSURISATION")
     return required
@@ -335,8 +335,7 @@ def _matched_profile_numbers(findings: Iterable[dict[str, Any]]) -> set[str]:
     return {
         _text((item.get("data") or {}).get("chart_number"))
         for item in findings
-        if item.get("engine") == "depressurisation"
-        and _text((item.get("data") or {}).get("chart_number"))
+        if is_proposed_profile_finding(item)
     }
 
 

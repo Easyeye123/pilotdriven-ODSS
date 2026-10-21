@@ -134,6 +134,53 @@ def test_level2_artifact_contract_publishes_actual_report_page() -> None:
     assert "level2_report_anchor" not in artifacts[0]
 
 
+def test_partial_coverage_candidate_does_not_require_a_chart() -> None:
+    # SQ302 regression: engine selects Profile 10-4 for only part of the
+    # route (coverage_complete=False). The loader serves no chart for a
+    # partial candidate, so the gate must not fail the whole briefing.
+    findings = [
+        {
+            "engine": "depressurisation",
+            "data": {
+                "chart_number": "10-4",
+                "coverage_complete": False,
+                "reference_status": "controlled-index-loaded",
+            },
+        }
+    ]
+
+    assert validate_depressurisation_profile_charts({}, findings, 1) == []
+    assert validate_depressurisation_profile_charts({}, findings, 2) == []
+    assert validate_depressurisation_profile_charts({}, findings, "combined") == []
+
+
+def test_mixed_partial_and_complete_only_enforces_complete() -> None:
+    findings = [
+        {
+            "engine": "depressurisation",
+            "data": {
+                "chart_number": "10-4",
+                "coverage_complete": False,
+                "reference_status": "controlled-index-loaded",
+            },
+        },
+        {
+            "engine": "depressurisation",
+            "data": {
+                "chart_number": "8-5",
+                "coverage_complete": True,
+                "reference_status": "controlled-index-loaded",
+            },
+        },
+    ]
+
+    with pytest.raises(DepressurisationProfileChartPublicationError) as captured:
+        validate_depressurisation_profile_charts({}, findings, 1)
+
+    locations = {item["location"] for item in captured.value.violations}
+    assert locations == {"depressurisation_profile_charts[8-5]"}
+
+
 def test_unmatched_high_terrain_without_a_proposed_profile_does_not_require_a_chart() -> None:
     findings = [
         {

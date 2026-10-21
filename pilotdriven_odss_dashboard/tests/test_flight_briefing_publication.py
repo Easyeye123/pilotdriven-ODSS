@@ -326,6 +326,29 @@ def test_required_mel_and_depressurisation_source_crops_fail_closed() -> None:
     assert "REQUIRED_SOURCE_CROP_MISSING" in _codes(captured.value)
 
 
+def test_partial_profile_candidate_does_not_require_chart_or_crop() -> None:
+    # SQ302 regression: partial-coverage candidate must not fail the
+    # combined publication gate or demand a source crop.
+    from copy import deepcopy
+
+    flight = _flight()
+    flight["depressurisation_profile_charts"] = []
+    findings = _findings()
+    for item in findings:
+        if item.get("engine") == "depressurisation":
+            item["data"] = {
+                "chart_number": "8-3",
+                "coverage_complete": False,
+                "reference_status": "controlled-index-loaded",
+            }
+    manifest = deepcopy(_manifest())
+    manifest["source_crops"] = [
+        crop for crop in manifest["source_crops"]
+        if crop["category"] != "DEPRESSURISATION"
+    ]
+    assert validate_flight_briefing_publication(flight, findings, manifest) == []
+
+
 def test_matched_profile_requires_combined_analysis_and_cropped_chart() -> None:
     flight = _flight()
     flight["depressurisation_profile_charts"][0]["combined_cropped_source_chart_embedded"] = False
