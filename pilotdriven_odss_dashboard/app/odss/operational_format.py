@@ -33,6 +33,7 @@ from .analysed_briefing_content import (cyclone_content, deferred_item_label,
 from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
 from .constants import format_actm
+from .source_status import source_status_met, source_status_words
 from .fuel_rows import contingency_label
 from .page_one_weather import page_one_taf_field_continued, forecast_source_line, page_one_metar_field, page_one_taf_field, weather_page_taf_field
 from .enroute_contact import (compose_enroute_contact, crossing_sequence_limited, has_printed_values, is_call_line,
@@ -502,19 +503,17 @@ def checklist_lines(rows: list[dict[str, Any]], mode: str = "whole") -> list[str
             *([f"Open: {open_items}."] if open_items else [])]
 
 
-SOURCE_ASSURANCE_WORDS = {"NOT REACHED": "not reached", "PARTIAL": "partial", "NOT QUERIED": "not queried",
-                          "NOT SETTLED": "not settled"}
-
-
 def source_assurance_line(entries: list[dict[str, Any]]) -> str:
     """The page-6 source line. It used to name only the OFP's sources, so "every listed source record is held" printed
-    while the live VA SIGMET feed and every responsible VAAC were unreached; each source is listed with its own state."""
+    while the live VA SIGMET feed and every responsible VAAC were unreached; each source is listed with its own state.
+
+    ITEM2-VOLCANIC: each status prints in its own words from the one vocabulary (source_status.py). A reached feed whose
+    answer was not current printed "not reached", and any status outside a four-word table printed "not held"."""
     grouped: dict[str, list[str]] = {}
     for row in entries:
-        status = str(row.get("status") or "").upper()
-        if status in {"HELD", "REACHED"}:
+        if source_status_met(row.get("status")):
             continue
-        grouped.setdefault(SOURCE_ASSURANCE_WORDS.get(status, "not held"), []).append(text(row.get("source")))
+        grouped.setdefault(source_status_words(row.get("status")), []).append(text(row.get("source")))
     if not grouped:
         return "SOURCE ASSURANCE: every listed source is held or reached."
     return "SOURCE ASSURANCE: " + "; ".join(f"{', '.join(names)} {word}" for word, names in grouped.items()) + "."

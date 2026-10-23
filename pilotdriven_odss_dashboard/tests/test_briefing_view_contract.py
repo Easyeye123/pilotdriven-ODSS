@@ -1937,6 +1937,9 @@ def test_cfp_weather_count_excludes_live_enrichment_without_source_pages() -> No
     assert cfp_assurance == {
         "source": "OFP WEATHER",
         "status": "HELD",
+        # ITEM2-VOLCANIC: every row carries the two facts its status is composed from.
+        "reach": "HELD",
+        "qualifiers": [],
         "detail": "2 parsed bulletin record(s).",
     }
     departure_panel = next(

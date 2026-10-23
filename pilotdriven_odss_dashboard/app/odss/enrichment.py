@@ -664,110 +664,169 @@ def ofp_volcano_records(flight: dict[str, Any]) -> list[dict[str, Any]]:
     return records
 
 
+# ITEM2-VOLCANIC (24 Oct 2026): a NOTAM printed under a FIR or area heading,
+# not under a "VAA <volcano>" heading, is a volcano notice when its own text is
+# about volcanic ash and names the volcano. The name is read only from the
+# notice's own wording - never from a list of known volcanoes.
+_VOLCANIC_ASH_TEXT = re.compile(
+    r"\b(?:VOLCANIC\s+ASH|ASHTAM|ASH\s+ADVISORY|VA\s+CLD|VA\s+ERUPTION)\b",
+)
+_VOLCANO_NAME_FORMS = (
+    # "ERUPTION OF MOUNT KRAKATAU", "ERUPTION OF VOLCANO KANLAON"
+    re.compile(r"\bERUPTION\s+OF\s+(?:THE\s+)?(?:MOUNT|MT\.?|VOLCANO)\s+(?P<name>[A-Z][A-Z'-]{2,})\b"),
+    # VAA field "VOLCANO: KRAKATAU 262000"
+    re.compile(r"\bVOLCANO:\s*(?P<name>[A-Z][A-Z' -]{1,40}?)\s+\d{6}\b"),
+    # ASHTAM item C) "C)KRAKATAU 602-00"
+    re.compile(r"(?:^|\s)C\)\s*(?P<name>[A-Z][A-Z' -]{1,40}?)\s+\d{3}-?\d{2}\b"),
+)
+
+
+def _volcano_named_in(text: str) -> str | None:
+    for form in _VOLCANO_NAME_FORMS:
+        match = form.search(text)
+        if match:
+            return " ".join(match.group("name").split()).upper()
+    return None
+
+
 def _parse_cfp_volcano_advisories(
     pages: list[str],
     fallback: datetime,
 ) -> list[dict[str, Any]]:
-    """Capture the CFP's named ``VAA <volcano>`` notice blocks verbatim.
+    """Capture the CFP's volcano notices verbatim.
 
     These are notice-package volcano advisories, not VA SIGMET bulletins.
     Keeping them in a separate source projection prevents an unavailable
     live VA-SIGMET feed from erasing advisory text that is physically held
     in the uploaded CFP, or from being presented as the same product.
+
+    ITEM2-VOLCANIC (24 Oct 2026): the reader went page by page and kept one
+    NOTAM per "VAA <volcano>" heading, so the genuine corpus lost notices four
+    ways - a heading printed at the foot of a page with its notice on the next
+    (SQ910 BULUSAN), every NOTAM after the first under one heading (two Darwin
+    VAAC ash advisories on SQ223), a notice's text running onto the next page
+    (four ASHTAMs cut, one at "E)ORANGE ALERT" before its ash levels), and a
+    volcanic-ash NOTAM printed under its FIR heading with no VAA heading
+    (SQ882 10 Sep, Mount Krakatau). The OFP is now read as one stream with the
+    page furniture removed at page joins (the NOTAM readers' own stream); a
+    VAA heading owns every NOTAM until the next heading; and a NOTAM in the
+    NOTAM section whose own text is about volcanic ash and names its volcano
+    is a notice of that volcano.
     """
+    from .parser import _notam_section_lines
+
+    stream = _notam_section_lines(pages, (0, len(pages)))
+    bounds = _notam_section_bounds(pages)
+    notam_pages = set(range(bounds[0] + 1, bounds[1] + 1)) if bounds else set()
+    count = len(stream)
+
+    def section(page_number: int) -> int:
+        """Before, inside or after the NOTAM section: a notice never runs across a section boundary."""
+        if not bounds or page_number <= bounds[0]:
+            return 0
+        return 1 if page_number in notam_pages else 2
+
+    def substantive(index: int) -> int:
+        while index < count and not stream[index][1]:
+            index += 1
+        return index
+
+    def starts_block(index: int) -> bool:
+        """A heading of the next block: a VAA heading, a title bar, an area/airport heading or an underlined line."""
+        text = stream[index][1]
+        if _VOLCANO_ADVISORY_HEADING.fullmatch(text) or re.fullmatch(r"={3,}", text):
+            return True
+        if re.fullmatch(
+            r"(?:AREA\s+.+|(?:DEPARTURE|DESTINATION|ALTERNATE|ENROUTE)\s+AIRPORT(?:\(S\)|S)?\s*:?)",
+            text,
+            re.IGNORECASE,
+        ):
+            return True
+        # An underlined line opens a block only when a NOTAM declaration follows its rule (the former per-page rule),
+        # so a dashed separator inside a notice never cuts it.
+        following = substantive(index + 1)
+        after_rule = substantive(following + 1)
+        return (
+            not re.fullmatch(r"[-=]{3,}", text)
+            and following < count
+            and re.fullmatch(r"-{3,}", stream[following][1]) is not None
+            and after_rule < count
+            and _NOTAM_START.match(stream[after_rule][1]) is not None
+        )
+
     advisories: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
-    for page_number, page in enumerate(pages, start=1):
-        lines = page.splitlines()
-        index = 0
-        while index < len(lines):
-            heading = _VOLCANO_ADVISORY_HEADING.fullmatch(lines[index].strip())
-            if not heading:
-                index += 1
-                continue
-            declaration_index = index + 1
-            while (
-                declaration_index < len(lines)
-                and (
-                    not lines[declaration_index].strip()
-                    or re.fullmatch(r"[-=]{3,}", lines[declaration_index].strip())
-                )
+    heading: str | None = None
+    # The first NOTAM after a "VAA <volcano>" heading is that volcano's notice by layout. A later NOTAM under the
+    # same heading is one only by its own text - its volcanic-ash wording naming a volcano, or the heading's
+    # volcano - because LIDO also prints unrelated notices after a volcano block with no heading between them.
+    heading_owns_next = False
+    index = 0
+    while index < count:
+        page_number, text = stream[index]
+        if not text or re.fullmatch(r"[-=]{3,}", text):
+            index += 1
+            continue
+        named = _VOLCANO_ADVISORY_HEADING.fullmatch(text)
+        if named:
+            heading = named.group("volcano").strip().upper()
+            heading_owns_next = True
+            index += 1
+            continue
+        declaration = _NOTAM_START.match(text)
+        if declaration is None:
+            if starts_block(index):
+                heading = None
+                heading_owns_next = False
+            index += 1
+            continue
+
+        body_lines: list[str] = []
+        cursor = index + 1
+        while cursor < count:
+            stripped = stream[cursor][1]
+            if _NOTAM_START.match(stripped) or (stripped and starts_block(cursor)):
+                break
+            if section(stream[cursor][0]) != section(page_number) or stripped in {"NOTAM", "INTAM"}:
+                break
+            if (
+                stripped
+                and not re.fullmatch(r"[-=]{3,}", stripped)
+                and not stripped.startswith(("SIA ", "Page "))
             ):
-                declaration_index += 1
-            declaration = (
-                _NOTAM_START.match(lines[declaration_index].strip())
-                if declaration_index < len(lines)
-                else None
+                body_lines.append(stripped)
+            cursor += 1
+        body = " ".join(body_lines).strip()
+        by_heading = heading is not None and heading_owns_next
+        heading_owns_next = False
+        volcano = heading if by_heading else None
+        if volcano is None and heading is not None and re.search(rf"\b{re.escape(heading)}\b", body):
+            volcano = heading
+        if volcano is None and (heading is not None or page_number in notam_pages) and _VOLCANIC_ASH_TEXT.search(body):
+            volcano = _volcano_named_in(body)
+        notam_id = declaration.group("id").upper()
+        key = (volcano or "", notam_id)
+        if volcano and body and key not in seen:
+            valid_from, valid_to, validity_parsed = _parse_validity(
+                declaration.group("validity"),
+                fallback,
             )
-            if declaration is None:
-                index += 1
-                continue
-
-            body_lines: list[str] = []
-            cursor = declaration_index + 1
-            while cursor < len(lines):
-                stripped = lines[cursor].strip()
-                if _VOLCANO_ADVISORY_HEADING.fullmatch(stripped):
-                    break
-                if _NOTAM_START.match(stripped):
-                    break
-                # Named airspace blocks need not carry an ICAO/FIR heading.
-                # Keep their title out of the volcano notice too, but require
-                # the underline and next NOTAM declaration as evidence.
-                if stripped and cursor + 1 < len(lines) and re.fullmatch(
-                    r"[-=]{3,}", lines[cursor + 1].strip(),
-                ):
-                    next_declaration = cursor + 2
-                    while next_declaration < len(lines) and not lines[next_declaration].strip():
-                        next_declaration += 1
-                    if next_declaration < len(lines) and _NOTAM_START.match(lines[next_declaration].strip()):
-                        break
-                # A named FIR heading starts the next NOTAM block.  Without
-                # this boundary the final VAA on a page can absorb unrelated
-                # FIR notices until the footer, corrupting both the evidence
-                # text and the generated weather page.
-                if (
-                    re.fullmatch(r"[A-Z]{4}\s+.+\bFIR", stripped)
-                    and cursor + 1 < len(lines)
-                    and re.fullmatch(r"[-=]{3,}", lines[cursor + 1].strip())
-                ):
-                    break
-                if re.fullmatch(
-                    r"(?:AREA\s+.+|(?:DEPARTURE|DESTINATION|ALTERNATE|ENROUTE)\s+AIRPORT(?:\(S\)|S)?\s*:?)",
-                    stripped,
-                    re.IGNORECASE,
-                ):
-                    break
-                if (
-                    stripped
-                    and not re.fullmatch(r"[-=]{3,}", stripped)
-                    and not stripped.startswith(("SIA ", "Page "))
-                ):
-                    body_lines.append(stripped)
-                cursor += 1
-
-            body = " ".join(body_lines).strip()
-            volcano = heading.group("volcano").strip().upper()
-            notam_id = declaration.group("id").upper()
-            key = (volcano, notam_id)
-            if body and key not in seen:
-                valid_from, valid_to, validity_parsed = _parse_validity(
-                    declaration.group("validity"),
-                    fallback,
-                )
-                advisories.append({
-                    "advisory_kind": "CFP_VAA_NOTICE",
-                    "volcano": volcano,
-                    "notam_id": notam_id,
-                    "text": body,
-                    "valid_from_utc": valid_from.isoformat(),
-                    "valid_to_utc": valid_to.isoformat() if valid_to else None,
-                    "validity_review": not validity_parsed,
-                    "source_page": page_number,
-                    "volcano_position": _cfp_volcano_position(body, volcano),
-                })
-                seen.add(key)
-            index = max(cursor, index + 1)
+            advisories.append({
+                "advisory_kind": "CFP_VAA_NOTICE",
+                "volcano": volcano,
+                "notam_id": notam_id,
+                "text": body,
+                "valid_from_utc": valid_from.isoformat(),
+                "valid_to_utc": valid_to.isoformat() if valid_to else None,
+                "validity_review": not validity_parsed,
+                "source_page": page_number,
+                "volcano_position": _cfp_volcano_position(body, volcano),
+                # How the notice was recognised: under its "VAA <volcano>"
+                # heading, or by its own volcanic-ash wording.
+                "recognised_by": "vaa_heading" if by_heading else "notice_text",
+            })
+            seen.add(key)
+        index = cursor
     return advisories
 
 def _notam_section_bounds(pages: list[str]) -> tuple[int, int] | None:

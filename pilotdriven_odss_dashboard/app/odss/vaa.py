@@ -19,7 +19,7 @@ from shapely.geometry import LineString, MultiPolygon, Polygon, mapping
 from shapely.ops import split
 
 from .snapshot_governance import govern_snapshot, mark_snapshot_reused
-from .vaac_areas import responsible_vaac_centres
+from .vaac_areas import responsible_vaac_centres, waypoint_firs
 
 
 AWC_ISIGMET_URL = "https://aviationweather.gov/api/data/isigmet?format=json"
@@ -35,6 +35,11 @@ AWC_SUPPORTED_HAZARDS = frozenset({
     "VA",
 })
 _SURFACE_BASE_WHEN_OMITTED = frozenset({"DS", "SS", "TC", "TS"})
+# AWC Data API: "Most endpoints return a maximum of 400 entries". A response
+# that size may have been cut by the provider; it is never read as complete
+# (ITEM2-VOLCANIC, 24 Oct 2026).
+AWC_MAX_RESULTS = 400
+AWC_CAP_WARNING = f"response_at_provider_cap:{AWC_MAX_RESULTS}"
 _CACHE_LOCK = Lock()
 # The live path stores one governed receipt for the shared AWC endpoint. Hazard
 # projections are filtered from that receipt so a single analysis never makes
@@ -312,6 +317,9 @@ def fetch_awc_snapshot(
                 else f"record_{index}:{warning}"
             )
 
+    if len(payload) >= AWC_MAX_RESULTS:
+        parse_warnings.append(AWC_CAP_WARNING)
+
     response_date = None
     try:
         if response.headers.get("date"):
@@ -469,6 +477,38 @@ def _planned_levels(
         current_level = change_by_index.get(index, current_level)
         levels.append(current_level)
     return levels, unresolved
+
+
+def _segment_level_ranges(
+    waypoints: list[dict[str, Any]],
+    levels: list[int | None],
+) -> list[tuple[int, int] | None]:
+    """The planned flight-level range flown on each route segment.
+
+    ITEM2-VOLCANIC (24 Oct 2026): every segment used to be evaluated at its
+    cruise level, so the climb from departure to TOC and the descent from TOD
+    to arrival were screened as if flown at cruise - a SFC/FL100 ash SIGMET
+    over the climb-out read as no crossing. The OFP prints its own TOC and TOD
+    route points; a segment before TOC spans the ground up to the level held at
+    TOC, a segment after TOD the ground up to the level held at TOD. Without a
+    printed TOC/TOD the segments keep their cruise level (no profile is
+    invented).
+    """
+    names = [_normalized_waypoint_name(waypoint) for waypoint in waypoints]
+    toc = names.index("TOC") if "TOC" in names else None
+    tod = len(names) - 1 - names[::-1].index("TOD") if "TOD" in names else None
+    ranges: list[tuple[int, int] | None] = []
+    for index in range(max(0, len(waypoints) - 1)):
+        level = levels[index]
+        if toc is not None and index < toc and levels[toc] is not None:
+            ranges.append((0, int(levels[toc])))
+        elif tod is not None and index >= tod and levels[tod] is not None:
+            ranges.append((0, int(levels[tod])))
+        elif level is None:
+            ranges.append(None)
+        else:
+            ranges.append((int(level), int(level)))
+    return ranges
 
 
 def _flight_anchor(flight: dict[str, Any]) -> datetime | None:
@@ -682,8 +722,10 @@ def evaluate_vaa(
         result["reason_codes"].append("flight_level_change_unresolved")
         result["unresolved_level_anchors"] = unresolved_level_anchors
 
+    level_ranges = _segment_level_ranges(waypoints, levels)
     matches: list[dict[str, Any]] = []
     matched_features: dict[str, dict[str, Any]] = {}
+    expiring: dict[str, dict[str, Any]] = {}
     for segment_index, (start, end) in enumerate(zip(waypoints, waypoints[1:])):
         start_actm = int(start["actm_minutes"])
         end_actm = int(end["actm_minutes"])
@@ -692,28 +734,35 @@ def evaluate_vaa(
             continue
         segment_start = anchor + timedelta(minutes=start_actm)
         segment_end = anchor + timedelta(minutes=end_actm)
-        flight_level = levels[segment_index]
-        if flight_level is None:
+        level_range = level_ranges[segment_index]
+        if level_range is None:
             continue
+        flight_level = level_range[1]
         for advisory in snapshot.get("advisories") or []:
             valid_from = _utc(advisory.get("valid_from_utc"))
             valid_to = _utc(advisory.get("valid_to_utc"))
             if not valid_from or not valid_to:
                 result["reason_codes"].append("advisory_time_unavailable")
                 continue
-            if not _intervals_touch_or_overlap(
+            in_time = _intervals_touch_or_overlap(
                 segment_start,
                 segment_end,
                 valid_from,
                 valid_to,
-            ):
+            )
+            # A SIGMET in force now that ends before the flight reaches its
+            # area says nothing about that area at passage time; when the route
+            # and level cross it, the passage is held as unresolved (no
+            # successor SIGMET is held), never as "no crossing".
+            expires_first = valid_to < segment_start
+            if not in_time and not expires_first:
                 continue
             lower_level = advisory.get("lower_flight_level")
             upper_level = advisory.get("upper_flight_level")
             if lower_level is None or upper_level is None:
                 result["reason_codes"].append("advisory_level_unavailable")
                 continue
-            if not int(lower_level) <= flight_level <= int(upper_level):
+            if int(upper_level) < level_range[0] or int(lower_level) > level_range[1]:
                 continue
             try:
                 intersects = _segment_intersects_geometry(
@@ -727,6 +776,19 @@ def evaluate_vaa(
             if not intersects:
                 continue
             advisory_id = str(advisory.get("advisory_id") or default_advisory_id)
+            if not in_time:
+                expiring.setdefault(advisory_id, {
+                    "advisory_id": advisory_id,
+                    "hazard_code": advisory.get("hazard"),
+                    "fir_id": advisory.get("fir_id"),
+                    "route_segment_index": segment_index,
+                    "route_from": _normalized_waypoint_name(start),
+                    "route_to": _normalized_waypoint_name(end),
+                    "segment_start_utc": _iso(segment_start),
+                    "advisory_valid_to_utc": advisory.get("valid_to_utc"),
+                    "planned_level_range": list(level_range),
+                })
+                continue
             matches.append({
                 "advisory_id": advisory_id,
                 "hazard_code": advisory.get("hazard"),
@@ -739,6 +801,7 @@ def evaluate_vaa(
                 "segment_start_utc": _iso(segment_start),
                 "segment_end_utc": _iso(segment_end),
                 "planned_flight_level": flight_level,
+                "planned_level_range": list(level_range),
                 "advisory_valid_from_utc": advisory.get("valid_from_utc"),
                 "advisory_valid_to_utc": advisory.get("valid_to_utc"),
                 "advisory_lower_flight_level": lower_level,
@@ -809,6 +872,9 @@ def evaluate_vaa(
 
     result["matches"] = matches
     result["hazard_features"] = list(matched_features.values())
+    result["expiring_on_route"] = list(expiring.values())
+    if expiring:
+        result["reason_codes"].append("route_sigmet_expires_before_passage")
     if matches:
         result["status"] = "affected"
         result["reason_codes"] = sorted(set(result["reason_codes"] + ["verified_intersection"]))
@@ -1208,7 +1274,14 @@ def build_direct_vaa_source_review(
         for waypoint in waypoints
         if waypoint.get("fir_boundary")
     ]
-    responsibility = responsible_vaac_centres(route_points, route_firs)
+    # ITEM2-VOLCANIC: each placed point also carries the FIR the OFP's own boundary sequence puts it in.
+    point_firs = [
+        fir
+        for waypoint, fir in zip(waypoints, waypoint_firs(waypoints))
+        if isinstance(waypoint.get("latitude"), (int, float))
+        and isinstance(waypoint.get("longitude"), (int, float))
+    ]
+    responsibility = responsible_vaac_centres(route_points, route_firs, point_firs)
     responsible = [
         str(centre).strip().upper()
         for centre in responsibility.get("centres") or []
@@ -1263,6 +1336,11 @@ def build_direct_vaa_source_review(
             "reached": status in {"available", "partial"},
             "advisory_count": len(centre_advisories),
             "source_url": (snapshot or {}).get("source_url"),
+            # ITEM2-VOLCANIC: when the answer was received and the issue window it was asked for, so its currency for
+            # this flight is a held fact (volcanic_check.answer_currency), not an assumption.
+            "retrieved_at_utc": (snapshot or {}).get("retrieved_at_utc"),
+            "requested_issue_window_start_utc": (snapshot or {}).get("requested_issue_window_start_utc"),
+            "requested_issue_window_end_utc": (snapshot or {}).get("requested_issue_window_end_utc"),
             "freshness_status": (snapshot or {}).get("freshness_status"),
             "listing_latest_utc": (snapshot or {}).get("listing_latest_utc"),
             "next_advisory_due": (snapshot or {}).get("next_advisory_due"),
@@ -1312,12 +1390,23 @@ def build_direct_vaa_source_review(
             for receipt in receipts
             if not receipt["reached"]
         ]
+        # A centre that answered with failures is reached but incomplete; the line says so instead of "all reached".
+        incomplete = [
+            str(receipt["centre"])
+            for receipt in receipts
+            if receipt["reached"] and receipt["status"] != "available"
+        ]
         responsible_line = (
             f"Responsible for this route: {named}"
             + (
                 " - all reached"
                 if not missing
                 else f" - NOT reached: {', '.join(missing)} (review gap)"
+            )
+            + (
+                f"; answered incompletely: {', '.join(incomplete)}"
+                if incomplete
+                else ""
             )
             + (
                 "; boundary segments need review"
@@ -1345,6 +1434,9 @@ def build_direct_vaa_source_review(
         "responsibility_review_required": responsibility_review_required,
         "unresolved_route_points": int(
             responsibility.get("unresolved_points") or 0
+        ),
+        "shared_boundary_points": int(
+            responsibility.get("shared_boundary_points") or 0
         ),
         "responsibility_source": responsibility.get("source"),
         "official_advisory_count": len(advisories),

@@ -67,11 +67,16 @@ def flight(points: list[tuple[float, float]]) -> dict:
     }
 
 
-def feed(advisories: list[dict] | None = None, *, status: str = "available", freshness: str = "fresh") -> dict:
-    """SIMULATED: the international VA SIGMET feed's answer (current active SIGMETs only, as the live provider)."""
+def feed(advisories: list[dict] | None = None, *, status: str = "available", freshness: str = "fresh",
+         retrieved: str = "2026-07-22T03:55:00+00:00") -> dict:
+    """SIMULATED: the international VA SIGMET feed's answer (current active SIGMETs only, as the live provider).
+
+    ITEM2-VOLCANIC: an answer is only current for a flight when it was retrieved in the window it can cover, so a
+    simulated answer is stamped at the time it would have been asked (5 min before the synthetic flight's departure,
+    or 30 min before a genuine flight's)."""
     return {
         "schema_version": "1.0", "provider": "noaa-awc-international-sigmet", "source_url": "https://aviationweather.gov",
-        "status": status, "retrieved_at_utc": "2026-07-22T03:55:00+00:00", "coverage_status": "current_active_sigmets",
+        "status": status, "retrieved_at_utc": retrieved, "coverage_status": "current_active_sigmets",
         "coverage_start_utc": None, "coverage_end_utc": None, "freshness_status": freshness,
         "advisories": advisories or [], "parse_warnings": [], "raw_sha256": "simulated",
     }
@@ -90,6 +95,8 @@ def centres(answers: dict[str, tuple[str, int]]) -> tuple[list[dict], list[dict]
     """SIMULATED: per-centre VAAC answers {centre: (status, advisory count)} and the matching mounted list."""
     snapshots = [
         {"centre": centre, "provider": f"sim-{centre.lower()}", "status": status, "coverage_status": "simulated",
+         # Every live connector stamps its answer (ITEM2-VOLCANIC: currency for the flight is a held fact).
+         "retrieved_at_utc": "2026-07-22T03:55:00+00:00",
          "advisories": [{"advisory_number": f"2026/{i:03d}", "issued_at_utc": "2026-07-22T02:00:00+00:00",
                          "volcano": "SIMULATED", "raw_sha256": f"{centre}{i}"} for i in range(count)]}
         for centre, (status, count) in answers.items() if status != "not_mounted"
@@ -113,7 +120,9 @@ def view_of(route: dict, feed_snapshot: dict | None, answers: dict[str, tuple[st
 
 
 EQUATOR = [(0.0, 100.0), (0.0, 110.0)]           # DARWIN's area, settled
-PACIFIC = [(0.0, 110.0), (35.0, 140.0), (47.0, 160.0), (45.0, 170.0)]   # DARWIN, TOKYO, unsettled band, ANCHORAGE
+# DARWIN, TOKYO, TOKYO (the Kuril band, settled since ITEM2-VOLCANIC), ANCHORAGE (Oakland Oceanic north of the split),
+# and one point no row of Doc 9766 assigns by coordinates: Edmonton FIR north of N60 with no FIR named on the route.
+PACIFIC = [(0.0, 110.0), (35.0, 140.0), (47.0, 160.0), (45.0, 170.0), (63.0, -130.0)]
 BOX = [[104.0, -2.0], [106.0, -2.0], [106.0, 2.0], [104.0, 2.0], [104.0, -2.0]]
 
 
@@ -177,7 +186,9 @@ def test_an_unsettled_responsibility_keeps_a_fully_reached_pacific_route_unresol
     assert check["unsettled_points"] == 1
     assert check["state"] == "UNRESOLVED"
     assert "all reached; no advisory held; responsibility unsettled for 1 route point" in check["line"]
-    assert assurance(view)["RESPONSIBLE VAACS"]["status"] == "PARTIAL"
+    # ITEM2-VOLCANIC: every centre answered, so the reach is REACHED; the unsettled point is its own qualifier. PARTIAL
+    # (some centres not reached) used to stand for both facts.
+    assert assurance(view)["RESPONSIBLE VAACS"]["status"] == "REACHED · NOT SETTLED"
 
 
 def test_partial_reach_names_the_centres_not_reached():
@@ -220,31 +231,39 @@ def _block_network(monkeypatch):
     monkeypatch.setattr(socket, "create_connection", blocked)
 
 
-def _sources(monkeypatch, scenario: str, crossing_at: tuple[float, float] | None = None):
+def _sources(monkeypatch, scenario: str, crossing_at: tuple[float, float] | None = None,
+             retrieved: str = "2026-07-22T03:55:00+00:00"):
     """Production source configuration, with every provider answer SIMULATED in-process for ``scenario``:
     blocked (every fetch fails), reached_empty (every source answers with nothing), crossing (a VA SIGMET box
-    across ``crossing_at``, valid all day)."""
+    across ``crossing_at``, valid all day). Every answer is stamped ``retrieved``."""
     _block_network(monkeypatch)
     monkeypatch.setenv("ODSS_VA_SIGMET_SOURCE", "awc")
     monkeypatch.setenv("ODSS_VAAC_ADVISORY_SOURCE", PROD_VAAC)
 
     def live(hazard_code: str = "VA") -> dict:
         if scenario == "blocked":
-            return {**feed(status="unavailable"), "error": "network blocked (test)"}
+            return {**feed(status="unavailable", retrieved=retrieved), "error": "network blocked (test)"}
         advisories = []
         if scenario == "crossing" and crossing_at:
             lat, lon = crossing_at
             ring = [[lon - 1, lat - 1], [lon + 1, lat - 1], [lon + 1, lat + 1], [lon - 1, lat + 1], [lon - 1, lat - 1]]
             advisories = [{**crossing(ring), "valid_from_utc": "2026-01-01T00:00:00+00:00", "valid_to_utc": "2026-12-31T00:00:00+00:00"}]
-        return feed(advisories)
+        return feed(advisories, retrieved=retrieved)
 
     def mounted_answers(_flight, mounted):
         status = "unavailable" if scenario == "blocked" else "available"
         return [{"centre": entry["centre"], "provider": entry.get("provider"), "status": status,
-                 "coverage_status": "simulated", "advisories": []} for entry in mounted]
+                 "coverage_status": "simulated", "advisories": [], "retrieved_at_utc": retrieved}
+                for entry in mounted]
 
     monkeypatch.setattr(vaa_module, "live_vaa_snapshot", live)
     monkeypatch.setattr(vaa_module, "fetch_mounted_vaac_snapshots", mounted_answers)
+
+
+def _asked_before(parsed: dict) -> str:
+    """When a briefing for the genuine flight would have asked its sources: 30 min before scheduled departure."""
+    departure = datetime.fromisoformat(parsed["scheduled_departure_utc"])
+    return (departure - timedelta(minutes=30)).isoformat()
 
 
 def genuine_view(monkeypatch, name: str, scenario: str) -> dict:
@@ -256,7 +275,7 @@ def genuine_view(monkeypatch, name: str, scenario: str) -> dict:
     pages = extract_pages(source)
     parsed = parse_lido(pages, name)
     points = [(w["latitude"], w["longitude"]) for w in parsed["route_waypoints"] if w.get("latitude") is not None]
-    _sources(monkeypatch, scenario, points[len(points) // 2])
+    _sources(monkeypatch, scenario, points[len(points) // 2], retrieved=_asked_before(parsed))
     vaa_module.assess_volcanic_ash(parsed, pages)
     return build_briefing_view(parsed, [], [])
 
@@ -265,19 +284,25 @@ def genuine_view(monkeypatch, name: str, scenario: str) -> dict:
 def test_genuine_pacific_routes_with_every_live_source_failed_are_unavailable_and_named(monkeypatch, name):
     check = genuine_view(monkeypatch, name, "blocked")["vaa"]["check"]
     assert check["state"] == "UNAVAILABLE"
-    assert {"ANCHORAGE", "TOKYO"} <= set(check["responsible"]), check["responsible"]
+    assert {"ANCHORAGE", "TOKYO", "WASHINGTON"} <= set(check["responsible"]), check["responsible"]
     assert check["reached"] == []
-    # The encoded Doc 9766 table leaves the Kuril/Kamchatka band and the NE Pacific unassigned on these routes.
-    assert check["unsettled_points"] > 0
+    # The 21 Aug encoding left the Kuril/Kamchatka band and the NE Pacific unassigned on these routes; ITEM2-VOLCANIC
+    # encodes the Oakland Oceanic / Anchorage FIR boundaries Doc 9766 bounds those rows by, and both are settled.
+    assert check["unsettled_points"] == 0
     assert "VA SIGMET feed: not reached" in check["line"]
-    assert ": none reached; responsibility unsettled for" in check["line"]
+    assert ": none reached" in check["line"]
 
 
 @pytest.mark.parametrize("name", [SQ34, SQ38])
 def test_genuine_pacific_routes_fully_reached_stay_unresolved(monkeypatch, name):
-    check = genuine_view(monkeypatch, name, "reached_empty")["vaa"]["check"]
+    view = genuine_view(monkeypatch, name, "reached_empty")
+    check = view["vaa"]["check"]
     assert check["state"] == "UNRESOLVED"
-    assert "all reached; no advisory held; responsibility unsettled for" in check["line"]
+    assert "all reached; no advisory held" in check["line"]
+    # Settled and fully reached, but the routes end in US domestic FIRs, whose VA SIGMETs the international feed
+    # does not carry: never a clear check.
+    assert check["feed_status"] == "REACHED · COVERAGE GAP"
+    assert "are not in this feed" in check["line"]
 
 
 def test_genuine_sq38_volcano_notice_is_a_notice_not_held_products(monkeypatch):
@@ -316,7 +341,8 @@ def genuine_pdf_text(monkeypatch, tmp_path: Path, name: str, scenario: str) -> l
     for key in ("ODSS_DIRECT_SIGMET_SOURCES", "ODSS_TCA_ADVISORY_SOURCE", "ODSS_WEATHER_CHART_MODEL"):
         monkeypatch.setenv(key, "")
     monkeypatch.setenv("ODSS_DATA_DIR", str(tmp_path / "data"))
-    _sources(monkeypatch, scenario)
+    from app.odss.parser import extract_pages, parse_lido
+    _sources(monkeypatch, scenario, retrieved=_asked_before(parse_lido(extract_pages(source), name)))
     result = run_odss_analysis(source, tmp_path / "results", tmp_path / "reports", 1)
     import json
     analysis = json.loads(Path(result["analysis_path"]).read_text())

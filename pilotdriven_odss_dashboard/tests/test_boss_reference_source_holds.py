@@ -95,6 +95,9 @@ def test_source_assurance_hides_internal_cfp_storage_filename():
     assert uploaded_ofp == {
         "source": "UPLOADED OFP",
         "status": "HELD",
+        # ITEM2-VOLCANIC: every row carries the two facts its status is composed from.
+        "reach": "HELD",
+        "qualifiers": [],
         "detail": "SQ482 source package bound to this analysis.",
     }
     assert "cfp_" not in uploaded_ofp["detail"].lower()

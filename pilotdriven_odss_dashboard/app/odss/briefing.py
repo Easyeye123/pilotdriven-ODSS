@@ -45,6 +45,7 @@ from .notam_restriction_line import (
 )
 from .enrichment import ofp_volcano_records
 from .route_anchors import drawn_aerodromes, resolve_route_endpoints, unplaced_endpoint_statements
+from .source_status import HELD, NOT_HELD, source_row
 from .volcanic_check import volcanic_ash_check
 from .pilot_briefing import (
     normalize_notam_references,
@@ -3358,21 +3359,22 @@ def _vaac_reach_summary(flight: dict[str, Any]) -> dict[str, Any]:
     else:
         # Legacy saved analyses predate the explicit source contract.  Preserve
         # their deterministic Doc 9766 projection without changing old files.
-        from .vaac_areas import responsible_vaac_centres
+        from .vaac_areas import responsible_vaac_centres, waypoint_firs
 
         waypoints = flight.get("route_waypoints") or []
-        route_points = [
-            (waypoint.get("latitude"), waypoint.get("longitude"))
-            for waypoint in waypoints
+        placed = [
+            (waypoint, fir)
+            for waypoint, fir in zip(waypoints, waypoint_firs(waypoints))
             if isinstance(waypoint.get("latitude"), (int, float))
             and isinstance(waypoint.get("longitude"), (int, float))
         ]
+        route_points = [(waypoint.get("latitude"), waypoint.get("longitude")) for waypoint, _ in placed]
         route_firs = [
             waypoint.get("fir_boundary")
             for waypoint in waypoints
             if waypoint.get("fir_boundary")
         ]
-        responsibility = responsible_vaac_centres(route_points, route_firs)
+        responsibility = responsible_vaac_centres(route_points, route_firs, [fir for _, fir in placed])
         reached_names = {
             str(item.get("centre") or "").upper()
             for item in ledger
@@ -5661,61 +5663,66 @@ def _source_assurance_projection(
         else "Source package bound to this analysis."
     )
     rows = [
-        {
-            "source": "UPLOADED OFP",
-            "status": "HELD",
-            # The storage document_id can be an internal cfp_<uuid>.pdf name.
-            # It is useful for audit storage, but never for a pilot-facing PDF.
-            "detail": uploaded_ofp_detail,
-        },
-        {
-            "source": "AIRPORT NOTICES",
-            "status": "HELD" if selected_notams else "NOT HELD",
-            "detail": f"{selected_notams} parsed source record(s).",
-        },
-        {
-            "source": "ROUTE AIRSPACE NOTICES",
-            "status": "HELD" if route_airspace.get("record_count") else "NOT HELD",
-            "detail": (
+        # The storage document_id can be an internal cfp_<uuid>.pdf name.
+        # It is useful for audit storage, but never for a pilot-facing PDF.
+        source_row("UPLOADED OFP", HELD, [], uploaded_ofp_detail),
+        source_row(
+            "AIRPORT NOTICES",
+            HELD if selected_notams else NOT_HELD,
+            [],
+            f"{selected_notams} parsed source record(s).",
+        ),
+        source_row(
+            "ROUTE AIRSPACE NOTICES",
+            HELD if route_airspace.get("record_count") else NOT_HELD,
+            [],
+            (
                 f"{route_airspace.get('record_count')} source record(s) - "
                 f"{route_airspace.get('source_page_text')}; applicability not inferred."
                 if route_airspace.get("record_count")
                 else "No bounded route-airspace notice is held in this parsed view."
             ),
-        },
-        {
-            "source": "OFP WEATHER",
-            "status": "HELD" if weather_records else "NOT HELD",
-            "detail": f"{weather_records} parsed bulletin record(s).",
-        },
-        {
-            "source": "OFP VOLCANO ADVISORIES",
-            "status": "HELD" if volcanic_advisories else "NOT HELD",
-            "detail": f"{len(volcanic_advisories)} named advisory record(s).",
-        },
+        ),
+        source_row(
+            "OFP WEATHER",
+            HELD if weather_records else NOT_HELD,
+            [],
+            f"{weather_records} parsed bulletin record(s).",
+        ),
+        source_row(
+            "OFP VOLCANO ADVISORIES",
+            HELD if volcanic_advisories else NOT_HELD,
+            [],
+            f"{len(volcanic_advisories)} named advisory record(s).",
+        ),
         # VOLCANIC-CHECK-436: this list used to name only the OFP's volcanic
         # sources, so "every listed source record is held" printed while the
         # live VA SIGMET feed and every responsible VAAC were unreached (SQ34,
         # independent QA of release 436). The OFP section, the feed and the
         # responsible centres are each listed with their own state.
+        # ITEM2-VOLCANIC: every row's status is composed from the one
+        # vocabulary (source_status.py); the OFP section's "held" /
+        # "unavailable" is a document fact, HELD or NOT HELD.
         *(
             (volcanic_check or {}).get("sources")
-            or [{
-                "source": "VA SIGMET COVERAGE",
-                "status": va_sigmet.upper(),
-                "detail": "A coverage state is not a NIL operational finding.",
-            }]
+            or [source_row(
+                "VA SIGMET COVERAGE",
+                HELD if va_sigmet.strip().lower() == "held" else NOT_HELD,
+                [],
+                "A coverage state is not a NIL operational finding.",
+            )]
         ),
-        {
-            "source": "INTAM",
-            "status": "HELD" if intam_records else "NOT HELD",
-            "detail": (
+        source_row(
+            "INTAM",
+            HELD if intam_records else NOT_HELD,
+            [],
+            (
                 f"{len(intam_records)} structured source record(s) - "
                 f"{intam_page_text}; relevance not inferred."
                 if intam_records
                 else "No structured INTAM record is held in this parsed briefing view."
             ),
-        },
+        ),
     ]
     return rows
 
