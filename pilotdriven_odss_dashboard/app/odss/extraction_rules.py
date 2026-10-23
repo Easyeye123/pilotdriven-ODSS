@@ -101,4 +101,8 @@ the two are bumped together whenever the parser's extraction changes.
 # missing, separated or cut-off operand is a review); held station records can differ in schedule_review. A v22
 # analysis is an older extraction.
 # v24: spatial metadata and independent-clause boundaries; timing spec v10. Re-mint derived corpus expectations.
-EXTRACTION_RULES = "2026-10-18-operand-boundaries-v24"
+# v25 (24 Oct 2026, on v24). ITEM2-VOLCANIC: volcano notices are read as one stream across page breaks (a VAA heading
+# at the foot of a page, a notice running onto the next), every NOTAM after the first under a VAA heading that is
+# volcanic by its own text, and a volcanic-ash NOTAM under its FIR heading that names its volcano. Held
+# volcanic_advisories can differ; a v24 analysis is an older extraction and Create updated briefing re-reads the OFP.
+EXTRACTION_RULES = "2026-10-24-volcano-notice-stream-v25"

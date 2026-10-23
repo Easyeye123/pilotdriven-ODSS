@@ -267,7 +267,13 @@ WAFC_CHARTS_PER_PAGE = 3
 # UNTIL.', 'AFTER, CURFEW') is a review, never 'no schedule'. The tables, the accounting of statements and the PDF
 # printable form are unchanged.
 # v114: measured weather column widths retain full content before existing deferrals.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-20-measured-weather-columns-v114"
+# 24 Oct 2026 (v115, on v114). ITEM2-VOLCANIC (open item #2: 'The PDF wrongly says a warning source wasn't
+# checked'): every source-assurance status is composed from one vocabulary (source_status.py) - a reach and the
+# qualifiers on the answer - and page 6 prints each in its own words, so a reached feed whose answer is not current
+# reads 'reached, not current', never 'not reached', and no status folds into 'not held'. The volcanic check states
+# currency for the flight, incomplete and unevaluated answers, the US domestic SIGMET gap, settled Pacific VAAC
+# responsibility (Doc 9766 rows bounded by the FAA's FIR edges) and SIGMETs expiring before passage.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-24-source-status-vocabulary-v115"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

@@ -238,5 +238,5 @@ def test_genuine_baku_lower_heading_names_its_fir():
 
 
 def test_the_tokens_move_together():
-    assert EXTRACTION_RULES == "2026-10-18-operand-boundaries-v24"
+    assert EXTRACTION_RULES == "2026-10-24-volcano-notice-stream-v25"
     assert ENROUTE_CONTACT_RULE == "enroute-contact-v16"

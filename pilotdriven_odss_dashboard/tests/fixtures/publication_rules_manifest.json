@@ -1,7 +1,7 @@
 {
-  "publication_rules": "2026-10-20-measured-weather-columns-v114",
+  "publication_rules": "2026-10-24-source-status-vocabulary-v115",
   "enroute_contact_rule": "enroute-contact-v16",
-  "extraction_rules": "2026-10-18-operand-boundaries-v24",
+  "extraction_rules": "2026-10-24-volcano-notice-stream-v25",
   "publication_format": "six-page-reference-briefing-2026-09-19",
-  "minted": "2026-10-20: measured two-column weather layout uses adjacent spare space before any existing content deferral. Full retained SQ302 weather now fits six pages at the unchanged readable floor. Publication v114; extraction v24 and timing v10 are unchanged. Saved analysis bytes remain immutable; server PDF cache is renewed. Tests and live acceptance are recorded separately."
+  "minted": "2026-10-24 ITEM2-VOLCANIC on release 531 (v114 / v24). Open item #2: page 6 printed 'VA SIGMET FEED not reached' for a feed whose own detail said it was reached (release-440 SQ314). Every source status is now composed from one vocabulary (source_status.py: reach + qualifiers NOT CURRENT, CURRENCY UNKNOWN, INCOMPLETE, NOT EVALUATED, COVERAGE GAP, NOT SETTLED) and printed in its own words; the volcanic check states currency for the flight's window, incomplete and unevaluated answers, the US domestic SIGMET gap and SIGMETs expiring before passage; Doc 9766 Pacific responsibility is settled from the FAA's FIR edges; volcano notices are read across pages and FIR headings (evidence: output/pd-item2-volcanic-20261024/). Publication v115, extraction v25; timing spec, table-cells, the PDF printable form and enroute-contact unchanged. A v114 pack reopens rebuilt under v115 and as an older extraction; old saved analyses, models and PDF bytes are never rewritten. Production acceptance remains separate. Re-mint this file with any rule-token change; both suites fail on drift."
 }

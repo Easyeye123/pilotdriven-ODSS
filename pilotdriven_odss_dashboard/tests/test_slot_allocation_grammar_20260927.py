@@ -297,6 +297,6 @@ def test_page_six_prints_an_unread_allocation_as_printed_not_absent(tmp_path_fac
 
 
 def test_the_tokens_move_together():
-    assert EXTRACTION_RULES == "2026-10-18-operand-boundaries-v24"
+    assert EXTRACTION_RULES == "2026-10-24-volcano-notice-stream-v25"
     assert ENROUTE_CONTACT_RULE == "enroute-contact-v16"
-    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-10-20-measured-weather-columns-v114"
+    assert COMBINED_BRIEFING_SCHEMA_VERSION == "2026-10-24-source-status-vocabulary-v115"
