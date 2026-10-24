@@ -280,7 +280,13 @@ WAFC_CHARTS_PER_PAGE = 3
 # keeps every waypoint at the maximum in route order. vws_review publishes maximum_points; its summary, page 6's VWS
 # sentence and the CAT corroboration condition name the first four and count the rest ('+K more at NNN (see
 # dashboard)'). A single maximum publishes exactly as before.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-24-vws-maximum-ties-v116"
+# 25 Oct 2026 (v117, on v116). DEPRESS-CHART-ISSUANCE (David 24 Oct, SQ301 MAN-SIN: 'Depress chart issued has a
+# duplicate. And the second chart is not issued'): a governed depressurisation chart is issued once per flight and
+# names every terrain window it protects and the legs it covers in each (8-7 over TBN-EDATA and RASAM); a chart
+# covering part of a window is issued for exactly those legs (10-4 RANAH-DUDEG) and the window states the legs no
+# indexed chart covers. The terrain sentence, the depressurisation receipt row, the annex statuses and the held
+# chart artifacts carry that coverage. A chart covering one whole window publishes exactly as before.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-25-depress-chart-issuance-v117"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
