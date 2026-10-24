@@ -298,7 +298,7 @@ def draw_match_matrix_page(
                 uncovered = ", ".join(
                     (gap.get("data") or {}).get("uncovered_legs") or []
                 )
-                cells.append(["PARTIAL", f"{uncovered} not covered", "review required"])
+                cells.append(["PARTIAL", f"{uncovered} not covered", "by any indexed chart"])
         else:
             cells.append(
                 [

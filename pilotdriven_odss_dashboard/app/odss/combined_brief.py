@@ -5137,7 +5137,7 @@ def _terrain_detail_pages(
             if status == "complete"
             else (
                 "PARTIALLY COVERED - "
-                + str((window_gap_finding(event_id, findings) or {}).get("summary") or "review required").upper()
+                + str((window_gap_finding(event_id, findings) or {}).get("summary") or "legs not covered by an indexed chart").upper()
                 if status == "partial"
                 else "UNMATCHED EXPOSURE - MANUAL REVIEW REQUIRED"
             ),
@@ -13155,7 +13155,7 @@ def _operational_coverage_receipt(
             f"{len(charts)} controlled depressurisation profile chart"
             f"{'s' if len(charts) != 1 else ''} issued ({', '.join(charts)}); "
             f"{' and '.join(windows)} {'is' if len(windows) == 1 else 'are'} "
-            "only partly covered - review required."
+            "only partly covered by an indexed chart."
         )
     elif matched_profiles:
         profile_state = "FOUND"

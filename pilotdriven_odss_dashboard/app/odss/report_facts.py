@@ -488,7 +488,7 @@ def profile_coverage_label(
             )
             return (
                 f"Partial: {charts}; {', '.join(uncovered)} not covered"
-                " - review required"
+                " by any indexed chart"
             )
     partial = [
         _clean((item.get("data") or {}).get("chart_number"))

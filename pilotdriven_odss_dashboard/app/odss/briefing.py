@@ -2870,7 +2870,7 @@ def _terrain_summary(
     unmatched_count = event_count - match_count - partial_count
     partial_clause = (
         f"; {partial_count} partially covered terrain "
-        f"window{'s' if partial_count != 1 else ''} - review required"
+        f"window{'s' if partial_count != 1 else ''}"
         if partial_count
         else ""
     )

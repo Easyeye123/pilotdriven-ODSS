@@ -2756,7 +2756,7 @@ def chart_coverage_statement(issue: dict[str, Any]) -> str:
     if issue["uncovered_legs"]:
         legs = _join_words(issue["uncovered_legs"])
         verb = "is" if len(issue["uncovered_legs"]) == 1 else "are"
-        statement += f"; {legs} {verb} not covered by any indexed chart - review required"
+        statement += f"; {legs} {verb} not covered by any indexed chart"
     return statement + "."
 
 
@@ -3970,7 +3970,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 )
                 + f"; {_join_words(uncovered)} "
                 + ("is" if len(uncovered) == 1 else "are")
-                + " not covered by any indexed chart - review required."
+                + " not covered by any indexed chart."
             )
         else:
             summary = (

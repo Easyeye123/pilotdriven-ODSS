@@ -1602,7 +1602,7 @@ def _overview_rows(
             dict.fromkeys(
                 [profile_finding_label(item) for item in confirmed_profiles]
                 + [
-                    f"{profile_finding_label(item)} partial - review required"
+                    f"{profile_finding_label(item)} partial coverage"
                     for item in partial_profiles
                 ]
             )

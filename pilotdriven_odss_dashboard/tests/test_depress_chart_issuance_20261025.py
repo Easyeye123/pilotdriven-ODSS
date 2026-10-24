@@ -164,7 +164,7 @@ def test_sq301_issues_8_7_once_and_issues_10_4_over_ranah(controlled_rows) -> No
     ] == [(["ENRON-DUDEG"], False)]
     assert ranah["data"]["uncovered_legs"] == ["DUDEG-UPVAL"]
     assert "Covers ENRON-DUDEG of window ENRON-UPVAL" in ranah["summary"]
-    assert "DUDEG-UPVAL is not covered by any indexed chart - review required" in ranah["summary"]
+    assert ranah["summary"].endswith("DUDEG-UPVAL is not covered by any indexed chart.")
     assert ranah["severity"] == "unknown"
 
     # Every issued chart, partial or complete, is a governed chart to publish.
@@ -180,7 +180,7 @@ def test_sq301_issues_8_7_once_and_issues_10_4_over_ranah(controlled_rows) -> No
     assert partial["title"] == "Profile coverage incomplete - ENRON to UPVAL"
     assert partial["summary"] == (
         "Chart 10-4 covers ENRON-DUDEG; DUDEG-UPVAL is not covered by any "
-        "indexed chart - review required."
+        "indexed chart."
     )
     assert partial["data"]["coverage_state"] == "partial"
     assert partial["data"]["issued_chart_numbers"] == ["10-4"]
@@ -211,7 +211,7 @@ def test_sq301_terrain_summary_never_reads_the_ranah_window_as_covered(controlle
     events = engines.detect_terrain_events(flight["route_waypoints"])
     summary = _terrain_summary(events, findings, flight["route_waypoints"])
     assert "2/4 terrain windows have validated profile matches" in summary
-    assert "1 partially covered terrain window - review required" in summary
+    assert "1 partially covered terrain window; 1 unmatched terrain window" in summary
     assert "1 unmatched terrain window" in summary
 
 
@@ -234,7 +234,7 @@ def test_sq301_window_join_returns_the_chart_for_each_window_it_covers(controlle
     assert sorted(item["data"].get("chart_number") for item in tbn) == ["8-23", "8-7"]
     ranah = profile_findings_for_terrain_event(events["ENRON-UPVAL"], findings)
     label = profile_coverage_label(ranah, events["ENRON-UPVAL"]["terrain_event_id"])
-    assert label == "Partial: 10-4 ENRON-DUDEG; DUDEG-UPVAL not covered - review required"
+    assert label == "Partial: 10-4 ENRON-DUDEG; DUDEG-UPVAL not covered by any indexed chart"
 
 
 def test_sq301_coverage_receipt_states_the_partial_window(controlled_rows) -> None:
@@ -248,7 +248,7 @@ def test_sq301_coverage_receipt_states_the_partial_window(controlled_rows) -> No
     assert row["state"] == "UNRESOLVED"
     assert row["detail"] == (
         "3 controlled depressurisation profile charts issued (8-23, 8-7, 10-4); "
-        "ENRON-UPVAL is only partly covered - review required."
+        "ENRON-UPVAL is only partly covered by an indexed chart."
     )
 
 
@@ -392,3 +392,26 @@ def test_terrain_summary_counts_a_window_covered_by_a_multi_window_chart() -> No
         },
     }
     assert "2/2 terrain windows have validated profile matches on the terrain page" in _terrain_summary(events, [one_chart])
+
+
+def test_issued_chart_wording_states_facts_without_reminders(controlled_rows) -> None:
+    """R2 (David, 22 Sep 2026): states, never review instructions."""
+    import re
+
+    from app.odss.briefing import build_briefing_view
+    from app.odss.combined_brief import _operational_coverage_receipt
+
+    reminder = re.compile(r"review[ _-]required|manual review|crew review|requires? review", re.I)
+    for filename in (SQ301_MAN_SIN_24OCT, SQ302_SIN_MAN_21OCT, SQ23_JFK_SIN):
+        flight, findings = _analyse(filename)
+        view = build_briefing_view(flight, findings, [])
+        receipt = _operational_coverage_receipt(flight, view, findings, None)
+        texts = [view["terrain"]["summary"], *(row["detail"] for row in receipt["rows"] if row["key"] == "depressurisation_profile")]
+        for item in findings:
+            if item.get("engine") != "depressurisation":
+                continue
+            data = item.get("data") or {}
+            if not data.get("chart_number") and data.get("coverage_state") != "partial":
+                continue  # the unchanged no-chart window wording is outside this repair
+            texts += [item["title"], item["summary"], *item["details"], str(data.get("coverage_statement") or "")]
+        assert [text for text in texts if reminder.search(text)] == [], filename
