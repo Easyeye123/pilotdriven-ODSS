@@ -415,3 +415,35 @@ def test_issued_chart_wording_states_facts_without_reminders(controlled_rows) ->
                 continue  # the unchanged no-chart window wording is outside this repair
             texts += [item["title"], item["summary"], *item["details"], str(data.get("coverage_statement") or "")]
         assert [text for text in texts if reminder.search(text)] == [], filename
+
+
+def test_sq301_closing_condition_names_only_the_windows_no_chart_covers(controlled_rows) -> None:
+    """The six-page closing record's numbered condition names the windows the
+    issued charts do not cover completely (DINRO, ENRON-UPVAL), never the
+    windows 8-23 and 8-7 cover (TBN-EDATA, RASAM)."""
+    from app.odss.analysed_briefing_content import release_condition_groups
+    from app.odss.briefing import build_briefing_view
+    from app.odss.combined_brief import _operational_coverage_receipt
+
+    flight, findings = _analyse(SQ301_MAN_SIN_24OCT)
+    view = build_briefing_view(flight, findings, [])
+    ids = _event_ids(flight)
+    assert view["terrain"]["profile_coverage"] == {
+        ids["DINRO-DINRO"]: "none",
+        ids["TBN-EDATA"]: "complete",
+        ids["RASAM-RASAM"]: "complete",
+        ids["ENRON-UPVAL"]: "partial",
+    }
+    receipt = _operational_coverage_receipt(flight, view, findings, None)
+    import re
+
+    lines = [
+        re.sub(r"^\d+\. ", "", line)
+        for group in release_condition_groups(flight, view, receipt, [], [], []).values()
+        for line in group
+        if "depressurisation profile" in line
+    ]
+    assert lines == [
+        "Escape/depressurisation profile not bound: DINRO, ENRON-UPVAL; "
+        "high MSA alone is not an escape procedure."
+    ]

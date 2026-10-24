@@ -715,6 +715,11 @@ def release_condition_groups(flight, view, receipt, airport_analysis, alternate_
         operations.append("Released Airport Notes coverage incomplete: " + "/".join(stations) + ".")
     if "depressurisation_profile" in pending:
         events = (view.get("terrain") or {}).get("events") or []
+        # Only windows the issued charts do not cover completely are unbound;
+        # a view held before the coverage map names every window as before.
+        coverage = (view.get("terrain") or {}).get("profile_coverage") or {}
+        if coverage:
+            events = [e for e in events if coverage.get(str(e.get("terrain_event_id"))) != "complete"]
         legs = ["-".join(dict.fromkeys([(e.get("first_high") or {}).get("name", "?"), (e.get("last_high") or {}).get("name", "?")])) for e in events]
         technical.append("Escape/depressurisation profile not bound" + (": " + ", ".join(legs) if legs else "") + "; high MSA alone is not an escape procedure.")
     if "edto" in pending:

@@ -2767,6 +2767,19 @@ def _validated_profile_coverage(
     return len(matched_event_ids), len(terrain_events)
 
 
+def _terrain_profile_coverage(
+    terrain_events: list[dict[str, Any]],
+    findings: list[dict[str, Any]],
+) -> dict[str, str]:
+    from .depress_coverage import window_status
+
+    return {
+        str(event.get("terrain_event_id")): window_status(event.get("terrain_event_id"), findings)
+        for event in terrain_events
+        if str(event.get("terrain_event_id") or "").strip()
+    }
+
+
 def _partially_covered_windows(
     terrain_events: list[dict[str, Any]],
     findings: list[dict[str, Any]],
@@ -6631,6 +6644,9 @@ def build_briefing_view(
         "terrain": {
             "events": terrain_events,
             "summary": _terrain_summary(terrain_events, findings, waypoints),
+            # Per window: "complete", "partial" (an issued chart covers part)
+            # or "none", from the one shared coverage reading.
+            "profile_coverage": _terrain_profile_coverage(terrain_events, findings),
             "vws_review": _vws_review(waypoints),
         },
         "exception_cards": exception_cards,
