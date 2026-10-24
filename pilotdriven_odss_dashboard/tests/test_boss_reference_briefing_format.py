@@ -560,13 +560,30 @@ def test_the_analysed_surface_consequence_count_is_still_published(briefing):
 def test_the_vws_threshold_summary_is_still_published(briefing):
     """``vws_events or [vws_summary]`` dropped it whenever events existed."""
     vws = (briefing["view"].get("terrain") or {}).get("vws_review") or {}
-    summary = (
+    head = (
         f"{int(vws.get('event_count') or 0)} event(s) at the analysed "
         f"{published_value(vws.get('threshold'))} threshold. Maximum "
         f"{published_value(vws.get('maximum_display'))} at "
-        f"{published_value(vws.get('maximum_waypoint'))}, ACTM "
-        f"{published_value(vws.get('maximum_actm_display'))}."
     )
+    # Item #9 (24 Oct 2026): a maximum held at several waypoints is printed at
+    # each of them, in route order, the first four named and the rest counted.
+    points = vws.get("maximum_points") or []
+    assert len(points) == vws.get("maximum_point_count")
+    if len(points) <= 1:
+        summary = (
+            head + f"{published_value(vws.get('maximum_waypoint'))}, ACTM "
+            f"{published_value(vws.get('maximum_actm_display'))}."
+        )
+    else:
+        listed = "; ".join(
+            f"{published_value(p.get('waypoint'))}, ACTM {published_value(p.get('actm_display'))}"
+            for p in points[:4]
+        )
+        more = (
+            f"; +{len(points) - 4} more at {published_value(vws.get('maximum_display'))} (see dashboard)"
+            if len(points) > 4 else ""
+        )
+        summary = head + f"{len(points)} waypoints: {listed}{more}."
     assert normalized(summary) in briefing["folded"][5]
 
 

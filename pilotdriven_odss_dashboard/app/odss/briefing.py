@@ -29,6 +29,7 @@ from .engines import (
     notam_dashboard_line,
     obstacle_restriction_line,
 )
+from .vws_maxima import vws_maximum_entry, vws_maximum_points, vws_review_summary
 from .runway_closure_schedule import (
     notice_reference_time,
     published_runway_closure_statement,
@@ -2872,15 +2873,14 @@ def _vws_review(route_waypoints: list[dict[str, Any]] | None) -> dict[str, Any]:
     VWS is source-held route data, not model memory.  Keeping this as a
     deterministic view invariant means a high-MSA event may share or replace a
     compact timeline marker without ever hiding the VWS review itself.
+
+    Item #9 (24 Oct 2026): ``maximum_points`` is every waypoint at the maximum,
+    in route order, from the one shared selection; the dashboard lists them all
+    and the summary names the first ``VWS_MAXIMUM_PRINT_LIMIT`` and how many
+    more.  The single ``maximum_*`` fields carry the first point for older
+    readers.  A single maximum publishes the same summary as before.
     """
     waypoints = route_waypoints or []
-    held_points = [
-        waypoint
-        for waypoint in waypoints
-        if isinstance(waypoint.get("vws"), int)
-        and not isinstance(waypoint.get("vws"), bool)
-        and int(waypoint["vws"]) >= 0
-    ]
     events = detect_vws_events(waypoints)
     base: dict[str, Any] = {
         "status": "unavailable",
@@ -2892,58 +2892,27 @@ def _vws_review(route_waypoints: list[dict[str, Any]] | None) -> dict[str, Any]:
         "maximum_actm_minutes": None,
         "maximum_actm_display": None,
         "source_page": None,
+        "maximum_points": [],
+        "maximum_point_count": 0,
         "summary": (
             "VWS review unavailable: no planned VWS value is held in the "
             "parsed OFP route."
         ),
     }
-    if not held_points:
+    maxima = vws_maximum_points(waypoints)
+    if not maxima:
         return base
 
-    maximum_point = max(held_points, key=lambda waypoint: int(waypoint["vws"]))
-    maximum = int(maximum_point["vws"])
-    waypoint = str(maximum_point.get("name") or "").lstrip("-").strip() or None
-    raw_actm = maximum_point.get("actm_minutes")
-    actm = (
-        int(raw_actm)
-        if isinstance(raw_actm, int)
-        and not isinstance(raw_actm, bool)
-        and raw_actm >= 0
-        else None
-    )
-    raw_page = maximum_point.get("source_page")
-    source_page = (
-        int(raw_page)
-        if isinstance(raw_page, int)
-        and not isinstance(raw_page, bool)
-        and raw_page > 0
-        else None
-    )
-    maximum_text = f"maximum {maximum:03d}"
-    if waypoint:
-        maximum_text += f" at {waypoint}"
-    evidence = [
-        f"ACTM {format_actm(actm)}" if actm is not None else "",
-        f"OFP p{source_page}" if source_page is not None else "",
-    ]
-    evidence = [item for item in evidence if item]
-    if evidence:
-        maximum_text += f" ({', '.join(evidence)})"
-
+    maximum = int(maxima[0]["vws"])
+    entries = [vws_maximum_entry(point) for point in maxima]
+    first = entries[0]
     event_count = len(events)
-    if event_count:
-        window_label = "window" if event_count == 1 else "windows"
-        status = "review_required"
-        summary = (
-            f"VWS: {event_count} planned >004 trigger {window_label}; "
-            f"{maximum_text}."
-        )
-    else:
-        status = "reviewed_no_trigger"
-        summary = (
-            "VWS review: no planned >004 trigger in the source-held route "
-            f"values; {maximum_text}."
-        )
+    status = "review_required" if event_count else "reviewed_no_trigger"
+    summary = vws_review_summary({
+        "maximum": maximum,
+        "event_count": event_count,
+        "maximum_points": entries,
+    })
 
     return {
         **base,
@@ -2951,10 +2920,12 @@ def _vws_review(route_waypoints: list[dict[str, Any]] | None) -> dict[str, Any]:
         "event_count": event_count,
         "maximum": maximum,
         "maximum_display": f"{maximum:03d}",
-        "maximum_waypoint": waypoint,
-        "maximum_actm_minutes": actm,
-        "maximum_actm_display": format_actm(actm) if actm is not None else None,
-        "source_page": source_page,
+        "maximum_waypoint": first["waypoint"],
+        "maximum_actm_minutes": first["actm_minutes"],
+        "maximum_actm_display": first["actm_display"],
+        "source_page": first["source_page"],
+        "maximum_points": entries,
+        "maximum_point_count": len(entries),
         "summary": summary,
     }
 

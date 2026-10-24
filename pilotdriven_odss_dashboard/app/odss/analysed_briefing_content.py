@@ -11,10 +11,26 @@ import re
 
 from .report_facts import operational_reference_times
 from .vaa import _utc
+from .vws_maxima import VWS_MAXIMUM_PRINT_LIMIT, review_maximum_entries
 
 
 def clean(value) -> str:
     return " ".join(str(value or "").split())
+
+
+def vws_corroboration_subject(vws: dict) -> str:
+    """Name every waypoint at the published VWS maximum (item #9), bounded like every fixed printed slot."""
+    entries = review_maximum_entries(vws)
+    names = [clean(entry.get("waypoint")) for entry in entries]
+    if not any(names):
+        return "CAT"
+    names = [name or "unnamed waypoint" for name in names]
+    value = vws.get("maximum_display")
+    if len(names) > VWS_MAXIMUM_PRINT_LIMIT:
+        listed = ", ".join(names[:VWS_MAXIMUM_PRINT_LIMIT])
+        return f"VWS {value} at {listed} (+{len(names) - VWS_MAXIMUM_PRINT_LIMIT} more at {value}, see dashboard)"
+    listed = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+    return f"VWS {value} at {listed}"
 
 
 # ------------------------------------------------- the carried excess's name
@@ -675,8 +691,7 @@ def release_condition_groups(flight, view, receipt, airport_analysis, alternate_
     cat = [label for key, label in (("wafs_sigwx", "WAFS/SIGWX"), ("airep_pirep", "AIREP/PIREP")) if key in pending]
     if cat:
         vws = (view.get("terrain") or {}).get("vws_review") or {}
-        near = clean(vws.get("maximum_waypoint"))
-        weather.append((f"VWS {vws.get('maximum_display')} at {near}: " if near else "CAT: ") + f"{' and '.join(cat)} corroboration missing; VWS alone does not establish CAT.")
+        weather.append(f"{vws_corroboration_subject(vws)}: {' and '.join(cat)} corroboration missing; VWS alone does not establish CAT.")
     declared = view.get("deferred_dispatch_gates") or []
     if declared:
         names = ", ".join(dict.fromkeys(re.sub(r"\s*REVIEW REQUIRED", "", clean(g.get("title"))) for g in declared))

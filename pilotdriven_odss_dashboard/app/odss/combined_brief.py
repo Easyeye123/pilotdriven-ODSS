@@ -39,6 +39,7 @@ from .briefing import (
 )
 from .pilot_briefing import normalize_notam_references
 from .constants import format_actm
+from .vws_maxima import vws_review_summary_variants
 from .deferred_dispatch import (
     deferred_item_type_for_display,
     deferred_reference_for_display,
@@ -353,7 +354,15 @@ def _operational_terrain_status_lines(
     push the independently governed VWS sentence out of the operational PDF.
     """
     bounded_max_lines = max(1, int(max_lines))
-    vws_lines = _wrap(str(vws_summary or "").strip(), SANS, 8.8, text_width)
+    # Item #9: a tied maximum may arrive as its published sentence followed by
+    # variants naming fewer points (each still counting the rest). The first
+    # that fits is printed; none fitting is still a refusal, never a cut.
+    candidates = vws_summary if isinstance(vws_summary, (list, tuple)) else [vws_summary]
+    vws_lines: list[str] = []
+    for candidate in candidates:
+        vws_lines = _wrap(str(candidate or "").strip(), SANS, 8.8, text_width)
+        if len(vws_lines) <= bounded_max_lines:
+            break
     if len(vws_lines) > bounded_max_lines:
         raise ValueError("VWS review exceeds the operational terrain panel capacity.")
     body_lines = _wrap(str(body or "").strip(), SANS, 8.8, text_width)
@@ -6799,21 +6808,21 @@ def _operational_terrain_summary(
         terrain.get("summary")
         or "Terrain/profile assessment is unavailable - review required."
     ).strip()
-    vws_summary = str(
-        ((terrain.get("vws_review") or {}).get("summary"))
-        or "VWS review unavailable: no planned VWS value is held in the parsed OFP route."
-    ).strip()
-    full = _join_sentences(
-        summary,
-        vws_summary,
-        (
-            "Dedicated governed terrain/profile evidence follows this page"
-            if has_terrain_annex
-            else None
-        ),
-    )
-    if len(_wrap(full, SANS, T_SMALL, text_width)) <= max_lines:
-        return full
+    # Item #9: the published VWS sentence first; for a tied maximum, then the
+    # same sentence naming fewer points (each still counting the rest).
+    vws_variants = vws_review_summary_variants(terrain.get("vws_review"))
+    for vws_summary in vws_variants:
+        full = _join_sentences(
+            summary,
+            vws_summary,
+            (
+                "Dedicated governed terrain/profile evidence follows this page"
+                if has_terrain_annex
+                else None
+            ),
+        )
+        if len(_wrap(full, SANS, T_SMALL, text_width)) <= max_lines:
+            return full
     if not has_terrain_annex:
         return full
 
@@ -6840,15 +6849,16 @@ def _operational_terrain_summary(
         else "maximum source value held in annex"
     )
     review = summary.rsplit("); ", 1)[-1] if "); " in summary else summary
-    compact = _join_sentences(
-        f"{len(events)} MSA >100* window(s); {maximum_line}",
-        review,
-        vws_summary,
-        "Full governed terrain/profile evidence follows this page",
-    )
-    if len(_wrap(compact, SANS, T_SMALL, text_width)) > max_lines:
-        raise ValueError("Terrain annex receipt exceeds readable capacity.")
-    return compact
+    for vws_summary in vws_variants:
+        compact = _join_sentences(
+            f"{len(events)} MSA >100* window(s); {maximum_line}",
+            review,
+            vws_summary,
+            "Full governed terrain/profile evidence follows this page",
+        )
+        if len(_wrap(compact, SANS, T_SMALL, text_width)) <= max_lines:
+            return compact
+    raise ValueError("Terrain annex receipt exceeds readable capacity.")
 
 
 def _communication_continuation_fragments(
@@ -7114,9 +7124,24 @@ def draw_terrain_page(
     # The one composed terrain sentence prints verbatim here - the parity
     # gate requires it in both directions (a no-window flight must SAY so).
     terrain_view = briefing.get("terrain") or {}
+    # Item #9: one fitted line holds the VWS review. A tied maximum takes the
+    # published sentence when it fits the line, otherwise the same sentence
+    # naming fewer points (each still counting the rest) - never an ellipsis.
+    vws_line = ""
+    if (terrain_view.get("vws_review") or {}).get("summary"):
+        vws_variants = vws_review_summary_variants(terrain_view.get("vws_review"))
+        vws_line = next(
+            (
+                variant for variant in vws_variants
+                if pdfmetrics.stringWidth(
+                    variant, SANS, _fit(variant, SANS, T_SMALL, full_w)
+                ) <= full_w
+            ),
+            vws_variants[-1],
+        )
     summary_lines = [
         str(terrain_view.get("summary") or "").strip(),
-        str((terrain_view.get("vws_review") or {}).get("summary") or "").strip(),
+        vws_line,
     ]
     for summary_line in (line for line in summary_lines if line):
         canvas.setFillColor(TEXT_SECONDARY)
@@ -13755,7 +13780,7 @@ def draw_operational_terrain_page(
         if body and not body.endswith((".", "!", "?")):
             body += "."
         body += " Exact endpoint/airway source validation remains required; no nearby chart is substituted."
-    vws_summary = str(((briefing.get("terrain") or {}).get("vws_review") or {}).get("summary") or "").strip()
+    vws_summary = vws_review_summary_variants((briefing.get("terrain") or {}).get("vws_review"))
     row_y = status_y + status_h - 68.0
     canvas.setFillColor(TEXT_SECONDARY)
     canvas.setFont(SANS, 8.8)

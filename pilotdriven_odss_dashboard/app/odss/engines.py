@@ -13,6 +13,7 @@ from .constants import (
     format_actm,
     format_kg,
 )
+from .vws_maxima import vws_maximum_points
 
 from .controlled_library import (
     CDL_LIBRARY_METADATA,
@@ -2117,38 +2118,81 @@ def detect_terrain_events(waypoints: list[dict[str, Any]]) -> list[dict[str, Any
 
 
 def detect_vws_events(waypoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group consecutive >004 samples into events.
+
+    ``maxima`` is every waypoint at the event's maximum, in route order, from the one shared selection
+    (``vws_maxima.vws_maximum_points``); ``maximum`` is its first point, kept for readers of one anchor.
+    """
     events: list[dict[str, Any]] = []
     active: list[dict[str, Any]] = []
+
+    def close(drop: dict[str, Any] | None) -> None:
+        # The parser holds integers; a non-integer sample keeps the former single anchor rather than none.
+        maxima = vws_maximum_points(active) or [max(active, key=lambda w: w.get("vws") or -1)]
+        events.append({
+            "first_high": active[0],
+            "last_high": active[-1],
+            "drop": drop,
+            "maximum": maxima[0],
+            "maxima": maxima,
+        })
+
     for waypoint in waypoints:
         vws = waypoint.get("vws")
         if vws is None:
             if active and not waypoint.get("fir_boundary"):
-                events.append({
-                    "first_high": active[0],
-                    "last_high": active[-1],
-                    "drop": waypoint,
-                    "maximum": max(active, key=lambda w: w.get("vws") or -1),
-                })
+                close(waypoint)
                 active = []
             continue
         if vws > 4:
             active.append(waypoint)
         elif active:
-            events.append({
-                "first_high": active[0],
-                "last_high": active[-1],
-                "drop": waypoint,
-                "maximum": max(active, key=lambda w: w.get("vws") or -1),
-            })
+            close(waypoint)
             active = []
     if active:
-        events.append({
-            "first_high": active[0],
-            "last_high": active[-1],
-            "drop": None,
-            "maximum": max(active, key=lambda w: w.get("vws") or -1),
-        })
+        close(None)
     return events
+
+
+def vws_event_finding(flight: dict[str, Any], index: int, event: dict[str, Any]) -> dict[str, Any]:
+    """One VWS event finding. Every waypoint at the event's maximum is named (item #9, 24 Oct 2026)."""
+    end_wp = event["drop"] or event["last_high"]
+    maximum = event["maximum"]
+    maxima = event.get("maxima") or [maximum]
+    return finding(
+        "vws",
+        "warning",
+        f"VWS event {index}",
+        f"ACTM {format_actm(event['first_high']['actm_minutes'])}-"
+        f"{format_actm(end_wp['actm_minutes'])}, maximum {maximum['vws']:03d}.",
+        [
+            f"First qualifying waypoint {event['first_high']['name']}.",
+            f"Last qualifying waypoint {event['last_high']['name']}.",
+            "Maximum at " + "; ".join(
+                f"{point['name']}, ACTM {format_actm(point['actm_minutes'])}" for point in maxima
+            ) + ".",
+            "Threshold is strictly greater than 4.",
+        ],
+        {
+            "start_actm_minutes": event["first_high"]["actm_minutes"],
+            "source_references": [
+                _cfp_source_reference(
+                    flight,
+                    [
+                        waypoint.get("source_page")
+                        for waypoint in (
+                            event.get("first_high"),
+                            event.get("last_high"),
+                            *maxima,
+                            event.get("drop"),
+                        )
+                        if waypoint
+                    ],
+                    "Route wind data",
+                )
+            ],
+        },
+    )
 
 
 def _subsequence(sequence: list[str], candidate: list[str]) -> bool:
@@ -3574,40 +3618,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         ))
 
     for index, event in enumerate(detect_vws_events(flight["route_waypoints"]), start=1):
-        end_wp = event["drop"] or event["last_high"]
-        maximum = event["maximum"]
-        findings.append(finding(
-            "vws",
-            "warning",
-            f"VWS event {index}",
-            f"ACTM {format_actm(event['first_high']['actm_minutes'])}-"
-            f"{format_actm(end_wp['actm_minutes'])}, maximum {maximum['vws']:03d}.",
-            [
-                f"First qualifying waypoint {event['first_high']['name']}.",
-                f"Last qualifying waypoint {event['last_high']['name']}.",
-                f"Maximum at {maximum['name']}, ACTM {format_actm(maximum['actm_minutes'])}.",
-                "Threshold is strictly greater than 4.",
-            ],
-            {
-                "start_actm_minutes": event["first_high"]["actm_minutes"],
-                "source_references": [
-                    _cfp_source_reference(
-                        flight,
-                        [
-                            waypoint.get("source_page")
-                            for waypoint in (
-                                event.get("first_high"),
-                                event.get("last_high"),
-                                event.get("maximum"),
-                                event.get("drop"),
-                            )
-                            if waypoint
-                        ],
-                        "Route wind data",
-                    )
-                ],
-            },
-        ))
+        findings.append(vws_event_finding(flight, index, event))
 
     matches = sorted(
         match_profiles(flight, terrain_events),

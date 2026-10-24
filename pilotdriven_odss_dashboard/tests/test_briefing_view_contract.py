@@ -93,6 +93,11 @@ def test_vws_review_is_published_even_when_the_same_route_has_high_terrain() -> 
         "maximum_actm_minutes": 85,
         "maximum_actm_display": "01.25",
         "source_page": 7,
+        # Item #9: every waypoint at the maximum, in route order (one here).
+        "maximum_points": [
+            {"waypoint": "ALPHA", "actm_minutes": 85, "actm_display": "01.25", "source_page": 7},
+        ],
+        "maximum_point_count": 1,
         "summary": (
             "VWS: 1 planned >004 trigger window; maximum 005 at ALPHA "
             "(ACTM 01.25, OFP p7)."
@@ -153,6 +158,8 @@ def test_vws_review_never_turns_missing_route_values_into_zero() -> None:
         "maximum_actm_minutes": None,
         "maximum_actm_display": None,
         "source_page": None,
+        "maximum_points": [],
+        "maximum_point_count": 0,
         "summary": "VWS review unavailable: no planned VWS value is held in the parsed OFP route.",
     }
 

@@ -33,6 +33,7 @@ from .analysed_briefing_content import (cyclone_content, deferred_item_label,
 from .analysed_briefing_map import (build_publication_map, draw_publication_map,
                                     publication_key_entries)
 from .constants import format_actm
+from .vws_maxima import review_maximum_entries, vws_maximum_listing
 from .source_status import source_status_met, source_status_words
 from .fuel_rows import contingency_label
 from .page_one_weather import page_one_taf_field_continued, forecast_source_line, page_one_metar_field, page_one_taf_field, weather_page_taf_field
@@ -84,6 +85,20 @@ def fuel_state_label(state: Any) -> str:
     if not code:
         return "not held"
     return FUEL_STATE_LABELS.get(code, code.replace("_", " ").replace("-", " "))
+
+
+def vws_threshold_sentence(vws: dict[str, Any]) -> str:
+    """Page 6's VWS threshold sentence. Every waypoint at the maximum is named (item #9), in route order, the
+    first ``VWS_MAXIMUM_PRINT_LIMIT`` printed and the rest counted; a single maximum prints as it always has."""
+    entries = review_maximum_entries(vws)
+    head = (f"{int(vws.get('event_count') or 0)} event(s) at the analysed {text(vws.get('threshold'))} threshold. "
+            f"Maximum {text(vws.get('maximum_display'))} at ")
+    if len(entries) <= 1:
+        return (head + f"{text(vws.get('maximum_waypoint'))}, ACTM {text(vws.get('maximum_actm_display'))}.")
+    listing = vws_maximum_listing(
+        entries, lambda entry: f"{text(entry.get('waypoint'))}, ACTM {text(entry.get('actm_display'))}",
+        text(vws.get("maximum_display")), separator="; ")
+    return head + f"{len(entries)} waypoints: {listing}."
 
 
 def text(value: Any, missing: str = "Not held") -> str:
@@ -1645,7 +1660,7 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     sections: dict[str, list[Page]] = {}
     route_map = build_publication_map(flight, view)
 
-    vws_summary = f"{int(vws.get('event_count') or 0)} event(s) at the analysed {text(vws.get('threshold'))} threshold. Maximum {text(vws.get('maximum_display'))} at {text(vws.get('maximum_waypoint'))}, ACTM {text(vws.get('maximum_actm_display'))}."
+    vws_summary = vws_threshold_sentence(vws)
     terrain_summary = f"{len(terrain.get('events') or [])} high-MSA event(s); controlled-profile status is in the closing record."
     deferred = deferred_status_lines(flight, view["deferred_pdf_analysis"])
 

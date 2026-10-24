@@ -126,6 +126,40 @@ def _deduplicate(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
+def _vws_timing_events(anchor: datetime, waypoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Start, every maximum and end of each VWS event (item #9: a tied maximum is timed at each waypoint)."""
+    events: list[dict[str, Any]] = []
+    for index, vws_event in enumerate(detect_vws_events(waypoints), start=1):
+        end_waypoint = vws_event.get("drop") or vws_event["last_high"]
+        events.append(
+            _event(
+                anchor,
+                int(vws_event["first_high"]["actm_minutes"]),
+                f"VWS event {index} starts at {vws_event['first_high']['name']}",
+                "vws",
+            )
+        )
+        for maximum in vws_event.get("maxima") or [vws_event["maximum"]]:
+            events.append(
+                _event(
+                    anchor,
+                    int(maximum["actm_minutes"]),
+                    f"VWS event {index} maximum at {maximum['name']}",
+                    "vws",
+                    f"VWS {maximum['vws']:03d}.",
+                )
+            )
+        events.append(
+            _event(
+                anchor,
+                int(end_waypoint["actm_minutes"]),
+                f"VWS event {index} ends at {end_waypoint['name']}",
+                "vws",
+            )
+        )
+    return events
+
+
 def build_timing_view(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -261,30 +295,7 @@ def build_timing_view(
             ),
         ])
 
-    for index, vws_event in enumerate(detect_vws_events(flight.get("route_waypoints", [])), start=1):
-        end_waypoint = vws_event.get("drop") or vws_event["last_high"]
-        maximum = vws_event["maximum"]
-        events.extend([
-            _event(
-                anchor,
-                int(vws_event["first_high"]["actm_minutes"]),
-                f"VWS event {index} starts at {vws_event['first_high']['name']}",
-                "vws",
-            ),
-            _event(
-                anchor,
-                int(maximum["actm_minutes"]),
-                f"VWS event {index} maximum at {maximum['name']}",
-                "vws",
-                f"VWS {maximum['vws']:03d}.",
-            ),
-            _event(
-                anchor,
-                int(end_waypoint["actm_minutes"]),
-                f"VWS event {index} ends at {end_waypoint['name']}",
-                "vws",
-            ),
-        ])
+    events.extend(_vws_timing_events(anchor, flight.get("route_waypoints", [])))
 
     for finding in findings:
         if finding.get("engine") != "depressurisation":
