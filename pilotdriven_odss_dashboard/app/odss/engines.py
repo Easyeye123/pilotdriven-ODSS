@@ -2748,8 +2748,10 @@ def chart_coverage_statement(issue: dict[str, Any]) -> str:
     for row in issue["window_coverage"]:
         legs = _join_words(row["covered_legs"])
         parts.append(legs if legs == row["window"] else f"{legs} of window {row['window']}")
+    # A serial comma only where a part already names its window.
+    last_join = ", and " if any(" of window " in part for part in parts) else " and "
     statement = "Covers " + (
-        parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + ", and " + parts[-1]
+        parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + last_join + parts[-1]
     )
     if issue["uncovered_legs"]:
         legs = _join_words(issue["uncovered_legs"])

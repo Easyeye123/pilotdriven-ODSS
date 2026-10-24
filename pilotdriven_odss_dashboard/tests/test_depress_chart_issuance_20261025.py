@@ -245,7 +245,7 @@ def test_sq301_coverage_receipt_states_the_partial_window(controlled_rows) -> No
     view = build_briefing_view(flight, findings, [])
     rows = {row["key"]: row for row in _operational_coverage_receipt(flight, view, findings, None)["rows"]}
     row = rows["depressurisation_profile"]
-    assert row["state"] == "FOUND"
+    assert row["state"] == "UNRESOLVED"
     assert row["detail"] == (
         "3 controlled depressurisation profile charts issued (8-23, 8-7, 10-4); "
         "ENRON-UPVAL is only partly covered - review required."
@@ -267,17 +267,22 @@ def test_sq302_issues_the_partial_10_4_over_ranah(controlled_rows) -> None:
 
 
 @pytest.mark.parametrize(
-    ("filename", "chart", "windows", "legs"),
+    ("filename", "chart", "windows", "legs", "statement"),
     [
-        (SQ23_JFK_SIN, "8-7", ["TBN-EDATA", "RASAM-RASAM"], [["TBN-EDATA"], ["RASAM"]]),
-        (SQ303_BRU_SIN, "8-7", ["TBN-EDATA", "RASAM-RASAM"], [["REBLO-EDATA"], ["RASAM"]]),
-        (SQ24_SIN_JFK, "11-37", ["TED-ORT", "63N30-62N20"], [["TED-ORT"], ["63N30-62N20"]]),
+        (SQ23_JFK_SIN, "8-7", ["TBN-EDATA", "RASAM-RASAM"], [["TBN-EDATA"], ["RASAM"]],
+         "Covers TBN-EDATA and RASAM."),
+        (SQ303_BRU_SIN, "8-7", ["TBN-EDATA", "RASAM-RASAM"], [["REBLO-EDATA"], ["RASAM"]],
+         "Covers REBLO-EDATA of window TBN-EDATA, and RASAM."),
+        (SQ24_SIN_JFK, "11-37", ["TED-ORT", "63N30-62N20"], [["TED-ORT"], ["63N30-62N20"]],
+         "Covers TED-ORT and 63N30-62N20."),
     ],
 )
-def test_a_chart_covering_two_windows_is_issued_once(controlled_rows, filename, chart, windows, legs) -> None:
+def test_a_chart_covering_two_windows_is_issued_once(controlled_rows, filename, chart, windows, legs, statement) -> None:
     flight, findings = _analyse(filename)
     ids = _event_ids(flight)
     issued = _chart(findings, chart)
+    assert issued["summary"].endswith(statement)
+    assert issued["data"]["coverage_statement"] == statement
     assert issued["data"]["terrain_event_ids"] == [ids[name] for name in windows]
     assert [row["covered_legs"] for row in issued["data"]["window_coverage"]] == legs
     assert all(row["window_complete"] for row in issued["data"]["window_coverage"])

@@ -13147,7 +13147,10 @@ def _operational_coverage_receipt(
             ))
             for event in partly_covered
         ]
-        profile_state = "FOUND"
+        # Issued charts are held, but a window they cover only in part is an
+        # open review item: the closing record groups it as unresolved and
+        # never as checked.
+        profile_state = "UNRESOLVED"
         profile_detail = (
             f"{len(charts)} controlled depressurisation profile chart"
             f"{'s' if len(charts) != 1 else ''} issued ({', '.join(charts)}); "
