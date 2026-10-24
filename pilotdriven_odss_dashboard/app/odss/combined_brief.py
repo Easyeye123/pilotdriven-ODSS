@@ -39,6 +39,7 @@ from .briefing import (
 )
 from .pilot_briefing import normalize_notam_references
 from .constants import format_actm
+from .depress_coverage import window_gap_finding, window_status
 from .vws_maxima import vws_review_summary_variants
 from .deferred_dispatch import (
     deferred_item_type_for_display,
@@ -5119,24 +5120,21 @@ def _terrain_detail_pages(
     events = list((briefing.get("terrain") or {}).get("events") or [])
     if not events:
         return []
-    matched_ids: set[str] = set()
-    for finding in _matched_profiles(findings):
-        data = finding.get("data") or {}
-        matched_ids.update(
-            str(value)
-            for value in data.get("terrain_event_ids") or []
-            if value
-        )
-        if data.get("terrain_event_id"):
-            matched_ids.add(str(data["terrain_event_id"]))
+    issued = _matched_profiles(findings)
     rows: list[tuple[str, str]] = []
     for index, event in enumerate(events, start=1):
         event_id = str(event.get("terrain_event_id") or f"EVENT-{index}")
+        status = window_status(event_id, issued)
         rows.append((
             f"EVENT {index} STATUS",
             "PROFILE MATCHED"
-            if event_id in matched_ids
-            else "UNMATCHED EXPOSURE - MANUAL REVIEW REQUIRED",
+            if status == "complete"
+            else (
+                "PARTIALLY COVERED - "
+                + str((window_gap_finding(event_id, findings) or {}).get("summary") or "review required").upper()
+                if status == "partial"
+                else "UNMATCHED EXPOSURE - MANUAL REVIEW REQUIRED"
+            ),
         ))
         rows.extend(_flatten_detail_rows(f"EVENT {index}", event))
     return _detail_page_plans("ALL TERRAIN EVENTS / UNMATCHED EXPOSURES", rows)
@@ -7155,7 +7153,12 @@ def draw_terrain_page(
         y -= T_SMALL + 8
     terrain = _terrain_findings(findings)
     matched = _matched_profiles(findings)
-    unmatched = [f for f in terrain if not any(
+    # A window is resolved only when the issued charts cover all its legs; a
+    # chart covering part of it leaves it on the review list.
+    unmatched = [
+        f for f in terrain
+        if window_status((f.get("data") or {}).get("terrain_event_id"), matched) != "complete"
+    ] if any((f.get("data") or {}).get("terrain_event_id") for f in terrain) else [f for f in terrain if not any(
         (m.get("data") or {}).get("start_actm_minutes") == (f.get("data") or {}).get("start_actm_minutes")
         for m in matched
     )]
@@ -7315,7 +7318,13 @@ def draw_terrain_page(
                 canvas.setFont(MONO, T_SMALL)
                 canvas.drawString(ix + 150, row_y, format_actm(start) if start is not None else "--")
                 canvas.setFont(SANS, T_SMALL)
-                _draw_string_fitted(canvas, ix + 260, row_y, str(finding.get("summary") or "Exact endpoint/airway profile unresolved."), SANS, T_SMALL, full_w - 290, TEXT_SECONDARY)
+                gap = window_gap_finding(data.get("terrain_event_id"), findings) or {}
+                status_text = (
+                    gap.get("summary")
+                    if (gap.get("data") or {}).get("coverage_state") == "partial"
+                    else finding.get("summary")
+                )
+                _draw_string_fitted(canvas, ix + 260, row_y, str(status_text or "Exact endpoint/airway profile unresolved."), SANS, T_SMALL, full_w - 290, TEXT_SECONDARY)
                 row_y -= 14
         else:
             canvas.setFillColor(EDTO_GREEN)
@@ -13115,7 +13124,31 @@ def _operational_coverage_receipt(
 
     matched_profiles = _matched_profiles(findings)
     terrain_events = list(terrain.get("events") or [])
-    if matched_profiles:
+    partly_covered = [
+        event for event in terrain_events
+        if window_status(event.get("terrain_event_id"), findings) == "partial"
+    ]
+    if matched_profiles and partly_covered:
+        # An issued chart covering part of a window is listed with the
+        # others, and the window is never reported as covered.
+        charts = list(dict.fromkeys(
+            str((item.get("data") or {}).get("chart_number")) for item in matched_profiles
+        ))
+        windows = [
+            "-".join(dict.fromkeys(
+                str((event.get(key) or {}).get("name") or "").lstrip("-")
+                for key in ("first_high", "last_high")
+            ))
+            for event in partly_covered
+        ]
+        profile_state = "FOUND"
+        profile_detail = (
+            f"{len(charts)} controlled depressurisation profile chart"
+            f"{'s' if len(charts) != 1 else ''} issued ({', '.join(charts)}); "
+            f"{' and '.join(windows)} {'is' if len(windows) == 1 else 'are'} "
+            "only partly covered - review required."
+        )
+    elif matched_profiles:
         profile_state = "FOUND"
         profile_detail = (
             f"{len(matched_profiles)} exact controlled depressurisation profile match(es) held."

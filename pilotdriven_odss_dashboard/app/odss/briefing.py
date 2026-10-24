@@ -2750,28 +2750,35 @@ def _validated_profile_coverage(
 ) -> tuple[int, int]:
     """Return how many current terrain windows have a controlled match.
 
-    A depressurisation result belongs to a particular detected terrain event.
-    Requiring that identity prevents a complete-but-stale result from another
-    route window from making the current briefing appear fully matched.  A
-    duplicate finding for one event also counts only once.
+    A depressurisation chart belongs to the detected terrain windows it names
+    (one chart can protect several windows). Requiring that identity prevents
+    a complete-but-stale result from another route window from making the
+    current briefing appear fully matched. A window counts once however many
+    charts cover it, and only when the issued charts cover all of its legs.
     """
-    event_ids = {
+    from .depress_coverage import window_status
+
+    matched_event_ids = {
         str(event.get("terrain_event_id") or "").strip()
         for event in terrain_events
         if str(event.get("terrain_event_id") or "").strip()
-    }
-    matched_event_ids = {
-        str((item.get("data") or {}).get("terrain_event_id") or "").strip()
-        for item in findings
-        if item.get("engine") == "depressurisation"
-        and bool((item.get("data") or {}).get("chart_number"))
-        and (item.get("data") or {}).get("coverage_complete") is True
-        and (item.get("data") or {}).get("reference_status")
-        == "controlled-index-loaded"
-        and str((item.get("data") or {}).get("terrain_event_id") or "").strip()
-        in event_ids
+        and window_status(event.get("terrain_event_id"), findings) == "complete"
     }
     return len(matched_event_ids), len(terrain_events)
+
+
+def _partially_covered_windows(
+    terrain_events: list[dict[str, Any]],
+    findings: list[dict[str, Any]],
+) -> int:
+    """Windows an issued chart covers only in part (never read as covered)."""
+    from .depress_coverage import window_status
+
+    return sum(
+        window_status(event.get("terrain_event_id"), findings) == "partial"
+        for event in terrain_events
+        if str(event.get("terrain_event_id") or "").strip()
+    )
 
 
 def _terrain_summary(
@@ -2859,11 +2866,23 @@ def _terrain_summary(
             f"{label}; {match_count}/{event_count} terrain windows have "
             "validated profile matches on the terrain page"
         )
-    unmatched_count = event_count - match_count
+    partial_count = _partially_covered_windows(terrain_events, findings)
+    unmatched_count = event_count - match_count - partial_count
+    partial_clause = (
+        f"; {partial_count} partially covered terrain "
+        f"window{'s' if partial_count != 1 else ''} - review required"
+        if partial_count
+        else ""
+    )
+    unmatched_clause = (
+        f"; {unmatched_count} unmatched terrain "
+        f"window{'s' if unmatched_count != 1 else ''}"
+        if unmatched_count or not partial_count
+        else ""
+    )
     return (
         f"{label}; {match_count}/{event_count} terrain windows have validated "
-        f"profile matches; {unmatched_count} unmatched terrain "
-        f"window{'s' if unmatched_count != 1 else ''}"
+        f"profile matches{partial_clause}{unmatched_clause}"
     )
 
 

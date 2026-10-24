@@ -2539,6 +2539,10 @@ def match_profiles(
                     "uncovered_edge_count": len(uncovered),
                     "start_index": item["start_index"],
                     "end_index": item["end_index"],
+                    # Route edges (index i = leg i -> i+1) of this window the
+                    # chart covers; a single-point window uses its own index.
+                    "covered_edges": sorted(item["covered_edges"]),
+                    "window_edges": sorted(required_edges),
                 }
             )
 
@@ -2578,6 +2582,180 @@ def match_profiles(
         ),
     )
 
+
+
+def _is_route_point(waypoint: dict[str, Any]) -> bool:
+    """A filed waypoint, not an FIR-boundary annotation row."""
+    name = str(waypoint.get("name") or "")
+    return bool(name) and not name.startswith("-")
+
+
+def _edge_runs(edges: Any) -> list[tuple[int, int]]:
+    """Contiguous route-edge runs as (from_index, to_index) waypoint pairs."""
+    runs: list[tuple[int, int]] = []
+    for edge in sorted(set(edges)):
+        if runs and runs[-1][1] == edge:
+            runs[-1] = (runs[-1][0], edge + 1)
+        else:
+            runs.append((edge, edge + 1))
+    return runs
+
+
+def _window_label(waypoints: list[dict[str, Any]], event: dict[str, Any]) -> str:
+    first = _route_waypoint_name(event["first_high"])
+    last = _route_waypoint_name(event["last_high"])
+    return first if first == last else f"{first}-{last}"
+
+
+def _leg_labels(
+    waypoints: list[dict[str, Any]],
+    event: dict[str, Any],
+    edges: Any,
+    *,
+    via: bool = False,
+) -> list[str]:
+    """Name route legs by their filed end points (``REBLO-EDATA``).
+
+    A single-point window is named by its point. ``via`` lists every filed
+    waypoint along the run (FIR-boundary rows are not waypoints).
+    """
+    if event["first_high"] is event["last_high"]:
+        return [_route_waypoint_name(event["first_high"])] if edges else []
+    labels: list[str] = []
+    for start, end in _edge_runs(edges):
+        if via:
+            labels.append("-".join(
+                _route_waypoint_name(waypoint)
+                for waypoint in waypoints[start : end + 1]
+                if _is_route_point(waypoint)
+            ))
+        else:
+            labels.append(
+                f"{_route_waypoint_name(waypoints[start])}-"
+                f"{_route_waypoint_name(waypoints[end])}"
+            )
+    return labels
+
+
+def _join_words(values: list[str]) -> str:
+    if len(values) <= 1:
+        return "".join(values)
+    return ", ".join(values[:-1]) + " and " + values[-1]
+
+
+def issue_profile_charts(
+    flight: dict[str, Any],
+    terrain_events: list[dict[str, Any]],
+    matches: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Group per-window matches into charts issued once per flight.
+
+    ``match_profiles`` selects, window by window, the charts that cover each
+    terrain window's legs. The issued unit is the chart: one chart that
+    protects two separate windows is one chart naming both windows and the
+    legs it covers in each (David, 24 Oct 2026: "one chart over REBLO is one
+    chart"). A chart that covers only part of a window is still issued, for
+    exactly the legs it covers; the legs no selected chart covers are named
+    per window so no surface can read the window as fully covered.
+
+    Returns the issued charts in route order and, per terrain window, its
+    coverage: the legs each chart covers and the legs no indexed chart covers.
+    """
+    waypoints = flight["route_waypoints"]
+    windows: dict[str, dict[str, Any]] = {}
+    for event in terrain_events:
+        start = waypoints.index(event["first_high"])
+        end = waypoints.index(event["last_high"])
+        required = set(range(start, end)) or {start}
+        windows[event["terrain_event_id"]] = {
+            "event": event,
+            "label": _window_label(waypoints, event),
+            "required": required,
+            "covered": set(),
+            "charts": [],
+        }
+    for match in matches:
+        window = windows.get(match["terrain_event_id"])
+        if window is None:
+            continue
+        covered = set(match.get("covered_edges") or ()) & window["required"]
+        window["covered"] |= covered
+        window["charts"].append((str(match["profile"].get("chart") or ""), covered))
+    for window in windows.values():
+        uncovered = window["required"] - window["covered"]
+        window["complete"] = not uncovered
+        window["uncovered_legs"] = _leg_labels(waypoints, window["event"], uncovered)
+        window["uncovered_via"] = _leg_labels(
+            waypoints, window["event"], uncovered, via=True,
+        )
+
+    issues: dict[str, dict[str, Any]] = {}
+    for match in matches:
+        chart = str(match["profile"].get("chart") or "")
+        issue = issues.setdefault(chart, {"chart": chart, "profile": match["profile"], "matches": []})
+        issue["matches"].append(match)
+    issued: list[dict[str, Any]] = []
+    for issue in issues.values():
+        first = issue["matches"][0]
+        coverage: list[dict[str, Any]] = []
+        uncovered_legs: list[str] = []
+        for match in issue["matches"]:
+            window = windows[match["terrain_event_id"]]
+            if any(row["terrain_event_id"] == match["terrain_event_id"] for row in coverage):
+                continue
+            edges = set(match.get("covered_edges") or ()) & window["required"]
+            coverage.append({
+                "terrain_event_id": match["terrain_event_id"],
+                "window": window["label"],
+                "covered_legs": _leg_labels(waypoints, window["event"], edges),
+                "window_complete": window["complete"],
+            })
+            uncovered_legs.extend(
+                leg for leg in window["uncovered_legs"] if leg not in uncovered_legs
+            )
+        whole_window = (
+            len(coverage) == 1
+            and set(first.get("covered_edges") or ()) >= windows[first["terrain_event_id"]]["required"]
+        )
+        start_index = min(match["start_index"] for match in issue["matches"])
+        end_index = max(match["end_index"] for match in issue["matches"])
+        issued.append({
+            **issue,
+            "event": first["event"],
+            "events": [windows[row["terrain_event_id"]]["event"] for row in coverage],
+            "terrain_event_id": first["terrain_event_id"],
+            "terrain_event_ids": [row["terrain_event_id"] for row in coverage],
+            "window_coverage": coverage,
+            "uncovered_legs": uncovered_legs,
+            "coverage_complete": all(row["window_complete"] for row in coverage),
+            # One chart covering one whole window: the published one-line
+            # proposal already says everything; nothing more is printed.
+            "covers_one_whole_window": whole_window,
+            "start_index": start_index,
+            "end_index": end_index,
+            "route_start": _route_waypoint_name(waypoints[start_index]),
+            "route_end": _route_waypoint_name(waypoints[end_index]),
+            "airways": first["airways"],
+            "match_class": first.get("match_class", "published-route"),
+            "direction": first["direction"],
+        })
+    return issued, windows
+
+
+def chart_coverage_statement(issue: dict[str, Any]) -> str:
+    """``Covers REBLO-EDATA of window TBN-EDATA, and RASAM.`` style statement."""
+    parts = []
+    for row in issue["window_coverage"]:
+        legs = _join_words(row["covered_legs"])
+        parts.append(legs if legs == row["window"] else f"{legs} of window {row['window']}")
+    statement = "Covers " + (
+        parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + ", and " + parts[-1]
+    )
+    if issue["uncovered_legs"]:
+        legs = _join_words(issue["uncovered_legs"])
+        verb = "is" if len(issue["uncovered_legs"]) == 1 else "are"
+        statement += f"; {legs} {verb} not covered by any indexed chart - review required"
+    return statement + "."
 
 
 def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
@@ -3627,11 +3805,16 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     depress_source_loaded = (
         DEPRESS_LIBRARY_METADATA.get("status") == "controlled-index-loaded"
     )
-    for index, match in enumerate(matches, start=1):
-        event = match["event"]
-        profile = match["profile"]
-        route_start = match["route_start"]
-        route_end = match["route_end"]
+    # The issued unit is the chart, once per flight (David, 24 Oct 2026).
+    issued_charts, window_coverage = issue_profile_charts(
+        flight, terrain_events, matches,
+    )
+    for index, issue in enumerate(issued_charts, start=1):
+        event = issue["event"]
+        events_covered = issue["events"]
+        profile = issue["profile"]
+        route_start = issue["route_start"]
+        route_end = issue["route_end"]
         critical = profile["critical"]
         critical_aliases = _profile_aliases(profile, "critical")
         critical_wp = next(
@@ -3642,11 +3825,16 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             ),
             None,
         )
-        maximum = event["maximum"]
-        end_wp = event["drop"] or event["last_high"]
+        maximum = max(
+            (item["maximum"] for item in events_covered),
+            key=lambda point: point.get("msa_hundreds_ft") or -1,
+        )
         details = [
-            f"High-MSA event ACTM {format_actm(event['first_high']['actm_minutes'])}-"
-            f"{format_actm(end_wp['actm_minutes'])}.",
+            f"High-MSA event ACTM {format_actm(item['first_high']['actm_minutes'])}-"
+            f"{format_actm((item['drop'] or item['last_high'])['actm_minutes'])}."
+            for item in events_covered
+        ]
+        details += [
             f"Maximum MSA {maximum['msa_hundreds_ft']}* "
             f"({maximum['msa_hundreds_ft'] * 100:,} ft) at {maximum['name']}.",
             f"Published chart route {profile['from']}-{profile['to']}; "
@@ -3662,10 +3850,10 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         ]
         if profile.get("chart_page"):
             details.append(f"Controlled chart page {profile['chart_page']}.")
-        if not match["coverage_complete"]:
-            details.append(
-                f"Coverage incomplete: {match['uncovered_edge_count']} event route leg(s) remain unmatched."
-            )
+        coverage_statement = chart_coverage_statement(issue)
+        states_coverage = not issue["covers_one_whole_window"]
+        if states_coverage:
+            details.append(f"Coverage: {coverage_statement}")
         if not depress_source_loaded:
             details.append(
                 "Controlled profile index is not mounted; this repository-safe "
@@ -3675,14 +3863,17 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "depressurisation",
             (
                 "warning"
-                if match["coverage_complete"] and depress_source_loaded
+                if issue["coverage_complete"] and depress_source_loaded
                 else "unknown"
             ),
             f"Profile {index} - {route_start} to {route_end} "
-            f"({' / '.join(match['airways']) or 'airway not identified'})",
+            f"({' / '.join(issue['airways']) or 'airway not identified'})",
             (
-                f"Proposed depressurisation chart {profile['chart']}; "
-                f"critical point {critical}."
+                (
+                    f"Proposed depressurisation chart {profile['chart']}; "
+                    f"critical point {critical}."
+                )
+                + (f" {coverage_statement}" if states_coverage else "")
                 if depress_source_loaded
                 else (
                     f"Candidate chart {profile['chart']}; controlled profile "
@@ -3693,11 +3884,17 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             {
                 "chart_number": profile["chart"],
                 "critical_point": critical,
-                "terrain_event_id": match["terrain_event_id"],
+                "terrain_event_id": issue["terrain_event_id"],
+                # Every terrain window this one chart protects, and the legs
+                # it covers in each (one chart, issued once per flight).
+                "terrain_event_ids": issue["terrain_event_ids"],
+                "window_coverage": issue["window_coverage"],
+                "uncovered_legs": issue["uncovered_legs"],
+                "coverage_statement": coverage_statement,
                 "start_actm_minutes": event["first_high"]["actm_minutes"],
                 "route_start": route_start,
                 "route_end": route_end,
-                "coverage_complete": match["coverage_complete"],
+                "coverage_complete": issue["coverage_complete"],
                 "controlled_issue_date": DEPRESS_LIBRARY_METADATA.get("issue_date"),
                 "reference_status": DEPRESS_LIBRARY_METADATA.get("status"),
                 "chart_page": profile.get("chart_page"),
@@ -3706,12 +3903,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                         flight,
                         [
                             waypoint.get("source_page")
+                            for item in events_covered
                             for waypoint in (
-                                event.get("preceding"),
-                                event.get("first_high"),
-                                event.get("last_high"),
-                                event.get("maximum"),
-                                event.get("drop"),
+                                item.get("preceding"),
+                                item.get("first_high"),
+                                item.get("last_high"),
+                                item.get("maximum"),
+                                item.get("drop"),
                             )
                             if waypoint
                         ],
@@ -3733,19 +3931,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             },
         ))
 
-    matches_by_event: dict[str, list[dict[str, Any]]] = {}
-    for match in matches:
-        matches_by_event.setdefault(match["terrain_event_id"], []).append(match)
     coverage_scope = str(
         DEPRESS_LIBRARY_METADATA.get("coverage_scope") or "not stated"
     )
     for event in terrain_events:
         event_id = event["terrain_event_id"]
-        event_matches = matches_by_event.get(event_id, [])
-        exact_profile_confirmed = bool(
-            depress_source_loaded
-            and any(match["coverage_complete"] for match in event_matches)
-        )
+        window = window_coverage[event_id]
+        exact_profile_confirmed = bool(depress_source_loaded and window["complete"])
         if exact_profile_confirmed:
             continue
 
@@ -3754,95 +3946,141 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         threshold_drop = event.get("drop")
         context_start = event.get("preceding") or first_high
         event_end = threshold_drop or last_high
-        candidate_charts = sorted(
-            {
-                str(match["profile"].get("chart") or "")
-                for match in event_matches
-                if match["profile"].get("chart")
-            }
-        )
+        candidate_charts = sorted({chart for chart, _ in window["charts"] if chart})
+        # A governed chart issued for part of this window: name the legs it
+        # covers and the legs no indexed chart covers (never "covered").
+        partially_issued = bool(depress_source_loaded and window["charts"])
         reference_status = "partial" if depress_source_loaded else "unavailable"
-        summary = (
-            "No exact profile confirmed from controlled partial issue."
-            if depress_source_loaded and coverage_scope == "partial_issue"
-            else (
-                "No exact profile confirmed from controlled index."
-                if depress_source_loaded
+        if partially_issued:
+            covered_by = [
+                {
+                    "chart": chart,
+                    "legs": _leg_labels(flight["route_waypoints"], event, edges),
+                }
+                for chart, edges in window["charts"]
+            ]
+            uncovered = window["uncovered_legs"]
+            summary = (
+                "; ".join(
+                    f"{'Chart' if position == 0 else 'chart'} {row['chart']} "
+                    f"covers {_join_words(row['legs'])}"
+                    for position, row in enumerate(covered_by)
+                )
+                + f"; {_join_words(uncovered)} "
+                + ("is" if len(uncovered) == 1 else "are")
+                + " not covered by any indexed chart - review required."
+            )
+        else:
+            summary = (
+                "No exact profile confirmed from controlled partial issue."
+                if depress_source_loaded and coverage_scope == "partial_issue"
                 else (
-                    "No exact profile confirmed because the controlled profile "
-                    "index is unavailable."
+                    "No exact profile confirmed from controlled index."
+                    if depress_source_loaded
+                    else (
+                        "No exact profile confirmed because the controlled profile "
+                        "index is unavailable."
+                    )
                 )
             )
-        )
         details = [
             f"High-MSA event ACTM {format_actm(first_high['actm_minutes'])}-"
             f"{format_actm(event_end['actm_minutes'])}.",
             f"Validated exposure boundary {first_high['name']}-{last_high['name']}; "
             f"profile matching context begins at {context_start['name']}.",
         ]
-        if candidate_charts:
+        if partially_issued:
+            details.extend(
+                f"Issued chart {row['chart']} covers {_join_words(row['legs'])}."
+                for row in covered_by
+            )
             details.append(
-                "Candidate chart coverage is incomplete: "
-                f"{', '.join(candidate_charts)}."
+                "Not covered by any indexed chart: "
+                f"{_join_words(window['uncovered_via'])}."
             )
-        details.append(
-            (
+            details.append(
                 f"Controlled profile coverage scope is {coverage_scope}; no "
-                "complete endpoint, airway and effectivity match was found."
-                if depress_source_loaded
-                else "The approved controlled profile index is not mounted."
+                "indexed chart covers the remaining legs, and no nearby or "
+                "generic chart is substituted."
             )
-        )
+        else:
+            if candidate_charts:
+                details.append(
+                    "Candidate chart coverage is incomplete: "
+                    f"{', '.join(candidate_charts)}."
+                )
+            details.append(
+                (
+                    f"Controlled profile coverage scope is {coverage_scope}; no "
+                    "complete endpoint, airway and effectivity match was found."
+                    if depress_source_loaded
+                    else "The approved controlled profile index is not mounted."
+                )
+            )
+        data = {
+            "terrain_event_id": event_id,
+            "confirmed": False,
+            "coverage_complete": False,
+            "reference_status": reference_status,
+            "controlled_library_status": DEPRESS_LIBRARY_METADATA.get("status"),
+            "controlled_index_loaded": depress_source_loaded,
+            "coverage_scope": coverage_scope,
+            "candidate_chart_numbers": candidate_charts,
+        }
+        if partially_issued:
+            data.update({
+                "coverage_state": "partial",
+                "issued_chart_numbers": [row["chart"] for row in covered_by],
+                "covered_legs": covered_by,
+                "uncovered_legs": window["uncovered_legs"],
+            })
+        data.update({
+            "start_actm_minutes": first_high["actm_minutes"],
+            "end_actm_minutes": event_end["actm_minutes"],
+            "profile_context_start_waypoint": context_start["name"],
+            "first_high_waypoint": first_high["name"],
+            "last_high_waypoint": last_high["name"],
+            "threshold_drop_waypoint": (
+                threshold_drop["name"] if threshold_drop else None
+            ),
+            "source_references": [
+                _cfp_source_reference(
+                    flight,
+                    [
+                        waypoint.get("source_page")
+                        for waypoint in (
+                            event.get("preceding"),
+                            first_high,
+                            last_high,
+                            event.get("maximum"),
+                            threshold_drop,
+                        )
+                        if waypoint
+                    ],
+                    "Route MSA data",
+                ),
+                {
+                    "source_type": "controlled_document",
+                    "document_title": DEPRESS_LIBRARY_METADATA.get("title"),
+                    "revision": DEPRESS_LIBRARY_METADATA.get("issue_date"),
+                    "pages": [],
+                    "section": "Depressurisation profile index",
+                    "availability_status": DEPRESS_LIBRARY_METADATA.get("status"),
+                    "coverage_scope": coverage_scope,
+                },
+            ],
+        })
         findings.append(finding(
             "depressurisation",
             "unknown",
-            f"Profile unresolved - {first_high['name']} to {last_high['name']}",
+            (
+                f"Profile coverage incomplete - {first_high['name']} to {last_high['name']}"
+                if partially_issued
+                else f"Profile unresolved - {first_high['name']} to {last_high['name']}"
+            ),
             summary,
             details,
-            {
-                "terrain_event_id": event_id,
-                "confirmed": False,
-                "coverage_complete": False,
-                "reference_status": reference_status,
-                "controlled_library_status": DEPRESS_LIBRARY_METADATA.get("status"),
-                "controlled_index_loaded": depress_source_loaded,
-                "coverage_scope": coverage_scope,
-                "candidate_chart_numbers": candidate_charts,
-                "start_actm_minutes": first_high["actm_minutes"],
-                "end_actm_minutes": event_end["actm_minutes"],
-                "profile_context_start_waypoint": context_start["name"],
-                "first_high_waypoint": first_high["name"],
-                "last_high_waypoint": last_high["name"],
-                "threshold_drop_waypoint": (
-                    threshold_drop["name"] if threshold_drop else None
-                ),
-                "source_references": [
-                    _cfp_source_reference(
-                        flight,
-                        [
-                            waypoint.get("source_page")
-                            for waypoint in (
-                                event.get("preceding"),
-                                first_high,
-                                last_high,
-                                event.get("maximum"),
-                                threshold_drop,
-                            )
-                            if waypoint
-                        ],
-                        "Route MSA data",
-                    ),
-                    {
-                        "source_type": "controlled_document",
-                        "document_title": DEPRESS_LIBRARY_METADATA.get("title"),
-                        "revision": DEPRESS_LIBRARY_METADATA.get("issue_date"),
-                        "pages": [],
-                        "section": "Depressurisation profile index",
-                        "availability_status": DEPRESS_LIBRARY_METADATA.get("status"),
-                        "coverage_scope": coverage_scope,
-                    },
-                ],
-            },
+            data,
         ))
 
     if terrain_events and not matches:

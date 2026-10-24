@@ -24,6 +24,7 @@ from .constants import format_actm
 from .controlled_library import aircraft_effectivity_tokens, normalized_registration
 from . import engines
 from .engines import detect_terrain_events, effectivity_conflict
+from .depress_coverage import profile_finding_event_ids
 from .report_facts import actm_utc_clock
 
 
@@ -58,19 +59,19 @@ def _effectivity_label(flight: dict[str, Any]) -> str:
 def _matched_event_findings(
     findings: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Return every complete controlled match, including repeated charts.
+    """Return every issued controlled chart finding.
 
-    One approved profile can legitimately cover more than one distinct
-    high-terrain exposure window. Event-level consumers (for example the
-    Level 2 match matrix) must retain every match; profile-level consumers
-    can deduplicate the result separately.
+    The engine issues one finding per chart, naming every terrain window it
+    covers (``terrain_event_ids``); a chart that covers only part of a window
+    is issued too, so its governed chart is served and embedded. Window-level
+    consumers join through ``depress_coverage``; findings saved before that
+    contract may still repeat a chart, so profile-level consumers deduplicate.
     """
     return [
         finding
         for finding in findings
         if finding.get("engine") == "depressurisation"
         and bool((finding.get("data") or {}).get("chart_number"))
-        and bool((finding.get("data") or {}).get("coverage_complete"))
         and (finding.get("data") or {}).get("reference_status")
         == "controlled-index-loaded"
     ]
@@ -209,18 +210,15 @@ def _draw_card(
     related_events: list[dict[str, Any]] = []
     seen_event_ids: set[str] = set()
     for related_finding in related_findings:
-        related_data = related_finding.get("data") or {}
-        related_event = _event_for_id(
-            events,
-            related_data.get("terrain_event_id"),
-        )
-        if related_event is None:
-            continue
-        event_id = str(related_event.get("terrain_event_id") or "")
-        if event_id in seen_event_ids:
-            continue
-        seen_event_ids.add(event_id)
-        related_events.append(related_event)
+        for related_id in profile_finding_event_ids(related_finding):
+            related_event = _event_for_id(events, related_id)
+            if related_event is None:
+                continue
+            event_id = str(related_event.get("terrain_event_id") or "")
+            if event_id in seen_event_ids:
+                continue
+            seen_event_ids.add(event_id)
+            related_events.append(related_event)
     if not related_events and event is not None:
         related_events.append(event)
 
@@ -363,6 +361,12 @@ def _draw_card(
     )
     if not data.get("coverage_complete"):
         coverage = "PARTIAL coverage - review required"
+    if data.get("coverage_statement") and (
+        len(related_events) > 1 or not data.get("coverage_complete")
+    ):
+        # The chart names the legs it covers in each window it protects, and
+        # the legs no indexed chart covers.
+        coverage = str(data["coverage_statement"]).rstrip(".")
     rows.append(
         (
             "COVERAGE",
@@ -605,7 +609,11 @@ def draw_depressurisation_analysis(
             lines.append(exposure)
             lines.append(
                 f"Filed leg: {_filed_segment(flight, event)}. "
-                "No exact chart match in mounted index."
+                + (
+                    str(finding.get("summary") or "")
+                    if data.get("coverage_state") == "partial"
+                    else "No exact chart match in mounted index."
+                )
             )
         lines.append(
             "Status remains manual profile-index review; "
@@ -623,14 +631,9 @@ def draw_depressurisation_analysis(
             for finding in matched
         )
         event_refs = ", ".join(
-            _terr_ref(
-                events,
-                _event_for_id(
-                    events,
-                    (finding.get("data") or {}).get("terrain_event_id"),
-                ),
-            )
+            _terr_ref(events, _event_for_id(events, event_id))
             for finding in matched_events
+            for event_id in profile_finding_event_ids(finding)
         )
         canvas.setFillColor(theme.MUTED)
         canvas.setFont(theme.SANS, theme.readable(5.8))

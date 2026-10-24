@@ -1588,11 +1588,23 @@ def _overview_rows(
         for item in profile_findings
         if is_confirmed_profile_finding(item)
     ]
-    if confirmed_profiles:
+    partial_profiles = [
+        item
+        for item in profile_findings
+        if (item.get("data") or {}).get("chart_number")
+        and (item.get("data") or {}).get("reference_status") == "controlled-index-loaded"
+        and not is_confirmed_profile_finding(item)
+    ]
+    if confirmed_profiles or partial_profiles:
+        # Every issued chart is named; one covering a window only in part
+        # says so (David, 24 Oct 2026).
         profile_result = "; ".join(
             dict.fromkeys(
-                profile_finding_label(item)
-                for item in confirmed_profiles
+                [profile_finding_label(item) for item in confirmed_profiles]
+                + [
+                    f"{profile_finding_label(item)} partial - review required"
+                    for item in partial_profiles
+                ]
             )
         )
     elif terrain_windows:
@@ -1680,7 +1692,7 @@ def _terrain_rows(
             for item in event_profiles
             if is_confirmed_profile_finding(item)
         ]
-        profile = profile_coverage_label(event_profiles)
+        profile = profile_coverage_label(event_profiles, event.get("terrain_event_id"))
         utc_values = [
             actm_utc_clock(flight, start),
             actm_utc_clock(flight, end),
@@ -1726,7 +1738,7 @@ def _terrain_rows(
                     _pilot_text(item.get("title")),
                     "Review",
                     _finding_summary(item),
-                    profile_coverage_label(event_profiles),
+                    profile_coverage_label(event_profiles, data.get("terrain_event_id")),
                 ]
             )
     return rows

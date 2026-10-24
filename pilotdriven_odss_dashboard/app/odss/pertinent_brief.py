@@ -2761,7 +2761,7 @@ def _draw_route_detail(
             event,
             depress_findings,
         )
-        profile = profile_coverage_label(event_profiles)
+        profile = profile_coverage_label(event_profiles, event.get("terrain_event_id"))
         terrain_rows.append(
             [
                 chr(64 + index),

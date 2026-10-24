@@ -134,10 +134,12 @@ def test_level2_artifact_contract_publishes_actual_report_page() -> None:
     assert "level2_report_anchor" not in artifacts[0]
 
 
-def test_partial_coverage_candidate_does_not_require_a_chart() -> None:
-    # SQ302 regression: engine selects Profile 10-4 for only part of the
-    # route (coverage_complete=False). The loader serves no chart for a
-    # partial candidate, so the gate must not fail the whole briefing.
+def test_partial_coverage_chart_requires_its_artifact() -> None:
+    # SQ302 21 Oct / SQ301 24 Oct: the engine issues Profile 10-4 for the
+    # legs it covers (coverage_complete=False for the window). An issued
+    # chart - complete or partial - must have its governed artifact; the
+    # 21 Oct patch that exempted partial charts also dropped 10-4 from the
+    # briefing. The gate fails closed for it like any other issued chart.
     findings = [
         {
             "engine": "depressurisation",
@@ -149,12 +151,15 @@ def test_partial_coverage_candidate_does_not_require_a_chart() -> None:
         }
     ]
 
-    assert validate_depressurisation_profile_charts({}, findings, 1) == []
-    assert validate_depressurisation_profile_charts({}, findings, 2) == []
-    assert validate_depressurisation_profile_charts({}, findings, "combined") == []
+    for mode in (1, 2, "combined"):
+        with pytest.raises(DepressurisationProfileChartPublicationError) as captured:
+            validate_depressurisation_profile_charts({}, findings, mode)
+        assert {item["location"] for item in captured.value.violations} == {
+            "depressurisation_profile_charts[10-4]"
+        }
 
 
-def test_mixed_partial_and_complete_only_enforces_complete() -> None:
+def test_mixed_partial_and_complete_enforces_both() -> None:
     findings = [
         {
             "engine": "depressurisation",
@@ -178,7 +183,26 @@ def test_mixed_partial_and_complete_only_enforces_complete() -> None:
         validate_depressurisation_profile_charts({}, findings, 1)
 
     locations = {item["location"] for item in captured.value.violations}
-    assert locations == {"depressurisation_profile_charts[8-5]"}
+    assert locations == {
+        "depressurisation_profile_charts[10-4]",
+        "depressurisation_profile_charts[8-5]",
+    }
+
+
+def test_candidate_without_a_controlled_index_does_not_require_a_chart() -> None:
+    # With no controlled index mounted nothing is issued: a repository-safe
+    # candidate names no governed chart, so no artifact can be demanded.
+    findings = [
+        {
+            "engine": "depressurisation",
+            "data": {
+                "chart_number": "10-4",
+                "coverage_complete": False,
+                "reference_status": "controlled-source-not-mounted",
+            },
+        }
+    ]
+    assert validate_depressurisation_profile_charts({}, findings, "combined") == []
 
 
 def test_unmatched_high_terrain_without_a_proposed_profile_does_not_require_a_chart() -> None:

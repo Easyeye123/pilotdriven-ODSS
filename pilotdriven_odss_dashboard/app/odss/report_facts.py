@@ -5,6 +5,13 @@ import re
 from typing import Any, Iterable
 
 from .constants import format_actm
+from .depress_coverage import (
+    chart_legs_for_window,
+    covers_window_completely,
+    covers_window_partly,
+    profile_finding_event_ids,
+    window_gap_finding,
+)
 from .deferred_dispatch import (
     deferred_item_type_for_display,
     deferred_reference_for_display,
@@ -377,10 +384,13 @@ def profile_findings_for_terrain_event(
     ]
     event_id = _clean(event.get("terrain_event_id"))
     if event_id:
+        # A chart is issued once per flight and names every window it
+        # covers; the window's own finding names it alone.
         direct = [
             finding
             for finding in candidates
-            if _clean((finding.get("data") or {}).get("terrain_event_id"))
+            if event_id in profile_finding_event_ids(finding)
+            or _clean((finding.get("data") or {}).get("terrain_event_id"))
             == event_id
         ]
         if direct:
@@ -424,13 +434,23 @@ def profile_findings_for_terrain_event(
     )
 
 
-def is_confirmed_profile_finding(finding: dict[str, Any]) -> bool:
+def is_confirmed_profile_finding(
+    finding: dict[str, Any],
+    terrain_event_id: Any = None,
+) -> bool:
+    """A controlled chart that, with the issued set, covers the whole window.
+
+    Without a window, the chart must cover every window it names.
+    """
     data = finding.get("data") or {}
-    return bool(
+    if not (
         data.get("chart_number")
         and data.get("reference_status") == "controlled-index-loaded"
-        and data.get("coverage_complete") is True
-    )
+    ):
+        return False
+    if terrain_event_id is not None and _clean(terrain_event_id):
+        return covers_window_completely(finding, terrain_event_id)
+    return data.get("coverage_complete") is True
 
 
 def profile_finding_label(finding: dict[str, Any]) -> str:
@@ -442,11 +462,34 @@ def profile_finding_label(finding: dict[str, Any]) -> str:
     return f"{chart} {route_start}-{route_end} / CP {critical}"
 
 
-def profile_coverage_label(findings: Iterable[dict[str, Any]]) -> str:
+def profile_coverage_label(
+    findings: Iterable[dict[str, Any]],
+    terrain_event_id: Any = None,
+) -> str:
     candidates = [item for item in findings if isinstance(item, dict)]
-    confirmed = [item for item in candidates if is_confirmed_profile_finding(item)]
+    confirmed = [
+        item for item in candidates
+        if is_confirmed_profile_finding(item, terrain_event_id)
+    ]
     if confirmed:
         return "; ".join(profile_finding_label(item) for item in confirmed)
+    if terrain_event_id is not None and _clean(terrain_event_id):
+        issued = [
+            item for item in candidates
+            if covers_window_partly(item, terrain_event_id)
+        ]
+        gap = window_gap_finding(terrain_event_id, candidates) or {}
+        uncovered = (gap.get("data") or {}).get("uncovered_legs") or []
+        if issued and uncovered:
+            charts = "; ".join(
+                f"{_clean((item.get('data') or {}).get('chart_number'))} "
+                + ", ".join(chart_legs_for_window(item, terrain_event_id))
+                for item in issued
+            )
+            return (
+                f"Partial: {charts}; {', '.join(uncovered)} not covered"
+                " - review required"
+            )
     partial = [
         _clean((item.get("data") or {}).get("chart_number"))
         for item in candidates
