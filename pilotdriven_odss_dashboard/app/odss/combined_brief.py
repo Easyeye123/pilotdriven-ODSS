@@ -274,7 +274,12 @@ WAFC_CHARTS_PER_PAGE = 3
 # reads 'reached, not current', never 'not reached', and no status folds into 'not held'. The volcanic check states
 # currency for the flight, incomplete and unevaluated answers, the US domestic SIGMET gap, settled Pacific VAAC
 # responsibility (Doc 9766 rows bounded by the FAA's FIR edges) and SIGMETs expiring before passage.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-24-source-status-vocabulary-v115"
+# 24 Oct 2026 (v116, on v115). ITEM9-VWS-TIES (open item #9, David 30 Sep: 'only Sapda was flagged out but
+# actually other waypoints also had 4 units as VWS'): the VWS maximum is one shared selection (vws_maxima.py) that
+# keeps every waypoint at the maximum in route order. vws_review publishes maximum_points; its summary, page 6's VWS
+# sentence and the CAT corroboration condition name the first four and count the rest ('+K more at NNN (see
+# dashboard)'). A single maximum publishes exactly as before.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-24-vws-maximum-ties-v116"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can
