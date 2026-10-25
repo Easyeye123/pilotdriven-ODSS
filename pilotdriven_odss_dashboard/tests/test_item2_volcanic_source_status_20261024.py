@@ -147,13 +147,28 @@ def test_the_page_six_line_prints_every_status_in_its_own_words():
         {"source": "FUTURE FEED", "status": "REACHED · LATE"},
         {"source": "DEAD FEED", "status": "NOT REACHED"},
     ])
-    assert "VA SIGMET FEED reached, not current" in line
-    assert "RESPONSIBLE VAACS reached, not settled" in line
-    assert "FUTURE FEED reached, late" in line
-    assert "OFP VOLCANO ADVISORIES not held" in line
-    assert "DEAD FEED not reached" in line
+    # Each group reads as a group: names, a colon, the shared status words (25 Oct 2026 QA).
+    assert "VA SIGMET FEED: reached, not current" in line
+    assert "RESPONSIBLE VAACS: reached, not settled" in line
+    assert "FUTURE FEED: reached, late" in line
+    assert "OFP VOLCANO ADVISORIES: not held" in line
+    assert "DEAD FEED: not reached" in line
     # A status the old four-word table did not know printed "not held"; a reached answer printed "not reached".
-    assert "VA SIGMET FEED not reached" not in line and "FUTURE FEED not held" not in line
+    assert "VA SIGMET FEED: not reached" not in line and "FUTURE FEED: not held" not in line
+
+
+def test_the_page_six_line_reads_grouped_sources_as_a_group():
+    """25 Oct 2026 QA misread "VA SIGMET FEED, RESPONSIBLE VAACS reached, not current, incomplete" as the feed row having
+    lost its status words: two names join with "and", three or more with commas and "and", then a colon."""
+    line = source_assurance_line([
+        {"source": "OFP VOLCANO ADVISORIES", "status": "NOT HELD"},
+        {"source": "VA SIGMET FEED", "status": "REACHED · NOT CURRENT · INCOMPLETE"},
+        {"source": "OFP VA SIGMET SECTION", "status": "NOT HELD"},
+        {"source": "RESPONSIBLE VAACS", "status": "REACHED · NOT CURRENT · INCOMPLETE"},
+        {"source": "SYNTHETIC THIRD", "status": "NOT HELD"},
+    ])
+    assert line == ("SOURCE ASSURANCE: OFP VOLCANO ADVISORIES, OFP VA SIGMET SECTION and SYNTHETIC THIRD: not held; "
+                    "VA SIGMET FEED and RESPONSIBLE VAACS: reached, not current, incomplete.")
     assert "UPLOADED OFP" not in line
 
 
@@ -203,8 +218,8 @@ def test_the_feed_row_states_reach_and_answer_apart_on_every_surface(case):
     if ss.source_status_met(status):
         assert "VA SIGMET FEED" not in line
     else:
-        assert re.search(rf"VA SIGMET FEED(?:, [A-Z ]+)* {re.escape(ss.source_status_words(status))}(?:;|\.)", line), line
-    assert ("VA SIGMET FEED not reached" in line) == (status == "NOT REACHED"), line
+        assert re.search(rf"VA SIGMET FEED(?:(?:, | and )[A-Z ]+)*: {re.escape(ss.source_status_words(status))}(?:;|\.)", line), line
+    assert bool(re.search(r"VA SIGMET FEED(?:(?:, | and )[A-Z ]+)*: not reached(?:;|\.)", line)) == (status == "NOT REACHED"), line
 
 
 def test_a_route_into_us_domestic_firs_is_a_feed_coverage_gap_never_a_clear_feed():
@@ -311,9 +326,9 @@ def test_sq314_shape_prints_reached_on_every_surface_and_stays_unresolved():
     assert feed_row["status"] == "REACHED · NOT CURRENT · INCOMPLETE"
     assert feed_row["detail"].startswith("VA SIGMET feed: reached, not current")
     line = source_assurance_line(view["source_assurance"])
-    # Sources with the same status share their words: "VA SIGMET FEED, RESPONSIBLE VAACS reached, not current, ...".
-    assert re.search(r"VA SIGMET FEED(?:, [A-Z ]+)* reached, not current, incomplete", line), line
-    assert "VA SIGMET FEED not reached" not in line
+    # Sources with the same status share their words: "VA SIGMET FEED and RESPONSIBLE VAACS: reached, not current, ...".
+    assert re.search(r"VA SIGMET FEED(?:(?:, | and )[A-Z ]+)*: reached, not current, incomplete", line), line
+    assert not re.search(r"VA SIGMET FEED(?:(?:, | and )[A-Z ]+)*: not reached", line)
     assert check["state"] == checklist_row(view)["state"] == "UNRESOLVED"
 
 
@@ -402,8 +417,9 @@ def test_the_rendered_page_six_names_a_stale_feed_reached_never_not_reached(monk
     analysis, pages = _rendered_pdf(monkeypatch, tmp_path, SQ366,
                                     feed(freshness="stale", retrieved="2026-08-04T17:00:00+00:00"))
     closing = pages[-1]
-    assert re.search(r"VA SIGMET FEED reached,\s+not current", closing), closing
-    assert "VA SIGMET FEED not reached" not in closing
+    # 25 Oct 2026 QA: the group's names, a colon, then its words ("VA SIGMET FEED: reached, not current" alone).
+    assert re.search(r"VA SIGMET FEED(?:(?:, | and )[A-Z ]+)*:\s+reached,\s+not current", closing), closing
+    assert not re.search(r"VA SIGMET FEED(?:(?:, | and )[A-Z ]+)*:\s+not reached", closing)
     view_rows = {row["source"]: row for row in analysis["view"]["briefing"]["source_assurance"]}
     assert view_rows["VA SIGMET FEED"]["status"] == "REACHED · NOT CURRENT"
 

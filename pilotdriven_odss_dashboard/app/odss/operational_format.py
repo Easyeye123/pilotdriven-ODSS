@@ -531,7 +531,14 @@ def source_assurance_line(entries: list[dict[str, Any]]) -> str:
         grouped.setdefault(source_status_words(row.get("status")), []).append(text(row.get("source")))
     if not grouped:
         return "SOURCE ASSURANCE: every listed source is held or reached."
-    return "SOURCE ASSURANCE: " + "; ".join(f"{', '.join(names)} {word}" for word, names in grouped.items()) + "."
+    # 25 Oct 2026 QA: "VA SIGMET FEED, RESPONSIBLE VAACS reached, not current, incomplete" read as the feed having lost
+    # its status words. Each group now reads as a group: its names joined with "and" (commas before the last for three
+    # or more), a colon, then the shared status words; groups stay separated by "; ".
+    return "SOURCE ASSURANCE: " + "; ".join(f"{_name_group(names)}: {word}" for word, names in grouped.items()) + "."
+
+
+def _name_group(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def compact_conditions_summary(summary: Any, limit: int | None = 72) -> str:
