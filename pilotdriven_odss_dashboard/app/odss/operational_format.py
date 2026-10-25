@@ -1637,7 +1637,7 @@ def severity_pill(value: Any) -> tuple[str, Any]:
 def build_sections(flight, view, findings, references=None) -> dict[str, list[Page]]:
     """David's six reference pages; every published fact keeps an owner."""
     from .airport_pdf_analysis import airport_pdf_analysis, alternate_pdf_analysis
-    from .combined_brief import _operational_coverage_receipt, _route_anchor_entries
+    from .combined_brief import _operational_coverage_receipt, _route_anchor_entries, early_call_anchor_entries
 
     identity = view.get("flight_identity") or {}
     one = view.get("page_one") or {}
@@ -1832,6 +1832,11 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
             "The analysis holds no ranked decision finding for this flight. Source coverage "
             "conditions remain on the ENROUTE / INTAM / ASSURANCE page."], CYAN)]
     anchors = _route_anchor_entries(flight, view)
+    early_anchors = early_call_anchor_entries(flight, view)
+    if early_anchors:
+        # The departure anchor stays first; every other anchor keeps its ACTM order (an anchor with no ACTM sorts last).
+        last = max((a["actm"] for a in anchors if a.get("actm") is not None), default=0)
+        anchors = sorted([*anchors, *early_anchors], key=lambda a: a["actm"] if a.get("actm") is not None else last + 1)
 
     def analysis_rows(body, leading, variant=0):
         rows: list[tuple[Any, list[Card]]] = []

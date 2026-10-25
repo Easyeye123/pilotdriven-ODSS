@@ -292,3 +292,18 @@ def test_labelled_dense_page_six_keeps_every_early_call_and_names_what_it_cannot
         assert any(normalized(form) in text for form in forms), (call["notam_ids"], text)
     assert normalized("CPDLC AT MAASTRICHT UAC (EDYY) NOT AVBL") not in text
     assert re.search(r"\b\d+ FURTHER ROWS ON THE DASHBOARD\b", text), text
+
+
+def test_the_audit_compositions_measured_timeline_band_is_unchanged(tmp_path_factory):
+    """The early-call anchors belong to the six-page decision timeline. The lossless audit composition's REV3-measured
+    timeline band keeps its own anchors (the private corpus gate's physical scan found early-call labels overlapping
+    there), and its FIR / NEXT CONTACT tile carries the calls instead."""
+    from app.odss.briefing import build_briefing_view
+    from app.odss.combined_brief import _route_anchor_entries, early_call_anchor_entries
+
+    case = rendered("SQ303", tmp_path_factory)
+    flight = case["payload"]["flight"]
+    view = build_briefing_view(flight, case["payload"]["findings"], [], timing_view=flight.get("timing_view"))
+    assert not any(entry["label"].endswith((" TIBA", " CALL", " LOGON")) for entry in _route_anchor_entries(flight, view))
+    assert [(entry["label"], entry["sub"]) for entry in early_call_anchor_entries(flight, view)] == [
+        ("OAKX TIBA", "ACTM 05:11"), ("OPLR CALL", "ACTM 05:52")]
