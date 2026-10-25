@@ -286,7 +286,14 @@ WAFC_CHARTS_PER_PAGE = 3
 # covering part of a window is issued for exactly those legs (10-4 RANAH-DUDEG) and the window states the legs no
 # indexed chart covers. The terrain sentence, the depressurisation receipt row, the annex statuses and the held
 # chart artifacts carry that coverage. A chart covering one whole window publishes exactly as before.
-COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-25-depress-chart-issuance-v117"
+# 25 Oct 2026 (v118, on v117). ATC-EARLY-CALLS (David 25 Oct, SQ301 MAN-SIN: 'the early ATC call content is missing
+# still'): every crew call a FIR notice prints with a lead before an entry is an early call (enroute-contact-v17) with
+# its call time from the OFP entry ACTM and the printed lead read as printed (WITHIN is a window ending at the entry).
+# Page 6 prints every timed early call first at every capacity step - generic communications notices defer first, a
+# call the page cannot hold whole is named by time, FIR, identity and page - the decision timeline carries each call
+# at its time, and the shared communications list (the FIR / NEXT CONTACT tile) leads with them. A flight with no early
+# call publishes exactly as before.
+COMBINED_BRIEFING_SCHEMA_VERSION = "2026-10-25-atc-early-calls-v118"
 
 # The pilot-visible publication format of the Flight Briefing this renderer
 # produces, stated on every served PDF so a client that stores the file can

@@ -2436,7 +2436,7 @@ def test_mel_page_embeds_a_durable_signed_in_governed_source_link(tmp_path):
     }
     assert (
         COMBINED_BRIEFING_SCHEMA_VERSION
-        == "2026-10-25-depress-chart-issuance-v117"
+        == "2026-10-25-atc-early-calls-v118"
     )
     assert combined_briefing_cache_token(123, 7) != combined_briefing_cache_token(
         123,
