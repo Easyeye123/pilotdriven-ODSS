@@ -37,8 +37,8 @@ from .vws_maxima import review_maximum_entries, vws_maximum_listing
 from .source_status import source_status_met, source_status_words
 from .fuel_rows import contingency_label
 from .page_one_weather import page_one_taf_field_continued, forecast_source_line, page_one_metar_field, page_one_taf_field, weather_page_taf_field
-from .enroute_contact import (compose_enroute_contact, crossing_sequence_limited, has_printed_values, is_call_line,
-                              primary_procedure_line, printed_values)
+from .enroute_contact import (compose_enroute_contact, crossing_sequence_limited, early_call_sentence, has_printed_values,
+                              is_call_line, named_early_call, primary_procedure_line, printed_values, untimed_call_pointer)
 from .weather_publication import edto_window_lines, sigmet_lines, volcanic_ash_lines
 
 SIZE = landscape(A4)
@@ -2225,7 +2225,25 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
     enroute_contact = view.get("enroute_contact") or compose_enroute_contact(flight, findings)
     fir_state = text(enroute_contact.get("state_sentence"))
     fir_calls = [f"+{call['actm']} {call['title']}. {call['summary']}" for call in enroute_contact.get("required_calls") or []]
-    procedure_lines = list(enroute_contact.get("procedure_lines") or [])
+    all_procedure_lines = list(enroute_contact.get("procedure_lines") or [])
+    # ATC-EARLY-CALLS (25 Oct 2026, David on SQ301: "the early ATC call content is missing still"). Every early call
+    # with a call time derived from the OFP entry ACTM and its printed lead prints at every step of this card, first and
+    # in the order it falls due; generic communications notices (CPDLC not available, limited radio coverage, ATS not
+    # provided) take whatever room is left and defer to the dashboard first. An early call with no derivable time stays
+    # among the other rows and is named by identity whenever it defers. A record held before the composition listed
+    # early calls has none here, so its page prints exactly as it did.
+    timed_calls = [call for call in enroute_contact.get("early_calls") or [] if call.get("call_window")]
+
+    def call_line(call):
+        return next((line for line in all_procedure_lines if line["fir"] == call["fir"] and line["notam_ids"] == call["notam_ids"]
+                     and line["text"] == call["text"]), None)
+
+    early_lines = [call_line(call) for call in timed_calls]
+    if any(line is None for line in early_lines):
+        raise ValueError("FIR / COMMUNICATION early call does not resolve to its composed row")
+    procedure_lines = [line for line in all_procedure_lines if not any(line is early for early in early_lines)]
+    untimed_calls = {(call["fir"], tuple(call["notam_ids"])): call for call in enroute_contact.get("early_calls") or []
+                     if not call.get("call_window")}
 
     def compact_summary(line, limit: int = 72) -> str:
         return compact_conditions_summary(line.get("conditions_summary"), limit)
@@ -2269,13 +2287,37 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         return (f"{head} {line['text']}{printed} "
                 f"NOTAM {', '.join(line['notam_ids'])}, OFP {pages}; {summary}.{more}")
 
+    def early_row(call, line, compact: bool = False, limit: int = 72, quote: bool = True, tight: bool = False) -> str:
+        # The early-call sentence (when, what, to whom, on what, the printed lead, the entry), then - while the page
+        # holds it - the notice's own instruction verbatim, its identity, page and every printed condition's outcome.
+        pages = ", ".join(f"p{page}" for page in line["source_pages"]) or "page not held"
+        summary = compact_conditions_summary(line["conditions_summary"], limit) if compact else line["conditions_summary"]
+        if tight:
+            # The validity window, its outcome and its timing basis stay whole; the counted clauses and the state read as one.
+            summary = re.sub(r"^validity ", "valid ", summary)
+            summary = re.sub(r"\+(\d+) further condition\(s\) on the dashboard · (conditions held|conditions unresolved|not applicable)$",
+                             r"\2 (+\1 on the dashboard)", summary)
+        further = line.get("further_actions") or 0
+        more = (f" +{further} more on the dashboard." if compact else
+                f" +{further} further source statement(s) of this notice on the dashboard.") if further else ""
+        quoted = f" {line['text']}" if quote else ""
+        return (f"{early_call_sentence(call, compact=tight)}{quoted} NOTAM {', '.join(line['notam_ids'])}, OFP {pages}; "
+                f"{summary}.{more}")
+
+    def untimed_call_pointers(lines) -> list[str]:
+        return [untimed_call_pointer(untimed_calls[(line.get("fir") or "", tuple(line["notam_ids"]))])
+                for line in lines if (line.get("fir") or "", tuple(line["notam_ids"])) in untimed_calls]
+
     def identities(lines, compact: bool = False) -> str:
+        # An early call whose time is not derived is named by identity, never only counted (ATC-EARLY-CALLS).
+        named = untimed_call_pointers(lines)
+        lines = [line for line in lines if (line.get("fir") or "", tuple(line["notam_ids"])) not in untimed_calls]
         grouped: dict[str, list[str]] = {}
         for line in lines:
             grouped.setdefault(line["fir"] or "FIR not derived", []).extend(line["notam_ids"])
         if compact:
-            return ", ".join(f"{fir} {len(ids)}" for fir, ids in grouped.items())
-        return "; ".join(f"{fir} {', '.join(ids)}" for fir, ids in grouped.items())
+            return "; ".join([*named, ", ".join(f"{fir} {len(ids)}" for fir, ids in grouped.items())] if grouped else named)
+        return "; ".join([*named, *(f"{fir} {', '.join(ids)}" for fir, ids in grouped.items())])
 
     # The card defers whole rows only, and says so: every step keeps the
     # state, the BOBCAT sentence, the primary row (the first call row with
@@ -2312,12 +2354,23 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         # after every whole-quotation step: retain the first printed status
         # and identify each deferred untimed notice by FIR/ID/source page.
         ("primary_source_status", 8, 24), ("primary_source_status", 8, 0),
+        # ATC-EARLY-CALLS: the early calls (or, with none, the primary row) alone, every other row named or counted;
+        # last, the early calls without the verbatim instruction (each keeps its time, unit, frequencies, lead, entry,
+        # identity, page and state - the dashboard row quotes it).
+        ("early_only", 8, 24), ("early_only", 8, 0), ("early_unquoted", 8, 0),
+        # Only if the page still cannot hold every early call in that form: the last ones in time order are named by
+        # their call time, FIR, identity and page on one line (the dashboard holds them whole) - never dropped unnamed.
+        *((f"early_named_{kept}", 8, 0) for kept in range(len(timed_calls) - 1, -1, -1)),
     )
+    EARLY_STEPS = ("early_only", "early_unquoted", *(f"early_named_{kept}" for kept in range(len(timed_calls))))
 
     def fir_card(gap, weight, step=0):
-        primary = primary_procedure_line(procedure_lines)
+        # With early calls held, they are the rows every step prints; the primary-row duty is theirs.
+        primary = None if timed_calls else primary_procedure_line(procedure_lines)
         rows_kind, pairs, clause_limit = FIR_STEPS[step]
         compact = clause_limit is not None
+        if rows_kind in EARLY_STEPS and not timed_calls:
+            rows_kind = "primary"
         if rows_kind == "all":
             shown = list(procedure_lines)
         elif rows_kind == "calls":
@@ -2335,6 +2388,8 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
                      (any(line is pick for pick in chosen.values()) and not (primary and line["fir"] == primary["fir"]))]
         elif rows_kind == "primary_plus_source_status":
             shown = _primary_and_next_valued_call(procedure_lines, primary)
+        elif rows_kind in EARLY_STEPS:
+            shown = []
         else:
             shown = [primary] if primary else []
         # Service status matters independently of a crew call. Try all full
@@ -2343,6 +2398,8 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         # each deferred untimed row as well. No held row changes.
         if rows_kind.endswith("source_status"):
             shown = [line for line in procedure_lines if line in shown or line in _first_untimed_status_lines(procedure_lines)]
+        elif rows_kind in EARLY_STEPS:
+            pass
         else:
             shown = [line for line in procedure_lines if line in shown or
                      (line.get("instruction_effect") == "availability" and (not rows_kind.endswith("untimed") or not line.get("actm")))]
@@ -2350,16 +2407,31 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
         rendered_shown = _compact_untimed_availability_lines(shown) if compact else shown
         state_line = fir_state
         if compact and enroute_contact.get("procedures") and not fir_calls:
-            counts = {state: sum(row["applicability_state"] == state for row in enroute_contact["procedures"])
-                      for state in ("conditions_held", "conditions_unresolved", "not_applicable")}
-            state_line = (f"No approved early-call rule held. {len(enroute_contact['procedures'])} source-held ATC/communications notices: "
-                          f"{counts['conditions_held']} conditions met, {counts['conditions_unresolved']} unresolved, "
-                          f"{counts['not_applicable']} not applicable.")
-            if not (enroute_contact.get("extraction") or {}).get("current"):
-                state_line += " Held extraction predates the current parser; update re-reads the OFP."
-        lines = [state_line, *fir_calls, *(fir_row(line, compact, 72 if clause_limit is None else clause_limit) for line in rendered_shown)]
+            state_line = enroute_contact.get("compact_state_sentence")
+            if not state_line:
+                # A record held before the composition carried its compact sentence: the sentence that page printed.
+                counts = {state: sum(row["applicability_state"] == state for row in enroute_contact["procedures"])
+                          for state in ("conditions_held", "conditions_unresolved", "not_applicable")}
+                state_line = (f"No approved early-call rule held. {len(enroute_contact['procedures'])} source-held ATC/communications notices: "
+                              f"{counts['conditions_held']} conditions met, {counts['conditions_unresolved']} unresolved, "
+                              f"{counts['not_applicable']} not applicable.")
+                if not (enroute_contact.get("extraction") or {}).get("current"):
+                    state_line += " Held extraction predates the current parser; update re-reads the OFP."
+        limit = 72 if clause_limit is None else clause_limit
+        tight = rows_kind == "early_unquoted" or rows_kind.startswith("early_named_")
+        kept_calls = int(rows_kind.rsplit("_", 1)[1]) if rows_kind.startswith("early_named_") else len(timed_calls)
+        named_calls = [named_early_call(call) for call in timed_calls[kept_calls:]]
+        # At the tight steps the slot sentence closes the state paragraph instead of taking a line of its own.
+        slot_line = text(enroute_contact.get("slot_sentence"))
+        lines = [state_line + (f" {slot_line}" if tight else ""), *fir_calls,
+                 *(early_row(call, line, compact, limit, quote=not tight, tight=tight)
+                   for call, line in list(zip(timed_calls, early_lines))[:kept_calls]),
+                 *([f"Further early calls, whole on the dashboard: {'; '.join(named_calls)}."] if named_calls else []),
+                 *(fir_row(line, compact, limit) for line in rendered_shown)]
         if deferred:
-            if rows_kind.endswith("source_status"):
+            if rows_kind.endswith("source_status") or rows_kind in EARLY_STEPS:
+                # Every deferred untimed service status keeps its FIR, identity and page; an early call without a
+                # derived time is named; other rows are counted by FIR.
                 untimed = [line for line in deferred if not line.get("actm") and line.get("instruction_effect") == "availability"]
                 others = [line for line in deferred if line not in untimed]
                 pointers = "; ".join(f"{line['fir'] or 'FIR unresolved'} {','.join(line['notam_ids'])} ({','.join(f'p{p}' for p in line['source_pages']) or 'page not held'})" for line in untimed)
@@ -2368,7 +2440,8 @@ def build_sections(flight, view, findings, references=None) -> dict[str, list[Pa
             else:
                 lines.append(f"Further rows on the dashboard: {identities(deferred, compact)}." if not compact
                              else f"+{len(deferred)} further rows on the dashboard ({identities(deferred, compact)}).")
-        lines.append(text(enroute_contact.get("slot_sentence")))
+        if not tight:
+            lines.append(slot_line)
         crossing_line = crossing_sequence_limited(enroute_contact.get("crossings") or [], pairs, compact)
         lines.append("FIR crossings (OFP ACTM): " + (crossing_line or "no boundary row held."))
         return Card("FIR / COMMUNICATION", lines, CYAN, "sec_enroute", width_weight=weight, paragraph_gap=gap,

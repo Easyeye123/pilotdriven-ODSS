@@ -1,6 +1,7 @@
 """ITEM 1: genuine missing-boundary FIR notices and LABELLED SYNTHETIC semantic controls."""
 from pathlib import Path
 from copy import deepcopy
+import re
 
 import fitz
 import pytest
@@ -301,9 +302,11 @@ def test_sq23_physical_pdf_keeps_outage_text_and_source_identity_in_its_six_page
     with fitz.open(target) as document:
         assert len(document) == 6
         text = ' '.join(' '.join(page.get_text().split()) for page in document)
-    assert 'COM CPDLC ROUTE MESSAGING NOT AVBL' in text
-    assert '1A487/26' in text
-    assert 'p98' in text
+    # ATC-EARLY-CALLS (25 Oct 2026): generic communications notices rank below the early calls for page space. The
+    # Washington and New York CPDLC outages stay on page 6 by FIR, identity and source page; their text is on the
+    # dashboard. The early calls they gave way to print whole.
+    assert 'KZDC 1A1513/26 (p94)' in text and 'KZNY 1A487/26 (p98)' in text
+    assert 'Early call not later than ACTM 11:41: Contact LAHORE ACC WEST on 124.100 MHZ, 118.950 MHZ' in text
 
 
 @pytest.mark.parametrize('minutes,result', [(119, 'not_met'), (120, 'met'), (121, 'met')])
@@ -493,10 +496,13 @@ def test_other_genuine_six_page_pdfs_keep_untimed_outage_identities_and_truthful
         text = ' '.join(' '.join(page.get_text().split()) for page in document)
     for identity, page in identities.items():
         assert identity in text and f'p{page}' in text
-    assert 'source-held ATC/communications notices' in text and 'route/time unresolved' in text
+        # ATC-EARLY-CALLS (25 Oct 2026): an untimed outage the page defers behind the early calls is named with its
+        # own source page in the deferral, "<FIR> <identity> (p<page>)"; one the page prints says its route/time is
+        # unresolved.
+        assert re.search(rf'\b[A-Z]{{4}} {re.escape(identity)} \(p{page}\)', text) or 'route/time unresolved' in text, identity
+    assert 'source-held ATC/communications notices' in text
     assert 'further rows on the dashboard' in text
     assert 'FPL' in text and 'NOTAM' in text
-    import re
     card = text.split('FIR / COMMUNICATION', 1)[1].split('FIR crossings (OFP ACTM)', 1)[0]
     held_lines = compose_enroute_contact(payload['flight'])['procedure_lines']
     printed_rows = re.split(r'\+\d+ further rows on the dashboard', card, maxsplit=1)[0]

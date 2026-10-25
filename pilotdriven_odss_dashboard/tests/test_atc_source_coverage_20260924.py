@@ -290,7 +290,9 @@ def test_sq366_composition_publishes_the_source_held_calls_with_their_printed_co
     assert rows["SX9/26"]["applicability_state"] == "conditions_unresolved"
     assert next(c for c in rows["SX9/26"]["conditions"] if c["text"] == "report trigger: SUCH INTERFERENCE")["result"] == "unresolved"
     assert composed["state_sentence"] == (
-        "No approved early-call rule is held. 27 source-held ATC/communications notice(s): "
+        # ATC-EARLY-CALLS (25 Oct 2026): the OFP's own early calls are counted first.
+        "4 early call(s) are read from this OFP's FIR notices (3 with a call time from the OFP entry ACTM and the printed "
+        "lead); no approved reference library is held. 27 source-held ATC/communications notice(s): "
         "printed conditions met on 8, unresolved on 17, not applicable on 2. "
         "Frequencies and lead times are the source's own printed values; none is inferred from crossing times."
     )
@@ -414,14 +416,14 @@ def test_sq366_page_six_prints_the_applicable_voice_row_with_the_printed_frequen
     assert normalized("27 source-held ATC/communications notices: 8 conditions met, 17 unresolved, 2 not applicable.") in page
     assert normalized("FPL pp8-14 / NOTAM p67, pp85-90, pp93-94, pp98-100") in page
     assert normalized("lead times and frequencies are not held") not in page
-    assert normalized("+05:35 OAKX entry.") in page and "125.2MHZ" in raw and "1G216/26" in raw
-    assert normalized("10 MINS PRIOR ENTERING TO FIR") in page
-    assert normalized("NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM)") in page
-    assert normalized("Source FIR LIMM; route/time unresolved.") in page
-    assert normalized("NOTAM 1E1741/26, OFP p98; valid 10-JUL-26 0000 - PERM (time unresolved) · conditions unresolved.") in page
-    # ATC-CLEARANCE-FAMILY (1 Oct 2026): the added CO188/02 row (LTAA p90) is a named whole-row deferral - one more
-    # deferred row, one more under LTAA.
-    assert normalized("+25 further rows on the dashboard (WIIF 2, VABF 1, OPKR 2, OAKX 9, UTAV 1, LTAA 2, LGGG 1, LIBB 1, LOVV 2, FIR not derived 1, LSAS 1, LIMM 2).") in page
+    # ATC-EARLY-CALLS (25 Oct 2026): the applicable voice/broadcast call prints first as an early call, with the
+    # printed frequency, lead, entry, identity, page and complete validity with its timing basis.
+    assert normalized("Early call not later than ACTM 05:25: TIBA broadcast on 125.2MHZ; lead 10 MINS PRIOR ENTERING TO FIR - OAKX entry ACTM 05:35.") in page
+    assert "125.2MHZ" in raw and "1G216/26" in raw and normalized("10 MINS PRIOR ENTERING TO FIR") in page
+    assert normalized("NOTAM 1G216/26, OFP p88; valid 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM)") in page
+    # The untimed Milano service status ranks below the early calls: its FIR, identity and page stay named on the page.
+    assert normalized("LIMM 1E1741/26 (p98)") in page
+    assert normalized("+24 further rows on the dashboard (LIMM 1E1741/26 (p98); early call WIIF SX50/25 (p67), time not derived; WIIF 1, VABF 1, OPKR 2, OAKX 8, LTAA 2, LGGG 1, LIBB 1, LOVV 2, FIR not derived 1, LSAS 1, LIMM 2).") in page
     assert normalized("BOBCAT BIROS FL380: CTOT 1752Z + ACTM 05:35 = 2327Z, 1 min before CTO 2328Z (OFP p1, p11).") in page
     assert reminder_lines(raw, source_quotations(case["payload"]), david_format_labels()) == []
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))

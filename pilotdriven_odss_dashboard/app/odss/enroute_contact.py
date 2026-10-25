@@ -112,7 +112,13 @@ from .extraction_rules import EXTRACTION_RULES
 # until a waypoint closes it; a touching leg still open at the end of the route leaves the FIR's airways incomplete.
 # v16 (ATC-ABSENCE-WORDING, Codex review of release 452): an empty call list states only that no early-contact
 # instruction was identified - never that the source's frequencies or lead times are absent (SQ882 09 Sep 1A2345/26).
-ENROUTE_CONTACT_RULE = "enroute-contact-v16"
+# v17 (ATC-EARLY-CALLS, David 25 Oct 2026 on SQ301 MAN-SIN: "the early ATC call content is missing still"): every crew
+# call row that prints a lead before a FIR entry is an early call. The composition lists them in the order they fall
+# due (early_calls), each with its call time from the OFP entry ACTM and the printed lead read as printed (NOT LESS THAN
+# / AT LEAST / bare -> not later than; WITHIN / BETWEEN / MAXIMUM -> a window ending at the entry), the unit the
+# instruction or its filed-route table row names, the frequencies and the entry; a lead measured from take-off derives
+# no FIR clock. The page-6 card, the decision timeline and the dashboard print these first; nothing is inferred.
+ENROUTE_CONTACT_RULE = "enroute-contact-v17"
 # A record whose owning heading the source layout does not establish (parser heading_kind "unresolved").
 _UNRESOLVED_OWNER = "section heading not established from the source layout"
 
@@ -273,6 +279,16 @@ _AIRWAY_LIST = re.compile(r"\b(?:VIA|ON|ALONG|USING)\s+(?:ATS\s+)?(?:RTES?|ROUTE
 # Printed logon addresses: "USE LOGON ADDRESS PAZN", "THE AFN LOGON ADDRESS FOR JAKARTA FIR IS WIIF", "LOGON TO KZAK".
 _ADDRESS = re.compile(r"\bLOGON ADDRESS(?:ES)?(?: FOR [A-Z][A-Z ]*? FIR)?(?: IS| ARE)? ([A-Z]{4})\b|\bLOG ?ON TO ([A-Z]{4})\b")
 _ADDRESS_STOPWORDS = {"WHEN", "WITH", "THAT", "THIS", "FROM", "INTO", "OVER", "ONLY", "ALSO", "THEN", "THEM", "THEY", "WILL", "BASED", "UPON", "EACH", "BOTH", "SAME", "MUST", "SHALL"}
+# ATC-EARLY-CALLS (v17): the unit a call instruction names, in the source's own words - the words after the call verb
+# up to the first frequency, timing, place or clause word ("CTC KARACHI, LAHORE OR ISLAMABAD ACC AT LEAST ..." ->
+# "KARACHI, LAHORE OR ISLAMABAD ACC"; "ESTABLISH CON TACT WITH TURKMENABAT-CTL ON 134.5 MHZ" -> "TURKMENABAT-CTL").
+_CALL_UNIT = re.compile(
+    r"\b(?:CONTACT|CTC|CALL|LOG ?ON (?:TO|WITH)|ESTABLISH (?:TWO-WAY )?(?:RADIO )?(?:CON ?TACT|COMMUNICATIONS?|COM) WITH)"
+    r" (?P<unit>(?:(?!(?:ON|AT|NOT|WI|WITHIN|IN|BEFORE|PRIOR|AS|VIA|FOR|WHEN|IF|NO|BY|FREQ|FREQUENCY|UPON|AND|TO|FM|FROM|UNTIL)\b)"
+    r"[A-Z][A-Z/'-]*,? ?){1,6})")
+# A lead measured from the take-off or the departure is not a lead before a FIR entry: no FIR clock derives from it.
+_TAKEOFF_LEAD = re.compile(r"\b(?:TAKE-?OFF|DEPARTURE)\b")
+CALL_ACTIONS = {"voice_contact": "Contact", "tiba_broadcast": "TIBA broadcast", "contact_logon": "Logon"}
 # A sentence's own crew subject, its qualifiers and the modal that ends them:
 # "IFR AFCT FLT PLANNED TO DEP CYMM/OILSANDS UNABLE TO CTC ... SHOULD CTC ...".
 _LIST_MARKER = r"(?:\(?[A-Z]\)?[.)]\s+|\d{1,2}[.)]\s+|-\s*)?"
@@ -979,6 +995,47 @@ def _lead_minutes(lead: str | None) -> int | None:
     return min(amounts) if amounts else None
 
 
+def call_unit(sentence: Any) -> str | None:
+    """The unit a call instruction names, verbatim; None when the sentence names none (a TIBA broadcast, "LOGON ...")."""
+    match = _CALL_UNIT.search(classify_text(sentence))
+    unit = match.group("unit").strip().rstrip(",").strip() if match else ""
+    return unit or None
+
+
+def call_window(lead: Any, anchor_minutes: int | None) -> dict[str, Any] | None:
+    """When a printed lead puts the call, against the anchor's OFP ACTM, read as printed (ATC-EARLY-CALLS, v17).
+
+    NOT LESS THAN / AT LEAST / MINIMUM / NOT LATER THAN / a bare amount: not later than the anchor less the amount;
+    APPROX: about that time; WITHIN / WI: from the anchor less the amount up to the anchor; BETWEEN a AND b: from the
+    anchor less b to the anchor less a; NOT EARLIER THAN / MAXIMUM: from the anchor less the amount up to the anchor.
+    Nothing is derived when an end of the window would fall before take-off (ACTM 00:00)."""
+    upper = classify_text(lead)
+    amounts = [int(n) for n in re.findall(r"\b(\d{1,3})\b", upper)]
+    if not amounts or anchor_minutes is None:
+        return None
+    low, high = min(amounts), max(amounts)
+    if upper.startswith("BETWEEN "):
+        relation, start, by = "window", anchor_minutes - high, anchor_minutes - low
+    elif re.match(r"^(?:WI|WITHIN|NOT EARLIER THAN|MAXIMUM|MAX)\b", upper):
+        relation, start, by = "window", anchor_minutes - low, anchor_minutes
+    elif upper.startswith("APPROX"):
+        relation, start, by = "about", None, anchor_minutes - low
+    else:
+        relation, start, by = "not_later", None, anchor_minutes - low
+    if by < 0 or (start is not None and start < 0):
+        return None
+    return {"relation": relation, "from_actm": actm_text(start) if start is not None else None, "by_actm": actm_text(by),
+            "anchor_actm": actm_text(anchor_minutes)}
+
+
+def call_time_phrase(window: dict[str, Any]) -> str:
+    if window["relation"] == "window":
+        return f"between ACTM {window['from_actm']} and ACTM {window['by_actm']}"
+    if window["relation"] == "about":
+        return f"about ACTM {window['by_actm']}"
+    return f"not later than ACTM {window['by_actm']}"
+
+
 def _route_tokens(text: str) -> list[dict[str, Any]]:
     """Waypoint / airway tokens the notice prints, each with any level band printed beside it."""
     upper = classify_text(text)
@@ -993,7 +1050,7 @@ def _route_tokens(text: str) -> list[dict[str, Any]]:
         tokens.append({"waypoint": waypoint, "airway": airway, "band": None, "text": f"{airway} {waypoint}"})
     for airway, waypoint, unit, primary, secondary in _ROUTE_FREQ_ROW.findall(upper):
         frequencies = [f for f in (primary, secondary) if f]
-        tokens.append({"waypoint": waypoint, "airway": airway, "band": None, "frequencies": frequencies,
+        tokens.append({"waypoint": waypoint, "airway": airway, "band": None, "frequencies": frequencies, "unit": unit.strip(),
                        "text": f"{airway} {waypoint} {unit.strip()} {' '.join(frequencies)}"})
     return tokens
 
@@ -1535,12 +1592,15 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
     if segment is not None and heading_kind == "segment":
         tokens = [{"waypoint": w, "airway": segment.get("airway"), "band": None, "text": _normalise(record.get("heading"))} for w in segment_waypoints] + tokens
     route_frequencies: list[str] | None = None
+    frequency_row: dict[str, Any] | None = None
     if tokens:
         on_route_tokens = [t for t in tokens if t["waypoint"] in route["names"]]
         matched = on_route_tokens[0] if on_route_tokens else None
         notice_conditions.append({"kind": "route", "text": matched["text"] if matched else tokens[0]["text"], "result": "met" if matched else "not_met"})
         if matched and matched.get("frequencies"):
             route_frequencies = list(matched["frequencies"])
+            # ATC-EARLY-CALLS (v17): the table row the filed route selects is shown with the call (its unit and values).
+            frequency_row = matched
         band_token = next((t for t in on_route_tokens if t["band"]), None)
         if band_token:
             level = _planned_level_at(route, band_token["waypoint"])
@@ -1688,7 +1748,9 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
     positive_call = is_call_line(headline)
     next_fir = _next_fir(crossings, fir) if positive_call and fir and scope == "fir_exit" else None
     latest = None
-    if positive_call and lead_minutes is not None:
+    window = None
+    # A lead measured from take-off gives no clock before a FIR entry (ATC-EARLY-CALLS, v17).
+    if positive_call and lead_minutes is not None and not _TAKEOFF_LEAD.search(details["lead"] or ""):
         anchor = None
         if scope == "fir_exit":
             anchor = next((row for row in crossings if next_fir and row["fir"] == next_fir["fir"] and row["actm"] == next_fir["actm"]), None)
@@ -1696,6 +1758,7 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
             anchor = entry
         if anchor and anchor["actm_minutes"] >= lead_minutes:
             latest = actm_text(anchor["actm_minutes"] - lead_minutes)
+            window = call_window(details["lead"], anchor["actm_minutes"])
 
     return {
         "fir": fir,
@@ -1722,6 +1785,9 @@ def _compose_procedure(record: dict[str, Any], flight: dict[str, Any], route: di
         "actions": [{k: v for k, v in action.items() if k != "directive"} for action in actions],
         "next_fir": next_fir,
         "latest_actm": latest,
+        "call_window": window,
+        "call_unit": (frequency_row["unit"] if frequency_row and route_frequencies is not None else call_unit(instruction)) if positive_call else None,
+        "frequency_row": frequency_row["text"] if frequency_row and positive_call else None,
         "actm": entry["actm"] if entry else None,
         "sequence": entry["sequence"] if entry else None,
         "on_route": True if entry else None,
@@ -1783,7 +1849,10 @@ def printed_values(line: dict[str, Any]) -> list[str]:
         parts.append("logon " + ", ".join(details["addresses"]))
     if line.get("next_fir"):
         parts.append(f"next FIR {line['next_fir']['fir']} at {line['next_fir']['actm']}")
-    if line.get("latest_actm"):
+    if line.get("call_window"):
+        parts.append(call_time_phrase(line["call_window"]))
+    elif line.get("latest_actm"):
+        # A record held before ATC-EARLY-CALLS carries no window; its own latest ACTM prints as it did.
         parts.append(f"not later than ACTM {line['latest_actm']}")
     return parts
 
@@ -1872,6 +1941,8 @@ def procedure_lines(procedures: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "actor": row["actor"], "instruction_effect": row["instruction_effect"],
             "printed_details": {"frequencies": list(row["printed_details"]["frequencies"]), "lead": row["printed_details"]["lead"], "interval": row["printed_details"]["interval"], "addresses": list(row["printed_details"].get("addresses") or [])},
             "latest_actm": row["latest_actm"], "next_fir": dict(row["next_fir"]) if row["next_fir"] else None,
+            "call_window": dict(row["call_window"]) if row.get("call_window") else None,
+            "call_unit": row.get("call_unit"), "frequency_row": row.get("frequency_row"),
             "further_actions": max(0, len(row.get("actions") or []) - 1),
             "conditions_summary": summary,
             "notam_ids": [row["notam_id"]], "source_pages": [row["source_page"]] if row["source_page"] is not None else [],
@@ -1879,6 +1950,167 @@ def procedure_lines(procedures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for line in lines:
         line["source_pages"].sort()
     return lines
+
+
+# ---------------------------------------------------------------- early calls (ATC-EARLY-CALLS, v17)
+
+
+def is_early_call(line: dict[str, Any]) -> bool:
+    """A crew call row (voice / TIBA / logon, conditions not failed) that prints a lead: a call due before an entry."""
+    return is_call_line(line) and bool((line.get("printed_details") or {}).get("lead"))
+
+
+def _untimed_reason(line: dict[str, Any]) -> str:
+    lead = (line.get("printed_details") or {}).get("lead") or ""
+    if _TAKEOFF_LEAD.search(classify_text(lead)):
+        return "the lead is measured from take-off, not from a FIR entry"
+    if not line.get("actm"):
+        return f"{line['fir']} has no boundary row in this OFP" if line.get("fir") else "the owning FIR is not established from the source"
+    if line.get("call_window") is None and line.get("latest_actm") is None and not line.get("next_fir") and _scope_is_exit(line):
+        return "no next FIR follows in this OFP"
+    return "the lead falls before take-off on the OFP ACTM"
+
+
+def _scope_is_exit(line: dict[str, Any]) -> bool:
+    return sentence_scope(line.get("text")) == "fir_exit"
+
+
+def boundary_points(flight: dict[str, Any]) -> dict[str, str]:
+    """"FIR ACTM" -> the route waypoint the OFP prints immediately before that FIR's boundary row (the entry point)."""
+    points: dict[str, str] = {}
+    previous: str | None = None
+    for waypoint in flight.get("route_waypoints") or []:
+        if not isinstance(waypoint, dict):
+            continue
+        fir = _normalise(waypoint.get("fir_boundary")).upper()
+        minutes = _integer(waypoint.get("actm_minutes"))
+        if fir:
+            if previous and minutes is not None:
+                points.setdefault(f"{fir} {actm_text(minutes)}", previous)
+            continue
+        name = _normalise(waypoint.get("name")).upper().lstrip("-")
+        if name:
+            previous = name
+    return points
+
+
+def early_calls(lines: list[dict[str, Any]], takeoff: datetime | None = None,
+                points: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """Every early call in the order it falls due; one with no derivable clock keeps its place after the timed ones and
+    says why. Values are the row's own printed ones; the unit is the instruction's or its filed-route table row's."""
+    calls: list[dict[str, Any]] = []
+    for line in lines:
+        if not is_early_call(line):
+            continue
+        details = line.get("printed_details") or {}
+        window = line.get("call_window")
+        next_fir = line.get("next_fir")
+        due = (window.get("from_actm") or window.get("by_actm")) if window else None
+        utc, day = _clock(takeoff, _minutes(due)) if due else (None, "")
+        # A window's end gets its own clock (the entry, or the later end of a BETWEEN window).
+        until_utc, until_day = (_clock(takeoff, _minutes(window["by_actm"])) if window and window.get("from_actm")
+                                else (None, ""))
+        calls.append({
+            "fir": line.get("fir") or "",
+            "kind": line["kind"],
+            "action": CALL_ACTIONS[line["kind"]],
+            "unit": line.get("call_unit"),
+            "frequencies": list(details.get("frequencies") or []),
+            "addresses": list(details.get("addresses") or []),
+            "frequency_row": line.get("frequency_row"),
+            "lead": details.get("lead"),
+            "entry_fir": (next_fir or {}).get("fir") if next_fir else (line.get("fir") or None),
+            "entry_actm": (next_fir or {}).get("actm") if next_fir else line.get("actm"),
+            "entry_after": (points or {}).get(f"{(next_fir or {}).get('fir') if next_fir else line.get('fir')} "
+                                              f"{(next_fir or {}).get('actm') if next_fir else line.get('actm')}"),
+            "leaving_fir": line.get("fir") if next_fir else None,
+            "call_window": dict(window) if window else None,
+            "due_actm": due,
+            "due_utc": utc,
+            "due_day": day,
+            "until_utc": until_utc,
+            "until_day": until_day,
+            "untimed_reason": None if window else _untimed_reason(line),
+            "applicability_state": line["applicability_state"],
+            "text": line["text"],
+            "notam_ids": list(line["notam_ids"]),
+            "source_pages": list(line["source_pages"]),
+        })
+    # Due time first; at one time a call that prints its frequencies, then one whose conditions are held, comes first.
+    calls.sort(key=lambda call: (_minutes(call["due_actm"]) if call["due_actm"] else 10 ** 6, 0 if call["frequencies"] else 1,
+                                 _STATE_RANK[call["applicability_state"]]))
+    return calls
+
+
+def early_call_sentence(call: dict[str, Any], compact: bool = False) -> str:
+    """The one early-call sentence both surfaces print: when, what, to whom, on what, the printed lead and the entry.
+    ``compact`` (page 6's last capacity step) names the selected table row by its route and transfer point only - the
+    unit and frequencies the row gives are already in the sentence."""
+    if call.get("call_window"):
+        when = f"Early call {call_time_phrase(call['call_window'])}"
+        if call.get("due_utc"):
+            clock = f"{call['due_utc']}{' ' + call['due_day'] if call.get('due_day') else ''}"
+            if call.get("until_utc"):
+                clock += f" - {call['until_utc']}{' ' + call['until_day'] if call.get('until_day') else ''}"
+            when += f" ({clock})"
+    else:
+        when = f"Early call, time not derived ({call.get('untimed_reason') or 'no entry time held'})"
+    what = call["action"]
+    if call.get("unit"):
+        what += f" {call['unit']}"
+    elif call["kind"] != "tiba_broadcast" and not call.get("leaving_fir"):
+        what += " (unit not named in the notice)"
+    if call.get("leaving_fir"):
+        what += f" {'of ' if call.get('unit') else ''}the next FIR ({call['entry_fir']})"
+    if call.get("frequencies"):
+        what += f" on {', '.join(call['frequencies'])}"
+    elif call["kind"] != "contact_logon":
+        what += " (no frequency printed)"
+    if call.get("addresses"):
+        what += f", logon {', '.join(call['addresses'])}"
+    entry = ""
+    if call.get("entry_actm") and call.get("entry_fir"):
+        entry = (f" - leaving {call['leaving_fir']}, {call['entry_fir']} entry ACTM {call['entry_actm']}" if call.get("leaving_fir")
+                 else f" - {call['entry_fir']} entry ACTM {call['entry_actm']}")
+        if call.get("entry_after") and not compact:
+            entry += f" (boundary after {call['entry_after']})"
+    row = ""
+    if call.get("frequency_row"):
+        row = (f" Source row {' '.join(call['frequency_row'].split()[:2])} (filed route)." if compact
+               else f" Source row: {call['frequency_row']} (filed route).")
+    return f"{when}: {what}; lead {call['lead']}{entry}.{row}"
+
+
+def named_early_call(call: dict[str, Any]) -> str:
+    """Page 6's last resort for a timed early call it cannot hold whole: its time, entry FIR, action, identity, page, state."""
+    pages = ", ".join(f"p{page}" for page in call.get("source_pages") or []) or "page not held"
+    unit = f" {call['unit']}" if call.get("unit") else ""
+    frequencies = f" on {', '.join(call['frequencies'])}" if call.get("frequencies") else ""
+    return (f"{call_time_phrase(call['call_window'])} {call.get('entry_fir') or call.get('fir')} {call['action']}{unit}{frequencies} "
+            f"({', '.join(call['notam_ids'])}, {pages}, {call['applicability_state'].replace('_', ' ')})")
+
+
+def untimed_call_pointer(call: dict[str, Any]) -> str:
+    """How page 6 names an early call with no derived time when its row defers: FIR, identity and page."""
+    pages = ", ".join(f"p{page}" for page in call.get("source_pages") or []) or "page not held"
+    return f"early call {call.get('fir') or 'FIR not derived'} {', '.join(call['notam_ids'])} ({pages}), time not derived"
+
+
+def compact_state_sentence(contact: dict[str, Any]) -> str | None:
+    """The page-6 ladder's short state line: the early-call count first, then every notice outcome count."""
+    procedures = contact.get("procedures") or []
+    if not procedures or contact.get("required_calls"):
+        return None
+    counts = {state: sum(row["applicability_state"] == state for row in procedures)
+              for state in ("conditions_held", "conditions_unresolved", "not_applicable")}
+    calls = contact.get("early_calls") or []
+    opening = (f"{len(calls)} early call(s) from the OFP's FIR notices. " if calls
+               else "No approved early-call rule held. ")
+    sentence = (opening + f"{len(procedures)} source-held ATC/communications notices: {counts['conditions_held']} conditions met, "
+                f"{counts['conditions_unresolved']} unresolved, {counts['not_applicable']} not applicable.")
+    if not (contact.get("extraction") or {}).get("current"):
+        sentence += " Held extraction predates the current parser; update re-reads the OFP."
+    return sentence
 
 
 # ---------------------------------------------------------------- slot control
@@ -2019,13 +2251,19 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
     met = sum(1 for row in procedures if row["applicability_state"] == "conditions_held")
     unresolved = sum(1 for row in procedures if row["applicability_state"] == "conditions_unresolved")
     not_applicable = sum(1 for row in procedures if row["applicability_state"] == "not_applicable")
+    lines = procedure_lines(procedures)
+    calls = early_calls(lines, takeoff, boundary_points(source))
+    timed = sum(1 for call in calls if call["call_window"])
     if required_calls:
         state = "library_rules_held"
         state_sentence = f"{len(required_calls)} early-call requirement(s) from the approved reference library."
     elif procedures:
         state = "source_procedures_held"
+        opening = (f"{len(calls)} early call(s) are read from this OFP's FIR notices ({timed} with a call time from the "
+                   "OFP entry ACTM and the printed lead); no approved reference library is held. " if calls
+                   else "No approved early-call rule is held. ")
         state_sentence = (
-            f"No approved early-call rule is held. {len(procedures)} source-held ATC/communications notice(s): "
+            opening + f"{len(procedures)} source-held ATC/communications notice(s): "
             f"printed conditions met on {met}, unresolved on {unresolved}, "
             f"not applicable on {not_applicable}. Frequencies and lead times are the source's own printed values; none is inferred from crossing times."
         )
@@ -2053,7 +2291,7 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
 
     slot = _slot_control(source)
     unread = None if slot else _slot_unread(source)
-    return {
+    composed = {
         "rule": ENROUTE_CONTACT_RULE,
         "state": state,
         "state_sentence": state_sentence,
@@ -2063,7 +2301,8 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
         "crossing_sequence": " · ".join(f"{row['fir']} {row['actm']}" for row in crossings),
         "source_pages": source_pages,
         "procedures": procedures,
-        "procedure_lines": procedure_lines(procedures),
+        "procedure_lines": lines,
+        "early_calls": calls,
         "other_procedure_count": other_procedure_count,
         "required_calls": required_calls,
         "slot_control": slot,
@@ -2071,6 +2310,8 @@ def compose_enroute_contact(flight: dict[str, Any] | None, findings: list[dict[s
         "slot_sentence": slot_sentence(slot, unread, extraction),
         "provenance": provenance,
     }
+    composed["compact_state_sentence"] = compact_state_sentence(composed)
+    return composed
 
 
 def crossing_sequence_limited(crossings: list[dict[str, Any]], limit: int = 24, compact: bool = False) -> str:

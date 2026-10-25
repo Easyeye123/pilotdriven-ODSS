@@ -19,7 +19,7 @@ from reportlab.pdfbase import pdfmetrics
 from . import brief_theme as theme
 from .brief_theme import SANS, SANS_BOLD, register_fonts
 from .constants import edto_sectors, format_actm, format_kg
-from .enroute_contact import compose_enroute_contact
+from .enroute_contact import compose_enroute_contact, early_call_sentence
 from .fuel_rows import contingency_label
 from .deferred_dispatch import build_deferred_dispatch_gates
 from .engines import (
@@ -2330,10 +2330,25 @@ def _communication_timeline(
     flight: dict[str, Any],
     findings: list[dict[str, Any]],
     timing_view: dict[str, Any] | None,
+    enroute_contact: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     boundaries = _fir_boundary_rows(flight)
+    # ATC-EARLY-CALLS (25 Oct 2026): the OFP's own early calls lead the shared communications list (the FIR / NEXT
+    # CONTACT tile names the first one), in the order they fall due, each in the one sentence both surfaces print.
+    early = [
+        {
+            "time": f"ACTM {call['due_actm']}" if call.get("due_actm") else "ACTM --:--",
+            "actm": (f"{call['entry_fir']} entry {call['entry_actm']}" if call.get("entry_actm") and call.get("entry_fir")
+                     else call.get("fir") or "FIR not derived"),
+            "event": f"Early call {call.get('fir') or 'FIR not derived'} {', '.join(call.get('notam_ids') or [])}",
+            "detail": early_call_sentence(call) + " OFP " + (", ".join(f"p{page}" for page in call.get("source_pages") or [])
+                                                            or "page not held") + f"; {call['applicability_state'].replace('_', ' ')}.",
+            "record_kind": "early_call",
+        }
+        for call in (enroute_contact or {}).get("early_calls") or []
+    ]
     if timing_view:
-        return boundaries + [
+        return boundaries + early + [
             {
                 "time": event.get("utc_clock") or event.get("utc_display") or "--",
                 "actm": event.get("actm") or "--.--",
@@ -2343,7 +2358,7 @@ def _communication_timeline(
             for event in (timing_view.get("early_calls") or [])
         ]
 
-    timeline = list(boundaries)
+    timeline = list(boundaries) + early
     for item in findings:
         if item.get("engine") != "communications":
             continue
@@ -6319,7 +6334,7 @@ def build_briefing_view(
     fir_boundaries = _fir_boundary_rows(flight)
     # ATC-FIR-BOBCAT-416 (24 Sep 2026): one composed record for page 6 and the dashboard.
     enroute_contact = compose_enroute_contact(flight, findings)
-    communications = _communication_timeline(flight, findings, timing_view)
+    communications = _communication_timeline(flight, findings, timing_view, enroute_contact)
     intam_records = [
         dict(record)
         for record in flight.get("intam_records") or []

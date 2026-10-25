@@ -144,17 +144,20 @@ def test_sq366_page_six_prints_his_fir_communication_column_with_the_allocation_
     raw = case["pages"][ENROUTE_PAGE]
     assert "FIR / COMMUNICATION" in raw
     # ATC-CLEARANCE-FAMILY (1 Oct 2026): CO188/02 adds one source-held notice whose conditions are unresolved.
-    assert normalized("No approved early-call rule held. 27 source-held ATC/communications notices: 8 conditions met, 17 unresolved, 2 not applicable.") in page
-    # ATC-RADIO-SOURCE-418: page 6 holds one full row on this OFP (the first call row with a printed frequency, by the
-    # shared rule) and names every deferred row; the Jakarta note is on the dashboard and named here.
+    # ATC-EARLY-CALLS (25 Oct 2026): the early-call count leads the state line.
+    assert normalized("4 early call(s) from the OFP's FIR notices. 27 source-held ATC/communications notices: 8 conditions met, 17 unresolved, 2 not applicable.") in page
+    # ATC-RADIO-SOURCE-418 / ATC-EARLY-CALLS: page 6 prints the early calls first - the Kabul TIBA call whole, with its
+    # time, frequency, lead, entry, identity, page, complete validity and state; the Kabul exit and Turkmenabat calls,
+    # which this full page cannot hold whole, by time, FIR, unit, frequencies, identity, page and state - and names
+    # every deferred row; the Jakarta note is on the dashboard and named here.
     composed = case["payload"]["view"]["briefing"]["enroute_contact"]
     primary = primary_procedure_line(composed["procedure_lines"])
     assert primary["notam_ids"] == ["1G216/26"]
-    assert normalized("+05:35 OAKX entry. ALL OVERFLIGHTS SHALL COMPLY WITH TIBA PROCEDURE FOR BROADCAST INTENTIONS ON FREQ 125.2MHZ 10 MINS PRIOR ENTERING TO FIR. Printed: not later than ACTM 05:25. NOTAM 1G216/26, OFP p88; validity 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM) · overflight: met · conditions held.") in page
-    assert normalized("Source FIR LIMM; route/time unresolved. STATION 'MILANO ACC/FIC' SERVICE 'EMERGENCY' FREQUENCY 243.000MHZ COMPLETELY WITHDRAWN REF AIP ENR 2.1.1.1-3 NOTAM 1E1741/26, OFP p98; valid 10-JUL-26 0000 - PERM (time unresolved) · conditions unresolved.") in page
-    # ATC-CLEARANCE-FAMILY (1 Oct 2026): the added CO188/02 row (LTAA p90) is a named whole-row deferral - one more
-    # deferred row, one more under LTAA.
-    assert normalized("+25 further rows on the dashboard (WIIF 2, VABF 1, OPKR 2, OAKX 9, UTAV 1, LTAA 2, LGGG 1, LIBB 1, LOVV 2, FIR not derived 1, LSAS 1, LIMM 2).") in page
+    assert normalized("Early call not later than ACTM 05:25: TIBA broadcast on 125.2MHZ; lead 10 MINS PRIOR ENTERING TO FIR - OAKX entry ACTM 05:35. NOTAM 1G216/26, OFP p88; valid 10-JUN-26 0600 - 05-SEP-26 2359 EST: covers this crossing (at scheduled departure 1730Z + ACTM) · conditions held (+1 on the dashboard). +3 more on the dashboard.") in page
+    assert normalized("Further early calls, whole on the dashboard: not later than ACTM 06:07 UTAV Contact THE RELEVANT ACC (1G197/26, p88, conditions held); between ACTM 06:12 and ACTM 06:22 UTAV Contact TURKMENABAT-CTL on 134.5 MHZ, 128.5 MHZ (AX1/23, p89, conditions held).") in page
+    # Generic notices rank below the early calls: the untimed Milano status keeps its FIR, identity and page in the
+    # deferral; the untimed Jakarta logon is named as an early call with no derived time.
+    assert normalized("+24 further rows on the dashboard (LIMM 1E1741/26 (p98); early call WIIF SX50/25 (p67), time not derived; WIIF 1, VABF 1, OPKR 2, OAKX 8, LTAA 2, LGGG 1, LIBB 1, LOVV 2, FIR not derived 1, LSAS 1, LIMM 2).") in page
     # The topic row is source-held without a FIR/clock, included in that exact
     # whole-row deferral; no individual identity is invented in a count group.
     topic = next(row for row in composed["procedures"] if row["notam_id"] == "1A2595/26")

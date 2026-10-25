@@ -37,7 +37,10 @@ CASES = {
     "SQ322": "lido-briefing_SQ_322_16Aug2026_SIN_LHR.pdf",
     "SQ326": "lido-briefing_SQ_326_16Aug2026_SIN_FRA.pdf",
 }
-ROW_START = re.compile(r"\+\d{2}:\d{2} [A-Z]{4}\b|Source FIR [A-Z]{4}; route/time unresolved\.")
+# ATC-EARLY-CALLS (25 Oct 2026): an early call's row opens with its call time; it is bound to the same citation,
+# complete validity, timing basis and final state as every other timed row, and to the shared early-call sentence.
+ROW_START = re.compile(r"\+\d{2}:\d{2} [A-Z]{4}\b|Source FIR [A-Z]{4}; route/time unresolved\.|Early call (?:not later than|between|about) ACTM \d{2}:\d{2}")
+NAMED_CALLS = "Further early calls, whole on the dashboard: "
 CITATION = re.compile(r"\bNOTAM (?P<ids>[A-Z0-9]+/\d{2}(?:, [A-Z0-9]+/\d{2})*), OFP p(?P<page>\d+)(?=[;,])")
 
 
@@ -95,8 +98,13 @@ def assert_printed_timing_basis(card: str, composed: dict) -> list[dict]:
         validity = next(condition for condition in row["conditions"] if condition["kind"] == "validity")
         window = re.escape(validity["text"])
         suffix = block[citation.end():]
+        if block.startswith("Early call "):
+            from app.odss.enroute_contact import early_call_sentence
+            call = next(call for call in composed["early_calls"] if call["notam_ids"] == identities)
+            assert call["call_window"] and line["actm"], block
+            assert block.startswith(early_call_sentence(call)) or block.startswith(early_call_sentence(call, compact=True)), block
         if line["actm"]:
-            assert block.startswith(f"+{line['actm']} {line['fir']}"), block
+            assert block.startswith(f"+{line['actm']} {line['fir']}") or block.startswith("Early call "), block
             basis = composed["timing_basis"]
             assert basis["kind"] in {"scheduled_departure", "atot"} and basis["utc"]
             clock = basis["utc"][11:16].replace(":", "")
@@ -134,7 +142,10 @@ def test_the_page_still_defers_rather_than_failing_closed(page_six):
     for label, case in page_six.items():
         text, composed = case["text"], case["composed"]
         counts = Counter(row["applicability_state"] for row in composed["procedures"])
-        compact = (f"No approved early-call rule held. {len(composed['procedures'])} source-held ATC/communications notices: "
+        # ATC-EARLY-CALLS (25 Oct 2026): the early-call count leads the compact state; every outcome count follows.
+        opening = (f"{len(composed['early_calls'])} early call(s) from the OFP's FIR notices. " if composed["early_calls"]
+                   else "No approved early-call rule held. ")
+        compact = (f"{opening}{len(composed['procedures'])} source-held ATC/communications notices: "
                    f"{counts['conditions_held']} conditions met, {counts['conditions_unresolved']} unresolved, "
                    f"{counts['not_applicable']} not applicable.")
         assert (compact in text or composed["state_sentence"] in text) and "FIR crossings (OFP ACTM):" in text, label
@@ -142,16 +153,23 @@ def test_the_page_still_defers_rather_than_failing_closed(page_six):
         card = fir_card(text)
         published = assert_printed_timing_basis(card, composed)
         deferred = re.findall(r"\+(\d+) further rows on the dashboard \(", card)
-        assert len(deferred) == 1 and len(published) + int(deferred[0]) == len(composed["procedure_lines"]), card
+        # An early call the page cannot hold whole is named (time, FIR, action, identity, page, state), never dropped.
+        from app.odss.enroute_contact import named_early_call
+        named = [call for call in composed["early_calls"] if call["call_window"] and named_early_call(call) in card]
+        assert all(NAMED_CALLS in card for _ in named[:1]), card
+        assert len(deferred) == 1 and len(published) + len(named) + int(deferred[0]) == len(composed["procedure_lines"]), card
         assert any(line["notam_ids"] == ["1G216/26"] for line in published), label
 
 
 @pytest.mark.parametrize("before,after", [
     ("OFP p108;", "OFP p1080;"),
     ("scheduled departure 0215Z + ACTM", "scheduled departure 0315Z + ACTM"),
-    ("Source FIR KZDC; route/time unresolved.", "Source FIR KZNY; route/time unresolved."),
-    ("valid 02-JUN-26 1822 - 02-JUN-27 2359 (time unresolved)",
-     "valid 02-JUN-26 1822 - 02-JUN-27 2359: covers this crossing (at scheduled departure 0215Z + ACTM)"),
+    # ATC-EARLY-CALLS (25 Oct 2026): SQ23's untimed KZDC status now defers by identity behind the early calls, so the
+    # row-start and validity corruptions are made on the early-call rows page 6 now prints.
+    ("Early call not later than ACTM 11:41: Contact LAHORE ACC WEST", "Early call not later than ACTM 11:44: Contact LAHORE ACC WEST"),
+    ("OPLR entry ACTM 11:56. Source row", "OPLR entry ACTM 11:59. Source row"),
+    ("Early call not later than ACTM 11:08: TIBA broadcast on 125.2MHZ", "Early call not later than ACTM 11:08: TIBA broadcast on 125.3MHZ"),
+    ("valid 01-JUL-26 0000 - 31-DEC-26 2359: covers this crossing", "valid 01-JUL-26 0000 - 31-DEC-26 2359: outside this crossing"),
 ])
 def test_genuine_row_timing_or_own_citation_corruption_is_rejected(page_six, before, after):
     if "SQ23" not in page_six:

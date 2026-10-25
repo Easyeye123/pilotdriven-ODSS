@@ -1,6 +1,6 @@
 {
   "publication_rules": "2026-10-25-depress-chart-issuance-v117",
-  "enroute_contact_rule": "enroute-contact-v16",
+  "enroute_contact_rule": "enroute-contact-v17",
   "extraction_rules": "2026-10-24-volcano-notice-stream-v25",
   "publication_format": "six-page-reference-briefing-2026-09-19",
   "minted": "2026-10-25 DEPRESS-CHART-ISSUANCE on ITEM9-VWS-TIES (v116 / v25). David 24 Oct (SQ301 MAN-SIN): the briefing issued depressurisation chart 8-7 twice (once per terrain window it protects) and dropped 10-4 over RANAH because it covers only part of its window. A governed chart is now issued once per flight naming every window and leg it covers; a chart covering part of a window is issued for exactly those legs, the window states the legs no indexed chart covers, and every issued chart, complete or partial, must have its governed artifact (publication gate unchanged in strength). The terrain sentence, the depressurisation receipt row, the terrain annex and the held chart artifacts carry the coverage; one chart covering one whole window publishes exactly as before (evidence: output/pd-depress-charts-20261025/). Publication v117; extraction v25, timing spec, table-cells, the PDF printable form and enroute-contact unchanged. A v116 pack reopens rebuilt under v117; old saved analyses, models and PDF bytes are never rewritten. Production acceptance remains separate. Re-mint this file with any rule-token change; both suites fail on drift."

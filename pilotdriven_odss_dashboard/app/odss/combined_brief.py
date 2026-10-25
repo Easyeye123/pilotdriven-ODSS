@@ -4275,6 +4275,28 @@ def _route_anchor_entries(flight: dict[str, Any], briefing: dict[str, Any]) -> l
                 "actm": waypoint.get("actm_minutes"),
             })
 
+    # ATC-EARLY-CALLS (25 Oct 2026): every early call with a derived call time is a decision-timeline anchor at the
+    # time it falls due, named by the FIR it is made for ("OAKX TIBA", "OPLR CALL"); calls one entry shares at one
+    # time are one anchor. The page-6 card and the dashboard carry each call's values and source.
+    seen_calls: set[tuple[Any, ...]] = set()
+    short_action = {"tiba_broadcast": "TIBA", "voice_contact": "CALL", "contact_logon": "LOGON"}
+    for call in (briefing.get("enroute_contact") or {}).get("early_calls") or []:
+        due = str(call.get("due_actm") or "")
+        if not call.get("call_window") or not re.fullmatch(r"\d{2}:\d{2}", due):
+            continue
+        key = (due, call.get("entry_fir"), call.get("kind"))
+        if key in seen_calls:
+            continue
+        seen_calls.add(key)
+        due_minutes = int(due[:2]) * 60 + int(due[3:])
+        entries.append({
+            "time": _clock_at(flight, due_minutes),
+            "label": f"{call.get('entry_fir') or call.get('fir')} {short_action.get(call.get('kind'), 'CALL')}",
+            "sub": f"ACTM {due}",
+            "accent": COMMS_TEAL,
+            "actm": due_minutes,
+        })
+
     destination = str(
         ((briefing.get("overview") or {}).get("destination") or {}).get("icao")
         or ""

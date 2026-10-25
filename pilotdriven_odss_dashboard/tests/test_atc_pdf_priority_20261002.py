@@ -70,8 +70,10 @@ def test_genuine_sq304_page_six_prints_the_held_kabul_and_turkmenabat_calls(tmp_
     assert row(model, "1G216/26")["applicability_state"] == "conditions_held"
     assert row(model, "AX1/23")["applicability_state"] == "conditions_held"
     assert primary_procedure_line(model["procedure_lines"])["notam_ids"] == ["1G216/26"]
-    for printed in ("NOTAM 1G216/26, OFP p91", "FREQ 125.2MHZ 10 MINS PRIOR ENTERING TO FIR", "not later than ACTM 05:22",
-                    "NOTAM AX1/23, OFP p92", "134.5 MHZ, 128.5 MHZ"):
+    # ATC-EARLY-CALLS (25 Oct 2026): both print as early calls - the Kabul TIBA with its frequency and printed lead, the
+    # Turkmenabat contact within the ten minutes before UTAV entry (WI 10 MIN is a window, not a deadline).
+    for printed in ("NOTAM 1G216/26, OFP p91", "TIBA broadcast on 125.2MHZ; lead 10 MINS PRIOR ENTERING TO FIR", "not later than ACTM 05:22",
+                    "between ACTM 06:09 and ACTM 06:19: Contact TURKMENABAT-CTL on 134.5 MHZ, 128.5 MHZ", "NOTAM AX1/23, OFP p92", "134.5 MHZ, 128.5 MHZ"):
         assert normalized(printed) in page, printed
     # Every row still reaches the dashboard; the deferral line still counts what page 6 does not print.
     assert normalized("further rows on the dashboard") in page
@@ -93,7 +95,10 @@ def test_genuine_sq23_page_six_keeps_its_valued_calls_and_names_the_new_york_cpd
     separate KZNY row without dropping the Karachi crew call: KZNY 1A487/26 stays an explicitly named dashboard row."""
     case = rendered("SQ23", tmp_path_factory)
     model, page = case["model"], case["page6"]
-    for printed in ("NOTAM 1G216/26, OFP p108", "NOTAM SX33/26, OFP p110", "NOTAM 1A1513/26, OFP p94", "KZNY 1A487/26 (p98)"):
+    # ATC-EARLY-CALLS (25 Oct 2026): the early calls rank above generic communications notices for page space, so the
+    # Washington CPDLC outage (KZDC 1A1513/26) joins New York's as a named deferral - FIR, identity and page on the page,
+    # the whole row on the dashboard - and the Kabul exit contact prints whole beside Lahore ACC West.
+    for printed in ("NOTAM 1G216/26, OFP p108", "NOTAM SX33/26, OFP p110", "NOTAM 1G197/26, OFP p109", "KZDC 1A1513/26 (p94)", "KZNY 1A487/26 (p98)"):
         assert normalized(printed) in page, printed
     line = next(l for l in model["procedure_lines"] if "1A487/26" in l["notam_ids"])
     assert (line["text"], line["fir"], line["source_pages"], line["actm"]) == ("COM CPDLC ROUTE MESSAGING NOT AVBL", "KZNY", [98], None)
