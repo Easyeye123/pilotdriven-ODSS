@@ -1,3 +1,23 @@
+"""Exact-raster canary for the INTERNAL lossless audit composition.
+
+Scope, re-pinned 16 Sep 2026. This gate replays the SHA-pinned historical
+analysis through ``include_audit_appendix=True`` and compares the result with
+the approved private REV3 reference, pixel for pixel. That composition is the
+lossless audit publication. **It is not what a pilot downloads.** The Download
+PDF button calls ``render_combined_briefing`` with no audit appendix and
+publishes David's six-page format.
+
+Until this re-pin, this gate was cited as the answer to his 9 Sep 2026
+question "How do you ensure that [the standard does not degenerate]???". It
+never could be: its reference was minted from our own render and its candidate
+is an artefact he never receives. The pilot-facing publication format is now
+guarded by ``scripts/check_reference_conformance.py``, whose structure is read
+out of his own reference briefings.
+
+What this gate still earns its place for: it is the deterministic-renderer
+canary. A font, reportlab or PyMuPDF change that silently moves every glyph
+shows up here as a raster difference on a frozen input.
+"""
 from __future__ import annotations
 
 import argparse
@@ -5,12 +25,15 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import sys
 from typing import Any
 
 import fitz
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 DEFAULT_MANIFEST = ROOT / "tests" / "rev3_visual_reference_manifest.json"
 
 
@@ -47,6 +70,14 @@ def load_manifest(path: Path) -> dict[str, Any]:
         raise VisualRegressionError("Visual reference manifest schema_version must be 1")
     if payload.get("gate") != "rev3-raster-pixel-equality":
         raise VisualRegressionError("Visual reference manifest has an unexpected gate identifier")
+
+    artefact = payload.get("artefact")
+    if artefact != "internal-lossless-audit-composition":
+        raise VisualRegressionError(
+            "Visual reference manifest must declare artefact "
+            "'internal-lossless-audit-composition'; this gate does not guard the "
+            "pilot-facing Flight Briefing format"
+        )
 
     reference = payload.get("reference_asset")
     if not isinstance(reference, dict):
@@ -316,6 +347,29 @@ def _validate_reference(
             )
 
 
+def _assert_audit_composition(
+    candidate_path: Path,
+    candidate_pages: list[RenderedPage],
+    manifest: dict[str, Any],
+) -> None:
+    """Refuse to certify the pilot-facing download with this gate.
+
+    Pointing this gate at the six-page publication would let a release claim
+    the format is guarded when all that was compared is a raster of a different
+    artefact. That is precisely the confusion David's 9 Sep 2026 question
+    exposed, so it is now an error rather than a naming convention.
+    """
+    from app.odss.concise_pdf_gate import MAX_BRIEFING_PAGES
+
+    if len(candidate_pages) <= MAX_BRIEFING_PAGES:
+        raise VisualRegressionError(
+            f"{candidate_path.name} has {len(candidate_pages)} page(s), which is the "
+            f"pilot-facing publication, not the {manifest['artefact']} this gate "
+            "guards. The published Flight Briefing format is checked by "
+            "scripts/check_reference_conformance.py against David's own reference."
+        )
+
+
 def compare_pdf_rasters(
     *,
     reference_path: Path,
@@ -347,6 +401,7 @@ def compare_pdf_rasters(
     _validate_reference(reference_pages, manifest)
     candidate_hash = sha256_file(candidate_path)
     candidate_pages = _render_document(candidate_path)
+    _assert_audit_composition(candidate_path, candidate_pages, manifest)
     expected_pages = manifest["pages"]
     thresholds = manifest["thresholds"]
 

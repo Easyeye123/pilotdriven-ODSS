@@ -62,6 +62,22 @@ def test_combined_report_requires_valid_crop_box() -> None:
     )
 
 
+def test_combined_partial_chart_requires_its_chart() -> None:
+    findings = [
+        {
+            "engine": "depressurisation",
+            "data": {
+                "chart_number": "10-5",
+                "coverage_complete": False,
+                "reference_status": "controlled-index-loaded",
+            },
+        }
+    ]
+    for mode in ("combined", "flight-briefing"):
+        with pytest.raises(DepressurisationProfileChartPublicationError):
+            validate_depressurisation_profile_charts({}, findings, mode)
+
+
 def test_combined_report_accepts_validated_cropped_chart() -> None:
     flight = {"depressurisation_profile_charts": [_artifact()]}
     assert validate_depressurisation_profile_charts(

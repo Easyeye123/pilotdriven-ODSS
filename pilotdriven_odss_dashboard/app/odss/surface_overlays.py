@@ -16,6 +16,12 @@ SURFACE_MAP_DIR = DATA_DIR / "maps"
 MAX_SURFACE_FEATURES = 256
 MAX_SURFACE_MATCHES = 128
 MAX_COORDINATE_POINTS = 20_000
+MAX_BOUNDARY_RINGS = 32
+# Amazon Location's static-map API rejects a ``geojson-overlay`` query value
+# longer than this. The 10 Sep 2026 satellite surface map introduced the cap
+# with no test; ``fit_static_map_overlay`` now simplifies deterministically
+# down to it and fails closed when the runways and marks alone do not fit.
+STATIC_MAP_OVERLAY_LIMIT = 4_200
 
 
 def surface_conflict_publication_label(conflict: dict[str, Any]) -> str:
@@ -86,6 +92,46 @@ class SurfaceGeometry(_StrictModel):
         return self
 
 
+def _closed_ring(ring: Any) -> list[tuple[float, float]]:
+    """One boundary ring: closed, at least four vertices, enclosing an area."""
+    if not isinstance(ring, list) or not all(
+        isinstance(point, list)
+        and len(point) >= 2
+        and isinstance(point[0], (int, float))
+        and isinstance(point[1], (int, float))
+        for point in ring
+    ):
+        raise ValueError("An aerodrome boundary ring must be a list of [longitude, latitude] points.")
+    points = _coordinate_points(ring)
+    if len(points) < 4 or points[0] != points[-1]:
+        raise ValueError("An aerodrome boundary ring must be closed with at least four points.")
+    area = 0.0
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        area += x0 * y1 - x1 * y0
+    if abs(area) < 1e-10:
+        raise ValueError("An aerodrome boundary ring must enclose an area.")
+    return points
+
+
+class SurfaceAerodromeBoundary(_StrictModel):
+    """The exact OSM aerodrome outline the app already computes.
+
+    ``exactAerodromeBoundary`` (PilotDriven ``airport-report-scope.mjs``)
+    returns ``{outer: [ring...], inner: [ring...]}`` for the report-eligibility
+    test. The same shape is carried here so the figure can stroke the field
+    outline instead of floating three runway lines in black space.
+    """
+
+    outer: list[list[Any]] = Field(min_length=1, max_length=MAX_BOUNDARY_RINGS)
+    inner: list[list[Any]] = Field(default_factory=list, max_length=MAX_BOUNDARY_RINGS)
+
+    @model_validator(mode="after")
+    def validate_rings(self):
+        for ring in [*self.outer, *self.inner]:
+            _closed_ring(ring)
+        return self
+
+
 class SurfaceFeatureProperties(_StrictModel):
     featureId: str = Field(min_length=1, max_length=160)
     aeroway: Literal["runway", "taxiway", "taxilane", "apron"]
@@ -129,7 +175,13 @@ class SurfaceMarker(_StrictModel):
     geometry: SurfacePointGeometry
 
 
-SurfaceMarkClass = Literal["closure", "scheduled", "equipment", "locator"]
+SurfaceMarkClass = Literal[
+    "closure",
+    "shortening",
+    "scheduled",
+    "equipment",
+    "locator",
+]
 SurfaceReferenceState = Literal[
     "active_at_reference",
     "begins_after_reference",
@@ -192,6 +244,14 @@ class SurfaceSource(_StrictModel):
     attribution: str = Field(min_length=1, max_length=200)
     licenceUrl: str = Field(min_length=1, max_length=500)
     referenceOnly: Literal[True]
+    # What the app's provider said about the extract the contract was built
+    # from: the report scope it carries (2 = verified membership, field
+    # outline and apron relations; 1 = membership only) and whether it was a
+    # cached copy stood in for a failed refresh. Optional so a browser on the
+    # previous bundle still publishes; when stated, a figure drawn without
+    # its outline can say why instead of omitting it silently (17 Sep 2026).
+    reportScopeVersion: int | None = Field(default=None, ge=0, le=99)
+    stale: bool | None = None
 
 
 class SurfaceBounds(_StrictModel):
@@ -235,6 +295,9 @@ class SurfaceOverlayContract(_StrictModel):
     window: SurfaceWindow
     source: SurfaceSource
     bounds: SurfaceBounds | None
+    # Optional so a browser still on the previous app bundle publishes as
+    # before; when supplied it is the field outline of the figure.
+    aerodromeBoundary: SurfaceAerodromeBoundary | None = None
     featureCollection: SurfaceFeatureCollection
     mapped: list[SurfaceMappedFinding] = Field(max_length=MAX_SURFACE_MATCHES)
     reviewRequired: list[SurfaceReviewFinding] = Field(max_length=MAX_SURFACE_MATCHES)
@@ -264,11 +327,113 @@ class SurfaceOverlayContract(_StrictModel):
         return self
 
 
+class AirportNoteLine(_StrictModel):
+    sourceObject: str = Field(min_length=1, max_length=96)
+    path: str = Field(min_length=1, max_length=512)
+    value: str = Field(min_length=1, max_length=4_000)
+
+
+class AirportNoteObject(_StrictModel):
+    name: str = Field(min_length=1, max_length=96)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class AirportNotesPublication(_StrictModel):
+    status: Literal["released", "unavailable"]
+    message: str = Field(min_length=1, max_length=200)
+    releaseStatus: str | None = Field(default=None, max_length=40)
+    availabilityStatus: Literal[
+        "current",
+        "no_current_released_match",
+        "source_unavailable",
+        "future",
+        "expired",
+        "withdrawn",
+        "review_required",
+    ] | None = None
+    airportVersion: str | None = Field(default=None, max_length=80)
+    cycle: str | None = Field(default=None, max_length=40)
+    schemaVersion: str | None = Field(default=None, max_length=40)
+    objects: list[AirportNoteObject] = Field(max_length=24)
+    lines: list[AirportNoteLine] = Field(max_length=96)
+    omittedLineCount: int = Field(ge=0, le=1_000_000)
+
+    @model_validator(mode="after")
+    def validate_release(self):
+        if self.status == "released":
+            if self.releaseStatus != "released":
+                raise ValueError("Released airport notes require released source status.")
+            if self.availabilityStatus != "current":
+                raise ValueError(
+                    "Released airport notes require current availability."
+                )
+            if not self.airportVersion or not self.cycle or not self.schemaVersion:
+                raise ValueError("Released airport notes require package identity and cycle.")
+        else:
+            if self.availabilityStatus == "current":
+                raise ValueError(
+                    "Unavailable airport notes cannot claim current availability."
+                )
+            if self.lines or self.objects:
+                raise ValueError("Unavailable airport notes cannot publish package content.")
+        return self
+
+
+class AirportSurfaceIndexWindow(_StrictModel):
+    startsAt: str | None = Field(default=None, max_length=64)
+    endsAt: str | None = Field(default=None, max_length=64)
+    referenceAt: str | None = Field(default=None, max_length=64)
+    referenceBasis: str | None = Field(default=None, max_length=120)
+
+
+class AirportSurfaceIndexEntry(_StrictModel):
+    icao: str = Field(pattern=r"^[A-Z]{4}$")
+    name: str = Field(default="", max_length=200)
+    roles: list[
+        Literal[
+            "departure",
+            "destination",
+            "destination_alternate",
+            "edto",
+            "fuel_enroute",
+            "fuel_enroute_airport",
+            "enroute",
+        ]
+    ] = Field(min_length=1, max_length=7)
+    roleLabel: str = Field(min_length=1, max_length=160)
+    stationStatus: Literal["held", "unavailable", "error"]
+    sourceLabel: str = Field(min_length=1, max_length=240)
+    window: AirportSurfaceIndexWindow
+    notamCount: int = Field(ge=0, le=10_000)
+    notes: AirportNotesPublication
+
+
+# Shared with the PilotDriven app (web/src/lib/airport-surface-index-limit.mjs).
+MAX_AIRPORT_SURFACE_INDEX_ENTRIES = 128
+
+
 class SurfaceOverlayRequest(_StrictModel):
     # The field stays required so an omitted payload cannot clear an analysis by
     # accident. An explicit empty list is the fail-safe clear after a timing
     # refresh can no longer validate the previous marks.
     overlays: list[SurfaceOverlayContract] = Field(max_length=2)
+    # Omission means "leave the published index unchanged" so a browser that
+    # loaded the previous app bundle cannot erase it while refreshing the two
+    # legacy map overlays. An explicit [] remains the deliberate clear.
+    # The bound must clear a real station package, and it has been too small
+    # twice: SQ38 WSSS-KLAX (29 Aug 2026) filed 39 station airports against a
+    # cap of 30, and SQ303 EBBR-WSSS (16 Jul 2026) files 65 - one departure,
+    # one destination, four alternates, one fuel en-route, 49 EDTO and nine
+    # en-route airports, every one a real four-letter station - against a cap of
+    # 64. Either way the whole publication was refused as a 422 and the pilot
+    # got no PDF (Codex live QA, 22 Sep 2026). MAX_AIRPORT_SURFACE_INDEX_ENTRIES
+    # is about twice the largest package seen; it stays a bound (an entry is at
+    # most ~1.5 kB, so the list stays under ~200 kB), the app states the same
+    # number before it sends, and a test pins the two together.
+    airport_surface_index: list[AirportSurfaceIndexEntry] | None = Field(
+        default=None,
+        max_length=MAX_AIRPORT_SURFACE_INDEX_ENTRIES,
+    )
 
 
 def validated_surface_overlays(
@@ -293,6 +458,28 @@ def validated_surface_overlays(
     return result
 
 
+def validated_airport_surface_index(
+    request: SurfaceOverlayRequest,
+    flight: dict[str, Any],
+) -> list[dict[str, Any]] | None:
+    if request.airport_surface_index is None:
+        return None
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    departure = str(flight.get("departure") or "").strip().upper()
+    destination = str(flight.get("destination") or "").strip().upper()
+    for entry in request.airport_surface_index:
+        if entry.icao in seen:
+            raise ValueError(f"Duplicate {entry.icao} airport surface index entry.")
+        seen.add(entry.icao)
+        if "departure" in entry.roles and entry.icao != departure:
+            raise ValueError("Departure airport surface index does not match the analysed flight.")
+        if "destination" in entry.roles and entry.icao != destination:
+            raise ValueError("Destination airport surface index does not match the analysed flight.")
+        result.append(entry.model_dump(mode="json"))
+    return result
+
+
 def _sample_line(coordinates: list[Any], maximum: int = 16) -> list[Any]:
     if len(coordinates) <= maximum:
         return coordinates
@@ -313,6 +500,15 @@ _SURFACE_STYLES = {
         "fill-color": "#EF4444",
         "fill-opacity": 0.55,
         "marker-label": "X",
+    },
+    "shortening": {
+        "color": "#F59E0B",
+        "width": 7,
+        "outline-color": "#78350F",
+        "outline-width": 2,
+        "fill-color": "#F59E0B",
+        "fill-opacity": 0.4,
+        "marker-label": "R",
     },
     "scheduled": {
         "color": "#FBBF24",
@@ -346,7 +542,8 @@ _SURFACE_STYLE_PRIORITY = {
     "locator": 0,
     "equipment": 1,
     "scheduled": 2,
-    "closure": 3,
+    "shortening": 3,
+    "closure": 4,
 }
 
 
@@ -361,6 +558,8 @@ def surface_mark_presentation(match: dict[str, Any]) -> str | None:
         return "scheduled"
     if mark_class == "equipment":
         return "equipment"
+    if mark_class == "shortening" and state == "active_at_reference":
+        return "shortening"
     if mark_class == "closure" and state == "active_at_reference":
         return "closure"
     # Missing/unknown timing, explicit locator rows, and legacy unclassified
@@ -368,7 +567,37 @@ def surface_mark_presentation(match: dict[str, Any]) -> str | None:
     return "locator"
 
 
-def _styled_surface_overlay(contract: dict[str, Any]) -> dict[str, Any]:
+def _rounded(coordinates: Any, precision: int | None) -> Any:
+    if precision is None:
+        return coordinates
+    if (
+        isinstance(coordinates, list)
+        and len(coordinates) >= 2
+        and isinstance(coordinates[0], (int, float))
+        and isinstance(coordinates[1], (int, float))
+    ):
+        return [round(float(coordinates[0]), precision), round(float(coordinates[1]), precision)]
+    if isinstance(coordinates, list):
+        return [_rounded(item, precision) for item in coordinates]
+    return coordinates
+
+
+def _styled_surface_overlay(
+    contract: dict[str, Any],
+    *,
+    context_points: int = 16,
+    held_points: int = 16,
+    keep_context: bool = True,
+    precision: int | None = None,
+) -> dict[str, Any]:
+    """Style the validated overlay for the Amazon Location static map.
+
+    Runways and every marked feature are *held*: they are always emitted.
+    Unmarked taxiways, taxilanes and aprons are *context*: they may be thinned
+    to ``context_points`` per line or, at ``keep_context=False``, left out so
+    the query stays under the provider's byte cap. Polygons are never
+    resampled - a ring with vertices removed is a different shape.
+    """
     feature_marks: dict[str, str] = {}
     for match in contract.get("mapped") or []:
         presentation = surface_mark_presentation(match)
@@ -389,15 +618,27 @@ def _styled_surface_overlay(contract: dict[str, Any]) -> dict[str, Any]:
         geometry = feature.get("geometry") or {}
         geometry_type = geometry.get("type")
         coordinates = geometry.get("coordinates")
-        feature_id = str((feature.get("properties") or {}).get("featureId") or "")
+        properties = feature.get("properties") or {}
+        feature_id = str(properties.get("featureId") or "")
+        presentation = feature_marks.get(feature_id)
+        held = presentation is not None or properties.get("aeroway") == "runway"
+        if not held and not keep_context:
+            continue
         if geometry_type == "LineString" and isinstance(coordinates, list):
             geometry = {
                 "type": "LineString",
-                "coordinates": _sample_line(coordinates),
+                "coordinates": _rounded(
+                    _sample_line(coordinates, held_points if held else context_points),
+                    precision,
+                ),
             }
-        elif geometry_type != "Polygon":
+        elif geometry_type == "Polygon":
+            geometry = {
+                "type": "Polygon",
+                "coordinates": _rounded(coordinates, precision),
+            }
+        else:
             continue
-        presentation = feature_marks.get(feature_id)
         style = _SURFACE_STYLES.get(presentation or "")
         properties: dict[str, Any] = {
             "color": style["color"] if style else "#E5E7EB",
@@ -443,6 +684,87 @@ class SurfaceOverlayRenderError(RuntimeError):
     pass
 
 
+# The simplification ladder, in order. Each rung is (name, context points per
+# line, held points per line, keep context, coordinate decimals). The first
+# rung is byte-identical to the unsimplified overlay so an overlay that fits
+# is sent exactly as validated; six decimals is about 0.1 m, finer than the
+# 700 px satellite image can show.
+_STATIC_MAP_RUNGS: tuple[tuple[str, int, int, bool, int | None], ...] = (
+    ("full", 16, 16, True, None),
+    ("rounded", 16, 16, True, 6),
+    ("context-8", 8, 16, True, 6),
+    ("context-4", 4, 16, True, 6),
+    ("context-2", 2, 16, True, 6),
+    ("held-only", 2, 16, False, 6),
+    ("held-8", 2, 8, False, 6),
+    ("held-4", 2, 4, False, 6),
+)
+
+
+def _encode_overlay(overlay: dict[str, Any]) -> str:
+    return json.dumps(overlay, separators=(",", ":"), ensure_ascii=True)
+
+
+def fit_static_map_overlay(
+    contract: dict[str, Any],
+    *,
+    limit: int = STATIC_MAP_OVERLAY_LIMIT,
+) -> tuple[str, dict[str, Any]]:
+    """Encode the styled overlay within the provider's byte cap.
+
+    Deterministic: the same contract always takes the same rung. Runways,
+    marked features and their markers are never dropped; when they alone do
+    not fit, the satellite render is refused (``SurfaceOverlayRenderError``)
+    and the validated schematic stands. Thinning a picture is acceptable;
+    losing a closure from it is not.
+    """
+    feature_ids = {
+        str(feature_id)
+        for match in contract.get("mapped") or []
+        if surface_mark_presentation(match) is not None
+        for feature_id in match.get("featureIds") or []
+    }
+    source_features = (contract.get("featureCollection") or {}).get("features") or []
+    runways = sum(
+        (feature.get("properties") or {}).get("aeroway") == "runway"
+        for feature in source_features
+    )
+    marked = sum(
+        str((feature.get("properties") or {}).get("featureId") or "") in feature_ids
+        and (feature.get("properties") or {}).get("aeroway") != "runway"
+        for feature in source_features
+    )
+    for name, context_points, held_points, keep_context, precision in _STATIC_MAP_RUNGS:
+        overlay = _styled_surface_overlay(
+            contract,
+            context_points=context_points,
+            held_points=held_points,
+            keep_context=keep_context,
+            precision=precision,
+        )
+        text = _encode_overlay(overlay)
+        if len(text.encode("utf-8")) <= limit:
+            lines = [
+                feature for feature in overlay["features"]
+                if feature["geometry"]["type"] != "Point"
+            ]
+            return text, {
+                "bytes": len(text),
+                "limit": limit,
+                "rung": name,
+                "kept": {
+                    "runways": runways,
+                    "marked": marked,
+                    "context": max(0, len(lines) - runways - marked),
+                    "markers": len(overlay["features"]) - len(lines),
+                },
+            }
+    raise SurfaceOverlayRenderError(
+        "Airport surface overlay exceeds the Amazon static-map limit even with "
+        "context removed; the runways and marks are not thinned further."
+    )
+
+
 async def render_surface_static_map(
     contract: dict[str, Any],
     settings: MapSettings,
@@ -457,12 +779,7 @@ async def render_surface_static_map(
     if not bounds:
         raise SurfaceOverlayRenderError("Airport surface bounds are unavailable.")
 
-    overlay = _styled_surface_overlay(contract)
-    overlay_text = json.dumps(overlay, separators=(",", ":"), ensure_ascii=True)
-    if len(overlay_text) > 4_200:
-        raise SurfaceOverlayRenderError(
-            "Airport surface overlay exceeds the Amazon static-map limit."
-        )
+    overlay_text, overlay_receipt = fit_static_map_overlay(contract)
     params = {
         "key": key,
         "style": "Satellite",
@@ -502,7 +819,8 @@ async def render_surface_static_map(
         "style": "Satellite",
         "image_path": str(destination),
         "media_type": media_type,
-        "label": "Amazon Location Satellite + validated CFP surface overlay",
+        "label": "Amazon Location Satellite + validated OFP surface overlay",
+        "overlay": overlay_receipt,
     }
 
 
@@ -539,8 +857,12 @@ async def attach_surface_report_maps(
 
 
 __all__ = [
+    "STATIC_MAP_OVERLAY_LIMIT",
+    "SurfaceAerodromeBoundary",
     "SurfaceOverlayRequest",
+    "validated_airport_surface_index",
     "attach_surface_report_maps",
+    "fit_static_map_overlay",
     "surface_mark_presentation",
     "validated_surface_overlays",
 ]

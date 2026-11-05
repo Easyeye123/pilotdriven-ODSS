@@ -33,6 +33,12 @@ from .depress_analysis_page import (
     _terr_ref,
     _unresolved_findings,
 )
+from .depress_coverage import (
+    chart_legs_for_window,
+    profile_finding_event_ids,
+    window_gap_finding,
+    window_status,
+)
 from .engines import detect_terrain_events
 from .report_sections import level2_heading
 
@@ -60,15 +66,24 @@ def load_matched_chart_images(
         with fitz.open(stream=raw, filetype="pdf") as chart_doc:
             pixmap = chart_doc[0].get_pixmap(dpi=200)
             png = pixmap.tobytes("png")
-        images.append(
-            {
-                "chart_number": chart_number,
-                "profile": profile,
-                "png": png,
-                "width": pixmap.width,
-                "height": pixmap.height,
+        image = {
+            "chart_number": chart_number,
+            "profile": profile,
+            "png": png,
+            "width": pixmap.width,
+            "height": pixmap.height,
+        }
+        if data.get("window_coverage"):
+            # What this one issued chart covers, for every surface that shows
+            # the held chart (dashboard card, chart viewer).
+            image["coverage"] = {
+                "coverage_statement": data.get("coverage_statement"),
+                "coverage_complete": data.get("coverage_complete") is True,
+                "terrain_event_ids": list(data.get("terrain_event_ids") or []),
+                "window_coverage": list(data.get("window_coverage") or []),
+                "uncovered_legs": list(data.get("uncovered_legs") or []),
             }
-        )
+        images.append(image)
     return images
 
 
@@ -144,14 +159,16 @@ def draw_match_matrix_page(
     ordered_events = sorted(
         events, key=lambda item: item["first_high"].get("actm_minutes") or 0
     )
-    matched_by_event = {
-        (finding.get("data") or {}).get("terrain_event_id"): finding
-        for finding in _matched_event_findings(findings)
-    }
+    # One chart can protect several windows and one window can need several
+    # charts; each row lists every issued chart covering its window.
+    charts_by_event: dict[Any, list[dict[str, Any]]] = {}
+    for finding in _matched_event_findings(findings):
+        for event_id in profile_finding_event_ids(finding):
+            charts_by_event.setdefault(event_id, []).append(finding)
 
     columns = [
         ("REF", 0.055),
-        ("CFP ROUTE EXPOSURE", 0.155),
+        ("OFP ROUTE EXPOSURE", 0.155),
         ("FILED SEGMENT", 0.24),
         ("PROFILE / SOURCE", 0.24),
         ("CP / EFFECTIVITY", 0.16),
@@ -175,7 +192,14 @@ def draw_match_matrix_page(
         row_y -= row_height
         canvas.setFillColor(theme.PANEL if index % 2 else theme.PANEL_DEEP)
         canvas.rect(table_x, row_y, table_width, row_height, stroke=0, fill=1)
-        finding = matched_by_event.get(event.get("terrain_event_id"))
+        event_id = event.get("terrain_event_id")
+        covering = charts_by_event.get(event_id) or []
+        status = window_status(event_id, findings)
+        finding = (
+            covering[0]
+            if len(covering) == 1 and status == "complete"
+            else None
+        )
         data = (finding or {}).get("data") or {}
         chart_number = str(data.get("chart_number") or "")
         profile = _profile_by_chart(chart_number) or {}
@@ -244,6 +268,37 @@ def draw_match_matrix_page(
                     ),
                 ]
             )
+        elif covering:
+            # Several charts share the window, or the issued chart covers part
+            # of it: name each chart with the legs it covers in this window.
+            cells.append(
+                [
+                    f"{(item.get('data') or {}).get('chart_number')} "
+                    + " ".join(chart_legs_for_window(item, event_id))
+                    for item in covering[:3]
+                ]
+            )
+            cells.append(
+                [
+                    " / ".join(
+                        str((item.get("data") or {}).get("critical_point") or "")
+                        for item in covering[:3]
+                    ),
+                    "/".join(
+                        (_profile_by_chart(
+                            str((covering[0].get("data") or {}).get("chart_number") or "")
+                        ) or {}).get("effectivity") or []
+                    ),
+                ]
+            )
+            if status == "complete":
+                cells.append(["MATCH", "Full charts embedded"])
+            else:
+                gap = window_gap_finding(event_id, findings) or {}
+                uncovered = ", ".join(
+                    (gap.get("data") or {}).get("uncovered_legs") or []
+                )
+                cells.append(["PARTIAL", f"{uncovered} not covered", "by any indexed chart"])
         else:
             cells.append(
                 [
@@ -300,7 +355,7 @@ def draw_match_matrix_page(
     rules = [
         "1. Profile charts are embedded on the following pages; profile "
         "identifiers alone are not a compliant release.",
-        "2. CFP route exposure is not replaced by chart altitude. The CFP "
+        "2. OFP route exposure is not replaced by chart altitude. The OFP "
         "window and approved chart coverage are presented separately.",
         "3. Exact 100* rows terminate an active event. FIR-boundary rows "
         "without a parsed MSA do not terminate an active event.",
@@ -349,9 +404,9 @@ def draw_match_matrix_page(
     )
     if pages:
         chips.append(
-            "CFP P" + "-".join(str(page) for page in (pages[0], pages[-1]))
+            "OFP P" + "-".join(str(page) for page in (pages[0], pages[-1]))
             if len(pages) > 1
-            else f"CFP P{pages[0]}"
+            else f"OFP P{pages[0]}"
         )
     for finding in _matched_findings(findings)[:2]:
         chart_number = str((finding.get("data") or {}).get("chart_number") or "")

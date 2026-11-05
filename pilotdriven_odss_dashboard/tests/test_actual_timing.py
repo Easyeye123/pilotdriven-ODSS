@@ -16,7 +16,7 @@ import app.main as main
 
 def _build_lido_pdf() -> bytes:
     pages = [
-        """SUMMARY CFP
+        """SUMMARY OFP
 9V-SMG SIA304 SIN/BRU ETD 1030 11JUL26
 SCHED DEP 1030 UTC SCHED ARR 2200 UTC
 RTE NO 001 A350-941
@@ -35,12 +35,12 @@ PZFW 180000
 PTOW 245000
 PLWT 195000
 """,
-        "LIDO CFP PAGE 2\nTAKEOFF PERFORMANCE\nWSSS RWY 02L\nRWY COND: DRY\n",
-        "LIDO CFP PAGE 3\nEDTO INFORMATION\n",
-        "LIDO CFP PAGE 4\nFUEL AND MASS SUMMARY\n",
-        "LIDO CFP PAGE 5\nALTERNATE SUMMARY\n",
-        "LIDO CFP PAGE 6\nROUTE LOG CONTINUED\n",
-        """LIDO CFP PAGE 7
+        "LIDO OFP PAGE 2\nTAKEOFF PERFORMANCE\nWSSS RWY 02L\nRWY COND: DRY\n",
+        "LIDO OFP PAGE 3\nEDTO INFORMATION\n",
+        "LIDO OFP PAGE 4\nFUEL AND MASS SUMMARY\n",
+        "LIDO OFP PAGE 5\nALTERNATE SUMMARY\n",
+        "LIDO OFP PAGE 6\nROUTE LOG CONTINUED\n",
+        """LIDO OFP PAGE 7
 BOBI1 00.15
 N01 20.0 E103 50.0 105*
 BOBI2 00.25
@@ -108,6 +108,17 @@ def test_actual_takeoff_entry_runs_analysis_and_calculates_waypoint_utc(
     }
     assert waypoint_times["BOBI1"] == "1100Z"
     assert waypoint_times["BOBI2"] == "1110Z"
+    target_cross_over_times = {
+        item["display_name"]: item["target_cross_over_display"]
+        for item in analysis["view"]["timing"]["waypoints"]
+    }
+    assert target_cross_over_times == {
+        "BOBI1": "11 JUL 1100Z",
+        "BOBI2": "11 JUL 1110Z",
+    }
+    assert analysis["view"]["timing"]["calculation_basis"] == (
+        "Target cross-over time = ATOT + parsed OFP ACTM."
+    )
     assert any(item["engine"] == "actual_timing" for item in analysis["findings"])
 
     for level in (1, 2):
@@ -119,7 +130,8 @@ def test_actual_takeoff_entry_runs_analysis_and_calculates_waypoint_utc(
         finally:
             document.close()
         assert "ATOT 11 JUL 1045Z" in report_text
-        assert "ATOT + CFP ACTM" in report_text
+        assert "ATOT + OFP ACTM" in report_text
+        assert "TARGET CROSS-OVER TIME" in report_text
 
 
 def test_waypoint_ata_derives_takeoff_anchor_and_recalculates_route(
@@ -172,6 +184,6 @@ def test_unknown_waypoint_ata_is_rejected_without_changing_clock(
     flight = database.get_flight(flight_id)
 
     assert response.status_code == 400
-    assert "was not found in the parsed CFP route" in response.json()["detail"]
+    assert "was not found in the parsed OFP route" in response.json()["detail"]
     assert flight is not None
     assert flight["actual_takeoff_utc"] is None

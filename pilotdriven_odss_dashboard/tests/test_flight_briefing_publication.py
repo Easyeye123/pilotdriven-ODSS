@@ -326,6 +326,37 @@ def test_required_mel_and_depressurisation_source_crops_fail_closed() -> None:
     assert "REQUIRED_SOURCE_CROP_MISSING" in _codes(captured.value)
 
 
+def test_partial_profile_chart_requires_its_chart_and_crop() -> None:
+    # SQ302 21 Oct / SQ301 24 Oct (David: "10-4 ... is missing"): a governed
+    # chart that covers part of a terrain window is ISSUED, so it needs its
+    # chart artifact and its cropped source exactly like a complete match.
+    # The 21 Oct patch that let a partial chart publish without either also
+    # dropped the chart from the briefing; the gate stays fail-closed.
+    from copy import deepcopy
+
+    flight = _flight()
+    flight["depressurisation_profile_charts"] = []
+    findings = _findings()
+    for item in findings:
+        if item.get("engine") == "depressurisation":
+            item["data"] = {
+                "chart_number": "8-3",
+                "coverage_complete": False,
+                "reference_status": "controlled-index-loaded",
+            }
+    manifest = deepcopy(_manifest())
+    manifest["source_crops"] = [
+        crop for crop in manifest["source_crops"]
+        if crop["category"] != "DEPRESSURISATION"
+    ]
+    with pytest.raises(FlightBriefingPublicationError) as captured:
+        validate_flight_briefing_publication(flight, findings, manifest)
+    assert {
+        "DEPRESSURISATION_PROFILE_ARTIFACT_MISSING",
+        "REQUIRED_SOURCE_CROP_MISSING",
+    }.issubset(_codes(captured.value))
+
+
 def test_matched_profile_requires_combined_analysis_and_cropped_chart() -> None:
     flight = _flight()
     flight["depressurisation_profile_charts"][0]["combined_cropped_source_chart_embedded"] = False

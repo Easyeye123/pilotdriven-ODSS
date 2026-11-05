@@ -1,0 +1,17 @@
+{
+  "description": "Official aerodrome reference points (ARP) only, as read from the State AIPs and cited by Codex QA on 13 Oct 2026: CAAS eAIP AD 2.2 WSSS 012133.16N 1035921.57E (https://aim-sg.caas.gov.sg/aim-content/uploads/aip/17-SEP-2026/AIP/2026-09-03-000000/html/eAIP/SG-AD-2-WSSS-en-GB.html); FAA AIP KJFK 40-38-23.741N 073-46-43.292W (https://www.faa.gov/air_traffic/publications/atpubs/aip_html/part3_ad_2.0_new_york.html). No recalled value is held here: the other 17 corpus aerodromes are checked against the coordinate their own OFP prints and against the OpenStreetMap aerodrome PD published (tests/fixtures/osm_aerodromes_published_20261014.json).",
+  "points": {
+    "KJFK": [
+      40.63993,
+      -73.77869
+    ],
+    "WSSS": [
+      1.35921,
+      103.98933
+    ]
+  },
+  "official": [
+    "KJFK",
+    "WSSS"
+  ]
+}

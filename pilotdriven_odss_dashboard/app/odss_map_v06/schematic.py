@@ -78,37 +78,78 @@ def _render_svg(contract: MapContract, *, width: int, height: int) -> str:
         project(feature["geometry"]["coordinates"])
         for feature in markers
     ]
-    polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y in projected)
+    # The route line is the canonical route geometry, one polyline per side of
+    # the antimeridian. Threading it through the markers carried it on from the
+    # destination to every EDTO ETP (item 11: SQ214 PER-SIN ended south of Java,
+    # not at WSSS) and across the whole chart at the dateline.
+    route_lines = []
+    for route in contract.route_geojson.get("features", []):
+        geometry = route.get("geometry") or {}
+        segments = (
+            [geometry.get("coordinates") or []]
+            if geometry.get("type") == "LineString"
+            else geometry.get("coordinates") or []
+            if geometry.get("type") == "MultiLineString"
+            else []
+        )
+        for segment in segments:
+            if len(segment) >= 2:
+                route_lines.append(" ".join(
+                    f"{x:.1f},{y:.1f}" for x, y in (project(coordinate[:2]) for coordinate in segment)
+                ))
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" rx="12" fill="#07111f"/>',
     ]
     for feature in contract.hazards_geojson.get("features", []):
         geometry = feature.get("geometry") or {}
+        props = feature.get("properties") or {}
         coordinate_sets = geometry.get("coordinates") or []
+        if geometry.get("type") == "Point":
+            if props.get("volcano_marker") and len(coordinate_sets) == 2:
+                x, y = project(coordinate_sets)
+                name = escape(str(props.get("volcano") or "VOLCANO"))
+                parts.append(
+                    f'<path d="M {x:.1f},{y - 7:.1f} l 7,12 h -14 z" '
+                    'fill="#ffb84d" stroke="#07111f" stroke-width="1"/>'
+                    f'<text x="{x + 9:.1f}" y="{y:.1f}" '
+                    f'fill="#ffb84d" font-family="Arial" font-size="13">{name}</text>'
+                )
+            continue
+        if geometry.get("type") not in ("Polygon", "MultiPolygon"):
+            continue
         polygons = [coordinate_sets] if geometry.get("type") == "Polygon" else coordinate_sets
         for polygon in polygons:
             if not polygon:
                 continue
             ring = polygon[0]
             points = " ".join(f"{x:.1f},{y:.1f}" for x, y in (project(item) for item in ring))
-            parts.append(
-                f'<polygon points="{points}" fill="#ff6b6b" fill-opacity="0.30" '
-                'stroke="#ffb84d" stroke-width="2"/>'
-            )
-    parts.append(
-        f'<polyline points="{polyline}" fill="none" stroke="#dceeff" '
-        'stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'
-    )
+            style = ('fill="none" stroke-dasharray="5 4"' if props.get("volcano_ring")
+                     else 'fill="#ff6b6b" fill-opacity="0.30"')
+            parts.append(f'<polygon points="{points}" {style} stroke="#ffb84d" stroke-width="2"/>')
+    for polyline in route_lines:
+        parts.append(
+            f'<polyline points="{polyline}" fill="none" stroke="#dceeff" '
+            'stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'
+        )
     selected = set(contract.priority_labels)
-    for feature, (x, y) in zip(markers, projected):
+    # One label per name, on its highest-priority marker: a destination's
+    # printed navlog row shares the aerodrome's code with the aerodrome marker.
+    label_owner: dict[str, int] = {}
+    for index, feature in enumerate(markers):
+        props = feature.get("properties", {})
+        name = str(props.get("name") or "")
+        best = label_owner.get(name)
+        if best is None or int(props.get("priority") or 0) > int(markers[best].get("properties", {}).get("priority") or 0):
+            label_owner[name] = index
+    for index, (feature, (x, y)) in enumerate(zip(markers, projected)):
         props = feature.get("properties", {})
         name = str(props.get("name") or "")
         parts.append(
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" '
             'fill="#4db8ff" stroke="#07111f" stroke-width="2"/>'
         )
-        if name in selected:
+        if name in selected and label_owner.get(name) == index:
             parts.append(
                 f'<text x="{x + 7:.1f}" y="{y - 7:.1f}" '
                 'fill="#e8f2ff" font-family="Arial" font-size="13">'

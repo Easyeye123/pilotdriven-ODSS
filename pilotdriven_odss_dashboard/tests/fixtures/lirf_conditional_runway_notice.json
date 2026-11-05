@@ -1,0 +1,46 @@
+{
+  "source": "/Users/jabe/Documents/ezzo/output/pd-boss-09sep-review/reports/A7-evidence/corpus-9c839db/SQ365-FCO-SIN/analysis/flight_9020_789e0ac863b7_analysis.json",
+  "sha256": "45796373490401c3f8a889db1f60ec5a0e1ef7ef083d75c54f77b39e17ee6393",
+  "airport": "LIRF",
+  "role": "departure",
+  "planned_runway": "34L",
+  "notice": {
+    "notam_id": "A2314/26",
+    "summary": "Rwy 16R/34L closed or unavailable during the applicable departure window.",
+    "item_e_text": "RWY 16R/34L NOT AVBL FOR ACFT WITH TSAT (TARGET START-UP APPROVAL TIME) BETWEEN HR 2130-0445 (2030-0345) AND/OR ELDT (ESTIMATED LANDING TIME) BETWEEN HR 2200-0500 (2100-0400). ACFT CONCERNED SHALL PLAN RWY 16L/34R FOR TKOF AND LDG OPS. REF AIP AD 2 LIRF 1-25",
+    "valid_from_utc": "2026-05-13T18:14:00+00:00",
+    "valid_to_utc": "2026-08-10T18:00:00+00:00",
+    "schedule": null,
+    "source_page": 28,
+    "source_role": null,
+    "role": "departure",
+    "role_applicability": [
+      {
+        "role": "departure",
+        "window_start_utc": "2026-08-07T08:40:00+00:00",
+        "window_end_utc": "2026-08-07T10:40:00+00:00",
+        "window_label": "07 AUG 0840Z-1040Z",
+        "referenceAt": "2026-08-07T09:40:00+00:00",
+        "stateAtReference": "active_at_reference",
+        "minutesDelta": 0,
+        "applicability": "active",
+        "validity_status": "overlaps_flight_window",
+        "schedule_status": "not_applicable"
+      }
+    ],
+    "category": "RUNWAY",
+    "pertinence_rank": 1,
+    "pertinence_kind": "runway_closure",
+    "approach_affected": false,
+    "approach_condition_review": false,
+    "applicability": "active",
+    "window_start_utc": "2026-08-07T08:40:00+00:00",
+    "window_end_utc": "2026-08-07T10:40:00+00:00",
+    "stateAtReference": "active_at_reference",
+    "referenceAt": "2026-08-07T09:40:00+00:00",
+    "minutesDelta": 0,
+    "severity": "critical",
+    "signal_family": "runway_closure",
+    "compact_text": "Rwy 16R/34L closed or unavailable during the applicable departure window."
+  }
+}

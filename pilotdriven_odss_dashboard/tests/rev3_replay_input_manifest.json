@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "gate": "rev3-historical-input-replay",
+  "case_id": "SQ214-PER-SIN-19AUG",
+  "analysis": {
+    "filename": "SQ214_REV3_v16_analysis.json",
+    "sha256": "7d0f87cefef2b281bb81869811940ae2f004b2c0981562668ee03a0b9b5ff4ac"
+  },
+  "source": {
+    "filename": "SQ21419082026PER.pdf",
+    "sha256": "caa1f04e7d29aaeb34834695b8c50785c87174f152b9af9c03efd7425a08b428"
+  },
+  "provenance": "Unmodified analysis captured by the passing 2026-09-08 release-03 private corpus. Its original receipt binds both these SHA-256 values. Private input is stored beside the approved v16 reference PDF, outside git. This capture includes the original NOAA TAF response; fetching that historical URL again is not a deterministic layout input.",
+  "boundary": "The original reference PDF, raster manifest and zero-difference thresholds are unchanged. The current 25-flight source-to-PDF corpus remains mandatory and uses fresh analysis; this replay is only for the historical pixel comparison."
+}

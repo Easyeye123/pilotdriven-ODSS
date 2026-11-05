@@ -686,7 +686,7 @@ def test_missing_controlled_profile_index_is_explicit_when_no_candidate_matches(
     assert result["severity"] == "unknown"
     assert result["summary"] == (
         "No exact profile confirmed because the controlled profile index is "
-        "unavailable - manual review required."
+        "unavailable."
     )
     assert result["data"]["confirmed"] is False
     assert result["data"]["coverage_complete"] is False
@@ -769,8 +769,7 @@ def test_loaded_partial_index_emits_one_unmatched_result_per_terrain_event(
         events[1]["terrain_event_id"]
     ]
     assert unmatched[0]["summary"] == (
-        "No exact profile confirmed from controlled partial issue - "
-        "manual review required."
+        "No exact profile confirmed from controlled partial issue."
     )
     data = unmatched[0]["data"]
     assert data["confirmed"] is False

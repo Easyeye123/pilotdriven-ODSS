@@ -35,7 +35,7 @@ from .visual_reporting import PAGE_SIZE, visual_cover_flowable
 
 
 _TITLES = {
-    "page1": "CFP Page 1 organised summary",
+    "page1": "OFP Page 1 organised summary",
     "bobcat": "BOBCAT / Kabul slot control",
     "deferred_declaration": "Unclassified deferred declaration",
     "mel": "MEL review",
@@ -308,11 +308,11 @@ def _automatic_section(
                 for item in no_overlap
             )
             lines.append(
-                "No significant CFP forecast-weather overlap in the checked "
+                "No significant OFP forecast-weather overlap in the checked "
                 f"windows: {checked}."
             )
             lines.append(
-                "These checks use the uploaded CFP forecast; refresh from the "
+                "These checks use the uploaded OFP forecast; refresh from the "
                 "latest official operational weather before use."
             )
     seen_details: set[str] = set()

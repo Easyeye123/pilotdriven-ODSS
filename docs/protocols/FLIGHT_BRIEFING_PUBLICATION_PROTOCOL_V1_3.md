@@ -36,7 +36,7 @@ The PDF begins with the concise flight-specific briefing and continues into the 
 
 Legacy API routes may remain temporarily for compatibility, but the primary service link and dashboard download must point to the combined Flight Briefing.
 
-The complete uploaded CFP must not be appended, embedded or attached unless the pilot expressly requests it. Authoritative evidence is presented through selected source crops, exact source links and source metadata.
+The complete uploaded OFP must not be appended, embedded or attached unless the pilot expressly requests it. Authoritative evidence is presented through selected source crops, exact source links and source metadata.
 
 ## 3. Information architecture and duplication control
 
@@ -54,7 +54,7 @@ Repeated page-orientation data is limited to flight number, route, date, aircraf
 
 Page 1 is designed for a natural left-to-right pilot scan:
 
-- **Left:** flight identity, CFP Page 1 planning basis, Departure, Destination, preferred Alternate, fuel/mass summary and decision gates.
+- **Left:** flight identity, OFP Page 1 planning basis, Departure, Destination, preferred Alternate, fuel/mass summary and decision gates.
 - **Right:** whole-flight route map and route-linked markers.
 
 The route map must not displace critical Page 1 information or force detailed text below the operational reading size.
@@ -72,7 +72,7 @@ Departure, Destination and preferred Alternate cards shall:
 
 The preferred flight-planning alternate and its weather are mandatory Page 1 items.
 
-### 4.2 CFP Page 1 critical-item coverage
+### 4.2 OFP Page 1 critical-item coverage
 
 Page 1 analysis shall account for, when present:
 
@@ -177,11 +177,29 @@ Each event records:
 - matched profile or unresolved status; and
 - authoritative chart source when matched.
 
-Discrete CFP MSA values must not be converted into a decorative mountain profile.
+Discrete OFP MSA values must not be converted into a decorative mountain profile.
+
+### 9.1 VWS publication invariant
+
+Every parsed OFP route publishes one deterministic VWS review independently of High Terrain Exposure. The review must state exactly one of:
+
+- `review_required`, with the number of planned `>004` trigger windows and the source-held maximum;
+- `reviewed_no_trigger`, with the source-held maximum; or
+- `unavailable`, when the parsed route holds no VWS value.
+
+A high-MSA event or compact-timeline de-duplication may suppress a repeated marker, but must never suppress the VWS review from the dashboard or Flight Briefing PDF. Missing source data must not be rendered as `000`.
+
+This is a code, publication and regression-test invariant. It is not model memory and must not depend on a mutable prompt, session or default AI setting.
 
 ## 10. Mandatory Operational Hazard Assessment
 
-Every uploaded CFP is screened against the supplied and available authoritative hazardous-weather products, including SIGMET, tropical cyclone, volcanic ash, frontal weather and clear-air turbulence products.
+Every uploaded OFP is screened against the supplied and available authoritative hazardous-weather products, including SIGMET, tropical cyclone, volcanic ash, frontal weather and clear-air turbulence products.
+
+### 10.1 Enroute FIR NOTAM disclosure
+
+Every mapped FIR station in the uploaded OFP receives its own visible, timing-bounded NOTAM analysis. The dashboard shows the affecting, schedule-review and outside-window counts plus priority-ordered headlines. Complete raw FIR NOTAM records remain available in a native disclosure that is closed by default.
+
+FIR records are not repeated in the airport NOTAM digest. When an exact FIR crossing reference is unavailable, the product states that limitation and does not infer route intersection or applicability.
 
 Each reported product must retain, where issued:
 
@@ -254,7 +272,7 @@ Publication is blocked when any of the following occurs:
 
 - prohibited report terminology appears;
 - the filename does not follow the Flight Briefing convention;
-- the full CFP is appended or attached without explicit instruction;
+- the full OFP is appended or attached without explicit instruction;
 - Page 1 map/information sides are reversed;
 - airport cards differ materially in geometry or alignment;
 - detailed text or numerics are below the v1.3 minimum;
@@ -274,4 +292,6 @@ Publication is blocked when any of the following occurs:
 
 The legacy Level 1/Level 2 artifacts and endpoints may remain temporarily for regression compatibility. They are not the primary product output. New UI, API and download links shall expose the combined Flight Briefing first.
 
-No user CFP, generated operational report, proprietary company manual or controlled source content is committed with this protocol. Tests use synthetic or redacted fixtures only.
+Generated pilot-facing labels use **OFP**. Existing internal compatibility keys, type names and endpoint fields may retain `cfp`, and a verbatim source quotation may retain its original printed terminology; neither exception may leak a generated `CFP` product label.
+
+No user OFP, generated operational report, proprietary company manual or controlled source content is committed with this protocol. Tests use synthetic or redacted fixtures only.

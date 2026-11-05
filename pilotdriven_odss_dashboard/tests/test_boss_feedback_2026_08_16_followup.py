@@ -18,7 +18,7 @@ from app.odss.combined_brief import (
     _terrain_profile_width,
     _terrain_table_height,
     _time_gate_card_layout,
-    render_combined_briefing,
+    _render_reference_briefing as render_combined_briefing,
 )
 from app.odss.engines import _notam_operational_summary
 from app.odss.pilot_briefing import notam_pertinence
@@ -40,11 +40,17 @@ def _window_weather_finding() -> dict:
     }
 
 
-def test_overview_prefers_raw_bulletins_on_airport_cards(tmp_path):
-    """18 Aug instruction: the dep/dest cards print the actual METAR and TAF
-    from the CFP; synthesised window prose only appears when no bulletin is
-    held."""
+def test_six_box_overview_reports_source_held_weather_without_inventing_window_prose(
+    tmp_path,
+):
+    """The REV1 hierarchy keeps weather status compact on page one.
+
+    Exact source text remains in the dashboard; the physical PDF names its
+    held source state and must not replace it with synthesised window prose.
+    """
     flight = sample_flight()
+    for page_number, record in enumerate(flight["weather"], start=20):
+        record["source_page"] = page_number
     findings = [
         finding
         for finding in sample_findings()
@@ -57,7 +63,14 @@ def test_overview_prefers_raw_bulletins_on_airport_cards(tmp_path):
 
     with fitz.open(output) as document:
         first_page = document[0].get_text()
-    assert "METAR SA 160630 17007KT" in first_page.replace("\n", " ")
+        airports_page = next(
+            page.get_text()
+            for page in document
+            if "AIRPORTS / ALTERNATES" in page.get_text()
+        )
+    assert first_page.count("WINDOW REVIEW HELD") == 1
+    assert "1 OFP RECORD(S)" not in first_page
+    assert airports_page.count("WEATHER SOURCE · METAR HELD / TAF UNAVAILABLE") == 2
     assert "Forecast overlaps ETA plus or minus one hour." not in first_page
 
 
@@ -76,8 +89,31 @@ def test_overview_falls_back_to_operating_window_weather_primary(tmp_path):
 
     with fitz.open(output) as document:
         first_page = document[0].get_text()
-    assert "Forecast overlaps ETA plus or minus one hour." in first_page
+        airports_page = next(
+            page.get_text()
+            for page in document
+            if "AIRPORTS / ALTERNATES" in page.get_text()
+        )
+        undersized = [
+            (str(span.get("text") or "").strip(), span.get("size"))
+            for block in document[0].get_text("dict").get("blocks", [])
+            for line in block.get("lines", [])
+            for span in line.get("spans", [])
+            if str(span.get("text") or "").strip()
+            and 90 <= float(span.get("bbox", (0, 0, 0, 0))[1])
+            < document[0].rect.height - 30
+            and float(span.get("size") or 0.0) < 8.39
+        ]
+    assert "WINDOW REVIEW HELD" in first_page
+    assert "Forecast overlaps ETA plus or minus one hour." in airports_page
     assert "Weather review on the hazard assessment page." not in first_page
+    assert not undersized
+
+    from scripts.run_private_cfp_corpus import scan_physical_pdf
+
+    physical = scan_physical_pdf(output)
+    assert physical["valid"], physical["violations"]
+    assert physical["pages"][0]["visible_overlap_count"] == 0
 
 
 def test_combined_briefing_uses_the_combined_publication_contract(tmp_path):
@@ -165,10 +201,11 @@ def test_short_authoritative_source_crop_does_not_stretch_card_to_footer(tmp_pat
         mel_page = next(
             page
             for page in document
-            if "MEL 25-20-50A - NON-ESSENTIAL EQUIPMENT AND FURNISHINGS"
-            in page.get_text().upper()
+            if "MEL 25-20-50A · SOURCE DECLARATION" in page.get_text()
         )
-        title_box = mel_page.search_for("MEL 25-20-50A - Non-essential equipment and furnishings")[0]
+        title_box = mel_page.search_for(
+            "MEL 25-20-50A · SOURCE DECLARATION"
+        )[0]
         enclosing_panels = [
             drawing["rect"]
             for drawing in mel_page.get_drawings()
@@ -179,7 +216,14 @@ def test_short_authoritative_source_crop_does_not_stretch_card_to_footer(tmp_pat
         ]
         assert enclosing_panels, "declaration source panel missing"
         assert all(rect.height < 400 for rect in enclosing_panels)
-        assert mel_page.get_images(full=True)
+        crop_rects = [
+            rect
+            for image in mel_page.get_images(full=True)
+            for rect in mel_page.get_image_rects(image[0])
+            if any(panel.contains(rect) for panel in enclosing_panels)
+        ]
+        assert crop_rects, "bounded declaration crop missing"
+        assert all(rect.height < 200 for rect in crop_rects)
         assert abs(mel_page.rect.width - 841.89) < 0.1
         assert abs(mel_page.rect.height - 595.28) < 0.1
         assert "UNSPECIFIED" not in mel_page.get_text()

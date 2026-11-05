@@ -48,7 +48,7 @@ def find_route_waypoint(flight: dict[str, Any], name: str) -> dict[str, Any]:
         }
         if wanted in candidates:
             return waypoint
-    raise ValueError(f"Waypoint {wanted} was not found in the parsed CFP route")
+    raise ValueError(f"Waypoint {wanted} was not found in the parsed OFP route")
 
 
 def derive_timing_reference(
@@ -65,7 +65,7 @@ def derive_timing_reference(
         reference_actm = 0
     elif reference_type == "waypoint_ata":
         if not flight:
-            raise ValueError("Run the CFP analysis before using waypoint ATA mode")
+            raise ValueError("Run the OFP analysis before using waypoint ATA mode")
         waypoint = find_route_waypoint(flight, reference_waypoint or "")
         reference_actm = int(waypoint["actm_minutes"])
         actual_takeoff = reference - timedelta(minutes=reference_actm)
@@ -104,6 +104,12 @@ def _event(
         "utc_iso": when.isoformat(),
         "utc_display": display_utc(when),
         "utc_clock": when.strftime("%H%MZ"),
+        # Boss vocabulary: ATOT + the OFP's accumulated-time (ACTM) offset
+        # yields the target cross-over UTC for this filed point. Keep the
+        # legacy utc_* aliases for backwards-compatible consumers.
+        "target_cross_over_utc": when.isoformat(),
+        "target_cross_over_display": display_utc(when),
+        "target_cross_over_clock": when.strftime("%H%MZ"),
         "day_offset": day_offset,
         "day_label": f"D+{day_offset}" if day_offset >= 0 else f"D{day_offset}",
     }
@@ -118,6 +124,40 @@ def _deduplicate(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         deduplicated.values(),
         key=lambda item: (item["actm_minutes"], item["category"], item["label"]),
     )
+
+
+def _vws_timing_events(anchor: datetime, waypoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Start, every maximum and end of each VWS event (item #9: a tied maximum is timed at each waypoint)."""
+    events: list[dict[str, Any]] = []
+    for index, vws_event in enumerate(detect_vws_events(waypoints), start=1):
+        end_waypoint = vws_event.get("drop") or vws_event["last_high"]
+        events.append(
+            _event(
+                anchor,
+                int(vws_event["first_high"]["actm_minutes"]),
+                f"VWS event {index} starts at {vws_event['first_high']['name']}",
+                "vws",
+            )
+        )
+        for maximum in vws_event.get("maxima") or [vws_event["maximum"]]:
+            events.append(
+                _event(
+                    anchor,
+                    int(maximum["actm_minutes"]),
+                    f"VWS event {index} maximum at {maximum['name']}",
+                    "vws",
+                    f"VWS {maximum['vws']:03d}.",
+                )
+            )
+        events.append(
+            _event(
+                anchor,
+                int(end_waypoint["actm_minutes"]),
+                f"VWS event {index} ends at {end_waypoint['name']}",
+                "vws",
+            )
+        )
+    return events
 
 
 def build_timing_view(
@@ -150,6 +190,9 @@ def build_timing_view(
             "utc_iso": calculated.isoformat(),
             "utc_display": display_utc(calculated),
             "utc_clock": calculated.strftime("%H%MZ"),
+            "target_cross_over_utc": calculated.isoformat(),
+            "target_cross_over_display": display_utc(calculated),
+            "target_cross_over_clock": calculated.strftime("%H%MZ"),
             "day_offset": (calculated.date() - anchor.date()).days,
         }
         waypoint_times.append(item)
@@ -165,7 +208,7 @@ def build_timing_view(
             )
 
     events: list[dict[str, Any]] = [
-        _event(anchor, 0, "Actual takeoff / time-zero anchor", "takeoff", "UTC = ATOT + CFP ACTM."),
+        _event(anchor, 0, "Actual takeoff / time-zero anchor", "takeoff", "UTC = ATOT + OFP ACTM."),
     ]
 
     for finding in findings:
@@ -252,30 +295,7 @@ def build_timing_view(
             ),
         ])
 
-    for index, vws_event in enumerate(detect_vws_events(flight.get("route_waypoints", [])), start=1):
-        end_waypoint = vws_event.get("drop") or vws_event["last_high"]
-        maximum = vws_event["maximum"]
-        events.extend([
-            _event(
-                anchor,
-                int(vws_event["first_high"]["actm_minutes"]),
-                f"VWS event {index} starts at {vws_event['first_high']['name']}",
-                "vws",
-            ),
-            _event(
-                anchor,
-                int(maximum["actm_minutes"]),
-                f"VWS event {index} maximum at {maximum['name']}",
-                "vws",
-                f"VWS {maximum['vws']:03d}.",
-            ),
-            _event(
-                anchor,
-                int(end_waypoint["actm_minutes"]),
-                f"VWS event {index} ends at {end_waypoint['name']}",
-                "vws",
-            ),
-        ])
+    events.extend(_vws_timing_events(anchor, flight.get("route_waypoints", [])))
 
     for finding in findings:
         if finding.get("engine") != "depressurisation":
@@ -327,7 +347,7 @@ def build_timing_view(
         "scheduled_departure_utc": scheduled_departure.isoformat(),
         "schedule_difference_minutes": takeoff_difference,
         "reference": timing_reference,
-        "calculation_basis": "Calculated UTC = derived actual takeoff UTC + CFP ACTM.",
+        "calculation_basis": "Target cross-over time = ATOT + parsed OFP ACTM.",
         "events": events,
         "early_calls": early_calls,
         "fir_crossings": fir_crossings,

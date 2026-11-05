@@ -31,11 +31,36 @@ def _crop_box_valid(value: Any) -> bool:
     return x1 > x0 and y1 > y0
 
 
+def is_proposed_profile_finding(finding: dict[str, Any]) -> bool:
+    """True for every chart the briefing issues: it must have its artifact.
+
+    The engine issues a governed chart once per flight for the legs it covers
+    - the whole of a terrain window or only part of it (David, 24 Oct 2026:
+    10-4 over RANAH is the chart for that area and must be issued). Partial
+    coverage is stated on the chart and on the window; it does not make the
+    chart any less issued, so it never exempts the chart from the artifact
+    requirement. Only a finding that names no controlled source (the
+    repository-safe candidate when no controlled index is mounted) is not an
+    issued chart. Legacy findings that omit the reference field remain
+    proposals for backward compatibility.
+    """
+    if finding.get("engine") != "depressurisation":
+        return False
+    data = finding.get("data") or {}
+    if not _text(data.get("chart_number")):
+        return False
+    if "reference_status" in data:
+        reference_status = data.get("reference_status")
+        if reference_status not in (None, "", "controlled-index-loaded"):
+            return False
+    return True
+
+
 def _matched_profile_numbers(findings: list[dict[str, Any]]) -> list[str]:
     """Return each proposed approved profile number once, in report order."""
     numbers: list[str] = []
     for finding in findings:
-        if finding.get("engine") != "depressurisation":
+        if not is_proposed_profile_finding(finding):
             continue
         chart_number = _text((finding.get("data") or {}).get("chart_number"))
         if chart_number and chart_number not in numbers:
@@ -66,6 +91,9 @@ def build_profile_chart_artifact_contracts(
             "level1_analysis_chart_embedded": True,
             "level1_report_page": level1_report_page,
         }
+        # The legs this chart covers in each window it protects, and the legs
+        # no indexed chart covers (a partial chart never reads as complete).
+        artifact.update(image.get("coverage") or {})
         if level2_report_pages is not None:
             artifact.update({
                 "level2_full_source_chart_embedded": True,

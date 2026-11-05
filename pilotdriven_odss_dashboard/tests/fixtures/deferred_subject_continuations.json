@@ -1,0 +1,168 @@
+{
+  "source": "Verbatim parsed deferred items from independent audit fresh real-CFP analysis; subject tests never edit their content.",
+  "flights": [
+    {
+      "flight": "SQ214",
+      "analysis_sha256": "87e6f82217df7d11fedea9cc3d0daaded84cd79b4dd4828327196a5b90252345",
+      "deferred_items": [
+        {
+          "reference": null,
+          "description": "TRASH COMPACTOR, TRASH COMPACTOR, OTHERS (PLS ENTER COMMENTS)",
+          "item_type": "CDDL",
+          "source_declaration": "AA CDDL",
+          "company_remark": "CAN'T FEED WASTE. PUSH COMPACT TO RESET. 923 UPLIFT TRASH BAG"
+        },
+        {
+          "reference": null,
+          "description": "TRASH COMPACTOR, TRASH COMPACTOR, NO POWER",
+          "item_type": "CDDL",
+          "source_declaration": "BB CDDL",
+          "company_remark": "212 UPLIFT TRASH BAG"
+        },
+        {
+          "reference": "57-21",
+          "description": "MAINT ENTRY: WAC FOUND RH WING FTE PANEL 3 SEAL TORN",
+          "item_type": "CDL",
+          "source_declaration": "CC CDL 57-21",
+          "company_remark": null
+        },
+        {
+          "reference": "57-23",
+          "description": "MAINT ENTRY: WAC FOUND RH WING HINGED DOOR SEAL (QTY 01) TORN",
+          "item_type": "CDL",
+          "source_declaration": "DD CDL 57-23",
+          "company_remark": null
+        },
+        {
+          "reference": "SIA/00-003 R9",
+          "description": "MAINT ENTRY: BOTH VCRU (101HW & 103HW) REMOVED AS PER",
+          "item_type": "IN",
+          "source_declaration": "EE IN SIA/00-003 R9",
+          "company_remark": "MAF 23224. REFER TO NPE SN: 070492. CB: 1001HW, 1003HW, 1005HW, 1006HW, 3501HW, 3503HW, 3505HW, 3506HW, 3507HW & 3509HW TRIPPED & TAGGED. SCS SYS NOT AVAILABLE. TO UPLIFT DRY ICE FOR ALL SECTOR. FF CDL 53-66 MAINT ENTRY: DURING WAC, FOUND RH AFT NOSE LANDING GEAR DOOR SEAL PARTIALLY MISSING"
+        }
+      ]
+    },
+    {
+      "flight": "SQ297",
+      "analysis_sha256": "af3d52ecf1925e3dbada33f01dcfcb3c07b737e724949777627d0269787e32ec",
+      "deferred_items": [
+        {
+          "reference": "23-12-03A",
+          "description": "DM COM VHF EMER SUPPLY REDUNDANCY",
+          "item_type": "MEL",
+          "source_declaration": "AA MEL 23-12-03A",
+          "company_remark": null
+        },
+        {
+          "reference": "57-15",
+          "description": "FOUND LH INNER WING LEADING EDGE DND FIXED SEAL WITH",
+          "item_type": "CDL",
+          "source_declaration": "BB CDL 57-15",
+          "company_remark": "2.5CM TORN X PERFORMANCE [P]"
+        },
+        {
+          "reference": "25-20-50A",
+          "description": "MAINT ENTRY : WRT CDL 006028, CDL 006029 AND CDL 006032",
+          "item_type": "MEL",
+          "source_declaration": "CC MEL 25-20-50A",
+          "company_remark": "CABIN CREW REPORTED ALL GALLEY CHILLERS WORKING INTERMITTENT DURING FLIGHT TO UPLIFT DRY ICE"
+        }
+      ]
+    },
+    {
+      "flight": "SQ882-10Sep",
+      "analysis_sha256": "2481b6070ef944de9c07320c0a51d3da2c2a26ef117429e75ff6178ee36b1b5e",
+      "deferred_items": [
+        {
+          "reference": "25-20-50A",
+          "description": "MAINT ENTRY",
+          "item_type": "MEL",
+          "source_declaration": "AA MEL 25-20-50A",
+          "company_remark": "FROM CDL 004580 JCL D1 GALLEY COMP 213/214/215/309/310/311/312/314/315 AIR CHILLER NOT COLD FWD GALLEY PLS UPLIFT DRY ICE"
+        },
+        {
+          "reference": "31-19-03A",
+          "description": "VIDEO PB ON ECP NOT RESPONSIVE.",
+          "item_type": "MEL",
+          "source_declaration": "BB MEL 31-19-03A",
+          "company_remark": null
+        },
+        {
+          "reference": "27-20",
+          "description": "MAINT ENTRY: O/B FLAP, O/B CUSHION SEAL FOUND WORN.",
+          "item_type": "CDL",
+          "source_declaration": "CC CDL 27-20",
+          "company_remark": "RHW X PERFORMANCE [P]"
+        },
+        {
+          "reference": "27-25",
+          "description": "MAINT ENTRY: LH WING, AILERON TRAILING EDGE PANEL",
+          "item_type": "CDL",
+          "source_declaration": "DD CDL 27-25",
+          "company_remark": "573BB AND 573DB SEALS FOUND TORN LH WING"
+        },
+        {
+          "reference": "27-06",
+          "description": "MAINT ENTRY: LH WING, SLAT #6 LOWER SEAL FOUND",
+          "item_type": "CDL",
+          "source_declaration": "EE CDL 27-06",
+          "company_remark": "DETERIORATED (QTY: 04 OFF) LH WING FF CDL 57-16 MAINT ENTRY: LH WING, TRAILING EDGE ACCESS PANEL 572HB SEAL FOUND TORN LH WING GG EN A35MEN-21-28871 MAINT ENTRY DUE EN A35MEN-21-28871 VCRU #3 DEACTIVATED AND RCCB 1003HW TRIPPED UNTIL 10 JUNE 2027 UPLIFT DRY ICE FOR ALL CHILLERS"
+        }
+      ]
+    },
+    {
+      "flight": "SQ366",
+      "analysis_sha256": "ccf0c499c036f442409a02ef5496d383b8c66423f36dec62be3d0be8c4e58e61",
+      "deferred_items": [
+        {
+          "reference": "29-10-03A",
+          "description": "RESERVOIR AIR BLEED VALVE",
+          "item_type": "MEL",
+          "source_declaration": "AA MEL 29-10-03A - RESERVOIR AIR BLEED VALVE",
+          "company_remark": "DM HYD G RSVR AIR BLEED"
+        },
+        {
+          "reference": "PREAMBLE",
+          "description": "SECTION MEL AND CMS REV 18NOV 25",
+          "item_type": "MEL",
+          "source_declaration": "CC MEL PREAMBLE SECTION MEL AND CMS REV 18NOV 25",
+          "company_remark": "MAINT ENTRY. ON FAP POTABLE WATER ICE PROTECTION SYTEM INOP DISPLAYED , DRAINPORT SCV PNL"
+        }
+      ]
+    },
+    {
+      "flight": "SQ605",
+      "analysis_sha256": "71a050474b9e15f755e6faca3421c37a6f41d70628d8fd1ea8cedfaddbcf140a",
+      "deferred_items": [
+        {
+          "reference": null,
+          "description": "TRASH COMPACTOR 212 INOP",
+          "item_type": "CDDL",
+          "source_declaration": "AA CDDL",
+          "company_remark": "UPLIFT TRASH BAG"
+        },
+        {
+          "reference": "25-20-50A",
+          "description": "NON-ESSENTIAL EQUIPMENT AND FURNISHINGS",
+          "item_type": "MEL",
+          "source_declaration": "BB MEL 25-20-50A - NON-ESSENTIAL EQUIPMENT AND FURNISHINGS",
+          "company_remark": "JCL GALLEY 2 AIR CHILLER NOT WORKING TO UPLIFT DRY ICE"
+        },
+        {
+          "reference": "25-35-02B",
+          "description": "- GALLEY WASTE COMPARTMENT ACCESS DOOR INSTALLED)",
+          "item_type": "MEL",
+          "source_declaration": "CC MEL 25-35-02B",
+          "company_remark": "AFT GALLEY LH WASTE CONTAINER DOOR IN GALLEY LATCH MISSING"
+        },
+        {
+          "reference": "25-20-50A",
+          "description": "NON-ESSENTIAL EQUIPMENT AND FURNISHINGS (NEF)",
+          "item_type": "MEL",
+          "source_declaration": "DD MEL 25-20-50A - NON-ESSENTIAL EQUIPMENT AND FURNISHINGS (NEF)",
+          "company_remark": "FWD CARGO DOOR CTRL ACCESS PNL NOT FLUSH WHEN CLOSED TO INSPECT HST CONDITION AND REAPPLIED"
+        }
+      ]
+    }
+  ]
+}

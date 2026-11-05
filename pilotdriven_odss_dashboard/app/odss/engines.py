@@ -8,12 +8,12 @@ from typing import Any
 from .constants import (
     COMMUNICATION_RULES,
     MEL_REFERENCES,
-    MONTHS,
     REFERENCE_LIBRARY_METADATA,
     edto_sectors,
     format_actm,
     format_kg,
 )
+from .vws_maxima import vws_maximum_points
 
 from .controlled_library import (
     CDL_LIBRARY_METADATA,
@@ -25,17 +25,296 @@ from .controlled_library import (
     aircraft_effectivity_tokens,
     select_cdl_variants,
 )
+from .deferred_dispatch import (
+    deferred_item_type_for_display,
+    deferred_reference_for_display,
+    deferred_source_declaration_for_display,
+)
 from .pilot_briefing import (
+    _IAP_COMPETING_PROCEDURE,
     concise_weather_finding,
+    iap_minima_changes,
     notam_pertinence,
+    retired_taxiway_lighting_summary,
     notam_sort_key,
     pilot_notam_key,
 )
+from .runway_closure_schedule import reconcile_runway_closure_findings
+from .notam_timing import (
+    NOTAM_TIMING_RULES,
+    decide_notice_timing,
+    notice_timing_input,
+    parse_schedule_field,
+    schedule_occurrences,
+    shared_station_window,
+)
+from .airport_taxi_consequences import (
+    bounded_taxiway_extents,
+    is_prose_word,
+    taxiway_closure_items,
+    taxiway_designation_scope,
+)
+from .notam_restriction_line import (
+    FIXED_MARKER_SENTENCES,
+    derive_notam_restriction_line,
+)
 from .reviewed_publications import reviewed_publication_for_notam
-from .weather_timing import summarize_metar_for_window, summarize_taf_for_window
+from .report_facts import required_operational_reference_times
+from .weather_timing import select_taf_for_window, summarize_metar_for_window, summarize_taf_for_window
 
-_WEEKDAYS = {name: index for index, name in enumerate(("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"))}
-_TIME_RANGE = re.compile(r"\b(\d{4})(?:UTC|Z)?\s*(?:-|TO)\s*(\d{4})(?:UTC|Z)?\b")
+_INSTRUMENT_APPROACH_ADVERSE = re.compile(
+    r"\b(?:U/S|UNSERVICEAB(?:LE|ILITY)|NOT\s+(?:AVBL|AVAILABLE|"
+    r"AUTHORI[ZS]ED|MONITORED)|CLSD|CLOSED|SUSPENDED|INOP(?:ERATIVE)?|"
+    r"OUT\s+OF\s+(?:SERVICE|SVC)|UNRELIABLE|INTERRUPT(?:S|ED|ING|ION|IONS)?|"
+    r"INTRP|"
+    r"OSCILLAT(?:E|ES|ED|ING|ION|IONS)|DEGRAD(?:ED|ATION)|DOWNGRADED|"
+    r"NOT\s+OPERATIONAL|WITHDRAWN|UNUSABLE|UNAVAILABLE|UNREL|NA|"
+    r"DO\s+NOT\s+USE|SHOULD\s+NOT\s+BE\s+FLOWN)\b"
+)
+_INSTRUMENT_APPROACH_AVAILABLE = re.compile(
+    r"(?<!NOT )\b(?:AVBL|AVAILABLE|SERVICEABLE|OPERATIONAL)\b|"
+    r"\bIN\s+SERVICE\b"
+)
+_APPROACH_RUNWAY_REFERENCE = (
+    r"(?:RWY|RUNWAY)\s*\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
+)
+_APPROACH_CATEGORY_QUALIFIER = (
+    r"CAT\s*(?:I{1,3}|[123])(?:\s*/\s*(?:I{1,3}|[123]))*"
+)
+_APPROACH_EQUIPMENT_COMPONENT = (
+    r"(?:ILS|LOC(?:ALIZER|ALISER)?|LLZ|GP|GLIDE\s*(?:PATH|SLOPE)|"
+    r"GLIDEPATH|GLIDESLOPE|GLS|GBAS)"
+)
+_APPROACH_EQUIPMENT_NAME = (
+    rf"(?:{_APPROACH_EQUIPMENT_COMPONENT}"
+    rf"(?:\s*(?:/|\s)\s*{_APPROACH_EQUIPMENT_COMPONENT})*|"
+    r"(?:ILS|LOC(?:ALIZER|ALISER)?|LLZ)\s*(?:/|\s)\s*DME)"
+)
+_APPROACH_EQUIPMENT_IDENT = (
+    r"(?:['\"][A-Z]{2,5}['\"]|"
+    rf"(?!{_INSTRUMENT_APPROACH_ADVERSE.pattern})"
+    rf"(?!{_INSTRUMENT_APPROACH_AVAILABLE.pattern})"
+    r"(?!RWY\s*\d|RUNWAY\s*\d|CAT\b|FREQ\b|FREQUENCY\b|BC\b|"
+    r"ILS\b|LOC(?:ALIZER|ALISER)?\b|LLZ\b|GP\b|GLIDE\b|GLS\b|GBAS\b|"
+    r"DME\b|VOR\b|NDB\b|RNAV\b|RNP\b|PAPI\b|"
+    r"IM\b|MM\b|OM\b|"
+    r"LGT(?:S)?\b|LIGHT(?:S|ING)?\b|CRANES?\b|OBST(?:ACLES?)?\b)"
+    r"(?!NOT\b)"
+    r"[A-Z]{2,5}\b)"
+)
+_APPROACH_PREFIX_IDENT = (
+    r"(?:['\"][A-Z]{2,5}['\"]|"
+    r"I[A-Z]{2,4}(?=\s+(?:FREQ(?:UENCY)?\b|\d|RWY\b|RUNWAY\b|CAT\b))|"
+    r"[A-Z]{2}(?=\s+(?:FREQ(?:UENCY)?\b|\d)))"
+)
+_APPROACH_FREQUENCY = (
+    r"(?:(?:FREQ(?:UENCY)?\s*)?\d{2,3}(?:\.\d{1,3})?(?:\s*MHZ)?)"
+)
+_APPROACH_TECHNICAL_DETAIL = (
+    rf"(?:LOC(?:ALIZER|ALISER)?|LLZ|GP|GLIDE\s*(?:PATH|SLOPE)|DME)"
+    rf"(?:\s+(?:IDENT\s+)?{_APPROACH_EQUIPMENT_IDENT})?"
+    rf"(?:\s+{_APPROACH_FREQUENCY})?"
+    r"(?:\s+CH\d{1,3}[XY]?)?"
+)
+_APPROACH_TECHNICAL_COMPOSITION = (
+    rf"\(\s*{_APPROACH_TECHNICAL_DETAIL}"
+    rf"(?:\s*,\s*{_APPROACH_TECHNICAL_DETAIL}){{1,4}}\s*\)"
+)
+_INSTRUMENT_APPROACH_MARKER = re.compile(
+    rf"\b(?:"
+    rf"ILS(?:\s+{_APPROACH_RUNWAY_REFERENCE})?\s*(?:/|\s)\s*"
+    rf"(?:IM|MM|OM)(?:\s+{_APPROACH_RUNWAY_REFERENCE})?|"
+    rf"(?:IM|MM|OM)\s*\(\s*ILS"
+    rf"(?:\s+{_APPROACH_EQUIPMENT_IDENT})?\s*\)"
+    rf"(?:\s+{_APPROACH_RUNWAY_REFERENCE})?|"
+    rf"I-[A-Z]{{2,5}}\s+(?:INNER|MIDDLE|OUTER)\s+MARKER|"
+    rf"ILS(?:\s+{_APPROACH_RUNWAY_REFERENCE})?\s+"
+    rf"(?:INNER|MIDDLE|OUTER)\s+MARKER|"
+    rf"(?:INNER|MIDDLE|OUTER)\s+MARKER\s*\(\s*ILS"
+    rf"(?:\s+I-[A-Z]{{2,5}})?\s*\)(?:\s+{_APPROACH_RUNWAY_REFERENCE})?|"
+    rf"(?:INNER|MIDDLE|OUTER)\s+MARKER"
+    rf"(?:\s+{_APPROACH_RUNWAY_REFERENCE})?"
+    rf")(?=\s|$)(?:\s+{_APPROACH_FREQUENCY})?"
+)
+_DIRECT_INSTRUMENT_APPROACH_EQUIPMENT = re.compile(
+    rf"\b{_APPROACH_EQUIPMENT_NAME}"
+    r"(?![A-Z0-9])"
+    rf"(?:\s+{_APPROACH_PREFIX_IDENT})?"
+    rf"(?:\s+{_APPROACH_FREQUENCY})?"
+    r"(?:\s+[XYZ])?"
+    rf"(?:\s+{_APPROACH_CATEGORY_QUALIFIER})?"
+    rf"(?:\s+(?:FOR\s+)?{_APPROACH_RUNWAY_REFERENCE}"
+    rf"(?:\s*(?:AND|/)\s*{_APPROACH_RUNWAY_REFERENCE})?)?"
+    rf"(?:\s+{_APPROACH_CATEGORY_QUALIFIER})?"
+    rf"(?:\s+{_APPROACH_FREQUENCY})?"
+    rf"(?:\s+(?:IDENT\s+{_APPROACH_EQUIPMENT_IDENT}|I[A-Z]{{2,4}})"
+    r"(?=\s+(?:FREQ(?:UENCY)?\b|\d|\()))?"
+    rf"(?:\s+{_APPROACH_FREQUENCY})?"
+    rf"(?:\s*{_APPROACH_TECHNICAL_COMPOSITION})?"
+    r"(?:\s+(?:GP|BC))?"
+)
+_EXPLICIT_INSTRUMENT_APPROACH_PROCEDURE = re.compile(
+    r"\b(?:APCH|APPROACH)(?!\s+(?:LGT(?:S)?|LIGHT(?:S|ING)?))\b|\bIAP\b"
+)
+_RNAV_INSTRUMENT_APPROACH_PROCEDURE = re.compile(
+    r"(?:\b(?:RNAV|RNP)(?:\s*\([A-Z0-9 ]+\))?(?:\s+AR)?\s+"
+    r"(?:[XYZ]\s+)?(?:APCH|APPROACH|IAP|RWY(?:\s*\d{1,2}[LCR]?)?)\b|"
+    r"\b(?:APCH|APPROACH|IAP)\s+(?:RNAV|RNP)\b)"
+)
+_NAMED_INSTRUMENT_APPROACH_PROCEDURE = re.compile(
+    r"\b(?:IAC\s+(?:(?:ILS|LOC|VOR|NDB|RNAV|RNP)\s*/\s*)*"
+    r"(?:ILS|LOC|VOR|NDB|RNAV|RNP)\s+PROCEDURES?|"
+    r"(?:ILS|LOC|VOR|NDB|RNAV|RNP)\s+"
+    rf"{_APPROACH_RUNWAY_REFERENCE}\s+PROC(?:EDURE)?S?)\b"
+)
+_NUMBERED_IAC_APPROACH_PROCEDURE = re.compile(
+    rf"\bIAC\s+[A-Z0-9-]+\s+(?:ILS|LOC|VOR|NDB|RNAV|RNP)"
+    r"(?:\s*\([A-Z0-9 ]+\))?(?:\s+[WXYZ])?\s+"
+    rf"{_APPROACH_RUNWAY_REFERENCE}"
+    rf"(?:\s+{_APPROACH_CATEGORY_QUALIFIER})?"
+    r"(?:\s+DATED\s+\d{2}\s+[A-Z]{3}\s+\d{4})?\b"
+)
+_IAC_APPROACH_PROCEDURE_LIST = re.compile(
+    r"\bIAC(?:-[A-Z0-9]+)?\b"
+    r"(?:(?!\b(?:SID|STAR)\b).){0,600}"
+    r"\b(?:ILS|LOC|VOR|NDB|RNAV|RNP)\b"
+    r"(?:(?!\b(?:SID|STAR)\b).){0,600}\bPROCEDURES?\b"
+)
+_LPV_APPROACH_PROCEDURE = re.compile(
+    rf"\bLPV\s+APCH(?:\s+RNP)?(?:\s+[XYZ])?\s+"
+    rf"{_APPROACH_RUNWAY_REFERENCE}\b"
+)
+_ILS_LOC_APPROACH_PROCEDURE = re.compile(
+    rf"\b(?:ILS\s+(?:AND|OR)\s+LOC|LOC\s+(?:AND|OR)\s+ILS)\s+"
+    rf"APCH(?:\s+{_APPROACH_RUNWAY_REFERENCE})?(?:\s+TEMPO(?:RARY)?)?\b"
+)
+_PUBLISHED_ILS_LOC_PROCEDURE = re.compile(
+    rf"\bPROC(?:EDURE)?\s+(?:ILS\s+(?:AND|OR)\s+LOC|"
+    rf"LOC\s+(?:AND|OR)\s+ILS)\s+{_APPROACH_RUNWAY_REFERENCE}"
+    rf"(?:\s+TEMPO(?:RARY)?)?\b"
+)
+_ILS_FINAL_DME_READING = re.compile(
+    rf"\b(?:[A-Z]{{2,5}}\s+)?DME\s+READINGS?\s+ON\s+"
+    rf"(?:ILS/LOC|LOC/ILS)\s+{_APPROACH_RUNWAY_REFERENCE}\s+FINAL\b"
+)
+_ILS_CATEGORY_PROCEDURE = re.compile(
+    rf"\b(?:PROC(?:EDURE)?\s+)?ILS\s+{_APPROACH_RUNWAY_REFERENCE}\s+"
+    r"CAT\s+(?:I{1,3}|[123])(?:\s+AND\s+(?:I{1,3}|[123]))?"
+    r"(?:\s+PROC(?:EDURE)?)?\b"
+)
+_ILS_SPECIAL_AUTH_CATEGORY = re.compile(
+    rf"\bILS\s+{_APPROACH_RUNWAY_REFERENCE}\s+SPECIAL\s+AUTH\s+"
+    rf"{_APPROACH_CATEGORY_QUALIFIER}\b"
+)
+_IAP_PUBLICATION_ADVERSE = re.compile(
+    rf"\bIAP\b(?:(?!\b{_IAP_COMPETING_PROCEDURE}\b).){{0,650}}"
+    r"\b(?:ILS|LOC|VOR|NDB|RNAV|RNP)\b"
+    rf"(?:(?!\b{_IAP_COMPETING_PROCEDURE}\b).){{0,650}}"
+    r"\b(?:PROCEDURE\s+NA|"
+    r"S-(?:ILS|LOC)\s+(?:RWY\s*)?\d{1,2}[LCR]?\s+CAT\s+"
+    r"(?:I{1,3}|[123])(?:\s+AND\s+(?:I{1,3}|[123]))?\s+NA)\b"
+)
+_IAP_CLAUSE_SUSPENSION = re.compile(
+    rf"\bIAP\b(?:(?!\b{_IAP_COMPETING_PROCEDURE}\b).){{0,500}}"
+    r"\b(?:ILS|LOC|VOR|NDB|RNAV|RNP)\b"
+    rf"(?:(?!\b{_IAP_COMPETING_PROCEDURE}\b).){{0,350}}"
+    r"(?<!NOT\s)\b(?:SUSPENDED|WITHDRAWN)\b"
+)
+_CATEGORY_APPROACH_OPERATIONS = re.compile(
+    rf"\b(?:{_APPROACH_RUNWAY_REFERENCE}\s+"
+    rf"{_APPROACH_CATEGORY_QUALIFIER}\s+(?:OPS|OPERATIONS)|"
+    rf"{_APPROACH_CATEGORY_QUALIFIER}\s+(?:OPS|OPERATIONS)\s+"
+    rf"{_APPROACH_RUNWAY_REFERENCE}|"
+    rf"{_APPROACH_CATEGORY_QUALIFIER}\s+(?:OPS|OPERATIONS))\b"
+)
+_CONVENTIONAL_APPROACH_NAVAID = re.compile(
+    r"\b(?:VOR(?:/DME)?|NDB|DME)\b"
+    rf"(?:\s+{_APPROACH_RUNWAY_REFERENCE}|"
+    rf"\s+(?!(?:RWY|RUNWAY|NOT)\b)"
+    rf"(?!{_INSTRUMENT_APPROACH_ADVERSE.pattern})"
+    rf"(?!{_INSTRUMENT_APPROACH_AVAILABLE.pattern})"
+    r"(?:['\"][A-Z]{2,12}(?:/[A-Z]{2,12})?['\"]|"
+    r"[A-Z]{2,12}(?:/[A-Z]{2,12})?\b))?"
+    r"(?:\s+(?:\d{2,4}(?:\.\d{1,3})?\s*(?:KHZ|MHZ)|CH\d{1,3}[XY]?))?"
+)
+_APPROACH_PROCEDURE_CATEGORY = re.compile(
+    r"(?:\b(?:APPROACH|APCH)\s+PROCEDURE\b|\bIAP\b)"
+)
+_PAPI = re.compile(r"\bPAPI\b")
+_PAPI_OPERATIONAL_SUBJECT = re.compile(
+    rf"\bPAPI(?:\s+(?:LEFT|RIGHT)\s+SIDE)?"
+    rf"(?:\s+{_APPROACH_RUNWAY_REFERENCE})?\b"
+)
+_APPROACH_LIGHT_AVAILABLE = re.compile(r"\b(?:AVBL|AVAILABLE)\b")
+_APPROACH_RESTORATION_OTHER_SUBJECT = re.compile(
+    r"\b(?:PAPI|(?:APCH|APPROACH)\s+(?:LGT(?:S)?|LIGHT(?:S|ING)?)|"
+    r"(?:TWY|TAXIWAY)(?:\s+[A-Z0-9-]+)?|"
+    r"(?:RWY|RUNWAY)(?:\s*\d{1,2}[LCR]?)?"
+    r"(?:\s+LIGHT(?:S|ING)?)?)\b"
+)
+_APPROACH_BINDING_TOKEN = re.compile(r"[A-Z0-9]+(?:/[A-Z0-9]+)?")
+_APPROACH_BINDING_SURFACE_SUBJECT = re.compile(
+    r"\b(?:TWY|TAXIWAY|APRON|STAND|PAPI|LGT(?:S)?|LIGHT(?:S|ING)?|"
+    r"CRANES?|OBST(?:ACLES?)?)\b"
+)
+_RNAV_OR_RNP = re.compile(r"\b(?:RNAV|RNP)\b")
+_APPROACH_NON_ADVERSE_ACTIVITY = re.compile(
+    r"\b(?:FLIGHT\s+CHECK|CALIBRAT(?:E|ED|ING|ION)|"
+    r"SIGNAL\s+MONITOR(?:ED|ING)?|TEST(?:ED|ING)?)\b"
+)
+_APPROACH_RESTORATION = re.compile(
+    r"\b(?:CANCELLED|CANCELED|REVOKED|RESTORED)\b|"
+    r"\b(?:NOW|THEN)\s+(?:AVBL|AVAILABLE|OPERATIONAL|SERVICEABLE)\b|"
+    r"\b(?:RESTORED|RETURNED)\s+TO\s+SERVICE\b"
+)
+_APPROACH_RESTORATION_CONNECTOR = re.compile(
+    r"^\s*[,.;:\-]?\s*(?:(?:THIS\s+)?(?:CONDITION|NOTICE|NOTAM)"
+    r"(?:\s+(?:IS|HEREBY))?|(?:HAS|HAVE)\s+BEEN|"
+    r"UNTIL\s+\d{4}(?:UTC|Z)?)?\s*[,.;:\-]?\s*$"
+)
+_NEGATED_RESTORATION_PREFIX = re.compile(
+    r"\bNOT(?:\s+(?:YET|CURRENTLY))?\s*$"
+)
+_NO_APPROACH_OPERATIONS = re.compile(
+    r"\bNO\s+(?:INSTRUMENT\s+)?(?:APCH(?:ES)?|APPROACH(?:ES)?)\b"
+    r".{0,120}\b(?:TAKE\s+PLACE|PERMITTED|AUTHORI[ZS]ED|ALLOWED)\b"
+)
+
+
+def _conditional_instrument_approach_impact(text: str) -> bool:
+    """True when the adverse approach state depends on an unresolved WHEN.
+
+    The impact remains critical evidence, but it must be presented as a
+    condition review rather than an unconditional active outage.
+    """
+
+    normalized = " ".join(str(text or "").upper().split())
+    for adverse in _NO_APPROACH_OPERATIONS.finditer(normalized):
+        if re.match(r"\s+WHEN\b", normalized[adverse.end():]):
+            return True
+    return False
+_APPROACH_MINIMA_RAISED = re.compile(
+    r"\b(?:LPV|LNAV(?:/VNAV)?|RNP|RNAV)\s+MINIMA\s+"
+    r"(?:SHALL\s+BE\s+)?(?:RAISED|INCREASED)\b"
+    r"(?:\s+TO\s+(?:LPV|LNAV(?:/VNAV)?|RNP|RNAV)\s+MINIMA)?"
+)
+_FORWARD_APPROACH_STATE_BINDING = re.compile(
+    rf"^\s*(?:{_APPROACH_CATEGORY_QUALIFIER}\s+)?"
+    rf"(?:{_APPROACH_RUNWAY_REFERENCE}"
+    rf"(?:\s*(?:AND|/)\s*{_APPROACH_RUNWAY_REFERENCE})?\s*)?"
+    rf"(?:{_APPROACH_CATEGORY_QUALIFIER}\s*)?"
+    r"(?:(?:PROC(?:EDURE)?S?|OPS|OPERATIONS)\s*)?"
+    r"(?:COMPLETELY\s+)?"
+    r"(?:(?:IS|ARE|MAY|WILL|CAN)(?:\s+BE)?|"
+    r"HAS\s+BEEN|HAVE\s+BEEN|SUBJ(?:ECT)?\s+TO)?\s*[,/:\-]?\s*$"
+)
+_REVERSE_APPROACH_STATE_BINDING = re.compile(
+    r"^\s*(?:(?:OF|IN|FOR|AFFECTING)\s*)?$"
+)
+_NEGATED_ADVERSE_PREFIX = re.compile(
+    r"(?:\bWITHOUT|\bNO|\bNOT)(?:\s+[A-Z0-9/-]+){0,5}\s*$"
+)
+_MAX_APPROACH_BINDING_TOKENS = 12
 
 
 def finding(
@@ -64,8 +343,8 @@ def _cfp_source_reference(
 ) -> dict[str, Any]:
     return {
         "source_type": "uploaded_cfp",
-        "document_title": flight.get("document_id") or "Uploaded CFP",
-        "display_title": "Uploaded company CFP",
+        "document_title": flight.get("document_id") or "Uploaded OFP",
+        "display_title": "Uploaded company OFP",
         "pages": sorted(
             {
                 int(page)
@@ -103,6 +382,56 @@ def _weather_source_reference(
         "valid_from_utc": record.get("valid_from_utc"),
         "valid_to_utc": record.get("valid_to_utc"),
     }
+
+
+def _alternate_row_not_read_finding(row: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """A row printed in an alternate table that the parser did not read: a stated review, never an absence."""
+    edto = row.get("table") == "edto_alternates"
+    # QA512: the FUEL ENROUTE AIRPORT station row is held the same way when it does not read.
+    fuel_enroute = row.get("table") == "fuel_enroute_airports"
+    airport = str(row.get("airport") or "").strip().upper() or None
+    page = row.get("source_page")
+    where = f"OFP p{int(page)}" if isinstance(page, int) and not isinstance(page, bool) else "The OFP"
+    kind = "EDTO alternate" if edto else "fuel-enroute airport" if fuel_enroute else "planned alternate"
+    analysis = (
+        "EDTO checked-period" if edto else "fuel-enroute NOTAM or weather" if fuel_enroute else "NOTAM, weather or fuel"
+    )
+    printed = str(row.get("text") or "").strip()
+    # QA512: a row held for a cell that breaks a table-cell rule names that cell.
+    fields = [str(field) for field in row.get("invalid_fields") or [] if str(field).strip()]
+    invalid = f" ({', '.join(fields)} not valid)" if fields else ""
+    # QA504-01: a line inside the table whose airport cannot be read is held as printed; no airport is named for it.
+    summary = (
+        f'{where} prints {kind} {airport}, but its row was not read{invalid}: "{printed}". '
+        f"{airport} has no {analysis} analysis here; read it from the OFP."
+        if airport
+        else f'{where} prints a line in its {kind} table that was not read{invalid}: "{printed}". '
+        f"The {kind} it belongs to has no {analysis} analysis here; read it from the OFP."
+    )
+    return finding(
+        "edto" if edto else "qa",
+        "warning",
+        "EDTO alternate row not read" if edto
+        else "Fuel-enroute airport row not read" if fuel_enroute
+        else "Planned alternate row not read",
+        summary,
+        [str(row.get("reason") or "").strip()] if row.get("reason") else [],
+        {
+            "airport": airport,
+            "table": row.get("table"),
+            "source_page": page,
+            "text": row.get("text"),
+            "source_references": [{
+                "source_type": "uploaded_cfp",
+                "pages": [int(page)] if isinstance(page, int) and not isinstance(page, bool) else [],
+                "section": (
+                    "EDTO ENROUTE ALTN AIRPORTS" if edto
+                    else "FUEL ENROUTE AIRPORT" if fuel_enroute
+                    else "FLT PLANNING ALTN SUMMARY"
+                ),
+            }],
+        },
+    ), summary
 
 
 def _official_weather_review_finding(
@@ -144,7 +473,7 @@ def _official_weather_review_finding(
     return finding(
         "weather",
         "unknown",
-        "Official weather source review required",
+        "Official weather coverage incomplete",
         "Official public METAR/TAF coverage is incomplete.",
         [
             *(human_reasons.get(code, code.replace("_", " ").capitalize() + ".") for code in reason_codes),
@@ -155,9 +484,9 @@ def _official_weather_review_finding(
             "location": "",
             "utc_window": "Official source coverage check",
             "mechanism": "; ".join(human_reasons.get(code, code.replace("_", " ")) for code in reason_codes),
-            "flight_effect": "Review current official operational weather before use.",
+            "flight_effect": "Flight effect not assessed: official public weather coverage is incomplete.",
             "window_status": "review_required",
-            "window_status_text": "Official public weather coverage is incomplete — review required.",
+            "window_status_text": "Official public weather coverage is incomplete.",
             "provider": review.get("provider"),
             "reason_codes": reason_codes,
             "source_references": references,
@@ -172,51 +501,43 @@ _HAZARD_REVIEWS = (
         "review_key": "sigmet_review",
         "engine": "sigmet",
         "affected_title": "SIGMET affects the planned route",
-        "review_title": "SIGMET review required",
+        "review_title": "SIGMET coverage incomplete",
         "review_summary": (
             "The official source could not fully cover the flight window."
         ),
         "record_phrase": "SIGMET",
         "cfp_phrase": "SIGMET",
         "negative_claim": "no SIGMET",
-        "unresolved_warning": (
-            "SIGMET applicability remains unresolved; "
-            "review the current official source."
-        ),
+        "unresolved_warning": "SIGMET applicability remains unresolved.",
     },
     {
         "review_key": "vaa_review",
         "engine": "vaa",
         "affected_title": "Volcanic ash affects the planned route",
-        "review_title": "Volcanic ash review required",
+        "review_title": "Volcanic ash applicability unresolved",
+        # R2 residual (24 Sep 2026): a state, not "confirm that ..." prose.
         "review_summary": (
-            "The official sources could not safely confirm that volcanic ash "
+            "The official sources do not establish that volcanic ash "
             "is not applicable to the route."
         ),
         "record_phrase": "volcanic-ash",
         "cfp_phrase": "volcanic-ash",
         "negative_claim": "no volcanic ash",
-        "unresolved_warning": (
-            "Volcanic ash applicability remains unresolved; "
-            "review the current official advisory source."
-        ),
+        "unresolved_warning": "Volcanic ash applicability remains unresolved.",
     },
     {
         "review_key": "tropical_cyclone_review",
         "engine": "tropical_cyclone",
         "affected_title": "Tropical cyclone affects the planned route",
-        "review_title": "Tropical cyclone review required",
+        "review_title": "Tropical cyclone applicability unresolved",
         "review_summary": (
-            "The official sources could not safely confirm that a tropical "
+            "The official sources do not establish that a tropical "
             "cyclone is not applicable to the route."
         ),
         "record_phrase": "tropical-cyclone",
         "cfp_phrase": "tropical-cyclone",
         "negative_claim": "no tropical cyclone",
-        "unresolved_warning": (
-            "Tropical cyclone applicability remains unresolved; "
-            "review the current official advisory source."
-        ),
+        "unresolved_warning": "Tropical cyclone applicability remains unresolved.",
     },
 )
 
@@ -261,7 +582,8 @@ def _hazard_review_findings(
 
     def track_details() -> list[str]:
         details: list[str] = []
-        for cyclone in (track_context.get("cyclones") or [])[:3]:
+        # QA516: every tracked cyclone is described (the details stopped at three, with no count).
+        for cyclone in track_context.get("cyclones") or []:
             movement = cyclone.get("movement") or {}
             closest = cyclone.get("closest_route_screening") or {}
             if movement:
@@ -329,15 +651,15 @@ def _hazard_review_findings(
         "source_stale": "The source snapshot did not meet the configured freshness limit.",
         "source_records_incomplete": (
             f"Some official {hazard['record_phrase']} records could not be read "
-            "completely; review required."
+            "completely."
         ),
         "coverage_not_complete_for_flight": (
             "Official-source coverage is incomplete for the flight window."
         ),
         "cfp_weather_data_unavailable": (
-            f"The CFP states that {hazard['cfp_phrase']} weather data is unavailable."
+            f"The OFP states that {hazard['cfp_phrase']} weather data is unavailable."
         ),
-        "route_geometry_unavailable": "The CFP route geometry is incomplete.",
+        "route_geometry_unavailable": "The OFP route geometry is incomplete.",
         "route_timing_unavailable": "The route timing anchor is unavailable.",
         "flight_level_unavailable": "The planned flight level could not be resolved.",
         "flight_level_change_unresolved": "A planned level-change waypoint could not be matched to the route.",
@@ -394,104 +716,25 @@ def _reference_library_is_approved() -> bool:
     }
 
 
-def _intervals_overlap(
-    first_start: datetime,
-    first_end: datetime,
-    second_start: datetime,
-    second_end: datetime,
-) -> bool:
-    return first_start < second_end and second_start < first_end
+def _schedule_overlaps(
+    schedule: str, window_start: datetime, window_end: datetime,
+    *, valid_from: datetime | None = None, valid_to: datetime | None = None,
+) -> bool | None:
+    """Whether an Item D schedule has an occurrence overlapping the window; None when it cannot be read.
 
-
-def _minute_of_day(value: str) -> int | None:
-    hour = int(value[:2])
-    minute = int(value[2:])
-    if hour > 23 or minute > 59:
+    ITEM 3 (14 Oct 2026): the grammar is the shared one in notam_timing_rules.json - the app reads every Item D
+    by the same rules - so this is a view of that reader, kept for callers that only need overlap.
+    """
+    anchor_start, anchor_end = valid_from or window_start, valid_to or window_end
+    validity = {"startsAt": anchor_start.isoformat(), "endsAt": anchor_end.isoformat(), "endKind": "explicit"}
+    entries, error = parse_schedule_field(schedule, validity)
+    if error:
         return None
-    return hour * 60 + minute
-
-
-def _schedule_weekdays(value: str) -> set[int] | None:
-    weekday = r"MON|TUE|WED|THU|FRI|SAT|SUN"
-    normalized = re.sub(r"\s*,\s*", " ", value.strip())
-    range_match = re.fullmatch(rf"({weekday})-({weekday})", normalized)
-    if range_match:
-        start = _WEEKDAYS[range_match.group(1)]
-        end = _WEEKDAYS[range_match.group(2)]
-        result = {start}
-        while start != end:
-            start = (start + 1) % 7
-            result.add(start)
-        return result
-    if not re.fullmatch(rf"(?:{weekday})(?:\s+(?:{weekday}))*", normalized):
-        return None
-    tokens = re.findall(weekday, normalized)
-    return {_WEEKDAYS[token] for token in tokens}
-
-
-def _schedule_overlaps(schedule: str, window_start: datetime, window_end: datetime) -> bool | None:
-    months = "JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC"
-    normalized = re.sub(rf",\s*(?=(?:{months})\b)", ";", schedule.upper())
-    entries = [entry.strip() for entry in normalized.split(";") if entry.strip()]
-    if not entries:
-        return None
-    parsed_entries = 0
-    first_day = (window_start - timedelta(days=1)).date()
-    day_count = (window_end.date() - first_day).days + 1
-    for entry in entries:
-        matches = list(_TIME_RANGE.finditer(entry))
-        if not matches:
-            return None
-        gaps = [entry[matches[index].end():matches[index + 1].start()] for index in range(len(matches) - 1)]
-        gaps.append(entry[matches[-1].end():])
-        if any(not re.fullmatch(r"[\s,/]*", gap) for gap in gaps):
-            return None
-        ranges = []
-        for match in matches:
-            start_minutes = _minute_of_day(match.group(1))
-            end_minutes = _minute_of_day(match.group(2))
-            if start_minutes is None or end_minutes is None:
-                return None
-            ranges.append((start_minutes, end_minutes))
-        prefix = entry[:matches[0].start()].strip(" ,")
-        date_match = re.fullmatch(rf"({months})\s+(.+)", prefix)
-        month_days: set[int] | None = None
-        month_number = None
-        if date_match:
-            month_number = MONTHS[date_match.group(1)]
-            date_expression = date_match.group(2)
-            if not re.fullmatch(r"\d{2}(?:-\d{2})?(?:[ ,]+\d{2}(?:-\d{2})?)*", date_expression):
-                return None
-            month_days = set()
-            for token in re.findall(r"\d{2}(?:-\d{2})?", date_expression):
-                if "-" in token:
-                    start_day, end_day = (int(value) for value in token.split("-", 1))
-                    if start_day > end_day:
-                        return None
-                    month_days.update(range(start_day, end_day + 1))
-                else:
-                    month_days.add(int(token))
-            if not month_days:
-                return None
-        daily = prefix in {"DAILY", "DLY"}
-        weekdays = None if daily or date_match else _schedule_weekdays(prefix)
-        if not daily and not date_match and weekdays is None:
-            return None
-        parsed_entries += 1
-        for offset in range(day_count):
-            day = first_day + timedelta(days=offset)
-            if date_match and (day.month != month_number or day.day not in month_days):
-                continue
-            if weekdays is not None and day.weekday() not in weekdays:
-                continue
-            for start_minutes, end_minutes in ranges:
-                occurrence_start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(minutes=start_minutes)
-                occurrence_end = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(minutes=end_minutes)
-                if end_minutes <= start_minutes:
-                    occurrence_end += timedelta(days=1)
-                if _intervals_overlap(occurrence_start, occurrence_end, window_start, window_end):
-                    return True
-    return False if parsed_entries == len(entries) else None
+    start_ms, end_ms = window_start.timestamp() * 1000, window_end.timestamp() * 1000
+    occurrences = schedule_occurrences(entries, anchor_start.timestamp() * 1000,
+                                       anchor_end.timestamp() * 1000 if valid_to is not None else float("inf"),
+                                       start_ms, end_ms)
+    return any(occurrence_start < end_ms and start_ms < occurrence_end for occurrence_start, occurrence_end in occurrences)
 
 
 def _notam_role_window(
@@ -502,18 +745,15 @@ def _notam_role_window(
     fuel_enroute_airports: set[str] | None = None,
     source_role: str | None = None,
 ) -> tuple[str, datetime, datetime]:
-    departure_utc = datetime.fromisoformat(flight["scheduled_departure_utc"])
-    arrival_utc = datetime.fromisoformat(flight["scheduled_arrival_utc"])
-    departure_margin = timedelta(
-        minutes=_configured_window_minutes("ODSS_NOTAM_DEPARTURE_WINDOW_MINUTES", 60)
-    )
-    arrival_margin = timedelta(
-        minutes=_configured_window_minutes("ODSS_NOTAM_ARRIVAL_WINDOW_MINUTES", 120)
-    )
+    departure_utc, arrival_utc = required_operational_reference_times(flight)
+    # ITEM 3 (14 Oct 2026): the departure and destination windows are the shared ones (notam_timing_rules.json,
+    # +/-2h, the operator default the app has used since 25 Jul). The one-hour departure window and the per-service
+    # environment overrides let the card and the PDF text leave out a closure the chart and the PDF map drew.
     if location == flight["departure"]:
-        return "departure", departure_utc - departure_margin, departure_utc + departure_margin
+        return ("departure", *shared_station_window("departure", departure_utc))
     if location == flight["destination"]:
-        return "destination", arrival_utc - arrival_margin, arrival_utc + arrival_margin
+        return ("destination", *shared_station_window("destination", arrival_utc))
+    arrival_margin = timedelta(minutes=NOTAM_TIMING_RULES["stationWindows"]["destination"]["afterMinutes"])
     is_fuel_enroute = (
         source_role == "fuel_enroute_airport"
         or location in (fuel_enroute_airports or set())
@@ -544,6 +784,64 @@ def _notam_role_window(
     return "informational", departure_utc, arrival_utc
 
 
+
+def _notam_role_windows(
+    flight: dict[str, Any], location: str, alternate_airports: set[str],
+    fuel_enroute_airports: set[str], source_role: str,
+) -> list[tuple[str, datetime, datetime]]:
+    """Keep each governed use separate; a gap between uses is not a use."""
+    if location in {flight["departure"], flight["destination"]}:
+        return [_notam_role_window(flight, location, set(), {})]
+    windows = []
+    if source_role == "fuel_enroute_airport" or location in fuel_enroute_airports:
+        windows.append(_notam_role_window(flight, location, set(), {}, {location}))
+    if location in alternate_airports:
+        windows.append(_notam_role_window(flight, location, {location}, {}))
+    for airport in flight["edto"]["airports"]:
+        if airport["airport"] == location:
+            window = ("EDTO", datetime.fromisoformat(airport["period_start_utc"]), datetime.fromisoformat(airport["period_end_utc"]))
+            if window not in windows:
+                windows.append(window)
+    return windows or [_notam_role_window(flight, location, set(), {})]
+
+
+def _assess_notam_window(
+    record: dict[str, Any], flight: dict[str, Any], role: str,
+    start: datetime, end: datetime, valid_from: datetime, valid_to: datetime,
+) -> dict[str, Any]:
+    """One role's assessment of a station notice: the shared decision (notam_timing.py), in this service's words.
+
+    ITEM 3 (14 Oct 2026): the app decides the same record by the same rules for the dashboard chart, the PDF map
+    marks and its NOTAM records, so the card and the PDF text cannot say "active" where the map says "review".
+    ``valid_from``/``valid_to`` are kept in the signature for callers; the decision reads the record itself.
+    """
+    reference = _notam_reference_at(flight, role, start)
+    decision = decide_notice_timing(notice_timing_input(record), {
+        "startsAt": start.isoformat(), "endsAt": end.isoformat(), "referenceAt": reference.isoformat()})
+    status = decision["status"]
+    schedule = decision["schedule"]
+    result = {
+        "role": role, "window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(),
+        "window_label": _utc_window_label(start, end),
+        "referenceAt": reference.isoformat(), "stateAtReference": decision["stateAtReference"],
+        "minutesDelta": decision["minutesDelta"], "referenceInterval": decision["referenceInterval"],
+        "applicability": "active", "validity_status": "overlaps_flight_window",
+        "schedule_status": "overlaps_flight_window" if schedule else "not_applicable",
+    }
+    if status == "review":
+        unreadable_validity = notice_timing_input(record)["validity"] is None
+        result.update(
+            applicability="review",
+            validity_status="review_required" if unreadable_validity else "overlaps_flight_window",
+            schedule_status="not_applicable" if unreadable_validity else "review_required",
+            timing_review_reason=decision.get("reason"),
+        )
+    elif status == "outside_window" and decision["outsideBy"] == "validity":
+        result.update(applicability="outside_time_window", validity_status="outside_time_window")
+    elif status == "outside_window":
+        result.update(applicability="outside_schedule", schedule_status="outside_schedule")
+    return result
+
 def _utc_window_label(window_start: datetime, window_end: datetime) -> str:
     start = window_start.astimezone(timezone.utc)
     end = window_end.astimezone(timezone.utc)
@@ -557,46 +855,14 @@ def _notam_reference_at(
     role: str,
     window_start: datetime,
 ) -> datetime:
+    departure_utc, arrival_utc = required_operational_reference_times(flight)
     if role == "departure":
-        return datetime.fromisoformat(flight["scheduled_departure_utc"])
+        return departure_utc
     if role in {"destination", "destination alternate"}:
-        return datetime.fromisoformat(flight["scheduled_arrival_utc"])
+        return arrival_utc
     # EDTO windows use sector entry as their operational reference. Enroute
     # informational records use the beginning of the checked flight window.
     return window_start
-
-
-def _notam_reference_state(
-    record: dict[str, Any],
-    reference_at: datetime,
-    valid_from: datetime,
-    valid_to: datetime,
-) -> tuple[str, int | None]:
-    if record.get("validity_review"):
-        return "unknown_at_reference", None
-    if reference_at < valid_from:
-        return (
-            "begins_after_reference",
-            round((valid_from - reference_at).total_seconds() / 60),
-        )
-    if reference_at >= valid_to:
-        return (
-            "ended_before_reference",
-            round((reference_at - valid_to).total_seconds() / 60),
-        )
-
-    schedule = record.get("schedule")
-    if schedule:
-        active_at_reference = _schedule_overlaps(
-            schedule,
-            reference_at,
-            reference_at + timedelta(minutes=1),
-        )
-        if active_at_reference is not True:
-            return "unknown_at_reference", None
-    elif record.get("schedule_review"):
-        return "unknown_at_reference", None
-    return "active_at_reference", 0
 
 
 def _weather_role_window(
@@ -607,8 +873,7 @@ def _weather_role_window(
     fuel_enroute_airports: set[str] | None = None,
     source_role: str | None = None,
 ) -> tuple[str, datetime, datetime]:
-    departure_utc = datetime.fromisoformat(flight["scheduled_departure_utc"])
-    arrival_utc = datetime.fromisoformat(flight["scheduled_arrival_utc"])
+    departure_utc, arrival_utc = required_operational_reference_times(flight)
     preference = _weather_window_preference(flight)
     before = timedelta(minutes=preference["before_minutes"])
     after = timedelta(minutes=preference["after_minutes"])
@@ -728,9 +993,210 @@ def _associated_taxiway_subject(upper: str) -> str | None:
     return f"TWYs {joined}"
 
 
+# "CAT II/III OPS", "CAT 3 OPR" - the operations category a notice limits.
+# Kept in the source's own numerals so no reader has to guess which categories
+# the notice meant.
+_APPROACH_CATEGORY_OPS = re.compile(
+    r"\bCAT\s*(?P<category>(?:I{1,3}|[123])[A-C]?(?:\s*/\s*(?:I{1,3}|[123])[A-C]?)*)"
+    r"\s+(?:OPS|OPR|OPERATIONS?)\b",
+    re.I,
+)
+
+
+def _approach_category_operations(upper: str) -> str | None:
+    """`CAT II/III` when the notice limits a category's operations."""
+    match = _APPROACH_CATEGORY_OPS.search(upper)
+    if not match:
+        return None
+    category = re.sub(r"\s*/\s*", "/", match.group("category").strip().upper())
+    return f"CAT {category}"
+
+
+# A taxiway closure names its places whole - the shared grammar in
+# ``airport_taxi_consequences`` - and says what else it closes.
+#
+# SQ352 15 Aug 2026, EKCH A1383/26, real OFP page 36:
+#
+#     FOLLOWING TWY ARE CLSD DUE TO WIP:
+#     TWY B BTN TWY Y AND RWY 12/30.
+#     TWY Y BTN TWY B AND DEICING PLATFORM B.
+#     TWY Z BTN TWY D AND DEICING PLATFORM B.
+#
+# The first reader here took one identifier as the end point and published
+# "TWY B BETWEEN Y AND RWY" (independent live QA of release 392). Its repair
+# then accepted any one word as an end point: VAAH A1134/26 became "TWY P
+# between C and RAPID" (RAPID EXIT TWY R5) and KJFK A3912/26 "TWY A4 between A
+# and TERMINAL 5" (TERMINAL 5 RAMP) - independent replay, 22 Sep 2026. And its
+# start point had to be a taxiway, so an extent starting at a runway, a ramp,
+# a taxilane or a directional taxiway was not seen at all and the fallback
+# below published the partial closure as the WHOLE taxiway (WSSS A2510/26,
+# "TWY Q BTN TXL Q3 AND TWY P7", became "TWY Q closed").
+
+
+def _further_taxiway_extents(text: str) -> int:
+    """Bounded extents this notice states beyond the first."""
+    return max(0, len(bounded_taxiway_extents(text)) - 1)
+
+
+def _further_closed_taxiway_items(text: str) -> str:
+    """The sentence saying what else this notice closes, or "".
+
+    The subject names one extent. A notice listing three and publishing one,
+    with nothing saying so, reads as though the other two do not exist - and
+    that holds for a whole taxiway or a stand-access segment listed beside the
+    extents as much as for another extent. A count is stated only when every
+    listed element was read.
+    """
+    items, exact = taxiway_closure_items(text)
+    further = len(items) - 1
+    if further < 1:
+        return ""
+    if not exact:
+        return "This notice states further closed taxiway items"
+    if all(form == "extent" for form, _ in items):
+        return f"This notice states {further} further closed taxiway extent(s)"
+    return f"This notice states {further} further closed taxiway item(s)"
+
+
+def _named_taxiway_closure_items(text: str, subject: str) -> tuple[str, str] | None:
+    """ITEM 4, VRMM SX5/26 (9 Oct 2026): what the card states when it would otherwise say "part of".
+
+    David, 7 Oct: "The NOTAMS for VRMM was not highlighted at all ... You check the wordings". The card read "PART OF
+    TWY C closed ... Its bounds could not be read completely" while the notice states the side and length and four
+    more closed taxiways. Only a subject this reader could not bound is replaced, and only when every listed item was
+    read: the first item's own scope becomes the subject and the further items are named when each is a whole
+    taxiway, otherwise counted as before.
+    """
+    if not subject.startswith("part of "):
+        return None
+    items, exact = taxiway_closure_items(text)
+    if not exact or not items or items[0][0] != "partial" or items[0][1].startswith("part of "):
+        return None
+    if items[0][1].split(" ")[:2] != subject[len("part of "):].split(" ")[:2]:
+        return None
+    further = items[1:]
+    if not further:
+        return items[0][1], ""
+    kinds = {label.split(" ", 1)[0] for _, label in further}
+    if all(form == "surface" for form, _ in further) and len(kinds) == 1:
+        refs = [label.split(" ", 1)[1] for _, label in further]
+        named = refs[0] if len(refs) == 1 else f"{', '.join(refs[:-1])} and {refs[-1]}"
+        verb = "is" if len(refs) == 1 else "are"
+        return items[0][1], f"{kinds.pop()} {named} {verb} also closed"
+    return items[0][1], f"This notice states {len(further)} further closed taxiway item(s)"
+
+
+def taxiway_closure_stated_scopes(text: str) -> list[str]:
+    """The closed taxiway scopes a taxiway-closure card states, for the PDF consequence to state the same (ITEM 4).
+
+    Codex production QA of release 460 (F3-R460): Gatwick's SX67/25 "TAXIWAY TANGO CLOSED NORTH OF TAXIWAY JULIET" was
+    on the chart, the card and the PDF map, while the PDF's consequence panel held it unresolved - its taxi reader skips
+    a scope that follows the verb. Malé's SX5/26 was held the same way. This returns the card's own reading: every
+    named item where the card names them, else the card's one bounded subject. A subject the card could not bound
+    ("part of"), a fallback subject, or further items the card can only count, give nothing - the PDF keeps saying the
+    consequence is not established rather than understating it.
+    """
+    upper = " ".join(text.upper().split())
+    subject, source = _taxiway_subject(upper)
+    if _named_taxiway_closure_items(text, subject):
+        return [label for _, label in taxiway_closure_items(text)[0]]
+    if source == "fallback" or subject.startswith("part of ") or _further_closed_taxiway_items(text):
+        return []
+    return [subject]
+
+
+def _taxiway_subject(upper: str, *, closure: bool = True) -> tuple[str, str]:
+    """A taxiway notice's subject, and which reader named it.
+
+    ``extent`` and ``designation`` subjects name one item of what may be a
+    list; ``compound`` and ``table`` subjects already name every item. The
+    partial-closure guard is for closures: a lighting or marking restriction
+    on TWY F4 is not "part of TWY F4".
+    """
+    compound = re.search(
+        r"\b(?:TWY|TAXIWAY)\s+(?P<closed>[A-Z0-9][A-Z0-9/-]*)\s+AND\s+"
+        r"(?:THE\s+)?JUNCTION\s+OF\s+(?:TWY|TAXIWAY)\s+(?P=closed)[,\s]+"
+        r"(?:TWY|TAXIWAY)\s+(?P<left>[A-Z0-9][A-Z0-9/-]*)\s+AND\s+"
+        r"(?:TWY|TAXIWAY)\s+(?P<right>[A-Z0-9][A-Z0-9/-]*)\b",
+        upper,
+    )
+    if compound:
+        return (
+            f"TWY {compound.group('closed')} and "
+            f"{compound.group('closed')}/{compound.group('left')}/{compound.group('right')} junction",
+            "compound",
+        )
+    associated = _associated_taxiway_subject(upper)
+    if associated:
+        return associated, "table"
+    extents = bounded_taxiway_extents(upper)
+    if extents and (closure or extents[0].complete):
+        return extents[0].subject(), "extent"
+    invalid_identifiers = {
+        "AND",
+        "ASSOCIATED",
+        "CLSD",
+        "CLOSED",
+        "CLOSURE",
+        "INDICATOR",
+        "IS",
+        "LIGHT",
+        "LIGHTS",
+        "MARKINGS",
+        "PAVEMENT",
+        "WILL",
+        "WITH",
+    }
+    # 10 Oct 2026, genuine SQ437 WSSS SX168/26 "TEMPO CLOSURE OF TXL N4 BEHIND ACFT STAND 604 ...": the card read "PART
+    # OF TWY GUIDANCE closed" - only TWY was looked for, and "TWY GUIDANCE SIGNS WILL BE MASKED OUT" made a taxiway of a
+    # word. A taxilane is a designation too, and a plain word after TWY is never a name.
+    for match in re.finditer(
+        r"\b(?P<kind>TWY|TAXIWAY|TXL|TAXILANE)\s+(?P<identifier>[A-Z][A-Z0-9/-]*)\b",
+        upper,
+    ):
+        identifier = match.group("identifier")
+        if identifier in invalid_identifiers or is_prose_word(identifier):
+            continue
+        surface = "TXL" if match.group("kind") in {"TXL", "TAXILANE"} else "TWY"
+        # A designation qualified by anything but its closure, a list
+        # sibling or the end of its statement is a PARTIAL closure: its
+        # own scope when this can read it, "part of" when it cannot, and
+        # never the whole taxiway.
+        partial = taxiway_designation_scope(upper, match.end(), surface, identifier) if closure else None
+        if closure and partial is None:
+            # WSSS SX83/24: a header list ("TEMPO CLOSURE OF TXL R1, R2, R3 ...") names what its details narrow ("TXL
+            # R1 BEHIND ACFT STAND E5"). A later mention of the same designation that states a scope this can read
+            # wins: a list header never widens a closure to the whole taxiway. A later mention whose qualifier is not
+            # read ("JET BLAST TOWARDS TWY W1" after "TWY W1 CLSD", EBBR SX38/26) says nothing about the closure.
+            for later in re.finditer(
+                rf"\b(?:{match.group('kind')})\s+{re.escape(identifier)}\b", upper[match.end():],
+            ):
+                stated = taxiway_designation_scope(upper, match.end() + later.end(), surface, identifier)
+                if stated and not stated.startswith("part of "):
+                    partial = stated
+                    break
+        return partial or f"{surface} {identifier}", "designation"
+    phonetic = re.search(r"\b([A-Z]{2,})\s+TWY\b", upper)
+    turnoffs = re.search(
+        r"\bHIGH-SPEED\s+TURN-OFFS?\s+([A-Z]\d{1,2})\s+AND\s+([A-Z]\d{1,2})\b",
+        upper,
+    )
+    if phonetic and turnoffs:
+        return (
+            f"{phonetic.group(1).title()} TWY segment and "
+            f"{turnoffs.group(1)}/{turnoffs.group(2)} high-speed turn-offs",
+            "fallback",
+        )
+    if phonetic:
+        return f"{phonetic.group(1).title()} TWY segment", "fallback"
+    if turnoffs:
+        return f"{turnoffs.group(1)}/{turnoffs.group(2)} high-speed turn-offs", "fallback"
+    return "taxiway operational area", "fallback"
+
+
 def _notam_subject(text: str, kind: str) -> str:
     upper = " ".join(text.upper().split())
-    runway_pattern = r"(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
+    runway_pattern = r"(?:RWY|RUNWAY)\s*\d{1,2}[LCR]?(?:/\d{1,2}[LCR]?)?"
     taxiway_pattern = r"(?:TWY|TAXIWAY)\s+[A-Z0-9][A-Z0-9/-]*"
     closure_pattern = r"(?:CLSD|CLOSED|NOT\s+AVBL|NOT\s+AVAILABLE|SUSPENDED)"
     if kind == "runway_closure":
@@ -746,6 +1212,22 @@ def _notam_subject(text: str, kind: str) -> str:
         match = re.search(rf"\b{runway_pattern}\b", upper)
         return match.group(0).replace("RUNWAY", "RWY") if match else "runway"
     if kind == "approach_navaid_closure":
+        bound_subject = _bound_unavailable_approach_subject(upper)
+        if bound_subject:
+            return bound_subject
+        # A category-limited operation is not an aid outage, and it is not the
+        # whole approach either. SQ352 15 Aug 2026, EKCH A1312/26, real OFP
+        # page 36: "RWY 22L CAT II/III OPS NOT AVBL DUE TO WIP." names no
+        # system token, so this fell through to the literal "approach/navaid"
+        # and published a broader subject than the notice states, dropping the
+        # category entirely (independent live QA of release 392). Say what the
+        # source says - the category, and that it is the operations that are
+        # unavailable. Nothing here implies another category is available.
+        category = _approach_category_operations(upper)
+        if category:
+            runway_named = re.search(r"\b(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?\b", upper)
+            scope = runway_named.group(0).replace("RUNWAY", "RWY") if runway_named else ""
+            return f"{scope} {category} operations".strip()
         system = re.search(
             r"\b(?:ILS|LOC|LOCALIZER|GLIDE\s*PATH|GLIDESLOPE|DME|VOR|NDB|RNP|PAPI)\b",
             upper,
@@ -759,69 +1241,7 @@ def _notam_subject(text: str, kind: str) -> str:
         ]
         return " ".join(part for part in parts if part)
     if kind in {"taxiway_closure", "taxiway_restriction"}:
-        compound = re.search(
-            r"\b(?:TWY|TAXIWAY)\s+(?P<closed>[A-Z0-9][A-Z0-9/-]*)\s+AND\s+"
-            r"(?:THE\s+)?JUNCTION\s+OF\s+(?:TWY|TAXIWAY)\s+(?P=closed)[,\s]+"
-            r"(?:TWY|TAXIWAY)\s+(?P<left>[A-Z0-9][A-Z0-9/-]*)\s+AND\s+"
-            r"(?:TWY|TAXIWAY)\s+(?P<right>[A-Z0-9][A-Z0-9/-]*)\b",
-            upper,
-        )
-        if compound:
-            return (
-                f"TWY {compound.group('closed')} and "
-                f"{compound.group('closed')}/{compound.group('left')}/{compound.group('right')} junction"
-            )
-        associated = _associated_taxiway_subject(upper)
-        if associated:
-            return associated
-        bounded = re.search(
-            r"\b(?:TWY|TAXIWAY)\s+(?P<name>[A-Z][A-Z0-9/-]*)\s+BTN\s+"
-            r"(?:TWY|TAXIWAY)\s+(?P<start>[A-Z][A-Z0-9/-]*)\s+AND\s+"
-            r"(?:(?:TWY|TAXIWAY)\s+)?(?P<end>[A-Z][A-Z0-9/-]*)\b",
-            upper,
-        )
-        if bounded:
-            return (
-                f"TWY {bounded.group('name')} between "
-                f"{bounded.group('start')} and {bounded.group('end')}"
-            )
-        invalid_identifiers = {
-            "AND",
-            "ASSOCIATED",
-            "CLSD",
-            "CLOSED",
-            "CLOSURE",
-            "INDICATOR",
-            "IS",
-            "LIGHT",
-            "LIGHTS",
-            "MARKINGS",
-            "PAVEMENT",
-            "WILL",
-            "WITH",
-        }
-        for match in re.finditer(
-            r"\b(?:TWY|TAXIWAY)\s+(?P<identifier>[A-Z][A-Z0-9/-]*)\b",
-            upper,
-        ):
-            identifier = match.group("identifier")
-            if identifier not in invalid_identifiers:
-                return f"TWY {identifier}"
-        phonetic = re.search(r"\b([A-Z]{2,})\s+TWY\b", upper)
-        turnoffs = re.search(
-            r"\bHIGH-SPEED\s+TURN-OFFS?\s+([A-Z]\d{1,2})\s+AND\s+([A-Z]\d{1,2})\b",
-            upper,
-        )
-        if phonetic and turnoffs:
-            return (
-                f"{phonetic.group(1).title()} TWY segment and "
-                f"{turnoffs.group(1)}/{turnoffs.group(2)} high-speed turn-offs"
-            )
-        if phonetic:
-            return f"{phonetic.group(1).title()} TWY segment"
-        if turnoffs:
-            return f"{turnoffs.group(1)}/{turnoffs.group(2)} high-speed turn-offs"
-        return "taxiway operational area"
+        return _taxiway_subject(upper, closure=kind == "taxiway_closure")[0]
     if kind == "apron_stand_closure":
         match = re.search(
             r"\b(?:ACFT\s+STAND|STAND|APRON|APN|RAMP|GATE)\s+[A-Z0-9][A-Z0-9/-]*\b",
@@ -831,11 +1251,191 @@ def _notam_subject(text: str, kind: str) -> str:
     return ""
 
 
+def _approach_lights_reported_available(text: str) -> bool:
+    """Accept only a same-clause, directly bound approach-light state."""
+
+    normalized = " ".join(text.upper().split())
+    for clause in re.split(r"(?:\.(?=\s|$)|;|\r?\n)+", normalized):
+        subject = re.search(r"\b(?:APCH|APPROACH)\s+(?:LGT|LIGHTS?)\b", clause)
+        if subject is None:
+            continue
+        for available in _APPROACH_LIGHT_AVAILABLE.finditer(
+            clause,
+            subject.end(),
+        ):
+            between = clause[subject.end():available.start()]
+            if re.fullmatch(
+                r"\s*(?:FOR\s+)?(?:RWY|RUNWAY)\s+\d{1,2}[LCR]?\s*",
+                between,
+            ):
+                return True
+    return False
+
+
+_NAVAID_SUBJECT = re.compile(
+    r"\b((?:ILS|LOC|LLZ|LOCALI[ZS]ER|GP|GS|GLIDE ?PATH|DVOR|VOR|DME|NDB|TACAN|RNAV|RNP|GLS|GBAS|LPV)"
+    r"(?:/(?:DME|GP|LOC|NDB|VOR))?"
+    r"(?:\s+(?:CAT\s+I{1,3}|\(GPS\)|[XYZ]))*)"
+    r"(?:\s*'([A-Z]{2,4})')?"
+    r"(?:\s*(?:RWY|RUNWAY)\s*(\d{2}[LCR]?))?"
+)
+
+
+_FAA_PROCEDURE_TITLE = re.compile(r"^(?P<title>.+?),\s*(?:AMDT|ORIG|CHG)\b.*$")
+
+
+def _faa_procedure_line(upper: str) -> tuple[str, str]:
+    """(procedure, note) for an FAA "IAP ..." notice; ("", "") for anything else.
+
+    The notice lists one or more procedure titles with their amendment, each
+    ended by "...", then the chart note. The last title and the first sentence
+    of the note make the line; the note is bounded so it stays one line.
+    """
+    # OFP station packages may prefix the FAA text ("EST LAX IAP …"); the
+    # notice starts at its IAP token.
+    match = re.search(r"\bIAP\s+[^.]*\.\s*(?P<body>.+)$", upper)
+    if not match:
+        return "", ""
+    parts = [part.strip(" ,") for part in re.split(r"\.{3}\s*", match.group("body")) if part.strip(" ,")]
+    titles: list[str] = []
+    notes: list[str] = []
+    for part in parts:
+        title = _FAA_PROCEDURE_TITLE.match(part)
+        if title:
+            titles.append(" ".join(title.group("title").split()))
+        else:
+            notes.append(part)
+    if not titles or not notes:
+        return "", ""
+    note = re.split(r"\.\s+", notes[-1].strip())[0].rstrip(".").strip()
+    if len(note) > 100:
+        note = note[:97].rstrip() + "…"
+    return titles[-1], note
+
+
+def _navaid_clause(upper: str) -> tuple[str, str]:
+    """The aid and the state a single clause states about it.
+
+    The aid must open the clause and the state must sit in the same clause, so
+    "ILS RWY 25 AVBL. PAPI RWY 25 U/S" never reads as an ILS outage and a
+    negated "NOT U/S" never reads as unserviceable.
+    """
+    # A named PART or a preceding availability assertion starts a new
+    # component clause. A coordinated list (ILS-LOC, GP, DME) stays together.
+    separated = re.sub(r",\s*(?=(?:ILS|LOC|GP|GS|DVOR|VOR|DME|NDB)[ -]+PART\b)", ";", upper)
+    separated = re.sub(r"\b(AVBL|AVAILABLE|U/S|UNSERVICEABLE)\s*,\s*(?=(?:ILS|LOC|GP|GS|DVOR|VOR|DME|NDB)\b)", r"\1;", separated)
+    for clause in re.split(r"[.;]\s*", separated):
+        clause = clause.strip(" ,")
+        if not clause:
+            continue
+        state = _navaid_state_phrase(clause)
+        if not state:
+            continue
+        aid = _navaid_subject(clause)
+        if aid:
+            return aid, state
+    return "", ""
+
+
+def _navaid_subject(clause: str) -> str:
+    """The aid as the clause names it — "ILS CAT I RWY 06", "DVOR/DME MNL" — only when the aid opens the clause."""
+    coordinated = re.match(r"^((?:ILS-LOC|ILS|LOC|GP|GS|DME|VOR|NDB)(?:,\s*(?:ILS-LOC|ILS|LOC|GP|GS|DME|VOR|NDB))+)(?:\s+FOR)?(?:\s+(RWY\s+\d{2}[LCR]?(?:\s+AND\s+RWY\s+\d{2}[LCR]?)?))?\s+(?:U/S|UNSERVICEABLE)\b", clause)
+    if coordinated:
+        return re.sub(r",\s*", ", ", coordinated.group(1)) + (f" {coordinated.group(2)}" if coordinated.group(2) else "")
+    match = _NAVAID_SUBJECT.match(clause)
+    if not match:
+        return ""
+    aid = " ".join(match.group(1).replace("LOCALIZER", "LOC").replace("LOCALISER", "LOC").split())
+    parts = [aid]
+    if re.match(r"[ -]+PART\b", clause[match.end():]):
+        parts.append("PART")
+    if match.group(2):
+        parts.append(match.group(2))
+    if match.group(3):
+        parts.append(f"RWY {match.group(3)}")
+    return " ".join(parts)
+
+
+def _navaid_state_phrase(upper: str) -> str:
+    """The state the record states, in the boss's words; empty when it states none."""
+    if re.search(r"(?<!NOT )\bON\s+TEST\b", upper):
+        return "on test, do not use" if re.search(r"\bDO\s+NOT\s+USE\b", upper) else "on test"
+    if re.search(r"(?<!NOT )(?:\bU/S\b|\bUNSERVICEABLE\b|\bUNSERVICEABILITY\b)", upper):
+        return "unserviceable"
+    return ""
+
+
+def notam_dashboard_line(text: str, kind: str) -> str:
+    """The boss's own reading of an approach-aid record, for the dashboard card.
+
+    Boss 02 Sep 2026: "instrument approaches being affected such as ILS or VOR
+    not working, or on test or unserviceable". Names the aid, the runway and
+    its state ("ILS CAT I RWY 06 on test, do not use."), or the FAA procedure
+    and its note ("ILS OR LOC RWY 7R: AUTO-PILOT COUPLED APPROACH NA BELOW
+    800."). Empty when the record states neither. The PDF keeps its own
+    summary; this line exists for the dashboard's compact text only, so the
+    approved REV3 reference is untouched.
+    """
+    if kind not in {"approach_navaid_closure", "runway_approach_restriction"}:
+        return ""
+    upper = " ".join(str(text or "").upper().split())
+    aid, state = _navaid_clause(upper)
+    if aid and state:
+        return f"{aid} {state}."
+    procedure, note = _faa_procedure_line(upper)
+    if procedure and note:
+        return f"{procedure}: {note}."
+    return ""
+
+
+RUNWAY_NOT_CLOSED_NOTE = "The runway is not reported closed by this notice."
+
+
+def _with_runway_not_closed_note(line: str) -> str:
+    """Keep the boss's obstacle qualifier ahead of the derivation's markers.
+
+    An obstacle notice that names a runway must say the runway is not reported
+    closed by it (16 Aug 2026 follow-up). The derived line can end with a fixed
+    marker sentence saying what it omitted; the qualifier belongs to the
+    statement, so it goes before that marker rather than after it.
+    """
+    body = line
+    markers: list[str] = []
+    trimmed = True
+    while trimmed:
+        trimmed = False
+        for sentence in FIXED_MARKER_SENTENCES:
+            if body.endswith(sentence):
+                markers.insert(0, sentence)
+                body = body[: -len(sentence)].rstrip()
+                trimmed = True
+    return " ".join(part for part in (body, RUNWAY_NOT_CLOSED_NOTE, *markers) if part)
+
+
+def obstacle_restriction_line(text: str) -> str:
+    """The published line for an obstacle notice: C1's derivation, plus the
+    boss's runway qualifier when the notice names a runway.
+
+    C2 round 2. This was inline in ``_notam_operational_summary``'s obstacle
+    branch, which runs at ANALYSIS time only. Download PDF renders a stored
+    analysis without re-analysing it, so a flight already in storage needs the
+    same line derivable at RENDER time. Sharing one function is what makes a
+    stale pack and a fresh one publish the same sentence, rather than two
+    implementations that agree until one of them is edited.
+    """
+    line = derive_notam_restriction_line(text)["text"]
+    if re.search(r"\b(?:RWY|RUNWAY)\s+\d{1,2}", " ".join(str(text or "").upper().split())):
+        line = _with_runway_not_closed_note(line)
+    return line
+
+
 def _notam_operational_summary(
     text: str,
     kind: str,
     role: str,
     applicability: str = "active",
+    *,
+    category: str = "",
 ) -> str:
     upper = " ".join(text.upper().split())
     if kind == "taxiway_restriction" and "CONSTRUCTION SURVEY LASER" in upper:
@@ -850,38 +1450,487 @@ def _notam_operational_summary(
             f"Construction survey lasers near taxilanes {locations} require "
             f"operational review during the applicable {phase} window."
         )
+    if kind == "taxiway_restriction" and re.search(r"\bPROC(?:EDURE)?\b", upper) and re.search(r"\bTAXI(?:ING)?\b", upper):
+        return "Published taxi procedure; instructions, clearance limits and conditions are stated in item E."
     subject = _notam_subject(text, kind)
     phase = role.replace("destination alternate", "alternate").replace("informational", "flight")
     if applicability == "review":
         return (
             f"Published {subject or 'airport'} restriction could not be resolved "
-            f"for the applicable {phase} window; review required."
+            f"for the applicable {phase} window."
+        )
+    if _NO_APPROACH_OPERATIONS.search(upper):
+        runway = re.search(_APPROACH_RUNWAY_REFERENCE, upper)
+        runway_label = (
+            runway.group(0).replace("RUNWAY", "RWY")
+            if runway
+            else "the named runway"
+        )
+        return (
+            f"Instrument approaches to or from {runway_label} are prohibited "
+            "only under the exact condition stated in item E; that condition "
+            f"is not evaluated for the applicable {phase} window."
+        )
+    if _APPROACH_MINIMA_RAISED.search(upper):
+        return (
+            "LPV minima are raised to the stated LNAV/VNAV minima for the "
+            f"named RNP approaches during the applicable {phase} window."
+        )
+    if kind not in {"airport_closure", "runway_closure", "taxiway_closure", "apron_stand_closure", "approach_navaid_closure"} and re.search(
+        r"\bPROC(?:EDURE)?S?\s+MAY\s+BE\s+SUSPENDED\b", upper,
+    ):
+        return (
+            "Published procedure may be suspended under the conditions stated in item E; "
+            f"those conditions are not evaluated for the applicable {phase} window."
         )
     if kind == "airport_closure":
         return f"Entire airport closed or unavailable during the applicable {phase} window."
+    if kind == "approach_minima_change":
+        changes = iap_minima_changes(text, category)
+        cause = " by a temporary crane" if "CRANE" in upper else ""
+        if changes:
+            clauses = [
+                f"{procedure} minima changed ({minima})"
+                for procedure, minima in changes
+            ]
+            named = (
+                clauses[0]
+                if len(clauses) == 1
+                else f"{', '.join(clauses[:-1])} and {clauses[-1]}"
+            )
+            return f"{named}{cause} during the applicable {phase} window."
+        # The kind owns this sentence: never fall through to the generic
+        # restriction line, which would contradict the record's own rank.
+        return (
+            f"Published approach minima changed{cause} (procedure and minima as "
+            f"stated in item E) during the applicable {phase} window."
+        )
     if kind == "runway_closure":
         return f"{subject.title()} closed or unavailable during the applicable {phase} window."
     if kind == "approach_navaid_closure":
         return f"{subject} unavailable during the applicable {phase} window."
     if kind == "runway_approach_restriction":
-        return f"{subject.title()} restriction applies during the applicable {phase} window."
+        return derive_notam_restriction_line(text)["text"]
+    if kind == "surface_identity_review":
+        return retired_taxiway_lighting_summary(text) or "Pavement identity and availability are unverified."
     if kind == "runway_lighting_restriction":
+        sequence_flashing_lights = re.search(
+            r"\bSEQUENCE(?:D)?\s+(?:FLASHING|FLG)\s+(?:LGT|LIGHTS?)\b",
+            upper,
+        )
+        approach_lights_available = _approach_lights_reported_available(upper)
+        if sequence_flashing_lights and approach_lights_available:
+            return (
+                f"Sequence flashing lights for {subject.upper()} are unserviceable; "
+                "approach lights are reported available by this notice during the "
+                f"applicable {phase} window."
+            )
         return f"Lighting affecting {subject.upper()} is unavailable during the applicable {phase} window."
     if kind == "taxiway_closure":
-        return f"{subject.upper()} closed during the applicable {phase} window."
+        named = _named_taxiway_closure_items(text, subject)
+        if named:
+            scope, further_named = named
+            tail = f" {further_named}; the full record is held with the airport's notices." if further_named else ""
+            return f"{scope.upper()} closed during the applicable {phase} window.{tail}"
+        notes = []
+        if subject.startswith("part of "):
+            notes.append("Its bounds could not be read completely from the notice")
+        source = _taxiway_subject(upper)[1]
+        further = _further_closed_taxiway_items(text) if source in {"extent", "designation"} else ""
+        if further:
+            notes.append(further if not notes else further[0].lower() + further[1:])
+        remaining = (
+            " " + "; ".join(notes) + "; the full record is held with the airport's notices."
+            if notes else ""
+        )
+        return f"{subject.upper()} closed during the applicable {phase} window.{remaining}"
     if kind == "taxiway_restriction":
-        return f"{subject.upper()} restriction applies during the applicable {phase} window."
+        return derive_notam_restriction_line(text)["text"]
     if kind == "apron_stand_closure":
         return f"{subject.upper()} closed during the applicable {phase} window."
     if kind == "obstacle":
-        summary = (
-            f"Obstacle or crane affects the {phase} airport environment; "
-            "assess against expected runway and approach use."
+        # C2, 18 Sep 2026. This branch used to publish a fixed sentence
+        # ("Obstacle or crane affects the ... airport environment; assess
+        # against expected runway and approach use.") that states nothing the
+        # notice says. The dashboard refuses that template as content-free and
+        # derives a line from the source instead, so the two surfaces disagreed
+        # on all four RKSI records of SQ606-SIN-ICN-06SEP. The derivation is
+        # C1's: source-bound, copy-guarded, and it abstains in its own words
+        # rather than inventing one.
+        #
+        # The boss's own rule survives the change: an obstacle notice that
+        # names a runway must still say the runway is not reported closed, so
+        # an obstacle is never skim-read as a closure (16 Aug 2026 follow-up;
+        # the conditional-crane regression "CRANE WILL ONLY OPERATE WHEN RWY
+        # 09L/27R IS CLSD"). The note goes before the derivation's own trailing
+        # marker sentence so the line still ends by saying what it omitted.
+        # Shared with the render-time repair of a pack analysed before C2
+        # (``briefing._republishable_finding``), so storage age cannot change
+        # what an obstacle notice publishes.
+        return obstacle_restriction_line(text)
+    # R2 residual (24 Sep 2026): the unresolved state, never "requires review".
+    return f"Operational airport restriction is unresolved for the applicable {phase} window."
+
+
+def _text_between(
+    clause: str,
+    left: re.Match[str],
+    right: re.Match[str],
+) -> str:
+    if left.end() <= right.start():
+        return clause[left.end():right.start()]
+    if right.end() <= left.start():
+        return clause[right.end():left.start()]
+    return ""
+
+
+def _binding_token_gap(
+    clause: str,
+    left: re.Match[str],
+    right: re.Match[str],
+) -> int:
+    return len(_APPROACH_BINDING_TOKEN.findall(_text_between(clause, left, right)))
+
+
+def _adverse_is_negated(clause: str, adverse: re.Match[str]) -> bool:
+    return bool(_NEGATED_ADVERSE_PREFIX.search(clause[:adverse.start()]))
+
+
+def _adverse_is_restored_before_another_subject(
+    clause: str,
+    adverse: re.Match[str],
+) -> bool:
+    """Bind a restoration to the adverse subject immediately before it."""
+
+    for restoration in _APPROACH_RESTORATION.finditer(
+        clause,
+        adverse.end(),
+    ):
+        if _NEGATED_RESTORATION_PREFIX.search(
+            clause[:restoration.start()]
+        ):
+            continue
+        if _APPROACH_RESTORATION_CONNECTOR.fullmatch(
+            clause[adverse.end():restoration.start()]
+        ):
+            return True
+    return False
+
+
+def _special_approach_state_is_restored(
+    clause: str,
+    subject: re.Match[str],
+) -> bool:
+    """Bind a cancellation/restoration to one prohibition or minima rule."""
+
+    for restoration in _APPROACH_RESTORATION.finditer(
+        clause,
+        subject.end(),
+    ):
+        if _NEGATED_RESTORATION_PREFIX.search(
+            clause[:restoration.start()]
+        ):
+            continue
+        between = clause[subject.end():restoration.start()]
+        if _APPROACH_RESTORATION_CONNECTOR.fullmatch(between):
+            return True
+    return False
+
+
+def _binding_has_competing_subject(
+    clause: str,
+    subject: re.Match[str],
+    state: re.Match[str],
+) -> bool:
+    between = _text_between(clause, subject, state)
+    if _APPROACH_BINDING_SURFACE_SUBJECT.search(between):
+        return True
+    if (
+        _APPROACH_NON_ADVERSE_ACTIVITY.search(between)
+        and not re.fullmatch(r"DO\s+NOT\s+USE", state.group(0))
+    ):
+        return True
+    return any(
+        pattern.search(between)
+        for pattern in (
+            _DIRECT_INSTRUMENT_APPROACH_EQUIPMENT,
+            _CONVENTIONAL_APPROACH_NAVAID,
+            _INSTRUMENT_APPROACH_MARKER,
+            _EXPLICIT_INSTRUMENT_APPROACH_PROCEDURE,
+            _RNAV_OR_RNP,
+            _NAMED_INSTRUMENT_APPROACH_PROCEDURE,
+            _CATEGORY_APPROACH_OPERATIONS,
         )
-        if re.search(r"\b(?:RWY|RUNWAY)\s+\d{1,2}", upper):
-            summary += " The runway is not reported closed by this notice."
-        return summary
-    return f"Operational airport restriction requires review during the applicable {phase} window."
+    )
+
+
+def _subject_state_are_bound(
+    clause: str,
+    subject: re.Match[str],
+    state: re.Match[str],
+) -> bool:
+    """Accept only a bounded approach subject plus its own adverse state."""
+    if _binding_has_competing_subject(clause, subject, state):
+        return False
+    between = _text_between(clause, subject, state)
+    if subject.end() <= state.start():
+        if (
+            re.fullmatch(r"DO\s+NOT\s+USE", state.group(0))
+            and re.fullmatch(r"\s*ON\s+TEST\s*,?\s*", between)
+        ):
+            return True
+        return bool(_FORWARD_APPROACH_STATE_BINDING.fullmatch(between))
+    return bool(_REVERSE_APPROACH_STATE_BINDING.fullmatch(between))
+
+
+def _subject_adverse_pair(
+    clause: str,
+    subject_pattern: re.Pattern[str],
+) -> tuple[re.Match[str], re.Match[str]] | None:
+    adverse_states = [
+        match
+        for match in _INSTRUMENT_APPROACH_ADVERSE.finditer(clause)
+        if not _adverse_is_negated(clause, match)
+    ]
+    available_states = list(
+        _INSTRUMENT_APPROACH_AVAILABLE.finditer(clause)
+    )
+    for subject in subject_pattern.finditer(clause):
+        for adverse in adverse_states:
+            if subject.start() < adverse.end() and adverse.start() < subject.end():
+                continue
+            adverse_gap = _binding_token_gap(clause, subject, adverse)
+            if adverse_gap > _MAX_APPROACH_BINDING_TOKENS:
+                continue
+            if not _subject_state_are_bound(clause, subject, adverse):
+                continue
+            if _adverse_is_restored_before_another_subject(clause, adverse):
+                continue
+            if any(
+                subject.end() <= available.start() <= adverse.start()
+                and _binding_token_gap(clause, subject, available) <= adverse_gap
+                and _subject_state_are_bound(clause, subject, available)
+                for available in available_states
+            ):
+                continue
+            return subject, adverse
+    return None
+
+
+def _subject_has_adverse_state(
+    clause: str,
+    subject_pattern: re.Pattern[str],
+) -> bool:
+    return _subject_adverse_pair(clause, subject_pattern) is not None
+
+
+def _instrument_marker_adverse_pair(
+    clause: str,
+) -> tuple[re.Match[str], re.Match[str]] | None:
+    """Bind an ILS marker state without borrowing a surface identifier."""
+
+    pair = _subject_adverse_pair(clause, _INSTRUMENT_APPROACH_MARKER)
+    if pair is None:
+        return None
+    subject, _ = pair
+    surface_owner = re.search(
+        r"\b(?:TWY|TAXIWAY|STAND|APRON|INTERSECTION)"
+        r"(?:\s+[A-Z0-9-]+)?\s*$",
+        clause[:subject.start()],
+    )
+    return None if surface_owner else pair
+
+
+def _bound_unavailable_approach_subject(text: str) -> str | None:
+    """Return the exact adverse subject without borrowing an available one."""
+
+    normalized = " ".join(str(text or "").upper().split())
+    clauses = [
+        clause.strip()
+        for clause in re.split(r"(?:\.(?=\s|$)|;|\r?\n)+", normalized)
+        if clause.strip()
+    ]
+    for clause in clauses:
+        pairs = [
+            pair
+            for subject_pattern in (
+                _DIRECT_INSTRUMENT_APPROACH_EQUIPMENT,
+                _CONVENTIONAL_APPROACH_NAVAID,
+                _PAPI_OPERATIONAL_SUBJECT,
+                _RNAV_OR_RNP,
+                _EXPLICIT_INSTRUMENT_APPROACH_PROCEDURE,
+            )
+            if (pair := _subject_adverse_pair(clause, subject_pattern))
+        ]
+        if marker_pair := _instrument_marker_adverse_pair(clause):
+            pairs.append(marker_pair)
+        if not pairs:
+            continue
+        subject, adverse = min(pairs, key=lambda pair: pair[0].start())
+        label = subject.group(0)
+        if not re.search(rf"\b{_APPROACH_RUNWAY_REFERENCE}\b", label):
+            runway = re.search(
+                rf"\b{_APPROACH_RUNWAY_REFERENCE}\b",
+                _text_between(clause, subject, adverse),
+            )
+            if runway is None and label.startswith("PAPI"):
+                runway = re.search(
+                    rf"\b{_APPROACH_RUNWAY_REFERENCE}\s*$",
+                    clause[:subject.start()],
+                )
+            if runway:
+                label = f"{label} {runway.group(0)}"
+        return (
+            label.replace("LOCALIZER", "LOC")
+            .replace("RUNWAY", "RWY")
+            .strip()
+        )
+    return None
+
+
+def _instrument_approach_affected(text: str, category: str) -> bool:
+    """Require explicit adverse instrument-approach evidence.
+
+    The older pertinence taxonomy intentionally groups general navaid and
+    visual-aid outages for pilot review.  This stricter gate is only for the
+    machine-readable ``approach_affected`` flag and critical severity: a bare
+    VOR/NDB/DME outage needs an explicit approach-procedure binding, while a
+    PAPI outage alone remains a visual-aid warning.
+    """
+
+    category_text = " ".join(str(category or "").upper().split())
+    category_is_approach_procedure = bool(
+        _APPROACH_PROCEDURE_CATEGORY.search(category_text)
+    )
+    normalized_text = " ".join(str(text or "").upper().split())
+    normalized_text = re.sub(
+        r"\bINSTRUMENT\s+LANDING\s+SYSTEM\s*\(ILS\)",
+        "ILS",
+        normalized_text,
+    )
+    normalized_text = re.sub(r"\bG\.P\.?\b", "GP", normalized_text)
+    normalized_text = re.sub(
+        r"\bON\s+TEST\.\s+DO\s+NOT\s+USE\b",
+        "ON TEST DO NOT USE",
+        normalized_text,
+    )
+    normalized_text = re.sub(r"\.{2,}", " ", normalized_text)
+    iap_publication_adverse = _IAP_PUBLICATION_ADVERSE.search(normalized_text)
+    if (
+        iap_publication_adverse
+        and not _special_approach_state_is_restored(
+            normalized_text,
+            iap_publication_adverse,
+        )
+    ):
+        return True
+    if iap_publication_adverse:
+        normalized_text = (
+            normalized_text[:iap_publication_adverse.start()]
+            + " "
+            + normalized_text[iap_publication_adverse.end():]
+        )
+    if iap_minima_changes(text, category):
+        # Republished DA/MDA for a named procedure changes the approach the
+        # crew will fly, whatever the underlying cause. This reads the record
+        # as received - category included, nothing excised - so it can never
+        # disagree with the kind the same record was given.
+        return True
+    clauses = [
+        " ".join(clause.upper().split())
+        for clause in re.split(
+            r"(?:\.(?=\s|$)|;|\r?\n)+",
+            normalized_text,
+        )
+        if clause.strip()
+    ]
+    for clause in clauses:
+        iap_clause_suspension = _IAP_CLAUSE_SUSPENSION.search(clause)
+        if (
+            iap_clause_suspension
+            and not _INSTRUMENT_APPROACH_AVAILABLE.search(
+                iap_clause_suspension.group(0)
+            )
+            and not _special_approach_state_is_restored(
+                clause,
+                iap_clause_suspension,
+            )
+        ):
+            return True
+        for special_pattern in (
+            _NO_APPROACH_OPERATIONS,
+            _APPROACH_MINIMA_RAISED,
+        ):
+            for special in special_pattern.finditer(clause):
+                if not _special_approach_state_is_restored(
+                    clause,
+                    special,
+                ):
+                    return True
+        if not _INSTRUMENT_APPROACH_ADVERSE.search(clause):
+            continue
+        if _subject_has_adverse_state(
+            clause,
+            _DIRECT_INSTRUMENT_APPROACH_EQUIPMENT,
+        ):
+            return True
+        if _instrument_marker_adverse_pair(clause):
+            return True
+        for exact_procedure_pattern in (
+            _LPV_APPROACH_PROCEDURE,
+            _ILS_LOC_APPROACH_PROCEDURE,
+            _PUBLISHED_ILS_LOC_PROCEDURE,
+            _ILS_FINAL_DME_READING,
+            _IAC_APPROACH_PROCEDURE_LIST,
+            _ILS_CATEGORY_PROCEDURE,
+            _ILS_SPECIAL_AUTH_CATEGORY,
+        ):
+            if _subject_has_adverse_state(
+                clause,
+                exact_procedure_pattern,
+            ):
+                return True
+
+        for named_procedure_pattern in (
+            _NAMED_INSTRUMENT_APPROACH_PROCEDURE,
+            _NUMBERED_IAC_APPROACH_PROCEDURE,
+            _CATEGORY_APPROACH_OPERATIONS,
+        ):
+            if (
+                category_is_approach_procedure
+                and _subject_has_adverse_state(
+                    clause,
+                    named_procedure_pattern,
+                )
+            ):
+                return True
+
+        explicit_procedure = bool(
+            _EXPLICIT_INSTRUMENT_APPROACH_PROCEDURE.search(clause)
+        )
+        if _subject_has_adverse_state(
+            clause,
+            _RNAV_INSTRUMENT_APPROACH_PROCEDURE,
+        ):
+            return True
+        if (
+            _subject_has_adverse_state(
+                clause,
+                _CONVENTIONAL_APPROACH_NAVAID,
+            )
+            and (explicit_procedure or category_is_approach_procedure)
+        ):
+            return True
+        if (
+            explicit_procedure
+            and not _PAPI.search(clause)
+            and _subject_has_adverse_state(
+                clause,
+                _EXPLICIT_INSTRUMENT_APPROACH_PROCEDURE,
+            )
+        ):
+            return True
+    return False
 
 
 def taxiway_operational_details(text: str, kind: str) -> list[str]:
@@ -1069,38 +2118,81 @@ def detect_terrain_events(waypoints: list[dict[str, Any]]) -> list[dict[str, Any
 
 
 def detect_vws_events(waypoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group consecutive >004 samples into events.
+
+    ``maxima`` is every waypoint at the event's maximum, in route order, from the one shared selection
+    (``vws_maxima.vws_maximum_points``); ``maximum`` is its first point, kept for readers of one anchor.
+    """
     events: list[dict[str, Any]] = []
     active: list[dict[str, Any]] = []
+
+    def close(drop: dict[str, Any] | None) -> None:
+        # The parser holds integers; a non-integer sample keeps the former single anchor rather than none.
+        maxima = vws_maximum_points(active) or [max(active, key=lambda w: w.get("vws") or -1)]
+        events.append({
+            "first_high": active[0],
+            "last_high": active[-1],
+            "drop": drop,
+            "maximum": maxima[0],
+            "maxima": maxima,
+        })
+
     for waypoint in waypoints:
         vws = waypoint.get("vws")
         if vws is None:
             if active and not waypoint.get("fir_boundary"):
-                events.append({
-                    "first_high": active[0],
-                    "last_high": active[-1],
-                    "drop": waypoint,
-                    "maximum": max(active, key=lambda w: w.get("vws") or -1),
-                })
+                close(waypoint)
                 active = []
             continue
         if vws > 4:
             active.append(waypoint)
         elif active:
-            events.append({
-                "first_high": active[0],
-                "last_high": active[-1],
-                "drop": waypoint,
-                "maximum": max(active, key=lambda w: w.get("vws") or -1),
-            })
+            close(waypoint)
             active = []
     if active:
-        events.append({
-            "first_high": active[0],
-            "last_high": active[-1],
-            "drop": None,
-            "maximum": max(active, key=lambda w: w.get("vws") or -1),
-        })
+        close(None)
     return events
+
+
+def vws_event_finding(flight: dict[str, Any], index: int, event: dict[str, Any]) -> dict[str, Any]:
+    """One VWS event finding. Every waypoint at the event's maximum is named (item #9, 24 Oct 2026)."""
+    end_wp = event["drop"] or event["last_high"]
+    maximum = event["maximum"]
+    maxima = event.get("maxima") or [maximum]
+    return finding(
+        "vws",
+        "warning",
+        f"VWS event {index}",
+        f"ACTM {format_actm(event['first_high']['actm_minutes'])}-"
+        f"{format_actm(end_wp['actm_minutes'])}, maximum {maximum['vws']:03d}.",
+        [
+            f"First qualifying waypoint {event['first_high']['name']}.",
+            f"Last qualifying waypoint {event['last_high']['name']}.",
+            "Maximum at " + "; ".join(
+                f"{point['name']}, ACTM {format_actm(point['actm_minutes'])}" for point in maxima
+            ) + ".",
+            "Threshold is strictly greater than 4.",
+        ],
+        {
+            "start_actm_minutes": event["first_high"]["actm_minutes"],
+            "source_references": [
+                _cfp_source_reference(
+                    flight,
+                    [
+                        waypoint.get("source_page")
+                        for waypoint in (
+                            event.get("first_high"),
+                            event.get("last_high"),
+                            *maxima,
+                            event.get("drop"),
+                        )
+                        if waypoint
+                    ],
+                    "Route wind data",
+                )
+            ],
+        },
+    )
 
 
 def _subsequence(sequence: list[str], candidate: list[str]) -> bool:
@@ -1323,7 +2415,7 @@ def effectivity_conflict(flight: dict[str, Any]) -> dict[str, Any] | None:
         for value in profile.get("effectivity", [])
         if value
     })
-    # Shown to a human, so the tail is displayed as the CFP wrote it when that
+    # Shown to a human, so the tail is displayed as the OFP wrote it when that
     # already carries a separator. normalized_registration only knows how to
     # punctuate one national format and would flatten the others.
     stated = str(registration or "").strip().upper()
@@ -1447,6 +2539,10 @@ def match_profiles(
                     "uncovered_edge_count": len(uncovered),
                     "start_index": item["start_index"],
                     "end_index": item["end_index"],
+                    # Route edges (index i = leg i -> i+1) of this window the
+                    # chart covers; a single-point window uses its own index.
+                    "covered_edges": sorted(item["covered_edges"]),
+                    "window_edges": sorted(required_edges),
                 }
             )
 
@@ -1488,6 +2584,182 @@ def match_profiles(
 
 
 
+def _is_route_point(waypoint: dict[str, Any]) -> bool:
+    """A filed waypoint, not an FIR-boundary annotation row."""
+    name = str(waypoint.get("name") or "")
+    return bool(name) and not name.startswith("-")
+
+
+def _edge_runs(edges: Any) -> list[tuple[int, int]]:
+    """Contiguous route-edge runs as (from_index, to_index) waypoint pairs."""
+    runs: list[tuple[int, int]] = []
+    for edge in sorted(set(edges)):
+        if runs and runs[-1][1] == edge:
+            runs[-1] = (runs[-1][0], edge + 1)
+        else:
+            runs.append((edge, edge + 1))
+    return runs
+
+
+def _window_label(waypoints: list[dict[str, Any]], event: dict[str, Any]) -> str:
+    first = _route_waypoint_name(event["first_high"])
+    last = _route_waypoint_name(event["last_high"])
+    return first if first == last else f"{first}-{last}"
+
+
+def _leg_labels(
+    waypoints: list[dict[str, Any]],
+    event: dict[str, Any],
+    edges: Any,
+    *,
+    via: bool = False,
+) -> list[str]:
+    """Name route legs by their filed end points (``REBLO-EDATA``).
+
+    A single-point window is named by its point. ``via`` lists every filed
+    waypoint along the run (FIR-boundary rows are not waypoints).
+    """
+    if event["first_high"] is event["last_high"]:
+        return [_route_waypoint_name(event["first_high"])] if edges else []
+    labels: list[str] = []
+    for start, end in _edge_runs(edges):
+        if via:
+            labels.append("-".join(
+                _route_waypoint_name(waypoint)
+                for waypoint in waypoints[start : end + 1]
+                if _is_route_point(waypoint)
+            ))
+        else:
+            labels.append(
+                f"{_route_waypoint_name(waypoints[start])}-"
+                f"{_route_waypoint_name(waypoints[end])}"
+            )
+    return labels
+
+
+def _join_words(values: list[str]) -> str:
+    if len(values) <= 1:
+        return "".join(values)
+    return ", ".join(values[:-1]) + " and " + values[-1]
+
+
+def issue_profile_charts(
+    flight: dict[str, Any],
+    terrain_events: list[dict[str, Any]],
+    matches: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Group per-window matches into charts issued once per flight.
+
+    ``match_profiles`` selects, window by window, the charts that cover each
+    terrain window's legs. The issued unit is the chart: one chart that
+    protects two separate windows is one chart naming both windows and the
+    legs it covers in each (David, 24 Oct 2026: "one chart over REBLO is one
+    chart"). A chart that covers only part of a window is still issued, for
+    exactly the legs it covers; the legs no selected chart covers are named
+    per window so no surface can read the window as fully covered.
+
+    Returns the issued charts in route order and, per terrain window, its
+    coverage: the legs each chart covers and the legs no indexed chart covers.
+    """
+    waypoints = flight["route_waypoints"]
+    windows: dict[str, dict[str, Any]] = {}
+    for event in terrain_events:
+        start = waypoints.index(event["first_high"])
+        end = waypoints.index(event["last_high"])
+        required = set(range(start, end)) or {start}
+        windows[event["terrain_event_id"]] = {
+            "event": event,
+            "label": _window_label(waypoints, event),
+            "required": required,
+            "covered": set(),
+            "charts": [],
+        }
+    for match in matches:
+        window = windows.get(match["terrain_event_id"])
+        if window is None:
+            continue
+        covered = set(match.get("covered_edges") or ()) & window["required"]
+        window["covered"] |= covered
+        window["charts"].append((str(match["profile"].get("chart") or ""), covered))
+    for window in windows.values():
+        uncovered = window["required"] - window["covered"]
+        window["complete"] = not uncovered
+        window["uncovered_legs"] = _leg_labels(waypoints, window["event"], uncovered)
+        window["uncovered_via"] = _leg_labels(
+            waypoints, window["event"], uncovered, via=True,
+        )
+
+    issues: dict[str, dict[str, Any]] = {}
+    for match in matches:
+        chart = str(match["profile"].get("chart") or "")
+        issue = issues.setdefault(chart, {"chart": chart, "profile": match["profile"], "matches": []})
+        issue["matches"].append(match)
+    issued: list[dict[str, Any]] = []
+    for issue in issues.values():
+        first = issue["matches"][0]
+        coverage: list[dict[str, Any]] = []
+        uncovered_legs: list[str] = []
+        for match in issue["matches"]:
+            window = windows[match["terrain_event_id"]]
+            if any(row["terrain_event_id"] == match["terrain_event_id"] for row in coverage):
+                continue
+            edges = set(match.get("covered_edges") or ()) & window["required"]
+            coverage.append({
+                "terrain_event_id": match["terrain_event_id"],
+                "window": window["label"],
+                "covered_legs": _leg_labels(waypoints, window["event"], edges),
+                "window_complete": window["complete"],
+            })
+            uncovered_legs.extend(
+                leg for leg in window["uncovered_legs"] if leg not in uncovered_legs
+            )
+        whole_window = (
+            len(coverage) == 1
+            and set(first.get("covered_edges") or ()) >= windows[first["terrain_event_id"]]["required"]
+        )
+        start_index = min(match["start_index"] for match in issue["matches"])
+        end_index = max(match["end_index"] for match in issue["matches"])
+        issued.append({
+            **issue,
+            "event": first["event"],
+            "events": [windows[row["terrain_event_id"]]["event"] for row in coverage],
+            "terrain_event_id": first["terrain_event_id"],
+            "terrain_event_ids": [row["terrain_event_id"] for row in coverage],
+            "window_coverage": coverage,
+            "uncovered_legs": uncovered_legs,
+            "coverage_complete": all(row["window_complete"] for row in coverage),
+            # One chart covering one whole window: the published one-line
+            # proposal already says everything; nothing more is printed.
+            "covers_one_whole_window": whole_window,
+            "start_index": start_index,
+            "end_index": end_index,
+            "route_start": _route_waypoint_name(waypoints[start_index]),
+            "route_end": _route_waypoint_name(waypoints[end_index]),
+            "airways": first["airways"],
+            "match_class": first.get("match_class", "published-route"),
+            "direction": first["direction"],
+        })
+    return issued, windows
+
+
+def chart_coverage_statement(issue: dict[str, Any]) -> str:
+    """``Covers REBLO-EDATA of window TBN-EDATA, and RASAM.`` style statement."""
+    parts = []
+    for row in issue["window_coverage"]:
+        legs = _join_words(row["covered_legs"])
+        parts.append(legs if legs == row["window"] else f"{legs} of window {row['window']}")
+    # A serial comma only where a part already names its window.
+    last_join = ", and " if any(" of window " in part for part in parts) else " and "
+    statement = "Covers " + (
+        parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + last_join + parts[-1]
+    )
+    if issue["uncovered_legs"]:
+        legs = _join_words(issue["uncovered_legs"])
+        verb = "is" if len(issue["uncovered_legs"]) == 1 else "are"
+        statement += f"; {legs} {verb} not covered by any indexed chart"
+    return statement + "."
+
+
 def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     findings: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -1499,7 +2771,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     findings.append(finding(
         "page1",
         "information",
-        "CFP Page 1 organised control summary",
+        "OFP Page 1 organised control summary",
         f"{flight['flight_number']} {flight['departure']}-{flight['destination']}",
         [
             f"{flight['departure']}/{flight.get('departure_runway') or '-'} to "
@@ -1540,7 +2812,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         # The allocation itself belongs in the summary, not only in the evidence
         # list: the reports render a finding's summary line, so a bare delta left
         # the crossing time, level and CTOT out of the printed brief entirely.
-        # Every value here is read from the CFP or computed from it.
+        # Every value here is read from the OFP or computed from it.
         findings.append(finding(
             "bobcat",
             "critical" if difference not in (None, 0) else "warning" if difference is None else "information",
@@ -1554,12 +2826,12 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 else (
                     f"{allocation['waypoint']} FL{allocation['flight_level']}: "
                     f"allocated CTOT {ctot:%H%MZ}, CTO {cto:%H%MZ}; "
-                    "CFP waypoint ACTM not found, so no crossing time is computed."
+                    "OFP waypoint ACTM not found, so no crossing time is computed."
                 )
             ),
             [
                 f"Allocation CTOT {ctot:%H%MZ}; CTO {cto:%H%MZ}; FL{allocation['flight_level']}.",
-                f"CFP waypoint ACTM {format_actm(waypoint['actm_minutes']) if waypoint else 'not found'}.",
+                f"OFP waypoint ACTM {format_actm(waypoint['actm_minutes']) if waypoint else 'not found'}.",
                 "Treat the allocated CTO as controlling and recheck if take-off, route, level or speed changes.",
             ],
             {
@@ -1578,25 +2850,41 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         ))
 
     for item in flight["deferred_items"]:
-        if item["item_type"] in {"UNCLASSIFIED", "IFEDDL", "IN"}:
-            # The CFP's own vocabulary names the block (boss, 21 Aug 2026:
+        if item["item_type"] in {"UNCLASSIFIED", "IFEDDL", "IN", "EN"}:
+            # The OFP's own vocabulary names the block (boss, 21 Aug 2026:
             # "UNCLASSIFIED" never reaches the pilot). The exact printed text
             # is the whole held fact; no remedy or instruction is inferred.
-            declaration = str(item.get("source_declaration") or "DEFERRED DECLARATION")
+            declaration = deferred_source_declaration_for_display(
+                item.get("source_declaration")
+            ) or " ".join(
+                value
+                for value in (
+                    deferred_item_type_for_display(item.get("item_type")),
+                    deferred_reference_for_display(item.get("reference")),
+                )
+                if value
+            )
             kind_sentence = {
                 "IFEDDL": (
-                    "IFE deferred defect list declaration carried verbatim from CFP page 1; "
+                    "IFE deferred defect list declaration carried verbatim from OFP page 1; "
                     "no remedy or dispatch instruction is inferred."
                 ),
                 "IN": (
-                    "Engineering information notice carried verbatim from CFP page 1; "
+                    "Engineering information notice carried verbatim from OFP page 1; "
+                    "no remedy or dispatch instruction is inferred beyond the printed text."
+                ),
+                # "GG EN A35MEN-21-28871" (SQ882 10 Sep 2026). An engineering
+                # notice is not a configuration deviation: it has no CDL
+                # reference to be "missing".
+                "EN": (
+                    "Engineering notice carried verbatim from OFP page 1; "
                     "no remedy or dispatch instruction is inferred beyond the printed text."
                 ),
             }.get(item["item_type"], (
-                "Unclassified CFP deferred declaration; acronym meaning is not inferred "
-                "and it is not classified as MEL, CDL or CDDL."
+                "OFP deferred declaration is unresolved; acronym meaning is not "
+                "inferred and no MEL, CDL or CDDL classification is asserted."
             ))
-            details = [item.get("description") or "No following CFP text parsed."]
+            details = [item.get("description") or "No following OFP text parsed."]
             if item.get("company_remark"):
                 details.append(item["company_remark"])
             findings.append(finding(
@@ -1607,6 +2895,16 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 details,
                 {
                     "classification": item["item_type"].lower(),
+                    "deferred_entry_id": item.get("deferred_entry_id"),
+                    "classification_status": item.get("classification_status"),
+                    "classification_reason": item.get("classification_reason"),
+                    "governed_match_status": item.get("governed_match_status"),
+                    "source_identifier": item.get("source_identifier"),
+                    "source_group_tokens": list(item.get("source_group_tokens") or []),
+                    "source_page": item.get("source_page"),
+                    "source_line_start": item.get("source_line_start"),
+                    "source_line_end": item.get("source_line_end"),
+                    "source_lines": list(item.get("source_lines") or []),
                     "source_references": [
                         _cfp_source_reference(
                             flight,
@@ -1632,7 +2930,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                     "mel",
                     "warning",
                     f"MEL {item['reference']} - {item['description']}",
-                    "Candidate local-library match; verify the current approved MEL before use.",
+                    "Candidate local-library match; not the approved MEL.",
                     details,
                     {
                         "reference_library_version": REFERENCE_LIBRARY_METADATA["version"],
@@ -1855,8 +3153,14 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     if official_weather_gap is not None:
         findings.append(official_weather_gap)
         warnings.append(
-            "Official public METAR/TAF coverage is incomplete; review current operational weather."
+            "Official public METAR/TAF coverage is incomplete."
         )
+
+    for unread_row in flight.get("alternates_unread") or []:
+        if isinstance(unread_row, dict):
+            unread_finding, unread_warning = _alternate_row_not_read_finding(unread_row)
+            findings.append(unread_finding)
+            warnings.append(unread_warning)
 
     alternate_airports = {a["airport"] for a in flight["alternates"]}
     fuel_enroute_airports = {
@@ -1978,10 +3282,14 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "phase": phase,
             "location": location,
             "utc_window": window_label,
+            "window_start": window_start,
+            "window_end": window_end,
             "mechanisms": [],
             "taf_summaries": [],
+            "taf_sources": [],
             "taf_evidence_refs": [],
             "metar_summaries": [],
+            "metar_sources": [],
             "metar_evidence_refs": [],
             "fallback_evidence_refs": [],
             "record_types": [],
@@ -1994,9 +3302,27 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             group["source_references"].append(source_reference)
         if taf_summary:
             group["taf_summaries"].append(taf_summary)
+            group["taf_sources"].append({
+                **source_reference,
+                "raw_text": raw_text,
+                "issued_at_utc": taf_summary.get("issued_at_utc") or record.get("issue_time_utc"),
+                "valid_from_utc": taf_summary.get("valid_from_utc"),
+                "valid_to_utc": taf_summary.get("valid_to_utc"),
+            })
             group["taf_evidence_refs"].append(evidence_ref)
         elif metar_summary:
             group["metar_summaries"].append(metar_summary)
+            # The observation is a source like a TAF is: a station assessed
+            # from a METAR alone publishes which record it was built from
+            # (B4 fix round 1, 17 Sep 2026 - the dashboard's Weather block
+            # read "Forecast source details unavailable" for exactly this
+            # path).
+            group["metar_sources"].append({
+                **source_reference,
+                "record_type": str(record_type or "METAR").upper(),
+                "raw_text": raw_text,
+                "observed_at_utc": metar_summary.get("observed_at_utc") or record.get("observed_at_utc"),
+            })
             group["metar_evidence_refs"].append(evidence_ref)
         else:
             group["fallback_evidence_refs"].append(evidence_ref)
@@ -2030,15 +3356,18 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         )
 
     for group in weather_groups.values():
-        taf_summary = group["taf_summaries"][-1] if group["taf_summaries"] else None
+        taf_index = select_taf_for_window(group["taf_summaries"], group["window_start"], group["window_end"])
+        taf_summary = group["taf_summaries"][taf_index] if taf_index is not None else None
         if taf_summary:
             status = taf_summary["status"]
             data = {
+                "forecast_source": group["taf_sources"][taf_index],
                 "phase": group["phase"],
                 "location": group["location"],
                 "utc_window": group["utc_window"],
                 "mechanism": taf_summary["mechanism"],
                 "applicable_conditions": taf_summary["applicable_conditions"],
+                "applicable_groups": list(taf_summary.get("applicable_groups") or []),
                 "timing": taf_summary["timing"],
                 "window_status": status,
                 "window_status_text": taf_summary["window_status_text"],
@@ -2063,22 +3392,26 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             if status == "no_significant_overlap":
                 data["flight_effect"] = (
                     "No adverse flight effect is indicated for this window by the "
-                    "CFP TAF; confirm the latest operational weather."
+                    "selected TAF."
                 )
             elif status == "review_required":
                 data["flight_effect"] = (
-                    "Forecast coverage is incomplete; review the latest operational "
-                    "weather for this flight phase."
+                    "Forecast coverage is incomplete for this flight phase."
                 )
             severity = "information" if status == "no_significant_overlap" else "warning"
         elif group["metar_summaries"]:
             metar_summary = group["metar_summaries"][-1]
             data = {
+                # The basis of a METAR-only assessment is published like a
+                # TAF source; the publishing surfaces name it as an
+                # observation, never as a forecast with a validity.
+                "forecast_source": group["metar_sources"][-1],
                 "phase": group["phase"],
                 "location": group["location"],
                 "utc_window": group["utc_window"],
                 "mechanism": metar_summary["mechanism"],
                 "applicable_conditions": metar_summary["applicable_conditions"],
+                "applicable_groups": list(metar_summary.get("applicable_groups") or []),
                 "timing": metar_summary["timing"],
                 "window_status": metar_summary["status"],
                 "window_status_text": metar_summary["window_status_text"],
@@ -2089,14 +3422,12 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             }
             if metar_summary["status"] == "outside_window":
                 data["flight_effect"] = (
-                    "This observation is not used to characterize the later flight "
-                    "window; review the applicable forecast and latest observation."
+                    "This observation is not used to characterize the later flight window."
                 )
                 severity = "unknown"
             elif metar_summary["status"] == "no_significant_observation":
                 data["flight_effect"] = (
-                    "No adverse effect is indicated by this nearby observation; "
-                    "confirm the applicable forecast and latest operational weather."
+                    "No adverse effect is indicated by this nearby observation."
                 )
                 severity = "information"
             else:
@@ -2154,28 +3485,27 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     applicable_notams: list[dict[str, Any]] = []
     for record in flight["notams"]:
         location = record["location"]
-        role, window_start, window_end = _notam_role_window(
-            flight,
-            location,
-            alternate_airports,
-            edto_periods,
-            fuel_enroute_airports,
-            str(record.get("source_role") or "") or None,
-        )
         valid_from = datetime.fromisoformat(record["valid_from_utc"])
         valid_to = (
             datetime.fromisoformat(record["valid_to_utc"])
             if record.get("valid_to_utc")
             else datetime.max.replace(tzinfo=timezone.utc)
         )
+        role_applicability = [
+            _assess_notam_window(record, flight, role, start, end, valid_from, valid_to)
+            for role, start, end in _notam_role_windows(
+                flight, location, alternate_airports, fuel_enroute_airports,
+                str(record.get("source_role") or ""),
+            )
+        ]
+        relevant = [row for row in role_applicability if row["applicability"] in {"active", "review"}]
+        assessed = next((row for row in relevant if row["applicability"] == "active"), relevant[0] if relevant else role_applicability[0])
+        role = assessed["role"]
+        window_start = datetime.fromisoformat(assessed["window_start_utc"])
+        window_end = datetime.fromisoformat(assessed["window_end_utc"])
+        reference_at = datetime.fromisoformat(assessed["referenceAt"])
+        state_at_reference, minutes_delta = assessed["stateAtReference"], assessed["minutesDelta"]
         evidence_ref = f"notam:{len(notam_audit_records)}"
-        reference_at = _notam_reference_at(flight, role, window_start)
-        state_at_reference, minutes_delta = _notam_reference_state(
-            record,
-            reference_at,
-            valid_from,
-            valid_to,
-        )
         audit_record = {
             "evidence_ref": evidence_ref,
             "source": "uploaded_cfp",
@@ -2194,47 +3524,42 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "stateAtReference": state_at_reference,
             "referenceAt": reference_at.isoformat(),
             "minutesDelta": minutes_delta,
+            "referenceInterval": assessed.get("referenceInterval"),
             "pilot_status": "pending",
         }
         notam_audit_records.append(audit_record)
-        applicability = "active"
-        validity_status = "overlaps_flight_window"
-        if record.get("validity_review"):
-            applicability = "review"
-            validity_status = "review_required"
-            warnings.append(f"{record['notam_id']}: B/C validity could not be parsed; manual review required.")
-        elif not _intervals_overlap(valid_from, valid_to, window_start, window_end):
-            audit_record["pilot_status"] = "outside_time_window"
+        audit_record["role_applicability"] = role_applicability
+        audit_record["validity_status"] = assessed["validity_status"]
+        audit_record["schedule_status"] = assessed["schedule_status"]
+        if not relevant:
+            audit_record["pilot_status"] = assessed["applicability"]
             continue
+        applicability = assessed["applicability"]
+        validity_status = assessed["validity_status"]
+        schedule_status = assessed["schedule_status"]
         schedule = record.get("schedule")
-        schedule_status = "not_applicable"
-        if schedule:
-            schedule_active = _schedule_overlaps(schedule, window_start, window_end)
-            if schedule_active is False:
-                audit_record["pilot_status"] = "outside_schedule"
-                continue
-            if schedule_active is None:
-                applicability = "review"
-                schedule_status = "review_required"
-                warnings.append(f"{record['notam_id']}: D schedule could not be evaluated; manual review required.")
-            else:
-                schedule_status = "overlaps_flight_window"
-        elif record.get("schedule_review"):
-            applicability = "review"
-            schedule_status = "review_required"
-            warnings.append(f"{record['notam_id']}: schedule language could not be structured; manual review required.")
-        audit_record["validity_status"] = validity_status
-        audit_record["schedule_status"] = schedule_status
+        if applicability == "review":
+            warnings.append(f"{record['notam_id']}: B/C validity or schedule could not be resolved.")
+        approach_affected = _instrument_approach_affected(
+            str(record["text"]),
+            str(record["category"]),
+        )
+        approach_condition_review = bool(
+            approach_affected
+            and _conditional_instrument_approach_impact(str(record["text"]))
+        )
         pertinence_rank, pertinence_kind = notam_pertinence(
             str(record["text"]),
             str(record["category"]),
         )
         severity = (
-            "information"
+            "critical"
+            if approach_affected
+            else "information"
             if int(record.get("priority_score") or 0) == 0
             and applicability == "active"
             else "critical"
-            if role in {"departure", "destination"} and pertinence_rank <= 2
+            if role in {"departure", "destination"} and pertinence_rank <= 1
             else "warning"
         )
         operational_details = taxiway_operational_details(
@@ -2249,7 +3574,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         details = [
             *([f"Schedule: {schedule}."] if schedule else []),
             f"Applicable {role} UTC window: {_utc_window_label(window_start, window_end)}.",
-            *(["Applicability requires manual review."] if applicability == "review" else []),
+            *(["Applicability not resolved."] if applicability == "review" else []),
         ]
         applicable_notams.append(finding(
             "notam",
@@ -2260,10 +3585,12 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 pertinence_kind,
                 role,
                 applicability,
+                category=str(record["category"]),
             ),
             details,
             {
                 "role": role,
+                "role_applicability": role_applicability,
                 "source_role": record.get("source_role"),
                 "location": location,
                 "notam_id": record["notam_id"],
@@ -2271,6 +3598,8 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "priority_score": record.get("priority_score", 0),
                 "pertinence_rank": pertinence_rank,
                 "pertinence_kind": pertinence_kind,
+                "approach_affected": approach_affected,
+                "approach_condition_review": approach_condition_review,
                 "applicability": applicability,
                 "validity_status": validity_status,
                 "schedule_status": schedule_status,
@@ -2283,6 +3612,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 "stateAtReference": state_at_reference,
                 "referenceAt": reference_at.isoformat(),
                 "minutesDelta": minutes_delta,
+                "referenceInterval": assessed.get("referenceInterval"),
                 "raw_text": record["text"],
                 "operational_details": operational_details,
                 **(
@@ -2300,6 +3630,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                 ],
             },
         ))
+
+    # One assessment per notice (production audit, 19 Sep 2026). Where a notice
+    # prints dated runway-closure regimes that can be evaluated at its own
+    # reference time, that statement IS its summary - the same function
+    # publication applies to an analysis stored by an older build, so a fresh
+    # pack and a saved one cannot describe the notice differently.
+    applicable_notams = reconcile_runway_closure_findings(applicable_notams, flight)
 
     unique_applicable_notams: list[dict[str, Any]] = []
     priority_view_notams: list[dict[str, Any]] = []
@@ -2389,11 +3726,14 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         findings.append(finding(
             "communications",
             "unknown",
-            "FIR communication review required",
-            "Current approved communication procedures are unavailable.",
+            "No approved FIR communication reference",
+            "No approved communications reference library is held; early-contact instructions are read from the OFP's own FIR notices.",
             [
-                f"CFP route crosses {len(boundary_names)} FIR boundary or boundaries.",
-                "Review current early-contact, frequency and reporting requirements.",
+                f"OFP route crosses {len(boundary_names)} FIR boundary or boundaries.",
+                # ATC-ABSENCE-WORDING (4 Oct 2026): an unapproved library is not the absence of the source's own values.
+                "Early ATC / FIR calls lists the instructions identified in the OFP's FIR notices with their printed "
+                "frequencies and lead times; the full FIR NOTAM source records keep the other notices. Lead times and "
+                "frequencies are not inferred from crossing times.",
             ],
             {
                 "reference_status": REFERENCE_LIBRARY_METADATA["status"],
@@ -2458,40 +3798,7 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         ))
 
     for index, event in enumerate(detect_vws_events(flight["route_waypoints"]), start=1):
-        end_wp = event["drop"] or event["last_high"]
-        maximum = event["maximum"]
-        findings.append(finding(
-            "vws",
-            "warning",
-            f"VWS event {index}",
-            f"ACTM {format_actm(event['first_high']['actm_minutes'])}-"
-            f"{format_actm(end_wp['actm_minutes'])}, maximum {maximum['vws']:03d}.",
-            [
-                f"First qualifying waypoint {event['first_high']['name']}.",
-                f"Last qualifying waypoint {event['last_high']['name']}.",
-                f"Maximum at {maximum['name']}, ACTM {format_actm(maximum['actm_minutes'])}.",
-                "Threshold is strictly greater than 4.",
-            ],
-            {
-                "start_actm_minutes": event["first_high"]["actm_minutes"],
-                "source_references": [
-                    _cfp_source_reference(
-                        flight,
-                        [
-                            waypoint.get("source_page")
-                            for waypoint in (
-                                event.get("first_high"),
-                                event.get("last_high"),
-                                event.get("maximum"),
-                                event.get("drop"),
-                            )
-                            if waypoint
-                        ],
-                        "Route wind data",
-                    )
-                ],
-            },
-        ))
+        findings.append(vws_event_finding(flight, index, event))
 
     matches = sorted(
         match_profiles(flight, terrain_events),
@@ -2500,11 +3807,16 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     depress_source_loaded = (
         DEPRESS_LIBRARY_METADATA.get("status") == "controlled-index-loaded"
     )
-    for index, match in enumerate(matches, start=1):
-        event = match["event"]
-        profile = match["profile"]
-        route_start = match["route_start"]
-        route_end = match["route_end"]
+    # The issued unit is the chart, once per flight (David, 24 Oct 2026).
+    issued_charts, window_coverage = issue_profile_charts(
+        flight, terrain_events, matches,
+    )
+    for index, issue in enumerate(issued_charts, start=1):
+        event = issue["event"]
+        events_covered = issue["events"]
+        profile = issue["profile"]
+        route_start = issue["route_start"]
+        route_end = issue["route_end"]
         critical = profile["critical"]
         critical_aliases = _profile_aliases(profile, "critical")
         critical_wp = next(
@@ -2515,18 +3827,23 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             ),
             None,
         )
-        maximum = event["maximum"]
-        end_wp = event["drop"] or event["last_high"]
+        maximum = max(
+            (item["maximum"] for item in events_covered),
+            key=lambda point: point.get("msa_hundreds_ft") or -1,
+        )
         details = [
-            f"High-MSA event ACTM {format_actm(event['first_high']['actm_minutes'])}-"
-            f"{format_actm(end_wp['actm_minutes'])}.",
+            f"High-MSA event ACTM {format_actm(item['first_high']['actm_minutes'])}-"
+            f"{format_actm((item['drop'] or item['last_high'])['actm_minutes'])}."
+            for item in events_covered
+        ]
+        details += [
             f"Maximum MSA {maximum['msa_hundreds_ft']}* "
             f"({maximum['msa_hundreds_ft'] * 100:,} ft) at {maximum['name']}.",
             f"Published chart route {profile['from']}-{profile['to']}; "
             f"airways {', '.join(profile['airways']) or 'none listed'}.",
             f"Critical point {critical}"
             + (
-                f", CFP ACTM {format_actm(critical_wp['actm_minutes'])}."
+                f", OFP ACTM {format_actm(critical_wp['actm_minutes'])}."
                 if critical_wp
                 else "; ACTM not found."
             ),
@@ -2535,10 +3852,10 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         ]
         if profile.get("chart_page"):
             details.append(f"Controlled chart page {profile['chart_page']}.")
-        if not match["coverage_complete"]:
-            details.append(
-                f"Coverage incomplete: {match['uncovered_edge_count']} event route leg(s) remain unmatched."
-            )
+        coverage_statement = chart_coverage_statement(issue)
+        states_coverage = not issue["covers_one_whole_window"]
+        if states_coverage:
+            details.append(f"Coverage: {coverage_statement}")
         if not depress_source_loaded:
             details.append(
                 "Controlled profile index is not mounted; this repository-safe "
@@ -2548,29 +3865,38 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             "depressurisation",
             (
                 "warning"
-                if match["coverage_complete"] and depress_source_loaded
+                if issue["coverage_complete"] and depress_source_loaded
                 else "unknown"
             ),
             f"Profile {index} - {route_start} to {route_end} "
-            f"({' / '.join(match['airways']) or 'airway review required'})",
+            f"({' / '.join(issue['airways']) or 'airway not identified'})",
             (
-                f"Proposed depressurisation chart {profile['chart']}; "
-                f"critical point {critical}."
+                (
+                    f"Proposed depressurisation chart {profile['chart']}; "
+                    f"critical point {critical}."
+                )
+                + (f" {coverage_statement}" if states_coverage else "")
                 if depress_source_loaded
                 else (
                     f"Candidate chart {profile['chart']}; controlled profile "
-                    "index unavailable - review required."
+                    "index unavailable."
                 )
             ),
             details,
             {
                 "chart_number": profile["chart"],
                 "critical_point": critical,
-                "terrain_event_id": match["terrain_event_id"],
+                "terrain_event_id": issue["terrain_event_id"],
+                # Every terrain window this one chart protects, and the legs
+                # it covers in each (one chart, issued once per flight).
+                "terrain_event_ids": issue["terrain_event_ids"],
+                "window_coverage": issue["window_coverage"],
+                "uncovered_legs": issue["uncovered_legs"],
+                "coverage_statement": coverage_statement,
                 "start_actm_minutes": event["first_high"]["actm_minutes"],
                 "route_start": route_start,
                 "route_end": route_end,
-                "coverage_complete": match["coverage_complete"],
+                "coverage_complete": issue["coverage_complete"],
                 "controlled_issue_date": DEPRESS_LIBRARY_METADATA.get("issue_date"),
                 "reference_status": DEPRESS_LIBRARY_METADATA.get("status"),
                 "chart_page": profile.get("chart_page"),
@@ -2579,12 +3905,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
                         flight,
                         [
                             waypoint.get("source_page")
+                            for item in events_covered
                             for waypoint in (
-                                event.get("preceding"),
-                                event.get("first_high"),
-                                event.get("last_high"),
-                                event.get("maximum"),
-                                event.get("drop"),
+                                item.get("preceding"),
+                                item.get("first_high"),
+                                item.get("last_high"),
+                                item.get("maximum"),
+                                item.get("drop"),
                             )
                             if waypoint
                         ],
@@ -2606,19 +3933,13 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
             },
         ))
 
-    matches_by_event: dict[str, list[dict[str, Any]]] = {}
-    for match in matches:
-        matches_by_event.setdefault(match["terrain_event_id"], []).append(match)
     coverage_scope = str(
         DEPRESS_LIBRARY_METADATA.get("coverage_scope") or "not stated"
     )
     for event in terrain_events:
         event_id = event["terrain_event_id"]
-        event_matches = matches_by_event.get(event_id, [])
-        exact_profile_confirmed = bool(
-            depress_source_loaded
-            and any(match["coverage_complete"] for match in event_matches)
-        )
+        window = window_coverage[event_id]
+        exact_profile_confirmed = bool(depress_source_loaded and window["complete"])
         if exact_profile_confirmed:
             continue
 
@@ -2627,97 +3948,141 @@ def analyse(flight: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
         threshold_drop = event.get("drop")
         context_start = event.get("preceding") or first_high
         event_end = threshold_drop or last_high
-        candidate_charts = sorted(
-            {
-                str(match["profile"].get("chart") or "")
-                for match in event_matches
-                if match["profile"].get("chart")
-            }
-        )
+        candidate_charts = sorted({chart for chart, _ in window["charts"] if chart})
+        # A governed chart issued for part of this window: name the legs it
+        # covers and the legs no indexed chart covers (never "covered").
+        partially_issued = bool(depress_source_loaded and window["charts"])
         reference_status = "partial" if depress_source_loaded else "unavailable"
-        summary = (
-            "No exact profile confirmed from controlled partial issue - "
-            "manual review required."
-            if depress_source_loaded and coverage_scope == "partial_issue"
-            else (
-                "No exact profile confirmed from controlled index - "
-                "manual review required."
-                if depress_source_loaded
+        if partially_issued:
+            covered_by = [
+                {
+                    "chart": chart,
+                    "legs": _leg_labels(flight["route_waypoints"], event, edges),
+                }
+                for chart, edges in window["charts"]
+            ]
+            uncovered = window["uncovered_legs"]
+            summary = (
+                "; ".join(
+                    f"{'Chart' if position == 0 else 'chart'} {row['chart']} "
+                    f"covers {_join_words(row['legs'])}"
+                    for position, row in enumerate(covered_by)
+                )
+                + f"; {_join_words(uncovered)} "
+                + ("is" if len(uncovered) == 1 else "are")
+                + " not covered by any indexed chart."
+            )
+        else:
+            summary = (
+                "No exact profile confirmed from controlled partial issue."
+                if depress_source_loaded and coverage_scope == "partial_issue"
                 else (
-                    "No exact profile confirmed because the controlled profile "
-                    "index is unavailable - manual review required."
+                    "No exact profile confirmed from controlled index."
+                    if depress_source_loaded
+                    else (
+                        "No exact profile confirmed because the controlled profile "
+                        "index is unavailable."
+                    )
                 )
             )
-        )
         details = [
             f"High-MSA event ACTM {format_actm(first_high['actm_minutes'])}-"
             f"{format_actm(event_end['actm_minutes'])}.",
             f"Validated exposure boundary {first_high['name']}-{last_high['name']}; "
             f"profile matching context begins at {context_start['name']}.",
         ]
-        if candidate_charts:
+        if partially_issued:
+            details.extend(
+                f"Issued chart {row['chart']} covers {_join_words(row['legs'])}."
+                for row in covered_by
+            )
             details.append(
-                "Candidate chart coverage is incomplete: "
-                f"{', '.join(candidate_charts)}."
+                "Not covered by any indexed chart: "
+                f"{_join_words(window['uncovered_via'])}."
             )
-        details.append(
-            (
+            details.append(
                 f"Controlled profile coverage scope is {coverage_scope}; no "
-                "complete endpoint, airway and effectivity match was found."
-                if depress_source_loaded
-                else "The approved controlled profile index is not mounted."
+                "indexed chart covers the remaining legs, and no nearby or "
+                "generic chart is substituted."
             )
-        )
+        else:
+            if candidate_charts:
+                details.append(
+                    "Candidate chart coverage is incomplete: "
+                    f"{', '.join(candidate_charts)}."
+                )
+            details.append(
+                (
+                    f"Controlled profile coverage scope is {coverage_scope}; no "
+                    "complete endpoint, airway and effectivity match was found."
+                    if depress_source_loaded
+                    else "The approved controlled profile index is not mounted."
+                )
+            )
+        data = {
+            "terrain_event_id": event_id,
+            "confirmed": False,
+            "coverage_complete": False,
+            "reference_status": reference_status,
+            "controlled_library_status": DEPRESS_LIBRARY_METADATA.get("status"),
+            "controlled_index_loaded": depress_source_loaded,
+            "coverage_scope": coverage_scope,
+            "candidate_chart_numbers": candidate_charts,
+        }
+        if partially_issued:
+            data.update({
+                "coverage_state": "partial",
+                "issued_chart_numbers": [row["chart"] for row in covered_by],
+                "covered_legs": covered_by,
+                "uncovered_legs": window["uncovered_legs"],
+            })
+        data.update({
+            "start_actm_minutes": first_high["actm_minutes"],
+            "end_actm_minutes": event_end["actm_minutes"],
+            "profile_context_start_waypoint": context_start["name"],
+            "first_high_waypoint": first_high["name"],
+            "last_high_waypoint": last_high["name"],
+            "threshold_drop_waypoint": (
+                threshold_drop["name"] if threshold_drop else None
+            ),
+            "source_references": [
+                _cfp_source_reference(
+                    flight,
+                    [
+                        waypoint.get("source_page")
+                        for waypoint in (
+                            event.get("preceding"),
+                            first_high,
+                            last_high,
+                            event.get("maximum"),
+                            threshold_drop,
+                        )
+                        if waypoint
+                    ],
+                    "Route MSA data",
+                ),
+                {
+                    "source_type": "controlled_document",
+                    "document_title": DEPRESS_LIBRARY_METADATA.get("title"),
+                    "revision": DEPRESS_LIBRARY_METADATA.get("issue_date"),
+                    "pages": [],
+                    "section": "Depressurisation profile index",
+                    "availability_status": DEPRESS_LIBRARY_METADATA.get("status"),
+                    "coverage_scope": coverage_scope,
+                },
+            ],
+        })
         findings.append(finding(
             "depressurisation",
             "unknown",
-            f"Profile unresolved - {first_high['name']} to {last_high['name']}",
+            (
+                f"Profile coverage incomplete - {first_high['name']} to {last_high['name']}"
+                if partially_issued
+                else f"Profile unresolved - {first_high['name']} to {last_high['name']}"
+            ),
             summary,
             details,
-            {
-                "terrain_event_id": event_id,
-                "confirmed": False,
-                "coverage_complete": False,
-                "reference_status": reference_status,
-                "controlled_library_status": DEPRESS_LIBRARY_METADATA.get("status"),
-                "controlled_index_loaded": depress_source_loaded,
-                "coverage_scope": coverage_scope,
-                "candidate_chart_numbers": candidate_charts,
-                "start_actm_minutes": first_high["actm_minutes"],
-                "end_actm_minutes": event_end["actm_minutes"],
-                "profile_context_start_waypoint": context_start["name"],
-                "first_high_waypoint": first_high["name"],
-                "last_high_waypoint": last_high["name"],
-                "threshold_drop_waypoint": (
-                    threshold_drop["name"] if threshold_drop else None
-                ),
-                "source_references": [
-                    _cfp_source_reference(
-                        flight,
-                        [
-                            waypoint.get("source_page")
-                            for waypoint in (
-                                event.get("preceding"),
-                                first_high,
-                                last_high,
-                                event.get("maximum"),
-                                threshold_drop,
-                            )
-                            if waypoint
-                        ],
-                        "Route MSA data",
-                    ),
-                    {
-                        "source_type": "controlled_document",
-                        "document_title": DEPRESS_LIBRARY_METADATA.get("title"),
-                        "revision": DEPRESS_LIBRARY_METADATA.get("issue_date"),
-                        "pages": [],
-                        "section": "Depressurisation profile index",
-                        "availability_status": DEPRESS_LIBRARY_METADATA.get("status"),
-                        "coverage_scope": coverage_scope,
-                    },
-                ],
-            },
+            data,
         ))
 
     if terrain_events and not matches:

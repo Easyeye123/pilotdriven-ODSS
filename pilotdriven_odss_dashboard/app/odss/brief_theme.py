@@ -3,7 +3,7 @@
 The visual contract is the approved v1.3 reference brief set: condensed
 sans typography, deep-navy pages, a three-line flight header (date + BLOCK,
 UTC schedule, local times), per-page SOURCE chips and the
-``PILOTDRIVEN ODSS | <flight> | CFP OFP <id> | <type> <reg> | <date>``
+``PILOTDRIVEN ODSS | <flight> | OFP <id> | <type> <reg> | <date>``
 footer.
 """
 
@@ -152,6 +152,19 @@ def local_time_segment(icao: Any, utc_value: Any) -> str | None:
     return f"{label} {local.strftime('%d %b %H%M').upper()} {offset_text}"
 
 
+def local_clock_label(icao: Any, utc_value: Any) -> str | None:
+    """``0850 LT`` - the station's local clock for a UTC instant, else None.
+
+    David's page-1 SCHEDULE prints ``0050Z / 0850 LT``. The zone comes from the
+    pinned offline registry and the offset from IANA rules for the flight's
+    own date (``local_time_segment``); a station the registry does not hold
+    returns None and the caller prints "LT not held", never a guessed offset.
+    """
+    segment = local_time_segment(icao, utc_value)
+    match = re.search(r"\b\d{2} [A-Z]{3} (\d{4}) UTC", segment or "")
+    return f"{match.group(1)} LT" if match else None
+
+
 def airport_code_label(icao: Any) -> str:
     """Show the pinned IATA code beside ICAO without guessing either code."""
     code = str(icao or "").strip().upper()
@@ -205,7 +218,7 @@ def ofp_label(flight: dict[str, Any]) -> str:
 
 
 def display_flight_number(flight: dict[str, Any]) -> str:
-    """Prefer the CFP-declared operating designator (e.g. SQ352 over SIA352)."""
+    """Prefer the OFP-declared operating designator (e.g. SQ352 over SIA352)."""
     operating = str(flight.get("operating_flight_number") or "").strip()
     return operating or str(flight.get("flight_number") or "")
 
@@ -372,7 +385,7 @@ def draw_footer(
             for value in (
                 "PILOTDRIVEN",
                 display_flight_number(flight),
-                f"CFP OFP {ofp_label(flight)}",
+                f"OFP {ofp_label(flight)}",
                 (
                     f"{flight.get('aircraft_type') or ''} "
                     f"{normalized_registration(flight.get('registration'))}"

@@ -522,7 +522,7 @@ def _draw_route_detail(canvas, flight: dict[str, Any], findings: list[dict[str, 
     timing_title = (
         "ACTM / ACTUAL-ANCHORED UTC TIMELINE"
         if actual_timing_anchor(flight)
-        else "CFP ACTM TIMELINE — NO ACTUAL UTC ANCHOR"
+        else "OFP ACTM TIMELINE — NO ACTUAL UTC ANCHOR"
     )
     _draw_panel(canvas, x1, bottom, left_w, half, timing_title, timing_lines, _NAVY, False, _STYLES["detail_small"])
 
@@ -550,7 +550,7 @@ def _draw_route_detail(canvas, flight: dict[str, Any], findings: list[dict[str, 
         )
         route_status_lines = [
             (
-                "NIL EDTO - explicitly verified not applicable in the uploaded CFP."
+                "NIL EDTO - explicitly verified not applicable in the uploaded OFP."
                 if edto_status == "verified_not_applicable"
                 else "EDTO applicability is not explicitly verified - review required."
             ),
@@ -642,8 +642,8 @@ def _draw_vaa_detail(
         f"Coverage: {review.get('coverage_status') or 'unknown'}",
         f"Freshness: {review.get('freshness_status') or 'unknown'}",
         f"Snapshot SHA-256: {str(snapshot.get('raw_sha256') or 'not available')[:20]}",
-        f"CFP source page: {embedded.get('source_page') or 'not found'}",
-        f"CFP statement: {str(embedded.get('raw_excerpt') or 'not present')[:110]}",
+        f"OFP source page: {embedded.get('source_page') or 'not found'}",
+        f"OFP statement: {str(embedded.get('raw_excerpt') or 'not present')[:110]}",
         f"Source host: {source_host}",
     ]
     _draw_panel(

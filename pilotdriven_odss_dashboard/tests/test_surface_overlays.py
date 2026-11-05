@@ -4,11 +4,13 @@ import pytest
 from pydantic import ValidationError
 
 from app.odss.surface_overlays import (
+    SurfaceMappedFinding,
     SurfaceOverlayRequest,
     SurfaceReviewFinding,
     _styled_surface_overlay,
     surface_conflict_publication_label,
     surface_mark_presentation,
+    validated_airport_surface_index,
 )
 from app.odss.pertinent_brief import _surface_overlay_lines
 
@@ -20,6 +22,9 @@ from app.odss.pertinent_brief import _surface_overlay_lines
         ("closure", "begins_after_reference", "scheduled"),
         ("scheduled", "begins_after_reference", "scheduled"),
         ("equipment", "active_at_reference", "equipment"),
+        ("shortening", "active_at_reference", "shortening"),
+        ("shortening", "unknown_at_reference", "locator"),
+        ("shortening", "ended_before_reference", None),
         ("locator", "unknown_at_reference", "locator"),
         ("closure", "unknown_at_reference", "locator"),
         (None, None, "locator"),
@@ -158,10 +163,203 @@ def test_styled_surface_overlay_separates_classes_and_omits_ended_marks() -> Non
     )
 
 
+def test_runway_shortening_has_a_strict_amber_review_contract() -> None:
+    parsed = SurfaceMappedFinding.model_validate({
+        "notamNumber": "A1234/26",
+        "entityType": "runway",
+        "entityRef": "34R",
+        "featureIds": ["rwy-34r"],
+        "plainEnglish": "Declared distances changed.",
+        "evidence": "RWY 34R THR DISPLACED 300FT.",
+        "markClass": "shortening",
+        "stateAtReference": "active_at_reference",
+        "referenceAt": "2026-08-01T05:35:00+00:00",
+        "referenceInterval": {
+            "startsAt": "2026-08-01T04:00:00+00:00",
+            "endsAt": "2026-08-01T06:00:00+00:00",
+        },
+        "markers": [_marker(0)],
+    })
+    contract = {
+        "featureCollection": {
+            "type": "FeatureCollection",
+            "features": [_line_feature("rwy-34r", 0)],
+        },
+        "mapped": [parsed.model_dump(mode="json")],
+        "reviewRequired": [],
+    }
+
+    styled = _styled_surface_overlay(contract)
+    runway_style = styled["features"][0]["properties"]
+    marker_style = styled["features"][1]["properties"]
+    text = "\n".join(_surface_overlay_lines(contract, detail_limit=2))
+
+    assert runway_style["color"] == "#F59E0B"
+    assert runway_style["color"] != "#EF4444"
+    assert marker_style["label"] == "R"
+    assert (
+        "runway shortened / declared distances - verify exact distances"
+        in text.lower()
+    )
+    assert "Closed:" not in text
+
+
 def test_surface_overlay_clear_must_be_explicit() -> None:
     assert SurfaceOverlayRequest.model_validate({"overlays": []}).overlays == []
     with pytest.raises(ValidationError):
         SurfaceOverlayRequest.model_validate({})
+
+
+def _airport_index_entry(
+    icao: str = "WSSS",
+    roles: list[str] | None = None,
+    *,
+    released: bool = False,
+) -> dict:
+    notes = {
+        "status": "unavailable",
+        "availabilityStatus": "no_current_released_match",
+        "message": "AIRPORT NOTES UNAVAILABLE — REVIEW REQUIRED",
+        "releaseStatus": None,
+        "airportVersion": None,
+        "cycle": None,
+        "schemaVersion": None,
+        "objects": [],
+        "lines": [],
+        "omittedLineCount": 0,
+    }
+    if released:
+        notes = {
+            "status": "released",
+            "availabilityStatus": "current",
+            "message": "RELEASED AIRPORT NOTES — EXACT PACKAGE VALUES",
+            "releaseStatus": "released",
+            "airportVersion": "v25.1",
+            "cycle": "2609",
+            "schemaVersion": "25",
+            "objects": [{"name": "notes.json", "sha256": "a" * 64}],
+            "lines": [{
+                "sourceObject": "notes.json",
+                "path": "taxi.caution",
+                "value": "Exact released note text.",
+            }],
+            "omittedLineCount": 0,
+        }
+    return {
+        "icao": icao,
+        "name": "Synthetic airport",
+        "roles": roles or ["destination"],
+        "roleLabel": "Destination",
+        "stationStatus": "held",
+        "sourceLabel": "Uploaded OFP station package",
+        "window": {
+            "startsAt": "2026-08-28T10:00:00Z",
+            "endsAt": "2026-08-28T12:00:00Z",
+            "referenceAt": "2026-08-28T11:00:00Z",
+            "referenceBasis": "scheduled_arrival",
+        },
+        "notamCount": 3,
+        "notes": notes,
+    }
+
+
+def test_airport_surface_index_accepts_destination_alternate_and_enroute_rows() -> None:
+    payload = SurfaceOverlayRequest.model_validate({
+        "overlays": [],
+        "airport_surface_index": [
+            _airport_index_entry(released=True),
+            _airport_index_entry("WMKK", ["destination_alternate"]),
+            _airport_index_entry("FIMP", ["edto"]),
+            _airport_index_entry("WITT", ["fuel_enroute"]),
+        ],
+    })
+    result = validated_airport_surface_index(
+        payload,
+        {"departure": "FAOR", "destination": "WSSS"},
+    )
+    assert [item["icao"] for item in result] == ["WSSS", "WMKK", "FIMP", "WITT"]
+    assert result[0]["notes"]["lines"][0]["value"] == "Exact released note text."
+
+
+def test_airport_surface_index_fails_closed_on_non_current_released_notes() -> None:
+    for availability_status in (
+        "future",
+        "expired",
+        "withdrawn",
+        "review_required",
+    ):
+        entry = _airport_index_entry(released=True)
+        entry["notes"]["availabilityStatus"] = availability_status
+        with pytest.raises(
+            ValidationError,
+            match="current availability",
+        ):
+            SurfaceOverlayRequest.model_validate({
+                "overlays": [],
+                "airport_surface_index": [entry],
+            })
+
+
+def test_airport_surface_index_rejects_current_status_without_released_content() -> None:
+    entry = _airport_index_entry()
+    entry["notes"]["availabilityStatus"] = "current"
+    with pytest.raises(ValidationError, match="cannot claim current availability"):
+        SurfaceOverlayRequest.model_validate({
+            "overlays": [],
+            "airport_surface_index": [entry],
+        })
+
+
+def test_omitted_airport_surface_index_preserves_it_while_explicit_empty_clears() -> None:
+    flight = {"departure": "FAOR", "destination": "WSSS"}
+    omitted = SurfaceOverlayRequest.model_validate({"overlays": []})
+    explicit_clear = SurfaceOverlayRequest.model_validate({
+        "overlays": [],
+        "airport_surface_index": [],
+    })
+    assert validated_airport_surface_index(omitted, flight) is None
+    assert validated_airport_surface_index(explicit_clear, flight) == []
+
+
+def test_airport_surface_index_rejects_duplicate_or_wrong_endpoint_binding() -> None:
+    duplicate = SurfaceOverlayRequest.model_validate({
+        "overlays": [],
+        "airport_surface_index": [
+            _airport_index_entry("FIMP", ["edto"]),
+            _airport_index_entry("FIMP", ["enroute"]),
+        ],
+    })
+    with pytest.raises(ValueError, match="Duplicate FIMP"):
+        validated_airport_surface_index(
+            duplicate,
+            {"departure": "FAOR", "destination": "WSSS"},
+        )
+
+    wrong_destination = SurfaceOverlayRequest.model_validate({
+        "overlays": [],
+        "airport_surface_index": [
+            _airport_index_entry("WMKK", ["destination"]),
+        ],
+    })
+    with pytest.raises(ValueError, match="Destination airport surface index"):
+        validated_airport_surface_index(
+            wrong_destination,
+            {"departure": "FAOR", "destination": "WSSS"},
+        )
+
+
+def test_unavailable_airport_notes_cannot_smuggle_package_content() -> None:
+    invalid = _airport_index_entry()
+    invalid["notes"]["lines"] = [{
+        "sourceObject": "draft.json",
+        "path": "note",
+        "value": "Draft content",
+    }]
+    with pytest.raises(ValidationError, match="cannot publish package content"):
+        SurfaceOverlayRequest.model_validate({
+            "overlays": [],
+            "airport_surface_index": [invalid],
+        })
 
 
 def test_review_required_surface_accepts_bounded_official_source_conflict() -> None:
@@ -283,3 +481,85 @@ def test_report_summary_does_not_call_nonclosures_closed() -> None:
     assert "Review locator: TAXIWAY W9" in text
     assert "Closed:" not in text
     assert "04L/22R" not in text
+
+
+def _ulr_station_index(count: int) -> list[dict]:
+    # SQ38 WSSS-KLAX (29 Aug 2026) published 39 station-package airports; the
+    # index bound must clear every real ULR OFP, not just regional counts.
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    entries = [
+        _airport_index_entry("WSSS", ["departure"]),
+        _airport_index_entry("KLAX", ["destination"]),
+        _airport_index_entry("KONT", ["destination_alternate"]),
+        _airport_index_entry("KSFO", ["destination_alternate"]),
+    ]
+    seen = {entry["icao"] for entry in entries}
+    for first in letters:
+        for second in letters:
+            if len(entries) >= count:
+                return entries
+            icao = f"Z{first}{second}X"
+            if icao in seen:
+                continue
+            seen.add(icao)
+            entries.append(_airport_index_entry(icao, ["fuel_enroute"]))
+    return entries
+
+
+def test_airport_surface_index_accepts_ulr_station_count() -> None:
+    request = SurfaceOverlayRequest.model_validate({
+        "overlays": [],
+        "airport_surface_index": _ulr_station_index(39),
+    })
+    result = validated_airport_surface_index(
+        request,
+        {"departure": "WSSS", "destination": "KLAX"},
+    )
+    assert result is not None
+    assert len(result) == 39
+
+
+@pytest.mark.parametrize("count", [64, 65, 127, 128])
+def test_airport_surface_index_accepts_every_real_package_size_up_to_the_bound(count: int) -> None:
+    """65 is not a runaway: the real SQ303 EBBR-WSSS OFP of 16 Jul 2026 files exactly
+    65 station airports, and the old cap of 64 refused its whole publication
+    (Codex live QA, 22 Sep 2026). Nothing is dropped to fit: all entries survive."""
+    entries = _ulr_station_index(count)
+    request = SurfaceOverlayRequest.model_validate({"overlays": [], "airport_surface_index": entries})
+    result = validated_airport_surface_index(request, {"departure": "WSSS", "destination": "KLAX"})
+    assert result is not None
+    assert [row["icao"] for row in result] == [row["icao"] for row in entries]
+
+
+def test_airport_surface_index_still_bounds_runaway_station_count() -> None:
+    from app.odss.surface_overlays import MAX_AIRPORT_SURFACE_INDEX_ENTRIES
+
+    assert MAX_AIRPORT_SURFACE_INDEX_ENTRIES == 128
+    with pytest.raises(ValidationError):
+        SurfaceOverlayRequest.model_validate({
+            "overlays": [],
+            "airport_surface_index": _ulr_station_index(MAX_AIRPORT_SURFACE_INDEX_ENTRIES + 1),
+        })
+
+
+def test_the_app_states_the_same_station_bound_before_it_sends() -> None:
+    """A client that sends more than the service accepts loses the whole report;
+    one that sends fewer silently drops airports. The two numbers move together."""
+    import os
+    import re
+    from pathlib import Path
+
+    from app.odss.surface_overlays import MAX_AIRPORT_SURFACE_INDEX_ENTRIES
+    from tests.cross_runtime import sibling_app_root
+
+    configured = os.environ.get("PILOTDRIVEN_APP_ROOT")
+    root = Path(configured) if configured else sibling_app_root(Path(__file__))
+    module = root / "web/src/lib/airport-surface-index-limit.mjs" if root else None
+    if module is None or not module.exists():
+        pytest.skip("the PilotDriven app worktree is not available")
+    declared = re.search(
+        r"export const MAX_AIRPORT_SURFACE_INDEX_ENTRIES = (\d+)",
+        module.read_text(encoding="utf-8"),
+    )
+    assert declared, "the app must declare the station bound it enforces before sending"
+    assert int(declared.group(1)) == MAX_AIRPORT_SURFACE_INDEX_ENTRIES

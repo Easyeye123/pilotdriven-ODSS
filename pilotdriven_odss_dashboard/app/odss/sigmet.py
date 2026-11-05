@@ -19,7 +19,21 @@ from .direct_sigmet import (
     merge_direct_sigmet_snapshot,
     route_intersects_bbox,
 )
+from .source_status import answer_currency
 from .vaa import evaluate_vaa, filter_awc_snapshot, live_awc_snapshot
+from .volcanic_check import VA_SIGMET_MAX_VALIDITY
+
+# The evaluator's reasons that say the route/time/level comparison did not run.
+_ROUTE_NOT_EVALUATED = frozenset({
+    "route_geometry_unavailable",
+    "route_timing_unavailable",
+    "flight_level_unavailable",
+    "flight_level_change_unresolved",
+    "route_timing_non_monotonic",
+    "advisory_time_unavailable",
+    "advisory_level_unavailable",
+    "advisory_geometry_invalid",
+})
 
 
 GENERAL_SIGMET_HAZARDS = frozenset({
@@ -152,13 +166,32 @@ def assess_significant_weather(
             )
         },
     }
+    # ITEM2-VOLCANIC (24 Oct 2026): a clean receipt also needs an answer that
+    # can speak for this flight - retrieved no later than arrival and no
+    # earlier than the longest SIGMET validity (6 h, VA/TC) before departure -
+    # a completed route/time/level evaluation, and no SIGMET on the route that
+    # expires before the flight passes. A historical analysis re-run weeks
+    # later used to read "checked, no match" from today's SIGMETs.
+    currency, _ = answer_currency(
+        projected.get("retrieved_at_utc"),
+        flight,
+        lead=VA_SIGMET_MAX_VALIDITY,
+    )
+    evaluated = not (
+        {str(code) for code in review.get("reason_codes") or []}
+        & _ROUTE_NOT_EVALUATED
+    )
     review["clean_current_feed_no_match"] = bool(
         review.get("status") == "review_required"
         and projected.get("status") == "available"
         and projected.get("freshness_status") == "fresh"
         and not projected.get("parse_warnings")
         and not review.get("matches")
+        and not review.get("expiring_on_route")
+        and currency is None
+        and evaluated
     )
+    review["feed_currency"] = currency
     flight["sigmet_review"] = review
     return review
 

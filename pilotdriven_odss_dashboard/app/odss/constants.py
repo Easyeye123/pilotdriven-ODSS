@@ -9,8 +9,8 @@ REFERENCE_LIBRARY_METADATA = {
     "version": "sample-2026-07",
     "status": "manual-review",
     "notice": (
-        "Candidate MEL and communications mappings are regression samples only. "
-        "Verify every match against the current approved operator source."
+        "Candidate MEL and communications mappings are regression samples only, "
+        "not the current approved operator source."
     ),
 }
 

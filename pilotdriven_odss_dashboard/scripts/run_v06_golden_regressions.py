@@ -28,7 +28,10 @@ EXPECTED = {
         "source_sha256": "ffb63085badc026e1db590b289be80590d551a58b6a699a1c8d1c4f79ac9baef",
         "departure": "WSSS",
         "destination": "EBBR",
-        "route_hash": "90a055e3ec2fca7b83e7f10603d333b0104dae4f0175180dca85918049ff9f87",
+        # 10 Oct 2026: LIBDI, the waypoint before SQ304's "**ETP1 -1D" row, keeps its own position and MSA (020 at
+        # N14 15.1 E091 59.8) instead of the ETP's; then (Codex QA of release 468) the first navlog row IBIXU is kept
+        # and EXITI keeps its MSA 069. Same value as the reminted private-corpus manifest.
+        "route_hash": "910ebe1bdbbec51fbbdc99afbf16a0fe8b4933818da07358141e3e5de1691bc2",
         "masses": {
             "planned_zfw_kg": 175500,
             "planned_takeoff_weight_kg": 262222,
@@ -67,21 +70,39 @@ def _run(name: str, source: Path, root: Path, flight_id: int) -> dict:
     # Every coordinate-bearing route waypoint remains a marker. EDTO ETPs are
     # deliberate standalone markers because they can fall between waypoints;
     # the contract records their exact count so the golden check stays strict
-    # without treating those governed additions as duplicates.
+    # without treating those governed additions as duplicates. Aerodromes are
+    # their own markers at governed reference points (item 11, QA496-03),
+    # counted the same way; both golden flights draw both aerodromes.
     expected_marker_count = (
         len(flight["route_waypoints"])
         + int(contract.get("metadata", {}).get("edto_etp_marker_count", 0))
+        + int(contract.get("metadata", {}).get("aerodrome_marker_count", 0))
     )
     assert len(contract["markers_geojson"]["features"]) == expected_marker_count
+    aerodrome_markers = {
+        feature["properties"]["role"]: feature["properties"]["name"]
+        for feature in contract["markers_geojson"]["features"]
+        if str(feature["id"]).startswith("aerodrome-")
+    }
+    assert aerodrome_markers == {
+        "departure": expected["departure"],
+        "destination": expected["destination"],
+    }
+    assert not any(
+        {"departure", "destination"} & {feature["properties"]["role"], *feature["properties"]["roles"]}
+        for feature in contract["markers_geojson"]["features"]
+        if str(feature["id"]).startswith("wp-")
+    )
     assert Path(result["level1_report"]).read_bytes().startswith(b"%PDF")
     assert Path(result["level2_report"]).read_bytes().startswith(b"%PDF")
 
     if name == "SQ303":
         assert flight.get("bobcat") is None
+        assert flight.get("slot_allocation_unread") is None
         communications = [item for item in findings if item["engine"] == "communications"]
         assert len(communications) == 1
         assert communications[0]["severity"] == "unknown"
-        assert communications[0]["title"] == "FIR communication review required"
+        assert communications[0]["title"] == "No approved FIR communication reference"
         assert communications[0]["data"]["reference_status"] != "approved"
         assert max(
             item["data"].get("maximum_msa_hundreds_ft", 0)
@@ -90,12 +111,16 @@ def _run(name: str, source: Path, root: Path, flight_id: int) -> dict:
         ) == 166
         assert flight["edto"]["airports"][0]["airport"] == "VTBD"
     else:
+        # SLOT-ALLOCATION-434: the allocation also names the system and page it is printed under.
         assert flight["bobcat"] == {
             "waypoint": "BIROS",
             "flight_level": 360,
             "cto_utc": "2026-07-12T21:58:00+00:00",
             "ctot_utc": "2026-07-12T16:25:00+00:00",
+            "system": "BOBCAT",
+            "source_page": 1,
         }
+        assert flight.get("slot_allocation_unread") is None
         depressurisation = [item for item in findings if item["engine"] == "depressurisation"]
         assert [item["title"] for item in depressurisation] == [
             "Profile unresolved - ZB to RANAH",
